@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ExportAPI — converts a rendered DOM node to a file format.
+ * ExportAPI - converts a rendered DOM node to a file format.
  *
  * The host owns the renderer choice. Tools call host.export.render(node, fmt)
- * and get back a Blob. This file is where format support is added/swapped —
+ * and get back a Blob. This file is where format support is added/swapped - 
  * one place, not 50.
  *
  * Watermarking: applied when the tool is 'experimental' OR opts.watermark is true.
@@ -105,26 +105,27 @@ type Rgb = [number, number, number];
 type Rgba = [number, number, number, number];
 type LabelsRecord = Partial<Record<LabelSlot, string>>;
 
-// The web shell's host is a superset of the engine's HostV1 — it also carries an
+// The web shell's host is a superset of the engine's HostV1 - it also carries an
 // `identity` bridge (bridge/identity.js) used for Content Credentials signing.
 interface WebIdentityAPI { signer(): Promise<unknown>; }
 type WebHost = HostV1 & { identity?: WebIdentityAPI };
 
 
 // The union of options this host's export path understands. A superset of the
-// Per-export imprint state threaded through the vector/container export path in
-// place of a bare `imprint` boolean. A single instance is created per format
-// render (renderFormat) and reaches imprintEmbedCanvas at every raster chokepoint
-// by reference, across the export.ts / export-pptx.ts boundary. `want` mirrors
-// opts.imprint on a Lolly-rendered raster; `applied` is set true — ONLY inside
-// imprintEmbedCanvas — the first time a mark is genuinely embedded (want && the
-// raster clears the size floor). stampC2pa reads `applied` so a container export
-// (pdf) claims an imprint only when one was really written — a pure-vector page
-// (a QR PDF) marks no raster, so it must not claim. `undefined` / want:false at a
-// call site = never mark (user assets, opted-out exports).
+// Per-export imprint state passed through the vector/container export path,
+// instead of a plain `imprint` boolean. renderFormat creates one instance per
+// format render. It reaches imprintEmbedCanvas by reference at every raster
+// point, across the export.ts / export-pptx.ts boundary. `want` mirrors
+// opts.imprint on a Lolly-rendered raster. `applied` is set true only inside
+// imprintEmbedCanvas, the first time a mark is actually embedded (want is
+// true and the raster clears the size floor). stampC2pa reads `applied` so a
+// container export (pdf) claims an imprint only when one was actually
+// written. A pure-vector page (a QR PDF) marks no raster, so it must not
+// claim one. `undefined` or want:false at a call site means never mark (user
+// assets, opted-out exports).
 export interface ImprintState { want: boolean; applied: boolean }
 
-// engine's ExportOpts — the extra fields (print marks, video timing, c2pa, …)
+// engine's ExportOpts - the extra fields (print marks, video timing, c2pa, …)
 // are web-shell extensions the engine passes through untouched.
 export interface ExportOpts {
   scale?: number;
@@ -152,27 +153,27 @@ export interface ExportOpts {
   metadata?: boolean;
   /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp/avif/tiff).
    *  On by default, like C2PA; explicit opt-out via `imprint=0` in the URL. A
-   *  durable, imperceptible mark that survives what strips the C2PA credential —
+   *  durable, imperceptible mark that survives what strips the C2PA credential - 
    *  see engine/pixel-watermark. */
   imprint?: boolean;
-  /** Embed a DURABLE Content Credential — a TrustMark-format neural watermark
-   *  carrying Lolly's identifier — into raster exports, so a metadata strip can't
+  /** Embed a DURABLE Content Credential - a TrustMark-format neural watermark
+   *  carrying Lolly's identifier - into raster exports, so a metadata strip can't
    *  erase the "made with Lolly" link and a TrustMark-aware tool can recover it.
    *  Opt-in (heavy neural encode + a fetched ~tens-of-MB model), unlike the
    *  default-on pure-JS `imprint`. A no-op when the encoder model isn't on-device
    *  (scripts/convert-trustmark-encoder-onnx.py). Raster-only (png/jpg/webp/avif/
-   *  tiff) — see lib/trustmark-embed.ts and plans/28-durable-content-credentials.md. */
+   *  tiff) - see lib/trustmark-embed.ts and plans/28-durable-content-credentials.md. */
   durable?: boolean;
   /** Reserved id carried by the durable mark (0 until the CAI id scheme lands). */
   durableId?: number;
   /** OPT-IN HDR raster export (the `hdr` URL param). When set, an HDR-capable
    *  raster (png/jpeg/avif/tiff) is encoded in Rec.2100 PQ with the brand's primary
-   *  colours (opts.palette) boosted toward peak luminance — white text and brand
+   *  colours (opts.palette) boosted toward peak luminance - white text and brand
    *  colours glow on HDR displays, darks stay dark. Off by default; SDR otherwise.
    *  See engine/src/hdr.ts + pqBt2020IccProfile. */
   hdr?: boolean;
   /** HDR author dials (from the export-panel sliders / tuned `hdr=` value). All
-   *  optional — omitted ⇒ engine defaults. `hdrPeakNits`: white ceiling (nits).
+   *  optional - omitted ⇒ engine defaults. `hdrPeakNits`: white ceiling (nits).
    *  `hdrReach`/`hdrLift`/`hdrRichness`: 0–100 (glow reach / dark lift / colour focus). */
   hdrPeakNits?: number;
   hdrReach?: number;
@@ -180,7 +181,7 @@ export interface ExportOpts {
   hdrRichness?: number;
   /** REQUESTED bits per channel for the output (the `depth` URL param): 8, 16,
    *  'float', or 'auto'/absent = "the deepest the provenance chain supports".
-   *  A request, NEVER a promise — depth follows provenance, so a consumer emits
+   *  A request, NEVER a promise - depth follows provenance, so a consumer emits
    *  deep bits only where the pipeline actually produced them (a 16-bit container
    *  over an 8-bit canvas render is padding). First shipped consumer: the 16-bit
    *  HDR PNG path (export-hdr-png.ts, via deepHdrPng below), which honours a
@@ -204,7 +205,7 @@ export interface ExportOpts {
   colorBars?: boolean;
   provenance?: boolean;
   /** Colour-bar style: 'rgb-swatches' (brand colours as single RGB cells) for RGB
-   *  output — RGB PDF / SVG / EPS; 'cmyk-verify' (the RGB+CMYK press pairs) for the
+   *  output - RGB PDF / SVG / EPS; 'cmyk-verify' (the RGB+CMYK press pairs) for the
    *  CMYK formats. Omitted ⇒ the engine default 'cmyk-verify'. */
   barStyle?: 'cmyk-verify' | 'rgb-swatches';
   /** Corner radius (pt) for colour-bar cells, from the brand `--radius`. */
@@ -214,8 +215,8 @@ export interface ExportOpts {
   icoSizes?: number[];
   bundleFormats?: string[];
   /** CONTACT SHEET frame count for a STILL export of a timed composition (the
-   *  `cuts` URL param; engine url-mode parses and clamps it). 1 or absent — the
-   *  overwhelmingly common case — is the frame at the playhead, byte-identical to
+   *  `cuts` URL param; engine url-mode parses and clamps it). 1 or absent - the
+   *  overwhelmingly common case - is the frame at the playhead, byte-identical to
    *  no param at all. N > 1 renders N stills at midpoint times across the
    *  sequence: png/jpg/webp/svg come back as one ZIP of `<filename>-01.<ext>`
    *  members, pdf as ONE document of N pages. Ignored by every non-still format
@@ -231,42 +232,45 @@ export interface ExportOpts {
    *  embed it as a raster instead of dropping it. On by default; set false to A/B the
    *  pure-vector output (used by the byte-identical regression test). */
   rasterFallback?: boolean;
-  /** Page-snapshot mode for the raster escape hatch: capture only the offending
-   *  element's OWN paint layer as an <image> and keep walking its children as
-   *  vector, instead of baking the whole subtree into one PNG.
+  /** Page-snapshot mode for the raster escape hatch. Capture only the
+   *  offending element's own paint layer as an <image>, and keep walking its
+   *  children as vector, instead of baking the whole subtree into one PNG.
    *
-   *  Default (absent/false) is the historical subtree behaviour, which every tool
-   *  export relies on — see the note at the hatch for why splitting paint from
-   *  children is not automatically safe when the two composite together. Turned on
-   *  by main.ts's `__lollyWalkerShot` loopback hook, where the input is a whole
-   *  page and one unsupported property on a container would otherwise reduce the
-   *  entire capture to a screenshot. */
+   *  Default (absent/false) is the old subtree behaviour, which every tool
+   *  export relies on. See the note at the hatch for why splitting paint from
+   *  children is not always safe when the two composite together. Turned on
+   *  by main.ts's `__lollyWalkerShot` loopback hook, where the input is a
+   *  whole page. There, one unsupported property on a container would
+   *  otherwise reduce the entire capture to a screenshot. */
   elementScopedRaster?: boolean;
-  /** Reconstruct `backdrop-filter: blur()` by duplicating, clipping and blurring the
-   *  content behind the element, instead of sending it to the raster hatch (which
-   *  cannot see a backdrop at all). Snapshot mode only — it duplicates geometry, and
-   *  the cost is only worth paying when the goal is fidelity to a live page. */
+  /** Reconstruct `backdrop-filter: blur()` by duplicating, clipping, and
+   *  blurring the content behind the element, instead of sending it to the
+   *  raster hatch (which cannot see a backdrop at all). Snapshot mode only:
+   *  it duplicates geometry, so the cost is worth it only when the goal is
+   *  fidelity to a live page. */
   backdropBlur?: boolean;
   /** Page snapshots: paint in CSS stacking-context order (CSS 2.1 Appendix E
-   *  §E.2) instead of DOM order — negative-z children behind their parent's
-   *  in-flow content, positioned descendants above non-positioned ones, each
-   *  layer z-sorted, hoists terminating at every stacking-context creator (the
-   *  table in bridge/stacking-order.ts).
+   *  §E.2) instead of DOM order. Negative-z children paint behind their
+   *  parent's in-flow content. Positioned descendants paint above
+   *  non-positioned ones. Each layer is z-sorted. Each hoist stops at the
+   *  next stacking-context creator (see the table in bridge/stacking-order.ts).
    *
-   *  Default (absent/false) is DOM order, which every tool export has always
-   *  had. OFF is not "the new code happens to agree": `PaintCtx.frame === null`
-   *  makes every deferral branch unreachable, so each of the three placement
-   *  sites reduces to the single `parentG.appendChild(unit)` it was before and
-   *  the emitted bytes CANNOT differ. That short-circuit plus the byte-identity
-   *  golden in export-paint-order.test.ts is the entire protection for the
-   *  shipping SVG/PDF/EMF/EPS export path of every tool in every profile.
+   *  Default (absent/false) is DOM order, the behaviour every tool export has
+   *  always had. OFF does not just happen to match the old output: when
+   *  `PaintCtx.frame === null`, every deferral branch is unreachable, so each
+   *  of the three placement sites reduces to the same
+   *  `parentG.appendChild(unit)` call as before, and the emitted bytes cannot
+   *  differ. That short-circuit, plus the byte-identity golden test in
+   *  export-paint-order.test.ts, is the only thing protecting the shipping
+   *  SVG/PDF/EMF/EPS export path for every tool in every profile.
    *
-   *  Turned on by main.ts's `__lollyWalkerShot` loopback hook, where the input
-   *  is a whole page: on Lolly's own gallery 99 elements carry a non-auto
-   *  z-index, 22 of them negative, and DOM order paints them all wrong. */
+   *  Turned on by main.ts's `__lollyWalkerShot` loopback hook, where the
+   *  input is a whole page. On Lolly's own gallery, 99 elements have a
+   *  non-auto z-index, 22 of them negative, and DOM order paints them all
+   *  wrong. */
   stackingOrder?: boolean;
   /** Stamp `data-box-id` onto the per-element `<g>` in the SVG walker's output,
-   *  wherever the walked element already carries one (plans/104 §7 — the "Lift
+   *  wherever the walked element already carries one (plans/104 §7 - the "Lift
    *  layers" identity passthrough). Off by default and byte-identical when off:
    *  the one guarded block at the g-creation site is the whole feature, so a
    *  normal tool export cannot differ. On, a Lolly screenshot lifts along the
@@ -281,7 +285,7 @@ export interface ExportOpts {
   noBoxShadow?: boolean;
   /** Resolution ceiling for INLINED raster assets (`<img>` bitmaps), in DPI, decoupled
    *  from `dpi` (which sets the vector/own-paint resolution). Opt-in: when set, an
-   *  embedded bitmap is downscaled to its display box at this DPI with a 1x floor —
+   *  embedded bitmap is downscaled to its display box at this DPI with a 1x floor - 
    *  so `rasterDpi: 96` embeds each photo at exactly its rendered box, replacing the
    *  full-resolution source. Left unset, embedded rasters keep the dpi-derived >=2x cap.
    *  Lets a walker SVG stay crisp-vector while its heavy continuous-tone assets shrink
@@ -296,7 +300,7 @@ export interface ExportOpts {
   wait?: number;
   duration?: number;
   /** True when the user actually EDITED the export bar's duration field for this
-   *  export — set by the shell, never inferred. It is what lets a derived length
+   *  export - set by the shell, never inferred. It is what lets a derived length
    *  (a sequence's timeline) stay the default while a direct intervention still
    *  wins: the sequence tool's beforeExport only overwrites `duration` when this is
    *  unset, and the compositor re-lengths the stage when it is (sequence-plan
@@ -305,7 +309,7 @@ export interface ExportOpts {
   /** Record the ON-SCREEN preview through a screen share instead of the offline
    *  frame-by-frame render, so frame pacing matches what the user watched. Opt-in
    *  via the export panel's "Record live" toggle; webm/mp4 only. Popup-local like
-   *  wait/duration — never serialized into URLs or share links. */
+   *  wait/duration - never serialized into URLs or share links. */
   live?: boolean;
 }
 
@@ -358,7 +362,7 @@ export let _host: WebHost | null = null;
  *
  * opts.width / opts.height may be numbers (CSS px) or unit strings ("210mm",
  * "8.5in", "595pt", "800px"); absent falls back to the node's on-screen size.
- * Physical units need a resolution for raster output — opts.dpi wins, else 300
+ * Physical units need a resolution for raster output - opts.dpi wins, else 300
  * (print) when any physical unit is in play, else 96 (CSS). Vector formats
  * (PDF/SVG) ignore the DPI; they convert exactly.
  */
@@ -386,48 +390,50 @@ export function createExportAPI(host: WebHost) {
     async render(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
       const watermark = Boolean(opts.watermark);
 
-      // Watermark via a live overlay on the original node, not a detached clone.
-      // Detached clones lose getComputedStyle context: CSS variables don't resolve,
-      // animations don't run, getBoundingClientRect returns zero — everything breaks.
+      // Watermark with a live overlay on the original node, not a detached clone.
+      // A detached clone loses getComputedStyle context: CSS variables do not
+      // resolve, animations do not run, and getBoundingClientRect returns zero.
       const removeWatermark = watermark ? addWatermarkOverlay(node as HTMLElement) : null;
       // Pull any editor-only chrome out of the tree for the duration of the capture.
       const restoreHidden = detachExportHidden(node);
-      // The timeline panel photographs its own clip boxes with the SAME dom-to-image
-      // instance, whose options / url cache / sandbox iframe are module-global and are
-      // cleared by whichever call finishes first. detachExportHidden removes the panel
-      // from the tree, which stops it *scheduling* more, but a shot already in flight
-      // would still corrupt this one — and the panel is not the only thing rastering.
-      // Freeze every <video> to a current-frame still — the DOM serialiser can't
-      // paint live video, so a video box would otherwise export blank. One swap on
-      // the live node here covers every format, including each ZIP sub-format (they
-      // re-dispatch the same, already-swapped node).
+      // The timeline panel photographs its own clip boxes with the same dom-to-image
+      // instance. Its options, url cache, and sandbox iframe are module-global and
+      // get cleared by whichever call finishes first. detachExportHidden removes the
+      // panel from the tree, which stops it from *scheduling* more shots, but a shot
+      // already in flight can still corrupt this one, and the panel is not the only
+      // thing that rasters.
+      // Freeze every <video> to a still of its current frame. The DOM serialiser
+      // cannot paint live video, so a video box would otherwise export blank. One
+      // swap on the live node here covers every format, including each ZIP
+      // sub-format (they re-dispatch the same, already-swapped node).
       //
       // ONE exception: a [data-sequence] stage exported to a MOTION format. There
       // the sequence compositor decodes every clip itself, frame by frame, off the
-      // timeline — a frozen still would export a stuck picture instead of moving
-      // footage. Stills KEEP the freeze, deliberately: a still export of a sequence
-      // is the frame at the playhead, with each video exactly where the preview
-      // had it (the phase-2 WYSIWYG contract).
+      // timeline. A frozen still would export a stuck picture instead of moving
+      // footage. Stills KEEP the freeze on purpose: a still export of a sequence is
+      // the frame at the playhead, with each video exactly where the preview had
+      // it (the phase-2 WYSIWYG contract).
       const restoreMotion = (SEQUENCE_MOTION_FORMATS.has(format) && isSequenceStage(node))
         ? (): void => {}
         : snapshotMotion(node);
 
-      // The timeline panel photographs its own clip boxes with the SAME dom-to-image
-      // instance, whose options / url cache / sandbox iframe are module-global and are
-      // cleared by whichever call finishes first. detachExportHidden removes the panel
-      // from the tree, which stops it *scheduling* more, but a shot already in flight
-      // would still corrupt this one — and the panel is not the only thing rastering.
-      // Say it explicitly instead of relying on that side effect.
+      // The timeline panel photographs its own clip boxes with the same dom-to-image
+      // instance. Its options, url cache, and sandbox iframe are module-global and
+      // get cleared by whichever call finishes first. detachExportHidden removes the
+      // panel from the tree, which stops it from *scheduling* more shots, but a shot
+      // already in flight can still corrupt this one, and the panel is not the only
+      // thing that rasters. State that here explicitly instead of relying on that
+      // side effect.
       //
-      // Acquired HERE, immediately before the try, and not a line earlier: the counter
-      // is only decremented by the `finally` below, so anything that can throw between
-      // the two (snapshotMotion walks the tree) would suspend frame thumbnails for the
-      // rest of the session with nothing to log and nothing to reset it.
+      // Acquired HERE, right before the try, not a line earlier. The counter is
+      // only decremented by the `finally` below. Anything that throws between the
+      // two lines (snapshotMotion walks the tree) would suspend frame thumbnails
+      // for the rest of the session, with nothing logged and nothing to reset it.
       const resumeThumbRasters = suspendNodeRasters();
       try {
-        // Suspending stops the NEXT shot; it cannot cancel the uncancellable one that
-        // is already inside the library. Wait that one out — bounded — or its teardown
-        // clears the sandbox iframe and url cache out from under THIS render.
+        // Suspending stops the NEXT shot. It cannot cancel the one already inside
+        // the library, which cannot be cancelled. Wait for it, with a bound, or
+        // its teardown clears the sandbox iframe and url cache from under THIS render.
         await drainNodeRasters();
         return await renderFormat(node, format, opts);
       } finally {
@@ -450,7 +456,7 @@ export function createExportAPI(host: WebHost) {
     },
 
     // Transform-path delivery: a blob the tool produced itself (a transformed
-    // user file from the exportFile hook). On the web this is just a download —
+    // user file from the exportFile hook). On the web this is just a download - 
     // but it's deliberately a distinct verb from render(): no watermark and no
     // provenance metadata are ever applied, because the bytes are the user's own
     // content. (Tauri/CLI route this to a real save target.)
@@ -458,7 +464,7 @@ export function createExportAPI(host: WebHost) {
       let out = blob;
       // export.file's one legal container change: fonts. When a transform's bytes are an
       // sfnt/WOFF and the requested name asks for a DIFFERENT font container, convert it
-      // (TTF/OTF <-> WOFF, glyph outlines untouched) so the download matches the name —
+      // (TTF/OTF <-> WOFF, glyph outlines untouched) so the download matches the name - 
       // the font-convert tool's path. Never re-encodes anything else.
       const name = opts.filename || 'file';
       const de = name.match(/\.(ttf|otf|woff)$/i)?.[1]?.toLowerCase();
@@ -476,7 +482,7 @@ export function createExportAPI(host: WebHost) {
     },
 
     // Will Web Share actually accept a file of this type? Chromium enforces a fixed
-    // type/extension safelist — a private application/vnd.lolly+zip / .lolly is NOT on
+    // type/extension safelist - a private application/vnd.lolly+zip / .lolly is NOT on
     // it, so this returns false on Chromium (and canShare must be PRESENT, not just
     // navigator.share, or old engines that shipped share() without file support slip
     // through). The "Send to…" button is gated on this so it never claims a share it
@@ -494,8 +500,8 @@ export function createExportAPI(host: WebHost) {
     // Hand finished bytes to the OS share sheet (Web Share API). Delegates the capability
     // decision to canShare() above (so a type Web Share won't accept returns false → the
     // caller falls back to download, never a silent no-op). Returns true when the sheet
-    // took it — a user-cancel counts, so we don't then ALSO dump a download on them.
-    // Never watermarks — a share is a share. Tauri shells override this with native ACTION_SEND.
+    // took it - a user-cancel counts, so we don't then ALSO dump a download on them.
+    // Never watermarks - a share is a share. Tauri shells override this with native ACTION_SEND.
     async share(blob: Blob, opts: { filename?: string; mime?: string; title?: string } = {}): Promise<boolean> {
       if (!this.canShare({ mime: opts.mime || blob.type, filename: opts.filename })) return false;
       const file = new File([blob], opts.filename || 'file', {
@@ -505,18 +511,18 @@ export function createExportAPI(host: WebHost) {
         await navigator.share({ files: [file], title: opts.title });
         return true;
       } catch (err) {
-        // AbortError = the user opened the sheet and dismissed it — that is "handled",
+        // AbortError = the user opened the sheet and dismissed it - that is "handled",
         // don't fall back to a download. Any other error = the share failed → fall back.
         return (err as Error)?.name === 'AbortError';
       }
     },
 
-    // Apply Lolly's durable RASTER marks to finished image bytes — the transform-
+    // Apply Lolly's durable RASTER marks to finished image bytes - the transform-
     // path counterpart to render()'s automatic marking, for a tool that stamps an
     // existing file (Embed, Imprint & Track). Embeds the pixel Imprint always, plus
     // the imperceptible neural durable mark when asked, then re-encodes to the same
     // raster format. Non-raster / undecodable / too-small → returned unchanged.
-    // Never throws — losing the file to a watermark hiccup is worse than no mark.
+    // Never throws - losing the file to a watermark hiccup is worse than no mark.
     async imprint(bytes: Uint8Array, format: string, opts: { durable?: boolean } = {}): Promise<Uint8Array> {
       return imprintRasterBytes(bytes, format, opts);
     },
@@ -545,7 +551,7 @@ async function imprintRasterBytes(bytes: Uint8Array, format: string, opts: { dur
     if (!ctx) { bmp.close?.(); return bytes; }
     ctx.drawImage(bmp, 0, 0);
     bmp.close?.();
-    // Pixel Imprint — lossless-strength for png (no quantization to fight).
+    // Pixel Imprint - lossless-strength for png (no quantization to fight).
     imprintCanvas(canvas, f === 'png' ? LOSSLESS_STRENGTH : undefined);
     // Optional imperceptible neural durable mark (best-effort; never fatal).
     if (opts.durable) {
@@ -567,7 +573,7 @@ async function imprintRasterBytes(bytes: Uint8Array, format: string, opts: { dur
 // ZIP bundler can reuse it per sub-format without re-applying the overlay (the
 // outer render() already watermarked the live node once).
 //
-// Content Credentials are stamped HERE, after the per-format renderer returns —
+// Content Credentials are stamped HERE, after the per-format renderer returns - 
 // the last byte operation on every supported container (the credential hashes
 // the finished bytes; for video that means after the provenance-tags embed in
 // withVideoMeta). Keying on the format STRING (not blob.type) keeps apng
@@ -580,22 +586,22 @@ async function imprintRasterBytes(bytes: Uint8Array, format: string, opts: { dur
 const C2PA_STAMPABLE = new Set<string>(C2PA_FORMATS);
 
 async function renderFormat(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
-  // Fresh imprint sink per format render (so each zip member — which re-enters
-  // here — starts with applied=false; a marked earlier member can't make a later
+  // Fresh imprint sink per format render (so each zip member - which re-enters
+  // here - starts with applied=false; a marked earlier member can't make a later
   // pure-vector one over-claim). Created BEFORE dispatch so the container render
   // path can flip `applied`, and read by stampC2pa AFTER. `want` gates whether any
   // Lolly-rendered raster gets marked at all.
   opts._imprintSink = { want: !!opts.imprint, applied: false };
   // Collect componentOf ingredients from walker-inlined bitmaps ONLY when we will
-  // stamp — a preview/thumbnail render never pays to decode + C2PA-scan embedded
+  // stamp - a preview/thumbnail render never pays to decode + C2PA-scan embedded
   // images. Populated by the SVG/PDF walker (before its canvas re-encode), read below.
   if (opts.c2pa) opts._ingredientSink ??= [];
   const blob = await renderFormatDispatch(node, format, opts);
   const key = format === 'webm' || format === 'mp4'
     ? (blob.type.includes('mp4') ? 'mp4' : 'webm')
     : format === 'webp-anim' ? 'webp'          // animated WebP stamps like a still WebP (placeWebp appends a C2PA RIFF chunk)
-    : format === 'svg-anim' ? 'svg'            // an animated SVG is a real SVG doc — stamps via the svg placer (<c2pa:manifest> in <metadata>)
-    : format === 'opus' ? 'webm'               // Opus ships in a WebM container — stamps via placeWebm's attachment (Lolly's verifier reads it; c2patool can't, same as WebM)
+    : format === 'svg-anim' ? 'svg'            // an animated SVG is a real SVG doc - stamps via the svg placer (<c2pa:manifest> in <metadata>)
+    : format === 'opus' ? 'webm'               // Opus ships in a WebM container - stamps via placeWebm's attachment (Lolly's verifier reads it; c2patool can't, same as WebM)
     : format;
   if (opts.c2pa && C2PA_STAMPABLE.has(key)) {
     // The output size is only knowable here (node + opts); pass it to the stamp so
@@ -628,7 +634,7 @@ function isRecordStage(node: Element): boolean {
 }
 
 // A timed composition's artboard carries [data-sequence] (on the node or a
-// descendant) — the all-or-nothing marker a tool stamps when anything on it has a
+// descendant) - the all-or-nothing marker a tool stamps when anything on it has a
 // start/duration. Motion export then goes through the deterministic sequence
 // compositor (bridge/sequence-render.ts), which reads the timeline off the DOM and
 // decodes each clip frame-accurately instead of filming the preview in real time.
@@ -641,7 +647,7 @@ function isSequenceStage(node: Element): boolean {
 const SEQUENCE_MOTION_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng']);
 
 // Lazy so mediabunny + the compositor stay out of the initial bundle (the muxer
-// precedent) — they load the first time a timed composition is exported.
+// precedent) - they load the first time a timed composition is exported.
 async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts): Promise<Blob> {
   const { renderSequence } = await import('./sequence-render.ts');
   return renderSequence(node, format, opts, _host ?? null);
@@ -653,12 +659,12 @@ async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif'
 // in, checked in this order:
 //
 //  1. The render target (or a descendant marked [data-audio-source]) exposes
-//     `lollyAudioSource()` — a function returning the planar PCM the tool has
+//     `lollyAudioSource()` - a function returning the planar PCM the tool has
 //     already mixed, `{ channels: Float32Array[], sampleRate }`. This is the
 //     path for a mix no URL can name (Sequence Studio: every clip's own sound
 //     plus the bed). A property, not an attribute, because Float32Arrays do not
 //     fit in one.
-//  2. Otherwise `opts.audio` — the export bar's selection — with `opts.duration`.
+//  2. Otherwise `opts.audio` - the export bar's selection - with `opts.duration`.
 //     That pair means THE TRIMMED EXCERPT: [start, start + duration) of the
 //     source, the Audiogram's "Start at" plus its clip length, not the whole
 //     file.
@@ -719,7 +725,7 @@ async function renderSequenceCutSheet(node: Element, format: string, opts: Expor
 async function renderFormatDispatch(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
   // Contact sheet FIRST, ahead of every still renderer: `cuts=N` changes what the
   // output IS (an archive, or a paged document), not how one still is drawn. The
-  // guard is exact — N > 1, a still format, a timed stage — so `cuts=1` and every
+  // guard is exact - N > 1, a still format, a timed stage - so `cuts=1` and every
   // non-sequence export fall straight through to the switch untouched.
   if (opts.cuts != null && opts.cuts !== 1 && isSequenceStage(node)) {
     const { wantsCuts } = await import('./sequence-cuts.ts');
@@ -735,7 +741,7 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderBitmap(node, 'image/webp', opts);
     case 'avif':
       // Same imprint-then-encode path as webp (renderBitmap perturbs the canvas
-      // pixels before the browser's AV1 encode). Survival is UNVERIFIED here —
+      // pixels before the browser's AV1 encode). Survival is UNVERIFIED here - 
       // the watermark was calibrated against 8×8-block JPEG DCT quantization
       // (see engine/pixel-watermark.ts); AV1's block-transform + loop-filter
       // pipeline is different enough that it needs its own round-trip
@@ -786,7 +792,7 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'gpl':
       // Engine already hydrated the payload (runtime.export → buildDataPayload);
       // the host just wraps it with the right MIME. (`ase` is binary and never
-      // reaches here — the tool's exportStill hook returns its bytes upstream in
+      // reaches here - the tool's exportStill hook returns its bytes upstream in
       // runtime.export, short-circuiting before host.export.render.)
       return new Blob([opts.dataText ?? ''], { type: opts.dataMime ?? 'text/plain' });
     case 'ico':
@@ -796,7 +802,7 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'pptx':
       return await renderPptx(node, opts);
     case 'docx': {
-      // Editable Word document — headings + paragraphs read off the rendered node,
+      // Editable Word document - headings + paragraphs read off the rendered node,
       // NOT a rasterised page. The office MIME (not application/zip) keeps the .docx
       // extension in extFor. Lossy vs PDF by design (see doc-blocks.ts).
       const { blocks, title } = domToDocBlocks(node);
@@ -810,13 +816,13 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
         type: 'application/vnd.oasis.opendocument.text',
       });
     }
-    // A [data-sequence] stage is checked FIRST for every motion format — a timed
+    // A [data-sequence] stage is checked FIRST for every motion format - a timed
     // composition is the most specific thing a render target can be. `opts.live`
     // still wins for webm/mp4, exactly as it does over the record/top-tail sniffs:
     // "Record live" means film the screen, not re-render the timeline. The compositor
     // is the better output (deterministic, faster than realtime, full quality) and
     // stays the DEFAULT, but a real-time take is the cheap route on a low-power
-    // device, so it remains a deliberate opt-in — and renderLive drives the playhead
+    // device, so it remains a deliberate opt-in - and renderLive drives the playhead
     // itself for a sequence stage (see driveSequenceTime there), because nothing
     // else moves it and the take would otherwise be one held frame.
     case 'webm':
@@ -851,9 +857,9 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
 
 // Embed the Lolly pixel watermark into a canvas in place (straight sRGB RGBA;
 // canvas 2D getImageData is un-premultiplied). No-op contract lives in the
-// engine — flat/tiny buffers return unchanged. See engine/src/pixel-watermark.ts.
+// engine - flat/tiny buffers return unchanged. See engine/src/pixel-watermark.ts.
 // `strength` lets a LOSSLESS format (png/tiff) embed the gentler LOSSLESS_STRENGTH
-// — it faces no quantization, so a subtler mark still reads back with wide margin;
+// - it faces no quantization, so a subtler mark still reads back with wide margin;
 // lossy formats omit it and keep the JPEG-calibrated DEFAULT_STRENGTH.
 function imprintCanvas(canvas: HTMLCanvasElement, strength?: number): void {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -865,7 +871,7 @@ function imprintCanvas(canvas: HTMLCanvasElement, strength?: number): void {
 }
 
 // Brand primary hexes to boost, pulled from the live palette threaded in opts.
-// Engine stays brand-agnostic — it never derives these. (White is added by
+// Engine stays brand-agnostic - it never derives these. (White is added by
 // hdrBoostToPQ itself so white text glows even when the palette omits it.)
 function hdrTargets(opts: ExportOpts): string[] {
   const out: string[] = [];
@@ -1002,15 +1008,15 @@ function hdrTune(opts: ExportOpts): Partial<HdrBoostOptions> {
 
 // Imprint a LOLLY-RENDERED raster that's about to be baked into a container (a
 // PDF page, a PPTX slide, an SVG <image>). Two extra gates over the standalone
-// raster encoders: (1) `imprint.want` — the caller only threads a want-set sink
+// raster encoders: (1) `imprint.want` - the caller only threads a want-set sink
 // for opts.imprint AND a Lolly-own render, never a passed-through user image
-// (those call sites omit the sink → undefined); and (2) canCarryWatermark — an
+// (those call sites omit the sink → undefined); and (2) canCarryWatermark - an
 // embed chokepoint sees many small decorative rasters (gradient chips, icons), so
 // anything below the ~240px detection floor is skipped as wasted work. NEVER call
 // this on a user's own embedded photo/logo bytes.
 //
 // SINGLE writer of ImprintState.applied: the flag flips true here, and only here,
-// the moment a mark is genuinely embedded — so stampC2pa can never claim an
+// the moment a mark is genuinely embedded - so stampC2pa can never claim an
 // imprint a render didn't actually apply (a pure-vector page keeps applied=false).
 export function imprintEmbedCanvas(canvas: HTMLCanvasElement, imprint: ImprintState | undefined): void {
   if (imprint?.want && canCarryWatermark(canvas.width, canvas.height)) {
@@ -1019,12 +1025,12 @@ export function imprintEmbedCanvas(canvas: HTMLCanvasElement, imprint: ImprintSt
   }
 }
 
-// Neural DURABLE embed for a standalone raster canvas — the async, opt-in
+// Neural DURABLE embed for a standalone raster canvas - the async, opt-in
 // counterpart to the sync imprintCanvas. Lazy-imports the encoder runner so ORT
 // + the ~tens-of-MB model stay out of the boot budget. Best-effort: a no-op
 // (pixels untouched) when opts.durable is off, or the encoder model isn't
 // installed / the encode faults. Container chokepoints (PDF/PPTX raster) stay
-// imprint-only for now — folding an async neural pass into the SYNC
+// imprint-only for now - folding an async neural pass into the SYNC
 // imprintEmbedCanvas is future work (see plans/28-durable-content-credentials.md).
 async function durableEmbedCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): Promise<void> {
   if (!opts.durable) return;
@@ -1067,7 +1073,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
       // HDR PNG goes DEEP: the same `hdr=` request routes through the engine's
       // float view transform and its own 16-bit PNG writer instead of the 8-bit
-      // canvas transform + chunk splice (plans/61-deeprichpixels.md §10 item 2 —
+      // canvas transform + chunk splice (plans/61-deeprichpixels.md §10 item 2 - 
       // 8-bit PQ is the banding defect). Metadata, pixel marks and C2PA
       // compatibility all carry over; see bridge/export-hdr-png.ts. Returns null
       // if anything goes wrong, and the legacy 8-bit path below still runs.
@@ -1076,7 +1082,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
         if (deep) return new Blob([deep as BlobPart], { type: 'image/png' });
       }
       // HDR JPEG goes GAIN MAP: the same `hdr=` request now writes an ISO
-      // 21496-1 / Ultra HDR gain-map JPEG — a real SDR base image with the HDR
+      // 21496-1 / Ultra HDR gain-map JPEG - a real SDR base image with the HDR
       // appended as a gain map (plans/61-deeprichpixels.md §4.2, §6 B2). That is the
       // only HDR still output that renders as HDR in Chromium/Safari/Android and
       // degrades to a perfect ordinary JPEG everywhere else, which is what the
@@ -1106,7 +1112,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
     // Stamp the DPI (physical size) + provenance metadata + colour profile in a
     // SINGLE parse/serialise cycle: read the encoded bytes once, splice every
     // chunk/segment in order, rebuild the Blob once. (Each stamp was previously
-    // its own arrayBuffer()→Blob round-trip — three full multi-MB copies for a
+    // its own arrayBuffer()→Blob round-trip - three full multi-MB copies for a
     // high-DPI PNG.) Insertion order is preserved, so the output is byte-identical.
     // HDR overrides the colour profile with Rec.2100 PQ (its cicp tag is the HDR
     // signal); PNG also gets a cICP chunk.
@@ -1132,7 +1138,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   }
 }
 
-// Promisified canvas.toBlob — quality is passed through only for lossy encoders.
+// Promisified canvas.toBlob - quality is passed through only for lossy encoders.
 function canvasToBlob(canvas: HTMLCanvasElement, mimeType: string, quality?: number): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -1157,7 +1163,7 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
     endFrameClock(fc);
   }
   const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
-  // HDR (AVIF only here — AVIF signals HDR natively via its nclx colr box; WebP
+  // HDR (AVIF only here - AVIF signals HDR natively via its nclx colr box; WebP
   // has no working HDR decode path, so it's not offered). PQ-transform first, then
   // rewrite the encoded AVIF's colr box to Rec.2100 PQ.
   const hdrOn = !!opts.hdr && mimeType === 'image/avif';
@@ -1176,10 +1182,10 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
 
 // ── RGB TIFF export (archival / lossless raster) ────────────────────────────
 //
-// A plain, uncompressed RGB TIFF at the requested DPI — the RGB sibling of the
+// A plain, uncompressed RGB TIFF at the requested DPI - the RGB sibling of the
 // print DeviceCMYK TIFF, for archival and editor round-trips where a lossless,
 // broadly-readable raster is wanted (browsers can't encode TIFF, so like the CMYK
-// path the bytes are assembled by hand — here via the engine's packTiff). No print
+// path the bytes are assembled by hand - here via the engine's packTiff). No print
 // geometry / marks: this is a straight raster, not a press-ready separation. Any
 // transparency is flattened onto white, since baseline TIFF carries no alpha here.
 async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
@@ -1195,7 +1201,7 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
     restore();
   }
   // Imprint before reading pixels back out, so the mark is in the bytes packTiff
-  // serialises. Uncompressed TIFF is lossless — unlike JPEG/AVIF this is a
+  // serialises. Uncompressed TIFF is lossless - unlike JPEG/AVIF this is a
   // straight round-trip of exactly what embedWatermark wrote, no re-encode to
   // survive.
   const hdrOn = !!opts.hdr;
@@ -1206,7 +1212,7 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;       // sRGB, straight (un-premultiplied)
-  // Flatten transparency onto white normally; onto BLACK for HDR — in PQ, white is
+  // Flatten transparency onto white normally; onto BLACK for HDR - in PQ, white is
   // 10 000 nits, so a transparent edge flattened to white would blaze; black is 0 nits.
   const rgb = flattenRgb(rgba, hdrOn ? 0 : 255);
   const tiff = packTiff(rgb, {
@@ -1218,14 +1224,14 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   return new Blob([tiff as BlobPart], { type: 'image/tiff' });
 }
 
-// BMP is the raster escape hatch — the uncompressed Windows Bitmap a legacy
+// BMP is the raster escape hatch - the uncompressed Windows Bitmap a legacy
 // Windows / embedded / clipboard consumer accepts when it can't read a PNG. Same
 // dom-to-image → imprint → getImageData path as renderTiff, but encodeBmp takes the
 // straight RGBA directly and auto-picks 24-bit BGR (opaque) or 32-bit BGRA (any
 // translucency), so alpha is preserved rather than flattened. Uncompressed BI_RGB is
 // lossless, so the Imprint is a straight round-trip of what embedWatermark wrote (the
 // gentle LOSSLESS_STRENGTH, as with TIFF). BMP has no wide-gamut profile and no
-// metadata box, so HDR is not offered and C2PA cannot ride it — the in-pixel Imprint
+// metadata box, so HDR is not offered and C2PA cannot ride it - the in-pixel Imprint
 // is the only provenance the format holds.
 async function renderBmp(node: Element, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
@@ -1274,16 +1280,16 @@ function flattenRgb(rgba: Uint8ClampedArray, bg = 255): Uint8Array {
 // canvas is rasterised like the other raster formats, its sRGB pixels converted
 // per-pixel to *device* CMYK via the engine's rgbToCmyk, except where a pixel's
 // exact colour matches a brand-palette entry (buildCmykPaletteMap, shared with the
-// CMYK PDF path) — then the swatch's locked CMYK (or, for a spot-locked swatch,
+// CMYK PDF path) - then the swatch's locked CMYK (or, for a spot-locked swatch,
 // its CMYK equivalent) is used instead of the naive conversion. A single flat
 // raster has no per-plate channel for a named ink, so a spot lock only ever
-// contributes its CMYK equivalent here — true Separation output is a PDF-only
+// contributes its CMYK equivalent here - true Separation output is a PDF-only
 // capability (see renderCmykPdf); this is a deliberate scope limit, not a bug.
 // That reasoning holds for a Pantone and is WRONG for a declared FINISH (a foil,
 // a spot varnish, a die): there is no CMYK equivalent of a varnish, so an
 // "equivalent" here would be a fabricated colour. buildCmykPaletteMap therefore
 // hands this path FINISH_MASK_CMYK (100% K) for any finish swatch, and this
-// format cannot carry a finish at all — the region is written as a black mask,
+// format cannot carry a finish at all - the region is written as a black mask,
 // not as a printable finish.
 // Stored uncompressed in a single strip.
 //
@@ -1291,23 +1297,23 @@ function flattenRgb(rgba: Uint8ClampedArray, bg = 255): Uint8Array {
 // (computePrintGeometry): when bleed/marks are requested the design is stretched to
 // COVER the bleed box on an enlarged white sheet, and the crop / bleed / registration
 // marks + colour bar are rasterised straight into the CMYK buffer AFTER the
-// conversion — so the line marks land on every plate (C=M=Y=K=255, the raster
+// conversion - so the line marks land on every plate (C=M=Y=K=255, the raster
 // analogue of the PDF's 1 1 1 1 registration ink) instead of being remapped by the
 // naive per-pixel pass. The bar itself stays the generic process/overprint/tint
 // control strip (unlike the PDF path, the verification pairing isn't rebuilt here).
 //
 // Deliberately untagged DeviceCMYK: there is NO embedded output profile (a real
 // profile over the naive conversion would mislabel the file). The chosen press
-// condition is recorded only as provenance in ImageDescription — naming the intended
+// condition is recorded only as provenance in ImageDescription - naming the intended
 // viewing condition without claiming colour management. A colour-managed variant
-// (real ICC separation + embedded press profile) is a separate, heavier project —
+// (real ICC separation + embedded press profile) is a separate, heavier project - 
 // see cmykTiffSupport, which keeps the format off environments where it can't be
 // produced or delivered.
 async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
   const d = exportDims(node, opts);
   const paletteMap = buildCmykPaletteMap(opts.palette ?? []);
-  // Print finishing geometry — same engine source of truth as the PDF path. Still
+  // Print finishing geometry - same engine source of truth as the PDF path. Still
   // pass no palette here: the verification bar's brand pairing is rebuilt from the
   // PDF path's `usedKeys` (an exact-substitution audit trail this per-pixel pass
   // doesn't produce), so it stays the generic process/overprint/tint control strip.
@@ -1362,7 +1368,7 @@ async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
 // event loop every YIELD_ROWS scanlines (keeping the tab responsive) and reports
 // row progress through opts.onProgress. paletteMap (built once by the caller from
 // opts.palette, same as the CMYK PDF path) is consulted per pixel for an exact
-// brand-swatch match before falling back to the naive conversion — an empty map
+// brand-swatch match before falling back to the naive conversion - an empty map
 // (the common case, no locks configured) skips the lookup entirely so the hot
 // loop's arithmetic is otherwise unchanged.
 const YIELD_ROWS = 256;
@@ -1426,7 +1432,7 @@ function encodeCmykTiff(
   num(259, SHORT, 1);                                 // Compression: none
   num(262, SHORT, 5);                                 // PhotometricInterpretation: Separated (CMYK)
   asciiTag(270, [meta?.description, condition].filter(Boolean).join(' · ')); // ImageDescription (+ press condition)
-  num(273, LONG, 0);                                  // StripOffsets — patched after layout
+  num(273, LONG, 0);                                  // StripOffsets - patched after layout
   num(277, SHORT, 4);                                 // SamplesPerPixel
   num(278, LONG, H);                                  // RowsPerStrip (single strip)
   num(279, LONG, W * H * 4);                          // StripByteCounts
@@ -1473,7 +1479,7 @@ function encodeCmykTiff(
 }
 
 // Rasterise the print marks (crop / bleed / registration / colour bar) straight
-// into the DeviceCMYK byte buffer, AFTER the RGB→CMYK conversion — so the line
+// into the DeviceCMYK byte buffer, AFTER the RGB→CMYK conversion - so the line
 // marks land on all four plates (C=M=Y=K=255, the raster analogue of the PDF's
 // 1 1 1 1 registration ink) instead of being remapped by the naive per-pixel pass.
 // Engine geometry is points, top-left origin; convert to device pixels at dpi. All
@@ -1520,16 +1526,16 @@ function drawPrintMarksCmyk(
     fill(pt(b.x), pt(b.y), pt(b.w), pt(b.h), ink);
   }
 
-  // Provenance credit text — only the anchors the caller supplied a string for.
+  // Provenance credit text - only the anchors the caller supplied a string for.
   // The browser shapes the glyphs on an offscreen canvas (Helvetica, mirroring the
-  // PDF path), then each covered pixel is composited as 70% K ink — the raster
-  // analogue of the PDF's cmyk(0,0,0,0.7) — so the credits sit on the black plate
+  // PDF path), then each covered pixel is composited as 70% K ink - the raster
+  // analogue of the PDF's cmyk(0,0,0,0.7) - so the credits sit on the black plate
   // only, not as registration. Engine coords are points, top-left origin (same as
   // the canvas) so there's no y-flip; rotation is CCW-positive, hence the negation.
   const slots = (geo.primitives.labels ?? []).filter(l => labels?.[l.slot]);
   if (slots.length) {
     // Stamp the credits onto a canvas no bigger than the labels' union bounding
-    // box, not the full W×H sheet — the old path allocated an image-sized canvas
+    // box, not the full W×H sheet - the old path allocated an image-sized canvas
     // and ran a second whole-image getImageData + per-pixel loop just to composite
     // a few glyphs. The bbox is padded generously (ascent/descent + side overhang,
     // rotation-aware) so no covered pixel is ever clipped → byte-identical output.
@@ -1590,15 +1596,15 @@ function drawPrintMarksCmyk(
 }
 
 // The human-readable press condition recorded as TIFF provenance (ImageDescription).
-// Mirrors the PDF OutputIntent's purpose — naming the condition the DeviceCMYK values
-// target — but as metadata only: the pixels stay untagged (no embedded profile), so
+// Mirrors the PDF OutputIntent's purpose - naming the condition the DeviceCMYK values
+// target - but as metadata only: the pixels stay untagged (no embedded profile), so
 // the file is never mislabelled. 'none' opts out; anything else resolves via the
 // engine registry (unknown / 'srgb' fall back to the default condition).
 //
 // 'own' (the user's own profile, the PDF's embed route) must NOT reach
 // cmykCondition: it would silently fall back to the DEFAULT condition and write
 // "Coated FOGRA39" into a TIFF made for a different press. A TIFF cannot embed a
-// profile, so the label is the profile's own description — and when that profile
+// profile, so the label is the profile's own description - and when that profile
 // cannot be resolved, no label at all rather than a wrong one.
 async function pressConditionLabel(profile: string | undefined): Promise<string | null> {
   if (profile === 'none') return null;
@@ -1642,7 +1648,7 @@ function rasterStyle(d: ExportDims, opts: ExportOpts): DtoRenderOpts {
 }
 
 // dom-to-image options that stretch the node to exactly cover a target pixel box
-// (the bleed box) — non-uniform scale, matching the PDF's scale-to-bleed. Used by
+// (the bleed box) - non-uniform scale, matching the PDF's scale-to-bleed. Used by
 // the print-finished CMYK TIFF; any transparency is flattened onto the white sheet
 // by the CMYK pass, so the background is immaterial here.
 function coverRasterStyle(d: ExportDims, opts: ExportOpts, targetW: number, targetH: number): DtoRenderOpts {
@@ -1663,7 +1669,7 @@ function coverRasterStyle(d: ExportDims, opts: ExportOpts, targetW: number, targ
 
 
 // Remove comment nodes from a subtree. A tool's template.html comments serialise
-// verbatim into its SVG export as pure dead weight — e.g. filter-duotone's ~674 KB
+// verbatim into its SVG export as pure dead weight - e.g. filter-duotone's ~674 KB
 // commented-out declarative fallback <image>. Comments never render, so strip them
 // from every clone we serialise to SVG. Works on detached nodes (the export clones).
 export function stripCommentNodes(root: Node): void {
@@ -1684,7 +1690,7 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   // content emitted so far IS what is behind" holds only where DOM order equals
   // paint order. Design boxes are unrotated siblings in paint order and
   // satisfy it; arbitrary tool CSS (negative z-index, reordering) may not.
-  // EMF/EPS/DXF deliberately stay off it — svg-ir drops every non-drop-shadow
+  // EMF/EPS/DXF deliberately stay off it - svg-ir drops every non-drop-shadow
   // filter, so the reconstruction would degrade there to a SHARP backdrop clone,
   // which is worse than the raster hatch.
   // Print geometry (bleed + marks + colour bar), when requested. Null → every branch
@@ -1704,14 +1710,14 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   // canvas selector has to be released or it matches nothing in the standalone file.
   unscopeStyleEls(clone);
   // The clone is otherwise a VERBATIM copy of the tool's live <svg>, keeping its
-  // <text> runs as live text — a violation of the "vector output always outlines
+  // <text> runs as live text - a violation of the "vector output always outlines
   // text" rule, and a real bug on guest brands: community SVG tools (chart-creator,
   // d3) style text via an internal `font-family: var(--font-brand, 'SUSE', …)` rule,
   // so a standalone file (where --font-brand is undefined) renders in the SUSE
   // fallback, selectable, in the wrong font. Outline the runs into <path> shaped in
   // the run's computed (brand-resolved) font before serialising.
   await outlineSvgTextRuns(svg!, clone, opts.convertPaths !== false);
-  // Apply the requested size in its native unit (e.g. "210mm") — SVG is
+  // Apply the requested size in its native unit (e.g. "210mm") - SVG is
   // resolution-independent. Ensure a viewBox so the original coordinates scale
   // into the new physical size.
   const d = exportDims(node, opts);
@@ -1739,7 +1745,7 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
 }
 
 // Wrap an artwork <svg> in a media-sized outer <svg> and append the print marks:
-// crop/bleed/registration lines + rings, the brand colour bar, and provenance text —
+// crop/bleed/registration lines + rings, the brand colour bar, and provenance text - 
 // all from the same computePrintGeometry the PDF path uses. Points → CSS px (96/72)
 // so the coordinates match the artwork's CSS-px space; SVG is top-left origin like
 // the engine points, so there is no y-flip. The trim/bleed/media boxes are also
@@ -1758,7 +1764,7 @@ async function wrapArtworkSvgWithMarks(artworkEl: Element, geo: PrintGeometry, o
     const h = parseFloat(artworkEl.getAttribute('height') || '') || 0;
     if (w > 0 && h > 0) artworkEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
   }
-  // Nest the artwork into the bleed box (fill it — scale-to-cover, matching the PDF).
+  // Nest the artwork into the bleed box (fill it - scale-to-cover, matching the PDF).
   const bleed = geo.boxes.bleed;
   artworkEl.setAttribute('x', P(bleed.x));
   artworkEl.setAttribute('y', P(bleed.y));
@@ -1824,16 +1830,16 @@ async function wrapArtworkSvgWithMarks(artworkEl: Element, geo: PrintGeometry, o
 
 // Convert the <text> runs of a tool's own <svg> (the renderSvg fast-path clone) into
 // outlined <path>s, so an exported SVG renders identically without the authoring
-// machine's fonts — the same guarantee the HTML path (emitInlineTextSvg) already gives.
+// machine's fonts - the same guarantee the HTML path (emitInlineTextSvg) already gives.
 //
 // Styles are read from the LIVE element (`liveSvg`, still connected during render): its
-// computed `font-family` resolves the brand var — `var(--font-brand, 'SUSE', …)` becomes
-// the actual brand stack (the platform SUSE face, or a user's Google font) — which resolveVectorFont then
+// computed `font-family` resolves the brand var - `var(--font-brand, 'SUSE', …)` becomes
+// the actual brand stack (the platform SUSE face, or a user's Google font) - which resolveVectorFont then
 // maps to a fetchable sfnt. The clone is a deep copy, so its <text> list is 1:1 with the
 // live one in document order; we shape each run and swap the clone's node for a <path>.
 //
-// Runs we can't faithfully outline — a run with <tspan> children, an unresolvable/icon
-// font, or one with a .notdef glyph — keep their <text>, but get the resolved family
+// Runs we can't faithfully outline - a run with <tspan> children, an unresolvable/icon
+// font, or one with a .notdef glyph - keep their <text>, but get the resolved family
 // baked as an INLINE style (which beats the tool's internal <style> rule; a presentation
 // attribute would not) so they never fall through to the 'SUSE' var fallback. When
 // `outline` is false (the "Convert paths" toggle off) every run is left as editable text
@@ -1842,7 +1848,7 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
   const liveTexts = liveSvg.querySelectorAll('text');
   const cloneTexts = clone.querySelectorAll('text');
   // A deep clone keeps a 1:1, same-order <text> list; a mismatch means something
-  // rewrote the tree between clone and now — leave it rather than mis-map runs.
+  // rewrote the tree between clone and now - leave it rather than mis-map runs.
   if (!liveTexts.length || liveTexts.length !== cloneTexts.length) return;
   const textApi = _host?.text;
   const NS = 'http://www.w3.org/2000/svg';
@@ -1856,7 +1862,7 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
     const live = liveTexts[i] as SVGTextElement;
     const cl = cloneTexts[i] as SVGElement;
     const cs = window.getComputedStyle(live);
-    if (cs.display === 'none') continue;                         // hidden — leave as-is
+    if (cs.display === 'none') continue;                         // hidden - leave as-is
     const raw = applyTextTransform((live.textContent ?? '').replace(/\s+/g, ' ').trim(), cs.textTransform);
     if (!raw) continue;
 
@@ -1922,11 +1928,11 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
   }
 }
 
-// ── EMF (Enhanced Metafile) — vector, always text-as-paths ──────────────────
+// ── EMF (Enhanced Metafile) - vector, always text-as-paths ──────────────────
 //
 // EMF is a third sink on the SVG vector pipeline (alongside SVG and PDF): obtain
-// an SVG whose text is already outlined — the tool's own <svg>, or an outlined
-// SVG synthesised from an HTML layout via renderSvgFromHtml — walk it into the
+// an SVG whose text is already outlined - the tool's own <svg>, or an outlined
+// SVG synthesised from an HTML layout via renderSvgFromHtml - walk it into the
 // engine IR (svgDomToIr), and serialize to bytes (emitEmf). Device RGB only;
 // gradients/images/alpha are flattened to solids upstream. See
 // plans/63-emf-support.md. The text-as-paths guarantee is enforced in svgDomToIr,
@@ -1958,7 +1964,7 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   return new Blob([bytes as BlobPart], { type: 'image/emf' });
 }
 
-// WMF is the 16-bit ancestor of EMF — a sixth sink on the exact same outlined-SVG →
+// WMF is the 16-bit ancestor of EMF - a sixth sink on the exact same outlined-SVG →
 // engine IR (svgDomToIr) vector pipeline, wired identically to renderEmf. The safest
 // vector paste for legacy Office / clip-art pipelines. `attribution` is accepted for
 // call-site symmetry but is inert: WMF has no comment record to carry a source URL.
@@ -1983,9 +1989,9 @@ async function renderWmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
 // same outlined-SVG → engine IR (svgDomToIr) walk, then serialised to PostScript
 // text by emitEps. Device RGB (cmyk=false) or DeviceCMYK (cmyk=true): an exact
 // brand-palette match (buildCmykPaletteMap, shared with the CMYK PDF/TIFF paths)
-// substitutes its locked CMYK — a spot lock's CMYK equivalent, same as the CMYK
+// substitutes its locked CMYK - a spot lock's CMYK equivalent, same as the CMYK
 // TIFF path, since a true PostScript /Separation colourspace is out of scope for
-// this pass (see renderCmykPdf for the PDF path, which does emit one) — else the
+// this pass (see renderCmykPdf for the PDF path, which does emit one) - else the
 // naive conversion. As with the TIFF path, a declared FINISH has no CMYK
 // equivalent to substitute: buildCmykPaletteMap gives it FINISH_MASK_CMYK
 // (100% K), so emitEps writes a black mask, and this format cannot carry a
@@ -2005,7 +2011,7 @@ async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Pr
     background: opts.background,
     label: 'EPS',
   });
-  // Print geometry (bleed + marks + colour bar), when requested — same source as the
+  // Print geometry (bleed + marks + colour bar), when requested - same source as the
   // PDF path. Null when neither is set, so a plain EPS export is byte-identical.
   const geo = printGeometry(node, opts);
   const text = emitEps(ir, {
@@ -2020,10 +2026,10 @@ async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Pr
 
 // DXF is a fifth sink on the SVG vector pipeline (alongside SVG, PDF, EMF, EPS):
 // the same outlined-SVG → engine IR (svgDomToIr) walk, then serialised to an ASCII
-// DXF R12 document by emitDxf — POLYLINE entities (béziers flattened) in millimetres
+// DXF R12 document by emitDxf - POLYLINE entities (béziers flattened) in millimetres
 // for CAD / laser-cut / vinyl / CNC. Text is outlined upstream; gradients/alpha are
 // flattened to solids upstream (colour lands as a nearest AutoCAD Color Index). DXF
-// has no raster form, so any escape-hatch image prim is dropped — we surface that as
+// has no raster form, so any escape-hatch image prim is dropped - we surface that as
 // a log warning rather than silently losing the effect.
 async function renderDxf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
@@ -2066,7 +2072,7 @@ function isSvgRooted(node: Element): boolean {
 
 // Returns a short reason string when `el` uses CSS the vector walkers can't faithfully
 // reproduce (they'd SILENTLY DROP it), so the caller rasterises the node's subtree and
-// embeds it as an image instead. Returns null for everything the walkers DO handle —
+// embeds it as an image instead. Returns null for everything the walkers DO handle - 
 // that null-by-default is what keeps normal vector output byte-identical to before.
 // `vectorCaps` lets a caller declare features IT can emit natively: the SVG walker
 // carries mix-blend-mode as a style and emits circle/ellipse/inset clips as <clipPath>
@@ -2090,26 +2096,26 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // can drive them. drop-shadow(s) become real geometry (vectorCaps.dropShadow →
   // <feDropShadow>), and every other CSS filter function is spec-defined AS an SVG
   // filter, so the chain can be emitted verbatim (vectorCaps.cssFilter). A chain
-  // containing something with no SVG equivalent — a url() reference, an unknown
-  // function — rasterises for everyone.
+  // containing something with no SVG equivalent - a url() reference, an unknown
+  // function - rasterises for everyone.
   //
   // `cssFilter` is a cap and not a bare `parseCssFilter(...)` test because "this value
   // is expressible as an SVG filter" is NOT the same claim as "the caller will emit
   // one". It was written as the bare test, so `filter: blur(6px)` was declared
   // supported for EVERY caller while only the SVG walker fulfilled it: the PDF walker
   // has no filter branch at all, so DOF blur and the design `shadow: content` /
-  // `shadow: depth` silhouettes were dropped from PDF in silence — no raster, no
+  // `shadow: depth` silhouettes were dropped from PDF in silence - no raster, no
   // warning, no shadow. (Coloured drop-shadows escaped by accident: their computed
   // value nests an rgba(), which parseCssFilter's flat tokeniser refuses, so they fell
   // through to the hatch. A parser limitation is not a policy.) Declaring it makes the
-  // PDF walker take the per-element raster escape hatch instead — plan 104 §2, P1d.
+  // PDF walker take the per-element raster escape hatch instead - plan 104 §2, P1d.
   if (s.filter && s.filter !== 'none'
       && !(vectorCaps?.dropShadow && parseDropShadowFilter(s.filter))
       && !(vectorCaps?.cssFilter && parseCssFilter(s.filter))) return `filter:${s.filter}`;
   const bf = s.backdropFilter || (s as { webkitBackdropFilter?: string }).webkitBackdropFilter;
   // A blur-only backdrop-filter IS expressible: duplicate the content already painted
   // behind the element, clip that duplicate to the element's own shape, and blur it.
-  // The caller declares support via vectorCaps.backdropBlur — anything richer than a
+  // The caller declares support via vectorCaps.backdropBlur - anything richer than a
   // single blur() (saturate, brightness, a filter chain) still has no vector form.
   if (bf && bf !== 'none' && !(vectorCaps?.backdropBlur && parseBackdropBlurPx(bf) !== null)) return `backdrop-filter:${bf}`;
   // mix-blend-mode: SVG can carry it natively; only raster where the walker can't.
@@ -2130,7 +2136,7 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   }
 
   // background-image: linear/radial gradients emit true SVG/PDF gradients; a SINGLE
-  // non-tiling url() emits a real <image> (vector-first — keeps the box's text vector).
+  // non-tiling url() emits a real <image> (vector-first - keeps the box's text vector).
   // Only cases with no single-<image> equivalent rasterise: conic-gradient, a TILING
   // background (repeat at intrinsic/auto size), or MULTIPLE layered url() images.
   const bi = s.backgroundImage;
@@ -2138,12 +2144,12 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
     // PER LAYER, because `background-image` is a list and every parser below takes ONE
     // gradient. The transparency checker is the case that proves it: authored as
     // `background: <repeating-conic-gradient> 50% / 14px 14px, <colour>`, it computes to
-    // `repeating-conic-gradient(…), none` — the colour layer contributes a `none` — and
+    // `repeating-conic-gradient(…), none` - the colour layer contributes a `none` - and
     // handing that whole string to parseConicGradient fails, so the checker was declared
     // unvectorisable and the entire node was rasterised. That is how a 1080×676 PNG of a
     // faint checkerboard ended up inside docs/shots/use-chart-output.svg.
     const layers = splitCssArgs(bi).map((l) => l.trim()).filter((l) => l && l !== 'none');
-    // A conic gradient is drawn as a wedge fan when we can parse it — but ONLY by the
+    // A conic gradient is drawn as a wedge fan when we can parse it - but ONLY by the
     // SVG walker. The PDF walker has no conic branch (its gradient path handles linear
     // and radial), and sampleGradientMidpoint returns null for a conic, so exempting it
     // there dropped the sweep entirely: a box with a transparent flat fill lost its
@@ -2165,14 +2171,14 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
 
   // NB: skew / 3-D transforms are deliberately NOT rasterised here. dom-to-image
   // captures the node with a plain scale (its own transform is overwritten), so the
-  // skew/3-D wouldn't be reproduced anyway — rasterising would only turn crisp vector
+  // skew/3-D wouldn't be reproduced anyway - rasterising would only turn crisp vector
   // text into a bitmap for no gain. Leave those to the (axis-aligned) vector walk;
   // pure rotation is already reproduced upstream (SVG rotate / withPdfRotation).
   return null;
 }
 
 // CSS basic-shape / gradient / drop-shadow value parsing lives DOM-free in the engine
-// (parseClipShape / parseRadialGradient / parseDropShadowFilter — engine/src/css-paint.ts),
+// (parseClipShape / parseRadialGradient / parseDropShadowFilter - engine/src/css-paint.ts),
 // so the SVG and PDF walkers share one parser. This file keeps only the DOM assembly:
 // turning that geometry into SVG elements (svgClipShapeEl / build*El) or jsPDF ops.
 
@@ -2197,7 +2203,7 @@ function svgClipShapeEl(NS: string, shape: ClipShape, ox: number, oy: number): E
     if (shape.r > 0) { rect.setAttribute('rx', String(n2(shape.r))); rect.setAttribute('ry', String(n2(shape.r))); }
     return rect;
   }
-  // `empty` never reaches here — callers return before drawing (a zero-area clip
+  // `empty` never reaches here - callers return before drawing (a zero-area clip
   // paints nothing). Emitting a degenerate rect would be a silent 1px artefact,
   // so be explicit rather than letting it fall through to the polygon branch.
   if (shape.kind === 'empty') {
@@ -2230,9 +2236,9 @@ function firstCssUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   // The quote character is the TERMINATOR, so a quote of the other kind inside the
   // URL survives. The old pattern was `(["']?)([^)"']+)\1`, whose character class
-  // banned BOTH quote marks from the body — which silently dropped every inline
+  // banned BOTH quote marks from the body - which silently dropped every inline
   // SVG data-URI, since those are full of `xmlns='…'`. That is how the select
-  // chevron (--field-chevron, styles/parts/fields.css:42 — one declaration, on
+  // chevron (--field-chevron, styles/parts/fields.css:42 - one declaration, on
   // every <select> in the app) vanished from SVG and PDF exports: firstCssUrl
   // returned null, so the background branch never ran and nothing was emitted.
   // Three alternatives, in CSS's own order: "double", 'single', or bare.
@@ -2294,7 +2300,7 @@ function filterPrimitiveEl(NS: string, p: FilterPrimitive): Element {
   return e;
 }
 
-/** One top-level CSS filter function, allowing ONE level of nesting in its argument —
+/** One top-level CSS filter function, allowing ONE level of nesting in its argument - 
  *  a colour function (`rgba(…)`) is the only thing that ever appears inside one. */
 const FILTER_FN_RE = /[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi;
 
@@ -2303,14 +2309,14 @@ const FILTER_FN_RE = /[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi;
  *
  * Only the filter: box-shadow is drawn separately by both walkers, and a transform is
  * neutralised before capture. A blur reaches ~3σ, and drop-shadow's σ IS its blur
- * value (unlike box-shadow's, which is half it — see buildDropShadowFilterEl).
+ * value (unlike box-shadow's, which is half it - see buildDropShadowFilterEl).
  *
  * Measured PER TOP-LEVEL FUNCTION, not by handing the whole value to one parser, because
  * a MIXED chain defeats both of them: parseDropShadowFilter refuses any chain containing
  * a non-drop-shadow function, and parseCssFilter's flat tokeniser cannot see past the
  * nested rgba() of a coloured drop-shadow. `filter: blur(10px) drop-shadow(rgba(0,0,0,
- * 0.33) 0px 15px 30px)` — exactly what design emits for a blurred box carrying a
- * depth shadow — therefore measured ZERO spill, so the raster hatch cropped the effect
+ * 0.33) 0px 15px 30px)` - exactly what design emits for a blurred box carrying a
+ * depth shadow - therefore measured ZERO spill, so the raster hatch cropped the effect
  * off at the box edge for the one case that spills furthest. Each function is still
  * measured by the engine parsers; only the splitting is done here.
  */
@@ -2363,7 +2369,7 @@ function intrinsicSize(href: string): Promise<{ w: number; h: number } | null> {
 
 // ── Vector twins for <canvas> ────────────────────────────────────────────────
 // A canvas is pixels by construction, so the walker rasterises it. But some of
-// those canvases are painting something that HAS a vector form — the sequence
+// those canvases are painting something that HAS a vector form - the sequence
 // editor's clip bars are rectangles, waveform bars and tiled thumbnails, drawn
 // to a canvas only because that is the cheap way to repaint a timeline at 60fps.
 // A painter that knows its own vector form advertises it by hanging a
@@ -2371,12 +2377,12 @@ function intrinsicSize(href: string): Promise<{ w: number; h: number } | null> {
 //
 // The contract is presence-keyed and deliberately invisible: no ExportOpts field,
 // no attribute, no flag. A canvas WITHOUT the property must serialise
-// byte-identically to how it always has — that is the safety guarantee for every
+// byte-identically to how it always has - that is the safety guarantee for every
 // tool export in every profile, and it is pinned by a golden in
 // export-paint-order.test.ts.
 //
 // Re-entrancy: a producer may build its markup by calling the walker itself (the
-// timeline's node-thumbnail twin does). Only the OUTERMOST walk may use twins —
+// timeline's node-thumbnail twin does). Only the OUTERMOST walk may use twins - 
 // otherwise a producer that renders a subtree containing its own canvas recurses.
 // `twinDepth` is module-scope rather than per-call because the re-entrant call is
 // a *separate* renderSvgFromHtml invocation, so a per-call local could not see it.
@@ -2401,7 +2407,7 @@ async function vectorTwinEl(el: HTMLCanvasElement, mintPrefix: () => string): Pr
     // The guard is released when the PRODUCER settles, not when the race resolves.
     // Decrementing on the timeout branch would drop `twinDepth` back to 0 while an
     // abandoned producer is still running, so its own nested renderSvgFromHtml would
-    // then see an unguarded walker and recurse — and the timeline producer's
+    // then see an unguarded walker and recurse - and the timeline producer's
     // `withBorrowedVisibility` lease strips `.seq-off` from LIVE stage boxes, so an
     // unguarded abandoned producer is a visible artefact on screen, not just wasted work.
     let settled = false;
@@ -2424,7 +2430,7 @@ async function vectorTwinEl(el: HTMLCanvasElement, mintPrefix: () => string): Pr
     stripCommentNodes(root);
     unscopeStyleEls(root);
     await inlineBlobUrlsInEl(root);
-    // Ids are only unique within the twin that minted them — see namespaceSvgRefs.
+    // Ids are only unique within the twin that minted them - see namespaceSvgRefs.
     // The prefix is minted HERE, not at the call site: `uid` is the document's id
     // counter, and burning one on a twin that turns out to be null would shift every
     // later id in the file relative to the same document exported without twins.
@@ -2479,7 +2485,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
   // Cooperative yielding: the SVG-IR walk + host.text.toPath (HarfBuzz) shaping
   // runs fully synchronously and janks the UI for the whole export on a complex
-  // document. Mirror the CMYK pixel pass — every YIELD_NODES elements, report
+  // document. Mirror the CMYK pixel pass - every YIELD_NODES elements, report
   // progress and hand the event loop a turn. Purely additive: emitted geometry
   // and node order are untouched, so the serialised SVG bytes are identical.
   const totalNodes = ((node as any).querySelectorAll?.('*').length ?? 0) + 1;
@@ -2528,7 +2534,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   //     re-parented anywhere with NO geometry fix-up. There is no need to rebuild
   //     the tree into per-layer bucket groups.
   //  2. EVERY APPEARANCE-CHANGING WRAPPER THE WALKER EMITS IS ITSELF A STACKING-
-  //     CONTEXT CREATOR — opacity, clip-path, mix-blend-mode, filter, rotate,
+  //     CONTEXT CREATOR - opacity, clip-path, mix-blend-mode, filter, rotate,
   //     matrix. So a hoist terminates at each of them by construction, and the
   //     ONLY wrapper a deferred unit can be lifted out of is the overflow-clip
   //     group, which is a single re-appliable `clip-path` attribute (ctx.clips).
@@ -2549,24 +2555,24 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   interface PaintUnit { z: number; g: Element }
   /** One stacking context, alive while its element's subtree is being walked. */
   interface ScFrame {
-    /** Where deferred units land — the context element's contentG. */
+    /** Where deferred units land - the context element's contentG. */
     content: Element;
     /** Last own-paint node when contentG === g, else null. See the finalisation
      *  block for why layer 2 cannot just insert at firstChild. */
     anchor: ChildNode | null;
-    neg: PaintUnit[];   // §E.2 step 3 — negative z, most negative first
-    z0: PaintUnit[];    // §E.2 step 8 — positioned, z-index auto|0, TREE order
-    pos: PaintUnit[];   // §E.2 step 9 — positive z, least positive first
+    neg: PaintUnit[];   // §E.2 step 3 - negative z, most negative first
+    z0: PaintUnit[];    // §E.2 step 8 - positioned, z-index auto|0, TREE order
+    pos: PaintUnit[];   // §E.2 step 9 - positive z, least positive first
   }
   /** What a child inherits. `frame === null` ⇒ the flag is off ⇒ every append is
    *  the append this walker has always done. */
   interface PaintCtx {
     frame: ScFrame | null;
-    /** Ids of overflow clipPaths emitted between `frame`'s element and here — a
+    /** Ids of overflow clipPaths emitted between `frame`'s element and here - a
      *  hoisted unit must carry them or it escapes a clip it has today. */
     clips: string[];
     /** Intersection of every ancestor overflow box, in root coordinates. A node
-     *  that misses it entirely paints nothing on screen, so it is not emitted —
+     *  that misses it entirely paints nothing on screen, so it is not emitted - 
      *  the cheapest form of clip reduction, since it removes the node AND the
      *  clip work that would have hidden it. Null means unbounded. */
     clipBox?: Rect | null;
@@ -2604,8 +2610,8 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
    *  internals order correctly. It does NOT lift it above the rest of the
    *  document (HTML §top layer) and `::backdrop` is not modelled at all
    *  (pseudoDescriptor sees only ::before/::after). On the measured fixtures
-   *  that is the single largest remaining paint-order defect — ~36 points of
-   *  local-gallery's loss, against ~2 points for everything this flag fixes —
+   *  that is the single largest remaining paint-order defect - ~36 points of
+   *  local-gallery's loss, against ~2 points for everything this flag fixes - 
    *  and it is a separate milestone. */
   const topLayer = (el: Element): boolean => {
     try { return typeof el.matches === 'function' && el.matches(':modal, :popover-open'); }
@@ -2651,7 +2657,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
    *
    * Text is NOT laid out here. A throwaway mirror is positioned over the control's
    * content box, given its font and alignment, and walked with the same
-   * emitInlineTextSvg every other block goes through — so wrapping, direction,
+   * emitInlineTextSvg every other block goes through - so wrapping, direction,
    * vertical centring and line boxes come from the browser. Reimplementing them
    * would be a second, worse CSS. The mirror lives for one await and is removed in a
    * finally, including when the text pass throws.
@@ -2741,7 +2747,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
    * Checkbox, radio and range.
    *
    * Only for UA-drawn widgets (`appearance` still native). When a stylesheet has set
-   * `appearance: none` — which every control in this app does — the tick, dot and
+   * `appearance: none` - which every control in this app does - the tick, dot and
    * track are ordinary CSS the walker already paints, and drawing a second widget on
    * top would be the wrong answer twice.
    */
@@ -2818,7 +2824,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
-    // A closed <details> still LAYS OUT its content — Chrome skips it at paint time
+    // A closed <details> still LAYS OUT its content - Chrome skips it at paint time
     // via ::details-content, which computed style does not expose (display, visibility
     // and content-visibility all read "visible" on the hidden subtree, and it reports a
     // real getBoundingClientRect). So the walker drew it: the export preflight card on
@@ -2832,19 +2838,19 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // `display: contents` generates NO box of its own (CSS Display 3 §3.1: the element
     // is replaced by its contents for layout). getBoundingClientRect() is therefore
     // 0x0, and the `rect.width < 0.5` guard below would drop the element AND its whole
-    // subtree — content the reader plainly sees.
+    // subtree - content the reader plainly sees.
     //
     // The gallery is exactly this shape: `.gallery-topbar` is a display:contents
     // wrapper whose children are the fixed nav clusters, so every vector shot of the
     // gallery came back with NO top navigation. `hasOwnBox()` already returns true for
     // contents on the strength of "visitSvgNode recurses, so it is included rather than
-    // dropped" — this is the line that made that comment untrue.
+    // dropped" - this is the line that made that comment untrue.
     //
     // Paint nothing for the box that does not exist, and let the children paint into
     // this element's parent group with its context, which is where CSS puts them.
     // Own-box children only: a contents wrapper's inline TEXT already belongs to the
     // parent's inline walk, which descends through wrappers and stops at own-box
-    // elements — so nothing is lost and nothing double-paints.
+    // elements - so nothing is lost and nothing double-paints.
     if (style.display === 'contents') {
       for (const child of renderedChildren(el)) {
         if (hasOwnBox(child)) await visitSvgNode(child, parentG, ctx);
@@ -2855,7 +2861,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // Where does CSS say this element's paint unit goes? One pure table lookup
     // off the style we already fetched (bridge/stacking-order.ts). The parent's
     // display is only needed for the flex/grid-item rule, so it is fetched ONLY
-    // when a non-auto z-index makes that rule reachable — 70 of 992 elements on
+    // when a non-auto z-index makes that rule reachable - 70 of 992 elements on
     // the gallery fixture, rather than a second getComputedStyle per node.
     const role: StackingRole = stackingOrder
       ? stackingRole(
@@ -2866,18 +2872,18 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         )
       : DOM_ORDER_ROLE;
     // The root of the walk is always a stacking context (Appendix E: the root
-    // element establishes one), and so is a transform re-entry — see below.
+    // element establishes one), and so is a transform re-entry - see below.
     const createsCtx = stackingOrder && (role.createsContext || el === node || o?.forceContext === true);
 
     // CSS rotate(): neutralise it, walk the axis-aligned subtree, then wrap the
     // whole thing in an SVG rotation about the transform-origin (faithful in SVG,
-    // unlike the AABB fallback). Additive — no-op for every unrotated element.
+    // unlike the AABB fallback). Additive - no-op for every unrotated element.
     const rotDeg = pureRotationDeg(style.transform);
     if (rotDeg) {
       // Neutralise through the guarded helper, never by hand: a RUNNING transform
       // animation/transition outranks any inline declaration, and the un-neutralised
       // re-entry that follows is what turned one gallery tile into 2 136 nested
-      // groups (plans/104 §9 P3.1 — see bridge/transform-neutralise.ts). `null` means
+      // groups (plans/104 §9 P3.1 - see bridge/transform-neutralise.ts). `null` means
       // the transform survived and nothing was touched, so this element falls through
       // to the AABB path below, whose rect already carries the rotation.
       const restore = neutraliseTransform(el, neutralise, warnTransform);
@@ -2894,13 +2900,13 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // both about the same piece of hidden state: `el.style.transform` has just
           // been set to 'none', so the recursive call's getComputedStyle reports
           // `transform: none`.
-          //   • forceContext — without it the element stops looking like a stacking
+          //   • forceContext - without it the element stops looking like a stacking
           //     context (CSS Transforms 1 §3) on the way in, and its descendants
           //     would hoist straight out of a rotation that is about to be applied.
-          //   • placeDirect  — without it `g` would be deferred a SECOND time into
+          //   • placeDirect - without it `g` would be deferred a SECOND time into
           //     the same frame, leaving gRot empty and painting the element twice
           //     over at the wrong depth.
-          // Delete either one and the failure is silent. They are load-bearing.
+          // Delete either one and the failure is silent. They are essential.
           await visitSvgNode(el, gRot, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true });
         } finally { restore(); }
         return;
@@ -2916,18 +2922,18 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // getBoundingClientRect already carries it. That was the reasoning before, and it
     // is only half true: a client rect is scaled, but a COMPUTED LENGTH is not. Walk a
     // scaled subtree on the AABB path and every box lands correctly while every length
-    // read from getComputedStyle — font-size first, but equally border-radius, border
-    // width, shadow offset and blur — is left 1/s too big. Measured on the Design
+    // read from getComputedStyle - font-size first, but equally border-radius, border
+    // width, shadow offset and blur - is left 1/s too big. Measured on the Design
     // docs shot: a 1080px artboard displayed at 868 (`matrix(0.8037…)`) exported its
     // headline 1/0.8037 = 24.4% oversize, overflowing the card it fits on screen.
-    // Neutralising instead makes the subtree self-consistent — every length and every
-    // rect in the same unscaled space — and the scale goes on once, at the top.
+    // Neutralising instead makes the subtree self-consistent - every length and every
+    // rect in the same unscaled space - and the scale goes on once, at the top.
     // Pure TRANSLATE stays on the AABB path: it moves boxes without distorting lengths.
     const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
     const scaled = Boolean(mtx && isAxisAlignedMat(mtx)
       && (Math.abs(mtx.a - 1) > 1e-4 || Math.abs(mtx.d - 1) > 1e-4));
     if (mtx && (!isAxisAlignedMat(mtx) || scaled)) {
-      // Same guarded neutralise as the rotation branch — read its comment.
+      // Same guarded neutralise as the rotation branch - read its comment.
       const restore = neutraliseTransform(el, neutralise, warnTransform);
       if (restore) {
         try {
@@ -2936,7 +2942,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           const gM = document.createElementNS(NS, 'g');
           gM.setAttribute('transform', matToSvg(matAboutPivot(mtx, pivot.x, pivot.y)));
           place(gM, role, ctx, parentG);
-          // Same forceContext/placeDirect contract as the rotation branch above —
+          // Same forceContext/placeDirect contract as the rotation branch above - 
           // see the comment there before touching either flag.
           await visitSvgNode(el, gM, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true });
         } finally { restore(); }
@@ -2950,14 +2956,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // carries a perspective row and BOTH branches above decline. Falling through from
     // there to the AABB path is not a lossy approximation, it is a different picture:
     // `neutraliseTransform` writes `transform: none` and the subtree comes out
-    // axis-aligned, stretched to fill the projected bounding box — a tilted card
+    // axis-aligned, stretched to fill the projected bounding box - a tilted card
     // exported as a `<rect>`, with no notice (measured: two cards under `rx −45`,
     // 495 B of SVG, zero `matrix3d`, zero `<image>`, two upright rects).
     //
     // §12 Q2 is the decision, and spike S2 cleared it unreserved: keep every untilted
     // layer vector and embed a per-box captured raster for the tilted ones, with the
     // amber notice (`tool-actions.ts`'s fidelity row). On Chromium the capture is
-    // indistinguishable from the preview — flat-region diff 0.012–0.045/255, ink IoU
+    // indistinguishable from the preview - flat-region diff 0.012–0.045/255, ink IoU
     // 0.985–0.993 across 20 poses to 85°, and text comes out marginally SHARPER than
     // the live compositor's filtered layer. `rasterizePosedNodeToDataUrl` is the
     // wrapper-shaped capture S2 said this needs; `effectSpillCss` is the padding it
@@ -2985,7 +2991,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         return;
       }
       // Capture refused (a corner behind the eye, dom-to-image failed). Say so, then
-      // fall through — an AABB rectangle is wrong, but it is what this walker did
+      // fall through - an AABB rectangle is wrong, but it is what this walker did
       // before §12 Q2 and it is better than a hole.
       _host?.log?.('warn', `svg: tilted <${tag}> could not be captured; falling back to its bounding box`);
     }
@@ -2999,12 +3005,12 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const h = rect.height;
 
     // Entirely outside every ancestor's overflow box: it paints nothing on screen, so
-    // it is not emitted. Cheapest possible clip reduction — it removes the node and
+    // it is not emitted. Cheapest possible clip reduction - it removes the node and
     // its whole subtree rather than emitting them and then hiding them. The rows
     // scrolled out of a long list are the case that pays.
     // ...except when its containing block escapes that box. CSS 2.1 §11.1.1: an
     // absolutely-positioned element is NOT clipped by a non-positioned ancestor's
-    // overflow, and `fixed` escapes almost every clip — such a node is genuinely
+    // overflow, and `fixed` escapes almost every clip - such a node is genuinely
     // visible outside the box, and dropping it would delete content the reader saw.
     // Erring toward keeping is the same call the hoist path makes a few lines up:
     // an over-clipped node is a bug, an un-clipped node is a smaller one.
@@ -3017,14 +3023,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     expand(ctx.bounds, x, y, w, h);
 
     const g = document.createElementNS(NS, 'g');
-    // ── Layer identity passthrough (opts.layerIds — plans/104 §7) ────────────
+    // ── Layer identity passthrough (opts.layerIds - plans/104 §7) ────────────
     //
     // The walker emits one <g> per element in ROOT coordinates and has always
     // stamped ZERO identity on it, so a Lolly screenshot imported back in was one
     // undifferentiated scene. This is the one point that changes: where the walked
     // element already carries `data-box-id` (design's own boxes,
     // template.html), the group carries it out, and `enumerateSvgLayers` reports it
-    // as `layer.boxId` — so a lift lands on real UI boundaries instead of on
+    // as `layer.boxId` - so a lift lands on real UI boundaries instead of on
     // whatever the markup happened to group.
     //
     // What travels is an ID, never a NAME: `data-box-id` is a generated index the
@@ -3045,19 +3051,19 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // clip-path → vector <clipPath> so the node stays vector instead of rasterising.
     // circle()/ellipse()/inset()/polygon() all route through the shared parseClipShape
     // (element-local px → offset to root coords). clipHandled is false only for a shape
-    // we couldn't vectorise (url()/path(), or a failed basic shape) — the escape-hatch
+    // we couldn't vectorise (url()/path(), or a failed basic shape) - the escape-hatch
     // below then rasterises it. A polygon with <3 points still counts as handled (never
-    // rasters — matches prior behaviour). The PDF walker mirrors this exactly.
+    // rasters - matches prior behaviour). The PDF walker mirrors this exactly.
     let clipHandled = true;
     const cp = style.clipPath || (style as any).webkitClipPath;
     if (cp && cp !== 'none') {
       const clipRes = emitClip(cp, x, y, w, h, g);
       // Zero area: the browser paints nothing here, so neither do we. Drop the
-      // group we just appended and stop — no clip, no children, no raster.
+      // group we just appended and stop - no clip, no children, no raster.
       // UNPLACE: in stacking mode `g` was never attached to the DOM, it was
       // parked in a frame array, so `.remove()` alone would leave an empty (or
       // clip-wrapped) group to be appended at finalisation. Splice by IDENTITY
-      // rather than popping the tail — no child has been walked yet so it IS the
+      // rather than popping the tail - no child has been walked yet so it IS the
       // last entry, but relying on that would rot the moment anything is added
       // between the two points. The arrays are tiny.
       if (clipRes === 'empty') {
@@ -3097,7 +3103,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // EMF/EPS/DXF (opts.noBoxShadow) have no blur primitive, and used to get no shadow
     // at all rather than an ugly hard-edged offset shape. They can have one: a blur is
     // reproducible as concentric bands (§13), and for a format with no alpha the bands
-    // have to be non-overlapping RINGS at absolute coverage — svg-ir flattens every
+    // have to be non-overlapping RINGS at absolute coverage - svg-ir flattens every
     // shape against the page background independently, so overlapping increments never
     // accumulate and come out far too light.
     if (opts.noBoxShadow && tag !== 'img' && tag !== 'svg') {
@@ -3126,7 +3132,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         }
         // NOT clipped out of the border box, unlike the compositing path. A clipPath
         // is no use here (svg-ir skips those, so EMF/EPS would ignore it), and cutting
-        // the box out of the innermost ring by hand measured WORSE — the shadow is
+        // the box out of the innermost ring by hand measured WORSE - the shadow is
         // offset, so an un-offset hole leaves a gap along its own top edge. It costs
         // nothing in the target formats: svg-ir flattens the element's background to
         // an opaque shape painted after these, which covers the area completely. Only
@@ -3149,7 +3155,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // Painted back-to-front so the first-listed shadow ends up on top, matching CSS.
     if (!opts.noBoxShadow && tag !== 'img' && tag !== 'svg') {
       for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
-        if (sh.inset) continue;   // drawn after the background, below — CSS paints it inside
+        if (sh.inset) continue;   // drawn after the background, below - CSS paints it inside
         const col = parseCssColorFull(sh.color);
         if (!col) continue;
         const sw = Math.max(0, w + 2 * sh.spread);
@@ -3161,18 +3167,18 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           : `rgb(${col[0]},${col[1]},${col[2]})`;
         // CSS paints an outer shadow "as if the border box were opaque" and clips it
         // away INSIDE that box (Backgrounds §7.1.1). Painting the whole shape and
-        // covering it with the background only works when the background is opaque —
+        // covering it with the background only works when the background is opaque - 
         // over a translucent panel the shadow shows straight through, which measured
         // 6.2% mean / 36% worst-pixel error against the bitmap on this app's frosted
         // surfaces.
         //
         // With no blur the hole is pure geometry: one evenodd path, shadow shape minus
         // border box, and no clip at all (so it survives EMF/EPS too). With a blur the
-        // order matters — CSS blurs and THEN clips — and no amount of geometry
+        // order matters - CSS blurs and THEN clips - and no amount of geometry
         // reproduces that, so this is the §7 case where a clip is genuinely the
         // mechanism rather than a shortcut.
         // The hole is a HAIR smaller than the border box. Two antialiased edges meeting
-        // exactly leaves a seam of background showing between the shadow and the box —
+        // exactly leaves a seam of background showing between the shadow and the box - 
         // it measured up to 13% on a single pixel line, on the very fixtures that were
         // previously exact. Half a pixel of overlap tucks the shadow under the box's
         // own edge and costs nothing anywhere else.
@@ -3180,7 +3186,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         // …but only when it MATTERS. An opaque background hides the shadow beneath it
         // by simply painting over it, exactly as before, and that path measured exact.
         // Cutting a hole there instead leaves two independently antialiased edges
-        // meeting along the border — a seam worth up to 13% on a single pixel line.
+        // meeting along the border - a seam worth up to 13% on a single pixel line.
         // So the hole is cut only when the background cannot do the hiding.
         const bgAlpha = parseCssColorFull(style.backgroundColor)?.[3] ?? 0;
         const needsHole = bgAlpha < 0.999;
@@ -3241,7 +3247,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // and BEFORE background/children so the raster replaces them (dom-to-image already
     // captured the whole subtree). Returns on success. The element's own opacity is
     // neutralised for the capture (like the rotation branch neutralises transform) so
-    // it isn't applied twice — once baked into the PNG and again via g's opacity.
+    // it isn't applied twice - once baked into the PNG and again via g's opacity.
     // Falls through to the vector walk if raster fails.
     // Set when the escape hatch below captured this element's own paint as an
     // <image>; the vector background/border emission then stands down so the two
@@ -3250,7 +3256,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── CSS filter ───────────────────────────────────────────────────────────
     // Every CSS shorthand filter is spec-defined as an equivalent SVG filter, so the
     // chain is emitted rather than dropped (49 filtered elements on the gallery
-    // fixture used to lose theirs silently). drop-shadow is excluded — the walker
+    // fixture used to lose theirs silently). drop-shadow is excluded - the walker
     // draws those as geometry, which survives EMF/EPS where a filter would not.
     if (!opts.noBoxShadow) {
       const fv = style.filter || '';
@@ -3284,7 +3290,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // do on screen.
     //
     // Snapshot mode only. It duplicates geometry, which is the wrong trade for a
-    // tool export, and `rasterizeNodeToDataUrl` cannot do it at all — dom-to-image
+    // tool export, and `rasterizeNodeToDataUrl` cannot do it at all - dom-to-image
     // serialises the node into a <foreignObject>, and the backdrop is by definition
     // outside that subtree, which is why the raster hatch always got this wrong.
     const bfRaw = opts.backdropBlur === true
@@ -3292,7 +3298,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       : '';
     const bfPx = bfRaw ? parseBackdropBlurPx(bfRaw) : null;
     // The clone is expressed in root user space, so it can only be dropped into `g`
-    // when nothing between `g` and the root carries a transform — otherwise the
+    // when nothing between `g` and the root carries a transform - otherwise the
     // rotation wrapper above would apply that transform a second time. Rotated
     // frosted panels fall through to the raster hatch, as before.
     let bfTransformed = false;
@@ -3310,8 +3316,8 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // raster hatch have it rather than emit tens of megabytes.
       //
       // Count DESCENDANTS, not children. The root walk runs with `frame: null`, so
-      // place() appends straight to rootG and it holds exactly one child — the body
-      // <g> — for the entire walk. Measuring childNodes therefore always read 1, the
+      // place() appends straight to rootG and it holds exactly one child - the body
+      // <g> - for the entire walk. Measuring childNodes therefore always read 1, the
       // cap never fired, and each blurred element deep-cloned the whole accumulated
       // tree it was supposed to protect against.
       const backdropNodes = rootG.getElementsByTagName('*').length;
@@ -3323,7 +3329,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         // which composites backdrop filters in sRGB rather than linearRGB.
         // userSpaceOnUse over the element box padded by the blur radius. The default
         // objectBoundingBox region would be relative to the whole duplicated
-        // backdrop's bbox — near page-sized — making the filter far more expensive
+        // backdrop's bbox - near page-sized - making the filter far more expensive
         // than the area that actually shows through the clip.
         const bpad = bfPx * 2 + 4;
         filt.setAttribute('filterUnits', 'userSpaceOnUse');
@@ -3362,13 +3368,13 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       _host?.log?.('warn', `svg: backdrop-filter not reconstructed on <${tag}> (${bfTransformed ? 'rotated' : bfPx === null ? 'not a plain blur()' : 'nothing behind it'}); the panel rasterises instead`);
     }
 
-    // `cssFilter: true` — this walker emitted the whole chain as a <filter> a few
+    // `cssFilter: true` - this walker emitted the whole chain as a <filter> a few
     // blocks up, so a parseable filter stays vector here. It is stated rather than
     // inferred so the PDF walker, which has no filter branch, can decline it and
     // rasterise instead (see detectUnsupportedCss). KNOWN GAP, unchanged by that
     // split: under `opts.noBoxShadow` (EMF/EPS/DXF) the chain is NOT emitted, so
     // those three still lose a non-drop-shadow filter silently. Turning the cap off
-    // for them would rasterise instead — an improvement for EMF/EPS, but DXF is
+    // for them would rasterise instead - an improvement for EMF/EPS, but DXF is
     // line-art only and drops raster regions outright, so it is a separate decision
     // with its own measurements, not a rider on this one.
     const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), cssFilter: true, backdropBlur: bfHandled, conic: true }) : null;
@@ -3379,7 +3385,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       const prevOpacity = el.style.opacity;
       el.style.opacity = '1';   // g already carries the element opacity; don't bake it in twice
       let dataUrl: string | null = null;
-      // Lolly-composited subtree baked into an SVG <image> — same chokepoint as the
+      // Lolly-composited subtree baked into an SVG <image> - same chokepoint as the
       // PDF escape hatch, so it honours opts.imprint too (inert until SVG is imprint-
       // enabled upstream, since the mark is size-floored and opt-in either way).
       // Element-scoped mode (page snapshots): capture only this element's own paint
@@ -3388,7 +3394,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       //
       // Why it matters: the hatch fires on the ELEMENT, so one `conic-gradient` or
       // `backdrop-filter` on a top-level container used to convert an entire page to
-      // a screenshot — measured 100% raster coverage on two fixtures. Scoping it turns
+      // a screenshot - measured 100% raster coverage on two fixtures. Scoping it turns
       // that cliff into local degradation: the offending box's paint becomes an
       // <image>, everything inside it stays text and geometry.
       //
@@ -3420,7 +3426,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── Background ──────────────────────────────────────────────────────────
     // CSS paint order (bottom→top): background-color, then the background-image layer.
     // A gradient emits a true SVG gradient (alpha stops preserved); a url() image emits a
-    // real <image> (vector-first — the box's text/children stay crisp, instead of
+    // real <image> (vector-first - the box's text/children stay crisp, instead of
     // rasterising the whole node), sized/positioned per background-size/position and clipped
     // to the rounded box. Only when we CAN'T vectorise (conic, repeat, unresolvable) does the
     // escape-hatch above rasterise.
@@ -3431,7 +3437,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // bottom-first, and each layer carries its own size/position/repeat (those lists
     // cycle when shorter than the image list). Until 2026-07-31 the whole list was
     // handed to the gradient parsers as ONE value, and `^linear-gradient\((.+)\)$` is
-    // greedy — so two stacked gradients matched as one and their stop lists were
+    // greedy - so two stacked gradients matched as one and their stop lists were
     // concatenated. Offsets restart mid-list, SVG clamps stops monotonically, and a
     // flat swatch chip painted as a dark-to-white fade (docs/shots/brand-colours.svg).
     // One gradient/image element per layer, emitted bottom-first.
@@ -3448,7 +3454,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       const bgRepeat   = layerProp(style.backgroundRepeat,   layerIdx, 'repeat');
       const gid = ++uid;
       // The positioning area (the padding box) and its origin. Hoisted out of the
-      // url() branch below because the CONIC branch needs it too — see the tile
+      // url() branch below because the CONIC branch needs it too - see the tile
       // handling there.
       const area = {
         w: Math.max(0, w - num2(style, 'borderLeftWidth') - num2(style, 'borderRightWidth')),
@@ -3460,14 +3466,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // background image, and the editor stage's transparency checkerboard is exactly
       // that: two 45deg linear-gradient layers at `24px 24px`, offset `0 0, 12px 12px`.
       // Drawing a tiled gradient across the whole element box is silently wrong pixels,
-      // so before this the only honest answer left was the raster escape hatch — which
+      // so before this the only honest answer left was the raster escape hatch - which
       // is how a 1080x676 PNG of a faint checkerboard ended up inside a docs shot.
       // The tile becomes a real <pattern>, exactly as the conic and url() branches do.
       const gradPl = placeBackground(bgSize, bgPosition, bgRepeat, area, null);
       const gradTiles = Boolean(gradPl && gradPl.w > 0.5 && gradPl.h > 0.5
         && (gradPl.repeatX || gradPl.repeatY)
         && (gradPl.w < area.w - 0.5 || gradPl.h < area.h - 0.5));
-      // Built in the TILE's own coordinate space when tiling — a pattern's content
+      // Built in the TILE's own coordinate space when tiling - a pattern's content
       // coordinates are the tile, not the element.
       const gradEl = gradTiles
         ? (buildLinearGradientEl(NS, bgImg, 0, 0, gradPl.w, gradPl.h, gid)
@@ -3478,7 +3484,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // image, so resolve the placement BEFORE parsing: a tiled conic (the
       // transparency checkerboard is `repeating-conic-gradient(...) 50% / 2em 2em`)
       // must be parsed at ONE TILE, not at the element box. Parsing at the box and
-      // fanning across it — which is what this did until 2026-07-30 — turns a 32px
+      // fanning across it - which is what this did until 2026-07-30 - turns a 32px
       // checkerboard into a single element-sized four-quadrant sweep: not a raster,
       // but silently wrong pixels, which is worse.
       // `intrinsic` is null: a gradient has no intrinsic size, so `auto` resolves to
@@ -3493,7 +3499,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       if (gradEl && gradTiles) {
         // One tile of the gradient inside a <pattern>, phased by background-position
         // (modulo the tile on each repeating axis, so the phase matches what the
-        // browser paints — `12px 12px` on a 24px tile is not 0).
+        // browser paints - `12px 12px` on a 24px tile is not 0).
         const pid = `fcgradpat-${++uid}`;
         const pat = document.createElementNS(NS, 'pattern');
         pat.setAttribute('id', pid);
@@ -3516,7 +3522,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       } else if (conic && conicTiles && conicPl) {
         // A TILED conic: emit one tile's fan inside a real <pattern>, mirroring the
         // url() tiling branch below. Chromium cannot keep this vector through
-        // printToPDF at all (PDF has no conic/angular shading type — measured), so
+        // printToPDF at all (PDF has no conic/angular shading type - measured), so
         // the walker is the only path that renders a checkerboard crisply.
         const tile = conicFanEl(NS, conic, 0, 0, conicPl.w, conicPl.h, gid);
         if (tile) {
@@ -3594,7 +3600,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
             im.setAttribute('href', href);
             im.setAttribute('x', String(n2(ax + pl.x))); im.setAttribute('y', String(n2(ay + pl.y)));
             im.setAttribute('width', String(n2(pl.w))); im.setAttribute('height', String(n2(pl.h)));
-            // The size is already resolved, so the image must fill it exactly —
+            // The size is already resolved, so the image must fill it exactly - 
             // letting preserveAspectRatio re-fit it would undo the arithmetic.
             im.setAttribute('preserveAspectRatio', 'none');
             im.setAttribute('clip-path', `url(#${cid})`);
@@ -3702,8 +3708,8 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── Borders ─────────────────────────────────────────────────────────────
     // Mirror the PDF walker: a uniform border becomes one stroked rect/path (radius
     // honoured); a divider (border-top only) or mixed border fills per edge.
-    // Colours keep their alpha (stroke-opacity / fill-opacity) — svg-ir flattens
-    // it over the background for EMF/EPS — so hairline rgba() borders don't go opaque.
+    // Colours keep their alpha (stroke-opacity / fill-opacity) - svg-ir flattens
+    // it over the background for EMF/EPS - so hairline rgba() borders don't go opaque.
     const bSide = (wKey: string, cKey: string): { bw: number; rgb: Rgba | null } => {
       if (ownPaintRastered) return { bw: 0, rgb: null };   // already in the raster
       const bw = parseFloat((style as any)[wKey]) || 0;
@@ -3754,27 +3760,27 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       stripCommentNodes(clone);
       unscopeStyleEls(clone);
       // plans/101 (found via lolly-work's shot corpus): a nested <svg>'s
-      // presentation is mostly CASCADE-driven on screen — class rules, var()s,
-      // inherited text style — and the verbatim clone keeps only attributes
+      // presentation is mostly CASCADE-driven on screen - class rules, var()s,
+      // inherited text style - and the verbatim clone keeps only attributes
       // plus its inner <style>. Standalone, classes match stylesheets that
       // aren't there and var()s are undefined, so class-driven fills/strokes
       // vanish (a green ✓ ring flattens to a black dot) and var() strokes
       // don't paint at all. Bake each SVG descendant's COMPUTED presentation
-      // onto the clone as INLINE style — inline beats the surviving un-scoped
+      // onto the clone as INLINE style - inline beats the surviving un-scoped
       // <style> rules whose vars are undefined standalone; a presentation
       // attribute would not (the same ruling outlineSvgTextRuns records).
       // Guards: values equal to the SVG initial are skipped (an element whose
-      // paint arrives via attributes keeps them — the clone carries those);
+      // paint arrives via attributes keeps them - the clone carries those);
       // url(#…) paints are written verbatim, their defs travel inside the
       // clone; only SVG-namespace elements are touched (foreignObject HTML
       // has its own walk); <stop> takes its stop-* pair instead. Trades
       // accepted and pinned in export-nested-svg.test.ts: inheritance is
       // flattened to per-node literals (visually identical, structurally
       // denormalised), and inline style outranks SMIL/CSS animation on the
-      // same property — a shot is a static capture anyway. The deep clone is
+      // same property - a shot is a static capture anyway. The deep clone is
       // a same-order copy, so the two element lists pair 1:1 (the invariant
       // outlineSvgTextRuns leans on); topology mismatch skips the bake rather
-      // than mispairing. The PDF walker needs no mirror — it already resolves
+      // than mispairing. The PDF walker needs no mirror - it already resolves
       // paints per node from the live DOM (computedPaint); this converges the
       // two walkers.
       {
@@ -3816,11 +3822,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       }
       // `currentColor` inside the svg resolves against the inherited CSS `color`
       // on screen, but the emitted file is a STANDALONE svg with no HTML
-      // ancestors, so there it falls back to the initial value — black. The
+      // ancestors, so there it falls back to the initial value - black. The
       // gallery's ghost icons (`stroke="currentColor"` under a blue-`color`
       // span) are exactly that: blue on screen, black ink in the walked shot.
       // Stamp the live computed color onto the clone root as a presentation
-      // attribute — it is (0,0,0) specificity, so an inner node's own
+      // attribute - it is (0,0,0) specificity, so an inner node's own
       // color rule still wins wherever its CSS survives the clone; the PDF
       // walker needs no mirror because it resolves paints per node from the
       // live DOM via computedPaint (see the note above the `path` branch).
@@ -3838,7 +3844,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     if (tag === 'img') {
       const src = el.src || el.getAttribute('src') || '';
       if (src && w > 0 && h > 0) {
-        // SVG sources stay VECTOR — inline them as a nested <svg>, fitted "meet"
+        // SVG sources stay VECTOR - inline them as a nested <svg>, fitted "meet"
         // (object-fit: contain), instead of a raster <image>. SVG-ness is sniffed
         // from the bytes (asset URLs are blob: with no extension/MIME hint). Mirrors
         // the PDF walker; real bitmaps fall through to the <image> path below.
@@ -3869,14 +3875,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         try {
           // Inline EVERY scheme, not just data:/blob:. An http/relative src was
           // previously written straight into `<image href="/catalog/…">`, and an SVG
-          // consumed as `<img src="shot.svg">` — which is how /info serves every docs
-          // screenshot, and how any exported SVG is normally viewed — runs in secure
+          // consumed as `<img src="shot.svg">` - which is how /info serves every docs
+          // screenshot, and how any exported SVG is normally viewed - runs in secure
           // static mode with NO network access, so that image renders BLANK and the
           // file is not self-contained. The sibling CSS-url branch already fetches
           // and inlines http (cssUrlToHref, :1651), so this was the `<img>` branch
           // being inconsistent with it rather than a deliberate exemption.
           // Falls back to the raw src on failure (cross-origin without CORS, 404),
-          // which is exactly the old behaviour — never worse than before.
+          // which is exactly the old behaviour - never worse than before.
           const dataUrl0 = src.startsWith('data:') ? src
             : await blobToDataUrl(src).catch(() => src);
           // Preserve an embedded bitmap's provenance BEFORE downscaleRasterForBox's
@@ -3933,7 +3939,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
             img.setAttribute('clip-path',           `url(#${clipId})`);
             img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
           } else if (style.objectFit === 'cover') {
-            // Fill the box, cropping the overflow — `slice` clips to the image's own
+            // Fill the box, cropping the overflow - `slice` clips to the image's own
             // x/y/width/height viewport, so no extra clipPath is needed (matches the
             // on-screen hero/masthead). object-position picks WHICH edge is cropped.
             img.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} slice`);
@@ -3951,23 +3957,23 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── overflow:hidden → clip the CONTENT to the box (rounded or square) ──────
     // CSS crops an overflow:hidden box's descendants to the box (its corner curve when
     // rounded); the walker draws each box's own bg but doesn't clip descendants, so a
-    // child that spills — a differently-filled titlebar past a rounded edge, or an
-    // over-sized image/child past a square edge — would show outside the box. Route
+    // child that spills - a differently-filled titlebar past a rounded edge, or an
+    // over-sized image/child past a square edge - would show outside the box. Route
     // children/text/pseudo through a <clipPath> sub-group (rounded fill, or a plain rect
     // when there's no radius); the box-shadow/background/border stay in `g` (unclipped) so
     // an outset shadow still extends past the box. A ROUNDED overflow box always clips (its
     // children must follow the corner curve); a SQUARE one clips only when a descendant
-    // ACTUALLY spills (scroll > client) — most overflow:hidden boxes (flex/grid layout) clip
+    // ACTUALLY spills (scroll > client) - most overflow:hidden boxes (flex/grid layout) clip
     // nothing visible, and a clip group on every one would bloat the SVG for no change.
     const clipsOverflow = (style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible');
     const spillsBox = (el.scrollWidth || 0) > (el.clientWidth || 0) + 1 || (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
-    // ── Overflow clip (decided AFTER the walk — see finaliseOverflowClip) ─────
+    // ── Overflow clip (decided AFTER the walk - see finaliseOverflowClip) ─────
     // A clip is friction for whoever opens the file next: a designer has to release
     // it before they can edit anything inside. So the group is created optimistically
     // and the clip attribute is only attached at the end, once the descendants have
     // been measured and we know it is doing work. Across the five local fixtures the
     // walker emitted 325 clip defs and 4373 references to them, every one a single
-    // shape — most of them around content that never came near the edge.
+    // shape - most of them around content that never came near the edge.
     let contentG: Element = g;
     let ovClipId: string | null = null;
     let ovBounds: Bounds | null = null;
@@ -3982,13 +3988,13 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     /**
      * Attach the overflow clip, or prove it unnecessary and leave it off.
      *
-     * Kept when content genuinely leaves the box (`spillsBox` — the browser's own
+     * Kept when content genuinely leaves the box (`spillsBox` - the browser's own
      * scrollWidth/scrollHeight verdict, which also catches a text line running past
      * the edge), or when the box is rounded and something painted inside comes close
      * enough to an edge to touch a corner arc.
      *
      * Dropped otherwise, which also means dropping the `clip-path` references that
-     * hoisted descendants took with them — a dangling url(#…) would clip them to
+     * hoisted descendants took with them - a dangling url(#…) would clip them to
      * nothing.
      */
     const finaliseOverflowClip = (): void => {
@@ -4026,7 +4032,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // out for free: an element that is POSITIONED but does NOT create a context
     // (`position: relative; z-index: auto`) is deferred into layer 6, its
     // in-flow children append into its own contentG and travel with it, and a
-    // `z-index: 5` grandchild defers past it to the ANCESTOR frame's layer 7 —
+    // `z-index: 5` grandchild defers past it to the ANCESTOR frame's layer 7 - 
     // which is exactly what CSS paints, and exactly what a naive
     // "positioned ⇒ treat as a context" implementation gets wrong.
     let ownFrame: ScFrame | null = null;
@@ -4039,7 +4045,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       if (createsCtx) {
         ownFrame = {
           content: contentG,
-          // When there is no overflow clip, contentG IS g — so a layer-2 unit
+          // When there is no overflow clip, contentG IS g - so a layer-2 unit
           // inserted at firstChild would land BEHIND this element's own
           // box-shadow/background/border, which §E.2 step 3 puts first. Anchor
           // on the last own-paint node instead. With a clip group, contentG is
@@ -4060,30 +4066,30 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // Inline children are left to emitInlineTextSvg below, which walks the inline
     // flow and emits TEXT. That is right for a <span>, and silently wrong for an
     // inline <svg>: the inline walk has no passthrough branch, so the SVG is
-    // dropped entirely and nothing warns. An <svg> is replaced content, not text —
-    // it has a box of its own at any display value — so route it here regardless.
+    // dropped entirely and nothing warns. An <svg> is replaced content, not text - 
+    // it has a box of its own at any display value - so route it here regardless.
     // (App icons survived only because the CSS sets them display:block. A bare
     // <svg> defaults to display:inline, which is exactly what a TOOL's own canvas
     // is: the QR code was missing from every page snapshot for this reason. Tool
-    // EXPORTS were unaffected — an SVG-rooted canvas takes the renderSvg fast path
+    // EXPORTS were unaffected - an SVG-rooted canvas takes the renderSvg fast path
     // and never enters this walker.)
     //
     // A flex/grid container paints its items in ORDER-MODIFIED document order
     // (CSS Flexbox §5.4, CSS Grid §6), not raw document order. Pure reorder: the
     // visit PREDICATE is untouched, and it doesn't need to change, because
     // `position: absolute|fixed` blockifies computed display (CSS Display 3
-    // §2.7) — so every layer-2/6/7 child already fails the inlineFlow test and
+    // §2.7) - so every layer-2/6/7 child already fails the inlineFlow test and
     // is already visited today.
     const kids: Element[] = stackingOrder && isFlexOrGridContainer(style.display)
       ? orderModifiedChildren(renderedChildren(el),
           (c) => Number.parseInt(window.getComputedStyle(c).order || '0', 10) || 0)
       : renderedChildren(el);
     // A child WITHOUT a box of its own is a plain-inline wrapper (<span>, an
-    // unstyled <a>): its text belongs to emitInlineTextSvg below — but an own-box
+    // unstyled <a>): its text belongs to emitInlineTextSvg below - but an own-box
     // DESCENDANT inside it (an <img>, an inline <svg>, an <input>) belonged to
     // NOBODY: this loop skipped the wrapper, and the inline text walk returns at
     // own-box children on the assumption this loop visited them. A preview <img>
-    // inside an unstyled inline <a> therefore vanished from the shot, silently —
+    // inside an unstyled inline <a> therefore vanished from the shot, silently - 
     // the nested form of the bare-<svg> bug above. Descend through inline
     // wrappers and visit their own-box descendants; drawing them can only add,
     // because the previous behaviour was nothing. (Their TEXT is untouched: the
@@ -4100,7 +4106,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       else await visitThroughInline(child);
     }
     // Shadow text: a host's own text pass below reads el.childNodes, which for a
-    // shadow host is the LIGHT tree — the part that only renders where a <slot> puts
+    // shadow host is the LIGHT tree - the part that only renders where a <slot> puts
     // it. Text authored inside the shadow root has to be walked from the root itself.
     const sr = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
     if (sr) await emitInlineTextSvg(NS, sr, style, rootRect, contentG, vectorText);
@@ -4112,11 +4118,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // The pixels are the content; there is no vector form to recover. Snapshot the
     // backing store the same way snapshotMotion does, so chart/filter/D3 tools and
     // any real page draw something instead of an empty box. A cross-origin-tainted
-    // canvas throws on toDataURL — that is unrecoverable, so it degrades to blank
+    // canvas throws on toDataURL - that is unrecoverable, so it degrades to blank
     // with a warning rather than failing the export.
     if (tag === 'canvas') {
       // …unless the painter published a vector twin. The property is read
-      // SYNCHRONOUSLY here so a canvas without one never awaits anything — that is
+      // SYNCHRONOUSLY here so a canvas without one never awaits anything - that is
       // what keeps the untwinned path byte-identical AND allocation-free.
       const twin = typeof (el as VectorTwinCanvas).__lollyVectorTwin === 'function'
         ? await vectorTwinEl(el as HTMLCanvasElement, () => `tw${++uid}-`)
@@ -4127,7 +4133,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         twin.setAttribute('x', String(n2(x))); twin.setAttribute('y', String(n2(y)));
         twin.setAttribute('width', String(n2(w))); twin.setAttribute('height', String(n2(h)));
         twin.setAttribute('preserveAspectRatio', 'none');
-        // `currentColor` in a standalone svg falls back to black — mirror the live
+        // `currentColor` in a standalone svg falls back to black - mirror the live
         // computed colour as the inline-<svg> passthrough above does.
         if (style.color) twin.setAttribute('color', style.color);
         contentG.appendChild(twin);
@@ -4148,7 +4154,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     // ── Form controls ────────────────────────────────────────────────────────
     // A control's value is not a text node, so the pass above sees nothing and the
-    // box comes out empty — the blank URL field and blank Error-correction select on
+    // box comes out empty - the blank URL field and blank Error-correction select on
     // every tool-page snapshot. What it shows is decided in form-controls.ts; the
     // LAYOUT is deliberately not reimplemented here. Instead the text is mirrored
     // into a throwaway element positioned over the control's content box and walked
@@ -4159,7 +4165,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     // ── CSS generated content (::before/::after markers) ──────────────────────
     // pseudoDescriptor only models the ABSOLUTELY POSITIONED marker idiom, so
-    // every pseudo it emits is by construction a positioned descendant — i.e.
+    // every pseudo it emits is by construction a positioned descendant - i.e.
     // §E.2 layer 6/7 (or 2 for a negative-z scrim), never in-flow content. In
     // stacking mode each one therefore gets its own <g> and is placed like any
     // other positioned child, which stops a marker from hiding under a later
@@ -4177,7 +4183,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── Finalise this stacking context (CSS 2.1 Appendix E §E.2) ──────────────
     // Everything deferred by descendants is appended here, in spec order. This
     // runs AFTER emitInlineTextSvg and svgPseudoContent, so layers 6 and 7 land
-    // after layer-5 inline content automatically — a positioned child declared
+    // after layer-5 inline content automatically - a positioned child declared
     // before its parent's text still paints on top of it, which is what CSS does
     // and what DOM order got backwards.
     if (ownFrame) {
@@ -4186,16 +4192,16 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // background/border and BEFORE all in-flow content. `first` is re-read
       // here (not captured earlier) so it reflects the children/text/pseudo that
       // have since been appended. insertBefore against a FIXED anchor preserves
-      // insertion sequence — [a], [a,b], [a,b,c] — so the sorted array goes in
+      // insertion sequence - [a], [a,b], [a,b,c] - so the sorted array goes in
       // ascending, most-negative first, with no reverse.
       const first = f.anchor ? f.anchor.nextSibling : f.content.firstChild;
       for (const u of sortUnits(f.neg)) f.content.insertBefore(u.g, first);
-      for (const u of f.z0)             f.content.appendChild(u.g);   // step 8 — tree order, NOT z-sorted
+      for (const u of f.z0)             f.content.appendChild(u.g);   // step 8 - tree order, NOT z-sorted
       for (const u of sortUnits(f.pos)) f.content.appendChild(u.g);   // step 9
     }
 
     // Last, because it needs both the measured descendant bounds and the hoisted
-    // units to be in place before it can decide — and, if it decides against, strip
+    // units to be in place before it can decide - and, if it decides against, strip
     // the references those hoists carried.
     finaliseOverflowClip();
   }
@@ -4223,13 +4229,13 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   // Parse-check before returning. This walker can emit XML that does not parse,
   // and it does it SILENTLY: the inline-<svg> passthrough clones live DOM and
   // re-serialises it, so one malformed attribute in authored markup (a `<path d="…`
-  // that never closes — lib/icons.ts shipped exactly that) becomes an attribute
+  // that never closes - lib/icons.ts shipped exactly that) becomes an attribute
   // whose value contains `</svg><span class=`, and XMLSerializer faithfully writes
   // it out. The result was a 1.1 MB file, no thrown error, no warning, and it would
   // have been committed as a screenshot baseline.
   //
-  // Print-derived output cannot fail this way — it consumes painted output, never
-  // authored markup — so this gate is what buys the direct walker the same "fails
+  // Print-derived output cannot fail this way - it consumes painted output, never
+  // authored markup - so this gate is what buys the direct walker the same "fails
   // loudly or not at all" property. DOMParser puts <parsererror> in the result
   // rather than throwing, hence the explicit check.
   try {
@@ -4250,7 +4256,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 }
 
 // Underline / line-through carried by a computed style. text-decoration-line is NOT
-// inherited, so a nested <strong>/<span> under a decorated ancestor computes 'none' —
+// inherited, so a nested <strong>/<span> under a decorated ancestor computes 'none' - 
 // the walkers therefore OR these flags down the tree rather than reading them only off
 // the text node's immediate parent. (Neither vector walker reads text-decoration
 // otherwise, so without this underline/strike render on screen but vanish in export.)
@@ -4265,7 +4271,7 @@ export function mergeDeco(a: Deco, b: Deco): Deco { return { u: a.u || b.u, s: a
 //
 // By default each line becomes a true vector <path> (host.text.toPath, HarfBuzz
 // shaped) so the SVG is self-contained and renders identically without the font
-// installed — no bitmap, no <foreignObject>. Runs we can't vectorise faithfully
+// installed - no bitmap, no <foreignObject>. Runs we can't vectorise faithfully
 // (non-SUSE font, no host.text, letter-spacing) fall back to a positioned <text>
 // element. Line positions come from Range.getBoundingClientRect, same strategy as
 // renderInlineContent for PDF.
@@ -4277,7 +4283,7 @@ async function emitInlineTextSvg(
 ): Promise<void> {
   const textApi = vectorText ? _host?.text : null;
   // Filters need a <defs>. This function is called from both walkers and does not
-  // own the document, so the sink is found from the tree it is writing into — the
+  // own the document, so the sink is found from the tree it is writing into - the
   // root <svg>'s existing <defs>, or one created on demand.
   const ownerSvg = parentG.ownerDocument?.documentElement?.tagName === 'svg'
     ? parentG.ownerDocument.documentElement : parentG.closest?.('svg');
@@ -4301,7 +4307,7 @@ async function emitInlineTextSvg(
       const strokeWidthAttr = nodeStyle.strokeWidth ? nodeStyle.strokeWidth : null;
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
       // SUSE statics, a user's Google font (decompressed on demand) or the
-      // platform face — whichever the family stack resolves to first.
+      // platform face - whichever the family stack resolves to first.
       const vf = textApi ? await resolveVectorFont(nodeStyle, text) : null;
       const fontUrl = vf?.url ?? null;
       const vectorise = canVectoriseText(nodeStyle, fontUrl, Boolean(textApi));
@@ -4312,13 +4318,13 @@ async function emitInlineTextSvg(
 
       // text-shadow, back-to-front (CSS paints the FIRST-listed shadow on top, so the
       // list is drawn in reverse). Each shadow is a DUPLICATE of the run's own
-      // geometry — the outlined <path>, or the <text> fallback — recoloured, shifted
+      // geometry - the outlined <path>, or the <text> fallback - recoloured, shifted
       // and blurred, rather than a filter on the original.
       //
       // Duplicates rather than a filter because a filter is all-or-nothing outside
       // SVG: svg-ir skips <filter> entirely, so an EMF/EPS/DXF export would lose the
       // shadow completely. A duplicated path survives those formats, and when the
-      // blur is zero — the hard offset idiom — it is exact everywhere with no filter
+      // blur is zero - the hard offset idiom - it is exact everywhere with no filter
       // at all.
       const textShadows = parseTextShadow(nodeStyle.textShadow).reverse();
       const appendWithShadows = (el: Element): void => {
@@ -4345,7 +4351,7 @@ async function emitInlineTextSvg(
             filt.setAttribute('x', '-50%'); filt.setAttribute('y', '-50%');
             filt.setAttribute('width', '200%'); filt.setAttribute('height', '200%');
             // sRGB, because CSS composites shadows in sRGB and SVG's filter default
-            // is linearRGB — the same blur looks materially lighter without this.
+            // is linearRGB - the same blur looks materially lighter without this.
             filt.setAttribute('color-interpolation-filters', 'sRGB');
             const fe = document.createElementNS(NS, 'feGaussianBlur');
             fe.setAttribute('stdDeviation', String(n2(sh.blur / 2)));   // CSS blur radius → σ
@@ -4366,7 +4372,7 @@ async function emitInlineTextSvg(
         const top = r.top - rootRect.top;
         if (vectorise) {
           try {
-            // `notdef` > 0 means this face has no glyph for something in the run —
+            // `notdef` > 0 means this face has no glyph for something in the run - 
             // outlining would draw tofu, so keep the <text> fallback instead.
             const { d, notdef } = await textApi!.toPath({ text: lineText, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
             if (d && !notdef) {
@@ -4410,7 +4416,7 @@ async function emitInlineTextSvg(
       };
 
       // Draw underline / strikethrough as filled rects spanning the line box, in the
-      // run's own colour — text-decoration is otherwise dropped by the vector walk.
+      // run's own colour - text-decoration is otherwise dropped by the vector walk.
       const drawDeco = (r: DOMRect) => {
         if (!fillAttr || (!deco.u && !deco.s)) return;
         const x = r.left - rootRect.left;
@@ -4453,8 +4459,8 @@ async function emitInlineTextSvg(
       if (node.tagName.toLowerCase() === 'br') return;
       const s = window.getComputedStyle(node);
       if (s.display === 'none') return;
-      // Non-replaced `display: inline` only. Anything with a box of its own —
-      // inline-block, inline-flex, an <input>, an inline <svg> — is visited by
+      // Non-replaced `display: inline` only. Anything with a box of its own - 
+      // inline-block, inline-flex, an <input>, an inline <svg> - is visited by
       // visitSvgNode, which paints its background, border and text as a unit.
       // Descending into it here as well would draw its text a second time.
       if (s.display !== 'inline' || isReplaced(node)) return;
@@ -4466,7 +4472,7 @@ async function emitInlineTextSvg(
 }
 
 /** Elements whose box is drawn by the UA rather than by their children: replaced
- *  content and form controls. They default to `display: inline` but are atomic —
+ *  content and form controls. They default to `display: inline` but are atomic - 
  *  the inline text walk has nothing to find inside them. */
 const REPLACED = new Set(['img', 'svg', 'canvas', 'video', 'audio', 'iframe', 'object', 'embed',
                           'input', 'select', 'textarea', 'progress', 'meter']);
@@ -4481,14 +4487,14 @@ export function isReplaced(el: Element): boolean {
  * the inline walk's job. This predicate is the whole reason an inline-block's
  * background used to vanish: the loop tested for "inline flow" and skipped
  * inline-block and inline-flex along with inline, leaving them to a text pass that
- * paints no boxes at all — and leaving a replaced control, which has no text nodes,
+ * paints no boxes at all - and leaving a replaced control, which has no text nodes,
  * emitting nothing whatsoever.
  *
  * `display: contents` has no box of its own but its CHILDREN do, and visitSvgNode
  * recurses, so it is included rather than dropped.
  */
 /**
- * The children this element actually RENDERS — the flat tree, not the DOM tree.
+ * The children this element actually RENDERS - the flat tree, not the DOM tree.
  *
  * A shadow host renders its shadow root's children, not its own; its light children
  * appear only where a <slot> places them. Walking `el.children` therefore missed the
@@ -4564,7 +4570,7 @@ interface PseudoDescriptor {
   text: string; bg: Rgba | null; radii: CornerRadii; uniform: CornerPair | null;
   w: number; h: number; ps: CSSStyleDeclaration; x: number; y: number;
   /** The pseudo's own transform, LINEAR part only (rotate/scale/skew), about its
-   *  transform-origin in root space. Null for none / pure translate / 3-D — the
+   *  transform-origin in root space. Null for none / pure translate / 3-D - the
    *  translate component is already folded into x/y, so a caller that ignores this
    *  still lands the common `translate(-50%,-50%)` centring idiom correctly. */
   mat: Mat2D | null;
@@ -4576,7 +4582,7 @@ interface PseudoDescriptor {
  *
  * Missing the rest is not academic. `.profile-link` (the top-right profile pill) is
  * `position: static` with `backdrop-filter: blur(4px)` from the shared `.btn--glass`
- * alias — which makes it a containing block — so the browser anchors its `::before`
+ * alias - which makes it a containing block - so the browser anchors its `::before`
  * avatar dot to the PILL, while a position-only walk anchored it to the whole
  * `.gallery-topright` cluster 103px to the left. The dot came out sitting on top of
  * the settings button in every SVG and PDF export (docs/shots/use-utilities.svg).
@@ -4596,7 +4602,7 @@ function establishesAbsContainingBlock(cs: CSSStyleDeclaration): boolean {
   if (cs.filter && cs.filter !== 'none') return true;
   const backdrop = s.backdropFilter ?? s.webkitBackdropFilter;
   if (backdrop && backdrop !== 'none') return true;
-  // `will-change` on any of the above is sufficient on its own — the point of the
+  // `will-change` on any of the above is sufficient on its own - the point of the
   // property is that the browser promotes the element BEFORE the value changes.
   if (/\b(transform|perspective|filter|backdrop-filter|contain|translate|rotate|scale)\b/.test(cs.willChange || '')) return true;
   if (/\b(paint|layout|strict|content)\b/.test(cs.contain || '')) return true;
@@ -4624,7 +4630,7 @@ function isPaintSkipped(el: Element, style: CSSStyleDeclaration): boolean {
   // closest() matches the element itself: the <details> box is painted (it is the
   // card), only its non-summary CONTENTS are skipped.
   if (!details || details === el) return false;
-  // The summary is the part a closed <details> DOES paint — as is anything inside it.
+  // The summary is the part a closed <details> DOES paint - as is anything inside it.
   const summary = details.querySelector(':scope > summary');
   return !(summary && summary.contains(el));
 }
@@ -4633,10 +4639,10 @@ function isPaintSkipped(el: Element, style: CSSStyleDeclaration): boolean {
 // descriptor, or null if it has nothing visible. The DOM walkers only see real
 // nodes, so list markers / arrows authored as ::before content (e.g. dynamic-layout's
 // bullet dots and → arrows) are otherwise dropped from SVG/PDF. Scoped to the
-// absolutely-positioned marker idiom — a pseudo has no getBoundingClientRect, so its
+// absolutely-positioned marker idiom - a pseudo has no getBoundingClientRect, so its
 // box is computed from its containing block (nearest positioned ancestor) padding box
-// + the pseudo's own left/top/size. The padding box's origin is the padding EDGE —
-// just inside the border, NOT inside the padding (CSS 2.1 §10.1) — so the offset adds
+// + the pseudo's own left/top/size. The padding box's origin is the padding EDGE - 
+// just inside the border, NOT inside the padding (CSS 2.1 §10.1) - so the offset adds
 // border widths only. Inline/static generated content isn't modelled.
 function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   const ps = window.getComputedStyle(el, name);
@@ -4649,7 +4655,7 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   // word "Copied" over a 55%-black scrim, revealed for 900ms by a click handler) and
   // `[data-tip]::after` (the tooltip bubble). Without this, every colour chip in a
   // capture came back darkened and captioned, and every tooltip host grew a ghost
-  // pill — in SVG *and* PDF, since both call this one descriptor.
+  // pill - in SVG *and* PDF, since both call this one descriptor.
   if (ps.display === 'none' || ps.visibility === 'hidden') return null;
   if (!(parseFloat(ps.opacity || '1') > 0)) return null;
   const w = parseFloat(ps.width)  || 0;
@@ -4674,7 +4680,7 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   // The pseudo's OWN transform. `translate(-50%, -50%)` on an absolutely positioned
   // marker is the standard centring idiom (and is what `.profile-link::before` uses),
   // so ignoring it drops the marker half its own size down and right of where the
-  // browser paints it — the mispositioned ghost tooltips noted above were this.
+  // browser paints it - the mispositioned ghost tooltips noted above were this.
   // The translate lands in x/y for every caller; only a rotate/scale/skew needs the
   // matrix branch, which the SVG emitter wraps in a <g>.
   const mat = parseCssMatrix(ps.transform);
@@ -4710,7 +4716,7 @@ async function svgPseudoContent(
     // holding the fill and the text. (The translate component is already in x/y.)
     if (ds.mat) {
       // A COMPUTED transform-origin is always resolved to px, so parseFloat is the
-      // whole parse — same read rotationPivot() does for real elements.
+      // whole parse - same read rotationPivot() does for real elements.
       const o = String(ds.ps.transformOrigin || '').split(' ').map(parseFloat);
       const pivotX = x + (Number.isFinite(o[0]!) ? o[0]! : ds.w / 2);
       const pivotY = y + (Number.isFinite(o[1]!) ? o[1]! : ds.h / 2);
@@ -4786,7 +4792,7 @@ function makeSvgRect(NS: string, x: number, y: number, w: number, h: number, rx:
 function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: number, elW: number, elH: number, uid: number): Element | null {
   // ONE layer only. `.+` is greedy, so a two-layer `linear-gradient(…), linear-gradient(…)`
   // otherwise matches as a single gradient and both stop lists are concatenated into one
-  // element — offsets restart mid-list and SVG clamps them, so the second layer's colours
+  // element - offsets restart mid-list and SVG clamps them, so the second layer's colours
   // smear over the first. Callers split the layer list and emit one element per layer.
   if (splitCssArgs(bgImage).length > 1) return null;
   const m = bgImage.match(/^linear-gradient\((.+)\)$/s);
@@ -4828,11 +4834,11 @@ function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: nu
     const s = document.createElementNS(NS, 'stop');
     // An absolute CSS stop position is a distance ALONG THE GRADIENT LINE, whose
     // full length is 2*len. <stop offset> takes a number 0-1 or a percentage, so a
-    // raw "25px" is INVALID SVG: resvg discards it outright (measured — both stops
+    // raw "25px" is INVALID SVG: resvg discards it outright (measured - both stops
     // of a two-stop strip collapse to the last colour), and the rendering drifts
     // badly from the browser's (mean channel error up to 133 on a 3-stop gradient,
     // 99.8% of pixels wrong; 0.02 once converted). parseRadialGradient's stop loop
-    // has always divided by rx for exactly this reason — this is the linear analogue.
+    // has always divided by rx for exactly this reason - this is the linear analogue.
     s.setAttribute('offset', offset.endsWith('px') && len > 0
       ? `${n2(parseFloat(offset) / (2 * len) * 100)}%`
       : offset);
@@ -4857,7 +4863,7 @@ function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: nu
  * threshold anyone can see; the count scales with the box so a small dial doesn't pay
  * for a page background's smoothness.
  *
- * The radius reaches the FARTHEST corner from the centre — a conic gradient covers
+ * The radius reaches the FARTHEST corner from the centre - a conic gradient covers
  * the whole box even when its centre is off to one side, and using half the diagonal
  * would leave an unpainted crescent.
  *
@@ -4881,7 +4887,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
       at: parseFloat(st.offset) / (st.offset.endsWith('%') ? 100 : 360),
       // Parsed once per stop, not once per sampled wedge (this fan is up to 360 of them).
       // parseGradientStop returns an OPAQUE colorStr with the alpha split into
-      // `opacity` — re-parsing the hex alone read `transparent` as opaque black,
+      // `opacity` - re-parsing the hex alone read `transparent` as opaque black,
       // which painted the checkerboard idiom's clear wedges solid. Restore it.
       cc: (() => { const c = parseColor(st.colorStr!); return c ? { ...c, alpha: st.opacity } : null; })(),
     }))
@@ -4889,7 +4895,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
   if (raw.length < 2) return null;
   // CSS gradient stop fixup: an offset smaller than the one before it is CLAMPED up
   // to it, which is how a hard-edged stop is written (`red 0 25%, blue 0 50%`).
-  // Sorting instead would silently reorder those into a smooth ramp — and the
+  // Sorting instead would silently reorder those into a smooth ramp - and the
   // checkerboard behind every tool canvas is exactly that idiom.
   const stops = raw.map((st, i, all) => ({ ...st, at: i ? Math.max(st.at, all[i - 1]!.at) : st.at }));
   for (let i = 1; i < stops.length; i++) stops[i]!.at = Math.max(stops[i]!.at, stops[i - 1]!.at);
@@ -4909,7 +4915,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
         const span = b.at - a.at;
         const f = span > 0 ? (t - a.at) / span : 0;
         if (!a.cc || !b.cc) return f < 0.5 ? a : b;
-        // sRGB interpolation, PREMULTIPLIED — matching what the browser paints for
+        // sRGB interpolation, PREMULTIPLIED - matching what the browser paints for
         // the same conic (CSS Color 4 §12.3). Lerping the channels raw instead drags
         // a `red → transparent` sweep through dark red at 50% instead of holding red
         // and fading it, so the exported fan disagreed with the screen. The engine
@@ -4942,10 +4948,10 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
   };
 
   // ── hard-stop fast path: EXACT sectors, not sampled wedges ──────────────────
-  // A conic built entirely of constant-colour bands (`A 0 25%, B 0 50%` — the
+  // A conic built entirely of constant-colour bands (`A 0 25%, B 0 50%` - the
   // checkerboard idiom) has a precise vector form: one path per band, boundaries on the
   // stop angles. Sampling it as a uniform fan instead puts wedge edges WHERE THE COLOUR
-  // DOES NOT CHANGE, and each of those edges carries the 0.004rad overlap above — which
+  // DOES NOT CHANGE, and each of those edges carries the 0.004rad overlap above - which
   // is why a 14px checker tile came out with faint diagonal hairlines across every
   // square. Exact sectors also collapse ~48 paths to 2.
   const bands: { from: number; to: number; col: string; op: number }[] = [];
@@ -4992,7 +4998,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
 }
 
 function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: number, elW: number, elH: number, uid: number): Element | null {
-  if (splitCssArgs(bgImage).length > 1) return null;   // one LAYER per element — see buildLinearGradientEl
+  if (splitCssArgs(bgImage).length > 1) return null;   // one LAYER per element - see buildLinearGradientEl
   const g = parseRadialGradient(bgImage, elW, elH);
   if (!g) return null;
   const { rx, ry } = g;
@@ -5032,8 +5038,8 @@ function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: nu
  * here that looks like a bug and is not. `box-shadow: … 12px` and
  * `drop-shadow(… 12px)` do NOT produce the same blur: box-shadow's value is a radius
  * of 2σ, drop-shadow's IS σ. Measured against Chromium at blur 4, 6, 12, 24 and 40,
- * σ = blur is exact (0.000% pixel error) and σ = blur/2 — which this used to emit,
- * on the reasonable-sounding grounds that it "matches box-shadow" — is off by up to
+ * σ = blur is exact (0.000% pixel error) and σ = blur/2 - which this used to emit,
+ * on the reasonable-sounding grounds that it "matches box-shadow" - is off by up to
  * 2.3% mean and 12.5% on a single pixel.
  */
 function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; blur: number; color: string }[], id: string,
@@ -5058,7 +5064,7 @@ function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; 
     const fe = document.createElementNS(NS, 'feDropShadow');
     fe.setAttribute('dx', String(n2(sh.dx)));
     fe.setAttribute('dy', String(n2(sh.dy)));
-    fe.setAttribute('stdDeviation', String(n2(sh.blur)));   // NOT blur/2 — see above
+    fe.setAttribute('stdDeviation', String(n2(sh.blur)));   // NOT blur/2 - see above
     const col = parseCssColorFull(sh.color);
     if (col) { fe.setAttribute('flood-color', `rgb(${col[0]},${col[1]},${col[2]})`); fe.setAttribute('flood-opacity', String(col[3])); }
     else fe.setAttribute('flood-color', sh.color);
@@ -5067,11 +5073,11 @@ function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; 
   return filt;
 }
 
-// Resolve the print-marks geometry for a trim box already in points — the size-only
+// Resolve the print-marks geometry for a trim box already in points - the size-only
 // core, shared by the single-page path (below) and the per-page multi-page path
 // (renderMultiPagePdf). Null when no bleed and no marks are requested (the legacy
 // "page == trim, art fills it" path). The null gate reads ONLY opts, so geo-ness is
-// uniform across every page of a given export — only the numeric values scale.
+// uniform across every page of a given export - only the numeric values scale.
 function printGeometryForSize(trimWpt: number, trimHpt: number, opts: ExportOpts, paletteSource: BrandPaletteEntry[] | undefined): PrintGeometry | null {
   const bleedDim = parseDimension(opts.bleed);
   const bleedPt = bleedDim ? toPoints(bleedDim) : 0;
@@ -5090,7 +5096,7 @@ function printGeometryForSize(trimWpt: number, trimHpt: number, opts: ExportOpts
   return computePrintGeometry({ trimWpt, trimHpt, bleedPt, marks, palette, barStyle: opts.barStyle, barRadiusPt: opts.barRadiusPt });
 }
 
-// The whole-export geometry (the node's own box). One marks-building path only —
+// The whole-export geometry (the node's own box). One marks-building path only - 
 // see engine/src/print-marks.ts for the geometry, the single source of truth.
 function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPaletteEntry[] | undefined = opts.palette): PrintGeometry | null {
   const d = exportDims(node, opts);
@@ -5115,14 +5121,14 @@ async function renderArtworkPdf(node: Element, opts: ExportOpts, geo: PrintGeome
   const pageH = geo ? geo.page.h : trimH;
   const art   = geo ? geo.artwork : { x: 0, y: 0, w: trimW, h: trimH };
 
-  // orientation must be derived from the actual dimensions — jsPDF's default
+  // orientation must be derived from the actual dimensions - jsPDF's default
   // 'portrait' mode swaps format[0] and format[1] when width > height, which
   // would produce an inverted page with all drawHtmlVectors coordinates wrong.
   const orientation = pageW >= pageH ? 'landscape' : 'portrait';
 
   // A non-empty opts.password locks the PDF on open via jsPDF's standard security
   // handler (user = owner password; printing-only permissions). Only the plain
-  // RGB path with NO print finishing encrypts — print marks/boxes are applied in
+  // RGB path with NO print finishing encrypts - print marks/boxes are applied in
   // pdf-lib, which can't write encrypted PDFs, so the two are mutually exclusive
   // (the UI hides the password field when marks/bleed are on). `undefined` is a
   // no-op (jsPDF treats it as unencrypted).
@@ -5161,18 +5167,18 @@ function applyPdfMeta(pdf: any, m: ExportMeta | null | undefined): void {
   });
 }
 
-// Strong tier — AES-256 (R6 / ISO 32000-2) applied as a FINAL encrypt-last pass
+// Strong tier - AES-256 (R6 / ISO 32000-2) applied as a FINAL encrypt-last pass
 // over already-finished PDF bytes. Unlike the jsPDF-native 40-bit RC4 `password`
 // (which must be built into an unfinished document), this reopens the finished
 // bytes with pdf-lib and encrypts every string/stream, so it composes with the
 // PDF/X-4 / CMYK / print-marks finishing passes. The engine owns the crypto
-// (buildEncryptDictValues / encryptObjectBytes — DOM-free, byte-vector-tested);
+// (buildEncryptDictValues / encryptObjectBytes - DOM-free, byte-vector-tested);
 // this function owns the pdf-lib object walk + /Encrypt dict assembly. R6 uses one
 // file key for every object (no per-object derivation) and a fresh IV per object.
 async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
   const { PDFDocument, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFDict, PDFArray } =
     await import('pdf-lib') as any;
-  // updateMetadata:false — the finished bytes already carry Lolly's /Producer +
+  // updateMetadata:false - the finished bytes already carry Lolly's /Producer +
   // dates (from applyPdfX / renderCmykPdf); pdf-lib would otherwise overwrite them
   // with "pdf-lib …" + the load time, which we'd then encrypt into the file (and it
   // would disagree with the still-Lolly XMP). Same guard finishPdfX uses.
@@ -5206,9 +5212,9 @@ async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
   idArr.push(PDFHexString.of(hexU(rnd(16))));
   idArr.push(PDFHexString.of(hexU(rnd(16))));
 
-  // The /Encrypt dict — its own strings (U/O/UE/OE/Perms) are stored raw, so it is
+  // The /Encrypt dict - its own strings (U/O/UE/OE/Perms) are stored raw, so it is
   // registered AFTER the encryption walk (below), never encrypted. /Length is 256
-  // (BITS) at top level but 32 (BYTES) inside the crypt filter — the classic trap.
+  // (BITS) at top level but 32 (BYTES) inside the crypt filter - the classic trap.
   const encDict = ctx.obj({
     Filter: 'Standard', V: 5, R: 6, Length: 256, P,
     U: PDFHexString.of(hexU(vals.U)),
@@ -5220,7 +5226,7 @@ async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
     StmF: 'StdCF', StrF: 'StdCF', EncryptMetadata: true,
   });
 
-  // Encrypt every string (→ PDFHexString, which serialises verbatim — PDFString
+  // Encrypt every string (→ PDFHexString, which serialises verbatim - PDFString
   // does not escape binary) and every stream body. Same file key, fresh IV each.
   const encStr = async (o: any): Promise<any> =>
     PDFHexString.of(hexU(await encryptObjectBytes(fileKey, rnd(16), o.asBytes())));
@@ -5260,7 +5266,7 @@ async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
 }
 
 // Exported for the shadow-fidelity harness (export-pdf-shadow-fidelity.test.ts),
-// which needs real PDF bytes to rasterise and diff — a recording mock cannot answer
+// which needs real PDF bytes to rasterise and diff - a recording mock cannot answer
 // "does this LOOK like the browser". Not part of the bridge surface; callers go
 // through createExportAPI.
 export async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> {
@@ -5295,7 +5301,7 @@ export async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> 
   // `password` tier and with C2PA (enforced in the UI + stampC2pa). Encryption is
   // the last byte op EXCEPT C2PA, which is skipped whenever a password is set.
   if (opts.strongPassword) blob = await encryptPdfStrong(blob, opts.strongPassword);
-  // Content Credentials are applied by renderFormat AFTER this returns — the
+  // Content Credentials are applied by renderFormat AFTER this returns - the
   // stamp must remain the LAST byte operation on the finished blob.
   return blob;
 }
@@ -5314,7 +5320,7 @@ function describeDimensions(d: ExportDims): string {
 // Export environment for the `tools.lolly.export` assertion: the "where / when /
 // how big / from what" record. Browser ENGINE family + major version and OS
 // family (deliberately far short of a fingerprint), the export date, the output
-// size, and the runtime-supplied scalar-input digest — enough that an inspected
+// size, and the runtime-supplied scalar-input digest - enough that an inspected
 // asset tells its own story without leaking a device fingerprint.
 function c2paEnvironment(format: string, opts: ExportOpts, dimensions?: string): Record<string, unknown> {
   const ua = navigator.userAgent || '';
@@ -5352,7 +5358,7 @@ function c2paAuthor(meta: ExportMeta | null | undefined): { name: string; email?
 }
 
 // User-asserted IP → the signed manifest's dc:rights (engine c2pa.ts). Combines the
-// © notice + any licence into one line. Empty on ordinary exports — only tools that
+// © notice + any licence into one line. Empty on ordinary exports - only tools that
 // declare bindToMeta copyright/license (embed-track-image) populate meta.copyright/
 // meta.license, so a normal render never asserts rights it can't stand behind.
 function c2paRights(meta: ExportMeta | null | undefined): string | undefined {
@@ -5360,15 +5366,15 @@ function c2paRights(meta: ExportMeta | null | undefined): string | undefined {
   return r || undefined;
 }
 
-// Content Credentials (opts.c2pa) — a signed C2PA manifest embedded into the
+// Content Credentials (opts.c2pa) - a signed C2PA manifest embedded into the
 // finished bytes of any supported container (pdf, png/apng, jpg, gif, svg,
 // tiff, webp). Signed with the enrolled identity's device key + Lolly-CA cert
-// when one is valid (host.identity — see docs/content-credentials-identity.md),
+// when one is valid (host.identity - see docs/content-credentials-identity.md),
 // else an ephemeral on-device key whose validity window is the user's
-// opts.c2paDays pick (7/30/90/365, default 30) — viewers report that path as
+// opts.c2paDays pick (7/30/90/365, default 30) - viewers report that path as
 // unverified. An encrypted PDF can't take the update, so a password wins; any
 // other cannot-attach case ('C2PA embed: …') logs and ships the un-stamped
-// file — a credential failure must never fail the export.
+// file - a credential failure must never fail the export.
 async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimensions?: string): Promise<Blob> {
   if ((opts.password || opts.strongPassword) && (format === 'pdf' || format === 'pdf-cmyk')) {
     _host?.log?.('info', 'pdf: password-locked export — skipping Content Credentials (an encrypted document cannot take the C2PA update)');
@@ -5376,10 +5382,10 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
   }
   try {
     // Ephemeral cert window = the user's lifetime pick (clamped; default 30
-    // days). Ignored when an enrolled signer is present — its CA-issued cert
+    // days). Ignored when an enrolled signer is present - its CA-issued cert
     // carries its own window, fixed at enrolment.
     const days = [7, 30, 90, 365].includes(Number(opts.c2paDays)) ? Number(opts.c2paDays) : 30;
-    // Honest action history from what THIS export actually did — the pipeline
+    // Honest action history from what THIS export actually did - the pipeline
     // signals are all on opts/format, so nothing extra needs threading out of
     // the per-format renderers. Each genuine transformation gets its own,
     // individually-described step (task: "as granular as possible") rather than
@@ -5392,8 +5398,8 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
     if (opts.colorBars) marks.push('a colour bar');
     // The durable in-pixel watermark runs two ways: unconditionally for the
     // canvas-based raster encoders (renderRaster/renderBitmap/renderTiff's
-    // opts.imprint branch — imprintCapable formats always carry it), and — for
-    // a CONTAINER format (pdf) — only when a Lolly-rendered raster was actually
+    // opts.imprint branch - imprintCapable formats always carry it), and - for
+    // a CONTAINER format (pdf) - only when a Lolly-rendered raster was actually
     // composited in and marked (imprintEmbedCanvas flipped _imprintSink.applied).
     // A pure-vector page (e.g. a QR PDF) marks nothing, so it must NOT claim: gate
     // the container case on the applied flag, never on the format alone.
@@ -5411,7 +5417,7 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       // so passing it through here keeps the "text is a real edit" gate intact.
       ...(opts.c2paTextAdded ? { textAdded: true, textSample: opts.c2paTextAdded.sample } : {}),
       // The runtime sets c2paAiUpscale when the render's essence is an on-device
-      // AI-upscaled asset — created → compositeWithTrainedAlgorithmicMedia + a step
+      // AI-upscaled asset - created → compositeWithTrainedAlgorithmicMedia + a step
       // naming the model. Honest AI disclosure, surfaced on /verify automatically.
       ...(opts.c2paAiUpscale ? { aiUpscale: opts.c2paAiUpscale } : {}),
     });
@@ -5434,10 +5440,10 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
 // The shared signing core behind stampC2pa and stampDerivedC2pa: enrolled
 // signer when available (else the engine's ephemeral self-signed default with
 // a bounded validity window), one embedC2pa call, Blob back out. Throws on
-// failure — callers decide whether a missing credential may fail the export
+// failure - callers decide whether a missing credential may fail the export
 // (they don't: both wrap in try/catch and ship the un-stamped bytes).
 // `host` defaults to the module-level _host, which is only wired once
-// createExportAPI has run — callers that can reach this module before any
+// createExportAPI has run - callers that can reach this module before any
 // export (the catalog's download path) pass their host explicitly.
 async function signAndEmbedC2pa(blob: Blob, format: string, o: {
   title?: string;
@@ -5449,7 +5455,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
   ingredients?: IngredientCredential[];
   days?: number;
 }, host: WebHost | null = _host): Promise<Blob> {
-  // Enrolled-identity signer (device key + CA cert, see bridge/identity.js) —
+  // Enrolled-identity signer (device key + CA cert, see bridge/identity.js) - 
   // null when not enrolled or the cert is out of validity, in which case the
   // engine's ephemeral self-signed default applies unchanged.
   let signer: any = null;
@@ -5471,14 +5477,14 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
 }
 
 /**
- * Content Credentials for a DERIVED asset — a catalog/library file the user
+ * Content Credentials for a DERIVED asset - a catalog/library file the user
  * modified on the way out (icon recolour, photo colour treatment, crop,
  * re-encode) rather than a tool render. The caller supplies the honest action
  * history (engine C2paActionInput steps; when `ingredients` carry the source's
  * own credential the engine prepends a c2pa.opened step per ingredient, so the
  * list should NOT claim c2pa.created) and a transform-detail map recorded
  * under the tools.lolly.export assertion's `inputs`. Authorship follows the
- * profile's "Use my details" opt-in, exactly like tool exports. Never throws —
+ * profile's "Use my details" opt-in, exactly like tool exports. Never throws - 
  * an un-stampable format or a signing failure logs and returns the original
  * bytes, because a credential failure must never fail a download.
  *
@@ -5487,7 +5493,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
  * module-level _host via createExportAPI.
  */
 export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string, o: {
-  /** dc:title for the manifest — usually the asset's display name. */
+  /** dc:title for the manifest - usually the asset's display name. */
   title?: string;
   /** Where this happened, for the export assertion's `tool` (default 'Catalog'). */
   tool?: string;
@@ -5524,23 +5530,23 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
  * manifest into finished bytes and returns them. Two honest modes, chosen by
  * `o` (see C2paSignOpts):
  *
- *  • `'redacted'` (default when no author/rights/ingredients given) — a derivative
+ *  • `'redacted'` (default when no author/rights/ingredients given) - a derivative
  *    with content removed. NO ingredients (an ingredient box can carry a thumbnail
  *    of the un-redacted original), so it signs as a new work: c2pa.created + a
  *    c2pa.redacted step + the closing render/encode. The original redact path.
  *
- *  • `'imported'` (default when author/rights/ingredients ARE given) — the any-media
+ *  • `'imported'` (default when author/rights/ingredients ARE given) - the any-media
  *    authorship path. The essence was authored elsewhere and is preserved byte-for-
  *    byte; Lolly only splices in a manifest asserting the artist's author/©/licence.
  *    So it must NOT claim c2pa.created or a render/convert step. When `o.ingredients`
  *    carry manifests already inside the file (a document-level PDF manifest, a signed
  *    raster element, a signed video track) the engine prepends a c2pa.opened per
- *    ingredient and the claim reads as an edit of prior work — the nested credential
+ *    ingredient and the claim reads as an edit of prior work - the nested credential
  *    survives and is referenced, never orphaned. Explicit author/rights override the
  *    profile; absent, they fall back to the opted-in profile identity.
  *
  * Unlike stampDerivedC2pa this THROWS on an unstampable format or a signing
- * failure — the signature is an explicit user opt-in, so silently shipping
+ * failure - the signature is an explicit user opt-in, so silently shipping
  * unsigned bytes would misreport what the user asked for.
  */
 export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: string, o: C2paSignOpts = {}): Promise<Uint8Array> {
@@ -5557,7 +5563,7 @@ export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: str
 
   let actions: C2paActionInput[];
   if (imported) {
-    // The essence is preserved, not rendered — no c2pa.created and no convert step.
+    // The essence is preserved, not rendered - no c2pa.created and no convert step.
     // The engine prepends a c2pa.opened per preserved ingredient (o.ingredients),
     // so here we only describe the metadata/authorship edit (and the imprint, if the
     // caller stamped one into the raster before signing).
@@ -5586,7 +5592,7 @@ export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: str
  * engine's `C2PA_FORMATS` (asserted by tests/capture-clip-provenance.test.ts), so a
  * capture path never has to guess whether the credential will land: png for a
  * screenshot, mp4/webm for footage, and the four audio containers a voice/screen take
- * can arrive in — m4a (ISO BMFF, the `audio/mp4` AAC MediaRecorder writes), webm
+ * can arrive in - m4a (ISO BMFF, the `audio/mp4` AAC MediaRecorder writes), webm
  * (Matroska-wrapped Opus), ogg (Ogg Opus, what Firefox writes), plus mp3 and wav for
  * an on-device transcode of the take.
  */
@@ -5598,7 +5604,7 @@ export type CaptureFormat = (typeof CAPTURE_FORMATS)[number];
  * recorder names its output by MIME and the credential is placed by CONTAINER, and
  * the two do not line up one-to-one: `audio/mp4` is an M4A (the engine's `m4a` placer
  * writes `audio/mp4` into the manifest, `mp4` would claim `video/mp4`), `audio/ogg` is
- * Ogg Opus (the OpusTags comment header), and `audio/webm;codecs=opus` is Matroska —
+ * Ogg Opus (the OpusTags comment header), and `audio/webm;codecs=opus` is Matroska - 
  * NOT the Ogg one, despite the codec name. Null means the engine has no embedder for
  * it, which is the caller's cue to save unsigned rather than to lie about the bytes.
  */
@@ -5607,7 +5613,7 @@ export function captureContainer(mimeType: string): CaptureFormat | null {
   const audio = t.startsWith('audio/');
   if (t.includes('webm') || t.includes('matroska')) return 'webm';       // before opus: audio/webm;codecs=opus is Matroska
   if (t.includes('mp4') || t.includes('m4a') || t.includes('aac')) return audio ? 'm4a' : 'mp4';
-  if (audio && (t.includes('ogg') || t.includes('opus'))) return 'ogg';  // video/ogg has no placer — falls through to null
+  if (audio && (t.includes('ogg') || t.includes('opus'))) return 'ogg';  // video/ogg has no placer - falls through to null
   if (audio && (t.includes('mpeg') || t.includes('mp3'))) return 'mp3';
   if (audio && t.includes('wav')) return 'wav';
   if (t.includes('png')) return 'png';
@@ -5615,25 +5621,25 @@ export function captureContainer(mimeType: string): CaptureFormat | null {
 }
 
 /**
- * Content Credentials for a freshly CAPTURED clip — a recorder tool's live camera
+ * Content Credentials for a freshly CAPTURED clip - a recorder tool's live camera
  * or microphone take (added engine v1.35), or a screenshot / screen recording
  * (v1.54). Signs the raw bytes so the file self-asserts (the created step is IPTC
- * `digitalCapture` for a sensor, `screenCapture` for a display — never the wrong one
+ * `digitalCapture` for a sensor, `screenCapture` for a display - never the wrong one
  * of the two; on-device Lolly either way) and, placed into a composition, chains as a
  * credentialed ingredient. Returns the stamped blob PLUS the extracted manifest
  * store, because a `user/` asset's credential lookup reads the STORED store, not the
- * file's bytes — the caller persists it on the asset record (mirroring the
- * upload-ingest path). `format` is a `CaptureFormat` — every container the engine can
+ * file's bytes - the caller persists it on the asset record (mirroring the
+ * upload-ingest path). `format` is a `CaptureFormat` - every container the engine can
  * embed into, AUDIO INCLUDED: an audio take is credentialed exactly like a video one
  * (this used to be typed mp4/webm/png only, which is why voice takes were the one
- * capture shipping unsigned — a signature artifact, never a capability gap).
- * Never throws — a stamping failure returns the original blob + a null credential,
+ * capture shipping unsigned - a signature artifact, never a capability gap).
+ * Never throws - a stamping failure returns the original blob + a null credential,
  * so a take is never lost to a provenance hiccup.
  */
 export async function stampCaptureClip(host: HostV1, blob: Blob, format: CaptureFormat, o: {
   camera?: boolean;
   microphone?: boolean;
-  /** A display was captured, not a sensor — swaps the created step to IPTC screenCapture. */
+  /** A display was captured, not a sensor - swaps the created step to IPTC screenCapture. */
   screen?: boolean;
   dimensions?: string;
   /** The take was re-encoded on device on the way out (the voice recorder's "Save MP3"),
@@ -5641,7 +5647,7 @@ export async function stampCaptureClip(host: HostV1, blob: Blob, format: Capture
   transcoded?: boolean;
 }): Promise<{ blob: Blob; credential: { store: Uint8Array; format: string } | null }> {
   // Screen first: a narrated screen recording is a screen capture WITH a mic track, not
-  // a microphone recording — claiming the latter would say the file is a record of the
+  // a microphone recording - claiming the latter would say the file is a record of the
   // room. The mic is still named, since it did capture the room's sound.
   const description = o.screen ? (o.microphone ? 'Captured from the screen with microphone narration' : 'Captured from the screen')
     : o.camera && o.microphone ? 'Recorded live from the camera and microphone'
@@ -5674,11 +5680,11 @@ export async function stampCaptureClip(host: HostV1, blob: Blob, format: Capture
 
 // Render a sequence of [data-pdf-page] DOM nodes into one multi-page PDF. Each
 // page is sized to its own CSS box (layout px → PDF points at the CSS 96-DPI
-// convention), so a tool that lays out fixed-size page boxes — the height
-// matching the export page height — gets one true PDF page per box. Each box is
+// convention), so a tool that lays out fixed-size page boxes - the height
+// matching the export page height - gets one true PDF page per box. Each box is
 // drawn at (0,0) in its own page via drawHtmlVectors, whose coordinate origin is
 // the node it's handed, so a page is rendered correctly regardless of where it
-// sits in the scrolled/stacked document. A password locks the document on open —
+// sits in the scrolled/stacked document. A password locks the document on open - 
 // this path can always encrypt (no print geometry), at the cost of the pdf-lib
 // PDF/X finishing pass. Print marks/bleed are not applied here; a tool that
 // emits page boxes opts out of the print-finishing card (render.printMarks:false).
@@ -5701,7 +5707,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   const orientOf = (w: number, h: number) => (w >= h ? 'landscape' : 'portrait');
 
   // Per-page print geometry. The null gate in printGeometryForSize reads only opts,
-  // so geo-ness is UNIFORM across pages — hasGeo decides encryption + finishing up
+  // so geo-ness is UNIFORM across pages - hasGeo decides encryption + finishing up
   // front, and only the numeric box/mark values scale with each page's own size.
   const bleedPtCheck = (() => { const b = parseDimension(opts.bleed); return b ? toPoints(b) : 0; })();
   const hasGeo = bleedPtCheck > 0 || Boolean(opts.cropMarks) || Boolean(opts.registrationMarks) || Boolean(opts.bleedMarks) || Boolean(opts.colorBars) || Boolean(opts.provenance);
@@ -5731,7 +5737,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
     const pageH = g ? g.page.h : size.h;
     if (i > 0) pdf.addPage([pageW, pageH], orientOf(pageW, pageH));
     // The artwork (trim-size element) is drawn into the bleed box, so it scales up to
-    // cover the bleed — exactly the single-page renderArtworkPdf behaviour, per page.
+    // cover the bleed - exactly the single-page renderArtworkPdf behaviour, per page.
     const art = g ? g.artwork : { x: 0, y: 0, w: size.w, h: size.h };
     // An SVG-rooted page walks as vectors (mirrors renderArtworkPdf); otherwise the
     // HTML page walks via drawHtmlVectors. Common case here is HTML page boxes.
@@ -5742,7 +5748,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   }
   const blob = pdf.output('blob');
   if (opts.password && !hasGeo) {
-    // jsPDF encryption and pdf-lib post-processing are mutually exclusive — a
+    // jsPDF encryption and pdf-lib post-processing are mutually exclusive - a
     // locked multi-page document ships without the PDF/X-4 finishing pass.
     _host?.log?.('info', 'pdf: password-locked export — skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
     return blob;
@@ -5760,7 +5766,7 @@ const pdfxLog = (level: 'debug' | 'info' | 'warn' | 'error', msg: string): void 
 };
 
 // The user's own profile for this export, or null. Only ever consulted for an
-// `own` / `own:<digest>` selection — every registry-name condition resolves to
+// `own` / `own:<digest>` selection - every registry-name condition resolves to
 // null and produces exactly the file it produced before. A miss (profile deleted,
 // unreadable, or not an eligible output profile) is also null, and the pass then
 // writes no intent rather than declaring a condition nobody chose.
@@ -5773,7 +5779,7 @@ async function embeddedProfile(colorProfile: string | undefined): Promise<EmbedR
 // print geometry is supplied) and the PDF/X-4 metadata set. Subsumes the old
 // finishPrintPdf so the plain RGB path loads pdf-lib exactly once; the CMYK path
 // has its own pdf-lib pass and calls applyPdfX inside it (see renderCmykPdf).
-// Never fed an encrypted blob — pdf-lib can't reopen jsPDF's RC4 output.
+// Never fed an encrypted blob - pdf-lib can't reopen jsPDF's RC4 output.
 async function finishPdfX(
   blobOrBytes: Blob | Uint8Array, opts: ExportOpts,
   { intentKind = 'srgb', geo = null, geos = null, space = 'rgb', labels = null }:
@@ -5783,7 +5789,7 @@ async function finishPdfX(
   const bytes = blobOrBytes instanceof Uint8Array
     ? blobOrBytes
     : new Uint8Array(await blobOrBytes.arrayBuffer());
-  // updateMetadata:false — pdf-lib would otherwise stamp itself as Producer on
+  // updateMetadata:false - pdf-lib would otherwise stamp itself as Producer on
   // load; applyPdfX writes the document's real dates/producer below.
   const pdfDoc = await PDFDocument.load(bytes, { updateMetadata: false });
   // Marks + boxes per page. The single-page caller passes one `geo` (page 0); the
@@ -5857,7 +5863,7 @@ async function drawPrintMarks(page: any, geo: PrintGeometry, { space = 'rgb', la
     page.drawLine({ start: { x: ln.x1, y: fy(ln.y1) }, end: { x: ln.x2, y: fy(ln.y2) }, thickness: w, color: markColor });
   }
   for (const c of geo.primitives.circles) {
-    // borderColor without `color` strokes a ring (no fill) — see pdf-lib drawEllipse.
+    // borderColor without `color` strokes a ring (no fill) - see pdf-lib drawEllipse.
     page.drawCircle({ x: c.cx, y: fy(c.cy), size: c.r, borderWidth: w, borderColor: markColor });
   }
   for (const b of geo.primitives.bars) {
@@ -5876,7 +5882,7 @@ async function drawPrintMarks(page: any, geo: PrintGeometry, { space = 'rgb', la
     }
     page.drawRectangle({ x: b.x, y: fy(b.y + b.h), width: b.w, height: b.h, color: fill });
   }
-  // Provenance text — only the engine's anchors that the caller supplied a string
+  // Provenance text - only the engine's anchors that the caller supplied a string
   // for. Helvetica (a standard-14 font: referenced, not embedded) keeps it light.
   const slots = (geo.primitives.labels ?? []).filter(l => labels?.[l.slot]);
   if (slots.length) {
@@ -5908,7 +5914,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
   let sy = regionH / vbH;
   // Honour the SVG's preserveAspectRatio when its viewBox aspect differs from the
   // target region. Tools like Diagram Builder size the viewBox to the diagram's own
-  // bounds (not the fixed export page), so the browser — and the SVG export — letterbox
+  // bounds (not the fixed export page), so the browser - and the SVG export - letterbox
   // the artwork via the default "xMidYMid meet". Without this the walker filled the page
   // with a NON-uniform scale (sx≠sy), stretching the diagram vs. the on-screen preview.
   // 'none' keeps the legacy stretch-to-fill; meet/slice + x/y alignment follow the SVG
@@ -5927,8 +5933,8 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
   // jsPDF compat mode has no axial/radial shading, and a url(#…) fill resolves to null
   // → the shape simply VANISHES. Rasterise the whole subtree to an alpha-preserved PNG
   // and drop it into the SAME PAR-fitted box the vectors would occupy. drawHtmlVectors
-  // already does this for an inline <svg>; centralising it here means EVERY entry point —
-  // a Lolly tool embedded as an <img>, artwork / multi-page PDFs, a nested <image> —
+  // already does this for an inline <svg>; centralising it here means EVERY entry point - 
+  // a Lolly tool embedded as an <img>, artwork / multi-page PDFs, a nested <image> - 
   // keeps its shading instead of only the inline case. Solid-fill SVGs (qr, brand-lockup)
   // match nothing here and stay crisp vector. (bag-video's gradient Geeko is the canon case.)
   if (svgEl.querySelector?.('linearGradient, radialGradient, filter, pattern')) {
@@ -5945,7 +5951,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
 
   let nodesWalked = 0;
   const YIELD_NODES = 200;
-  // <use> expansion depth — bounds a <use> chain (or a self/mutually referential one)
+  // <use> expansion depth - bounds a <use> chain (or a self/mutually referential one)
   // so a malformed SVG can't recurse without end. 8 is far beyond any real nesting.
   let useDepth = 0;
   const MAX_USE_DEPTH = 8;
@@ -5962,7 +5968,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
         tag === 'radialgradient' || tag === 'symbol') return;
 
     // Compose this element's OWN transform (translate/scale/rotate) onto the inherited
-    // CTM — applied to CONTAINERS and LEAF drawables alike. brand-lockup lays its whole
+    // CTM - applied to CONTAINERS and LEAF drawables alike. brand-lockup lays its whole
     // lockup out as sibling <path transform="translate()/scale()"> with no wrapping <g>,
     // so unless a leaf's own transform is honoured here every glyph run and the chameleon
     // collapse onto the origin at native scale when the lockup is embedded as an image and
@@ -5993,14 +5999,14 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     const PY = (v: number) => oy + ((ty + sY * v) - vbY) * sy;
     const LW = (v: number) => v * sX * sx;
     const LH = (v: number) => v * sY * sy;
-    // Stroke width / font scaling: group scale × region scale — EXCEPT for
+    // Stroke width / font scaling: group scale × region scale - EXCEPT for
     // vector-effect:non-scaling-stroke (e.g. street-map roads), whose stroke keeps
     // its user-unit width through the group transform, so region scale only.
     const strokeMul = (e: any) =>
       ((e.getAttribute('vector-effect') || resolveStyleProp(e, 'vector-effect')) === 'non-scaling-stroke' ? 1 : gAvg) * rAvg;
 
     // Resolve fill + stroke (with opacity) for a basic shape, mirroring the
-    // <path> branch — so a stroked <rect>/<circle> keeps its border in PDF.
+    // <path> branch - so a stroked <rect>/<circle> keeps its border in PDF.
     // (Previously rect/circle were fill-only: a card whose fill matches the page,
     // distinguished only by its border, exported as an invisible box. The EMF/EPS
     // walker in svg-ir.js already routes rect/circle through its path logic, so
@@ -6021,7 +6027,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       return { fillRgb, strokeRgb, lw };
     };
 
-    // Paint + draw any shape expressed as an SVG `d` — shared by <path> and the shapes
+    // Paint + draw any shape expressed as an SVG `d` - shared by <path> and the shapes
     // that reduce to a path (<polygon>/<polyline>/<ellipse>). Resolves fill/stroke with
     // currentColor + computed-style fallback, per-element + fill/stroke opacity, and
     // fill-rule exactly as the <path> branch always has, so the added shapes match it.
@@ -6056,7 +6062,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       restoreStroke?.();
     };
 
-    // Render this element — leaf geometry, or a container's children — under any own
+    // Render this element - leaf geometry, or a container's children - under any own
     // rotation. Translate/scale are already folded into tx/ty/sX/sY above; a rotate()
     // (d3.zoom groups, pose-geeko's articulated limbs) is applied about its pivot via
     // the PDF matrix, wrapping the whole subtree. Skew/matrix() are not handled.
@@ -6124,7 +6130,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     if (tag === 'text') {
       // Draw ONE run (the <text> itself, or one <tspan>) at (userX,userY) in the element's
       // own style, then return its advance in USER units. Font props: attribute first, else
-      // the COMPUTED style — tools that set the typeface/size/weight via CSS (chart-creator/d3
+      // the COMPUTED style - tools that set the typeface/size/weight via CSS (chart-creator/d3
       // → SUSE) otherwise fell back to Helvetica at the default size. Advance uses the
       // browser's measured getComputedTextLength (a length → maps like the x attrs); jsPDF's
       // width is the fallback. Baseline y matches jsPDF's default (SVG y IS the baseline).
@@ -6164,7 +6170,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
 
       const nodes = el.childNodes ? [...el.childNodes] : [];
       const hasTspan = nodes.some((n: any) => n.nodeType === 1 && n.tagName?.toLowerCase() === 'tspan');
-      // Plain <text> (no tspans): one run at the text's own x/y — unchanged behaviour.
+      // Plain <text> (no tspans): one run at the text's own x/y - unchanged behaviour.
       if (!hasTspan) {
         await drawRun(el, el.textContent ?? '', svgLen(el.getAttribute('x'), vbW), svgLen(el.getAttribute('y'), vbH), el.getAttribute('text-anchor') ?? 'start');
         return;
@@ -6195,13 +6201,13 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
 
     // Fill/stroke fall back to the COMPUTED paint (not a literal black), so a path that
     // inherits its colour from an ancestor group (e.g. logo-wall's one-ink <g fill="ink">)
-    // or uses currentColor resolves correctly in PDF instead of rendering black —
+    // or uses currentColor resolves correctly in PDF instead of rendering black - 
     // getComputedStyle resolves SVG inheritance on the live DOM. (See drawShapeD.)
     if (tag === 'path') { drawShapeD(el, el.getAttribute('d') ?? ''); return; }
 
     // <ellipse> / <polygon> / <polyline> reduce to a `d` and paint through the same path
     // pipeline. Previously they fell through to the generic child-recurse and were
-    // silently DROPPED from PDF output — real geometry loss for filter-voronoi (all
+    // silently DROPPED from PDF output - real geometry loss for filter-voronoi (all
     // polygons), org-chart / diagram-builder connectors, multi-page-pdf, etc. The
     // EMF/EPS/DXF walker (svg-ir.ts) has always drawn them via the same reduction.
     if (tag === 'ellipse') {
@@ -6230,7 +6236,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       const h = LH(svgLen(el.getAttribute('height'), vbH));
       if (w <= 0 || h <= 0) return;
 
-      // An <image> pointing at an SVG (e.g. the brand logo) must stay VECTOR —
+      // An <image> pointing at an SVG (e.g. the brand logo) must stay VECTOR - 
       // jsPDF.addImage can't embed SVG. Inline it and recurse, honouring the
       // <image>'s preserveAspectRatio (meet → fit the whole mark, centred).
       // SVG-ness is detected from the bytes (asset URLs are blob: with no hint).
@@ -6252,7 +6258,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
               fx = x + (w - fw) / 2; fy = y + (h - fh) / 2;
             }
             // A nested <image href> is a REFERENCED asset (a user logo/photo), not
-            // Lolly-rendered content — never imprint it (KEY PRINCIPLE). Its own
+            // Lolly-rendered content - never imprint it (KEY PRINCIPLE). Its own
             // gradient/filter rasterisation fallback stays unmarked (imprint omitted).
             await drawSvgVectorsInRegion(pdf, inner, fx, fy, fw, fh, registeredFonts);
           }
@@ -6325,7 +6331,7 @@ function resolveStyleProp(el: any, prop: string): string | null {
 
 // Rasterise a CSS linear- or radial-gradient fill to a PNG data URL at pxW×pxH. jsPDF's
 // compat-mode API has no vector shading (patterns need advancedAPI, which flips the
-// coordinate system), so the PDF walker embeds this bounded bitmap as the box background —
+// coordinate system), so the PDF walker embeds this bounded bitmap as the box background - 
 // faithful multi-stop + angle and alpha-correct (unlike the old flat-midpoint solid),
 // reusing the SAME build{Linear,Radial}GradientEl the SVG walker emits so both paths agree.
 // `w`/`h` are the box size in CSS px. Returns null when the value isn't a parseable
@@ -6356,7 +6362,7 @@ async function gradientPng(bgImg: string, w: number, h: number, pxW: number, pxH
   return rasterizeSvgElement(svg, pxW, pxH, false, imprint);
 }
 
-// Rasterise ONE outer box-shadow (shape only — never the element's content/text) to a
+// Rasterise ONE outer box-shadow (shape only - never the element's content/text) to a
 // PNG for the PDF walker: jsPDF has no blur primitive, so a soft shadow is embedded as a
 // bounded shadow-only bitmap behind the box, mirroring the SVG walker's feGaussianBlur
 // shape (makeRoundedFill + the identical stdDeviation = blur/2). Returns the PNG plus the
@@ -6368,7 +6374,7 @@ async function gradientPng(bgImg: string, w: number, h: number, pxW: number, pxH
  * Same geometry the SVG walker emits (which measures 0.02% against the browser): the
  * region between the border box and an offset, spread-shrunken copy of it, as one
  * evenodd path, blurred and clipped to the box. PDF has no blur operator, so unlike
- * SVG this has to be baked — but baking a shadow is a far smaller compromise than
+ * SVG this has to be baked - but baking a shadow is a far smaller compromise than
  * baking the element, and it is the mechanism the soft OUTER shadow already uses here.
  */
 /**
@@ -6401,7 +6407,7 @@ async function rasterizeTextShadow(
   defs.appendChild(filt);
   svg.appendChild(defs);
   // Outlined glyphs when the caller has them; otherwise an SVG <text> in the run's
-  // own font. The raster happens in the browser, so the page's fonts resolve — this
+  // own font. The raster happens in the browser, so the page's fonts resolve - this
   // is the same shape the run itself takes when text-to-path is unavailable.
   let p: Element;
   if ('d' in glyphs) {
@@ -6517,7 +6523,7 @@ async function rasterizeBoxShadow(
   }
   svg.appendChild(shape);
   // Per-axis density (points→px) so the bitmap hits RASTER_DPI in the placed PT region,
-  // not RASTER_DPI/scale — the region is placed at rw*scaleX × rh*scaleY pt.
+  // not RASTER_DPI/scale - the region is placed at rw*scaleX × rh*scaleY pt.
   const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rw * dprX)));
   const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rh * dprY)));
   const png = await rasterizeSvgElement(svg, pxW, pxH, false, imprint);
@@ -6533,7 +6539,7 @@ async function rasterizeBoxShadow(
 //   • block-level leaf text → pdf.text() with computed font/color/align
 //
 // Font: custom webfonts (e.g. SUSE) are approximated with Helvetica. Text is
-// still selectable/searchable vector — only the typeface differs from screen.
+// still selectable/searchable vector - only the typeface differs from screen.
 // Transparency: jsPDF fills are opaque; semi-transparent CSS colors render at
 // full opacity (acceptable approximation for brand colours).
 // Rasterise a live <svg> subtree (inner <style> + gradients intact) to a PNG
@@ -6542,8 +6548,8 @@ async function rasterizeBoxShadow(
 // fills). `flipX` mirrors horizontally to honour a scaleX(-1) CSS transform.
 // Neutralise DOCUMENT-LAYOUT style on a root SVG that is about to be serialised and
 // loaded standalone as an <img> for rasterisation. A caller (the <img>→SVG branch)
-// positions the live element off-screen — style="position:absolute;left:-99999px;…;
-// width:Npx;height:Mpx" — so its computed fills resolve for the vector walk. That style
+// positions the live element off-screen - style="position:absolute;left:-99999px;…;
+// width:Npx;height:Mpx" - so its computed fills resolve for the vector walk. That style
 // must NOT ride into the raster: as a standalone image, left:-99999px shifts the WHOLE
 // artwork off the raster (→ a blank PNG, which is how bag-video's gradient Geeko vanished
 // from every PDF export), and a style width/height overrides the sizing attributes the
@@ -6588,25 +6594,25 @@ const MAX_RASTER_PX = 2000;   // per-side cap for the vector escape-hatch (match
 // How much already-painted content a single `backdrop-filter: blur()` may duplicate.
 // The backdrop is reconstructed by copying what sits behind the element, so a blurred
 // bar late in a busy page copies most of that page. Past this, the element falls back
-// to the raster hatch — a wrong-but-bounded answer beats an unbounded correct one.
+// to the raster hatch - a wrong-but-bounded answer beats an unbounded correct one.
 const BACKDROP_MAX_NODES = 400;
 const RASTER_DPI = 200;       // resolution for the PDF escape-hatch (points × RASTER_DPI/72)
 
-// Rasterise ONE live element's subtree to a PNG data URL at pxW×pxH device px — the
+// Rasterise ONE live element's subtree to a PNG data URL at pxW×pxH device px - the
 // vector escape-hatch: dom-to-image serialises the node's computed style into a
 // detached <foreignObject> and the browser paints it, so filters / masks / blend /
 // conic-gradient / clip-path render FAITHFULLY instead of being dropped by the walker.
 // The node is captured into its own box at (0,0) (left/top/margin neutralised, scaled
 // to fill). Returns null on failure so the caller falls through to the (lossy) vector
-// walk — never worse than before. Nothing mounts on-screen, so the position:fixed
+// walk - never worse than before. Nothing mounts on-screen, so the position:fixed
 // containing-block gotcha (the offscreen-stage flash) does not apply here.
 export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState, ownPaintOnly?: boolean, padPx = 0): Promise<string | null> {
   const r = el.getBoundingClientRect();
   const cssW = r.width, cssH = r.height;
   if (cssW < 0.5 || cssH < 0.5 || pxW < 2 || pxH < 2) return null;
   // `padPx`: extra output pixels on every side, with the content shifted into the
-  // middle. A CSS effect can paint OUTSIDE the element's box — a drop-shadow is the
-  // common one — and a capture sized to the box crops it, which is how a drop-shadow
+  // middle. A CSS effect can paint OUTSIDE the element's box - a drop-shadow is the
+  // common one - and a capture sized to the box crops it, which is how a drop-shadow
   // came out sheared off in PDF export. The caller places the padded image at the
   // correspondingly enlarged rect.
   const pad = Math.max(0, Math.round(padPx));
@@ -6615,15 +6621,15 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
   try {
     const canvas = await lib.toCanvas(el, {
       width: pxW + 2 * pad, height: pxH + 2 * pad,
-      // `ownPaintOnly`: capture the element's OWN paint layer — background, border,
-      // effect — and none of its descendants, so the caller can keep walking those
+      // `ownPaintOnly`: capture the element's OWN paint layer - background, border,
+      // effect - and none of its descendants, so the caller can keep walking those
       // as vector. dom-to-image-more applies `filter` to every node it clones EXCEPT
       // the root, so excluding everything yields exactly the root's own paint. The
       // explicit width/height in `style` below keeps the box from collapsing when the
       // element sized to its (now absent) content.
       ...(ownPaintOnly ? { filter: (n: Node) => n === el } : {}),
       style: {
-        // translate first (unscaled output px), then scale — so the element lands
+        // translate first (unscaled output px), then scale - so the element lands
         // `pad` pixels in from the top-left of the larger canvas.
         transform: `translate(${pad}px, ${pad}px) scale(${pxW / cssW}, ${pxH / cssH})`,
         transformOrigin: 'top left',
@@ -6634,7 +6640,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
     });
     // Lolly-composited DOM subtree → carry the imprint into the PDF/PPTX/SVG raster
     // it becomes. (A user <img> descendant baked into this composite is perturbed
-    // too — Lolly-composed content, PSNR-bounded; the one caveat, see task notes.)
+    // too - Lolly-composed content, PSNR-bounded; the one caveat, see task notes.)
     imprintEmbedCanvas(canvas, imprint);
     return canvas.toDataURL('image/png');
   } catch (e) {
@@ -6646,21 +6652,21 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
 }
 
 /**
- * plans/104 §12 Q2 — capture ONE element that carries a real 3-D pose, with the pose
+ * plans/104 §12 Q2 - capture ONE element that carries a real 3-D pose, with the pose
  * intact, for a vector export to embed as a per-box `<image>`.
  *
  * Separate from {@link rasterizeNodeToDataUrl} because that function CANNOT do this,
  * and spike S2 measured how badly: it overwrites the clone root's `transform` with its
- * own fit translate/scale and resizes the root to `getBoundingClientRect()` — which on
- * a tilted element IS the projected AABB — so a 45°-pitched card comes back untilted
+ * own fit translate/scale and resizes the root to `getBoundingClientRect()` - which on
+ * a tilted element IS the projected AABB - so a 45°-pitched card comes back untilted
  * and stretched to fill that box (mean 35/255, IoU 0.88, "trapezoid → rectangle"). S2's
  * rule was "capture a WRAPPER whose posed box is the child, never the tilted element as
  * the capture root".
  *
  * This is that rule without touching the live DOM. There is no wrapper to insert (and
  * inserting one would move a node on a live artboard mid-export, restarting animations
- * and resetting media): instead the clone root keeps its OWN layout size — so nothing
- * re-lays-out — and the fit transform is composed IN FRONT of the element's own pose,
+ * and resetting media): instead the clone root keeps its OWN layout size - so nothing
+ * re-lays-out - and the fit transform is composed IN FRONT of the element's own pose,
  * pre-anchored about its `transform-origin`:
  *
  *   translate(pad − s·aabb.x, pad − s·aabb.y) · scale(s) · [T(o)·M·T(−o)]
@@ -6680,7 +6686,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
  * drift 0.00 px across both embeds, where a divided translate would shear each row by
  * `tx·(1/w−1)`.
  *
- * The returned `rect` is where the caller must place the image — the posed AABB grown
+ * The returned `rect` is where the caller must place the image - the posed AABB grown
  * by the effect spill, in the element's own client coordinates. `getBoundingClientRect`
  * is exact against an analytic projection in both engines (S2 §3a), so the placement
  * needs no second implementation of the projection.
@@ -6691,7 +6697,7 @@ export async function rasterizePosedNodeToDataUrl(
   el: HTMLElement, scale: number, imprint?: ImprintState, padCss = 0,
 ): Promise<{ dataUrl: string; x: number; y: number; w: number; h: number } | null> {
   const aabb = el.getBoundingClientRect();
-  // The element's own LAYOUT box, which a transform never changes — so the clone can
+  // The element's own LAYOUT box, which a transform never changes - so the clone can
   // keep it and skip the re-layout that is the whole defect in the escape hatch.
   const cssW = el.offsetWidth || aabb.width;
   const cssH = el.offsetHeight || aabb.height;
@@ -6739,7 +6745,7 @@ export async function rasterizePosedNodeToDataUrl(
 
 /**
  * An element's own transform re-anchored about its `transform-origin`, plus the AABB
- * that pose gives its layout box — the two numbers {@link rasterizePosedNodeToDataUrl}
+ * that pose gives its layout box - the two numbers {@link rasterizePosedNodeToDataUrl}
  * needs, and nothing about the DOM beyond the computed style it is handed.
  *
  * `DOMMatrix` is the projector on purpose: it is the same 4×4 the compositor builds
@@ -6759,7 +6765,7 @@ function posedLocalMatrix(
     for (const [px, py] of [[0, 0], [cssW, 0], [0, cssH], [cssW, cssH]] as const) {
       const p = local.transformPoint(new DOMPoint(px, py, 0, 1));
       // A corner behind the eye divides by a non-positive w. There is no picture to
-      // capture through that pose, so refuse rather than emit a mirrored ghost — the
+      // capture through that pose, so refuse rather than emit a mirrored ghost - the
       // engine's own alphaGuard has already faded such a layer to nothing anyway.
       if (!(p.w > 1e-6)) return null;
       const x = p.x / p.w, y = p.y / p.w;
@@ -6790,7 +6796,7 @@ function transformOriginPx(style: CSSStyleDeclaration, cssW: number, cssH: numbe
 // regionH) in page points (top-left origin). Callers pass the full page for an
 // ordinary export, or the bleed box for a print export (so the design bleeds).
 //
-// KNOWN LIMITATION — paint order. This walker paints in DOM order and has no
+// KNOWN LIMITATION - paint order. This walker paints in DOM order and has no
 // z-index handling, exactly as the SVG walker did before `ExportOpts.
 // stackingOrder`. That flag was added on the SVG side only (page snapshots go
 // out as SVG), so SVG/EMF/EPS/DXF can paint in CSS 2.1 Appendix E §E.2 order and
@@ -6798,12 +6804,12 @@ function transformOriginPx(style: CSSStyleDeclaration, cssW: number, cssH: numbe
 // otherwise ask that they stay mirrored: PDF has no deferred-append equivalent
 // here, because it emits drawing operators straight into a content stream rather
 // than building a re-parentable node tree, so the same fix is a different (and
-// larger) piece of work. Nothing regresses — PDF keeps the order it always had.
+// larger) piece of work. Nothing regresses - PDF keeps the order it always had.
 async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true, imprint?: ImprintState): Promise<void> {
   const rect0 = node.getBoundingClientRect();
   const scaleX = regionW / rect0.width;
   const scaleY = regionH / rect0.height;
-  // CSS px → PDF pt — accounts for the CSS transform scale applied to the
+  // CSS px → PDF pt - accounts for the CSS transform scale applied to the
   // canvas node. node.clientWidth is the layout width before the transform.
   const cssToPt = regionW / (node.clientWidth || rect0.width);
   // Virtual origin: shifting the reference top-left by the region offset bakes it
@@ -6818,7 +6824,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 
   // Cooperative yielding: the vector walk + host.text.toPath (HarfBuzz) shaping
   // below runs fully synchronously and janks the UI for the whole export on a
-  // complex document. Mirror the CMYK pixel pass — every YIELD_NODES elements,
+  // complex document. Mirror the CMYK pixel pass - every YIELD_NODES elements,
   // report progress and hand the event loop a turn. Purely additive: geometry
   // and draw order are untouched, so the emitted PDF bytes are identical.
   const totalNodes = ((node as any).querySelectorAll?.('*').length ?? 0) + 1;
@@ -6827,7 +6833,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
   // The SVG walker's transform guard, mirrored (bridge/transform-neutralise.ts).
   const neutralise = newNeutraliseGuard();
   const warnTransform = (m: string): void => { _host?.log?.('warn', `pdf: ${m}`); };
-  /** Elements embedded as a posed raster instead of vector — see the branch below. */
+  /** Elements embedded as a posed raster instead of vector - see the branch below. */
   let tiltedRasters = 0;
 
   async function visit(el: any): Promise<void> {
@@ -6841,7 +6847,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
-    // A closed <details> still LAYS OUT its content — Chrome skips it at paint time
+    // A closed <details> still LAYS OUT its content - Chrome skips it at paint time
     // via ::details-content, which computed style does not expose (display, visibility
     // and content-visibility all read "visible" on the hidden subtree, and it reports a
     // real getBoundingClientRect). So the walker drew it: the export preflight card on
@@ -6856,7 +6862,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // in a jsPDF rotation about the transform-origin. Additive (no-op unrotated).
     const rotDeg = pureRotationDeg(style.transform);
     if (rotDeg) {
-      // Guarded neutralise, exactly as the SVG walker does it — a running transform
+      // Guarded neutralise, exactly as the SVG walker does it - a running transform
       // animation outranks the inline style, and the re-entry that follows recurses
       // per attempt (plans/104 §9 P3.1; bridge/transform-neutralise.ts). `null` = the
       // transform survived, so fall through to the AABB path with its rect as-is.
@@ -6872,7 +6878,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     }
 
     // General 2-D transform (rotate+scale / skew / matrix) that isn't a pure rotation:
-    // mirror the SVG walker — neutralise, walk the untransformed subtree, wrap the draw
+    // mirror the SVG walker - neutralise, walk the untransformed subtree, wrap the draw
     // in the full CTM about the transform-origin. Pure translate/scale → AABB path below;
     // a real 3-D/perspective pose takes the posed-raster branch straight after this one.
     const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
@@ -6927,16 +6933,16 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // clip-path (circle/ellipse/inset/polygon) → jsPDF clip so the node stays vector
     // (mirrors the SVG walker). Geometry is parsed in CSS px, scaled to pt when applied.
     // The clip wraps the WHOLE element paint (bg/border/content), so it goes around
-    // paintEl inside a graphics-state save/restore — restored on every early-return path
+    // paintEl inside a graphics-state save/restore - restored on every early-return path
     // (raster hatch / svg / img). Unparseable shapes leave clipShape null → paintEl's
     // escape-hatch rasterises them (clipBasicShapes:false).
     const cpVal = style.clipPath || (style as any).webkitClipPath;
     const clipShapeRaw = (cpVal && cpVal !== 'none') ? parseClipShape(cpVal, rect.width, rect.height) : null;
-    // A zero-area clip paints nothing — return before any draw, matching the SVG walker.
+    // A zero-area clip paints nothing - return before any draw, matching the SVG walker.
     if (clipShapeRaw && clipShapeRaw.kind === 'empty') return;
     const clipShape = clipShapeRaw;
     // Partial element opacity (0<o<1): jsPDF has no group-opacity primitive, so apply it
-    // as a GState alpha on the element's own draws. Correct for a LEAF (text/solid box —
+    // as a GState alpha on the element's own draws. Correct for a LEAF (text/solid box - 
     // no descendants to composite); non-leaves keep the current opaque behaviour rather
     // than mis-composite overlapping descendants (a per-op alpha ≠ CSS group opacity).
     const alpha = (elOpacity < 1 && el.children.length === 0 && typeof pdf.GState === 'function' && typeof pdf.setGState === 'function') ? elOpacity : 1;
@@ -6966,7 +6972,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // ── Box shadow (painted behind everything, mirrors the SVG walker) ──────────
     // A HARD shadow (blur 0) is a plain offset shape → true vector rounded rect. A SOFT
     // (blurred) shadow has no jsPDF vector primitive, so it's a bounded shadow-ONLY raster
-    // (never the element's content/text). PDF-only path — EMF/EPS go through the SVG walker
+    // (never the element's content/text). PDF-only path - EMF/EPS go through the SVG walker
     // with noBoxShadow, so no gate is needed here.
     if (tag !== 'img' && tag !== 'svg' && style.boxShadow && style.boxShadow !== 'none') {
       const { radii: shRadiiCss } = resolveRadii(style, rect.width, rect.height);
@@ -6989,7 +6995,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           // soft shadow → concentric bands, outermost first. PDF has no blur operator,
           // but the blur of an edge IS the Gaussian CDF, so painting the shape at a
           // series of outsets with the right alpha increments reproduces it in pure
-          // vector — no embedded bitmap, editable, resolution-independent. Bands come
+          // vector - no embedded bitmap, editable, resolution-independent. Bands come
           // from the engine (gaussianShadowBands) so PDF and any other blur-less
           // renderer share one derivation.
           const col = parseCssColorFull(sh.color);
@@ -7022,7 +7028,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // instead of dropping the effect. Returns on success so children/bg/text aren't
     // re-drawn. w,h are in points; RASTER_DPI sets the embedded bitmap resolution.
     //
-    // NO `cssFilter` CAP, AND NO `dropShadow` CAP — deliberate, and the whole of plan
+    // NO `cssFilter` CAP, AND NO `dropShadow` CAP - deliberate, and the whole of plan
     // 104's P1d work item. This walker has no `filter` branch: `filter: blur()` and
     // `filter: drop-shadow()` have nothing to emit into a content stream, so every
     // filtered box comes here. Declining the caps is what routes them here rather than
@@ -7035,8 +7041,8 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // be vectorised when the blurred thing is a KNOWN SHAPE: gaussianShadowBands paints
     // the box's own rounded rect at a fan of outsets, because the blur of an edge is the
     // Gaussian CDF. Neither of these is a known shape. `filter: drop-shadow()` follows
-    // the element's ALPHA SILHOUETTE — the transparent-PNG/icon cutout is the entire
-    // reason `shadow: content` exists — so a band fan of its bounding box would be a
+    // the element's ALPHA SILHOUETTE - the transparent-PNG/icon cutout is the entire
+    // reason `shadow: content` exists - so a band fan of its bounding box would be a
     // confidently wrong picture, worse than a bitmap. And `filter: blur()` blurs the
     // element's own painted content, for which PDF has no operator at all. So the honest
     // lane is the escape hatch: the effect is VISIBLE and correct, paid for in a bitmap
@@ -7049,12 +7055,12 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       // How far this element's effects paint OUTSIDE its box. A `filter` is the case
       // that matters: capturing a drop-shadowed element at exactly its rect shears
       // the shadow off, which measured 2.1% mean / 32% worst-pixel against the
-      // browser — the single largest shadow error left in PDF output.
+      // browser - the single largest shadow error left in PDF output.
       //
       // Units are the trap here: `pxW` is derived from `w`, which is POINTS, while the
       // spill is CSS px. The pad has to be converted to points first and only then to
       // capture pixels, or the padded image is placed at a rect that does not match the
-      // padding inside it — which measured WORSE than not padding at all.
+      // padding inside it - which measured WORSE than not padding at all.
       const spillCss = effectSpillCss(style);
       const padPt = spillCss * scaleX;
       const padPx = Math.round(padPt * dpr);
@@ -7092,7 +7098,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     const bgImg = style.backgroundImage;
     if (bgImg && (/^radial-gradient\(/.test(bgImg) || /^linear-gradient\(/.test(bgImg))) {
       // linear/radial gradient: rasterise the fill (faithful multi-stop + angle,
-      // alpha-correct) and place it as the box background, clipped to the rounded box —
+      // alpha-correct) and place it as the box background, clipped to the rounded box - 
       // jsPDF compat mode has no vector shading. A solid background-color paints behind it
       // (CSS order) so a gradient with transparent stops sits on the right colour. If the
       // gradient can't be parsed/rasterised we fall back to the flat solid-midpoint so we
@@ -7100,14 +7106,14 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const solid = parseCssColor(style.backgroundColor);
       if (solid) { pdf.setFillColor(solid[0], solid[1], solid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
       let placed = false;
-      // 1) TRUE VECTOR — a jsPDF ShadingPattern, unless the gradient has transparent
+      // 1) TRUE VECTOR - a jsPDF ShadingPattern, unless the gradient has transparent
       //    stops (PDF shading carries no per-stop alpha → would lose them).
       const spec = pdfGradientSpec(bgImg, x, y, w, h, cssToPt);
       if (spec && !spec.hasAlpha) {
         placed = fillPdfShading(pdf, spec, (doc) =>
           drawSvgPathToPdf(doc, roundedRectPath(x, y, w, h, radii), (v) => v, (v) => v));
       }
-      // 2) FAITHFUL RASTER — alpha stops, an unparseable value, or no shading API.
+      // 2) FAITHFUL RASTER - alpha stops, an unparseable value, or no shading API.
       if (!placed) {
         try {
           const dpr = RASTER_DPI / 72;
@@ -7121,7 +7127,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           }
         } catch { /* fall through to the midpoint solid */ }
       }
-      // 3) LAST RESORT — a flat midpoint solid (only if nothing painted yet).
+      // 3) LAST RESORT - a flat midpoint solid (only if nothing painted yet).
       if (!placed && !solid) {
         const mid = sampleGradientMidpoint(bgImg);
         if (mid) { pdf.setFillColor(mid[0], mid[1], mid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
@@ -7143,9 +7149,9 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             // Place it the way the SVG walker does (placeBackground honours
             // background-size, -position AND -repeat) rather than via the old cover-fitting
             // helper, which understood only cover/contain/two-length and DEFAULTED
-            // TO COVER (removed in the same commit — this was its last caller). That default was harmless while firstCssUrl silently dropped
+            // TO COVER (removed in the same commit - this was its last caller). That default was harmless while firstCssUrl silently dropped
             // every inline-SVG data-URI; now that those resolve, an auto-sized
-            // 14px chevron on a 176x29 box would be drawn at 176x176 — a giant
+            // 14px chevron on a 176x29 box would be drawn at 176x176 - a giant
             // smeared caret where there used to be nothing at all.
             const pl = dims ? placeBackground(
               style.backgroundSize, style.backgroundPosition, style.backgroundRepeat,
@@ -7187,13 +7193,13 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // CSS paints an inset shadow over the background and under the border, so it goes
     // between the two. Baked to a shadow-only bitmap covering exactly the box: PDF has
     // no blur operator, and baking the shadow is a far smaller compromise than baking
-    // the element — the same trade the soft outer shadow already makes here.
+    // the element - the same trade the soft outer shadow already makes here.
     for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
       if (!sh.inset) continue;
       const icol = parseCssColorFull(sh.color);
       // Same band derivation as the outer shadow, mirrored: an inset shadow is the
       // blur of the region OUTSIDE the offset, shrunken inner shape, so each band is
-      // a RING — everything except that shape shrunk by the band's outset — filled
+      // a RING - everything except that shape shrunk by the band's outset - filled
       // even-odd and clipped to the box.
       const ibands = icol ? gaussianShadowBands(sh.blur, icol[3]) : [];
       if (icol && (ibands.length || sh.blur <= 0)) {
@@ -7207,7 +7213,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             const t = band.outset;
             const bw = iw - 2 * t, bh = ih - 2 * t;
             // Past the point where the inner shape collapses, the ring is the whole
-            // box — the shadow has closed over the middle.
+            // box - the shadow has closed over the middle.
             const inner = bw > 0 && bh > 0
               ? roundedRectPath(sh.x + sh.spread + t, sh.y + sh.spread + t, bw, bh, insetCorners(iRadiiCss, t))
               : '';
@@ -7251,7 +7257,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       // CSS border-box: the border sits inside w×h; jsPDF strokes centred, so inset by lw/2.
       const innerUniform: CornerPair | null = uniform ? [Math.max(0, uniform[0] - lw / 2), Math.max(0, uniform[1] - lw / 2)] : null;
       // dashed/dotted → a line-dash pattern (jsPDF dash is sticky, so reset after). Round
-      // caps for dotted give round dots. Guarded — older jsPDF lacks the setters.
+      // caps for dotted give round dots. Guarded - older jsPDF lacks the setters.
       const dash = borderDashArray(style.borderTopStyle, lw);
       if (dash && typeof pdf.setLineDashPattern === 'function') {
         pdf.setLineDashPattern(dash.dash, 0);
@@ -7280,14 +7286,14 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       // reproduced by the vector walker: drawSvgVectorsInRegion has no axial /
       // radial shading and reads fills only from attributes or inline style, so
       // url(#gradient) fills disappear and CSS-class fills (declared in an inner
-      // <style>) fall back to black — a solid silhouette. The SVG export keeps
+      // <style>) fall back to black - a solid silhouette. The SVG export keeps
       // these vector by cloning the node verbatim; for PDF we rasterise just this
       // subtree to a PNG (alpha preserved) so it keeps its shading, and reserve
       // the crisp vector walk for solid-fill SVGs (qr, lockup, …).
       if (el.querySelector('linearGradient, radialGradient, filter, pattern')) {
         try {
           // Resolution from the OUTPUT region (points → px at ~150dpi), not the
-          // on-screen box — so it's independent of the preview zoom and bounded.
+          // on-screen box - so it's independent of the preview zoom and bounded.
           const dpr = 150 / 72;
           const pxW = Math.max(2, Math.min(2000, Math.round(w * dpr)));
           const pxH = Math.max(2, Math.min(2000, Math.round(h * dpr)));
@@ -7308,10 +7314,10 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const src = el.src || el.getAttribute('src') || '';
       if (!src || w <= 0 || h <= 0) return;
 
-      // SVG images (e.g. the corner brand logo) must stay VECTOR — rasterising
+      // SVG images (e.g. the corner brand logo) must stay VECTOR - rasterising
       // them breaks true CMYK output and looks soft. Inline the SVG and draw it
       // through the same vector path as an inline <svg>, honouring object-fit:
-      // "cover" slice-fits (fills the box, clipping the overflow — e.g. an SVG
+      // "cover" slice-fits (fills the box, clipping the overflow - e.g. an SVG
       // hero/masthead), everything else "meet"-fits (whole mark, centred = contain).
       // SVG-ness is detected from the bytes (asset URLs are blob: with no hint).
       {
@@ -7331,7 +7337,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             const [px, py] = objectPositionFractions(style.objectPosition);
             const dx = x + (w - fw) * px, dy = y + (h - fh) * py;
             // This SVG came from a user <img src> (a logo/photo asset), not from
-            // Lolly's own render — never imprint it (KEY PRINCIPLE). imprint omitted,
+            // Lolly's own render - never imprint it (KEY PRINCIPLE). imprint omitted,
             // so its gradient-rasterisation fallback keeps the user's pixels intact.
             if (cover) {
               await withPdfClipRect(pdf, x, y, w, h, () => drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts));
@@ -7346,14 +7352,14 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
         try {
           // Inline EVERY scheme, not just data:/blob:. An http/relative src was
           // previously written straight into `<image href="/catalog/…">`, and an SVG
-          // consumed as `<img src="shot.svg">` — which is how /info serves every docs
-          // screenshot, and how any exported SVG is normally viewed — runs in secure
+          // consumed as `<img src="shot.svg">` - which is how /info serves every docs
+          // screenshot, and how any exported SVG is normally viewed - runs in secure
           // static mode with NO network access, so that image renders BLANK and the
           // file is not self-contained. The sibling CSS-url branch already fetches
           // and inlines http (cssUrlToHref, :1651), so this was the `<img>` branch
           // being inconsistent with it rather than a deliberate exemption.
           // Falls back to the raw src on failure (cross-origin without CORS, 404),
-          // which is exactly the old behaviour — never worse than before.
+          // which is exactly the old behaviour - never worse than before.
           const dataUrl0 = src.startsWith('data:') ? src
             : await blobToDataUrl(src).catch(() => src);
           // Bake any CSS filter() into the bitmap (browser canvas) so PDF matches
@@ -7378,7 +7384,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           // Honour object-fit against the image's natural aspect (matches screen/PNG):
           //   contain → meet-fit the whole image into the box, centred (logo-wall tiles);
           //   cover   → fill the box, scaling up by the LARGER ratio and clipping the
-          //             overflow (hero/masthead images — see multi-page-pdf);
+          //             overflow (hero/masthead images - see multi-page-pdf);
           //   else    → stretch to the box (the prior default).
           // objectPosition fractions place the fitted image; the same `(box-fit)*frac`
           // offset works for both: it's a positive inset for contain, a negative one
@@ -7405,13 +7411,13 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 
     // ── Content: block children, inline text, pseudo markers ───────────────────
     // Inline children (<strong>, <em>, <span> …) are intentionally skipped in the child
-    // loop — their content is rendered by renderInlineContent, where each fragment gets
+    // loop - their content is rendered by renderInlineContent, where each fragment gets
     // its own computed style (preserving bold, color, etc.).
     //
     // overflow:hidden → clip the CONTENT to the box (mirrors the SVG walker): CSS crops an
     // overflow box's descendants to the box (its corner curve when rounded), so a child that
-    // spills — a differently-filled child past a rounded edge, or an over-sized child past a
-    // square edge — would otherwise show outside it. Only the content is clipped; bg/border
+    // spills - a differently-filled child past a rounded edge, or an over-sized child past a
+    // square edge - would otherwise show outside it. Only the content is clipped; bg/border
     // painted above stay, so the box's own edge is intact. A ROUNDED overflow box always
     // clips; a SQUARE one clips only when a descendant ACTUALLY spills (scroll > client), so a
     // clip isn't added to every layout overflow:hidden box (withPdfRoundedClip → a plain rect
@@ -7422,7 +7428,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       for (const child of el.children) {
         const cd = window.getComputedStyle(child).display;
         // Same carve-out as the SVG walker: inline children are left to the inline-text
-        // pass, which emits TEXT and has no <svg> branch — so an inline <svg> was
+        // pass, which emits TEXT and has no <svg> branch - so an inline <svg> was
         // dropped from PDF output entirely, silently. An <svg> is replaced content with
         // a box of its own at any display value. A bare <svg> defaults to display:inline,
         // which is what a tool's own canvas is, so this is the same missing-QR-code bug
@@ -7451,8 +7457,8 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 // This preserves inline formatting (<strong> bold, <em> italic, color spans, etc.)
 // that would be lost by reading the block's innerText as a flat string.
 //
-// Block-level children are skipped — the main visit() loop already handles them.
-// <br> is skipped — the line break is implicit in the text nodes' y positions.
+// Block-level children are skipped - the main visit() loop already handles them.
+// <br> is skipped - the line break is implicit in the text nodes' y positions.
 async function renderInlineContent(
   pdf: any, blockEl: any, blockStyle: CSSStyleDeclaration,
   rootRect: { left: number; top: number }, scaleX: number, scaleY: number, cssToPt: number,
@@ -7465,13 +7471,13 @@ async function renderInlineContent(
 
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
       // Resolve the run's real font (SUSE / a user Google font / platform) in
-      // BOTH modes — live text needs it to choose embed-vs-outline too.
+      // BOTH modes - live text needs it to choose embed-vs-outline too.
       const vf = _host?.text ? await resolveVectorFont(nodeStyle, text) : null;
       const fontUrl = vf?.url ?? null;
       const embedUrl = await pdfUserFontEmbed(vf);
       const isUserFont = Boolean(vf?.url.startsWith('blob:'));
       // Outline when converting paths, OR when a user font can't be faithfully
-      // embedded in jsPDF (variable off-weight / needs the subset chain) — so
+      // embedded in jsPDF (variable off-weight / needs the subset chain) - so
       // weight and coverage never silently break in live-text mode either.
       // A faithfully-embeddable user run stays live (pdf.text below).
       const outline = canVectoriseText(nodeStyle, fontUrl, Boolean(_host?.text))
@@ -7485,7 +7491,7 @@ async function renderInlineContent(
       const { ascent, descent } = fontMetricsPx(nodeStyle, fontSizePx);
 
       // Use the browser's actual line breaks + per-line positions (exact match to
-      // on-screen and the SVG output), NOT jsPDF's splitTextToSize — which re-measures
+      // on-screen and the SVG output), NOT jsPDF's splitTextToSize - which re-measures
       // with the embedded font's metrics and can wrap a word a character or two early
       // when they differ slightly from the browser's. 'Convert paths' ON outlines each
       // line via host.text.toPath; OFF (or any shape failure) draws embedded pdf.text
@@ -7519,7 +7525,7 @@ async function renderInlineContent(
             // ── text-shadow, back-to-front (CSS paints the first-listed on top) ──
             // A hard offset is exact vector: the same run again, shifted, in the
             // shadow colour. A blurred one has no PDF operator, so the outlined path
-            // is baked to a shadow-only bitmap — the same compromise the box shadows
+            // is baked to a shadow-only bitmap - the same compromise the box shadows
             // make here, and far smaller than baking the text itself.
             const tShadows = parseTextShadow(nodeStyle.textShadow).reverse();
             for (const tsh of tShadows) {
@@ -7565,7 +7571,7 @@ async function renderInlineContent(
             let drawn = false;
             if (outline) {
               try {
-                // A glyph the face lacks (notdef) would print as tofu — fall through
+                // A glyph the face lacks (notdef) would print as tofu - fall through
                 // to pdf.text, which at least renders through an embedded/base font.
                 const { d, notdef } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
                 if (d && !notdef) {
@@ -7640,7 +7646,7 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     const isUserFont = Boolean(vf?.url.startsWith('blob:'));
     const textRgb = parseCssColor(ds.ps.color) || ([0, 0, 0] as Rgb);
     // Baseline within the marker's line box (half-leading + ascent), matching the SVG
-    // pseudo path's textBaselineY — so a bullet/arrow lines up with the main text (which
+    // pseudo path's textBaselineY - so a bullet/arrow lines up with the main text (which
     // is now also centred), not riding the top of its box.
     const lineHPx = parseFloat(ds.ps.lineHeight) || fontSizePx * 1.2;
     const { ascent: pAsc, descent: pDesc } = fontMetricsPx(ds.ps, fontSizePx);
@@ -7714,7 +7720,7 @@ function makeRoundedFill(NS: string, x: number, y: number, w: number, h: number,
 // result instead of dropping the treatment. Used for tools that expose an image
 // filter (e.g. dynamic-layout's mono/punch/warm/cool/fade). Returns a filtered PNG
 // data URL, or the original on any failure (filter:none, headless/no-canvas,
-// tainted cross-origin canvas) — so it can never make output worse.
+// tainted cross-origin canvas) - so it can never make output worse.
 async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | null | undefined): Promise<string> {
   if (!filterStr || filterStr === 'none') return dataUrl;
   try {
@@ -7756,11 +7762,11 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
 // the cap, so the common case pays one Image decode and nothing else.
 // `floor` is the minimum device-px-per-CSS-px the cap allows (default 2: never soften a
 // tool export below 2x its box). The docs walker opts down to 1 via `rasterDpi`, so a
-// continuous-tone asset can be embedded at exactly its rendered box — see ExportOpts.rasterDpi.
+// continuous-tone asset can be embedded at exactly its rendered box - see ExportOpts.rasterDpi.
 // `embed` picks the re-encode format for the downscaled bytes:
-//   'png'  (default) — lossless. Tool exports and UI previews, where a lossy pass on a
+//   'png'  (default) - lossless. Tool exports and UI previews, where a lossy pass on a
 //          flat gradient/logo would show, and the source may carry alpha.
-//   'auto' — opt-in (rasterDpi walker path): a FULLY-OPAQUE asset (a photo) re-encodes as
+//   'auto' - opt-in (rasterDpi walker path): a FULLY-OPAQUE asset (a photo) re-encodes as
 //          lossy WebP, ~5-10x smaller than PNG with no visible loss at box resolution;
 //          anything with even one transparent pixel (icons, logos, cutouts) stays PNG so
 //          its edges and transparency are preserved. WebP falls back to PNG where the
@@ -7783,13 +7789,13 @@ async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: nu
     const factor = Math.max(floor, (dpi > 0 ? dpi : CSS_DPI) / CSS_DPI);
     const capLong = Math.max(256, Math.ceil(boxLongCss * factor));
     const srcLong = Math.max(nw, nh);
-    if (srcLong <= capLong * 1.15) return dataUrl;         // already sane — leave it be
+    if (srcLong <= capLong * 1.15) return dataUrl;         // already sane - leave it be
     const scale = capLong / srcLong;
     const dw = Math.max(1, Math.round(nw * scale)), dh = Math.max(1, Math.round(nh * scale));
     const canvas = document.createElement('canvas');
     canvas.width = dw; canvas.height = dh;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return dataUrl;                              // jsdom — keep the source
+    if (!ctx) return dataUrl;                              // jsdom - keep the source
     ctx.imageSmoothingEnabled = true;
     (ctx as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, dw, dh);
@@ -7801,7 +7807,7 @@ async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: nu
   } catch { return dataUrl; }
 }
 
-// True when every pixel is fully opaque — the signal to prefer lossy WebP over PNG for an
+// True when every pixel is fully opaque - the signal to prefer lossy WebP over PNG for an
 // inlined asset. A tainted canvas throws on read; treat that as "not provably opaque" so it
 // falls back to PNG rather than risking a wrong lossy encode. Scans alpha only (every 4th
 // byte); the boxes this runs on are small (a downscaled photo, tens of thousands of pixels).
@@ -7836,12 +7842,12 @@ async function circularClipImage(imgEl: any, dataUrl: string): Promise<string> {
 
 // Fetch + parse an image source into a live <svg> element IFF it is SVG, so it
 // can be drawn as true PDF vectors (jsPDF.addImage rejects SVG). Detection is by
-// CONTENT, not URL — asset URLs are blob: with no extension or MIME hint, so we
+// CONTENT, not URL - asset URLs are blob: with no extension or MIME hint, so we
 // fetch the bytes and sniff for "<svg". Known raster MIME types are skipped fast.
 // Handles blob:, http(s) and data: sources; returns null for non-SVG/unfetchable.
 // Exported for the sequence editor's still vector twin (views/timeline-panel.ts),
 // which resolves a data: SVG source through exactly this path so the twin and the
-// walker agree on what counts as vector — reached by dynamic import, so the panel
+// walker agree on what counts as vector - reached by dynamic import, so the panel
 // keeps its no-static-edge-to-export.ts property.
 export async function inlineSvgFromImg(src: string): Promise<Element | null> {
   if (!src) return null;
@@ -7866,7 +7872,7 @@ export async function inlineSvgFromImg(src: string): Promise<Element | null> {
   if (!text || !/<svg[\s>]/i.test(text)) return null;
   const svg = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
   if (!(svg && svg.tagName && svg.tagName.toLowerCase() === 'svg')) return null;
-  // Inlined files carry their own generated ids — namespace them or same-named
+  // Inlined files carry their own generated ids - namespace them or same-named
   // ids across several inlined files bind every reference to the FIRST one
   // (four covers all clipped by cover 1's `fcovclip-1`; see svg-inline-ids.ts).
   namespaceInlinedSvgIds(svg, src);
@@ -7925,7 +7931,7 @@ async function embedSuseFont(pdf: any, registeredFonts: Set<unknown>, weight: nu
 // unique per face across a PDF; registeredFonts embeds each at most once.
 // Unlike SUSE (per-weight static files), a user font is a single variable file,
 // so pdfUserFontEmbed only offers it up when jsPDF's default-instance render is
-// actually faithful — see there.
+// actually faithful - see there.
 async function embedUserFont(pdf: any, registeredFonts: Set<unknown>, url: string): Promise<string | null> {
   const name = `uf_${url}`;
   if (!registeredFonts.has(name)) {
@@ -7943,14 +7949,14 @@ async function embedUserFont(pdf: any, registeredFonts: Set<unknown>, url: strin
 }
 
 // Decide whether a resolved run font can be FAITHFULLY embedded as live text in
-// jsPDF, returning its sfnt URL if so, else null (the caller outlines instead —
+// jsPDF, returning its sfnt URL if so, else null (the caller outlines instead - 
 // the outline path has the variable axis and per-subset fallback jsPDF lacks).
 // Only decompressed USER faces (blob: URLs) are candidates; SUSE stays on its
 // own per-weight-static path, and the platform face isn't embedded here.
 // Embeddable requires a single face covering the whole run (jsPDF can't chain
 // subsets) rendering at the requested weight: a static face always does; a
 // variable face only when the request equals its default instance (jsPDF can't
-// move the axis). axisDefaults is additive — without it, don't risk a variable
+// move the axis). axisDefaults is additive - without it, don't risk a variable
 // face.
 async function pdfUserFontEmbed(vf: VectorFont | null): Promise<string | null> {
   if (!vf || !vf.url.startsWith('blob:') || vf.fallbacks?.length) return null;
@@ -7976,7 +7982,7 @@ async function pdfUserFontEmbed(vf: VectorFont | null): Promise<string | null> {
 // exact ink values for registered swatches.
 
 async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
-  // Artwork only (no marks/boxes here) — print finishing is applied below, after
+  // Artwork only (no marks/boxes here) - print finishing is applied below, after
   // the RGB→CMYK conversion, so the marks stay DeviceCMYK (incl. registration).
   const geo = printGeometry(node, opts);
   const rgbBlob = await renderArtworkPdf(node, opts, geo);
@@ -8009,7 +8015,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     const dict = obj.dict;
     if (!dict?.get) continue;
 
-    // Image XObjects contain pixel data, not PDF operators — skip them.
+    // Image XObjects contain pixel data, not PDF operators - skip them.
     const sub = dict.get(PDFName.of('Subtype'));
     if (sub && String(sub).includes('Image')) continue;
 
@@ -8032,7 +8038,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     const recompressed = await deflateBytes(modBytes);
 
     // PDFRawStream.contents is readonly in TypeScript but a plain own property
-    // at runtime — assign directly.
+    // at runtime - assign directly.
     obj.contents = recompressed;
     dict.set(PDFName.of('Length'), PDFNumber.of(recompressed.length));
     if (!filter) dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
@@ -8040,11 +8046,11 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
 
   // Materialise a /Separation colourspace for every spot a content stream actually
   // referenced above: one Type-2 exponential tint-transform function per spot (a
-  // linear ramp from "no ink" at tint 0 to the spot's CMYK equivalent at tint 1 —
+  // linear ramp from "no ink" at tint 0 to the spot's CMYK equivalent at tint 1 - 
   // the standard "spot ink with a process alternate" construction) plus the
   // colourspace array itself, both registered as fresh indirect objects the same
   // way applyPdfX/setPdfxOutputIntent registers the OutputIntent's ICC stream
-  // below — then wired into the single artwork page's /Resources/ColorSpace dict
+  // below - then wired into the single artwork page's /Resources/ColorSpace dict
   // under the name substitutePdfRgb already wrote into the content stream
   // ("/CSn cs"/"/CSn CS"). Deferred until after the enumeration loop so no new
   // indirect object is registered while pdfDoc.context.enumerateIndirectObjects()
@@ -8109,7 +8115,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   // Print finishing in DeviceCMYK, drawn after the colour swap so registration
   // marks land on every plate (1 1 1 1) and aren't re-mapped by the RGB→CMYK pass.
   // The verification bar shows pairs for only the brand inks that actually
-  // substituted in this artwork — rebuild the marks geometry from that used set
+  // substituted in this artwork - rebuild the marks geometry from that used set
   // now that the substitution pass has run (page size is palette-independent).
   if (geo) {
     const page = pdfDoc.getPage(0);
@@ -8123,7 +8129,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   // the final image set. The press-condition intent declares what the DeviceCMYK
   // values mean to a RIP; 'none' (user opted out of a condition) writes the
   // metadata without an intent or conformance claim, and anything non-CMYK
-  // ('srgb'/absent) falls back to the default condition — mirroring the old
+  // ('srgb'/absent) falls back to the default condition - mirroring the old
   // addCmykOutputIntent guard. 'own' is the embed route: the DestOutputProfile
   // bytes come from a profile on THIS device, and the intent's identity is read
   // off that profile rather than off the picker (press-profile-embed.ts).
@@ -8135,7 +8141,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     log: pdfxLog,
   });
 
-  // The C2PA embedder only parses a classic xref table — same flag finishPdfX
+  // The C2PA embedder only parses a classic xref table - same flag finishPdfX
   // threads for the RGB path when a credential is requested.
   const out = await pdfDoc.save(opts.c2pa ? { useObjectStreams: false } : undefined);
   const cmykBlob = new Blob([out], { type: 'application/pdf' });
@@ -8150,13 +8156,13 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
 
 
 
-// The computed fill/stroke of a live-DOM SVG element — resolves SVG inheritance
+// The computed fill/stroke of a live-DOM SVG element - resolves SVG inheritance
 // (an ancestor group's paint) and currentColor. Empty for a detached element, so
 // callers keep their own literal fallback.
 function computedPaint(el: Element, prop: string): string {
   try {
     // getPropertyValue takes the CSS property NAME, so hyphenated props ('stroke-width')
-    // are read here exactly like single-word ones ('fill'/'stroke') — no `as any` index,
+    // are read here exactly like single-word ones ('fill'/'stroke') - no `as any` index,
     // and none of the camelCase IDL spelling this would need via the property accessor.
     return (typeof window !== 'undefined' && el.isConnected) ? (window.getComputedStyle(el).getPropertyValue(prop) || '') : '';
   } catch { return ''; }
@@ -8165,15 +8171,15 @@ function computedPaint(el: Element, prop: string): string {
 
 
 /**
- * Resolve an element's stroke paint the way the browser does — the counterpart to
+ * Resolve an element's stroke paint the way the browser does - the counterpart to
  * resolveColor() below, which has always done this for fill.
  *
  * A presentation attribute and an inline style are only two of the three ways a stroke
- * arrives. Illustrator/Figma SVGs — which is every SUSE catalog illustration — carry
+ * arrives. Illustrator/Figma SVGs - which is every SUSE catalog illustration - carry
  * theirs in a CSS CLASS instead: `.cls-7{stroke:#003e37;stroke-width:4px}`, with no
  * stroke attribute on any node. Neither of the first two reads can see that, so without
  * the computed fallback every such stroke resolved to 'none' and the artwork exported to
- * PDF as flat fills with EVERY outline missing — while fill came through, because
+ * PDF as flat fills with EVERY outline missing - while fill came through, because
  * resolveColor already fell back to getComputedStyle. That asymmetry was the bug.
  *
  * Returns 'none' (the SVG initial value for stroke) when nothing paints, where the fill
@@ -8198,13 +8204,13 @@ export function strokeWidthOf(el: Element): number {
 }
 
 /**
- * Carry an SVG shape's stroke DECORATION — dash array, cap, join, miter limit — into the
+ * Carry an SVG shape's stroke DECORATION - dash array, cap, join, miter limit - into the
  * PDF graphics state, and hand back the undo. Without this the PDF walker reproduced only a
  * stroke's colour and width, so a dashed or flat-capped outline exported as a plain round
  * solid one: a control whose effect vanished on export, which is worse than not offering it.
  *
  * jsPDF's line state is STICKY (it writes the operator once and every later stroke inherits
- * it), which is why the caller must run the returned restore — the same discipline the
+ * it), which is why the caller must run the returned restore - the same discipline the
  * border path already follows. Every setter is feature-checked because older jsPDF builds
  * ship only some of them.
  *
@@ -8235,7 +8241,7 @@ export function applySvgStrokeDecoration(pdf: any, el: Element, mul: number): ((
     pdf.setLineJoin(join);
     undo.push(() => pdf.setLineJoin('miter'));
   }
-  // A miter join is PDF's default, but its default LIMIT is 10 against SVG's 4 — so a
+  // A miter join is PDF's default, but its default LIMIT is 10 against SVG's 4 - so a
   // shape that says 4 has to say it here too, or a spike PDF keeps is one the browser and
   // the SVG export both bevelled away.
   const ml = parseFloat(el.getAttribute('stroke-miterlimit') ?? resolveStyleProp(el, 'stroke-miterlimit') ?? '');
@@ -8292,16 +8298,16 @@ async function swapBlobUrls(node: Element): Promise<() => void> {
 // Snapshot every <video> under `node` to a still <img> of its CURRENT frame, in
 // place, returning a closure that restores the originals. dom-to-image-more
 // serialises the DOM into an SVG <foreignObject>, which does NOT carry decoded video
-// pixels — so without this a video box exports BLANK. We use an <img> (PNG data URL)
-// rather than a <canvas> deliberately: an <img> is handled by EVERY export path —
+// pixels - so without this a video box exports BLANK. We use an <img> (PNG data URL)
+// rather than a <canvas> deliberately: an <img> is handled by EVERY export path - 
 // the raster serialiser inlines it, and the true-vector walkers (svg/pdf/emf/eps)
-// already know how to place an <img> but NOT a <canvas> — so a video-still now
+// already know how to place an <img> but NOT a <canvas> - so a video-still now
 // behaves exactly like an ordinary still image everywhere. Runs on the LIVE node
 // (computed styles + geometry intact); the <img> copies the video's class + inline
 // style + key computed replaced-element props so the existing object-fit /
 // border-radius handling frames it identically. Per-element try/catch: a not-yet-
 // decoded frame (readyState < 2) or a cross-origin (canvas-tainting) video is skipped,
-// never thrown — a still-blank video is no worse than today. Synchronous + jsdom-safe
+// never thrown - a still-blank video is no worse than today. Synchronous + jsdom-safe
 // (videoWidth is 0 there → a clean no-op). gif/apng/animated-webp inside an <img>
 // already export as a still, so only <video> needs this.
 function snapshotMotion(node: Element): () => void {
@@ -8319,7 +8325,7 @@ function snapshotMotion(node: Element): () => void {
       if (!ctx) continue;
       ctx.drawImage(video, 0, 0, w, h);                 // SecurityError if the video is cross-origin tainted
       const still = document.createElement('img');
-      still.src = canvas.toDataURL('image/png');        // also throws SecurityError if tainted — caught below
+      still.src = canvas.toDataURL('image/png');        // also throws SecurityError if tainted - caught below
       // Marked so a renderer that decodes the video ITSELF can hide the freeze
       // instead of baking it in. The sequence compositor needs exactly that on the
       // ZIP path, where the guard above keys on the outer 'zip' format and the
@@ -8421,7 +8427,7 @@ async function rasterizeToPng(src: string): Promise<string> {
 
 // Best recorder mime, preferring the requested container ('webm' | 'mp4') but
 // falling back to the other so a deep-link/CLI request still produces a video.
-// With { audio: true } only audio-capable mimetypes are considered — returns
+// With { audio: true } only audio-capable mimetypes are considered - returns
 // null when none is supported, so the caller can fall back to a silent
 // recording rather than a NotSupportedError mid-record.
 // Returns null when no container is recordable.
@@ -8432,20 +8438,20 @@ export function videoMimeType(preferred?: string, { audio = false }: { audio?: b
 
 interface LoopedAudio { track: MediaStreamTrack; start(): void; stop(): void; }
 
-// Decodes an audio file (a catalog music bed — opts.audio.url, typically a
+// Decodes an audio file (a catalog music bed - opts.audio.url, typically a
 // blob: URL the view resolved via host.assets.get) into a loopable Web Audio
 // source whose MediaStream track can be muxed into the recorded stream.
 // loop=true makes the bed cover any clip length: recording stop truncates a
-// longer track, shorter tracks repeat seamlessly. start() is deferred so the
-// caller can align audio time-zero with recorder.start() — Phase 1 frame
+// longer track, shorter tracks repeat with no seam. start() is deferred so the
+// caller can align audio time-zero with recorder.start() - Phase 1 frame
 // capture is slower than real time and must not consume the track.
 /**
  * A gain envelope for a music bed, in seconds, timed against clipSec.
- *   volume — overall bed level (0..1, default 1)
- *   fadeIn/fadeOut — linear ramps from/to silence at the ends
- *   duck — a window over which the bed dips to volume·duck.level, then restores,
+ *   volume - overall bed level (0..1, default 1)
+ *   fadeIn/fadeOut - linear ramps from/to silence at the ends
+ *   duck - a window over which the bed dips to volume·duck.level, then restores,
  *          so foreground audio (an uploaded clip's own sound) stays intelligible.
- *   start — in-point into the SOURCE (not the clip): playback begins there, and a
+ *   start - in-point into the SOURCE (not the clip): playback begins there, and a
  *          looping bed repeats from there. Independent of the envelope, which is
  *          always timed from t0 against clipSec.
  */
@@ -8457,14 +8463,14 @@ interface AudioFade {
   duck?: { level: number; startSec: number; endSec: number };
   start?: number;
   /** Loop the source to cover the clip (default true). A tool's own narration
-   *  mixed over a bed plays ONCE — its end is what brings the bed back up. */
+   *  mixed over a bed plays ONCE - its end is what brings the bed back up. */
   loop?: boolean;
 }
 
 /**
  * Clamp a requested bed in-point into a decoded source. A start at or past the end
  * of the track can't be honoured: with loop off it records pure silence, with loop on
- * the spec snaps playback back to loopStart — either way the user gets an unexplained
+ * the spec snaps playback back to loopStart - either way the user gets an unexplained
  * result, so it degrades to 0:00 with a warning.
  */
 export function bedStartOffset(start: number | undefined, duration: number): number {
@@ -8491,7 +8497,7 @@ export function connectMusic(
   src.buffer = buffer;
   src.loop   = fade.loop !== false;
   // In-point: start playback `offset` into the source, and move the loop window with
-  // it — loopStart defaults to 0, so a wrap would otherwise throw the in-point away
+  // it - loopStart defaults to 0, so a wrap would otherwise throw the in-point away
   // and play the head of the track the visuals deliberately skipped. loopEnd must be
   // set explicitly too; it only means "end of buffer" while untouched.
   const offset = bedStartOffset(fade.start, buffer.duration);
@@ -8543,7 +8549,7 @@ export function connectMusic(
 /**
  * The extent of the primary track in CLIP time: it starts with the picture at 0
  * and ends at its natural length (minus the in-point), capped by the clip. This
- * is the window the mix-in bed ducks under — full bed before/after it (top and
+ * is the window the mix-in bed ducks under - full bed before/after it (top and
  * tail), the centre level through it.
  */
 function primarySpan(buffer: AudioBuffer, fade: AudioFade): { from: number; to: number } {
@@ -8556,7 +8562,7 @@ function primarySpan(buffer: AudioBuffer, fade: AudioFade): { from: number; to: 
 /**
  * Connect the mix-in bed (opts.audio.mix) into the graph: a looping source whose
  * gain envelope plays FULL where the primary is silent and glides to the centre
- * level under it (~0.8 s ramps, never steps — bedDuckEnvelope owns the math).
+ * level under it (~0.8 s ramps, never steps - bedDuckEnvelope owns the math).
  * start() schedules at ctx.currentTime, same contract as connectMusic.
  */
 function connectDuckedBed(
@@ -8608,7 +8614,7 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}, mix?: Export
     }
   }
   const dest  = ctx.createMediaStreamDestination();
-  // With a bed underneath, the primary (a tool's own narration) plays once —
+  // With a bed underneath, the primary (a tool's own narration) plays once - 
   // looping it would hold the bed at the centre level forever and the full-gain
   // tail would never come.
   const music = connectMusic(ctx, buffer, dest, bedBuffer ? { ...fade, loop: false } : fade);
@@ -8619,7 +8625,7 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}, mix?: Export
     track: dest.stream.getAudioTracks()[0]!,
     start() {
       // The context was created inside the export click's gesture, but resume
-      // defensively — a suspended context feeds silence into the recording.
+      // defensively - a suspended context feeds silence into the recording.
       ctx.resume?.().catch(() => {});
       music.start();
       bed?.start();
@@ -8634,7 +8640,7 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}, mix?: Export
 
 // Render the music-bed timeline (the SAME connectMusic fade/loop envelope used by
 // the live MediaRecorder path) to a finished PCM AudioBuffer, entirely offline and
-// faster than real time — this feeds the WebCodecs AudioEncoder so audio exports
+// faster than real time - this feeds the WebCodecs AudioEncoder so audio exports
 // can take the fast path too. Returns null when OfflineAudioContext is unavailable
 // or the clip is empty; throws on decode failure so renderVideo can fall back to the
 // live MediaRecorder mux (which decoded the bed successfully earlier).
@@ -8643,14 +8649,14 @@ async function renderMusicBed(url: string, clipSec: number, sampleRate: number, 
   if (!OAC || !(clipSec > 0)) return null;
   const CHANNELS = 2;                                   // deterministic stereo out
   const octx: OfflineAudioContext = new OAC(CHANNELS, Math.max(1, Math.ceil(clipSec * sampleRate)), sampleRate);
-  const bytes = await (await fetch(url)).arrayBuffer(); // blob: URL from host.assets.get — no network
+  const bytes = await (await fetch(url)).arrayBuffer(); // blob: URL from host.assets.get - no network
   let buffer: AudioBuffer;
   try {
     buffer = await octx.decodeAudioData(bytes);         // resamples the bed to `sampleRate`
   } catch (err) {
     throw err instanceof Error ? err : new Error('audio decode failed');
   }
-  // The mix-in bed rides the same offline render — best-effort, like the live path.
+  // The mix-in bed rides the same offline render - best-effort, like the live path.
   let bedBuffer: AudioBuffer | null = null;
   if (mix?.url) {
     try {
@@ -8667,7 +8673,7 @@ async function renderMusicBed(url: string, clipSec: number, sampleRate: number, 
 
 // Resolve opts.audio into a started-on-demand looped track, or null when audio
 // wasn't requested / can't be delivered (decode failure, no audio-capable
-// recorder mime) — in which case the export degrades to a silent video with a
+// recorder mime) - in which case the export degrades to a silent video with a
 // warning through the log channel rather than failing a multi-second capture.
 async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?: number, deferSilentWarn = false): Promise<{ audio: LoopedAudio | null; mimeType: string | null }> {
   if (!opts.audio?.url) return { audio: null, mimeType: videoMimeType(preferred) };
@@ -8683,7 +8689,7 @@ async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?:
     audio.stop();
     audio = null;
     // renderVideo passes deferSilentWarn when the WebCodecs AudioEncoder may still
-    // deliver the bed — warning "silent" here would be wrong when it does; that
+    // deliver the bed - warning "silent" here would be wrong when it does; that
     // caller warns itself once the WebCodecs audio pick has actually come up empty.
     if (!deferSilentWarn) _host?.log?.('warn', 'This browser cannot record an audio track into the chosen container; exporting silent video.');
   }
@@ -8695,10 +8701,10 @@ function videoContainer(mime: string | null): string {
   return mime && mime.includes('mp4') ? 'video/mp4' : 'video/webm';
 }
 
-// Stamp the provenance record (opts.meta — same content as the GIF comment and
+// Stamp the provenance record (opts.meta - same content as the GIF comment and
 // PNG iTXt) into a finished recording: MP4 udta/ilst or Matroska Tags, via the
 // engine's byte-writers. MediaRecorder can't write metadata during capture, so
-// this post-processes the blob. Failure is non-fatal — a playable file without
+// this post-processes the blob. Failure is non-fatal - a playable file without
 // provenance beats a corrupted one with it.
 async function withVideoMeta(blob: Blob, container: string, meta: ExportMeta | null | undefined): Promise<Blob> {
   if (!meta) return blob;
@@ -8718,7 +8724,7 @@ const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF 
 
 // A FrameSource turns a live DOM node into a sequence of rendered frames that
 // share ONE capture timeline. Motion encoders (webm/mp4 via renderVideo, gif via
-// renderGif — and future apng / image-sequence / spritesheet / favicon) consume it
+// renderGif - and future apng / image-sequence / spritesheet / favicon) consume it
 // instead of each re-implementing the capture loop.
 //
 // Capture semantics match the original per-encoder loops: blob: URLs are swapped
@@ -8726,28 +8732,28 @@ const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF 
 // `opts.wait` seconds to settle before the first frame, then each frame() renders
 // the CURRENT animation state via dom-to-image toCanvas(). Sequential frame() calls
 // advance the animation in real time (the await between them is the spacing), so
-// every frame is a distinct moment — no duplicate or skipped frames.
+// every frame is a distinct moment - no duplicate or skipped frames.
 //
-//   width / height — target pixel size (defaults to the node's box)
-//   frame()        — Promise<HTMLCanvasElement> for the current moment
-//   dispose()      — restore the blob:-URL swap; call once capture is done
+//   width / height - target pixel size (defaults to the node's box)
+//   frame() - Promise<HTMLCanvasElement> for the current moment
+//   dispose() - restore the blob:-URL swap; call once capture is done
 // ── Deterministic export-frame clock (opt-in) ────────────────────────────────
 // A canvas-animation tool can register `window.__lollyFrameRender(t)` to render a
 // deterministic frame at normalized loop time t∈[0,1). The snapshot export paths
 // drive it: they raise `window.__lollyFrameDriven` (so the tool's own rAF loop
-// bails — dom-to-image's toCanvas is async, and a stray repaint would otherwise
+// bails - dom-to-image's toCanvas is async, and a stray repaint would otherwise
 // clobber the frame), paint the exact phase, then capture. Presence-keyed, so a
 // tool that never registers the hook is byte-for-byte unchanged. Scoped to these
-// snapshot paths ONLY — never the real-time captureStream path (which returns
+// snapshot paths ONLY - never the real-time captureStream path (which returns
 // before createFrameSource), so the two mechanisms can't both fire per export.
 // Per-NODE channel (not a window global): the hook lives ON the tool's canvas, so
-// it can't leak across SPA tool navigation — a detached canvas from a previous tool
+// it can't leak across SPA tool navigation - a detached canvas from a previous tool
 // is never inside the node being exported, so an unrelated tool never enters this path.
 // The second argument is the exported clip's real length in seconds. It is ADDITIVE:
 // a tool that declares `(t)` ignores it and behaves exactly as before. A tool that
 // maps t onto its own timeline (the audiogram's caption cues) must prefer it over
-// any span of its own, because the export's length is decided here — after a frame
-// plan the tool never sees — and a tool-side guess is what let captions drift.
+// any span of its own, because the export's length is decided here - after a frame
+// plan the tool never sees - and a tool-side guess is what let captions drift.
 type FrameClockCanvas = HTMLCanvasElement & { __lollyFrameRender?: (t: number, clipSec?: number) => void; __lollyFrameDriven?: boolean };
 function frameClockCanvas(node: Element): FrameClockCanvas | null {
   const self = node as FrameClockCanvas;
@@ -8773,14 +8779,14 @@ function endFrameClock(c: FrameClockCanvas | null): void {
 // ── CSS animation/transition scrubbing (no tool opt-in required) ────────────
 // A plain template that animates via CSS `animation`/`transition` (no canvas,
 // no __lollyFrameRender) previously had its frames paced by whatever real time
-// elapsed between toCanvas() calls — capture jitter (DOM serialize + image
+// elapsed between toCanvas() calls - capture jitter (DOM serialize + image
 // decode isn't constant-time) meant the exported motion could subtly drift
 // from the authored timing. getAnimations() exposes every CSSAnimation/
 // CSSTransition affecting the node, so each can be paused and scrubbed to the
-// exact elapsed ms for the frame being captured — the same exact-phase
+// exact elapsed ms for the frame being captured - the same exact-phase
 // guarantee __lollyFrameRender gives canvas tools, without requiring one.
 // No-op (returns false) for tools with no CSS animations, and for JS/rAF-driven
-// motion that never produces a Web Animations API Animation object — those
+// motion that never produces a Web Animations API Animation object - those
 // still need the explicit clock hook.
 function scrubAnimations(node: Element, ms: number): boolean {
   const anims = node.getAnimations?.({ subtree: true }) ?? [];
@@ -8796,15 +8802,15 @@ function scrubAnimations(node: Element, ms: number): boolean {
 // A Node/Playwright caller (packages/node-shell/src/webshell-render.ts,
 // renderVideoViaScreenshot) can expose window.__lollyCaptureScreenshot before
 // navigating here. When present, frame() calls it instead of dom-to-image: Node
-// takes a REAL Chromium screenshot of the live node, clipped to its own box —
-// genuine paint, no clone/serialize/reinterpret step — and hands the PNG bytes
+// takes a REAL Chromium screenshot of the live node, clipped to its own box - 
+// genuine paint, no clone/serialize/reinterpret step - and hands the PNG bytes
 // back as base64, which are then scaled to the export's target pixel size on a
 // canvas exactly like dom-to-image's own output. Everything else (the
 // deterministic clock, scrubAnimations, the WebCodecs encode, C2PA/watermark
 // stamping) is the exact same pipeline.
 //
 // Deliberately does NOT force the live node to the target width/height/scale
-// the way dtoOpts styles a dom-to-image CLONE — an earlier version did, and it
+// the way dtoOpts styles a dom-to-image CLONE - an earlier version did, and it
 // leaked layout: forcing #tool-canvas's box away from its real flex-driven size
 // let neighbouring chrome (the sidebar) bleed into the shot. A screenshot is
 // captured at the node's own on-screen size and upscaled if needed; call
@@ -8834,14 +8840,14 @@ async function captureViaExternalScreenshot(
 // slides/deck-builder (`.sl-clock`) and all six filter-* tools (`[data-ov-clock]`)
 // carry `__lollyFrameRender` on a 0×0 aria-hidden canvas that draws nothing, and
 // audiogram's `style=milkdrop` leaves the fallback `#ag-wave` in the DOM at
-// display:none next to the mounted viz canvas — so both the backing-store size
+// display:none next to the mounted viz canvas - so both the backing-store size
 // and the computed visibility have to be checked, not just presence.
 function visibleCanvases(node: Element): HTMLCanvasElement[] {
   const all: HTMLCanvasElement[] = [];
   if (node instanceof HTMLCanvasElement) all.push(node);
   for (const c of Array.from(node.querySelectorAll?.('canvas') ?? [])) all.push(c as HTMLCanvasElement);
   return all.filter(c => {
-    if (!(c.width > 0 && c.height > 0)) return false;   // inert clock anchor — drawImage would throw on it anyway
+    if (!(c.width > 0 && c.height > 0)) return false;   // inert clock anchor - drawImage would throw on it anyway
     const s = window.getComputedStyle(c);
     if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false;
     const r = c.getBoundingClientRect();
@@ -8867,7 +8873,7 @@ function chromeElements(node: Element, live: HTMLCanvasElement[]): { liveBoxes: 
   return { liveBoxes, chrome };
 }
 
-// visibility:hidden, not display:none — layout must be preserved so the chrome
+// visibility:hidden, not display:none - layout must be preserved so the chrome
 // rasterises at exactly the geometry the live canvases will be blitted into.
 // !important because it has to beat the tool's own stylesheet.
 function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
@@ -8934,7 +8940,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   //
   // It does NOT skip dom-to-image's canvas handling: `makeNodeCopy` calls
   // `original.toDataURL()` for every canvas whatever its computed style, so this shot
-  // still pays that ~30.8 ms — once, instead of on all 240 frames. That is also why a
+  // still pays that ~30.8 ms - once, instead of on all 240 frames. That is also why a
   // tainted canvas still throws here rather than silently degrading.
   //
   // Restores on EVERY exit including a throw: a tool left with a hidden canvas after a
@@ -8950,7 +8956,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
     // Drive the clock to two DIFFERENT phases before reading the records: if any
     // chrome is a function of frame time, this is what makes it move where the
     // observer can see it. filter-*'s `[data-ov-clock]` rewrites an SVG overlay
-    // from its hook and slides/deck-builder seek CSS keyframes — both are caught
+    // from its hook and slides/deck-builder seek CSS keyframes - both are caught
     // here rather than silently frozen into the cached layer.
     if (frameClock) { renderFrameAt(frameClock, 0.37); renderFrameAt(frameClock, 0.71); }
     const geom = live.length ? chromeElements(node, live) : null;
@@ -8992,7 +8998,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
     // Node space → target space is the single UNIFORM factor dtoOpts already applies
     // to dom-to-image's clone: rasterStyle sets `transform: scale(targetW / node.w)`
     // and never scales height independently. Deriving a separate `sy = targetH/nodeH`
-    // looks more correct and is not — the two layers then disagree vertically the
+    // looks more correct and is not - the two layers then disagree vertically the
     // moment the target aspect differs from the node's (ask for 1920 wide on a square
     // 1280x1280 stage and the blitted canvas stretches away from the chrome behind
     // it). Taken at construction, so both layers are built from one number.
@@ -9012,10 +9018,10 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
     width: targetW,
     height: targetH,
     async frame(t = 0, clipSec?: number): Promise<HTMLCanvasElement> {
-      if (frameClock) renderFrameAt(frameClock, t, clipSec);   // deterministic phase — no settle wait needed
+      if (frameClock) renderFrameAt(frameClock, t, clipSec);   // deterministic phase - no settle wait needed
       else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
       // Frame-accurate anim-source drive: a live/onFrame tool (e.g. filter) registers
-      // __lollyFrameDrive to re-run its effect over the SOURCE frame at time t — the
+      // __lollyFrameDrive to re-run its effect over the SOURCE frame at time t - the
       // deterministic render the live preview showed. Awaited so the base is updated before
       // capture. Fail-safe: an error just leaves the previous (frozen) base in place.
       const drive = (node as unknown as { __lollyFrameDrive?: (t: number, durationMs: number) => Promise<void> | void }).__lollyFrameDrive;
@@ -9024,7 +9030,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
         catch (e) { _host?.log?.('warn', `__lollyFrameDrive threw: ${(e as Error)?.message ?? e}`); }
       }
       // Scrub any CSS animation/transition to the exact frame time regardless of
-      // frameClock — a clocked canvas can still share the DOM with CSS-animated
+      // frameClock - a clocked canvas can still share the DOM with CSS-animated
       // chrome around it. No-op when the node has none.
       scrubAnimations(node, t * durationMs);
       if (window.__lollyCaptureScreenshot)
@@ -9041,7 +9047,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
           _host?.log?.('warn', `static-chrome probe failed, keeping full rasterise: ${(e as Error)?.message ?? e}`);
         }
         // The probe drove the clock to its own phases to shake out time-dependent
-        // chrome, so the real one has to be repainted — and that is true WHATEVER the
+        // chrome, so the real one has to be repainted - and that is true WHATEVER the
         // verdict. Gating this on `fast` meant every clocked tool that DECLINED the
         // fast path (slides and deck-builder on their CSS animations, the filter-*
         // tools on their overlay hook's mutations) captured frame 1 at the probe's
@@ -9055,7 +9061,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
       if (fast) {
         // The cached chrome is only usable while nothing but canvas pixels has
         // changed since it was taken. rasterChrome's own visibility swap shows up
-        // here as attribute records on those same canvases, so it is filtered out —
+        // here as attribute records on those same canvases, so it is filtered out - 
         // otherwise the path would invalidate itself on its first composited frame.
         const mutated = watcher ? countToolMutations(watcher.takeRecords(), fast.own) : 0;
         const action = staticChromeFrameAction(guard, mutated);
@@ -9092,7 +9098,7 @@ async function renderIco(node: Element, opts: ExportOpts): Promise<Blob> {
   const sizes = opts.icoSizes ?? ICO_SIZES;
   const entries: { size: number; bytes: Uint8Array }[] = [];
   for (const size of sizes) {
-    // wait:0 — favicons are static, so there's no animation to settle.
+    // wait:0 - favicons are static, so there's no animation to settle.
     const src = await createFrameSource(node, { width: size, height: size, wait: 0 });
     let canvas: HTMLCanvasElement;
     try { canvas = await src.frame(); } finally { src.dispose(); }
@@ -9131,7 +9137,7 @@ function packIco(entries: { size: number; bytes: Uint8Array }[]): Blob {
 
 // ── ZIP bundle ────────────────────────────────────────────────────────────────
 // Bundles several of the tool's render formats into one archive. The shell passes
-// opts.bundleFormats (visual formats only — data/video are excluded). Each entry
+// opts.bundleFormats (visual formats only - data/video are excluded). Each entry
 // renders through renderFormat on the already-watermarked node, then is zipped.
 // Per-member archive filename (base + correct extension). A print PDF is renamed so
 // it doesn't clobber an RGB pdf in the same bundle; the animated SVG likewise sits
@@ -9148,9 +9154,9 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
   const password = opts.strongPassword || opts.password;
   // Defense-in-depth, matching the folder/batch path (pro/zip.ts): when the whole zip
   // is locked, any PDF member is ALSO individually AES-256 (R6) locked with the same
-  // password — so a PDF stays locked even after the zip is unpacked. Always the strong
+  // password - so a PDF stays locked even after the zip is unpacked. Always the strong
   // tier for the inner PDF (RC4 needs a plain unfinished doc; AES composes with any).
-  // Non-PDF members carry no lock of their own — only the container protects them.
+  // Non-PDF members carry no lock of their own - only the container protects them.
   const memberOpts: ExportOpts = password
     ? { ...opts, password: undefined, strongPassword: password }
     : { ...opts, password: undefined, strongPassword: undefined };
@@ -9163,8 +9169,8 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
 }
 
 // Pack already-rendered members into the archive. Split out of renderZip so the
-// contact sheet (bridge/sequence-cuts.ts) gets the identical container — including
-// both password tiers — without a second zip implementation.
+// contact sheet (bridge/sequence-cuts.ts) gets the identical container - including
+// both password tiers - without a second zip implementation.
 async function packZip(members: Array<{ name: string; bytes: Uint8Array }>, opts: ExportOpts): Promise<Blob> {
   const password = opts.strongPassword || opts.password;
 
@@ -9198,12 +9204,12 @@ async function packZip(members: Array<{ name: string; bytes: Uint8Array }>, opts
 
 // ── PPTX (PowerPoint) ─────────────────────────────────────────────────────────
 // Purpose: transport a page's treated IMAGES and VECTORS into PowerPoint as separate,
-// extractable objects at full fidelity — layout is secondary. So instead of one flat
+// extractable objects at full fidelity - layout is secondary. So instead of one flat
 // picture per slide, the DOM is decomposed:
 //   • an <svg> → a real embedded SVG picture (asvg:svgBlip + a PNG fallback), so the
 //     recipient can pull the crisp vector out (PowerPoint even "Convert to Shape"s it);
 //   • an <img> → a high-res PNG at (up to) its native resolution, with any CSS
-//     treatment baked in — the actual treated photo, extractable;
+//     treatment baked in - the actual treated photo, extractable;
 //   • a url() background → the fetched asset bytes as a picture;
 //   • text → a native, editable text box (font size / colour / weight / align);
 //   • solid/gradient backgrounds + borders → rect shapes (light layout context);
@@ -9215,25 +9221,25 @@ async function packZip(members: Array<{ name: string; bytes: Uint8Array }>, opts
 // Renders the DOM node into a video using captureStream() + MediaRecorder.
 //
 // Two-phase approach to guarantee stable frame rate regardless of render speed:
-//   Phase 1 — render: each frame is captured sequentially via toCanvas() and
+//   Phase 1 - render: each frame is captured sequentially via toCanvas() and
 //     stored as an ImageBitmap (GPU memory). Takes longer than real-time on
 //     slow machines but ensures every frame is visually unique.
-//   Phase 2 — replay: pre-rendered frames are painted to an offscreen canvas
+//   Phase 2 - replay: pre-rendered frames are painted to an offscreen canvas
 //     at exactly the target fps while MediaRecorder encodes the stream.
 //
-// opts.wait     — seconds to let CSS animations settle before recording starts (default 1)
-// opts.duration — length of the recorded clip in seconds (default 5)
+// opts.wait - seconds to let CSS animations settle before recording starts (default 1)
+// opts.duration - length of the recorded clip in seconds (default 5)
 //
 // Hard ceiling on buffered frames (Phase 1 holds one ImageBitmap each). A normal
 // clip is well under this; it exists to bound memory when duration/fps are pushed
 // past the UI limits via the URL, which would otherwise OOM a mobile WebView.
-// Scaled off navigator.deviceMemory where it's reported (Chromium only — the API
+// Scaled off navigator.deviceMemory where it's reported (Chromium only - the API
 // caps at 8): an 8GB-class device keeps the historical 600, a 2GB mobile WebView
 // gets a tighter ceiling instead of the same flat number as desktop. Floored at
 // 200 so the default 5s clip (150 frames at 30fps) always completes.
 // `hasAudio` raises the ceiling: an audio-driven clip (a narration audiogram) is
-// worthless cut short — losing two thirds of the words is a worse failure than a
-// slow export — so it gets AUDIO_FRAME_HEADROOM times the leash. The memory signal
+// worthless cut short - losing two thirds of the words is a worse failure than a
+// slow export - so it gets AUDIO_FRAME_HEADROOM times the leash. The memory signal
 // still scales it, so a 2 GB WebView keeps a smaller number than a desktop.
 function maxVideoFrames(hasAudio = false): number {
   const gb = (navigator as { deviceMemory?: number }).deviceMemory;
@@ -9242,7 +9248,7 @@ function maxVideoFrames(hasAudio = false): number {
 }
 
 // ── Encode quality: explicit bitrate + deterministic frame delivery ──────────
-// Bitrate math lives in video-mime.ts (DOM-free, shared with recorder.ts) — the
+// Bitrate math lives in video-mime.ts (DOM-free, shared with recorder.ts) - the
 // default 0.1 bits/pixel is tuned for these offline graphic renders. Audio bed
 // rides at a fixed 128 kbps.
 const AUDIO_BITRATE = 128_000;
@@ -9253,7 +9259,7 @@ function recorderOpts(mimeType: string, width: number, height: number, fps: numb
 }
 
 // A canvas capture stream we drive BY HAND: captureStream(0) emits a frame only when
-// we call requestFrame(), so exactly the frames we paint get encoded — frame-accurate,
+// we call requestFrame(), so exactly the frames we paint get encoded - frame-accurate,
 // with no setTimeout drift, no background-tab throttle, and no auto-sampler picking up
 // half-painted or duplicated states. `deliver()` hands the current canvas contents to
 // the encoder. Where requestFrame() isn't available the stream falls back to the fps
@@ -9270,12 +9276,12 @@ function manualCaptureStream(canvas: HTMLCanvasElement, fps: number): { stream: 
 // A deterministic alternative to the MediaRecorder capture: pre-rendered frames are
 // handed straight to a VideoEncoder with exact timestamps and an honoured bitrate, then
 // muxed in memory. The muxers (mp4-muxer / webm-muxer) are pure-JS, make no network
-// calls, and are lazy-imported so they never touch the initial bundle (loaded — and
-// service-worker-cached for offline — only when a video is first exported). Versus
+// calls, and are lazy-imported so they never touch the initial bundle (loaded - and
+// service-worker-cached for offline - only when a video is first exported). Versus
 // MediaRecorder this gives frame-accurate output, real H.264 High profile for mp4, and
 // encodes as fast as the CPU allows instead of in real time (a big win for long/large
 // clips, and it can't stall in a backgrounded tab). pickWebCodecsVideo returns null when
-// WebCodecs — or a codec for the requested size — isn't available, so renderVideo falls
+// WebCodecs - or a codec for the requested size - isn't available, so renderVideo falls
 // back to the MediaRecorder path.
 interface WebCodecsPick { container: 'mp4' | 'webm'; codec: string; muxCodec: string; }
 async function pickWebCodecsVideo(preferred: string, width: number, height: number, fps: number, bitrate: number): Promise<WebCodecsPick | null> {
@@ -9342,23 +9348,23 @@ async function encodeVideoWithWebCodecs(
 
 async function renderVideo(node: Element, opts: ExportOpts, preferred: string): Promise<Blob> {
   // Audio (opts.audio = { id?, url }) is resolved up front so a bad track fails
-  // fast — before the slow Phase 1 capture — and degrades to silent + warning.
+  // fast - before the slow Phase 1 capture - and degrades to silent + warning.
   // Pass the clip length so any fade-out lands at the end of the replay.
   const { audio, mimeType } = await prepareExportAudio(opts, preferred, opts.duration ?? 5, typeof AudioEncoder !== 'undefined');
-  // Fail fast when NOTHING can encode — no recorder mime and no WebCodecs.
+  // Fail fast when NOTHING can encode - no recorder mime and no WebCodecs.
   // Without this, Phase 1 would capture (and bitmap) every frame only for the
   // Phase 2 guard below to throw the same error minutes of work later.
   if (!mimeType && typeof VideoEncoder === 'undefined') { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
   // A missing recorder mime is NOT fatal here: the WebCodecs encode below needs no
   // MediaRecorder at all (e.g. a browser with VideoEncoder AVC but no MediaRecorder
-  // mp4). It only rules out the MediaRecorder paths — the opt-in stream capture and
-  // the Phase 2 replay — so NO_VIDEO_MSG moves to the guard before Phase 2, thrown
+  // mp4). It only rules out the MediaRecorder paths - the opt-in stream capture and
+  // the Phase 2 replay - so NO_VIDEO_MSG moves to the guard before Phase 2, thrown
   // only once the WebCodecs pick has ALSO come up empty.
 
   // A tool with a continuously-animating <canvas> can OPT IN to real-time stream
-  // capture by marking it `data-capture-stream` — the canvas's own rAF loop is
+  // capture by marking it `data-capture-stream` - the canvas's own rAF loop is
   // recorded at wall-clock speed, so a self-looping animation (e.g. the 3d tool's
-  // turntable: one revolution per `duration`s) yields a genuine seamless loop, and
+  // turntable: one revolution per `duration`s) yields a genuine gapless loop, and
   // it's faster than the frame-by-frame path. Opt-in so tools that composite DOM
   // overlays on top of a canvas keep the compositing (frame-by-frame) path.
   const streamCanvas = (node as Element).querySelector?.('canvas[data-capture-stream]') as HTMLCanvasElement | null;
@@ -9366,7 +9372,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     ? (node as HTMLCanvasElement)
     : (streamCanvas && typeof streamCanvas.captureStream === 'function' ? streamCanvas : null);
   // Stream capture is inherently MediaRecorder; without a mime it falls through to
-  // the frame-by-frame path (losing the seamless loop, keeping the export).
+  // the frame-by-frame path (losing the gapless loop, keeping the export).
   if (captureEl && mimeType) {
     const waitMs     = (opts.wait     ?? 1) * 1000;
     const durationMs = (opts.duration ?? 5) * 1000;
@@ -9397,7 +9403,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
 
   // Phase 1: render all frames sequentially through the shared FrameSource.
   // Animation advances in real time between frames, so each captures a unique
-  // state — recording takes longer than real-time but never duplicates/skips.
+  // state - recording takes longer than real-time but never duplicates/skips.
   const source  = await (async () => {
     try { return await createFrameSource(node, opts); }
     catch (err) { audio?.stop(); throw err; }
@@ -9407,7 +9413,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   try {
     for (let i = 0; i < frameCount; i++) {
       // `plan.clipSec` travels with the normalised t so a clocked tool can resolve
-      // absolute seconds instead of guessing the span from its own metadata — the
+      // absolute seconds instead of guessing the span from its own metadata - the
       // guess is what let the caption clock disagree with the muxed audio.
       frames.push(await createImageBitmap(await source.frame(i / frameCount, plan.clipSec)));
       // Progress for a slow N-frame render (no-op when no listener is wired).
@@ -9435,7 +9441,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
     // The "silent video" warning for a dropped live track was deferred to here
     // (prepareExportAudio, deferSilentWarn) so it only fires when the WebCodecs
-    // audio pick ALSO came up empty and no live track survives for Phase 2 —
+    // audio pick ALSO came up empty and no live track survives for Phase 2 - 
     // i.e. the export really will be silent. AudioEncoder-less browsers were
     // already warned in prepareExportAudio, hence the typeof gate.
     if (wantAudio && !audioPick && !audio && typeof AudioEncoder !== 'undefined') {
@@ -9462,7 +9468,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
 
       // Off-thread encode (opt-in, probe-gated): hand the buffered frames + a COPY of the
       // bed PCM to a Worker so the encode/mux runs off the main thread. Transfer is one-way,
-      // so this is COMMITTED — no Phase 2 fallback (the up-front support probe makes a mid-
+      // so this is COMMITTED - no Phase 2 fallback (the up-front support probe makes a mid-
       // encode failure unlikely; a failure surfaces as a clear error and the user re-exports).
       if (bedOk && supportsWorkerVideoEncode()) {
         try {
@@ -9498,7 +9504,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   }
 
   // Phase 2 needs a MediaRecorder mime. Reaching here without one means the
-  // WebCodecs attempt above also came up empty — nothing can encode.
+  // WebCodecs attempt above also came up empty - nothing can encode.
   if (!mimeType) {
     frames.forEach(b => b.close());
     audio?.stop();
@@ -9509,14 +9515,14 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // drawImage(bitmap) is near-instant so the replay timing is stable. The
   // audio bed joins the stream here (not in Phase 1): replay is real-time, so
   // starting the looped source at recorder.start() keeps it in sync and its
-  // loop naturally covers the actual replay length — including a clip
+  // loop naturally covers the actual replay length - including a clip
   // truncated by maxVideoFrames(), where frames.length is the timeline.
   const offscreen = document.createElement('canvas');
   offscreen.width  = targetW;
   offscreen.height = targetH;
   const ctx    = offscreen.getContext('2d')!;
   // Drive frame delivery by hand so the replay is frame-accurate and stays locked to
-  // wall-clock (and thus to the audio bed) — see manualCaptureStream.
+  // wall-clock (and thus to the audio bed) - see manualCaptureStream.
   const { stream, deliver } = manualCaptureStream(offscreen, fps);
   if (audio) stream.addTrack(audio.track);
 
@@ -9537,7 +9543,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     recorder.start();
     audio?.start();
 
-    // Replay: hand each pre-rendered frame to the encoder exactly once — captureStream(0)
+    // Replay: hand each pre-rendered frame to the encoder exactly once - captureStream(0)
     // + requestFrame() means the frame we paint IS the frame that's encoded (no fps
     // auto-sampler duplicating or dropping frames against the paint clock). Paced by
     // setTimeout, NOT rAF: rAF pauses entirely in a backgrounded/headless tab, which
@@ -9557,7 +9563,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
 
 // ── Live capture ("Record live") ─────────────────────────────────────────────
 // Records the on-screen preview through a screen share so the clip's frame pacing
-// matches what the user actually watched — the opt-in alternative to the offline
+// matches what the user actually watched - the opt-in alternative to the offline
 // paths above. Chromium self-tab shares crop to the element exactly (CropTarget);
 // other browsers/surfaces run live-capture.ts's stage-flash calibration and a
 // per-frame canvas crop. One MediaRecorder encode at the live bitrate tier (real
@@ -9566,8 +9572,8 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
 // stage is located and frames arrive at the compositor's own cadence.
 //
 // A SEQUENCE STAGE gets a playhead driven for it. Live capture films whatever the
-// DOM is doing, and a timed composition does nothing on its own — the preview's
-// playhead only moves while the timeline panel drives it — so a live take of a
+// DOM is doing, and a timed composition does nothing on its own - the preview's
+// playhead only moves while the timeline panel drives it - so a live take of a
 // sequence used to be one frozen frame for the whole clip. `driveSequenceTime`
 // (bridge/sequence-dom.ts, the same applier the preview clock uses, never a second
 // copy of the maths) advances t from 0 across the capture window and restores every
@@ -9578,7 +9584,7 @@ async function renderLive(node: Element, opts: ExportOpts, preferred: string): P
   const { audio, mimeType } = await prepareExportAudio(opts, preferred, durationS);
   if (!mimeType) { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
   const { captureLiveClip } = await import('./live-capture.ts');
-  // Bitrate from the stage's device-pixel size — the ceiling either crop tier can
+  // Bitrate from the stage's device-pixel size - the ceiling either crop tier can
   // deliver. 60fps in the math (compositor rate); the clamp bounds a huge canvas.
   const { width, height } = node.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -9594,18 +9600,18 @@ async function renderLive(node: Element, opts: ExportOpts, preferred: string): P
       videoBitsPerSecond: videoBitrate(Math.round(width * dpr), Math.round(height * dpr), 60, LIVE_BITS_PER_PIXEL),
       audioTrack: audio?.track ?? null,
       onRecordStart: () => { audio?.start(); playhead?.start(); },
-      // Countdown for chrome OUTSIDE the capture (the export button) — the in-page
+      // Countdown for chrome OUTSIDE the capture (the export button) - the in-page
       // pill is skipped whenever it has no capture-safe spot next to the stage.
       onProgress: opts.onProgress,
       onWarn: msg => _host?.log?.('warn', msg),
     });
     // MediaRecorder may fall back to the other container (mp4 request → webm bytes
-    // on Firefox) — derive the label from what it actually produced, like renderVideo.
+    // on Firefox) - derive the label from what it actually produced, like renderVideo.
     const container = videoContainer(blob.type || mimeType);
     return await withVideoMeta(new Blob([blob], { type: container }), container, opts.meta);
   } finally {
     // Restores every class/inline style the playhead wrote, even if the capture threw
-    // or the user cancelled the share — the live canvas must be left as it was found.
+    // or the user cancelled the share - the live canvas must be left as it was found.
     playhead?.stop();
     audio?.stop();
   }
@@ -9616,7 +9622,7 @@ async function renderLive(node: Element, opts: ExportOpts, preferred: string): P
 // recorded footage → an outro "tail" card, composited onto ONE canvas in REAL TIME
 // (unlike renderVideo's sequential DOM capture, which would drift against a live
 // <video>). The footage is drawn object-fit:cover into the chosen frame, so any
-// camera aspect ratio fills a portrait OR landscape output consistently — the cards
+// camera aspect ratio fills a portrait OR landscape output consistently - the cards
 // define the frame, the footage fits into it. The footage's own audio is mixed with
 // an optional faded music bed into a single track. Detected via [data-toptail]; if
 // no footage has been recorded yet it degrades to the plain DOM-timeline capture.
@@ -9686,7 +9692,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
     play.onloadedmetadata = () => res();
     play.onerror = () => res();
   });
-  // MediaRecorder WebM reports duration=Infinity until it's seeked to the end — force
+  // MediaRecorder WebM reports duration=Infinity until it's seeked to the end - force
   // it to resolve so the body phase gets the real clip length.
   if (!Number.isFinite(play.duration) || play.duration === 0) {
     await new Promise<void>((res) => {
@@ -9702,7 +9708,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
   const bodyMs = Math.min(durSec * 1000, TT_MAX_BODY_MS);
   const totalMs = introMs + bodyMs + outroMs;
 
-  // Whether the footage carries its own audio — the music only ducks when there's
+  // Whether the footage carries its own audio - the music only ducks when there's
   // something to duck under (a camera video-only recording is silent → no duck; an
   // uploaded talking clip → duck). Best-effort across engines (the forced end-seek
   // above has already decoded some audio, so webkitAudioDecodedByteCount is set).
@@ -9774,7 +9780,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
   const fillBlack = () => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, targetW, targetH); };
   const drawFull = (c: HTMLCanvasElement | null) => { if (c) ctx.drawImage(c, 0, 0, targetW, targetH); else fillBlack(); };
   // Clip fit (data-clip-fit): 'cover' fills the frame (crop); 'contain' fits the whole
-  // clip with letterbox bars. Default cover — matches the recorded-camera behaviour.
+  // clip with letterbox bars. Default cover - matches the recorded-camera behaviour.
   const fitContain = stage.dataset.clipFit === 'contain';
   const drawCover = (v: HTMLVideoElement) => {
     const vw = v.videoWidth || targetW, vh = v.videoHeight || targetH;
@@ -9850,14 +9856,14 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
 // camera CLIP → a fully-editable OUTRO card, composited onto ONE canvas in real time.
 // Unlike renderTopTail (which fades each card as a single unit), every object animates
 // in with its OWN transition (fade / pop / slide / rise / zoom / tilt / …), staggered
-// by a per-object delay — and objects on the middle (camera) frame ride over the
+// by a per-object delay - and objects on the middle (camera) frame ride over the
 // footage as overlays (lower-third, logo bug), entering at the head and leaving at the
 // tail. Detected via [data-record-stage].
 
 // The transition vocabulary + its maths live in ../lib/transitions.ts so the timeline
 // editing chrome can offer exactly the kinds this compositor implements.
 
-// `ease` is the authored GEOMETRY curve for this object's transition — a preset name
+// `ease` is the authored GEOMETRY curve for this object's transition - a preset name
 // or a CSS cubic-bezier, '' when unauthored, which is the byte-identical old path.
 // Read off the DOM like `transition` itself, so this compositor stays a reader of the
 // stage the tool hook stamped rather than a second interpreter of the input model.
@@ -9884,8 +9890,8 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
   const frameMs = 1000 / fps;
   const EDGE_FADE = 260; // ms fade-from/to-black at the very ends
 
-  // Output size: the FRAME's native (layout) size — transform-independent, so pan/zoom
-  // in the editor never affects it — optionally scaled up by an explicit export width.
+  // Output size: the FRAME's native (layout) size - transform-independent, so pan/zoom
+  // in the editor never affects it - optionally scaled up by an explicit export width.
   const frameNativeW = introEl.offsetWidth || 1080;
   const frameNativeH = introEl.offsetHeight || 1920;
   const targetW = Math.round(((opts.width as number) > 0) ? (opts.width as number) : frameNativeW);
@@ -9899,7 +9905,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
   const bodyVideo = bodyEl.querySelector('[data-record-clip]') as HTMLVideoElement | null;
   const clipSrc = bodyVideo && (bodyVideo.currentSrc || bodyVideo.getAttribute('src')) || '';
 
-  // Rasterise each object ONCE, unrotated, at target scale — rotation + transition are
+  // Rasterise each object ONCE, unrotated, at target scale - rotation + transition are
   // applied per frame at composite time. Blob: image URLs are swapped to data: first so
   // dom-to-image can serialise them, then restored.
   const lib = await getDomToImage();
@@ -9963,8 +9969,8 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
   // A clip was recorded but its duration never resolved (a MediaRecorder WebM/MP4 blob
   // can report duration=Infinity/0 across engines). Rather than DROP the body entirely
   // (which would export just the bookends), keep the footage on screen. Prefer the
-  // MEASURED take length the recorder stamped on the element (data-clip-ms) — otherwise a
-  // long take would be silently truncated to the blind 6s guess — falling back to 6s only
+  // MEASURED take length the recorder stamped on the element (data-clip-ms) - otherwise a
+  // long take would be silently truncated to the blind 6s guess - falling back to 6s only
   // when that hint is absent (a dropped-in clip, or the manual Export button).
   if (play && durSec === 0) {
     const hintMs = Number(bodyVideo?.dataset.clipMs);
@@ -9977,11 +9983,11 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
 
   // Prime playback under the caller's user-activation. autoProcessRecording runs this
   // right after the Stop click, but the deferred body-phase play() only fires after a
-  // multi-second decode/compositor await that can outlast the activation — a blocked
+  // multi-second decode/compositor await that can outlast the activation - a blocked
   // play() would then freeze the footage on frame 0. Playing once now blesses the element
   // so that later play() resumes without a fresh gesture. We keep it UNMUTED (muted is the
   // property the autoplay policy checks, so a muted prime wouldn't grant unmuted resume on
-  // stricter engines) but at volume 0 — no audible blip — and restore volume BEFORE
+  // stricter engines) but at volume 0 - no audible blip - and restore volume BEFORE
   // captureStream taps the audio below. Best-effort: if autoplay is refused the loop still
   // retries per frame.
   if (play) {
@@ -9989,7 +9995,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
     play.volume = 1;
   }
 
-  // Footage audio via the clip element's OWN capture stream — NO WebAudio graph, so no
+  // Footage audio via the clip element's OWN capture stream - NO WebAudio graph, so no
   // suspended-context / manual-frame-video mux fragility (a resumed AudioContext dest
   // track combined with a requestFrame() video track was producing 0-byte MP4s).
   // captureStream() is non-destructive (unlike createMediaElementSource), silent while
@@ -10042,7 +10048,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
   const drawEntering = (objs: RecObject[], phaseMs: number) => {
     for (const o of objs) drawObject(o, Math.min(1, Math.max(0, (phaseMs - o.delay) / enterMs)));
   };
-  // Body overlays: enter at the head, hold, exit near the tail (symmetric — leaves the
+  // Body overlays: enter at the head, hold, exit near the tail (symmetric - leaves the
   // same way it arrived) so lower-thirds/logo bugs come and go over the footage.
   const drawOverlays = (objs: RecObject[], bodyLocal: number) => {
     const tailStart = bodyMs - enterMs;
@@ -10136,13 +10142,13 @@ function recordStream(stream: MediaStream, { durationMs = 5000, mimeType = video
 // Renders the DOM node as an animated GIF.
 //
 // Each frame is rendered sequentially via toCanvas() so every GIF frame
-// captures a unique animation state — no duplicate or stale frames.
+// captures a unique animation state - no duplicate or stale frames.
 // Recording takes longer than real-time on slow machines, but the output
 // plays back at the intended speed because timing is in the GIF delay metadata.
 //
-// opts.wait     — seconds before capture starts (default 1)
-// opts.duration — clip length in seconds (default 5)
-// opts.dither   — Floyd-Steinberg dithering (default false)
+// opts.wait - seconds before capture starts (default 1)
+// opts.duration - clip length in seconds (default 5)
+// opts.dither - Floyd-Steinberg dithering (default false)
 async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
   const { GIFEncoder, quantize, applyPalette } = await import('gifenc') as any;
 
@@ -10190,7 +10196,7 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
 
       if (dither) {
         // Dithering already hides banding, and its reused error/nearest-colour buffers
-        // require a STABLE palette — so this path keeps one global palette, built from
+        // require a STABLE palette - so this path keeps one global palette, built from
         // frame 0 and reused for the whole clip.
         if (i === 0) palette = quantize(pixels, 256);
         const indexed = ditherFloydSteinberg(pixels, targetW, targetH, palette!, ditherState!);
@@ -10198,7 +10204,7 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
       } else {
         // No dithering: give EACH frame its own optimal 256-colour table (a local
         // palette) rather than forcing every frame through frame 0's colours. A clip
-        // whose palette evolves — fades, colour shifts, live footage — no longer bands
+        // whose palette evolves - fades, colour shifts, live footage - no longer bands
         // back to the first frame. Costs one quantize per frame and a little more size.
         const framePalette = quantize(pixels, 256);
         const indexed = applyPalette(pixels, framePalette);
@@ -10224,15 +10230,15 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
 //
 // Same capture loop as renderGif (shared FrameSource, sequential real-time
 // frames, timing lives in the fcTL delay metadata), but each frame stays a
-// full-fidelity PNG — no palette quantisation — and the engine's packApng
+// full-fidelity PNG - no palette quantisation - and the engine's packApng
 // splices the encoded frames into one APNG at the chunk level.
 //
-// opts.wait     — seconds before capture starts (default 1)
-// opts.duration — clip length in seconds (default 5)
-// opts.repeat   — loop count: -1 = play once, 0/absent = forever (GIF semantics)
+// opts.wait - seconds before capture starts (default 1)
+// opts.duration - clip length in seconds (default 5)
+// opts.repeat - loop count: -1 = play once, 0/absent = forever (GIF semantics)
 async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
-  // 15 fps by default; a caller can lower it (opts.fps) to shrink an APNG preview —
-  // fewer frames, smaller file — at the cost of smoothness. Clamped to a sane range.
+  // 15 fps by default; a caller can lower it (opts.fps) to shrink an APNG preview - 
+  // fewer frames, smaller file - at the cost of smoothness. Clamped to a sane range.
   const fps           = Math.min(30, Math.max(2, Math.round(opts.fps ?? 15)));
   const frameInterval = Math.round(1000 / fps);
   const durationMs    = (opts.duration ?? 5) * 1000;
@@ -10281,7 +10287,7 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
     loops: opts.repeat === -1 ? 1 : (opts.repeat ?? 0),
   });
 
-  // Stamp DPI + provenance + colour profile exactly as the static PNG path does —
+  // Stamp DPI + provenance + colour profile exactly as the static PNG path does - 
   // all three helpers splice right after IHDR, which the APNG spec allows (acTL
   // only has to precede the first IDAT, not follow IHDR directly).
   const d = exportDims(node, opts);
@@ -10298,14 +10304,14 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
 // real-time frames, timing in the ANMF duration field), but each frame is a
 // still WebP from the browser's native canvas.toBlob('image/webp') encoder, and
 // the engine's packWebpAnim muxes the extracted VP8/VP8L(+ALPH) bitstreams into
-// one animated RIFF/WEBP — full colour + alpha, smaller than GIF or APNG, and no
+// one animated RIFF/WEBP - full colour + alpha, smaller than GIF or APNG, and no
 // new dependency (the browser compresses, the engine assembles the container).
 //
-// opts.wait     — seconds before capture starts (default 1)
-// opts.duration — clip length in seconds (default 5)
-// opts.fps      — frames/sec (default 15, clamped 2..30, matches renderApng)
-// opts.quality  — per-frame WebP quality 0..1 (default 0.9, matches renderBitmap)
-// opts.repeat   — loop count: -1 = play once, 0/absent = forever (GIF semantics)
+// opts.wait - seconds before capture starts (default 1)
+// opts.duration - clip length in seconds (default 5)
+// opts.fps - frames/sec (default 15, clamped 2..30, matches renderApng)
+// opts.quality - per-frame WebP quality 0..1 (default 0.9, matches renderBitmap)
+// opts.repeat - loop count: -1 = play once, 0/absent = forever (GIF semantics)
 async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   const fps           = Math.min(30, Math.max(2, Math.round(opts.fps ?? 15)));
   const frameInterval = Math.round(1000 / fps);
@@ -10356,24 +10362,24 @@ async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
 
 // Each animated-SVG frame is a FULL vector snapshot (heavier than a raster frame and
 // stacked verbatim in the file), so default to a lower rate and cap well below the
-// raster ceiling — a flipbook is meant to stay scalable and self-contained, not to
+// raster ceiling - a flipbook is meant to stay scalable and self-contained, not to
 // rival a 30fps video.
 const MAX_SVG_ANIM_FRAMES = 150;
 
 // Renders the DOM node as a self-contained animated SVG (a vector "flipbook").
 //
 // Unlike gif/apng/webp-anim (which sample the canvas to RASTER frames), this samples
-// each moment to a VECTOR snapshot via renderSvgFromHtml — text stays outlined, so the
+// each moment to a VECTOR snapshot via renderSvgFromHtml - text stays outlined, so the
 // result scales to any size with no codec and no external runtime. The snapshots are
 // stacked as <g> layers and an embedded step-end @keyframes cross-cuts exactly one
 // visible per slice (svg-anim-core assembleAnimatedSvg). Capture semantics match the
-// raster animated path: settle once, then walk sequentially — the real-time animation
+// raster animated path: settle once, then walk sequentially - the real-time animation
 // advances between the (slow) walks, so every frame is a distinct moment; playback
 // timing lives in the flipbook CSS, not in when we happened to capture.
 //
-// opts.fps      — frames/sec (default 10, clamped 2..24; lower than raster on purpose)
-// opts.duration — clip length in seconds (default 5)
-// opts.repeat   — loop count: -1 = play once, 0/absent = forever (GIF semantics)
+// opts.fps - frames/sec (default 10, clamped 2..24; lower than raster on purpose)
+// opts.duration - clip length in seconds (default 5)
+// opts.repeat - loop count: -1 = play once, 0/absent = forever (GIF semantics)
 async function renderSvgAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   const fps           = Math.min(24, Math.max(2, Math.round(opts.fps ?? 10)));
   const frameInterval = Math.round(1000 / fps);
@@ -10389,7 +10395,7 @@ async function renderSvgAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   await new Promise<void>(r => setTimeout(r, (opts.wait ?? 1) * 1000));
 
   // Per-frame snapshot opts: keep the caller's convert-paths choice (vector text by
-  // default) but never let the still-SVG metadata be injected per frame — provenance
+  // default) but never let the still-SVG metadata be injected per frame - provenance
   // is added ONCE at assembly.
   const frameOpts: ExportOpts = { ...opts, meta: undefined, onProgress: undefined };
   const ser = new XMLSerializer();
@@ -10442,7 +10448,7 @@ function createDitherState(width: number, height: number): DitherState {
 //
 // Cache note: nearest-palette lookups are memoised by a 15-bit colour key
 // (5 bits per channel). This trades a tiny amount of precision for a large
-// speed improvement — especially effective for flat-colour brand graphics.
+// speed improvement - especially effective for flat-colour brand graphics.
 //
 // `state` (from createDitherState) lets a multi-frame caller reuse the buffers
 // across frames; absent, a fresh set is allocated for this single call.
@@ -10451,7 +10457,7 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
   const st  = state ?? createDitherState(width, height);
   const out = st.out;
 
-  // Float RGB buffer — accumulates diffused error beyond [0,255]. Re-seeded from
+  // Float RGB buffer - accumulates diffused error beyond [0,255]. Re-seeded from
   // this frame's pixels (so a reused buffer carries no error from the prior frame).
   const buf = st.buf;
   for (let i = 0; i < n; i++) {
@@ -10461,7 +10467,7 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
   }
 
   // Nearest-palette memoisation keyed on a 5-bit-per-channel approximation.
-  // Persisted across frames via `state` — valid because the palette is fixed.
+  // Persisted across frames via `state` - valid because the palette is fixed.
   const cache = st.cache;
   function nearest(r: number, g: number, b: number): number {
     const key = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
@@ -10544,21 +10550,21 @@ function addWatermarkOverlay(node: HTMLElement): () => void {
 
 // Editor-only chrome (size previews, guides, safe-area overlays) opts out of EVERY
 // export by tagging itself [data-export-hide]. We detach those nodes for the
-// duration of the render and put them back exactly where they were — so no export
+// duration of the render and put them back exactly where they were - so no export
 // path (raster, SVG, PDF, …) can pick them up regardless of how it reads the DOM,
 // and the live editor is untouched afterwards. Mirrors the watermark overlay's
 // add/remove-in-finally discipline above.
 //
-// ⚑ ONE EXEMPTION: `[data-cam]` — the plans/104 §5.4 CAMERA MARKER. It wears
+// ⚑ ONE EXEMPTION: `[data-cam]` - the plans/104 §5.4 CAMERA MARKER. It wears
 // `data-export-hide` for the same reason everything else here does (nothing may draw
 // it), but it is not chrome: it is the MODEL element both evaluators key their camera
 // branch off. `layerKind` (sequence-plan) and `readTiming` (sequence-dom) ask the LIVE
-// tree for `[data-cam]` INSIDE the render — the compositor when it parses the stage,
-// and `renderSequenceCuts` when its session poses each cut — so detaching it deletes
+// tree for `[data-cam]` INSIDE the render - the compositor when it parses the stage,
+// and `renderSequenceCuts` when its session poses each cut - so detaching it deletes
 // the camera out from under them mid-export. Measured before this exemption existed,
 // on a 4 s push-in over four layers at z 0/80/160/240: through `renderSequence`
 // directly every layer parallaxed (40.2 / 47.1 / 55.7 / 66.4 px, matching the engine
-// to 0.4 px); through THIS funnel — the one every real export takes — all four moved
+// to 0.4 px); through THIS funnel - the one every real export takes - all four moved
 // 0.0 px and the file fell from 230,632 B to 35,691 B, because a still picture
 // compresses to nothing. The contact sheet showed the second half of the same wound:
 // with no `[data-cam]` to find, the camera BOX stopped being `kind: 'camera'` and was
@@ -10577,7 +10583,7 @@ function detachExportHidden(node: Element): () => void {
   slots.forEach(({ el }) => el.remove());
   // Restore in REVERSE document order: a marked node's saved `next` may be ANOTHER
   // marked node (an editor stage's .fc-overlay / .fc-toolbar-dock / .tl-panel are
-  // adjacent siblings), and every one of them is detached before any is put back —
+  // adjacent siblings), and every one of them is detached before any is put back - 
   // forward order then throws insertBefore's NotFoundError. Going backwards puts
   // the reference sibling in first. The parentNode re-check covers the other way
   // the anchor rots: the live tool re-rendering during the awaits inside a render.
@@ -10594,7 +10600,7 @@ function detachExportHidden(node: Element): () => void {
 // ── Text-based export formats ─────────────────────────────────────────────────
 
 // Standalone HTML document with the tool's template CSS and baked-in content.
-// The fitting script is stripped — the computed font-size is already on the element.
+// The fitting script is stripped - the computed font-size is already on the element.
 //
 // opts.fullPage drops the fixed-size tool-canvas frame: the canvas div is the
 // shell's preview box, so we promote its content straight into the document body
@@ -10654,7 +10660,7 @@ function walkDom(node: Node, handlers: DomHandlers): string {
 // ── HTML DOM → Markdown ───────────────────────────────────────────────────────
 // A structural serializer (headings, nested lists, GFM tables, code, blockquote,
 // hr, links, emphasis) so ANY text tool that declares the `md` format gets a
-// faithful markdown export from its rendered DOM — no per-tool serializer needed.
+// faithful markdown export from its rendered DOM - no per-tool serializer needed.
 // (Tools wanting model-derived, CLI-working output ship a template.md instead.)
 const mdSkip = (el: Element): boolean =>
   el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('data-export-hide');

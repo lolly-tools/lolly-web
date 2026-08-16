@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-protocol — the message and state layer for a **Beam**: an AirDrop-grade,
+ * beam-protocol - the message and state layer for a **Beam**: an AirDrop-grade,
  * serverless hand-off of a saved session, a whole project, the user's own assets, or
  * a tag pack, over the direct channel the pairing ceremony already established
  * (plan 100 §6.4, §11.6, §11.15a, §11.18, §11.24).
@@ -9,12 +9,12 @@
  * no OPFS, no `fetch`, no DOM, and no wall clock. This module is pure logic: it
  * defines the frames two peers exchange and the two state machines that produce and
  * consume them. The transport, the staging store and the pack builder are all
- * **drivers** that sit outside and feed these machines — which is what lets the whole
+ * **drivers** that sit outside and feed these machines - which is what lets the whole
  * protocol be exercised headlessly, byte-exactly, against an in-memory sink.
  *
  * That separation is not tidiness. §11.15a requires beam work to run off the main
  * thread with chunks streaming to staging as they arrive, and §11.18 requires a
- * cancelled transfer to leave nothing behind. Both are properties of the *driver* —
+ * cancelled transfer to leave nothing behind. Both are properties of the *driver* - 
  * but they are only provable if the protocol never touches storage itself and never
  * decides on its own when to write. So:
  *
@@ -42,19 +42,19 @@
  *   complete {}                          ─▶   phase 'complete'
  *   cancel {reason}                     ◀─▶   either side, at any moment
  *
- * A chunk is TWO frames — a JSON header immediately followed by its binary payload.
+ * A chunk is TWO frames - a JSON header immediately followed by its binary payload.
  * The channel that carries a beam is reliable-ordered (§11.6: beam gets its own
  * channel so a bulk transfer never queues ops or presence behind it), so the header
  * is guaranteed to arrive before its bytes. A payload with no pending header, or a
- * second header with no payload between, is a protocol violation — that pairing is
+ * second header with no payload between, is a protocol violation - that pairing is
  * the only framing this needs, and it costs nothing on the wire.
  *
  * ── The consent gate (§6.4, §11.24) ──────────────────────────────────────────
  *
  * Nothing transfers on pairing alone. The offer discloses kind, name, item count,
  * per-item labels and the exact byte total BEFORE anything moves ("Receive 'Berlin
- * pack' — 14 assets, 38 MB?"). Until `accept()` is called the receiver treats ANY
- * chunk header or binary frame as `unsolicited-bytes` — a typed protocol violation
+ * pack' - 14 assets, 38 MB?"). Until `accept()` is called the receiver treats ANY
+ * chunk header or binary frame as `unsolicited-bytes` - a typed protocol violation
  * that cancels and discards. A peer cannot push bytes at a device that has not said
  * yes, and the machine proves it rather than the UI promising it.
  *
@@ -64,17 +64,17 @@
  * form `scripts/checksum-assets.ts` writes and `bridge/assets.ts` verifies against, so
  * a received asset's checksum compares equal to the one the sender's catalog already
  * holds and receiver-side dedup-by-checksum is a string compare. Each item's digest is
- * stated twice — in the offer (so the receiver can dedup and skip before consenting)
+ * stated twice - in the offer (so the receiver can dedup and skip before consenting)
  * and again in `item-done` (the digest of what was actually sent). They must agree,
  * and the staged bytes must match both; any disagreement is `checksum-mismatch` and
  * the whole beam is discarded, never partially ingested.
  *
  * The hasher is injectable for two reasons, and only one of them is tests. Web Crypto
  * has no streaming digest, so the built-in `sha256Hasher` retains each chunk until
- * `digest()` — O(item) memory, which is exactly what §11.15a says a 38 MB beam must
+ * `digest()` - O(item) memory, which is exactly what §11.15a says a 38 MB beam must
  * not do in the renderer. The escape hatch is `BeamSink.finalize()`: a driver that
  * holds the staged bytes anyway may return the digest from `finalize`, and that value
- * wins over (and is computed instead of) anything the hasher would produce — pass
+ * wins over (and is computed instead of) anything the hasher would produce - pass
  * `hasher: null` and the protocol buffers nothing at all. A driver that supplies
  * neither fails closed (`sink-failure`), never "verified" by omission.
  *
@@ -84,14 +84,14 @@
  * treated that way: one strict parser (`parseBeamMessage`) is the single door, with
  * caps on item count, name/label/id lengths, per-item and total byte sizes, chunk
  * size, and a wire-version equality check. `totalBytes` must equal the sum of the
- * declared item sizes exactly — a peer cannot disclose 2 MB and then send 2 GB. Item
+ * declared item sizes exactly - a peer cannot disclose 2 MB and then send 2 GB. Item
  * indices advance strictly 0…n-1 and `seq` strictly +1 within an item, so neither
  * out-of-order nor replayed chunks can reach staging. Sizes are checked against the
  * DECLARED size on every payload, so an item cannot overflow what the human accepted.
  * Nothing peer-supplied is ever used as an object key (items are addressed by index,
  * ids only ever land in a `Set` for a uniqueness check), so the prototype-key class of
  * bug has no surface here. Every violation produces a typed `BeamCancelReason`, sent
- * to the peer and surfaced in state — never a thrown exception, never a silent drop.
+ * to the peer and surfaced in state - never a thrown exception, never a silent drop.
  *
  * ── Ordering & versioning ────────────────────────────────────────────────────
  *
@@ -99,7 +99,7 @@
  * order; the receiver enforces both. `BEAM_PROTOCOL_VERSION` is checked for equality,
  * not range: a peer on another wire version gets an explicit `protocol-version`
  * refusal rather than a best-effort guess. No wall clock is read anywhere in this
- * file — a beam between two airgapped devices with wrong clocks behaves identically
+ * file - a beam between two airgapped devices with wrong clocks behaves identically
  * (§11.7's rule, honoured here for the same reason).
  */
 
@@ -108,14 +108,14 @@ import { ulid } from '../lib/row-id.ts';
 // ── Version & caps ────────────────────────────────────────────────────────────
 
 /** The beam wire version. Checked for EQUALITY at the offer, not compatibility-ranged
- *  — a peer on a different version is refused explicitly (`protocol-version`) rather
+ * - a peer on a different version is refused explicitly (`protocol-version`) rather
  *  than half-understood. Independent of CANVAS_OP_VERSION and CONTRACT_VERSION. */
 export const BEAM_PROTOCOL_VERSION = 1;
 
 /** Default payload size for one chunk frame. §11.6: every SCTP message stays ≤64 KB
  *  to be cross-browser safe, and a chunk frame is the largest thing a beam sends. */
 export const DEFAULT_CHUNK_BYTES = 64 * 1024;
-/** Hard ceiling for one payload frame — the §11.6 SCTP limit, not a preference. */
+/** Hard ceiling for one payload frame - the §11.6 SCTP limit, not a preference. */
 export const MAX_CHUNK_BYTES = 64 * 1024;
 /** Floor, so a hostile or buggy driver cannot turn a 38 MB beam into 38 M frames. */
 export const MIN_CHUNK_BYTES = 1024;
@@ -161,7 +161,7 @@ export type BeamCancelReason =
   | 'too-large'
   /** More items than the receiver will take. */
   | 'too-many-items'
-  /** Bytes (or a chunk header) arrived before consent — the §11.24 gate. */
+  /** Bytes (or a chunk header) arrived before consent - the §11.24 gate. */
   | 'unsolicited-bytes'
   /** `seq` was not the next one for this item. */
   | 'bad-sequence'
@@ -177,7 +177,7 @@ export type BeamCancelReason =
   | 'sink-failure'
   /** The sender's own byte source threw or returned the wrong length. */
   | 'source-failure'
-  /** The channel died under us (local only — nothing is sent). */
+  /** The channel died under us (local only - nothing is sent). */
   | 'transport';
 
 /** Why a receiver said no. A decline is a normal outcome, not a violation. */
@@ -195,7 +195,7 @@ export type BeamEndReason = BeamCancelReason | BeamDeclineReason;
 /** One thing inside a beam. `checksum` is SRI SHA-256 over the item's exact bytes. */
 export interface BeamItem {
   /** Sender-local id (a session slot, an upload id). Receiver-local ids are re-keyed
-   *  on ingest by the driver — §11.18 — so this is a label for humans and dedup, not
+   *  on ingest by the driver - §11.18 - so this is a label for humans and dedup, not
    *  an address. */
   readonly id: string;
   /** What the human sees in the consent sheet. May be empty. */
@@ -241,7 +241,7 @@ export interface BeamChunkMessage extends BeamBase {
 export interface BeamItemDoneMessage extends BeamBase {
   readonly t: 'item-done';
   readonly itemIndex: number;
-  /** SRI SHA-256 of what was actually sent — must equal the offered checksum. */
+  /** SRI SHA-256 of what was actually sent - must equal the offered checksum. */
   readonly checksum: string;
 }
 
@@ -265,7 +265,7 @@ export type BeamMessage =
   | BeamCompleteMessage
   | BeamCancelMessage;
 
-/** `ok: false` is a typed refusal carrying the reason to cancel with — not a throw. */
+/** `ok: false` is a typed refusal carrying the reason to cancel with - not a throw. */
 export type BeamParseResult =
   | { readonly ok: true; readonly value: BeamMessage }
   | { readonly ok: false; readonly reason: BeamCancelReason; readonly detail: string };
@@ -389,7 +389,7 @@ export function parseBeamMessage(raw: unknown): BeamParseResult {
       return { ok: true, value: { v, beamId, t: 'complete' } };
     case 'cancel': {
       // The reason selects localized copy, so an unknown word from the peer degrades
-      // to `user` rather than reaching the UI — and `detail` is a bounded log string,
+      // to `user` rather than reaching the UI - and `detail` is a bounded log string,
       // never shown. The key is omitted when absent so the parsed shape is exact.
       const raw2 = typeof raw.reason === 'string' ? raw.reason : 'user';
       const reason = (KNOWN_CANCEL.includes(raw2) ? raw2 : 'user') as BeamCancelReason;
@@ -411,7 +411,7 @@ export function parseBeamMessage(raw: unknown): BeamParseResult {
  *
  * Used for one decision only: whether a frame this machine could not parse is even
  * addressed to it. One channel may carry more than one machine's traffic, and both
- * machines already decline to judge well-formed frames belonging to another beam —
+ * machines already decline to judge well-formed frames belonging to another beam - 
  * but a PARSE FAILURE was acted on before that check, so a single garbage frame
  * belonging to a different beam terminated an unrelated, healthy transfer.
  */
@@ -447,7 +447,7 @@ export interface BeamHash {
 
 export type BeamHasher = () => BeamHash;
 
-// Chunked so a multi-MB digest input can't blow the call stack via spread/apply —
+// Chunked so a multi-MB digest input can't blow the call stack via spread/apply - 
 // the same guard lib/bundle.ts uses for the identical conversion.
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
@@ -459,10 +459,10 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * SRI SHA-256 over a complete buffer — byte-for-byte the catalog's form
+ * SRI SHA-256 over a complete buffer - byte-for-byte the catalog's form
  * (`scripts/checksum-assets.ts` writes `createHash('sha256').digest('base64')`;
  * Node's base64 alphabet and padding are identical to `btoa` over the raw digest, so
- * the strings compare equal — the note `bridge/assets.ts` already relies on).
+ * the strings compare equal - the note `bridge/assets.ts` already relies on).
  */
 export async function sriSha256(bytes: Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
@@ -475,7 +475,7 @@ export async function sriSha256(bytes: Uint8Array): Promise<string> {
 
 /**
  * The built-in incremental hasher. Web Crypto has no streaming digest, so this
- * RETAINS every chunk until `digest()` — O(item) memory, which §11.15a explicitly
+ * RETAINS every chunk until `digest()` - O(item) memory, which §11.15a explicitly
  * does not want in the renderer for a 38 MB beam. Two ways out, both supported:
  * return the digest from `BeamSink.finalize()` (the driver holds the bytes anyway),
  * or inject a real streaming hasher from the Worker. Passing `hasher: null` with a
@@ -498,7 +498,7 @@ export const sha256Hasher: BeamHasher = () => {
       }
       // BOTH halves of the state are cleared. Clearing `parts` alone left `total`
       // carrying the previous item's length, so a reused instance digested a
-      // wrongly-sized, zero-padded buffer — a wrong digest that reads as
+      // wrongly-sized, zero-padded buffer - a wrong digest that reads as
       // `checksum-mismatch`, or worse matches another zero-padded value. `BeamHasher`
       // is an exported surface a driver is invited to hold, so "no internal caller
       // reuses one" is not a property this can rely on.
@@ -515,7 +515,7 @@ export const sha256Hasher: BeamHasher = () => {
 export interface BeamWire {
   /** One JSON control frame. */
   json(msg: BeamMessage): void;
-  /** One binary payload frame — always immediately after its `chunk` header. The
+  /** One binary payload frame - always immediately after its `chunk` header. The
    *  bytes may be a view over a shared buffer, so a wire that defers must copy. */
   binary(bytes: Uint8Array): void;
 }
@@ -529,9 +529,9 @@ export interface BeamSource {
 
 /**
  * Where the receiver stages bytes. The whole IDB/OPFS integration is this interface
- * (§11.15a) — the protocol never learns what a staging row is.
+ * (§11.15a) - the protocol never learns what a staging row is.
  *
- * `finalize` SEALS an item's staging — it is emphatically NOT ingestion. Verification
+ * `finalize` SEALS an item's staging - it is emphatically NOT ingestion. Verification
  * happens after it (that is where a corrupted item is caught), and §11.18 means
  * nothing may enter the user's library until the receiver reaches `complete`. A
  * driver that ingests on `finalize` has broken the no-partial-ingest guarantee.
@@ -658,7 +658,7 @@ export interface BeamSender {
   cancel(reason?: BeamCancelReason, detail?: string): void;
   /** Feed one inbound control frame (already JSON-decoded, or a raw object). */
   receive(raw: unknown): void;
-  /** The channel died — terminal, and nothing is written to the wire. */
+  /** The channel died - terminal, and nothing is written to the wire. */
   abort(reason?: BeamCancelReason, detail?: string): void;
   subscribe(fn: (state: BeamSendState) => void): () => void;
   dispose(): void;
@@ -713,7 +713,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
   /**
    * EVERY write to the wire goes through these two, and neither ever throws.
    * `RTCDataChannel.send()` throws `InvalidStateError` on a channel that is not
-   * open and throws again when the send buffer is full — both of which are
+   * open and throws again when the send buffer is full - both of which are
    * ordinary conditions on a channel this file's own pull-based design exists to
    * manage. This module promises "never a thrown exception" (module header), so a
    * write that fails is reported through the state machine, not up the stack.
@@ -760,7 +760,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
     if (announce) wireJson({ v: BEAM_PROTOCOL_VERSION, beamId, t: 'cancel', reason: why, detail: why2 });
   }
 
-  /** False when the frame could not be written — the caller ends the beam. */
+  /** False when the frame could not be written - the caller ends the beam. */
   function sendItemDone(i: number, checksum: string): boolean {
     if (!wireJson({ v: BEAM_PROTOCOL_VERSION, beamId, t: 'item-done', itemIndex: i, checksum })) return false;
     itemsDone++;
@@ -781,7 +781,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
     return true;
   }
 
-  /** True when there is nothing left to send — which is `complete` if the frame went
+  /** True when there is nothing left to send - which is `complete` if the frame went
    *  out, and `cancelled` if the wire refused it. Callers read `phaseNow()` to tell
    *  the two apart rather than assuming success. */
   function finishIfDone(): boolean {
@@ -843,7 +843,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
           return 'ended';
         }
         // A cancel, decline or pause may have landed while the read was in flight.
-        // Bytes already in hand are dropped and re-read on resume — nothing has been
+        // Bytes already in hand are dropped and re-read on resume - nothing has been
         // written to the wire yet, so no `seq` is burned and no gap can appear.
         if (settled()) return 'ended';
         if (phase !== 'sending') return 'waiting';
@@ -854,7 +854,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
 
         // A CHUNK IS TWO FRAMES AND THEY MUST NOT COME APART. If the header goes
         // out and the payload does not, the peer sees a header with no payload
-        // while `offset`/`seq` (below) have not advanced — so the next pull emits
+        // while `offset`/`seq` (below) have not advanced - so the next pull emits
         // the SAME header, the receiver sees "two chunk headers with no payload
         // between" and kills the beam, and the sender never learns. One transient
         // backpressure throw would desynchronize the framing permanently, with no
@@ -943,7 +943,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
       if (!parsed.ok) {
         // The beamId filter applies to frames we could NOT parse too. It used to
         // run four lines later, so a garbage frame addressed to another beam on the
-        // same channel terminated this healthy transfer — contradicting the comment
+        // same channel terminated this healthy transfer - contradicting the comment
         // immediately below it.
         const claimed = claimedBeamId(raw);
         if (claimed !== undefined && claimed !== beamId) return;
@@ -951,7 +951,7 @@ export function createBeamSender(opts: BeamSenderOptions): BeamSender {
         return;
       }
       const msg = parsed.value;
-      // Frames for another beam are not ours to judge — one channel may carry more
+      // Frames for another beam are not ours to judge - one channel may carry more
       // than one machine's traffic, and a late frame from a dead beam is not a lie.
       if (msg.beamId !== beamId) return;
       switch (msg.t) {
@@ -1030,7 +1030,7 @@ export interface BeamReceiverOptions {
   readonly wire: BeamWire;
   readonly sink: BeamSink;
   /** Defaults to `sha256Hasher`. `null` means the sink's `finalize()` must return
-   *  the digest instead — verification is never skipped. */
+   *  the digest instead - verification is never skipped. */
   readonly hasher?: BeamHasher | null;
   readonly policy?: BeamPolicy;
 }
@@ -1045,7 +1045,7 @@ export interface BeamReceiver {
   accept(): void;
   decline(reason?: BeamDeclineReason): void;
   cancel(reason?: BeamCancelReason, detail?: string): void;
-  /** The channel died — terminal, nothing sent, staging discarded. */
+  /** The channel died - terminal, nothing sent, staging discarded. */
   abort(reason?: BeamCancelReason, detail?: string): void;
   /** Resolve once every queued staging write, finalize and verify has settled. */
   drain(): Promise<void>;
@@ -1108,7 +1108,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
     return phase === 'complete' || phase === 'declined' || phase === 'cancelled';
   }
 
-  /** Every write to the wire, and neither ever throws — see the sender's pair. */
+  /** Every write to the wire, and neither ever throws - see the sender's pair. */
   function wireJson(msg: BeamMessage): boolean {
     try {
       opts.wire.json(msg);
@@ -1130,7 +1130,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
       }
     };
     // BOTH handlers, deliberately: §11.18's guarantee is unconditional, so a chain
-    // that has somehow rejected must still reach the discard — a bare `.then(run)`
+    // that has somehow rejected must still reach the discard - a bare `.then(run)`
     // would skip it and leave the staged bytes behind, which is the one outcome
     // this latch exists to make impossible.
     chain = chain.then(run, run);
@@ -1150,7 +1150,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
   /**
    * TERMINAL FIRST, ANNOUNCEMENT SECOND. The order is the whole fix: the wire write
    * used to run before `end()`, and `wire.json` can throw (an `RTCDataChannel` that
-   * is closed, or whose send buffer is full) — so a fail on a dying channel never
+   * is closed, or whose send buffer is full) - so a fail on a dying channel never
    * reached `end()`. `discardOnce()` never fired, `phase` stayed `receiving`, and
    * the receiver went on accepting and STAGING bytes from the peer it had just
    * judged to be violating the protocol. Both headline guarantees broke on one
@@ -1216,7 +1216,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
 
   function onChunkHeader(msg: BeamChunkMessage): void {
     // THE CONSENT GATE (§6.4, §11.24). Nothing about the transfer is inspected first
-    // — a header before accept is refused for arriving at all.
+    // - a header before accept is refused for arriving at all.
     if (phase !== 'receiving') {
       fail('unsolicited-bytes', `chunk header in ${phase}`, !offer);
       return;
@@ -1320,7 +1320,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
         // As on the sender: a frame that names a DIFFERENT beam is not ours to
         // judge, and that has to be decided before the refusal, not after it.
         // (Before an offer exists there is no identity to compare against, so a
-        // stray frame in `waiting` is still taken as ours — the offer is the only
+        // stray frame in `waiting` is still taken as ours - the offer is the only
         // thing that could tell us otherwise.)
         const claimed = claimedBeamId(raw);
         if (offer && claimed !== undefined && claimed !== offer.beamId) return;
@@ -1405,7 +1405,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
       startItem();
       if (!wireJson({ v: BEAM_PROTOCOL_VERSION, beamId: offer!.beamId, t: 'accept' })) {
         // The channel died between the offer and the human saying yes. Nothing is
-        // staged yet, but the latch still runs — §11.18 is unconditional.
+        // staged yet, but the latch still runs - §11.18 is unconditional.
         fail('transport', 'accept could not be written', true);
         return;
       }
@@ -1427,7 +1427,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
 
     async drain() {
       // Never rejects. A sink error is already converted into `fail('sink-failure')`
-      // by `enqueue`, so a rejected chain would only ever be a bug in this module —
+      // by `enqueue`, so a rejected chain would only ever be a bug in this module - 
       // and surfacing it as a rejection from `drain()` would break the same "never a
       // thrown exception" promise everywhere else here keeps.
       let seen: Promise<void>;

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-work-opener.ts — the work-collab launch path, both ends.
+ * org/collab-work-opener.ts - the work-collab launch path, both ends.
  *
  * What is proved here:
  *   - the opener hands `lib/collab-mount.ts` a MEMBER connection with the shape the
  *     seam contract names (role, handle, close, toolId, launch, ephemeral, seed);
  *   - the inbox invite action parses the server's message, connects on press, and is
- *     ABSENT — not disabled — without the `collab.join` bit, including through a real
+ *     ABSENT - not disabled - without the `collab.join` bit, including through a real
  *     `initOrg()` pass on an instance that grants nothing;
  *   - each way an invite can outlive its session (410 / 403 / 404 / no answer) shows
  *     its OWN sentence, and never opens a socket;
@@ -106,7 +106,7 @@ function fakeProvider(initial: Status = 'connecting') {
 }
 
 /** The session handle a work provider is adapted into. Its `close()` closes the
- *  provider, exactly as `createWorkCollabHandle`'s does — the property the delivered
+ *  provider, exactly as `createWorkCollabHandle`'s does - the property the delivered
  *  connection's own `close()` stands on. */
 function fakeHandleOver(provider: ReturnType<typeof fakeProvider>) {
   return {
@@ -308,8 +308,8 @@ test('each way an invite outlives its session gets its own sentence, and no sock
     [404, 'missing', STRINGS.missing],
     // The point of a status-carrying fetch: only a status this module has NO reading for
     // (and `status: 0`, which is what a network error and an unusable body both are) may
-    // become the offline sentence. A 401 is an answer — the instance said "who are you?"
-    // — and telling that member to check their internet connection instead of to sign in
+    // become the offline sentence. A 401 is an answer - the instance said "who are you?"
+    // - and telling that member to check their internet connection instead of to sign in
     // is precisely the mis-diagnosis the fetch was introduced to prevent.
     [401, 'signed-out', STRINGS.signedOut],
     [500, 'server-error', STRINGS.serverError],

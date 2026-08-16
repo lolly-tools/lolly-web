@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * host.upscale catalogue (lib/upscale-models.ts) — the honesty gates. Twin of
+ * host.upscale catalogue (lib/upscale-models.ts) - the honesty gates. Twin of
  * matte-models.test.ts.
  *
- * The one property that MUST hold: nothing is offered until its weights are real —
+ * The one property that MUST hold: nothing is offered until its weights are real - 
  * a model appears only once UPSCALE_STAGED flips, in the same change that lands its
  * verified fetch-script pin (scripts/fetch-upscale-models.ts) OR, for the
  * conversion-sourced anime model, its reproducible converter
@@ -42,15 +42,15 @@ test('the default model is a real, staged catalogue entry', () => {
 
 test('HONESTY GATE: exactly the verified models are offered', () => {
   // Staging a model asserts you verified its weights: a real sha256/byte-verified
-  // pin in scripts/fetch-upscale-models.ts, OR — for the conversion-sourced anime
-  // model — that scripts/convert-anime-upscale-onnx.py reproduced it from the
+  // pin in scripts/fetch-upscale-models.ts, OR - for the conversion-sourced anime
+  // model - that scripts/convert-anime-upscale-onnx.py reproduced it from the
   // upstream BSD-3 .pth and it ran + scaled x4 in onnxruntime. Flipping a flag
   // without that verification is exactly the mistake this guards.
   //
   // Staged roster as of 2026-08-06: general (fast, default) + x4plus (quality) +
   // x4plus-anime (illustration/line-art, converted 2026-08-06) + gfpgan (face).
   // All permissive (BSD-3-Clause ×3, Apache-2.0). If this fails, a staged flag
-  // changed — re-affirm the weights were actually verified, then update this list
+  // changed - re-affirm the weights were actually verified, then update this list
   // in the SAME change.
   assert.deepEqual(
     stagedUpscaleModels().map(m => m.id).sort(),

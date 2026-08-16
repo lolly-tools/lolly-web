@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Swatch-exclusion read — the doc-level `$extensions` list that "deleting" a
+ * Swatch-exclusion read - the doc-level `$extensions` list that "deleting" a
  * derived swatch writes (see brand-doc.ts's exclusion block for the contract:
  * the token keeps resolving, only its tile/picker presence goes).
  *

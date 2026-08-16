@@ -4,7 +4,7 @@
  * adapter, the face dedupe and its honesty chips, and the logo cap.
  *
  * Fixtures are plain objects in the shapes `listVectors` / `listFonts` return,
- * which is the whole point of the split — the browser half is the only part that
+ * which is the whole point of the split - the browser half is the only part that
  * needs a document, and everything with judgement in it lives on this side of
  * the line and runs under bare node.
  *
@@ -143,7 +143,7 @@ test('chips report what the source stated and nothing more', () => {
   const [subsetted, silent] = pdfFontCandidates(FONTS);
   // Stated subset + stated fsType permission.
   assert.deepEqual(subsetted?.chips, ['SUBSET', 'installable']);
-  // Subset stated, embedding never mentioned — unknown stays unknown.
+  // Subset stated, embedding never mentioned - unknown stays unknown.
   assert.deepEqual(silent?.chips, ['SUBSET', 'unknown']);
 
   // subset: false produces no chip (the source may simply not have looked).
@@ -219,13 +219,13 @@ test('names number the picks and the page a human would turn to', () => {
 
 test('every pick carries the row it came from, through the filter and the sort', () => {
   const picks = pdfLogoPicks([
-    { fills: [], page: 0, shapes: 9 },                              // no svg — dropped
+    { fills: [], page: 0, shapes: 9 },                              // no svg - dropped
     { fills: [], svg: '<svg id="small"/>', page: 0, shapes: 2 },
-    { fills: [], svg: '   ', page: 1, shapes: 9 },                  // blank svg — dropped
+    { fills: [], svg: '   ', page: 1, shapes: 9 },                  // blank svg - dropped
     { fills: [], svg: '<svg id="big"/>', page: 1, shapes: 7 },
   ]);
   // Ranked richest-first, so the picks are in neither the document's order nor
-  // the filtered list's — `index` is the position in the array as SUPPLIED.
+  // the filtered list's - `index` is the position in the array as SUPPLIED.
   assert.deepEqual(picks.map(p => p.svg), ['<svg id="big"/>', '<svg id="small"/>']);
   assert.deepEqual(picks.map(p => p.index), [3, 1]);
 });

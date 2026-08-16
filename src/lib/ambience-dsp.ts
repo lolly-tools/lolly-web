@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Ambience synthesis — the background-noise beds behind the player's Atmosphere
+ * Ambience synthesis - the background-noise beds behind the player's Atmosphere
  * section. Pure DSP: numbers in, PCM out. No Web Audio, no DOM, so it is testable
  * and could move to a worker (or the engine) unchanged. lib/atmosphere.ts owns the
  * graph that plays what this bakes.
@@ -8,7 +8,7 @@
  * WHY SYNTHESISE rather than ship recordings. Generated ambience is CC0 by
  * construction (no licence to audit, and none handed on to a user who exports a
  * video), weighs nothing in the bundle, works offline on first run, and loops
- * seamlessly by construction — the same argument that made ZzFXM right for music.
+ * with no audible seam by construction - the same argument that made ZzFXM right for music.
  * Rain, wind, fire, waves and the three noise colours are all filtered/enveloped
  * noise, so they land close. The harder scenes need actual structure rather than
  * shaped hiss, which is the lesson every one of them taught the hard way:
@@ -18,12 +18,12 @@
  *     harmonics with a Doppler drop; a stream needs bubbles that chirp upward.
  *   - Struck things ring on INHARMONIC partials. A sine is a beep, not a teacup.
  *   - Events must sit in FRONT of the bed. RMS normalisation sets the level from
- *     whatever is loudest on average — so a bed mixed too hot doesn't just mask the
+ *     whatever is loudest on average - so a bed mixed too hot doesn't just mask the
  *     crockery/clacks/blops, it turns the gain down on them too. `ambience-dsp.test.ts`
  *     pins the foreground-to-background ratio for exactly this reason.
  *
- * Seamless looping rests on two rules, and every generator obeys both:
- *   1. All modulation is periodic in the loop — sines with an INTEGER number of
+ * Gapless looping rests on two rules, and every generator obeys both:
+ *   1. All modulation is periodic in the loop - sines with an INTEGER number of
  *      cycles per buffer, never a free-running random walk that would jump at the
  *      wrap.
  *   2. Filter state is not periodic (a filter starts cold and settles), so each
@@ -67,12 +67,12 @@ const TRIM: Record<AmbienceKind, number> = {
   white: 0.55, pink: 0.8, brown: 1.2,
 };
 
-/** Target RMS before trim — quiet enough that layering all seven never clips. */
+/** Target RMS before trim - quiet enough that layering all seven never clips. */
 const TARGET_RMS = 0.15;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/** mulberry32 — small, fast, and seeded, so a bake is reproducible (tests pin it). */
+/** mulberry32 - small, fast, and seeded, so a bake is reproducible (tests pin it). */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -121,7 +121,7 @@ function svCoef(hz: number, sampleRate: number): number {
   return 2 * Math.sin((Math.PI * Math.min(hz, sampleRate / 6)) / sampleRate);
 }
 
-/** A state-variable bandpass taking a PRE-TUNED coefficient — for callers that
+/** A state-variable bandpass taking a PRE-TUNED coefficient - for callers that
  *  update tuning at block rate rather than per sample. */
 function svBandpassTuned(q: number): (x: number, f: number) => number {
   let low = 0, band = 0;
@@ -135,7 +135,7 @@ function svBandpassTuned(q: number): (x: number, f: number) => number {
 }
 
 /** A state-variable bandpass whose centre frequency is set per sample (wind gusts,
- *  the droplet/crackle pings). Chamberlin form — stable while f < ~sampleRate/6. */
+ *  the droplet/crackle pings). Chamberlin form - stable while f < ~sampleRate/6. */
 function svBandpass(sampleRate: number, q: number): (x: number, hz: number) => number {
   const filter = svBandpassTuned(q);
   return (x: number, hz: number): number => filter(x, svCoef(hz, sampleRate));
@@ -148,8 +148,8 @@ function osc(i: number, n: number, cycles: number, phase = 0): number {
 }
 
 /**
- * Fold a rendered `n + tail` buffer down to a seamless `n`-sample loop by
- * crossfading the tail back over the head (equal power — see the module header).
+ * Fold a rendered `n + tail` buffer down to a gapless `n`-sample loop by
+ * crossfading the tail back over the head (equal power - see the module header).
  */
 function foldLoop(buf: Float32Array, n: number, tail: number): Float32Array {
   const out = buf.subarray(0, n);
@@ -178,7 +178,7 @@ function normalise(chans: Float32Array[], kind: AmbienceKind): void {
 /**
  * Where a shared event sits between the ears: a sub-millisecond arrival difference
  * and a small level difference. Drawn from the PER-CHANNEL stream, so each channel
- * independently picks its own — which is exactly what puts one source somewhere in
+ * independently picks its own - which is exactly what puts one source somewhere in
  * the room instead of pinning it dead centre in both ears.
  */
 function earPlacement(rnd: () => number, sampleRate: number): { delay: number; gain: number } {
@@ -188,7 +188,7 @@ function earPlacement(rnd: () => number, sampleRate: number): { delay: number; g
   };
 }
 
-/** Add an exponentially-decaying resonant ping — a rain droplet, a fire crackle. */
+/** Add an exponentially-decaying resonant ping - a rain droplet, a fire crackle. */
 function ping(buf: Float32Array, at: number, hz: number, decaySec: number, amp: number, sampleRate: number, rnd: () => number): void {
   const len = Math.min(buf.length - at, Math.ceil(decaySec * 5 * sampleRate));
   if (len <= 0) return;
@@ -202,7 +202,7 @@ function ping(buf: Float32Array, at: number, hz: number, decaySec: number, amp: 
 
 function genRain(n: number, total: number, sampleRate: number, rnd: () => number): Float32Array {
   const out = new Float32Array(total);
-  // Bed: white noise with the low end rolled off twice and a gentle top cut — the
+  // Bed: white noise with the low end rolled off twice and a gentle top cut - the
   // broadband hiss of rain, without the rumble that would fight a brown-noise layer.
   let hp1 = 0, hp2 = 0, lp = 0;
   const aHp = lpCoef(500, sampleRate);
@@ -218,7 +218,7 @@ function genRain(n: number, total: number, sampleRate: number, rnd: () => number
     // Two slow, periodic swells: rain that never breathes reads as static.
     out[i] = lp * (0.8 + 0.2 * osc(i, n, 1) + 0.1 * osc(i, n, 3, 1.1));
   }
-  // Droplets — sparse, closer pings over the bed so it has a foreground.
+  // Droplets - sparse, closer pings over the bed so it has a foreground.
   const drops = Math.round((total / sampleRate) * 13);
   for (let d = 0; d < drops; d++) {
     ping(out, Math.floor(rnd() * total), 1500 + rnd() * 3200, 0.008 + rnd() * 0.018, 0.10 + rnd() * 0.16, sampleRate, rnd);
@@ -252,7 +252,7 @@ function genWind(n: number, total: number, sampleRate: number, rnd: () => number
   let rumble = 0;
   const aRumble = lpCoef(200, sampleRate);
   for (let i = 0; i < total; i++) {
-    // Centre frequency wanders on two coprime periodic oscillators — enough to
+    // Centre frequency wanders on two coprime periodic oscillators - enough to
     // sound unrepeating over the loop without ever jumping at the wrap.
     const hz = 250 + 850 * (0.6 * osc(i, n, 3) + 0.4 * osc(i, n, 7, 2.3));
     const gust = 0.35 + 0.65 * osc(i, n, 2, 0.7) * (0.6 + 0.4 * osc(i, n, 5, 1.9));
@@ -276,7 +276,7 @@ function genFire(n: number, total: number, sampleRate: number, rnd: () => number
     out[i] = (lowBed * 0.6 + midBed * 0.19) * breathe;
   }
   // Crackles: mostly small ticks, occasionally a real pop. The irregularity is the
-  // whole character — an evenly spaced crackle reads as a machine.
+  // whole character - an evenly spaced crackle reads as a machine.
   const ticks = Math.round((total / sampleRate) * 7);
   for (let c = 0; c < ticks; c++) {
     const big = rnd() < 0.08;
@@ -288,7 +288,7 @@ function genFire(n: number, total: number, sampleRate: number, rnd: () => number
 }
 
 /**
- * Add a pitched event — a bird's syllable, a cricket pulse, a car horn, a bubble.
+ * Add a pitched event - a bird's syllable, a cricket pulse, a car horn, a bubble.
  * `sweep` is the end/start frequency ratio (a chirp glides), `vibrato` a fast
  * warble depth. Sine rather than noise: this is the difference between a creature
  * and a hiss, and the ear is unforgiving about it.
@@ -313,12 +313,12 @@ function tone(
 }
 
 /**
- * A SUSTAINED pitched event built from harmonics — a car horn, a steam whistle, a
+ * A SUSTAINED pitched event built from harmonics - a car horn, a steam whistle, a
  * passing engine. Distinct from `tone` (one sine, struck-and-decaying): these need
  * a body that holds, several partials to have any timbre at all, and smooth edges.
  *
  * `endHz` sweeps the pitch across the event, which is what makes an engine pass
- * rather than idle (Doppler). `breath` mixes in noise — a steam whistle without it
+ * rather than idle (Doppler). `breath` mixes in noise - a steam whistle without it
  * is an organ pipe.
  */
 function pitched(
@@ -347,14 +347,14 @@ function pitched(
       breathState += aBreath * ((rnd() * 2 - 1) - breathState);
       s += breathState * breath;
     }
-    // Raised-cosine attack and release, flat in between — no edges to click on.
+    // Raised-cosine attack and release, flat in between - no edges to click on.
     const env = Math.min(1, 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, i / atk)))
       * Math.min(1, 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, (len - i) / rel)));
     buf[at + i] = buf[at + i]! + s * env * amp;
   }
 }
 
-/** Add a band-limited noise swell — a passing car, a roll of thunder, a train's
+/** Add a band-limited noise swell - a passing car, a roll of thunder, a train's
  *  wheel hiss. `hzFrom → hzTo` sweeps the band, which is what sells a car as
  *  passing rather than idling. */
 function swell(
@@ -377,7 +377,7 @@ function genThunder(n: number, total: number, sampleRate: number, rnd: () => num
   // NO rain under it. This is a mixer: Rain is its own slider, and baking a rain
   // curtain in here would double it for anyone who wants both and force it on
   // anyone who doesn't. All that sits under the rolls is a very low, slow air
-  // pressure — felt more than heard, and impossible to mistake for hiss.
+  // pressure - felt more than heard, and impossible to mistake for hiss.
   const airBrown = brownShaper();
   let air = 0;
   const aAir = lpCoef(55, sampleRate);
@@ -414,15 +414,15 @@ function genThunder(n: number, total: number, sampleRate: number, rnd: () => num
 
 /**
  * A bubble "blop". A collapsing bubble's resonance RISES as it shrinks, so the
- * pitch sweeps up — that upward chirp is the entire difference between water and
+ * pitch sweeps up - that upward chirp is the entire difference between water and
  * a click. Big bubbles start low and ring longer; small ones are quick ticks.
  */
 function blop(buf: Float32Array, at: number, hz: number, decaySec: number, amp: number, sampleRate: number): void {
-  // The rise has to be SLIGHT. A big upward sweep is a cartoon boing, not water —
+  // The rise has to be SLIGHT. A big upward sweep is a cartoon boing, not water - 
   // and a high starting pitch is a droplet on glass rather than a bubble in a pool.
   // Low and barely-rising is the whole character.
   tone(buf, at, hz, decaySec, amp, sampleRate, { sweep: 1.12 + (hz < 260 ? 0.14 : 0.06), attackSec: 0.0012 });
-  // A trace of the second mode for body — enough to not be a pure sine, quiet
+  // A trace of the second mode for body - enough to not be a pure sine, quiet
   // enough not to ring.
   tone(buf, at, hz * 1.9, decaySec * 0.35, amp * 0.16, sampleRate, { sweep: 1.08, attackSec: 0.001 });
 }
@@ -431,7 +431,7 @@ function genStream(n: number, total: number, sampleRate: number, rnd: () => numb
   const out = new Float32Array(total);
   // The bed is deliberately QUIET and restless: water over stones is a fast,
   // uneven flutter, not a steady band of hiss. A smooth broadband bed at any
-  // useful level just reads as wind — the moving water has to come from the
+  // useful level just reads as wind - the moving water has to come from the
   // blops and trickles layered on top, so the bed only fills the gaps between them.
   const bp = svBandpass(sampleRate, 1.6);
   let lp = 0, flutter = 0;
@@ -443,7 +443,7 @@ function genStream(n: number, total: number, sampleRate: number, rnd: () => numb
     lp += aLp * (bp(rnd() * 2 - 1, hz) - lp);
     out[i] = lp * (0.55 + 0.45 * Math.abs(flutter * 3)) * 0.36;
   }
-  // Blops: the foreground. A wide size range — the big slow ones give it depth,
+  // Blops: the foreground. A wide size range - the big slow ones give it depth,
   // the small fast ones give it detail.
   const bubbles = Math.round((total / sampleRate) * 15);
   for (let b = 0; b < bubbles; b++) {
@@ -453,7 +453,7 @@ function genStream(n: number, total: number, sampleRate: number, rnd: () => numb
       big ? 0.05 + rnd() * 0.07 : 0.01 + rnd() * 0.022,
       big ? 1.5 + rnd() * 0.9 : 0.55 + rnd() * 0.45, sampleRate);
   }
-  // Trickles: a rivulet running over a stone — a quick descending run of small
+  // Trickles: a rivulet running over a stone - a quick descending run of small
   // blops, which is how water reads as GOING somewhere rather than just sitting.
   const trickles = Math.round((total / sampleRate) * 1.6);
   for (let t = 0; t < trickles; t++) {
@@ -488,7 +488,7 @@ function genBirds(n: number, total: number, sampleRate: number, rnd: () => numbe
     lp += a * (pink(rnd() * 2 - 1) - lp);
     out[i] = lp * 0.32 * (0.7 + 0.3 * osc(i, n, 2, 0.9));
   }
-  // Calls, in phrases of a few syllables — a bird that emits evenly spaced single
+  // Calls, in phrases of a few syllables - a bird that emits evenly spaced single
   // beeps is a smoke alarm.
   const calls = Math.round((total / sampleRate) * 1.1);
   for (let c = 0; c < calls; c++) {
@@ -516,7 +516,7 @@ function genNight(n: number, total: number, sampleRate: number, rnd: () => numbe
     out[i] = lp * 0.45 * (0.8 + 0.2 * osc(i, n, 1));
   }
   // Crickets: several individuals, each with its OWN steady rate and pitch, drifting
-  // in and out of phase with each other. That interference is the whole texture —
+  // in and out of phase with each other. That interference is the whole texture - 
   // one cricket is a metronome, five are a summer night.
   const individuals = 4 + Math.floor(rnd() * 3);
   for (let k = 0; k < individuals; k++) {
@@ -535,9 +535,9 @@ function genNight(n: number, total: number, sampleRate: number, rnd: () => numbe
 }
 
 /**
- * A struck body — a chime tube, a cup set down. Struck objects ring on
+ * A struck body - a chime tube, a cup set down. Struck objects ring on
  * INHARMONIC partials (the bar/bell series, not 2f/3f), which is exactly what
- * separates a clink from a beep — a sine at 3 kHz is a smoke alarm. Higher
+ * separates a clink from a beep - a sine at 3 kHz is a smoke alarm. Higher
  * partials also die faster than low ones, so the strike is bright and the tail
  * isn't.
  */
@@ -547,19 +547,19 @@ function clink(buf: Float32Array, at: number, hz: number, amp: number, sampleRat
     tone(buf, at, hz * RATIOS[p]!, (0.16 + rnd() * 0.16) / (1 + p * 1.4), amp / (1 + p * 1.5), sampleRate,
       { attackSec: 0.0006 });
   }
-  // The contact transient — without it the ring has no strike in front of it.
+  // The contact transient - without it the ring has no strike in front of it.
   ping(buf, at, hz * 4, 0.002, amp * 0.7, sampleRate, rnd);
 }
 
 function genChimes(n: number, total: number, sampleRate: number, rnd: () => number): Float32Array {
   const out = new Float32Array(total);
-  // WINDCHIMES — with an honest note on how it got here: this was built as café
+  // WINDCHIMES - with an honest note on how it got here: this was built as café
   // babble (a glottal buzz through three FORMANT resonances per voice, formants
   // being what make a sound read as a voice rather than as wind). It did not land
   // as a café. It landed as chimes on a porch, so that is what it is called now.
   // The formant bank stays, because it is what gives the moving air its body; the
   // struck partials below are the chimes. No words, nothing for a reader's language
-  // centre to snag on — which is what keeps it usable for focus.
+  // centre to snag on - which is what keeps it usable for focus.
   const speakers = 6;
   const vs = Array.from({ length: speakers }, () => {
     const low = rnd() < 0.5;                       // two rough voice ranges, mixed
@@ -595,7 +595,7 @@ function genChimes(n: number, total: number, sampleRate: number, rnd: () => numb
       if (v.acc >= 1) v.acc -= 1;
       // Glottal source: sawtooth + a little breath. The vowel comes from the filters.
       const src = (2 * v.acc - 1) * 0.75 + (rnd() * 2 - 1) * 0.2;
-      // Vowels move — sweep the formants a little at the syllable rate.
+      // Vowels move - sweep the formants a little at the syllable rate.
       if (retune) {
         const vowel = 1 + 0.1 * (osc(i, n, v.syl, v.phase * 1.3) - 0.5);
         for (const fo of v.f) fo.coef = svCoef(fo.hz * vowel, sampleRate);
@@ -607,7 +607,7 @@ function genChimes(n: number, total: number, sampleRate: number, rnd: () => numb
       const phrase = 0.12 + 0.88 / (1 + Math.exp(-9 * (osc(i, n, v.phrase, v.phase * 2) - 0.42)));
       mix += f * syl * phrase * v.amp;
     }
-    // A little room, well under the voices — the old version leaned on this and it
+    // A little room, well under the voices - the old version leaned on this and it
     // is a big part of why the bed read as wind.
     room += aRoom * (brown(rnd() * 2 - 1) - room);
     // The air is a BACKGROUND: it sits low enough that a struck tube reads as an
@@ -656,11 +656,11 @@ function genCity(n: number, total: number, sampleRate: number, rnd: () => number
       + wash * 0.1 * (0.7 + 0.3 * osc(i, n, 2, 2.2));
   }
   // Vehicles passing. An engine is a HARMONIC stack, and its pitch drops as it goes
-  // by — a swept noise band alone was the other half of why this read as a windstorm.
+  // by - a swept noise band alone was the other half of why this read as a windstorm.
   // The tyre swell rides along with it at a fraction of the level.
   // Fewer passes than before: at ~0.7/s they overlapped into a continuous motorway
   // wall, which is the same 'windstorm' failure in another costume. A street
-  // breathes — you hear individual vehicles arrive and go.
+  // breathes - you hear individual vehicles arrive and go.
   const cars = Math.round((total / sampleRate) * 0.42);
   for (let c = 0; c < cars; c++) {
     const at = Math.floor(rnd() * total);
@@ -673,7 +673,7 @@ function genCity(n: number, total: number, sampleRate: number, rnd: () => number
     });
     swell(out, at, dur, 520 + rnd() * 380, 230 + rnd() * 130, 0.28 + rnd() * 0.2, sampleRate, rnd, 0.9);
   }
-  // Horns — they were there before, at a level the bed swallowed whole. Now they
+  // Horns - they were there before, at a level the bed swallowed whole. Now they
   // are proper two-tone harmonic blasts (the minor-third interval a real horn uses)
   // and loud enough to be the event they are meant to be.
   const horns = 2 + Math.floor(srnd() * 2);
@@ -682,7 +682,7 @@ function genCity(n: number, total: number, sampleRate: number, rnd: () => number
     const at = Math.floor(srnd() * total) + ear.delay;
     const hz = 330 + srnd() * 150;
     // The FIRST horn of every loop is close by. Leaving it to a coin flip meant a
-    // bake could come out with every horn a street away and effectively inaudible —
+    // bake could come out with every horn a street away and effectively inaudible - 
     // and the horns are the thing that says "street" rather than "weather".
     const near = h === 0 || srnd() < 0.4;
     const amp = near ? 1.5 + srnd() * 0.6 : 0.7 + srnd() * 0.35;
@@ -691,7 +691,7 @@ function genCity(n: number, total: number, sampleRate: number, rnd: () => number
     const stack = near ? [1, 0.55, 0.34, 0.2, 0.1] : [1, 0.4, 0.14];
     pitched(out, at, dur, hz, stack, amp * ear.gain, sampleRate, { attackSec: 0.025, releaseSec: 0.06 });
     pitched(out, at, dur, hz * 1.19, stack, amp * 0.8 * ear.gain, sampleRate, { attackSec: 0.03, releaseSec: 0.06 });
-    // A double-tap on some of them — one long blast reads as a stuck horn.
+    // A double-tap on some of them - one long blast reads as a stuck horn.
     if (srnd() < 0.4) {
       const at2 = at + Math.floor((dur + 0.12 + srnd() * 0.1) * sampleRate);
       pitched(out, at2, dur * 0.7, hz, stack, amp * 0.9 * ear.gain, sampleRate, { attackSec: 0.025, releaseSec: 0.06 });
@@ -705,7 +705,7 @@ function genCity(n: number, total: number, sampleRate: number, rnd: () => number
  * Push a signal into the DISTANCE. Turning the level down is not distance: air
  * absorbs the top end over a few hundred metres, and the ground and whatever is
  * between you and the source send back a smeared tail a few tens of milliseconds
- * later. Rendered into a scratch buffer, then folded back in — cheap, and far more
+ * later. Rendered into a scratch buffer, then folded back in - cheap, and far more
  * convincing than attenuation alone.
  *
  * Different sources need different distance, and not only in degree: a KNOCK lives
@@ -732,7 +732,7 @@ function distant(
  * A rail joint, heard from across a field: a KNOCK, not a note.
  *
  * The previous version rang two tuned sines (an axle "thud" and a rail "ring") and
- * the result was a tuneless glockenspiel — which is exactly what a pitched partial
+ * the result was a tuneless glockenspiel - which is exactly what a pitched partial
  * with a 20 ms decay is. Steel struck through a loaded bogie is broadband and dead:
  * a short noise burst through a low resonance, a tighter mid knock for the body,
  * and nothing that holds a pitch long enough for the ear to hear one.
@@ -745,7 +745,7 @@ function clack(buf: Float32Array, at: number, amp: number, sampleRate: number, r
 
 function genTrain(n: number, total: number, sampleRate: number, rnd: () => number, srnd: () => number): Float32Array {
   const out = new Float32Array(total);
-  // Carriage rumble, and MUCH less hiss than before — a broadband wash at the old
+  // Carriage rumble, and MUCH less hiss than before - a broadband wash at the old
   // level was the "windy" part, and it was also masking the joints.
   const brown = brownShaper();
   const hiss = svBandpass(sampleRate, 0.8);
@@ -762,7 +762,7 @@ function genTrain(n: number, total: number, sampleRate: number, rnd: () => numbe
     out[i] = lp * 0.6 * wheel * (0.88 + 0.12 * osc(i, n, 2))
       + hiss(rnd() * 2 - 1, 1500 + 400 * osc(i, n, 5, 1.3)) * 0.05;
   }
-  // Everything that is heard ACROSS A DISTANCE — the joints and the horn — is
+  // Everything that is heard ACROSS A DISTANCE - the joints and the horn - is
   // rendered dry into a scratch buffer and then pushed back through `distant`.
   // Mixing them straight into the bed put them in the cab with you.
   // Two scratch buffers, because the knocks and the horn want different distance
@@ -770,7 +770,7 @@ function genTrain(n: number, total: number, sampleRate: number, rnd: () => numbe
   const rail = new Float32Array(total);
   const horn = new Float32Array(total);
   // Rail joints. A bogie has two axles, so a joint gives a PAIR of knocks close
-  // together, and a carriage has two bogies — "da-dum … da-dum", then the gap to
+  // together, and a carriage has two bogies - "da-dum … da-dum", then the gap to
   // the next carriage. The cycle is exactly periodic so the rhythm carries across
   // the loop point; the few milliseconds of jitter on each knock are what keep it
   // from sounding like a drum machine.
@@ -788,11 +788,11 @@ function genTrain(n: number, total: number, sampleRate: number, rnd: () => numbe
     }
   }
   // A horn in the distance: a HUM, not a honk. The old one stacked a fifth on top
-  // (1.5x) with a bright partial set and a fast attack, which is a chime — a chord
+  // (1.5x) with a bright partial set and a fast attack, which is a chime - a chord
   // is the one thing a distant horn is not. This is a single low note, slightly
   // detuned against itself so it beats slowly, with almost nothing above the third
   // harmonic, and a slow swell in and out.
-  // Rare on purpose. A horn is an EVENT — on a loop this length, at most one per
+  // Rare on purpose. A horn is an EVENT - on a loop this length, at most one per
   // pass and often none, so it lands maybe once every half-minute or so rather than
   // becoming part of the rhythm. Placed from the SHARED stream (see Generator) so
   // both ears hear the one horn at the one moment.
@@ -805,7 +805,7 @@ function genTrain(n: number, total: number, sampleRate: number, rnd: () => numbe
       pitched(horn, at, dur, hz * mult, [1, 0.34, 0.12, 0.04], amp * ear.gain, sampleRate,
         { attackSec: 0.35, releaseSec: 0.65, vibratoHz: 3.2, vibratoDepth: 0.002, breath: 0.12, rnd });
     }
-    // A second, softer call after a gap — the shape people know, without the toot.
+    // A second, softer call after a gap - the shape people know, without the toot.
     if (srnd() < 0.5) {
       const at2 = at + Math.round((dur + 0.5 + srnd() * 0.4) * sampleRate);
       for (const [mult, amp] of [[1, 0.6], [1.004, 0.42]] as const) {
@@ -814,7 +814,7 @@ function genTrain(n: number, total: number, sampleRate: number, rnd: () => numbe
       }
     }
   }
-  // The track: bright enough to keep the strike, with only a short tail — a knock
+  // The track: bright enough to keep the strike, with only a short tail - a knock
   // across a field still arrives as a knock.
   distant(rail, out, 3200, 2.1, sampleRate, [[0, 1], [0.029, 0.3], [0.068, 0.15], [0.125, 0.07]]);
   // The horn: dark and smeared, which is what a kilometre of air does to a long note.
@@ -840,7 +840,7 @@ function genKeyboard(_n: number, total: number, sampleRate: number, rnd: () => n
       // bright click of the switch. One without the other sounds like a toy.
       ping(out, at, space ? 130 + rnd() * 60 : 190 + rnd() * 130, 0.022 + rnd() * 0.02, amp, sampleRate, rnd);
       ping(out, at + Math.round(0.002 * sampleRate), 2400 + rnd() * 2600, 0.004 + rnd() * 0.004, amp * 0.8, sampleRate, rnd);
-      // The release, a moment later and softer — the other half of a keystroke.
+      // The release, a moment later and softer - the other half of a keystroke.
       const up = at + Math.round((0.035 + rnd() * 0.03) * sampleRate);
       if (up < total) ping(out, up, 1800 + rnd() * 1800, 0.004, amp * 0.28, sampleRate, rnd);
       at += Math.round((0.055 + rnd() * 0.11) * sampleRate);
@@ -875,7 +875,7 @@ function genBrown(_n: number, total: number, _sampleRate: number, rnd: () => num
 }
 
 /**
- * A generator gets TWO random streams. `rnd` is per-channel — it draws the noise
+ * A generator gets TWO random streams. `rnd` is per-channel - it draws the noise
  * and the dense textures, and having it differ between left and right is what
  * makes a bed stereo. `srnd` is SHARED between the channels: rare, singular events
  * (a train's horn, a roll of thunder, a car sounding off) must happen at the same
@@ -895,8 +895,8 @@ const GENERATORS: Record<AmbienceKind, Generator> = {
 
 /**
  * Bake one ambience bed: two decorrelated channels (same modulation, independent
- * noise — so it opens up in stereo without the swells drifting apart), already
- * folded into a seamless loop and normalised.
+ * noise - so it opens up in stereo without the swells drifting apart), already
+ * folded into a gapless loop and normalised.
  *
  * `seed` is exposed so a test can pin a bake; callers otherwise take the default.
  */
@@ -911,7 +911,7 @@ export function bakeAmbience(kind: AmbienceKind, sampleRate: number, seed = 0x10
   return chans;
 }
 
-/** Rough byte cost of a baked bed — the Atmosphere panel uses it to keep an eye on
+/** Rough byte cost of a baked bed - the Atmosphere panel uses it to keep an eye on
  *  how much PCM the enabled layers are holding. */
 export function ambienceBytes(kind: AmbienceKind, sampleRate: number): number {
   return Math.round(AMBIENCE_SECONDS[kind] * sampleRate) * 2 * 4;

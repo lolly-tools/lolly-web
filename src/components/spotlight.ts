@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight overlay (plans/99 M2) — grouped cross-domain search results in
+ * The spotlight overlay (plans/99 M2) - grouped cross-domain search results in
  * a panel above the persistent bottom bar. Typing in the bar (or the ⌘/⌃Space
  * chord) surfaces hits from every registered provider (lib/search/registry.ts),
  * grouped in fixed presentation order; the view behind keeps live-filtering on
@@ -9,11 +9,11 @@
  * Anatomy and the rules that shaped it:
  *  - BODY-MOUNTED, never a child of the footer: `.gallery-footer` has a
  *    backdrop-filter, which makes it the containing block for fixed
- *    descendants (the repo's fixed-popover trap — same reason body-popover.ts
+ *    descendants (the repo's fixed-popover trap - same reason body-popover.ts
  *    exists). Positioned above the footer from its live rect, recomputed on
  *    open and on window/visualViewport changes (the footer itself rides the
  *    --vv-* vars, so its rect already reflects pinch-zoom offsets).
- *  - Focus STAYS in the bar's field the whole time — the panel is never
+ *  - Focus STAYS in the bar's field the whole time - the panel is never
  *    focused. ARIA combobox pattern (lifted from pro/index.ts's template
  *    picker): the field carries role=combobox/aria-expanded and points its
  *    aria-activedescendant at the active row; pointerdown on the panel is
@@ -29,10 +29,10 @@
  *    is always discoverable in the overlay even when the panel overlaps the
  *    live-filtered cards behind it; routes with no domain show every group at
  *    the standard cap. (Was: live-adapt views omitted their own group and leaned
- *    on the cards behind — which the panel can occlude.)
+ *    on the cards behind - which the panel can occlude.)
  *  - Providers load LAZILY (a dynamic import in initSpotlight): the provider
  *    modules pull in per-view haystack code that has no business in the boot
- *    chunk main.ts pays for — same reason the views themselves lazy-load.
+ *    chunk main.ts pays for - same reason the views themselves lazy-load.
  */
 import { t } from '../i18n.ts';
 import { escape, safeHref } from '../utils.ts';
@@ -51,7 +51,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 const LISTBOX_ID = 'spotlight-listbox';
 
 /**
- * Injectable seams — module-level and mutable ON PURPOSE (the registry's
+ * Injectable seams - module-level and mutable ON PURPOSE (the registry's
  * resetProviders() convention): jsdom's location.assign throws, window.open is
  * inert there, and the provider modules land from a separate lazy chunk, so
  * spotlight.test.ts swaps all three.
@@ -76,11 +76,11 @@ let inited = false;
 let panelEl: HTMLElement | null = null;
 let isOpen = false;
 let activeIndex = -1;
-// Monotonic query id — a resolution for a superseded query (or one arriving
+// Monotonic query id - a resolution for a superseded query (or one arriving
 // after close bumped the id) is discarded, so a slow provider can never paint
 // stale rows over fresh ones.
 let queryId = 0;
-// The last raw text the bar handed us — replayed once when the lazily-loaded
+// The last raw text the bar handed us - replayed once when the lazily-loaded
 // provider chunk lands, so an early query can't strand a false "No matches".
 let lastRaw: string | null = null;
 
@@ -88,7 +88,7 @@ const listEl = (): HTMLElement | null => panelEl?.querySelector<HTMLElement>('.s
 const statusEl = (): HTMLElement | null => panelEl?.querySelector<HTMLElement>('.spotlight-status') ?? null;
 const rowEls = (): HTMLElement[] => (panelEl ? [...panelEl.querySelectorAll<HTMLElement>('.spotlight-opt')] : []);
 
-/** Build the panel scaffold once (DOM API — the only raw-HTML sink in this
+/** Build the panel scaffold once (DOM API - the only raw-HTML sink in this
  *  module is the result-list render below). */
 function ensurePanel(): HTMLElement {
   if (panelEl) return panelEl;
@@ -137,7 +137,7 @@ function position(): void {
 const reposition = (): void => { if (isOpen) position(); };
 
 /** Dismiss on any press outside the panel and outside the footer (the field,
- *  its ✕ and the nav links live there — their own handlers decide). */
+ *  its ✕ and the nav links live there - their own handlers decide). */
 function onOutsidePointerDown(e: Event): void {
   const target = e.target as HTMLElement | null;
   if (!target) return;
@@ -167,7 +167,7 @@ function open(): void {
   isOpen = true;
   panel.hidden = false;
   // Entry motion is JS-gated on prefersReducedMotion() (OS media query OR the
-  // app's a11y pref — the shared read every JS-driven animation site uses).
+  // app's a11y pref - the shared read every JS-driven animation site uses).
   panel.classList.remove('spotlight-anim');
   if (!prefersReducedMotion()) panel.classList.add('spotlight-anim');
   installWhileOpen();
@@ -176,7 +176,7 @@ function open(): void {
 
 function close(): void {
   if (!isOpen) {
-    // Never opened (or already closed) — still invalidate any in-flight query
+    // Never opened (or already closed) - still invalidate any in-flight query
     // so a pending resolution can't open the panel after the fact.
     queryId++;
     return;
@@ -202,7 +202,7 @@ function setActive(index: number): void {
   setSearchBarExpanded(true, el?.id ?? null);
 }
 
-/** Arrow walk across ALL rows — hits and see-all rows alike — wrapping at both
+/** Arrow walk across ALL rows - hits and see-all rows alike - wrapping at both
  *  ends (plans/99 §2d). */
 function move(delta: 1 | -1): void {
   const rows = rowEls();
@@ -224,18 +224,18 @@ function activate(row: HTMLElement, newTab: boolean): void {
   }
   // A same-route "See all in Projects" handoff (#/p → #/p?q=) needs no forcing:
   // the projects route signature carries ?q= (main.ts routeSignature), so the
-  // hash change remounts on its own — and Back out of results mode does too.
+  // hash change remounts on its own - and Back out of results mode does too.
   spotlightSeams.navigate(href);
   close();
 }
 
 /** One row of the listbox. `hit.icon` is provider-authored icon() markup (the
  *  SearchHit contract); title/subtitle are plain text, escape()d here.
- *  The href is scheme-gated by renderResults() (see navigableHits) — escape()
+ *  The href is scheme-gated by renderResults() (see navigableHits) - escape()
  *  neutralises quotes, not a `javascript:` scheme, and SearchProvider is an
  *  extension point, so the gate is at the paint boundary, not in the providers. */
 function rowHtml(hit: SearchHit, n: number, gid: SearchGroupId, own: boolean): string {
-  // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; a hit that fails it is dropped, never painted
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in renderResults() before this runs; a hit that fails it is dropped, never painted
   return `<div class="spotlight-opt${own ? ' spotlight-opt--own' : ''}" role="option" id="spotlight-opt-${n}" aria-selected="false" data-group="${gid}" data-href="${escape(hit.href)}" data-sfx="navigate">
     <span class="spotlight-opt-icon" aria-hidden="true">${hit.icon}</span>
     <span class="spotlight-opt-text">
@@ -246,7 +246,7 @@ function rowHtml(hit: SearchHit, n: number, gid: SearchGroupId, own: boolean): s
 }
 
 function seeAllHtml(gid: SearchGroupId, href: string, n: number): string {
-  // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; an unsafe see-all target drops the row
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in renderResults() before this runs; an unsafe see-all target drops the row
   return `<div class="spotlight-opt spotlight-see-all" role="option" id="spotlight-opt-${n}" aria-selected="false" data-href="${escape(href)}" data-sfx="navigate">
     <span class="spotlight-opt-title">${t('See all in {view}', { view: t(GROUP_LABELS[gid]) })}</span>
     <span class="spotlight-see-all-arrow" aria-hidden="true">→</span>
@@ -256,7 +256,7 @@ function seeAllHtml(gid: SearchGroupId, href: string, n: number): string {
 /** The scheme gate for everything this module paints. A hit's href becomes a
  *  real navigation in activate() (location.assign / window.open), so a
  *  `javascript:` or `data:` target from a provider would be an XSS sink that
- *  escape() cannot see — escaping is not scheme validation (the invariant
+ *  escape() cannot see - escaping is not scheme validation (the invariant
  *  .github/opengrep/lolly-rules.yml encodes). Every shipped provider builds its
  *  href from a first-party literal prefix plus encodeURIComponent, so this drops
  *  nothing today; it holds the line for the next provider. */
@@ -273,7 +273,7 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
   for (const gid of order) {
     const hits = navigableHits(hitsByGroup.get(gid) ?? []);
     if (!hits.length) continue;
-    const own = gid === ownGroup; // the current view's group — leads, brand-highlighted (§2a)
+    const own = gid === ownGroup; // the current view's group - leads, brand-highlighted (§2a)
     total += hits.length;
     html += `<div class="spotlight-group-label${own ? ' spotlight-group-label--own' : ''}" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
     for (const hit of hits) html += rowHtml(hit, n++, gid, own);
@@ -286,7 +286,7 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
   // The module's one raw-HTML sink: every interpolation above is escape()d
   // (hrefs, titles, subtitles), a t() literal, a NUMBER (the row ids), or
   // provider-authored icon() markup per the SearchHit contract. Hrefs clear
-  // safeHref() as well — escape()ing one is not scheme validation.
+  // safeHref() as well - escape()ing one is not scheme validation.
   if (list) list.innerHTML = html;
   const status = statusEl();
   if (status) status.textContent = total === 1 ? t('1 result') : t('{n} results', { n: total });
@@ -305,8 +305,8 @@ function onQueryChanged(raw: string): void {
   }
   const tokens = tokenize(trimmed);
   const own = ROUTE_DOMAIN[currentSearchRoute()];
-  // §2a: the current view's own group LEADS the panel — hoisted first with the
-  // larger cap and brand-highlighted (renderResults marks it) — so its results
+  // §2a: the current view's own group LEADS the panel - hoisted first with the
+  // larger cap and brand-highlighted (renderResults marks it) - so its results
   // stay discoverable in the overlay even when the panel occludes the
   // live-filtered cards behind it. Applies to both tiers now; a live view still
   // filters its cards behind, an overlay one doesn't.
@@ -326,7 +326,7 @@ function onQueryChanged(raw: string): void {
     }
   };
   void Promise.all(provs.map(settle)).then((pairs) => {
-    if (id !== queryId) return; // superseded (or closed) — discard, never paint
+    if (id !== queryId) return; // superseded (or closed) - discard, never paint
     renderResults(order, new Map(pairs), trimmed, own?.group);
   });
 }

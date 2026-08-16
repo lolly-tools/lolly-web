@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The walker's layer-identity passthrough (`opts.layerIds` — plans/104 §7),
+ * The walker's layer-identity passthrough (`opts.layerIds` - plans/104 §7),
  * pinned in both directions.
  *
  * The feature is one guarded block at the walker's g-creation site, and the
  * whole risk of it is the direction people forget: not "does the flag work" but
  * "is a normal export still the bytes it was". Every tool in every profile ships
  * through `renderSvgFromHtml`, so the OFF case is asserted as BYTE IDENTITY
- * against the same DOM rendered twice — the same protection `export-paint-order`
+ * against the same DOM rendered twice - the same protection `export-paint-order`
  * built for `stackingOrder`, for the same reason.
  *
  * A browser is the oracle because the walker reads `getBoundingClientRect` and

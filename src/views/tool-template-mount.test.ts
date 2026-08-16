@@ -3,8 +3,8 @@
  * THE TEMPLATE CHOOSER IS NOT IN THE MOUNT PATH.
  *
  * A tool that ships `templates/` (today: Design, four of them) used to open like
- * this: `views/tool.ts` awaited `openTemplateChooser`, and `createRuntime` — the whole
- * mount — could not begin until a human clicked a tile. In that same window the chooser
+ * this: `views/tool.ts` awaited `openTemplateChooser`, and `createRuntime` - the whole
+ * mount - could not begin until a human clicked a tile. In that same window the chooser
  * eagerly rendered a live preview per template, each one a real off-screen tool mount +
  * walker export. Measured on a cache-cold first open: ~1 s per template, 3972 / 3999 /
  * 4355 ms for the four, main-thread, before the editor had drawn a single pixel. Layout
@@ -18,11 +18,11 @@
  *
  *   1. nothing awaits the chooser before `createRuntime`;
  *   2. the chooser is still started BEFORE it, or the modal arrives late instead;
- *   3. the pick is applied through `applyPatch`, not `setInput` — `setInput` is
+ *   3. the pick is applied through `applyPatch`, not `setInput` - `setInput` is
  *      mountTool's undo-history wrapper (and collab's op wrapper), so seeding through it
  *      would make ⌘Z erase the template the user just chose.
  *
- * WHY A SOURCE SCAN: `mountTool` cannot be imported outside Vite — it imports
+ * WHY A SOURCE SCAN: `mountTool` cannot be imported outside Vite - it imports
  * stylesheets and reaches `tool-inputs.ts`, whose sibling imports use the `.js` specifier
  * convention Node cannot resolve. `views/tool-collab-mount.test.ts`, `views/block-row-id
  * .test.ts` and `views/multi-edit-crash-guard.test.ts` all scan for the same reason; this
@@ -43,7 +43,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * Source with comments removed, so "is this awaited?" cannot be answered by prose that
  * merely says it isn't. Line comments are cut at a `//` that is not part of a `://`
  * scheme; block comments are dropped wholesale. (Same helper, same reasoning, as
- * views/tool-collab-mount.test.ts — duplicated rather than exported, so neither file's
+ * views/tool-collab-mount.test.ts - duplicated rather than exported, so neither file's
  * guard can be weakened by an edit made for the other.)
  */
 function stripComments(src: string): string {
@@ -148,7 +148,7 @@ test('the chooser yields the main thread around every preview render', () => {
 // click already in flight) run `applyPatch`/`migrateBlockRowIds` against a runtime
 // `_cleanup` already tore down. Same shape as the collab `aborted` latch pinned by
 // `tool-collab-mount.test.ts`'s "a navigation DURING the import cannot leak a live
-// transport" — a holder armed before the awaits it needs to survive, checked on both
+// transport" - a holder armed before the awaits it needs to survive, checked on both
 // sides of the one await (`applyPatch`) a navigation can straddle.
 
 test('a navigate-away before the pick lands cannot patch a torn-down runtime', () => {
@@ -171,7 +171,7 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
   );
 
   // Applying: the SAME latch is checked before the patch (skips it outright) and again
-  // after (skips the row-id re-stamp) — `applyPatch` is the one await a navigation can
+  // after (skips the row-id re-stamp) - `applyPatch` is the one await a navigation can
   // land in the middle of.
   const pickBlock = bodyAfter(CODE, 'if (templatePick) {');
   const applyAt = pickBlock.indexOf('runtime.applyPatch(');
@@ -183,15 +183,46 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
 
   // Tearing down: _cleanup is what makes the latch true and takes the modal, which lives
   // outside viewEl's own subtree (template-chooser.ts appends to document.body), down
-  // with the view — nothing else here would otherwise touch it.
+  // with the view - nothing else here would otherwise touch it.
   const cleanup = bodyAfter(CODE, 'viewEl._cleanup = () => {');
   assert.match(cleanup, /templatePickTornDown = true;/);
   assert.match(cleanup, /templatePickClose\?\.\(\); templatePickClose = null;/);
 });
 
+// ── Surface 1: the chooser also opens for user-template-only tools ────────────
+// The blank-fresh-open gate used to hard-require built-in `hasTemplates`, so a tool whose
+// only starting points were the user's own saved templates never opened the chooser. It now
+// opens on `hasTemplates || hasUserTemplates`, where the user count is read from the store
+// only when a chooser is otherwise possible (blank open, no resume/seed/link).
+
+test('the chooser gate opens on built-in OR user templates', () => {
+  assert.match(
+    CODE,
+    /else if \(!slot && !seededDirect && Object\.keys\(values\)\.length === 0 && !reachedViaLink\) \{/,
+    'the gate condition dropped the hard hasTemplates requirement so a user-template-only tool reaches it',
+  );
+  assert.match(CODE, /hasUserTemplates = mine\.length > 0;/,
+    'the user templates are counted from the store list()');
+  assert.match(CODE, /createUserTemplateStore\([\s\S]{0,200}?\)\.list\(toolId\)/,
+    'the count comes from the user-template store scoped to this tool id');
+  assert.match(CODE, /if \(hasTemplates \|\| hasUserTemplates\) \{/,
+    'the chooser opens for built-in OR user templates - for neither, this guard leaves templatePick null');
+});
+
+test('the built-in fast path skips the user-template store read before mount', () => {
+  // A tool WITH built-in templates always opens, so it must not pay the async store read on
+  // the mount path - the count is guarded behind `if (!hasTemplates)`, and the chooser
+  // promise below still fetches the user templates off the mount path as it always did.
+  const branch = bodyAfter(CODE, 'else if (!slot && !seededDirect && Object.keys(values).length === 0 && !reachedViaLink)');
+  const countAt = branch.indexOf('hasUserTemplates = mine.length > 0;');
+  assert.notEqual(countAt, -1, 'the user-template count is inside this branch');
+  assert.match(branch.slice(0, countAt), /if \(!hasTemplates\) \{/,
+    'the store read only runs when there are no built-in templates (Design stays fast)');
+});
+
 test('the chooser hands back a working close only once the modal is real', () => {
   // onOpen must fire after `finish` is defined (the close it hands back closes over it)
-  // — a close handle that could throw or close nothing would defeat the whole guard.
+  // - a close handle that could throw or close nothing would defeat the whole guard.
   const finishAt = CHOOSER.indexOf('const finish = (values');
   const onOpenAt = CHOOSER.indexOf('opts.onOpen?.(');
   assert.notEqual(finishAt, -1);

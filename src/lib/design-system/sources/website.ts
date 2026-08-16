@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **website source** (plan 97 §9, M6) — a first-party site as design-system
+ * The **website source** (plan 97 §9, M6) - a first-party site as design-system
  * material, on the two shells that can actually read one.
  *
- * §9's decision is the shape of this file: **no server fetch, ever**. The
+ * §9's decision is the structure of this file: **no server fetch, ever**. The
  * deployed PWA cannot reach an arbitrary origin at all (`connect-src` allowlists
  * six hosts, so this dies at CSP before CORS is even asked), and `api/ingest`
  * was ruled out rather than built. So the reading is done by whatever on-device
  * transport the person already has:
  *
- *  - **Tauri** — a native fetch (the Rust `site_fetch` command), which has no
+ *  - **Tauri** - a native fetch (the Rust `site_fetch` command), which has no
  *    CORS or CSP to answer to. Probed two ways, because one of them can miss:
- *    an optional bridge member a shell's `bridge-overrides` may add, and — the
- *    one that cannot miss — Tauri's own `__TAURI_INTERNALS__.invoke` global.
+ *    an optional bridge member a shell's `bridge-overrides` may add, and - the
+ *    one that cannot miss - Tauri's own `__TAURI_INTERNALS__.invoke` global.
  *    A build-time override keyed on a FILENAME has silently failed in this repo
  *    before, and here it would fail OPEN: no throw, just a tile that never
  *    appears on the one platform it is meant to work on. The runtime probe owns
  *    no filename, so a rename cannot break it.
- *  - **Chromium + the Lolly extension** — the capture extension already holds
+ *  - **Chromium + the Lolly extension** - the capture extension already holds
  *    `debugger`/`tabs` + `<all_urls>`; alongside its PNG capture it answers a
  *    site request with the rendered page's HTML, stylesheet text and asset
- *    bytes. **The wire protocol for that lives in exactly one place** —
+ *    bytes. **The wire protocol for that lives in exactly one place** - 
  *    `bridge/capture-extension.ts`, beside the `capture` request that shares the
- *    relay — and this module adapts it rather than restating it. It restated it
+ *    relay - and this module adapts it rather than restating it. It restated it
  *    once, disagreed with the shipped extension on both the request type and
  *    the reply's shape, and the only symptom was a 60 s wait ending in
  *    "{host} took too long to answer": a wrong answer that blames the site.
@@ -35,19 +35,19 @@
  *
  *  1. **Nothing is fetched before a press.** This module has no boot-time work
  *     and no ambient behaviour; `scanWebsite` fetches once, for the address it
- *     was handed. A `?source=url&u=` deep link only prefills — it never reaches
+ *     was handed. A `?source=url&u=` deep link only prefills - it never reaches
  *     here on its own.
  *  2. **First-party only, no crawling.** One address, one page, whatever the
  *     transport resolved for it. Links are not followed; the only sub-resources
  *     read are the stylesheets and candidate logo bytes the transport already
  *     resolved for that one page.
  *  3. **Machine reasons, never a throw.** Every failure comes back as a
- *     `refused` result with a token the caller renders through its own `t()` —
+ *     `refused` result with a token the caller renders through its own `t()` - 
  *     the same stance as `sources/pdf.ts`. A source picker that throws on a
  *     hostile page is a source picker that loses the press.
  *
  * The parsing itself is not here: `extract-site.ts` is the pure HTML/CSS →
- * census reader, and this module is the transport seam around it — address
+ * census reader, and this module is the transport seam around it - address
  * validation, the fetch, pairing logo bytes onto the URLs the parser found, and
  * the §9 bonus of feeding a screenshot through the image census so colours
  * painted by a webfont or a canvas (which no stylesheet declares) are seen too.
@@ -68,12 +68,12 @@ import * as captureBridge from '../../../bridge/capture-extension.ts';
 
 // ── The transport contract ───────────────────────────────────────────────────
 
-/** One sub-resource a transport resolved for the page — a favicon, an
+/** One sub-resource a transport resolved for the page - a favicon, an
  *  `apple-touch-icon`, an `og:image`. Bytes only; nothing here re-fetches. */
 export interface SiteAsset {
   url: string;
   bytes: Uint8Array;
-  /** As the transport received it. Treated as a claim, not a fact — see
+  /** As the transport received it. Treated as a claim, not a fact - see
    *  {@link sniffImageMime}. */
   mime: string;
 }
@@ -93,7 +93,7 @@ export interface SiteFetchResult {
 /**
  * A way to read one page on this device.
  *
- * `label` is a MACHINE token, never display copy — the caller maps it through
+ * `label` is a MACHINE token, never display copy - the caller maps it through
  * its own `t()`, because the consent sentence is the caller's to write and it
  * differs per transport ("The extension reads {host} in a background tab" vs
  * "The app fetches {host} directly"). Copy lives with the button that IS the
@@ -137,7 +137,7 @@ const TIMEOUT_GRACE_MS = 2_000;
 /**
  * Belt-and-braces size caps on what a transport hands back.
  *
- * Both transports cap at the fetch — but a page is untrusted input arriving over
+ * Both transports cap at the fetch - but a page is untrusted input arriving over
  * two independent code paths, and stating the ceiling once here means the parser
  * cannot be handed 200 MB of markup because one of them regressed. Over-cap
  * input is TRUNCATED, not refused: `extract-site.ts` is deliberately tolerant of
@@ -149,7 +149,7 @@ export const SITE_MAX_HTML_CHARS = 4_000_000;
 export const SITE_MAX_CSS_CHARS = 8_000_000;
 export const SITE_MAX_STYLESHEETS = 60;
 
-/** Logo candidates offered from one page, and the byte ceiling per candidate —
+/** Logo candidates offered from one page, and the byte ceiling per candidate - 
  *  the Logos room's own caps, so nothing travels that the room would refuse. */
 export const SITE_MAX_LOGOS = PENDING_LOGO_MAX_FILES;
 export const SITE_MAX_LOGO_BYTES = PENDING_LOGO_MAX_BYTES;
@@ -183,7 +183,7 @@ export type SiteUrlRefusal =
   | 'empty-url'
   /** Not an address at all once a scheme was assumed. */
   | 'unparseable-url'
-  /** Named a scheme that is not `http`/`https` — `javascript:`, `data:`, `file:`. */
+  /** Named a scheme that is not `http`/`https` - `javascript:`, `data:`, `file:`. */
   | 'unsupported-scheme'
   /** Carried a user:password. */
   | 'credentials-in-url'
@@ -200,7 +200,7 @@ const BAD_SCHEME_RE = /^(?:javascript|data|blob|file|about|mailto|tel|ftp|ws|wss
  *  which is why the test is for `://` rather than for a colon. */
 const HAS_ORIGIN_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 const HTTP_SCHEME_RE = /^https?:\/\//i;
-/** An interior space or control character — what a line-wrapped paste and a
+/** An interior space or control character - what a line-wrapped paste and a
  *  smuggling attempt both look like. A scan rather than a character class: a
  *  control character inside a regex literal is unreadable, and the linter is
  *  right to say so. */
@@ -217,7 +217,7 @@ function hasControlOrSpace(s: string): boolean {
  *
  * **`https` is assumed, never `http`.** A person types "suse.com"; assuming the
  * unencrypted scheme would silently downgrade a fetch they never described. A
- * site that only serves `http` still works — they can type it.
+ * site that only serves `http` still works - they can type it.
  *
  * **Credentials are refused, not stripped.** `https://user:pw@example.com` would
  * send that secret to a third party from the person's own machine, and the host
@@ -264,7 +264,7 @@ export function normalizeSiteUrl(raw: unknown): SiteUrlCheck {
   return { ok: true, url: parsed.href, siteHost: parsed.hostname };
 }
 
-/** The host a scanned page belongs to — the provenance chip's text ("from
+/** The host a scanned page belongs to - the provenance chip's text ("from
  *  suse.com"), and the noun the caller puts in its consent sentence. */
 function hostOf(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
@@ -298,7 +298,7 @@ function b64ToBytes(b64: string): Uint8Array | null {
  * `data:` URL its capture sibling returns. All three are the same fact, so all
  * three are accepted here rather than in two nearly-identical adapters.
  *
- * Anything else — a number, an object, a string that is not base64 — is `null`.
+ * Anything else - a number, an object, a string that is not base64 - is `null`.
  * A transport that hands over something unreadable contributes nothing; it does
  * not get to throw inside a scan.
  */
@@ -324,7 +324,7 @@ export function toBytes(value: unknown): Uint8Array | null {
   if (typeof value === 'string') {
     const data = DATA_URL_RE.exec(value);
     if (data) {
-      // A non-base64 data URL is percent-encoded text — an inline SVG, which is
+      // A non-base64 data URL is percent-encoded text - an inline SVG, which is
       // a perfectly good logo.
       const body = value.slice(data[0].length);
       if (data[2]) return b64ToBytes(body);
@@ -389,9 +389,9 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  *
  * The point of the estimate is that it costs nothing: `toBytes` allocates the
  * whole buffer, so measuring afterwards is a cap on memory already spent. Every
- * branch over-states rather than under-states — a base64 string is at most
+ * branch over-states rather than under-states - a base64 string is at most
  * three bytes per four characters, a percent-encoded data URL at most one byte
- * per character — so a carrier this admits is genuinely under the ceiling, and
+ * per character - so a carrier this admits is genuinely under the ceiling, and
  * the exact length is re-checked after the decode anyway.
  */
 function byteLengthHint(value: unknown): number {
@@ -417,7 +417,7 @@ function byteLengthHint(value: unknown): number {
  * carries no stylesheets is an ordinary page, not an error.
  *
  * Returns the truncation warnings alongside, because a partial read must be
- * reportable — the caller says "read this far", never implies the whole page.
+ * reportable - the caller says "read this far", never implies the whole page.
  */
 export function coerceFetchResult(
   value: unknown,
@@ -532,7 +532,7 @@ function absolute(url: string, base: string): string {
  *
  * A URL with no matching asset still travels, without bytes. That is a real
  * candidate to a caller that can act on a URL (a Tauri shell can fetch it; a
- * report can quote it) and it is honest about what happened — dropping it would
+ * report can quote it) and it is honest about what happened - dropping it would
  * quietly turn "the transport did not fetch this one" into "the page did not
  * have one". Bytes are kept only when they sniff as an image and fit under
  * {@link SITE_MAX_LOGO_BYTES}; anything else keeps the URL and reports why.
@@ -597,8 +597,8 @@ const totalWeight = (census: DesignCensus): number =>
  * counts against another's is a claim about relative importance that no source
  * makes. That rule holds between sources that count the same KIND of thing. Here
  * they do not: the stylesheet census counts DECLARATIONS (tens), the screenshot
- * counts PIXELS (hundreds of thousands). Merging those raw is itself the claim —
- * that one pixel weighs what one declaration weighs — and it costs the whole
+ * counts PIXELS (hundreds of thousands). Merging those raw is itself the claim - 
+ * that one pixel weighs what one declaration weighs - and it costs the whole
  * declared palette, because the tray takes the top candidates by weight and a
  * page's own background would fill every slot.
  *
@@ -636,8 +636,8 @@ interface NativeSiteFetchNet {
  * Two reasons, and the second is the one that matters. It keeps this module
  * loading whether or not that bridge has grown the pair yet (no probe means no
  * announced protocol, which means no extension transport). And it keeps the
- * extension's wire protocol — request type, reply type, id field, payload shape
- * — in exactly ONE file, next to the `capture` request that shares the relay,
+ * extension's wire protocol - request type, reply type, id field, payload shape
+ * - in exactly ONE file, next to the `capture` request that shares the relay,
  * rather than restated here where it can silently disagree. It did disagree,
  * and the failure was a 60 s wait blamed on the site.
  */
@@ -651,7 +651,7 @@ const captureExt = captureBridge as {
 /**
  * The extension transport: one page read in a background tab the extension owns.
  *
- * An ADAPTER, not an implementation — the bridge owns the relay, this owns the
+ * An ADAPTER, not an implementation - the bridge owns the relay, this owns the
  * shape the scan reads. Two things happen on the way through: the answer goes
  * through `coerceFetchResult`, the single place a wire payload becomes a typed
  * one for both transports (and the single place the caps are enforced), and no
@@ -732,9 +732,9 @@ function tauriSiteFetch(invoke: TauriInvoke): (url: string, opts?: { timeoutMs?:
 /**
  * The way this device can read a page, or `null`.
  *
- * `null` is load-bearing: §9's decision is that the Website source exists only
+ * `null` is required: §9's decision is that the Website source exists only
  * where a real transport does, and the source picker must not render the tile
- * otherwise. There is no third branch to add later — a server fetch was ruled
+ * otherwise. There is no third branch to add later - a server fetch was ruled
  * out, not deferred.
  *
  * Native wins when both exist. It is a plain HTTP client with no CORS, CSP or
@@ -744,13 +744,13 @@ function tauriSiteFetch(invoke: TauriInvoke): (url: string, opts?: { timeoutMs?:
  *
  * THREE PROBES, IN ORDER, and the second is the one that saves the feature:
  *
- *  1. `host.net._siteFetch` — an optional bridge member a shell's overrides may
+ *  1. `host.net._siteFetch` - an optional bridge member a shell's overrides may
  *     add. First because a shell that went to the trouble of providing one
  *     knows something this module does not.
  *  2. Tauri's `__TAURI_INTERNALS__.invoke` global → the `site_fetch` command.
  *     The build-time override that was supposed to supply (1) is keyed on a
  *     FILENAME and there is no web-shell file with that name, so it never fires
- *     — and its failure mode is silence: no throw, just a Website tile that
+ * - and its failure mode is silence: no throw, just a Website tile that
  *     never appears on the two shells the capabilities page names as the way to
  *     get one. A probe that owns no filename cannot miss that way.
  *  3. The extension, if it announced a site protocol this build speaks.
@@ -816,7 +816,7 @@ export type SiteScanResult =
       googleFamilies: string[];
       /** Where the read actually landed, after any redirect. */
       finalUrl: string;
-      /** That address's host — the provenance chip, and the consent noun. */
+      /** That address's host - the provenance chip, and the consent noun. */
       siteHost: string;
       transport: SiteTransport['kind'];
       /** True when the transport painted the page and its colours were read. */
@@ -832,12 +832,12 @@ const errText = (err: unknown): string => String((err as { message?: unknown })?
  *
  * §9's bonus, and the reason it is worth the code: a stylesheet only declares
  * what a stylesheet can declare. A wordmark set in a webfont, a hero drawn into
- * a canvas, a brand colour that only exists inside a background image — none of
+ * a canvas, a brand colour that only exists inside a background image - none of
  * those appear in `extract-site.ts`'s output at all, and all of them are in the
  * pixels.
  *
  * The decoder is imported on demand (it drags in the bitmap/codec chunk, exactly
- * as `views/start.ts` does for a dropped image) and only where a DOM exists —
+ * as `views/start.ts` does for a dropped image) and only where a DOM exists - 
  * decoding needs a canvas, so a headless run skips straight to the warning
  * rather than loading a codec that cannot work.
  */
@@ -870,7 +870,7 @@ async function screenshotCensus(bytes: Uint8Array, label: string): Promise<Desig
  * own `t()`; `detail` is a transport's own words and belongs in a log, not in a
  * sentence built for a person.
  *
- * @param transport   from {@link detectSiteTransport} — injected so tests fake it
+ * @param transport   from {@link detectSiteTransport} - injected so tests fake it
  * @param url         whatever the person typed; validated here, not by the caller
  * @param onProgress  optional phase reporter; its errors can never abort a scan
  */

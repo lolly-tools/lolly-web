@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PDF capability (host.pdf) — metadata inspection + removal, backed by pdf-lib.
+ * PDF capability (host.pdf) - metadata inspection + removal, backed by pdf-lib.
  *
  * Unlike the JPEG/PNG/SVG strippers (dependency-free byte/text surgery that runs
  * inside the sandboxed tool hook), a PDF is a cross-referenced object graph with
- * an xref table and compressed object streams — you can't excise a metadata
+ * an xref table and compressed object streams - you can't excise a metadata
  * object without rewriting offsets. So the work lives here in the shell, where a
  * real PDF library is available, and the tool reaches it through `host.pdf`.
  *
  * IMPORTANT: this RE-SAVES the document (pdf-lib re-serialises), so the result is
- * not byte-for-byte and any digital signature is invalidated — the tool's UI says
+ * not byte-for-byte and any digital signature is invalidated - the tool's UI says
  * so. Everything runs locally in the browser; nothing is uploaded.
  *
- * pdf-lib is loaded on demand (dynamic import) so it never adds to startup cost —
+ * pdf-lib is loaded on demand (dynamic import) so it never adds to startup cost - 
  * only the first PDF a user opens pulls it in.
  */
 import type { PDFDocument as PDFDocumentType, PDFName as PDFNameType } from 'pdf-lib';
@@ -89,7 +89,7 @@ export async function analyzePdf(bytes: Uint8Array): Promise<{ findings: PdfFind
     add('XMP metadata', who ? `XMP packet — ${who}` : 'embedded XMP packet', 'warn');
   }
 
-  // Structural findings — what the document CARRIES and DOES, as opposed to what
+  // Structural findings - what the document CARRIES and DOES, as opposed to what
   // it says about itself. Lazily imported so a caller that only wants Info/XMP
   // doesn't pay for the graph walkers, and defensive: a document too broken to
   // walk structurally must still return its metadata.
@@ -128,7 +128,7 @@ export async function stripPdf(bytes: Uint8Array): Promise<{ bytes: Uint8Array }
 // Shrinks a PDF where the bytes almost always are: oversized embedded JPEGs. Each
 // qualifying image XObject is decoded on a canvas, downsampled and re-encoded, then
 // swapped back IN PLACE; the document is re-saved with object streams. Text and
-// vector graphics are never touched. No heavy WASM — pdf-lib (already here) plus the
+// vector graphics are never touched. No heavy WASM - pdf-lib (already here) plus the
 // browser's own canvas. The node CLI has no canvas, so it does the structural pass
 // only (object-stream re-save). The result is guaranteed never larger than the input.
 
@@ -201,7 +201,7 @@ async function recodeJpeg(jpgBytes: Uint8Array, { maxDim, quality, grayscale }: 
   let bmp: ImageBitmap;
   try {
     bmp = await createImageBitmap(new Blob([jpgBytes as BlobPart], { type: 'image/jpeg' }));
-  } catch { return null; } // undecodable here (e.g. CMYK / JPEG2000) — leave it alone
+  } catch { return null; } // undecodable here (e.g. CMYK / JPEG2000) - leave it alone
   const iw = bmp.width, ih = bmp.height;
   if (!iw || !ih) { if (bmp.close) bmp.close(); return null; }
   const scale = Math.min(1, maxDim / Math.max(iw, ih));
@@ -210,7 +210,7 @@ async function recodeJpeg(jpgBytes: Uint8Array, { maxDim, quality, grayscale }: 
   const canvas = makeCanvas(nw, nh);
   // Both canvas kinds return a 2D context with the members used here (filter,
   // drawImage); cast to HTMLCanvasElement only to pick a concrete getContext
-  // overload — erased at runtime, so the OffscreenCanvas path is unaffected.
+  // overload - erased at runtime, so the OffscreenCanvas path is unaffected.
   const cx = (canvas as HTMLCanvasElement).getContext('2d');
   if (!cx) { if (bmp.close) bmp.close(); return null; }
   if (grayscale && 'filter' in cx) cx.filter = 'grayscale(1)';
@@ -250,7 +250,7 @@ export async function compressPdf(bytes: Uint8Array, opts: PdfCompressOpts = {})
   let images = 0;
   if (hasImageCodec()) {
     // First pass: an image used as a soft mask (/SMask) or image mask (/Mask) by
-    // another image must NOT be recompressed — masks are DeviceGray, and a canvas
+    // another image must NOT be recompressed - masks are DeviceGray, and a canvas
     // re-encode would force a 3-channel DeviceRGB JPEG, corrupting the transparency.
     // Collect those target refs ("N G R") so the main pass skips them.
     const maskRefs = new Set<string>();
@@ -264,7 +264,7 @@ export async function compressPdf(bytes: Uint8Array, opts: PdfCompressOpts = {})
     }
 
     for (const [ref, obj] of doc.context.enumerateIndirectObjects() as unknown as Array<[unknown, RawStreamLike]>) {
-      if (maskRefs.has(String(ref))) continue; // this image masks another — leave it alone
+      if (maskRefs.has(String(ref))) continue; // this image masks another - leave it alone
       // Image XObjects are raw streams; content streams, fonts, etc. are skipped.
       if (!(obj.contents instanceof Uint8Array)) continue;
       const dict = obj.dict;
@@ -276,7 +276,7 @@ export async function compressPdf(bytes: Uint8Array, opts: PdfCompressOpts = {})
       // Only baseline single-filter JPEGs (DCTDecode) in a plain RGB/Gray space, with
       // no soft mask, stencil mask or custom Decode array. Everything else (CMYK JPEG,
       // ICCBased/Indexed, JPX/JBIG2/CCITT, Flate rasters) a browser canvas decodes
-      // wrong or not at all — so we leave those images untouched.
+      // wrong or not at all - so we leave those images untouched.
       const filter = dict.get(PDFName.of('Filter'));
       if (!filter || String(filter) !== '/DCTDecode') continue;
       if (!isSafeColorSpace(dict.get(PDFName.of('ColorSpace')))) continue;
@@ -305,7 +305,7 @@ export async function compressPdf(bytes: Uint8Array, opts: PdfCompressOpts = {})
     }
   }
 
-  // A light, non-identifying tool credit. The original author/title are left as-is —
+  // A light, non-identifying tool credit. The original author/title are left as-is - 
   // metadata scrubbing is the Strip Hidden Data tool's job, not this one's. Producer
   // gets overwritten by any re-saver anyway; this just makes it a clean value.
   try {

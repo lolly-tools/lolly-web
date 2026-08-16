@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * bridge/export-gainmap-jpeg.ts — HDR JPEG as an ISO 21496-1 gain-map file
+ * bridge/export-gainmap-jpeg.ts - HDR JPEG as an ISO 21496-1 gain-map file
  * (plans/61-deeprichpixels.md §6 B2 wiring).
  *
- * The seam under test is DOM-free by design — `Uint8ClampedArray` in, file
- * bytes out, with JPEG encoding injected — so the whole HDR JPEG path runs here
+ * The seam under test is DOM-free by design - `Uint8ClampedArray` in, file
+ * bytes out, with JPEG encoding injected - so the whole HDR JPEG path runs here
  * under node:test with no canvas and no jsdom. Two encoders are used: a
  * RECORDING stub that returns fixed JPEG fixtures and captures the exact pixel
  * buffers the seam asked it to encode (that is how the gain-map maths is
@@ -14,7 +14,7 @@
  *
  * What is NOT covered: `renderRaster`'s canvas plumbing around the seam
  * (`getImageData` -> scratch canvas -> `toBlob`), which needs a real browser,
- * and how any given OS/display actually renders the result — the same
+ * and how any given OS/display actually renders the result - the same
  * browser-tier gap `export-hdr-png.test.ts` carries.
  *
  * Run: node --test shells/web/src/bridge/export-gainmap-jpeg.test.ts
@@ -203,7 +203,7 @@ test('a constant map that asks for real gain is still written', async () => {
 test('the gain map really encodes log2(HDR/SDR): brighter targets read brighter', async () => {
   const src = testImage(32, 32);
   // The fitted range is normalised per image, so the map bytes are not directly
-  // comparable — the declared capacity is. A higher peak asks for more headroom.
+  // comparable - the declared capacity is. A higher peak asks for more headroom.
   const capOf = (bytes: Uint8Array) => {
     const { map } = splitFile(bytes);
     const packet = new TextDecoder().decode(
@@ -227,7 +227,7 @@ test('imprint lands in the DELIVERED base pixels, and the map follows them', asy
   const without = detectWatermark(plain.calls[0]!.rgba, { width: 256, height: 256 });
   assert.equal(withMark.present, true, 'the base image carries the imprint');
   assert.equal(without.present, false, 'the unmarked control does not');
-  // The map is computed from the marked pixels, so it differs too — base and map
+  // The map is computed from the marked pixels, so it differs too - base and map
   // describe the SAME image.
   assert.notDeepEqual(marked.calls[1]!.rgba, plain.calls[1]!.rgba);
 });
@@ -320,7 +320,7 @@ test('sharp decodes the finished file to EXACTLY the base SDR image', { skip: SK
   assert.equal(meta.width, w);
   assert.equal(meta.height, h);
 
-  // The appended image is a real, decodable JPEG of the same size — and its
+  // The appended image is a real, decodable JPEG of the same size - and its
   // decoded pixels are grey (a single-channel gain map splayed across RGB).
   const { map } = splitFile(res.bytes);
   const mapMeta = await sharp!(Buffer.from(map)).metadata();

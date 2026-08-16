@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Audio encoders — PCM in, a finished audio file out.
+ * Audio encoders - PCM in, a finished audio file out.
  *
  * Two callers today: the voice recorder's "MP3" download (blobToMp3, unchanged),
  * and the audio-only export formats (wav / mp3 / m4a / opus) that bridge/export.ts
@@ -8,29 +8,29 @@
  * bridge/export-hdr-png.ts, so every encoder is testable under node with no DOM.
  *
  * ── The PCM shape ────────────────────────────────────────────────────────────
- * ONE shape throughout: `AudioPcm` = the engine's `WavAudio` — planar channels
+ * ONE shape throughout: `AudioPcm` = the engine's `WavAudio` - planar channels
  * (`Float32Array` per channel, samples in -1..1) plus a sample rate. Not an
  * `AudioBuffer`: that is a main-thread-only global and is not transferable, and
  * the engine's WAV writer already takes exactly this. `pcmFromAudioBuffer()`
  * converts at the boundary where a real `AudioBuffer` shows up.
  *
  * ── What each path does to the audio (the honesty rule) ──────────────────────
- *  - wav   — engine `packWav`. LOSSLESS. `float32` writes the Float32 samples
+ *  - wav - engine `packWav`. LOSSLESS. `float32` writes the Float32 samples
  *            through untouched; the default `int16` quantises to 16-bit PCM.
  *            Pure JS, deterministic, always available.
- *  - mp3   — lamejs. A LOSSY re-encode of whatever PCM it is handed. Pure JS,
+ *  - mp3 - lamejs. A LOSSY re-encode of whatever PCM it is handed. Pure JS,
  *            deterministic, always available. Note the source is already decoded
  *            here, so an mp3-in/mp3-out request is generation loss: the caller
  *            (renderAudioExport) avoids it by passing the original bytes through
  *            when nothing was trimmed or mixed.
- *  - m4a   — WebCodecs AudioEncoder (AAC-LC, mp4a.40.2) muxed by mp4-muxer in
+ *  - m4a - WebCodecs AudioEncoder (AAC-LC, mp4a.40.2) muxed by mp4-muxer in
  *            audio-only mode. LOSSY. Needs a platform encoder (see audioSupport).
- *  - opus  — WebCodecs AudioEncoder (opus) muxed by webm-muxer in audio-only
+ *  - opus - WebCodecs AudioEncoder (opus) muxed by webm-muxer in audio-only
  *            mode. LOSSY. Needs a platform encoder.
  *
  * Every LOSSY path is a genuine re-encode of the samples given, so a lossy source
  * that is neither trimmed nor mixed must NOT be routed through one when the
- * requested format already matches it — renderAudioExport enforces that.
+ * requested format already matches it - renderAudioExport enforces that.
  *
  * The muxers (mp4-muxer / webm-muxer) and lamejs are lazy-imported so none of
  * them enters the preload bundle; they load only when someone exports audio.
@@ -62,7 +62,7 @@ export function isAudioFormat(format: string): format is AudioFormat {
   return (AUDIO_FORMATS as readonly string[]).includes(format);
 }
 
-/** Bitrate for the lossy encoders — the same 128 kbps the video export's audio
+/** Bitrate for the lossy encoders - the same 128 kbps the video export's audio
  *  track uses (export.ts AUDIO_BITRATE), so a bed sounds identical either way. */
 export const AUDIO_BITRATE = 128_000;
 
@@ -71,7 +71,7 @@ export const AUDIO_BITRATE = 128_000;
 const MAX_CHANNELS = 2;
 
 /** The slice of `AudioBuffer` this module reads (spelled out so a worker-side
- *  planar buffer satisfies it too — same reasoning as video-encode-core's PcmSource). */
+ *  planar buffer satisfies it too - same reasoning as video-encode-core's PcmSource). */
 export interface PcmSource {
   length: number;
   numberOfChannels: number;
@@ -119,7 +119,7 @@ export async function encodeMp3(pcm: AudioPcm, { bitrate = 160 }: { bitrate?: nu
 }
 
 /** Decode any recorded audio Blob and re-encode it to an MP3 Blob (audio/mpeg).
- *  The voice recorder's MP3 download — MediaRecorder gives us opus/aac for free,
+ *  The voice recorder's MP3 download - MediaRecorder gives us opus/aac for free,
  *  MP3 is the universally-playable extra the browser cannot produce itself. */
 export async function blobToMp3(blob: Blob, { bitrate = 160 }: { bitrate?: number } = {}): Promise<Blob> {
   const audio = await decodeAudioBlob(blob);
@@ -144,7 +144,7 @@ interface AudioMuxerLike {
 }
 interface BuiltAudioMuxer { muxer: AudioMuxerLike; target: { buffer: ArrayBuffer } }
 
-/** Factory for the audio-only muxer — swappable so the encode path is drivable
+/** Factory for the audio-only muxer - swappable so the encode path is drivable
  *  under node without a real muxer or a real AudioEncoder. */
 export type AudioMuxerFactory = (
   container: 'mp4' | 'webm',
@@ -272,12 +272,12 @@ export function encodeAudio(
  * What the export dispatch hands over. The audio SOURCE is tool-specific, so it
  * arrives one of two ways and this module never guesses:
  *
- *  1. `pcm` — PCM the tool already mixed (Sequence Studio: every clip's own
+ *  1. `pcm` - PCM the tool already mixed (Sequence Studio: every clip's own
  *     sound plus the bed). Wins over `audio`, and is what a mix that cannot be
  *     named by a URL must use.
- *  2. `audio` — the export bar's selection (`ExportOpts.audio`): a fetchable
+ *  2. `audio` - the export bar's selection (`ExportOpts.audio`): a fetchable
  *     `url` plus the in-point/envelope fields. With `duration` this is THE
- *     TRIMMED EXCERPT — [start, start + duration) of the source, which is what
+ *     TRIMMED EXCERPT - [start, start + duration) of the source, which is what
  *     the Audiogram's "Start at" / clip length mean.
  *
  * With neither, there is nothing to export and the caller gets an error rather
@@ -375,7 +375,7 @@ export function sliceWithEnvelope(
   return { channels: channels.length ? channels : [new Float32Array(n)], sampleRate: rate };
 }
 
-/** Container sniff on the leading bytes — enough to tell the four apart, so the
+/** Container sniff on the leading bytes - enough to tell the four apart, so the
  *  pass-through above never claims a match it cannot see. */
 export function sniffAudioFormat(bytes: ArrayBuffer | Uint8Array): AudioFormat | null {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

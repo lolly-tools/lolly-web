@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * swatch-export.ts — the pure palette-download formatters behind the brand
+ * swatch-export.ts - the pure palette-download formatters behind the brand
  * editor's Palette panel "Download all as" control.
  *
  * Run with: node --test "shells/web/src/**\/*.test.ts"
@@ -45,7 +45,7 @@ test('swatchesToTokensJson nests colour leaves by dotted key, and skips unresolv
   const doc = JSON.parse(swatchesToTokensJson(FIXTURE));
   assert.deepEqual(doc.color.ramp.primary['5'], { $value: '#3355ff', $type: 'color', $description: 'Primary 5' });
   assert.deepEqual(doc.color.spectrum.blue, { $value: '#00aa66', $type: 'color', $description: 'Blue' });
-  // The unresolved alias ('color.semantic.primary') has no hex — it must not appear at all.
+  // The unresolved alias ('color.semantic.primary') has no hex - it must not appear at all.
   assert.equal(doc.color.semantic, undefined);
 });
 
@@ -89,7 +89,7 @@ test('swatchesToGpl: header lines, then space-padded RGB rows for resolved swatc
   // rgb(51,85,255) → ' 51  85 255' (each channel space-padded to width 3).
   assert.equal(lines[4], ' 51  85 255\tPrimary Primary 5');
   assert.equal(lines[5], '  0 170 102\tSpectrum Blue');
-  // Only 2 resolved rows — the unresolved alias contributes nothing.
+  // Only 2 resolved rows - the unresolved alias contributes nothing.
   assert.equal(lines.filter(l => l && !['GIMP Palette', 'Name: My Brand', 'Columns: 0', '#'].includes(l)).length, 2);
 });
 
@@ -111,7 +111,7 @@ test('swatchesToAse: header + one colour-entry block per resolved swatch, byte-e
     const type = dv.getUint16(blockStart, false);
     assert.equal(type, 0x0001, 'colour-entry block type');
     const dataLen = dv.getUint32(blockStart + 2, false);
-    // Data starts right after the u16 type + u32 length fields — NOT at blockStart.
+    // Data starts right after the u16 type + u32 length fields - NOT at blockStart.
     const dataStart = blockStart + 2 + 4;
 
     const nameUnits = dv.getUint16(dataStart, false);

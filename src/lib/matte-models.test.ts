@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * host.matte catalogue (lib/matte-models.ts) — the honesty gates.
+ * host.matte catalogue (lib/matte-models.ts) - the honesty gates.
  *
  * The one property that MUST hold: nothing is offered until its licence + weights
  * are verified. A model may only appear once MATTE_STAGED flips (in the same change
- * that lands its verified pin). This test is the tripwire on that gate — it pins the
+ * that lands its verified pin). This test is the tripwire on that gate - it pins the
  * exact staged set, so a NEW flip fails here until whoever flipped it re-affirms the
  * verification by updating this test in the same change.
  *
@@ -45,8 +45,8 @@ test('HONESTY GATE: exactly the verified models are offered', () => {
   // (max quality, full Swin-L, ~490 MB fp16) + modnet (portraits). Each has a real
   // sha256/byte-verified pin (fetch-matte-models.ts), its ONNX graph inspected in
   // onnxruntime (tensor shape/dtype, per-model normalization + activation confirmed),
-  // and a permissive licence (Apache-2.0 ×2, MIT ×2 — MPL-compatible). Matte runs
-  // WASM-only, so no WebGPU gate applies. If this fails, a staged flag changed — re-affirm
+  // and a permissive licence (Apache-2.0 ×2, MIT ×2 - MPL-compatible). Matte runs
+  // WASM-only, so no WebGPU gate applies. If this fails, a staged flag changed - re-affirm
   // the licence + pin were actually verified, then update this list in the SAME change.
   assert.deepEqual(stagedMatteModels().map(m => m.id).sort(), ['birefnet', 'birefnet-lite', 'modnet', 'u2netp'],
     'the staged set must match the verified models');
@@ -57,7 +57,7 @@ test('matteModel round-trips even an unstaged (withheld) id', () => {
 });
 
 test('BACKEND GATE: native-only models are offered only where a native backend exists', () => {
-  // birefnet (full Swin-L @1024²) OOMs the wasm32 heap — it is offered ONLY where a
+  // birefnet (full Swin-L @1024²) OOMs the wasm32 heap - it is offered ONLY where a
   // native ORT backend exists (Tauri desktop). Every other staged model runs in the
   // wasm heap and is offered everywhere. matteModelsFor is the single gate both the
   // picker (bridge/index.ts) and the offline pre-download (model-prefetch.ts) use, so

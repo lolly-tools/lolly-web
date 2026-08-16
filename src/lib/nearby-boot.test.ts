@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby-boot — the LAN provider built over a native invoke (lib/nearby-boot.ts):
+ * nearby-boot - the LAN provider built over a native invoke (lib/nearby-boot.ts):
  * the poll→fanout loop, browse lifecycle, timed-window auto-hide, invite
  * respond/decline once-only, output clamping, and the off-Tauri dormancy of
  * installNearbyBoot.
@@ -67,7 +67,7 @@ class FakeEnv {
   cmds(): string[] { return this.calls.map(c => c.cmd); }
 }
 
-// A microtask flush — the provider's async invokes resolve on the microtask queue.
+// A microtask flush - the provider's async invokes resolve on the microtask queue.
 const flush = () => new Promise<void>(r => setImmediate(r));
 
 test('installNearbyBoot is dormant off Tauri (no global)', () => {
@@ -153,7 +153,7 @@ test('inbound invite is surfaced once; respond sends the reply; decline is ignor
   const seen: NearbyInboundInvite[] = [];
   p.subscribeInvites(inv => seen.push(inv));
   await flush();
-  fe.advance(POLL_INTERVALS(2)); // poll again — must NOT re-surface the same exchange
+  fe.advance(POLL_INTERVALS(2)); // poll again - must NOT re-surface the same exchange
   await flush();
   assert.equal(seen.length, 1);
   assert.equal(seen[0]!.fromName, 'Priya');
@@ -163,7 +163,7 @@ test('inbound invite is surfaced once; respond sends the reply; decline is ignor
   const reply = fe.calls.find(c => c.cmd === 'nearby_send_reply');
   assert.ok(reply);
   assert.equal(reply?.args?.token, 'MY-REPLY');
-  seen[0]!.decline(); // already answered — no decline call
+  seen[0]!.decline(); // already answered - no decline call
   await flush();
   assert.equal(fe.cmds().includes('nearby_decline'), false);
 });

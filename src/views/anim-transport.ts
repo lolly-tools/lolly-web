@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
-// Animation transport — a reusable play / pause / scrub bar for ANY tool that publishes
+// Animation transport - a reusable play / pause / scrub bar for ANY tool that publishes
 // an animation on `window.__lollyAnim`. The tool owns rendering and its own frame clock;
 // this control only drives that shared clock (play/pause, seek, step) and reflects its
 // position, so one component works across every animated tool without knowing its
 // internals. Mounted on the tool stage for any manifest declaring `render.video`; it
 // shows itself only while an animation is actually active.
 //
-// Contract (window.__lollyAnim — all fields additive, the tool may set a subset):
-//   active   boolean       — tool sets true while animating; false / absent hides the bar
-//   labels   string[]      — keyframe names, drawn as ticks under the track
-//   loopMs   number        — one loop's duration (informational)
-//   curT     number        — 0..1 current position; the TOOL writes it each frame
-//   playing  boolean       — the SHELL toggles it; the tool advances only while true
-//   scrubT   number | null — the SHELL sets 0..1 to seek/hold; null = follow the clock
-//   gen      number        — the tool bumps it when it republishes so the bar resyncs ticks
+// Contract (window.__lollyAnim - all fields additive, the tool may set a subset):
+//   active   boolean - tool sets true while animating; false / absent hides the bar
+//   labels   string[] - keyframe names, drawn as ticks under the track
+//   loopMs   number - one loop's duration (informational)
+//   curT     number - 0..1 current position; the TOOL writes it each frame
+//   playing  boolean - the SHELL toggles it; the tool advances only while true
+//   scrubT   number | null - the SHELL sets 0..1 to seek/hold; null = follow the clock
+//   gen      number - the tool bumps it when it republishes so the bar resyncs ticks
 
 import { icon } from '../lib/icons.ts';
 
@@ -22,7 +22,7 @@ export type AnimState = {
   playing?: boolean; scrubT?: number | null; gen?: number;
 };
 
-// Transport glyphs come from the one icon registry (lib/icons.ts) — filled so the
+// Transport glyphs come from the one icon registry (lib/icons.ts) - filled so the
 // solid transport look matches the audio player's play/pause.
 const ICON = {
   play: icon('play', { filled: true }),
@@ -122,7 +122,7 @@ export function setupAnimTransport({ stageEl }: { stageEl: HTMLElement }): () =>
   const onUp = (e: PointerEvent): void => {
     if (!dragging) return; dragging = false;
     // If it was playing, resume (the tool picks up from the scrubbed clock); if it was
-    // paused, KEEP scrubT so it holds exactly on the scrubbed frame — never nulling it,
+    // paused, KEEP scrubT so it holds exactly on the scrubbed frame - never nulling it,
     // which could strand the tool at a stale clock if no tick fired during a fast click.
     const a = A();
     if (a) { if (wasPlaying) { a.scrubT = null; a.playing = true; } else { a.playing = false; } }

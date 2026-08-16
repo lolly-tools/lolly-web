@@ -3,7 +3,7 @@
  * The collab session composition layer (plan 100 §4.6, §5).
  *
  * Every piece this module composes is already tested on its own, so what is worth
- * pinning here is only what COMPOSITION can get wrong — and each of these has a
+ * pinning here is only what COMPOSITION can get wrong - and each of these has a
  * specific way of failing silently:
  *
  *  1. ZERO TRAFFIC WHEN ALONE survives the wiring (§4.7). The presence engine
@@ -13,25 +13,25 @@
  *  2. Focus changes ride the 50 ms throttle and the LAST one still lands. Tabbing
  *     through a sidebar is a burst; a frame per control is the bug.
  *  3. A blocks row is addressed by its STABLE ID, never its array index. The DOM
- *     only knows the index, so this is the one place the model has to be consulted —
+ *     only knows the index, so this is the one place the model has to be consulted - 
  *     get it wrong and a peer's ring lands on whichever row moved into that slot.
  *  4. Inbound frames build the roster in first-seen order, and colours are
  *     deterministic: a peer's own broadcast colour is honoured, an unknown one is
  *     re-derived, and nobody doubles up.
  *  5. An observer's edits never become ops, while remote ops still land (contract
- *     §9 — read everything, write nothing).
- *  6. `close()` leaves NOTHING behind — zero armed timers (asserted through the
+ *     §9 - read everything, write nothing).
+ *  6. `close()` leaves NOTHING behind - zero armed timers (asserted through the
  *     injected timer hook, the only honest way), the runtime's setInput restored,
  *     the transport closed, and a clean `null` leave frame sent while the wire was
  *     still up.
  *  7. THE GUARD IS ACTUALLY ON BOTH INBOUND WIRES (§6.3, §11.21). `op-guard.ts`
- *     proves what the guard decides; these cases prove it is CONSULTED — that a
+ *     proves what the guard decides; these cases prove it is CONSULTED - that a
  *     refused op cannot reach `runtime.applyPatch` or the converging document, that
  *     a refused presence frame cannot reach the roster, and that structural abuse
  *     leaves through `onAbuse` rather than by closing a transport this module does
  *     not own. The drop-vs-disconnect split is tested as the two separate behaviours
  *     it is: a DROP takes one op and the batch carries on, while structural ABUSE
- *     condemns the whole message — so "the valid ops beside it still apply" is a
+ *     condemns the whole message - so "the valid ops beside it still apply" is a
  *     claim about drop-class malice only, and asserting it of a prototype key would
  *     be asserting the opposite of what the guard is documented to do.
  *
@@ -55,7 +55,7 @@ globalThis.document = dom.window.document;
 globalThis.FocusEvent = dom.window.FocusEvent;
 globalThis.Event = dom.window.Event;
 // jsdom boots at visibilityState 'prerender', so `document.hidden` is TRUE out of the
-// box — which would make every session here start away. Pin it to the state a real
+// box - which would make every session here start away. Pin it to the state a real
 // foreground tab is in; the away case flips it deliberately.
 const setHidden = (v: boolean): void => {
   Object.defineProperty(document, 'hidden', { value: v, configurable: true });
@@ -109,7 +109,7 @@ function fakeClock() {
     },
     clearTimer: (handle: unknown): void => { timers.delete(handle as number); },
     advance(ms: number): void { const until = t + ms; runDue(until); t = until; },
-    /** Timers still armed — how "left nothing behind" is asserted. */
+    /** Timers still armed - how "left nothing behind" is asserted. */
     pending: (): number => timers.size,
   };
 }
@@ -226,7 +226,7 @@ const text = (id: string, value: InputValue): InputModelItem =>
 const blocks = (id: string, value: InputValue): InputModelItem =>
   ({ id, type: 'blocks', value, isDirty: false, control: 'blocks', fields: [{ id: 'label', type: 'text' }] });
 
-/** A declared input whose value is an OBJECT — the `param` lane's counter-example. */
+/** A declared input whose value is an OBJECT - the `param` lane's counter-example. */
 const assetInput = (id: string): InputModelItem =>
   ({ id, type: 'asset', value: null, isDirty: false, control: 'asset-picker' });
 
@@ -255,7 +255,7 @@ function scheduler() {
 const peerState = (over: Partial<PresenceState> = {}): PresenceState =>
   ({ userId: 'U', name: '', color: '', ...over } as PresenceState);
 
-/** Three fixed colours — the palette derivation has its own test; this file cares
+/** Three fixed colours - the palette derivation has its own test; this file cares
  *  only about WHICH slot each person ends up in. */
 const swatch = (hex: string, hue: number): CollabColor =>
   ({ hex, hue, source: 'spun', lc: { light: 41, dark: 42 } });
@@ -356,7 +356,7 @@ test('a blocks row is addressed by its stable id, never by its array index', () 
   assert.equal(w.sent.at(-1)!.state?.focus, 'items:BBB', 'the token is "<blocksId>:<rowId>"');
 
   // The rows swap places (a peer inserted above, a drag reordered). The DOM index is
-  // unchanged; the identity behind it is not — and THAT is what must be reported.
+  // unchanged; the identity behind it is not - and THAT is what must be reported.
   void runtime.applyPatch({
     items: [{ [ROW_ID_FIELD]: 'BBB', label: 'b' }, { [ROW_ID_FIELD]: 'AAA', label: 'a' }],
   });
@@ -749,7 +749,7 @@ test('the "Invitee 2+" ordinal is the same on every device, not lowest-for-whoev
   // §4.5's numbering is consumed by collabDisplayName, which feeds the avatar title,
   // the roster row, the stack's aria-label, the focus chip and every announce()
   // string. If two devices number the same two people differently, each side calls
-  // ITSELF "Invitee" and the other "Invitee 2" — two people with two different names
+  // ITSELF "Invitee" and the other "Invitee 2" - two people with two different names
   // for the same two people, which is worse than not numbering at all.
   const view = (selfId: string, peerId: string, hostClientId?: string) => {
     const clock = fakeClock();
@@ -767,7 +767,7 @@ test('the "Invitee 2+" ordinal is the same on every device, not lowest-for-whoev
     return named;
   };
 
-  // Two anonymous peers, no host declared — an explicitly supported configuration
+  // Two anonymous peers, no host declared - an explicitly supported configuration
   // ("absent is fine and simply means every nameless peer reads as an invitee").
   const fromA = view('AAA', 'BBB');
   const fromB = view('BBB', 'AAA');
@@ -776,7 +776,7 @@ test('the "Invitee 2+" ordinal is the same on every device, not lowest-for-whoev
   assert.equal(fromA.get('AAA'), 1);
   assert.equal(fromA.get('BBB'), 2);
 
-  // Hub mode — a declared host plus two invitees, which is what the "2+" numbering
+  // Hub mode - a declared host plus two invitees, which is what the "2+" numbering
   // exists for in the first place. The host is never numbered on either device.
   const hubFromA = view('AAA', 'BBB', 'HOST');
   const hubFromB = view('BBB', 'AAA', 'HOST');
@@ -809,7 +809,7 @@ test('drop-class malice is refused per-op, and the valid ops beside it still app
   // build cannot make sense of costs that op and nothing else. An input id we do not
   // declare (a newer peer), an object-valued input addressed on the scalar lane, and
   // an over-sized string are all things a buggy or half-migrated peer genuinely
-  // emits — none of them is a reason to end a session.
+  // emits - none of them is a reason to end a session.
   const g = guarded([text('title', 'before'), text('subtitle', 'sub'), assetInput('logo')]);
   const log = captureWarn();
   try {
@@ -841,7 +841,7 @@ test('a prototype key condemns the whole message and leaves as an abuse event', 
   // inside an `add` row, are both schema-VALID (op-guard.test.ts asserts that against
   // the canonical ajv validator) and both become object keys downstream. Nothing in
   // this codebase can emit one, so §11.21 treats the sender as hostile: the batch is
-  // condemned entire — including the perfectly good op travelling with it — and the
+  // condemned entire - including the perfectly good op travelling with it - and the
   // verdict goes out for the transport to act on.
   const g = guarded([text('title', 'before'), blocks('items', [{ [ROW_ID_FIELD]: 'AAA', label: 'a' }])]);
   const log = captureWarn();
@@ -885,7 +885,7 @@ test('a prototype key condemns the whole message and leaves as an abuse event', 
 
 test('a presence flood raises the abuse event, and the flooding frame never lands', () => {
   // §11.21's ~40 frames/s. The window is measured on the INJECTED clock, which never
-  // advances here — so this is one second's worth of traffic by construction, with no
+  // advances here - so this is one second's worth of traffic by construction, with no
   // sleeping and no dependence on how fast the machine runs the loop.
   const g = guarded([text('title', '')]);
   const log = captureWarn();
@@ -910,7 +910,7 @@ test('a presence flood raises the abuse event, and the flooding frame never land
 
 test('a presence frame that would poison a CSS value is dropped, not escalated', () => {
   // A colour is painted into a style value, so `url(…)` in one is a network fetch
-  // from the viewer's browser to an address the peer chose. It is refused — but it is
+  // from the viewer's browser to an address the peer chose. It is refused - but it is
   // a VALUE, and a value out of range is exactly what §11.11 says to drop and carry
   // on with, so the peer keeps its seat.
   const g = guarded([text('title', '')]);
@@ -936,7 +936,7 @@ test('a presence frame that would poison a CSS value is dropped, not escalated',
 test('clean traffic is byte-identical: the same op objects, the same counts, no noise', async () => {
   // The zero-behaviour-change claim, made where it can actually fail. The guard is a
   // GATE, never a codec: what the adapter applies must be the very object the peer
-  // sent, not a normalized copy of it — a clone would silently break the identity a
+  // sent, not a normalized copy of it - a clone would silently break the identity a
   // future adapter (or a `===` in a differ) is entitled to rely on.
   const g = guarded([text('title', 'before'), blocks('items', [{ [ROW_ID_FIELD]: 'AAA', label: 'a' }])]);
   const batch = [

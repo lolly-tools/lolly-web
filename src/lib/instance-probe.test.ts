@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Tests for instance-probe.ts's pure logic — URL validation shaping and
+// Tests for instance-probe.ts's pure logic - URL validation shaping and
 // probe-response classification for components/instance-sheet.ts's connect
 // flow. Split into its own module specifically so it's importable with no
 // DOM/CSS dependency: instance-sheet.ts itself has a top-level CSS import for

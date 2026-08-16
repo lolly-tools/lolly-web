@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **PDF source** (plan 97 §8 gap 2, M5) — a guidelines PDF as design-system
+ * The **PDF source** (plan 97 §8 gap 2, M5) - a guidelines PDF as design-system
  * material: the palette its artwork paints with, the marks themselves, and the
  * font programs it embeds.
  *
- * §8 states the shape of this milestone exactly: "`PdfHandle` is already
- * view-agnostic — the work is adapters + affordances, not extraction". So there
+ * §8 states the structure of this milestone exactly: "`PdfHandle` is already
+ * view-agnostic - the work is adapters + affordances, not extraction". So there
  * is no PDF parsing here at all. `views/pdf-import.ts` opens the document and
  * `listVectors`/`listFonts` do the reading; this module is the two things that
- * were missing between that handle and the tray — a census adapter, and the
+ * were missing between that handle and the tray - a census adapter, and the
  * per-candidate shaping (deduped faces with honest chips, a capped set of named
  * marks).
  *
@@ -21,7 +21,7 @@
  *    without a fixture document and a pdf-lib load.
  *  - **The browser half** ({@link scanPdfForDesignSystem}) is the only part that
  *    touches a file. It lazily imports `openPdfFile`, feature-detects the two
- *    optional handle methods, and returns a machine `reason` on every failure —
+ *    optional handle methods, and returns a machine `reason` on every failure - 
  *    a dropped PDF must never throw into the source picker.
  *
  * Copy is the caller's, as in `sources/file.ts`: refusals and progress come back
@@ -29,7 +29,7 @@
  * is a mark's default `name`, which has nowhere else to be formed (see
  * {@link pdfLogoPicks}).
  *
- * **Nothing leaves the device.** The whole read is local — no network call is
+ * **Nothing leaves the device.** The whole read is local - no network call is
  * made or possible from this module.
  */
 
@@ -49,7 +49,7 @@ import { describeFaceSource, parseFaceName } from '../font-resolve.ts';
 /** One mark as `listVectors` reports it. `fills` is the only field the census
  *  reads; the rest are what a logo pick needs. */
 export interface PdfScanVector {
-  /** Distinct fill colours, most-used first — the extractor's own ordering. */
+  /** Distinct fill colours, most-used first - the extractor's own ordering. */
   fills: string[];
   /** Self-contained SVG of the mark, cropped to itself. */
   svg?: string;
@@ -61,7 +61,7 @@ export interface PdfScanVector {
 
 /** One embedded font program as `listFonts` reports it. */
 export interface PdfScanFont {
-  /** `/FontName`, subset prefix and all — "ABCDEF+Inter-Regular". */
+  /** `/FontName`, subset prefix and all - "ABCDEF+Inter-Regular". */
   name: string;
   /** The family with the subset prefix removed, when the reader supplied one. */
   family?: string;
@@ -74,7 +74,7 @@ export interface PdfScanFont {
   embedding?: { permission?: string };
 }
 
-/** Everything the pure half needs to build a census — the two lists plus the
+/** Everything the pure half needs to build a census - the two lists plus the
  *  document's own title, where a reader can supply one. */
 export interface PdfScan {
   vectors: readonly PdfScanVector[];
@@ -85,7 +85,7 @@ export interface PdfScan {
 /** A face worth offering to install: the bytes, the name they came under, and
  *  the chips that say what is and is not known about them. */
 export interface PdfFontCandidate {
-  /** Family as `parseFaceName` reads it — the label and the compare-stage key. */
+  /** Family as `parseFaceName` reads it - the label and the compare-stage key. */
   family: string;
   /** The document's own spelling, kept verbatim so a report can quote it. */
   raw: string;
@@ -97,7 +97,7 @@ export interface PdfFontCandidate {
 /** One mark offered as a logo candidate. */
 export interface PdfLogoPick {
   svg: string;
-  /** Default English label — see the note on {@link pdfLogoPicks}. */
+  /** Default English label - see the note on {@link pdfLogoPicks}. */
   name: string;
   /** 0-based, exactly as the extractor reported it. The `name` shows the human
    *  1-based page number; this field stays in the source's own numbering so a
@@ -108,7 +108,7 @@ export interface PdfLogoPick {
    *
    * Picks are filtered and re-ranked, so their order is not the document's. A
    * caller that has to name a mark after the row it came from (the `#/pdf`
-   * tiles do — the filename is what makes an arriving mark traceable) needs the
+   * tiles do - the filename is what makes an arriving mark traceable) needs the
    * ORIGINAL position, and recovering it by matching the SVG text back into the
    * scan silently collapses a mark repeated verbatim on two pages onto one name.
    */
@@ -164,7 +164,7 @@ function cleanTitle(title: unknown): string | undefined {
 /**
  * A PDF scan as a `DesignCensus`.
  *
- * Colours go through `censusFromPdfVectors` unchanged — the per-mark
+ * Colours go through `censusFromPdfVectors` unchanged - the per-mark
  * most-used-first ordering, the ink/ground split and the implied paper ground
  * are all its judgement, and duplicating any of it here would give two adapters
  * two answers about the same document.
@@ -176,8 +176,8 @@ function cleanTitle(title: unknown): string | undefined {
  *    Italic as three programs; that is one family in a design system, and the
  *    weight it was set at is a fact about the pages, not about the font table.
  *  - **`count: 1` is presence, not usage.** The census weights everywhere else
- *    are occurrence counts. A font table has none — a face embedded for one
- *    footnote sits beside the display face with identical evidence — so every
+ *    are occurrence counts. A font table has none - a face embedded for one
+ *    footnote sits beside the display face with identical evidence - so every
  *    family weighs the same and the ranking stays honestly flat.
  *  - **`usage` stays `'unknown'`.** The sibling adapters read a role off a
  *    design tool's own text runs. Nothing here saw a text run; which face is the
@@ -219,7 +219,7 @@ export function pdfScanToCensus(scan: PdfScan, label: string): DesignCensus {
  *
  * A duplicate replaces the row already kept when it is strictly better to
  * install: installable beats not-installable, and (all else equal) a full
- * program beats a subset. Nothing else reorders — first seen wins ties, so the
+ * program beats a subset. Nothing else reorders - first seen wins ties, so the
  * document's own order survives.
  *
  * Bytes are required. A face with none cannot be installed, and a row that
@@ -228,7 +228,7 @@ export function pdfScanToCensus(scan: PdfScan, label: string): DesignCensus {
  * Chips come from `describeFaceSource`, which is where the honesty rules live:
  * `SUBSET` only when the source said so, exactly one embedding chip, and
  * `unknown` whenever the source stated nothing we recognise. `installable` ranks
- * the list but is deliberately NOT a chip — it is our reading of the bytes, and
+ * the list but is deliberately NOT a chip - it is our reading of the bytes, and
  * the chips report what the SOURCE stated.
  */
 export function pdfFontCandidates(fonts: readonly PdfScanFont[]): PdfFontCandidate[] {
@@ -282,7 +282,7 @@ export function pdfFontCandidates(fonts: readonly PdfScanFont[]): PdfFontCandida
  * `name` is the one piece of user-facing text this module forms, because there
  * is nowhere else to form it: the mark has no name of its own, and a candidate
  * with a blank label is unusable. It is a default the caller may replace with
- * its own localised label — the numbering is the load-bearing part, and the page
+ * its own localised label - the numbering is the required part, and the page
  * number in it is 1-based (`page` itself is not; see {@link PdfLogoPick}).
  */
 export function pdfLogoPicks(
@@ -342,7 +342,7 @@ export type PdfScanResult =
        * It is a BOUND, not a count of pages walked. `listVectors` also stops at
        * its own cap on marks (`MAX_VECTORS` in views/pdf-import.ts), so a
        * document with icon grids at the front can hit that within a page or
-       * three and never reach the end of this window — which is why the copy
+       * three and never reach the end of this window - which is why the copy
        * built from it must claim the window ("taken from the first n pages")
        * and never the reading ("read the first n pages").
        *
@@ -355,7 +355,7 @@ export type PdfScanResult =
     }
   | { kind: 'refused'; reason: PdfScanRefusal; limit?: number; detail?: string };
 
-/** The PDF view module, named as a TYPE only — erased at build time, so the
+/** The PDF view module, named as a TYPE only - erased at build time, so the
  *  dynamic import below stays the sole real edge into `views/`. */
 type PdfImportModule = typeof import('../../../views/pdf-import.ts');
 type OpenedPdf = Awaited<ReturnType<PdfImportModule['openPdfFile']>>;
@@ -368,7 +368,7 @@ const errText = (err: unknown): string => String((err as { message?: unknown })?
  * The document's own title, when the handle offers one.
  *
  * Today's `PdfHandle` offers neither `getTitle()` nor `title`, so this returns
- * undefined for every real document and the census carries no name — which is
+ * undefined for every real document and the census carries no name - which is
  * the truthful answer, and better than the file name dressed up as one. The
  * feature detect is here so the day the handle grows document metadata the
  * census picks it up without a second adapter, and it is guarded because the
@@ -386,7 +386,7 @@ function readTitle(handle: unknown): string | undefined {
  * Scan one PDF into design-system material: census, font candidates, logo picks.
  *
  * `openPdfFile` is imported LAZILY, and that is a size decision rather than a
- * style one — `views/pdf-import.ts` pulls in pdf-lib and the whole PDF
+ * style one - `views/pdf-import.ts` pulls in pdf-lib and the whole PDF
  * interpreter, and the source picker must not pay for that until somebody
  * actually drops a PDF. `lib/pdf-vector-shot.ts` already imports the same
  * function from the same view (as `lib/upload-dropzone.ts` does with

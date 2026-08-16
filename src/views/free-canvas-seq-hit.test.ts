@@ -5,17 +5,17 @@
  * A sequence composition stacks its scenes full-canvas; at any playhead time the
  * clock hides every inactive one by stamping sequence-dom's OFF_CLASS on its
  * `.lolly-box`. Hit-testing used to ignore that: a click on the visible scene
- * selected whatever was TOP of the boxes array — usually a scene the user could
+ * selected whatever was TOP of the boxes array - usually a scene the user could
  * not see (the bug a screen recording demonstrated: playhead on scene 1, click
  * selects scene 2). Selection must follow what the canvas shows.
  *
  * Runs against the real `initFreeCanvas` on the jsdom harness
  * free-canvas-timeline-add.test.ts established. The canvas DOM is hand-stamped
  * with `.lolly-box[data-box-id]` elements + OFF_CLASS exactly as the tool hooks
- * and the sequence clock leave them — the clock itself never stamps these
+ * and the sequence clock leave them - the clock itself never stamps these
  * fixtures (they carry no data-seq attrs), so the class is fully test-owned.
  * Selection is observed through the model: click, press Delete, see which box
- * left the array — a full round trip, no spies.
+ * left the array - a full round trip, no spies.
  *
  * ── THE ONE RULE ────────────────────────────────────────────────────────────
  * The whole of this file exists to pin one sentence, stated verbatim in
@@ -31,18 +31,18 @@
  * ACQUISITION (the original five tests) is only a third of it. The other two
  * thirds are covered below, because acquisition alone leaks:
  *
- *  • RETENTION — a selection made while a box was on screen survives the
+ *  • RETENTION - a selection made while a box was on screen survives the
  *    playhead moving away. The selection chrome is positioned from the MODEL,
  *    not from the DOM, so without suppression a hidden box gets a full outline,
  *    eight resize handles and a contextual bar painted over nothing, and a
  *    resize handle is the one drag entry that never goes through the hit-test.
- *  • KEYBOARD — a nudge or a Delete needs no chrome at all, so the gate is
+ *  • KEYBOARD - a nudge or a Delete needs no chrome at all, so the gate is
  *    re-stated in onKey. Asserted the same way as everything else here: press
  *    the key, then look at the model array.
  *
  * The playhead itself is simulated the way the real timeline panel drives it:
  * the OFF_CLASS on the boxes plus a `tl-time` CustomEvent on the stage. That IS
- * the seam — the panel dispatches exactly this, only on an active-set change.
+ * the seam - the panel dispatches exactly this, only on an active-set change.
  *
  * Run directly:  node --test shells/web/src/views/free-canvas-seq-hit.test.ts
  */
@@ -112,7 +112,7 @@ function canvasCfg(): Record<string, unknown> {
 }
 
 /**
- * The SAME canvas with the ten time sub-fields removed — i.e. Carousel Maker, Org
+ * The SAME canvas with the ten time sub-fields removed - i.e. Carousel Maker, Org
  * Chart, Record, and every other editor that is not time-capable. `timeCfg` is null
  * there, so the whole rule is dead code: this is what proves it costs those tools
  * nothing, not even when a stray `seq-off` class is somehow on the page.
@@ -139,7 +139,7 @@ interface Fixture {
   boxes(): Box[];
   ids(): string[];
   setOff(...ids: string[]): void;
-  /** What the timeline panel dispatches when the ACTIVE SET changes — the real seam. */
+  /** What the timeline panel dispatches when the ACTIVE SET changes - the real seam. */
   tlTime(playing?: boolean, onion?: Record<string, unknown>): void;
   destroy(): void;
 }
@@ -206,7 +206,7 @@ function clickAt(f: Fixture, x: number, y: number): void {
 function press(key: string): void {
   // The auto-opened timeline panel focuses its ruler; while focus is inside
   // `.tl-panel`, onKey defers to the panel's own key handling (by design). A real
-  // canvas click moves focus, jsdom's synthetic pointerdown does not — so park
+  // canvas click moves focus, jsdom's synthetic pointerdown does not - so park
   // focus on body first, as the browser would after the click.
   (dom.window.document.activeElement as HTMLElement | null)?.blur?.();
   dom.window.document.body.dispatchEvent(
@@ -246,7 +246,7 @@ test('an always-on overlay above a hidden scene still wins its own pixels', asyn
 
 test('with nothing hidden the historical topmost-wins behaviour is unchanged', async () => {
   const f = mount(SCENES());
-  await settle();                          // no setOff — no OFF_CLASS anywhere
+  await settle();                          // no setOff - no OFF_CLASS anywhere
   clickAt(f, 500, 500);
   pressDelete();
   assert.deepEqual(f.ids(), ['scene1', 'badge'], 'top-of-array scene2 was selected');
@@ -318,7 +318,7 @@ test('during PLAYBACK the banner stays down — scenes leaving the frame is the 
   f.tlTime(true);                            // the panel says: playing
   const banner = f.stageEl.querySelector('.fc-offplayhead') as HTMLElement;
   assert.equal(banner.hidden, true, 'no chip blinking on every cut');
-  // The chrome suppression is NOT relaxed by playback — it is about what can be edited.
+  // The chrome suppression is NOT relaxed by playback - it is about what can be edited.
   assert.equal(f.stageEl.querySelectorAll('.fc-handle').length, 0);
   f.tlTime(false);
   assert.equal(banner.hidden, false, 'and it returns the moment playback stops');
@@ -389,7 +389,7 @@ test('with no time model the rule is dead code: chrome, keys and banner are unch
 //
 // The one rule says the canvas edits exactly what the canvas SHOWS at the playhead. A
 // ghost is drawn precisely because its scene is NOT shown, so it must be impossible to
-// acquire — and the way that is guaranteed is structural, not a new branch in the hit
+// acquire - and the way that is guaranteed is structural, not a new branch in the hit
 // test: the ghosts live in a `pointer-events: none` layer inside `.fc-overlay`, which is
 // a stage sibling of the canvas. There is no `.lolly-box` for the hit test to find.
 
@@ -415,7 +415,7 @@ test('clicking where a ghost is drawn still selects the VISIBLE box beneath it',
   const f = mount(SCENES());
   await settle();
   f.setOff('scene2');
-  // scene2 is hidden AND ghosted, dead centre over scene1 — the worst case for the rule.
+  // scene2 is hidden AND ghosted, dead centre over scene1 - the worst case for the rule.
   f.tlTime(false, { mode: 'filled', past: [], future: ['scene2'], opacity: 1 });
   await settle();
   assert.equal(f.stageEl.querySelectorAll('.onion-ghost').length, 1, 'precondition: a ghost is up');

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The persistent candidate tray (plan 97 SS8) — what a Source scan or a group-add
+ * The persistent candidate tray (plan 97 SS8) - what a Source scan or a group-add
  * lands in before anything is committed to the design system. Model + persistence
  * only; the dockable panel / bottom sheet lives elsewhere.
  *
  * Candidates never overwrite each other silently: `add()` dedupes on type+value
  * (case-insensitive) so a rescanned source doesn't pile up duplicates, and a
  * previously-dismissed candidate coming back in a new scan is treated as live
- * information again — it revives to pending rather than staying buried.
+ * information again - it revives to pending rather than staying buried.
  */
 
 import type { HostV1 } from '@lolly-tools/core/host-v1';
@@ -31,7 +31,7 @@ interface StoredTray {
 }
 
 /** Deterministic id for a (type, value) pair, stable across sessions and
- *  independent of a value's original casing or surrounding whitespace — this is
+ *  independent of a value's original casing or surrounding whitespace - this is
  *  the same key `add()` dedupes on, so a candidate always lands on the same slot. */
 function candidateId(type: CandidateType, value: string): string {
   const norm = value.trim().toLowerCase();
@@ -49,7 +49,7 @@ function dedupeKey(type: CandidateType, value: string): string {
 
 /** Turns a scanned census into tray candidates: the top colours by weight, one
  *  candidate per font family, and the source's name if it has one. Gradients are
- *  not surfaced here — there is no `gradient` candidate type (plan 97 SS8). */
+ *  not surfaced here - there is no `gradient` candidate type (plan 97 SS8). */
 export function candidatesFromCensus(
   census: DesignCensus,
   opts?: { maxColors?: number },
@@ -70,7 +70,7 @@ export function candidatesFromCensus(
     });
   }
 
-  // One candidate per family — usage/label come from whichever entry has the
+  // One candidate per family - usage/label come from whichever entry has the
   // highest individual count (the family's dominant role wins ties left-to-right).
   const byFamily = new Map<string, { family: string; usage: string; bestCount: number }>();
   for (const f of census.fonts) {

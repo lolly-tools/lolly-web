@@ -8,14 +8,14 @@ import type { InputSpec, InputValue } from '../../../../engine/src/inputs.ts';
  *
  *  - Reference pickers (`optionsFrom`): a block sub-field whose choices come from
  *    the rows of another blocks input. The value stored is the target row's
- *    *effective id* — derived the SAME way a tool's hook derives it (slug of the
+ *    *effective id* - derived the SAME way a tool's hook derives it (slug of the
  *    key field, else the label, else an ordinal, de-duplicated). Because tools
  *    slug both a node's id and the back-reference to it, storing the slug here
  *    keeps the reference valid without the engine knowing the tool's id scheme.
  *
  *  - Nesting (`nesting`): treats a flat blocks array as an editable tree by reading
  *    each row's parent reference. The data stays a flat, reference-by-id array
- *    (so graphs / groupings still work and the URL format is unchanged) — only the
+ *    (so graphs / groupings still work and the URL format is unchanged) - only the
  *    sidebar *presentation* (indentation, drag above/below/inside) is tree-shaped.
  *
  * Keep `slugRef` in lockstep with the tool-side `slug()` (e.g. diagram-builder
@@ -169,7 +169,7 @@ export function blockParentIndex(rows: BlockRow[], keys: string[], parentField: 
 }
 
 /**
- * Pre-order [{idx, depth}] over the parent forest — the order the sidebar renders
+ * Pre-order [{idx, depth}] over the parent forest - the order the sidebar renders
  * a tree in. Cycle/orphan-safe: any row not reached from a root is appended as its
  * own root (matches the tool's buildTree promoting orphans).
  */
@@ -209,7 +209,7 @@ export function blockSubtree(idx: number, parentIdx: number[]): number[] {
 /**
  * Move a dragged row's whole subtree next to a target and update its parent ref.
  * Returns a NEW rows array in pre-order, or null for a no-op / illegal move
- * (drop on self, or into the dragged node's own subtree — which would orphan it).
+ * (drop on self, or into the dragged node's own subtree - which would orphan it).
  *
  * @param {object[]} rows
  * @param {number} fromIdx  index of the dragged row
@@ -227,7 +227,7 @@ export function blockReparentMove(rows: BlockRow[], fromIdx: number, targetIdx: 
   const parentIdx = blockParentIndex(rows, keys, cfg.parentField);
 
   // Refuse to drop a node into its own subtree (would orphan it). Use the
-  // cycle-safe descendant set, not the pre-order run — under malformed/cyclic
+  // cycle-safe descendant set, not the pre-order run - under malformed/cyclic
   // input a real descendant can fall outside the contiguous run.
   if (blockSubtree(fromIdx, parentIdx).includes(targetIdx)) return null;
 
@@ -266,7 +266,7 @@ export function blockReparentMove(rows: BlockRow[], fromIdx: number, targetIdx: 
 
   // The reorder above can change a position-derived key. Anchor every row that is
   // now referenced as a parent to its ORIGINAL effective id (which the references
-  // already hold) by writing it onto keyField — so the move can't silently orphan
+  // already hold) by writing it onto keyField - so the move can't silently orphan
   // a card whose id was auto-derived. Leaf/unreferenced rows keep their blank id.
   return freezeReferencedKeys(out, order, keys, cfg);
 }
@@ -297,7 +297,7 @@ export function materializeRefTarget(rows: BlockRow[], refKey: string, cfg: Keye
   if (!Array.isArray(rows) || !refKey) return rows;
   const keys = deriveBlockKeys(rows, cfg);
   const i = keys.indexOf(refKey);
-  if (i < 0) return rows;                                   // unknown ref — leave as-is
+  if (i < 0) return rows;                                   // unknown ref - leave as-is
   if (slugRef(rows[i]?.[cfg.keyField]) === refKey) return rows; // already explicit
   return rows.map((r, j) => (j === i ? { ...r, [cfg.keyField]: refKey } : r));
 }

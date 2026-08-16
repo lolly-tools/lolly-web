@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * HDR PNG at 16 bits per channel — the first "invisible upgrade" of
+ * HDR PNG at 16 bits per channel - the first "invisible upgrade" of
  * plans/61-deeprichpixels.md §10 item 2.
  *
  * Before this module, `?hdr=1&format=png` ran the canvas through the engine's
  * legacy byte path (`hdrBoostToPQ`: 8-bit in, 8-bit PQ code values out) and then
  * spliced a cICP chunk into the browser's own PNG bytes. That is §1's sharpest
  * recorded defect: PQ is a 10/12-bit transfer by design, so quantising it to 8
- * bits bands the shadows — the very place PQ spends its code values. The fix is
+ * bits bands the shadows - the very place PQ spends its code values. The fix is
  * not a new toggle: the same `hdr=` request now routes through the float view
  * transform and lands in a 16-bit IDAT written by the engine's own encoder.
  *
@@ -18,11 +18,11 @@
  *                -> packPng           (depth 16, cICP 9/16/0/1, pHYs)
  *
  * ─── Why this is not padding (the honesty rule, plan §10) ────────────────────
- * "Depth follows provenance — never emit bits the pipeline did not produce."
+ * "Depth follows provenance - never emit bits the pipeline did not produce."
  * A 16-bit TIFF of an 8-bit canvas render is padding. This is NOT that: the
  * bits below the 8th are *generated* by real float math on the way out. The
  * boost gain is continuous, the sRGB->Rec.2020 primary matrix is continuous,
- * and the PQ curve is steeply non-linear — three 256-valued inputs map to
+ * and the PQ curve is steeply non-linear - three 256-valued inputs map to
  * distinct, unevenly-spaced 16-bit outputs, so the low byte carries signal
  * rather than a `v * 257` replication. The test asserts exactly that (a 16-bit
  * output whose low bytes were mere padding would fail it). What the file does
@@ -34,7 +34,7 @@
  * ─── depth= interaction ──────────────────────────────────────────────────────
  * `depth=8` is IGNORED here (with a logged note): 8-bit PQ *is* the banding
  * defect the plan forbids, so honouring the request would re-introduce it under
- * a different name. `depth=float` is also noted and satisfied at 16 — PNG has no
+ * a different name. `depth=float` is also noted and satisfied at 16 - PNG has no
  * float sample format (that is EXR's job, plan §4.2 B3). 16/auto/absent take
  * this path silently, which is what "auto = the deepest the provenance chain
  * supports" means for an HDR PNG.
@@ -47,7 +47,7 @@
  * the iTXt and iCCP chunks go through the SAME `insertPngMeta` / `insertPngIcc`
  * splicers as before, so there is no second copy of that logic to drift. Chunk
  * ORDER among these ancillaries differs from the old path (the splicers each
- * insert directly after IHDR, so the last one inserted comes first) — PNG places
+ * insert directly after IHDR, so the last one inserted comes first) - PNG places
  * no ordering requirement on them beyond "before IDAT", which holds.
  *
  * C2PA: `engine/src/c2pa-containers.ts#placePng` walks the chunk list generically
@@ -69,8 +69,8 @@
  * ─── Size (the plan §9b blocker, lifted in Phase B3) ─────────────────────────
  * This path used to refuse past ~2.1 megapixels, because `deflate.ts` compressed
  * in one shot with ~8x scratch: a 4K 16-bit master (8.3 MP, ~66 MiB filtered)
- * meant ~530 MiB of tokenizer scratch, and the alternative — a stored,
- * uncompressed IDAT — shipped a ~66 MB file from an existing link. Neither is
+ * meant ~530 MiB of tokenizer scratch, and the alternative - a stored,
+ * uncompressed IDAT - shipped a ~66 MB file from an existing link. Neither is
  * acceptable, so the export fell back to the legacy 8-bit PQ path.
  * `deflate.ts` now streams (`createZlibStream`: one 32 KB window carried across
  * slabs, constant scratch) and `packPng` feeds it one filtered scanline at a
@@ -119,14 +119,14 @@ export interface HdrPng16Opts {
   imprintStrength?: number;
   /** Durable (TrustMark) embed, injected so this module stays DOM/model-free. */
   durable?: (rgba: Uint8ClampedArray, width: number, height: number) => Promise<Uint8Array | Uint8ClampedArray | null>;
-  /** The `depth` URL param as requested. See the header — 8 is refused, loudly. */
+  /** The `depth` URL param as requested. See the header - 8 is refused, loudly. */
   depth?: 8 | 16 | 'float' | 'auto';
   /** Filtered-byte ceiling override (tests). */
   maxDeflateBytes?: number;
   log?: (level: 'info' | 'warn', msg: string) => void;
 }
 
-/** 8-bit quantisation of a PQ signal — byte-identical to hdrBoostToPQ's own. */
+/** 8-bit quantisation of a PQ signal - byte-identical to hdrBoostToPQ's own. */
 const pq8 = (v: number): number => {
   const q = Math.round((Number.isFinite(v) ? v : 0) * 255);
   return q < 0 ? 0 : q > 255 ? 255 : q;
@@ -136,7 +136,7 @@ const clampU16 = (v: number): number => (v < 0 ? 0 : v > 65535 ? 65535 : v);
 
 /**
  * Encode canvas pixels as a 16-bit Rec.2100-PQ PNG. Returns the complete file
- * bytes. Throws only on genuinely unencodable input (bad dimensions) — the
+ * bytes. Throws only on genuinely unencodable input (bad dimensions) - the
  * caller falls back to the legacy 8-bit path on any throw.
  */
 export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): Promise<Uint8Array> {

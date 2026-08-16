@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * /valid's pure verdict/scorecard logic — extracted from valid.ts so it's importable
+ * /valid's pure verdict/scorecard logic - extracted from valid.ts so it's importable
  * (and testable) without that view's top-level CSS side-effect import, which makes the
  * view itself unloadable outside a bundler. Zero DOM, zero side effects: report/watermark
  * data in, a resolved state or scorecard model out. valid.ts imports all of this back for
  * rendering; nothing here renders anything itself.
  *
  * Local mirror of the engine verifier's report shape (c2pa-verify's C2paReport is not
- * re-exported through the barrel). Structural — the awaited result of verifyC2pa() is
+ * re-exported through the barrel). Structural - the awaited result of verifyC2pa() is
  * assignable to it.
  */
 
@@ -39,18 +39,18 @@ export interface Claim {
 // Local mirrors of the engine's C2paTextBinding / C2paAiDisclosure, same rule as
 // VerifyReport itself: structural, so the awaited verifyC2pa() result stays
 // assignable without importing the engine's own types through a barrel that does
-// not re-export them yet. Every field is optional — the engine only sets what it
+// not re-export them yet. Every field is optional - the engine only sets what it
 // actually established, and a shell that guesses at an absent one would be
 // inventing a finding.
 export type TextBindingKind = 'html' | 'structuredText' | 'text';
 export interface TextBinding {
   kind: TextBindingKind;
-  /** A C2PA_TEXT_STATUS code — the carrier is present but unusable. */
+  /** A C2PA_TEXT_STATUS code - the carrier is present but unusable. */
   status?: string;
   detail?: string;
   /** §A.7.1.2 / §A.9.3 external reference. THE ENGINE NEVER FETCHES IT. */
   manifestUrl?: string;
-  /** The verified store arrived via verifyC2pa's `externalManifest` option — the
+  /** The verified store arrived via verifyC2pa's `externalManifest` option - the
    *  shell fetched `manifestUrl` itself, so this report is about a credential
    *  that is NOT inside the file. */
   externalManifestUsed?: boolean;
@@ -59,12 +59,12 @@ export interface TextBinding {
   wrappersTruncated?: boolean;
   selectedWrapper?: number;
   exclusionsConform?: 'narrower' | 'other';
-  /** §15.12.1.3.4 — the machine-derivable "this is part of a longer signed
+  /** §15.12.1.3.4 - the machine-derivable "this is part of a longer signed
    *  text" shapes only. Never set from a plain hash mismatch. */
   fragment?: boolean;
   exclusionsFrom?: 'wrapper' | 'selectors';
 }
-// §18.28 c2pa.ai-disclosure — claim CONTENT (what the signer declared), read for
+// §18.28 c2pa.ai-disclosure - claim CONTENT (what the signer declared), read for
 // every format and never a failure.
 export interface AiDisclosure {
   modelType?: string;
@@ -98,20 +98,20 @@ export interface VerifyReport {
   // one; `aiDisclosure` is always the first of them.
   aiDisclosure?: AiDisclosure;
   aiDisclosures?: AiDisclosure[];
-  // claim_generator_info.specVersion — informational per §10.2.3.1, so nothing
+  // claim_generator_info.specVersion - informational per §10.2.3.1, so nothing
   // here (or in the engine) branches on it.
   specVersion?: string;
 }
 
 // The pixel-watermark detection result (engine detectWatermark), surfaced only
-// when present — a durable, lower-confidence provenance signal that lives in the
+// when present - a durable, lower-confidence provenance signal that lives in the
 // pixels rather than the C2PA metadata container.
 export interface Watermark {
   present: boolean;
   score: number;
   // Set when the mark was found INSIDE a container file's embedded raster
   // (a .pptx slide image, a PDF image XObject) rather than in the dropped file's
-  // own pixels — the note/pip wording changes to say so.
+  // own pixels - the note/pip wording changes to say so.
   embedded?: boolean;
 }
 
@@ -134,8 +134,8 @@ export const STATE_COPY = {
     sub: 'This file carries no C2PA manifest. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
   },
   // state 'valid' + the signing chain verifies against the pinned Lolly CA
-  // root: integrity plus a CA-verified signer identity. What was made — and
-  // with which app — remains the signer’s own claim.
+  // root: integrity plus a CA-verified signer identity. What was made - and
+  // with which app - remains the signer’s own claim.
   trusted: {
     cls: 'is-valid is-trusted',
     title: 'Verified',
@@ -148,7 +148,7 @@ export const STATE_COPY = {
     sub: 'The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim; an on-device key, not a CA identity.)',
   },
   // state 'valid' + trusted + a c2pa.published (not created) action: an existing
-  // asset Lolly distributes but did not author. Honest journey — verified
+  // asset Lolly distributes but did not author. Honest journey - verified
   // authentic, delivered by Lolly, made by someone else (shown below).
   delivered: {
     cls: 'is-valid is-delivered',
@@ -156,7 +156,7 @@ export const STATE_COPY = {
     sub: 'This is the genuine official version, delivered by Lolly. The credential chains to the pinned Lolly CA root, so the file is intact and its origin is CA-verified. Lolly delivered this asset — it did not create it; who made it is recorded below as the signer’s own claim.',
   },
   // Every check passed EXCEPT the cert validity window: the bytes still match
-  // what was signed — saying "modified after signing" here would be false.
+  // what was signed - saying "modified after signing" here would be false.
   expired: {
     cls: 'is-none is-expired',
     title: 'Credential expired',
@@ -165,11 +165,11 @@ export const STATE_COPY = {
   // state 'invalid' with ONE failure: manifest.inaccessible. C2PA 2.4 §A.7.1.2 /
   // §A.9.3 let a text asset REFERENCE its credential instead of carrying it, and
   // the engine reports `invalid` there because `state` is integrity-only and NO
-  // integrity check could run — 'valid' would be a lie and 'none' (no credential
+  // integrity check could run - 'valid' would be a lie and 'none' (no credential
   // at all) would be a different one. Rendering that as the flat "Credential
   // broken", with its "Bytes no longer match" and "Modified after signing"
   // badges, would be the loudest lie of the three: nothing was compared. Same
-  // lesson as the expired-certificate state — a verdict word must describe what
+  // lesson as the expired-certificate state - a verdict word must describe what
   // was actually established.
   external: {
     cls: 'is-none is-external',
@@ -178,8 +178,8 @@ export const STATE_COPY = {
   },
   // state 'invalid' whose ONLY failures are carrier problems (see CARRIER_CODES):
   // the credential could not be read out of the file at all, so NO hash was ever
-  // computed and nothing was compared. The flat "Credential broken" hero — with
-  // its "Bytes no longer match" and "Modified after signing" badges — states
+  // computed and nothing was compared. The flat "Credential broken" hero - with
+  // its "Bytes no longer match" and "Modified after signing" badges - states
   // three things the engine never established, and it directly contradicts the
   // note this page is about to print underneath ("nothing here says its content
   // was changed"). Two markers quoted in a prose document about C2PA are enough
@@ -195,7 +195,7 @@ export const STATE_COPY = {
   // Present: the credential's declared exclusion reaches OUTSIDE its own manifest
   // block, so part of the file is deliberately not bound. The hash over the rest
   // still ran and still PASSED, which is why the flat broken hero was false on
-  // its own page — the check list right below it prints "data hash valid". This
+  // its own page - the check list right below it prints "data hash valid". This
   // is the §A.7.1.3 / §A.9.4 forged-carve-out shape, and the correct reading is
   // "the bytes are intact, the coverage is not", never "the file was edited".
   uncovered: {
@@ -206,7 +206,7 @@ export const STATE_COPY = {
   // The text readers cap at 16 MiB (engine MAX_TEXT_BYTES) while this page accepts
   // far larger files, so a big HTML document carrying a real credential lands
   // here with found:false. "This file carries no C2PA manifest" would be a flat
-  // positive claim of absence about a file whose text was never searched — the
+  // positive claim of absence about a file whose text was never searched - the
   // mirror image of the never-accuse rule, and just as wrong. Never exonerate
   // either.
   notInspected: {
@@ -214,7 +214,7 @@ export const STATE_COPY = {
     title: 'Not inspected as text',
     sub: 'This file is past the size limit for on-device text inspection, so its text was never searched for a C2PA manifest — nothing is claimed about it either way. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
   },
-  // state 'invalid', but ONLY the hard binding (the file's own bytes) failed —
+  // state 'invalid', but ONLY the hard binding (the file's own bytes) failed - 
   // the claim signature and every hashed-URI-bound assertion (the actions and
   // export context this page shows as edit history / "made from") checked out,
   // and the claim records a Lolly creation. A softer, honest middle ground
@@ -233,11 +233,11 @@ export function isExpiredOnly(report: VerifyReport): boolean {
   return fails.length === 1 && fails[0]!.code === 'signingCredential.expired';
 }
 
-// True when the ONLY failure is "the credential lives elsewhere" — the C2PA 2.4
+// True when the ONLY failure is "the credential lives elsewhere" - the C2PA 2.4
 // external-reference case (§A.7.1.2 / §A.9.3). Same shape as isExpiredOnly, and
 // for the same reason: an `invalid` state whose single cause is not damage must
 // not be worded as damage. A report that ALSO carries a real failure keeps the
-// broken verdict — this is a rewording of one specific case, never a softener.
+// broken verdict - this is a rewording of one specific case, never a softener.
 export function isExternalOnly(report: VerifyReport): boolean {
   const fails = report.checks.filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
   return fails.length === 1 && fails[0]!.code === 'manifest.inaccessible';
@@ -251,11 +251,11 @@ export function isExternalOnly(report: VerifyReport): boolean {
 // inference FROM one of them, so it may only be printed when one of them is
 // actually in the report. Nine of the C2PA 2.4 text statuses return before the
 // binding ever runs (M1 §3: "'your exclusions are wrong' and 'your bytes
-// changed' are different accusations"), and one of them — the §A.7.1.3 /
-// §A.9.4 carve-out — fails the report with the hash row PASSING beside it.
+// changed' are different accusations"), and one of them - the §A.7.1.3 /
+// §A.9.4 carve-out - fails the report with the hash row PASSING beside it.
 const HASH_FAIL_CODES = ['assertion.dataHash.mismatch', 'assertion.bmffHash.mismatch'];
 const HASH_PASS_CODES = ['assertion.dataHash.match', 'assertion.bmffHash.match'];
-/** A hard-binding comparison ran and FAILED — the only evidence for "the bytes changed". */
+/** A hard-binding comparison ran and FAILED - the only evidence for "the bytes changed". */
 export const hashFailed = (report: VerifyReport): boolean =>
   (report.checks ?? []).some((c) => !c.ok && HASH_FAIL_CODES.includes(c.code));
 /** A hard-binding comparison ran at all, either way. */
@@ -264,7 +264,7 @@ export const hasHashVerdict = (report: VerifyReport): boolean =>
 
 // Failures that mean "the credential could not be got out of this file", as
 // opposed to "the credential itself did not check out" (claimSignature.mismatch,
-// assertion.hashedURI.mismatch, assertion.missing — those ARE damage and keep
+// assertion.hashedURI.mismatch, assertion.missing - those ARE damage and keep
 // the broken verdict). Deliberately NOT a catch-all: a code that is not listed
 // here falls through to the flat invalid state, which is the safe direction.
 const CARRIER_CODES = new Set([
@@ -277,7 +277,7 @@ const CARRIER_CODES = new Set([
   'manifest.inaccessible',
   'credential.unreadable',
   // §15.12.1.3.1 step 3: the exclusions are wrong, which is a different
-  // accusation from "the bytes changed" — and the hash never ran.
+  // accusation from "the bytes changed" - and the hash never ran.
   'assertion.dataHash.malformed',
 ]);
 /** Every failure is a carrier problem AND no hash was ever computed. */
@@ -286,7 +286,7 @@ export function isCarrierOnly(report: VerifyReport): boolean {
   return fails.length > 0 && fails.every((c) => CARRIER_CODES.has(c.code)) && !hasHashVerdict(report);
 }
 
-/** The ONE failure is the §A.7.1.3 / §A.9.4 carve-out — the hash itself passed. */
+/** The ONE failure is the §A.7.1.3 / §A.9.4 carve-out - the hash itself passed. */
 export function isExclusionsOnly(report: VerifyReport): boolean {
   const fails = (report.checks ?? []).filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
   return fails.length === 1 && fails[0]!.code === 'assertion.dataHash.additionalExclusionsPresent';
@@ -297,7 +297,7 @@ export function isExclusionsOnly(report: VerifyReport): boolean {
 // this module must not import the engine to word one sentence.
 const STATUS_TOO_LARGE = 'lolly.text.tooLarge';
 
-// The untrusted marker is the designed posture, not damage — render it as an
+// The untrusted marker is the designed posture, not damage - render it as an
 // informational row, never as a failure.
 export const isExpectedRow = (c: Check): boolean => c.code === 'signingCredential.untrusted';
 
@@ -305,10 +305,10 @@ export const isExpectedRow = (c: Check): boolean => c.code === 'signingCredentia
 // variable number of rows (one hashed-URI per assertion, trusted vs untrusted,
 // …); this collapses them onto a stable eight so the hero reads as a consistent
 // glance, with each pip's state (pass / fail / warn / not-applicable) derived
-// from the actual rows — never hard-coded.
+// from the actual rows - never hard-coded.
 export interface ScorecardItem { icon: IconName; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; statusWord?: string; }
 // A pip's status word: the shared pass/fail vocabulary unless the item carries
-// its own (the Lolly Imprint says "detected" — presence, not a graded check).
+// its own (the Lolly Imprint says "detected" - presence, not a graded check).
 export const pipStatusWord = (it: ScorecardItem): string => it.statusWord ?? t(STATUS_WORD[it.status]);
 export function scorecardModel(report: VerifyReport, watermark?: Watermark, extra: ScorecardItem[] = []): ScorecardItem[] {
   const cs = report.checks || [];
@@ -320,7 +320,7 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
 
   // "Manifest readable" is about a manifest we actually read. With the credential
   // stored elsewhere (§A.7.1.2 / §A.9.3) there was nothing in these bytes to
-  // read, so this is not-applicable — a green "readable: passed" would be the
+  // read, so this is not-applicable - a green "readable: passed" would be the
   // scorecard vouching for a file the page just said it could not check.
   const readable = present('credential.unreadable') ? 'fail'
     : present('manifest.inaccessible') ? na
@@ -340,7 +340,7 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
   return [
     // Yes/no, not a graded check: "Made with Lolly" (green tick), a "Likely"
     // amber middle ground (manifest content checks out, file bytes don't), or
-    // a plain "Not made with Lolly" — none of these show a status pill, "not
+    // a plain "Not made with Lolly" - none of these show a status pill, "not
     // applicable"/"invalid" would misword the amber and grey cases.
     {
       icon: 'lollipop',
@@ -349,14 +349,14 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
       status: lollyMade ? 'pass' : (lollyLikely || lollyParts) ? 'warn' : na,
       hideStatus: !lollyMade,
     },
-    // The Lolly Imprint — detected in the pixels ON this device, so it earns a
+    // The Lolly Imprint - detected in the pixels ON this device, so it earns a
     // real pass pip, seated right beside the Made-with-Lolly verdict it backs.
     // Present ONLY when found: absence is uninformative (resize erases it;
     // non-Lolly rasters never carry it), so there is no fail/na state.
     ...(watermark?.present ? [{ icon: 'imprint' as IconName, label: t('Lolly Imprint'), status: 'pass' as const, statusWord: watermark.embedded ? t('in an image') : t('detected') }] : []),
     // Extra signal pips, seated up top with the other watermark facts: the
     // SynthID/Meta likelihood pip (aiMarkPip) and the steganalysis heuristics
-    // (stegoPips) — built by the caller so both scorecards stay in sync.
+    // (stegoPips) - built by the caller so both scorecards stay in sync.
     ...extra,
     { icon: 'document', label: t('Manifest found'), status: found ? 'pass' : na },
     { icon: 'eye', label: t('Manifest readable'), status: readable },
@@ -365,7 +365,7 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
     { icon: 'clock', label: t('Certificate within validity'), status: validity },
     { icon: 'hash', label: t('File bytes match (hard binding)'), status: binding },
     // "Signer identity" has no CA answer when the file was signed with a
-    // self-signed on-device key — so say that plainly (dark-ash card) rather
+    // self-signed on-device key - so say that plainly (dark-ash card) rather
     // than a bare "not applicable".
     (trust === 'na' && report.signer?.selfSigned
       ? { icon: 'cpu', label: t('Signed with an on-device key'), status: na, hideStatus: true, ash: true }
@@ -381,7 +381,7 @@ export interface ResolvedState {
 // Resolve the hero state (which STATE_COPY entry it maps to) and the occasionally
 // reworded sub-line. Shared by the full report body AND the collapsed summary so the
 // two never disagree on the headline. Defence in depth: a green "trusted" hero must
-// never outrank a broken credential — the engine only sets report.trusted when the
+// never outrank a broken credential - the engine only sets report.trusted when the
 // file is intact, but the view never trusts that invariant blind, so an invalid file
 // always resolves to its failure state whatever `trusted` says.
 export function resolveState(report: VerifyReport): ResolvedState {
@@ -392,7 +392,7 @@ export function resolveState(report: VerifyReport): ResolvedState {
     : report.state === 'invalid' && isExternalOnly(report) ? STATE_COPY.external
     : report.state === 'invalid' && report.likelyMadeWithLolly ? STATE_COPY.likelyLolly
     : report.state === 'invalid' && isExpiredOnly(report) ? STATE_COPY.expired
-    // "We declined to look" is not "we looked and it is clean" — the flat
+    // "We declined to look" is not "we looked and it is clean" - the flat
     // no-credential hero would be a positive claim of absence about text that
     // was never read.
     : report.textBinding?.status === STATUS_TOO_LARGE ? STATE_COPY.notInspected
@@ -413,16 +413,16 @@ export function resolveState(report: VerifyReport): ResolvedState {
   // which is wrong for a third-party signer (Google, Adobe, Microsoft…). When
   // the chain verified against a NON-Lolly anchor, name the actual root and the
   // signer's organisation instead. Delivered/lolly stay Lolly-worded (they ARE
-  // Lolly). signerOrg comes from the CA-verified cert — only used once trusted.
+  // Lolly). signerOrg comes from the CA-verified cert - only used once trusted.
   const signerOrg = report.signer?.organization || report.signer?.commonName;
   const thirdPartyRoot = !!identity?.issuer && !/\blolly\b/i.test(identity.issuer);
   // NB: `sub` is rendered as raw HTML (so the signer/anchor names can be <strong>).
   // The static STATE_COPY subs carry no HTML metacharacters; any cert-derived value
-  // interpolated here (issuer, signerOrg) MUST be escape()'d — it is attacker-controlled.
+  // interpolated here (issuer, signerOrg) MUST be escape()'d - it is attacker-controlled.
   // Every intact-state sub says "its EMBEDDED credential", which is exactly the
   // word that stops being true once the shell fetched the credential from the
   // address the file names (engine 1.116.0's externalManifest). The verdict is
-  // unchanged and earned — these bytes really do match that credential — but the
+  // unchanged and earned - these bytes really do match that credential - but the
   // sentence has to name which credential, because a reader who assumes it came
   // with the file would be assuming the wrong thing.
   const sub = report.state === 'valid' && report.textBinding?.externalManifestUsed
@@ -438,13 +438,13 @@ export function resolveState(report: VerifyReport): ResolvedState {
           })
         // The external hero's default sub ends "The address is shown below."
         // One route here has no address to show: a reference the engine refused
-        // to hand up at all (a `javascript:` href — M1 §3, "manifestUrl is
+        // to hand up at all (a `javascript:` href - M1 §3, "manifestUrl is
         // deliberately absent"). Promising an address that is never rendered
         // sends the reader looking for something that is not on the page.
         : state === STATE_COPY.external && !report.textBinding?.manifestUrl
           ? t('This file does not carry its Content Credential — it points at one kept somewhere else, but not in a form this page can follow, so no address is shown and these bytes have not been checked against it.')
         // An invalid state that no hash mismatch caused: the default sub's
-        // "they no longer match its bytes — it was modified after signing" is
+        // "they no longer match its bytes - it was modified after signing" is
         // false either way, and which honest sentence applies depends on
         // whether a hash comparison ran at all.
           : state === STATE_COPY.invalid && !hashFailed(report)
@@ -466,7 +466,7 @@ export function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none
   if (state === STATE_COPY.expired || state === STATE_COPY.likelyLolly
     || state === STATE_COPY.carrier || state === STATE_COPY.uncovered) return 'warn';
   // A credential kept elsewhere is neutral, never green and never red: nothing
-  // was checked. So is a file whose text was never searched. Listed explicitly —
+  // was checked. So is a file whose text was never searched. Listed explicitly - 
   // the fall-through below is 'good', and a new state silently inheriting that
   // would be the worst possible default.
   if (state === STATE_COPY.none || state === STATE_COPY.external
@@ -479,12 +479,12 @@ export function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none
 // A step's IPTC `digitalSourceType` says what the material at that step IS. For
 // a producing action (created/resized/edited/converted) that is the step's own
 // output, so "Generated by AI" reads correctly. For an INGEST action (opened /
-// placed) it describes what the step took IN — and Lolly's `c2pa.opened`
+// placed) it describes what the step took IN - and Lolly's `c2pa.opened`
 // deliberately propagates an ingredient's AI source type onto its own manifest
 // so the flag survives even if the ingredient manifests are stripped
 // (engine/src/c2pa.ts). Rendered with the producing wording, that propagated
 // claim sat under the green Lolly pill reading "Generated by AI", which says
-// Lolly generated the pixels. It did not — it opened something that already
+// Lolly generated the pixels. It did not - it opened something that already
 // was. Same claim, attributed to the step that actually makes it.
 
 /** Wording when the source type describes what this step PRODUCED. */

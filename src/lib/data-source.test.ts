@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * data-source pure core — RFC-4180 serialisation and the file→field-text decode,
+ * data-source pure core - RFC-4180 serialisation and the file→field-text decode,
  * proven against a real .xlsx built by the engine's own writeXlsx.
  */
 import { test } from 'node:test';

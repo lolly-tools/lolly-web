@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * pptxgen-import.ts — parse a **pptxgenjs builder script** into a freeform deck
+ * pptxgen-import.ts - parse a **pptxgenjs builder script** into a freeform deck
  * model the deck-builder tool can import, later re-themed onto brand tokens.
  *
  * Users author decks as executable pptxgenjs scripts:
@@ -15,19 +15,19 @@
  *
  * Rather than re-implement pptxgenjs's API surface, we EXECUTE the user script
  * against a capturing mock of pptxgenjs and record every call. Coordinates stay
- * in **inches** on the declared layout — the deck tool converts to native box
+ * in **inches** on the declared layout - the deck tool converts to native box
  * units at import time via `inchesToNative`.
  *
  * ── SECURITY ────────────────────────────────────────────────────────────────
  * The script is run with `new Function("require","module","exports", source)`.
  * This is the SAME trust model as pasting content into a tool: the bytes are the
- * user's own file, executed in the user's own session — we are not running third
+ * user's own file, executed in the user's own session - we are not running third
  * -party code. We reduce blast radius by design:
  *
  *   • The ONLY thing we ever pass to `new Function` is the user-provided `source`.
  *     We never `eval`/`Function` anything derived from network or disk.
  *   • The `require` we inject resolves ONLY `"pptxgenjs"` (to the capturing mock).
- *     Every other `require(...)` throws — so `require("fs")` / `require("https")`
+ *     Every other `require(...)` throws - so `require("fs")` / `require("https")`
  *     / `require("child_process")` are unavailable; there is no node `require`
  *     in scope to reach the filesystem or network.
  *   • The mock never touches the real DOM, filesystem, or network. `writeFile`
@@ -146,7 +146,7 @@ function numOrUndef(v: unknown): number | undefined {
   return undefined;
 }
 
-/** Uppercase, hash-less 6-hex — pptxgenjs's own colour form. `undefined` for
+/** Uppercase, hash-less 6-hex - pptxgenjs's own colour form. `undefined` for
  *  non-colours (e.g. `{ type:"none" }`, missing values). Unknown strings are
  *  passed through uppercased so nothing is silently lost. */
 function normalizeColor(raw: unknown): string | undefined {
@@ -454,7 +454,7 @@ export function parsePptxGenJs(source: string): ParsedDeck {
       return DEFAULT_LAYOUT;
     }
 
-    // Output sinks — inert thenables so `.writeFile().then()` chains resolve.
+    // Output sinks - inert thenables so `.writeFile().then()` chains resolve.
     writeFile(opts?: Record<string, unknown>): Promise<string> {
       const name = opts && typeof opts['fileName'] === 'string' ? (opts['fileName'] as string) : 'deck.pptx';
       return Promise.resolve(name);
@@ -465,7 +465,7 @@ export function parsePptxGenJs(source: string): ParsedDeck {
     stream(): Promise<string> {
       return Promise.resolve('');
     }
-    // Section/master helpers used by some builders — inert & chainable.
+    // Section/master helpers used by some builders - inert & chainable.
     addSection(): this {
       return this;
     }

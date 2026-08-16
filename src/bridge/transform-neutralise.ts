@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Neutralising a `transform` that a RUNNING ANIMATION owns — the walkers' re-entry
+ * Neutralising a `transform` that a RUNNING ANIMATION owns - the walkers' re-entry
  * guard (plans/104 §9, P3.1 failure 2).
  *
  * Both walkers in `export.ts` (SVG here, PDF further down the same file) handle a
@@ -9,9 +9,9 @@
  * comes out in ONE SVG `rotate()`/`matrix()` group (or one jsPDF CTM). That
  * neutralise step is a plain inline declaration, and there is exactly one thing in
  * CSS that outranks every declaration in every origin: an ANIMATION or TRANSITION
- * currently running on that property (CSS Cascade 5 §6.1 — animations sit above the
+ * currently running on that property (CSS Cascade 5 §6.1 - animations sit above the
  * author `!important` level and transitions above them again). A STRONGER inline
- * style therefore cannot win, `!important` included — measured, which is why nothing
+ * style therefore cannot win, `!important` included - measured, which is why nothing
  * here reaches for one.
  *
  * The failure that caused was not a wrong pixel, it was an explosion. With the
@@ -22,14 +22,14 @@
  * cap. Under an INFINITE transform animation the recursion has no natural end at
  * all. Docs shots escaped it only because the capture harness injects `FREEZE_CSS`,
  * whose `transition-duration: 0s !important` leaves nothing running to outrank the
- * write — which is also why nobody found this from a screenshot.
+ * write - which is also why nobody found this from a screenshot.
  *
  * So, in order:
  *
  *  1. **Stop the element's own transform animations for the shot.** A capture is a
  *     STILL: the frame being exported is one instant, and an element mid-transition
  *     has no other "correct" pose to preserve, so stopping the motion is not a
- *     fidelity loss — it is what a still means. `pause()` cannot do the job (a
+ *     fidelity loss - it is what a still means. `pause()` cannot do the job (a
  *     paused animation still contributes its current value to the cascade, so it
  *     would still outrank the inline neutralise), so they are CANCELLED, and then
  *     replayed from the time they were stopped at once the element's walk finishes.
@@ -39,14 +39,14 @@
  *     one is not obvious and it is the half that actually bit: writing
  *     `transform: none` onto an element whose stylesheet says
  *     `transition: transform …` is itself a style change, so the browser starts a
- *     BRAND-NEW transition from the old pose toward `none` — which outranks the very
+ *     BRAND-NEW transition from the old pose toward `none` - which outranks the very
  *     declaration that triggered it, leaving the computed transform where it was.
  *     Measured in Chromium 151: cancel the running transition and the computed
  *     transform snaps to its target correctly; assign `transform: none` and a fresh
  *     `CSSTransition` appears in `getAnimations()` with the computed value unmoved.
  *     So the element carries an inline `transition-property: none` for the duration
- *     of its walk. That means an element merely DECLARING a transform transition —
- *     idle, never hovered, never touched — was enough to trigger the re-entry, which
+ *     of its walk. That means an element merely DECLARING a transform transition - 
+ *     idle, never hovered, never touched - was enough to trigger the re-entry, which
  *     is why a gallery of static tiles could explode. `!important` is used for this
  *     one property, and it is not the move §9 rules out: importance settles a
  *     contest between DECLARATIONS, which this is. Out-declaring a running ANIMATION
@@ -55,7 +55,7 @@
  *     `!important` rule, an animation the API would not let us touch, a UA-driven
  *     transform: `neutraliseTransform` returns `null` and the caller falls through
  *     to its AABB path, whose `getBoundingClientRect` already carries the transform.
- *     One group for one element, bounded — the same graceful degrade a 3-D transform
+ *     One group for one element, bounded - the same graceful degrade a 3-D transform
  *     has always taken.
  *  3. **An element already inside its own neutralise-walk never starts a second
  *     one.** The `walking` WeakSet is the backstop that makes the recursion bounded
@@ -64,7 +64,7 @@
  *
  * Nothing here runs for an element with no transform, and for a document with no
  * transform animation at all step 1 finds nothing to cancel and step 2 always
- * passes — so the emitted bytes are unchanged. That is the floor this must hold.
+ * passes - so the emitted bytes are unchanged. That is the floor this must hold.
  *
  * Measured, one rotated card in a 400×240 page, Chromium 151 (the fixtures in
  * `export-transform-animation.test.ts`):
@@ -75,7 +75,7 @@
  * | `transition: transform 0.2s`, idle | unparseable: "Excessive node nesting"    | 6 `<g>`, 3 ms    |
  * | infinite `@keyframes` spin         | never finished (killed at 30 s)          | 6 `<g>`, 6 ms    |
  *
- * (`<g>` depth 5 in all three after cases — the same tree the un-animated page walks
+ * (`<g>` depth 5 in all three after cases - the same tree the un-animated page walks
  * to. The middle row is the gallery's shape: nothing was animating.)
  */
 import { parseCssMatrix, isAxisAlignedMat } from '@lolly/engine';
@@ -93,7 +93,7 @@ export const newNeutraliseGuard = (): NeutraliseGuard =>
 
 /**
  * Does this computed `transform` still send the element down a wrap-and-recurse
- * branch? Mirrors the two walker conditions exactly — a pure rotation, or a matrix
+ * branch? Mirrors the two walker conditions exactly - a pure rotation, or a matrix
  * that is not axis-aligned, or one that scales. A pure TRANSLATE (and anything
  * `parseCssMatrix` refuses, i.e. 3-D/perspective) is handled by the AABB path, so it
  * is not "wrapping" for this purpose.
@@ -126,7 +126,7 @@ export function animatesTransform(anim: {
 }): boolean {
   const eff = anim.effect;
   // An animation targeting ::before/::after does not touch the element's own
-  // transform, so it is left running — the pseudo paint path owns it.
+  // transform, so it is left running - the pseudo paint path owns it.
   if (eff && typeof eff.pseudoElement === 'string' && eff.pseudoElement) return false;
   const tp = anim.transitionProperty;
   if (typeof tp === 'string') return TRANSFORM_PROPS.has(tp);
@@ -165,7 +165,7 @@ function replayAnimations(stopped: StoppedAnim[]): void {
     // Restoring the page's motion must never be able to fail an export, and every
     // step here is independently best-effort: `cancel()` left the animation idle,
     // `play()` re-attaches it, and seeking puts it back where the shot found it.
-    // (A finished animation lands back on 'finished' from the seek alone — calling
+    // (A finished animation lands back on 'finished' from the seek alone - calling
     // `finish()` would throw on an infinite one.)
     try {
       s.anim.play();
@@ -178,7 +178,7 @@ function replayAnimations(stopped: StoppedAnim[]): void {
 /**
  * Neutralise `el`'s transform for the walk of its subtree.
  *
- * Returns the restore function — call it in a `finally` — or **null** when the
+ * Returns the restore function - call it in a `finally` - or **null** when the
  * transform could not be neutralised, in which case NOTHING was changed and the
  * caller must fall through to its AABB path instead of wrapping and recursing.
  *
@@ -192,7 +192,7 @@ export function neutraliseTransform(
 ): (() => void) | null {
   if (guard.walking.has(el)) return null;                       // (3) already mid-walk
   const style = (el as unknown as { style?: CSSStyleDeclaration }).style;
-  // No inline style object, no neutralise — and the AABB path is a complete answer,
+  // No inline style object, no neutralise - and the AABB path is a complete answer,
   // so this is a fall-through rather than an error.
   if (!style) return null;
   const prev = style.transform;
@@ -212,7 +212,7 @@ export function neutraliseTransform(
     else style.removeProperty('transform');
     // Put the transform back FIRST and let it settle while transitions are still
     // off, or restoring `transition-property` and the pose in one change starts the
-    // exact transition this suppressed — the walk would leave a 60-second tween
+    // exact transition this suppressed - the walk would leave a 60-second tween
     // running on a page that had none.
     try { void window.getComputedStyle(el).transform; } catch { /* no view: nothing to flush */ }
     if (prevTrans) style.setProperty('transition-property', prevTrans, prevTransPriority);

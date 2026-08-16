@@ -20,7 +20,7 @@ import {
   type MorphBox,
 } from './present-math.ts';
 
-/** A flat three-slide deck (no stacks) — the M1 shape. */
+/** A flat three-slide deck (no stacks) - the M1 shape. */
 function linear(): FrameSpec[] {
   return [
     { id: 'slide1', order: 0, x: 0, y: 0, w: 1920, h: 1080 },

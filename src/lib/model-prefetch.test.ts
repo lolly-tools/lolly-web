@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The offline pre-download must pull EXACTLY the model files the dialogs fetch on
- * demand — same store, same file names — or "Available offline" writes bytes the
+ * demand - same store, same file names - or "Available offline" writes bytes the
  * runtime never reads. Cache-parity is the whole point of model-prefetch.ts; these
  * pin the offline file lists to the staged roster so the two can't drift.
  */
@@ -32,7 +32,7 @@ test('the matte offline part vendors exactly the cut-out models this shell can r
   // native-only full BiRefNet (~467 MB) is withheld where it can't run, so the
   // offline section must not pre-download it there either. This test runs with no
   // Tauri backend (isTauriShell() === false), so matteOfflineFiles() is the
-  // wasm-runnable subset — matteModelsFor(false).
+  // wasm-runnable subset - matteModelsFor(false).
   assert.deepEqual(
     [...matteOfflineFiles()].sort(),
     matteModelsFor(false).map(m => MATTE_MODEL_FILES[m.id]).sort(),

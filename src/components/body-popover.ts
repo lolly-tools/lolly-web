@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared shell for a body-mounted anchored popover — the machinery lang-menu.ts
+ * Shared shell for a body-mounted anchored popover - the machinery lang-menu.ts
  * and profile-menu.ts used to hand-roll twice: mount a `<div>` on `document.body`,
  * position it off the trigger's rect, trap focus inside it, and tear it down on
  * Escape, an outside pointerdown, a window resize, or a route change (any of
- * NAV_EVENTS — the popover lives outside the view tree, so a hash/route change
+ * NAV_EVENTS - the popover lives outside the view tree, so a hash/route change
  * would otherwise orphan it).
  *
  * `render(el, popover)` builds the popover's own content fresh on every open
  * (item lists, current-value checks, etc. can change between opens) and wires
  * whatever internal listeners it needs (item clicks, roving-tabindex arrow keys);
  * it returns the element that should receive initial focus, or null/undefined to
- * leave focus where it is. The shell only owns the generic lifecycle — callers
+ * leave focus where it is. The shell only owns the generic lifecycle - callers
  * keep deciding what the trigger's own click handler does (profile-menu, e.g.,
  * only intercepts the click at a mobile breakpoint).
  *
@@ -22,10 +22,10 @@
  * The anchor need not be a real trigger element: `PopoverAnchor` is the minimal
  * shape `position()`/the outside-click check actually use, so a context menu that
  * opens at a pointer position (a right-click, a kebab button's corner) can pass a
- * `pointAnchor()` instead of forking this whole lifecycle — see projects.ts's and
+ * `pointAnchor()` instead of forking this whole lifecycle - see projects.ts's and
  * folder-overlay.ts's tile context menus. `container` (default `document.body`)
  * lets a popover opened from WITHIN a native `<dialog open>` mount inside that
- * dialog instead — required for it to paint above the dialog's own `::backdrop`
+ * dialog instead - required for it to paint above the dialog's own `::backdrop`
  * (only the top-layer dialog's own subtree renders above its backdrop).
  */
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -40,7 +40,7 @@ export interface BodyPopoverHandle {
 /** The minimal shape mountBodyPopover needs from whatever it's anchored to. A real
  *  HTMLElement satisfies this as-is; `pointAnchor()` below builds a virtual one for
  *  popovers with no real trigger element (a right-click, a computed point). `focus`/
- *  `setAttribute` are optional — a virtual anchor has no aria-expanded to toggle and
+ *  `setAttribute` are optional - a virtual anchor has no aria-expanded to toggle and
  *  no element worth returning focus to. */
 export interface PopoverAnchor {
   getBoundingClientRect(): { top: number; left: number; right: number; bottom: number; width: number; height: number };
@@ -50,7 +50,7 @@ export interface PopoverAnchor {
 }
 
 /** A virtual anchor at a viewport point (a right-click, a kebab button's computed
- *  corner) rather than a live element — mutate `.x`/`.y` before each `open()` to
+ *  corner) rather than a live element - mutate `.x`/`.y` before each `open()` to
  *  reposition it. `contains()` always reports false: nothing IS the point, so the
  *  outside-click check never carves out an exception for it.
  *  When the point comes FROM a real control (a kebab button that's recreated every
@@ -83,23 +83,23 @@ export interface BodyPopoverOptions {
    *  every window resize unless `onResize` is given. Default: right-aligned,
    *  dropped 8px below the anchor's bottom edge (matches the old profile-menu). */
   position?(el: HTMLDivElement, anchor: PopoverAnchor): void;
-  /** Called on window resize INSTEAD OF re-running `position()` — e.g. to close
+  /** Called on window resize INSTEAD OF re-running `position()` - e.g. to close
    *  the popover outright when a responsive breakpoint no longer applies. */
   onResize?(popover: BodyPopoverHandle): void;
   /** Called AFTER a close that actually closed something, whichever route took it:
    *  the caller's own `close()`, Escape, an outside pointerdown, or a route change.
-   *  For a caller whose content is not owned by the popover — the timeline inspector
+   *  For a caller whose content is not owned by the popover - the timeline inspector
    *  moves a LIVE element into it and must move it back before `close()` detaches the
    *  whole popover with that element still inside. Never call `close()` from here. */
   onClose?(): void;
   /**
-   * "Is this node logically part of me?" — the escape hatch for a popover that SPAWNS
+   * "Is this node logically part of me?" - the escape hatch for a popover that SPAWNS
    * popovers of its own on `document.body`.
    *
    * The dismissal test is `!menu.contains(target) && !anchor.contains(target)`, and a
    * child popover is a sibling `<div>` on the body: `contains()` says false, so the
    * FIRST pointerdown inside the child (a bezier handle, a preset button) reads as an
-   * outside click and closes the parent under the user's hands — taking any live
+   * outside click and closes the parent under the user's hands - taking any live
    * element the parent had borrowed with it. A `pointAnchor` cannot cover this either:
    * its `contains()` is hard-wired to false by design.
    *
@@ -107,7 +107,7 @@ export interface BodyPopoverOptions {
    * inside the child, Escape belongs to the CHILD, and both popovers listen on
    * `document` (stopPropagation cannot stop a sibling listener on the same node), so
    * without this the parent closes underneath it and its focus restore lands on a node
-   * the parent has just hidden. One Escape, the innermost popover — which is the rule
+   * the parent has just hidden. One Escape, the innermost popover - which is the rule
    * everywhere else in the shell.
    *
    * Optional and absent by default, so every existing caller is unchanged.
@@ -121,16 +121,16 @@ function defaultPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
   el.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
 }
 
-/** Options for `wireDisclosure` — the in-place sibling of mountBodyPopover below. */
+/** Options for `wireDisclosure` - the in-place sibling of mountBodyPopover below. */
 export interface DisclosureOptions {
-  /** Optional scrim element (the gallery's `.filter-backdrop`) — un/hidden with the
+  /** Optional scrim element (the gallery's `.filter-backdrop`) - un/hidden with the
    *  popover and, when present, dismisses it on click. CSS decides whether it paints
    *  (the gallery shows it on mobile only); this module only drives `hidden`. */
   backdrop?: HTMLElement | null;
   /** Element to focus when the popover opens, resolved fresh on every open (the
    *  content can be rebuilt between opens). Return null/undefined to leave focus put. */
   initialFocus?(popover: HTMLElement): HTMLElement | null | undefined;
-  /** Notified after every state change — for a caller that mirrors the open state into
+  /** Notified after every state change - for a caller that mirrors the open state into
    *  its own render (the catalog re-renders its topbar with the popover still open). */
   onToggle?(open: boolean): void;
 }
@@ -153,13 +153,13 @@ export interface DisclosureHandle {
  * position + focus-trap contract intact rather than growing a second mode through it.
  * The gallery's filter popover and the catalog's view-options popover were the two
  * hand-rolled copies; where they had drifted this keeps:
- *   - NON-capturing outside-pointerdown, deferred a tick (gallery's) — capture-phase
+ *   - NON-capturing outside-pointerdown, deferred a tick (gallery's) - capture-phase
  *     document listeners pre-empt the page's own handlers for no benefit here, and the
  *     deferral is the same guard mountBodyPopover uses against self-dismissal.
- *   - Escape on `document` (catalog's) — it closes the popover from anywhere on the page,
+ *   - Escape on `document` (catalog's) - it closes the popover from anywhere on the page,
  *     not only when focus already sits inside it, and it is `hidden`-guarded so it is
  *     inert while closed. stopPropagation keeps a host view from also acting on it.
- *   - Escape restores focus to the trigger (gallery's) — the catalog silently dropped it.
+ *   - Escape restores focus to the trigger (gallery's) - the catalog silently dropped it.
  */
 export function wireDisclosure(
   fab: HTMLElement | null,
@@ -235,14 +235,14 @@ export function mountBodyPopover(
   const reposition = (): void => { if (menu) position(menu, anchor); };
   const onResizeEvt = (): void => { opts.onResize ? opts.onResize(handle) : reposition(); };
   // preventDefault (not just stopPropagation) so an ancestor native <dialog> showing
-  // modally — e.g. folder-overlay's, which a context menu can mount inside via
-  // `container` — doesn't ALSO process this Escape as its own close request and
+  // modally - e.g. folder-overlay's, which a context menu can mount inside via
+  // `container` - doesn't ALSO process this Escape as its own close request and
   // cascade-close behind us; only the popover should close.
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return;
     // A popover this one spawned owns the Escape while focus is inside it (see
     // `isInside`). Returning WITHOUT preventDefault/stopPropagation leaves the child's
-    // own listener — registered later on the same node — to handle it.
+    // own listener - registered later on the same node - to handle it.
     if (opts.isInside?.(document.activeElement)) return;
     e.preventDefault();
     e.stopPropagation();

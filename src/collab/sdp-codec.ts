@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sdp-codec — the invite/accept payload of a private collab (plan 100 §6.1, wave 2.1).
+ * sdp-codec - the invite/accept payload of a private collab (plan 100 §6.1, wave 2.1).
  *
  * THE PROBLEM. Non-trickle ICE makes the whole signaling channel exactly two
  * payloads, and the humans are the channel: A shows an invite, B shows an answer.
  * A real Chrome data-channel offer is ~2.5 KB of SDP against a ~2,953-byte absolute
- * QR ceiling and a ~100-byte *practical* scanning budget (§2.9) — so the SDP itself
+ * QR ceiling and a ~100-byte *practical* scanning budget (§2.9) - so the SDP itself
  * cannot be the payload. Almost none of it varies: the m-line, the transport, the
  * SCTP port and the session boilerplate are identical on every browser and are
  * reconstructed from a template here. What actually varies is five things:
@@ -26,7 +26,7 @@
  * let a hostile invite append `a=` attributes of its own choosing).
  *
  * DEFENSIVE BY CONTRACT (§11.21). This payload arrives from a stranger's QR code or
- * a pasted link — it is untrusted input, exactly like a shared URL. Every public
+ * a pasted link - it is untrusted input, exactly like a shared URL. Every public
  * function returns `CodecResult<T>` and NEVER throws: length caps before decode, a
  * version byte, exact-consumption parsing (trailing bytes are an error, not slack),
  * canonical-form checks on the text skins, and a whitelist charset on `toolId`
@@ -40,7 +40,7 @@
  *              bits 2-3  setup role  0 = actpass, 1 = active, 2 = passive
  *              bits 4-5  fp algo     0 = sha-256, 1 = sha-384, 2 = sha-512
  *              bit  6    opVersion present (invite only; costs 0 bytes when absent)
- *              bit  7    reserved (must be 0 — a later shape bumps the version byte)
+ *              bit  7    reserved (must be 0 - a later shape bumps the version byte)
  *   ...      fingerprint bytes: 32 / 48 / 64, implied by the algo
  *   ...      ice-ufrag: u8 char count (1..127) + ceil(n*6/8) bytes, 6 bits per char
  *   ...      ice-pwd:   same
@@ -72,12 +72,12 @@
  * answer-shaped or minimal invite pays nothing for it (§11.19).
  *
  * Two encodings earn their complexity. **ICE credentials pack at 6 bits per char**
- * because RFC 5245's `ice-char` set is `ALPHA / DIGIT / "+" / "/"` — exactly 64
+ * because RFC 5245's `ice-char` set is `ALPHA / DIGIT / "+" / "/"` - exactly 64
  * characters, so a 24-char ice-pwd is 18 bytes, not 24, by definition rather than by
  * luck. **Addresses go binary when and only when they round-trip**: pack tries the
  * IPv4 / IPv6 / mDNS-uuid forms, re-formats the result and compares it to the input,
  * and falls back to the text form when they differ. That is what makes the round-trip
- * property total — a non-canonical `192.168.001.5` or an odd IPv6 spelling survives
+ * property total - a non-canonical `192.168.001.5` or an odd IPv6 spelling survives
  * verbatim instead of being silently rewritten.
  *
  * Measured by the size test, which prints these as diagnostics so a regression shows
@@ -88,30 +88,30 @@
  *
  * ── The two text skins ─────────────────────────────────────────────────────────
  *
- * **`'link'` — base64url**, unpadded, for `#/join?inv=…`. URL-safe with no percent
+ * **`'link'` - base64url**, unpadded, for `#/join?inv=…`. URL-safe with no percent
  * escaping, and it is the densest skin per character, which is what a link wants.
  *
- * **`'qr'` — base32** (RFC 4648, `A-Z` + `2-7`), for the QR skin and its paste
+ * **`'qr'` - base32** (RFC 4648, `A-Z` + `2-7`), for the QR skin and its paste
  * fallback. QR's *alphanumeric* mode draws from a fixed 45-character set
- * (`0-9 A-Z SP $ % * + - . / :`) at 11 bits per character PAIR — 5.5 bits/char
+ * (`0-9 A-Z SP $ % * + - . / :`) at 11 bits per character PAIR - 5.5 bits/char
  * against byte mode's 8. A token that stays inside that set is therefore smaller on
  * the symbol even though base32 spends more characters per byte than base64:
  *
  *   120 B payload → base64url: 160 chars × 8 bits   = 1,280 bits (byte mode)
  *                 → base32:    192 chars × 5.5 bits = 1,056 bits (alphanumeric)
  *
- * — about a QR version smaller, i.e. a visibly coarser symbol that scans from
+ * - about a QR version smaller, i.e. a visibly coarser symbol that scans from
  * further away and off a worse screen. base45 (RFC 9285, the EU covid-certificate
  * encoding) is denser still (~990 bits here) but its alphabet includes SPACE and
  * `$ % * + . / :`: a token that cannot be double-click-selected, survives chat
  * clients badly, and needs escaping in a URL. Since this same skin IS the paste
  * fallback everywhere BarcodeDetector is missing (§11.27), the ~6 % symbol saving
  * loses to "selectable, unambiguous, typeable". RFC 4648's alphabet also omits
- * 0/1/8/9 precisely so O/0, I/1 and B/8 cannot be transcribed wrong.
+ * 0/1/8/9 precisely so O/0, I/1 and B/8 cannot be copied down wrong.
  *
  * The in-repo QR encoder (`community/qr-code/hooks.js`) implements byte mode only
  * today, so the skin costs nothing there and pays off the moment an alphanumeric
- * encoder is wired in — the payload does not change either way.
+ * encoder is wired in - the payload does not change either way.
  *
  * Pure, DOM-free, dependency-free: the ceremony state machine (wave 2.2) and any
  * future non-browser shell import the same functions.
@@ -134,7 +134,7 @@ export const MAX_CANDIDATES = 8;
 export const MAX_TOOL_ID_BYTES = 64;
 export const MAX_VERSION_BYTES = 32;
 export const MAX_NAME_BYTES = 48;
-/** RFC 5245 §15.4 minimums — libwebrtc enforces them, so we refuse them early. */
+/** RFC 5245 §15.4 minimums - libwebrtc enforces them, so we refuse them early. */
 export const MIN_UFRAG_CHARS = 4;
 export const MIN_PWD_CHARS = 22;
 const MAX_ICE_CHARS = 127;
@@ -147,7 +147,7 @@ export type SetupRole = 'actpass' | 'active' | 'passive';
 
 export interface DtlsFingerprint {
   algo: FingerprintAlgo;
-  /** Raw digest bytes (32 / 48 / 64) — the `AA:BB:…` hex is a presentation detail. */
+  /** Raw digest bytes (32 / 48 / 64) - the `AA:BB:…` hex is a presentation detail. */
   bytes: Uint8Array;
 }
 
@@ -158,7 +158,7 @@ export interface IceCandidate {
   /** IPv4, IPv6, an mDNS `<uuid>.local` name, or any other host token, verbatim. */
   address: string;
   port: number;
-  /** Absent by default — see `extract`'s note on why order beats the raw number. */
+  /** Absent by default - see `extract`'s note on why order beats the raw number. */
   priority?: number;
   /** Only meaningful for `protocol: 'tcp'`; defaults to passive. */
   tcpActive?: boolean;
@@ -176,7 +176,7 @@ export interface SdpMaterial {
 /** What an invite carries beyond the connection material (§6.1). */
 export interface InviteMeta {
   v: typeof SDP_CODEC_VERSION;
-  /** The tool both peers must already have — probed locally before accepting. */
+  /** The tool both peers must already have - probed locally before accepting. */
   toolId: string;
   toolVersion: string;
   engineVersion: string;
@@ -211,7 +211,7 @@ export type CodecErrorCode =
 export interface CodecFailure {
   ok: false;
   code: CodecErrorCode;
-  /** Human-readable and safe to surface — never echoes the offending bytes. */
+  /** Human-readable and safe to surface - never echoes the offending bytes. */
   reason: string;
 }
 
@@ -289,7 +289,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 /**
- * No C0/C1 control — and no invisible or bidi-rewriting format character — ever
+ * No C0/C1 control - and no invisible or bidi-rewriting format character - ever
  * reaches SDP text or a rendered name chip. Written as a scan rather than a regex on
  * purpose: a character class of literal control codes is both unreadable and
  * (rightly) a lint error, and this is the check that stops a decoded `name` from
@@ -345,7 +345,7 @@ function writeVersionField(out: number[], v: string, label: string): void {
   const m = SEMVER_RE.exec(v);
   if (m) {
     const parts = [Number(m[1]), Number(m[2]), Number(m[3])] as const;
-    // Only take the compact path when it re-renders to the SAME string — "1.010.0"
+    // Only take the compact path when it re-renders to the SAME string - "1.010.0"
     // would otherwise come back as "1.10.0" and break the round-trip property.
     if (parts.every(n => n <= 255) && parts.join('.') === v) {
       out.push(SEMVER_COMPACT, parts[0], parts[1], parts[2]);
@@ -369,7 +369,7 @@ function readVersionField(r: Reader, label: string): string {
 
 // ── ICE credentials at 6 bits per character ───────────────────────────────────
 
-// RFC 5245: ice-char = ALPHA / DIGIT / "+" / "/" — exactly 64 symbols, so an ICE
+// RFC 5245: ice-char = ALPHA / DIGIT / "+" / "/" - exactly 64 symbols, so an ICE
 // ufrag/pwd is a base64 string by definition and packs losslessly at 6 bits/char.
 // Anything outside the set is refused rather than escaped: it is non-conformant AND
 // it is the only way a decoded credential could carry a CRLF into reconstructed SDP.
@@ -591,7 +591,7 @@ const TOOL_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
 /**
  * Ids that would resolve on a bare object's prototype chain. The charset above
  * refuses `__proto__` only incidentally (its leading `_`), and `constructor` /
- * `prototype` are ordinary lowercase words that sail through — but the decoded id
+ * `prototype` are ordinary lowercase words that sail through - but the decoded id
  * goes straight into the acceptor's "do I actually have this tool?" probe (§6.1),
  * and a probe that indexes a plain-object catalog map would answer *yes* for a tool
  * that does not exist. Three words refused here beats requiring every future
@@ -624,7 +624,7 @@ function checkMaterial(m: SdpMaterial): void {
     }
     if (!ADDRESS_RE.test(c.address)) fail('bad-charset', 'sdp-codec: candidate address has an illegal character');
     // `tcpActive` has no meaning on udp, and silently dropping it would make the
-    // round-trip lossy — so it is a refusal, not a normalization.
+    // round-trip lossy - so it is a refusal, not a normalization.
     if (c.protocol !== 'tcp' && c.tcpActive) fail('bad-field', 'sdp-codec: tcpActive on a udp candidate');
   }
 }
@@ -779,18 +779,18 @@ export function unpack(bytes: Uint8Array): CodecResult<CollabPayload> {
 const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const B64URL_INDEX = new Map<string, number>();
 for (let i = 0; i < B64URL.length; i++) B64URL_INDEX.set(B64URL[i]!, i);
-// Tolerate a token pasted in the standard alphabet — one character class, no ambiguity.
+// Tolerate a token pasted in the standard alphabet - one character class, no ambiguity.
 B64URL_INDEX.set('+', 62);
 B64URL_INDEX.set('/', 63);
 
-/** RFC 4648 base32 — every character is inside QR's 45-symbol alphanumeric set. */
+/** RFC 4648 base32 - every character is inside QR's 45-symbol alphanumeric set. */
 export const QR_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const QR_INDEX = new Map<string, number>();
 for (let i = 0; i < QR_ALPHABET.length; i++) QR_INDEX.set(QR_ALPHABET[i]!, i);
 
 // Whitespace a paste or a share sheet may have introduced is never data in either
-// skin. A HYPHEN is different and the difference is load-bearing: base32 has no `-`,
-// so it is free there as a readability grouper — but `-` is character 62 of
+// skin. A HYPHEN is different and the difference matters: base32 has no `-`,
+// so it is free there as a readability grouper - but `-` is character 62 of
 // base64url, so stripping it from a link token silently corrupts the payload.
 const WHITESPACE_RE = /\s+/g;
 const QR_SEPARATORS_RE = /[\s-]+/g;
@@ -840,7 +840,7 @@ export function encodeToken(bytes: Uint8Array, skin: TokenSkin): string {
 /**
  * Token → bytes. Tolerant where tolerance is unambiguous (whitespace in both skins,
  * grouping hyphens and lowercase in the QR skin, `=` padding in the link skin) and
- * strict everywhere it is not — one payload has exactly one canonical token.
+ * strict everywhere it is not - one payload has exactly one canonical token.
  */
 export function decodeToken(text: string, skin: TokenSkin): CodecResult<Uint8Array> {
   return guard(() => {
@@ -860,7 +860,7 @@ export function decodeToken(text: string, skin: TokenSkin): CodecResult<Uint8Arr
  * Which skin a pasted token is in. A base64url token of real payload bytes is
  * essentially never all-[A-Z2-7] (a single lowercase letter, `-`, `_`, `0`, `1`,
  * `8` or `9` settles it, and one appears with probability ~1 within a few chars),
- * so the charset is a safe tell. Callers that KNOW the skin should still say so —
+ * so the charset is a safe tell. Callers that KNOW the skin should still say so - 
  * a link param is always `'link'`, a scan is always `'qr'`.
  */
 export function sniffSkin(text: string): TokenSkin {
@@ -929,7 +929,7 @@ export interface ExtractOptions {
  * Deliberately lenient about line endings, attribute placement (Firefox puts the
  * fingerprint at session level, Chrome at media level) and candidate extensions,
  * and deliberately strict about what it keeps: component 1 only, udp/tcp only,
- * host/srflx only — `relay` is dropped on principle (no TURN in OSS, §6.2a) and
+ * host/srflx only - `relay` is dropped on principle (no TURN in OSS, §6.2a) and
  * `prflx` never appears in SDP.
  */
 export function extract(sdp: string, opts: ExtractOptions = {}): CodecResult<SdpMaterial> {
@@ -1025,7 +1025,7 @@ function parseCandidateLine(rest: string, keepPriority: boolean): IceCandidate |
  *
  * `max-message-size` is stated as Chrome's 262,144 even when the peer is Firefox
  * (which advertises ~1 GB): the value only bounds what WE send, and §11.6 caps every
- * message at 64 KB regardless — understating it is free, guessing high is not.
+ * message at 64 KB regardless - understating it is free, guessing high is not.
  *
  * `a=ice-options:trickle` is deliberately ABSENT and `a=end-of-candidates` present:
  * the ceremony is non-trickle by construction (§2.9), and a static payload cannot
@@ -1074,7 +1074,7 @@ function sessionId(m: SdpMaterial): string {
 /**
  * Rebuild a valid single-data-channel SDP from the material. `kind` decides the
  * one thing an offer and an answer genuinely disagree about: an answer must never
- * say `actpass` (RFC 5763 §5) — it picks a role — so an answer built from
+ * say `actpass` (RFC 5763 §5) - it picks a role - so an answer built from
  * `actpass` material is coerced to `active`, which is what a browser answerer
  * chooses anyway.
  */

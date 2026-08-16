@@ -2,18 +2,18 @@
 /**
  * One-time privacy transparency notice (web/PWA shell only).
  *
- * Lolly stores only strictly-necessary, first-party data on the device — the
+ * Lolly stores only strictly-necessary, first-party data on the device - the
  * theme preference, a few UI prefs, an offline catalog cache, local-only vanity
- * counters (metrics.js — never transmitted), and the user's own tool documents
+ * counters (metrics.js - never transmitted), and the user's own tool documents
  * (IndexedDB via host.state). No cookies, no tracking, no analytics. Nothing
  * leaves the device unless the user starts a feature that needs the internet:
  * adding a Google Font in the brand editor (one consented fetch to Google's
  * font servers, then kept on-device) or playing the opt-in net-radio (SomaFM).
- * Both are disclosed with specifics in docs/privacy.md — keep that list and
+ * Both are disclosed with specifics in docs/privacy.md - keep that list and
  * this comment in sync with the code (SUSE assessment 2026-08, P1: an absolute
  * "nothing sent anywhere" claim is broader than the code supports).
  * Under the ePrivacy Directive (Art. 5(3)) storage that is
- * strictly necessary for the service the user asked for needs no consent — only
+ * strictly necessary for the service the user asked for needs no consent - only
  * transparency. So this is a dismissible *notice*, not an accept/reject gate:
  * there is nothing non-essential to refuse.
  *
@@ -21,7 +21,7 @@
  * storage (it remembers that you closed the notice), so it persists in
  * localStorage without any consent of its own.
  *
- * The /info docs site is intentionally NOT covered by this — it sets no cookies
+ * The /info docs site is intentionally NOT covered by this - it sets no cookies
  * and writes only `theme` to localStorage for its dark-mode toggle, which is the
  * same strictly-necessary preference storage. See docs/privacy.md.
  */
@@ -30,7 +30,7 @@ import { docsAppHref } from '../i18n.ts';
 
 const ACK_KEY = 'lolly-privacy-ack';
 
-/** True once the user has dismissed the notice (or if storage is unavailable —
+/** True once the user has dismissed the notice (or if storage is unavailable - 
  *  nothing is being persisted in that case, so there's nothing to disclose). */
 export function privacyNoticeAcknowledged(): boolean {
   try { return localStorage.getItem(ACK_KEY) === '1'; }
@@ -63,7 +63,7 @@ export function mountPrivacyNotice(viewEl: HTMLElement): void {
 
   viewEl.classList.add('has-privacy-notice');
 
-  // Sit exactly on top of the footer — measure it rather than hard-code a height
+  // Sit exactly on top of the footer - measure it rather than hard-code a height
   // that the safe-area inset and wrapped controls would make wrong on mobile. The
   // bar is a shell-level singleton OUTSIDE #view now (plans/99 M1), so query the
   // document, not the view.

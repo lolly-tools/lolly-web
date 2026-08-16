@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the DOM-free video-encode scheduling — the timestamp / keyframe /
+ * Unit tests for the DOM-free video-encode scheduling - the timestamp / keyframe /
  * PCM-chunk math the WebCodecs encode loop (export.ts) and a future worker-side encoder
  * both consume. The real VideoEncoder/AudioEncoder run only in a browser; this pins the
  * pure schedule they're driven by.

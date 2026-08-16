@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * curve-editor.ts — pure geometry + hit-test helpers.
+ * curve-editor.ts - pure geometry + hit-test helpers.
  *
  * The mount function is DOM-driven and verified by hand in the brand studio;
  * these tests pin the coordinate maths the drag relies on (t ⇄ x and value ⇄ y
@@ -86,7 +86,7 @@ test('bakedStrip equals the engine bake, and curveLiterals emit oklch() strings'
   assert.ok(lits.every(s => /^oklch\(/.test(s)), 'literals are canonical oklch() strings');
 });
 
-// ── Keyboard operability — value stepping + roving focus ────────────────────────
+// ── Keyboard operability - value stepping + roving focus ────────────────────────
 // The mount's keydown handler is DOM-driven and verified by hand; these pin the
 // pure helpers it routes through, which is what the "same value-set path as a
 // drag" and "←/→ picks the adjacent index" guarantees rest on.

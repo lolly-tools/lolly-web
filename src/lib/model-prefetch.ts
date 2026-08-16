@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Main-thread PREFETCH of the on-device image-AI model weights (host.upscale,
- * host.matte) into the exact IndexedDB object stores their worker runners read —
+ * host.matte) into the exact IndexedDB object stores their worker runners read - 
  * so the profile's "Available offline" section can pull them down in ANTICIPATION
  * of work, not only when a dialog first needs them.
  *
@@ -14,9 +14,9 @@
  * worker fetchers (upscaler.ts, matter.ts) exactly, or the pre-downloaded bytes are
  * invisible to them and the dialog re-downloads on first use. They come from the
  * shared pure catalogue modules (upscale-models.ts / matte-models.ts) for exactly
- * that reason — one source of truth. The service worker bypasses `/models/`, so
+ * that reason - one source of truth. The service worker bypasses `/models/`, so
  * there is only ever ONE on-device copy (the IDB one), never a duplicate SW-cache
- * copy — which is why this uses the model fetcher, not offline-manager's
+ * copy - which is why this uses the model fetcher, not offline-manager's
  * downloadList (that would write an unread SW-cache bucket).
  */
 
@@ -46,7 +46,7 @@ type OnProgress = (p: DownloadProgress) => void;
 
 /** The upscale files the offline part vendors: every staged model, plus GFPGAN's
  *  small face-detector helper, plus the WDN denoise partner only when it's staged.
- *  The default (general) model is first — stagedUpscaleModels preserves roster order. */
+ *  The default (general) model is first - stagedUpscaleModels preserves roster order. */
 export function upscaleOfflineFiles(): string[] {
   const files = stagedUpscaleModels().map(m => UPSCALE_MODEL_FILES[m.id]);
   files.push(UPSCALE_FACE_DETECT_FILE);
@@ -57,7 +57,7 @@ export function upscaleOfflineFiles(): string[] {
 /** The matte files the offline part vendors: every model THIS shell can actually
  *  run (matteModelsFor mirrors the picker). The native-only full BiRefNet is a
  *  ~467 MB download that only the desktop shell can use, so the web/PWA offline
- *  section never offers it — pre-downloading bytes you can't run would be dishonest. */
+ *  section never offers it - pre-downloading bytes you can't run would be dishonest. */
 export function matteOfflineFiles(): string[] {
   return matteModelsFor(isTauriShell()).map(m => MATTE_MODEL_FILES[m.id]);
 }
@@ -67,7 +67,7 @@ export function matteOfflineFiles(): string[] {
  * running-total bar across them (a cache hit / 404 folds its file's size in without
  * a per-chunk callback, so the bar only ever reflects observed bytes; `total` goes
  * null the moment any file never reports a Content-Length). `required` names the
- * files that must succeed for the part to count as complete — aux helpers are
+ * files that must succeed for the part to count as complete - aux helpers are
  * best-effort. The fetchers take no AbortSignal (they finish a file in flight), so
  * a cancel lands between files at the latest.
  */
@@ -118,8 +118,8 @@ export function prefetchMatteModels(opts: { signal?: AbortSignal; onProgress?: O
 
 // ─── Measurement (for the /profile storage-reconciliation meter) ──────────────
 //
-// Measures what is ACTUALLY on device in a model store — filled by this prefetch OR
-// by the dialog's own on-demand download — the twin of offline-manager's
+// Measures what is ACTUALLY on device in a model store - filled by this prefetch OR
+// by the dialog's own on-demand download - the twin of offline-manager's
 // speechCacheBytes. Reads only the KEYS (filenames, cheap) and sums the roster's
 // exact declared sizes, so it never deserialises the multi-hundred-MB ArrayBuffers
 // just to weigh them. An aux file with no roster entry (the tiny face detector)

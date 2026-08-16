@@ -6,8 +6,8 @@
  * `planBatch` compacts: `renderable[k]` is not `rows[k]`. Everything the runner emits
  * (BatchProgress.index, BatchResult.index, the zip's NN- prefix) is a position in the
  * COMPACTED array, so a number captured before the compaction names a different row
- * after it. These tests pin the two properties the rest of the code rests on — the
- * planner never clones, and it reports the mapping it destroys — and the one that must
+ * after it. These tests pin the two properties the rest of the code rests on - the
+ * planner never clones, and it reports the mapping it destroys - and the one that must
  * never be assumed: a queue position is not a row.
  *
  * Lives next to the feature so the whole /pro module can be removed in one delete.
@@ -45,7 +45,7 @@ test('planBatch: the worked example — 5 rows, r2 and r4 have no template', asy
   const plan = await planBatch(rows, {
     ...deps,
     // The findings channel: keyed by rowIndex into the array handed to the runner,
-    // with uid beside it. `F` is opaque here on purpose — Phase 1's `Finding` slots in.
+    // with uid beside it. `F` is opaque here on purpose - Phase 1's `Finding` slots in.
     check: (row, rowIndex, ctx) => [{ rowIndex, srcIndex: ctx.srcIndex, uid: row.uid }],
   });
 
@@ -64,7 +64,7 @@ test('planBatch: the worked example — 5 rows, r2 and r4 have no template', asy
   const f = plan.findings.find(x => x.uid === 'r5')!;
   assert.equal(f.rowIndex, 2);
   assert.equal(f.items[0]!.srcIndex, 4);
-  // A skipped row has NO queue position — it is nameable only by uid.
+  // A skipped row has NO queue position - it is nameable only by uid.
   const skippedFinding = plan.findings.find(x => x.uid === 'r4')!;
   assert.equal(skippedFinding.rowIndex, -1);
   assert.equal(skippedFinding.items[0]!.srcIndex, 3);
@@ -96,7 +96,7 @@ test('runBatch: every emitted index is a QUEUE position, and the row rides with 
   // The compacted array the runner is handed: grid rows r1/r3/r5 (r2, r4 were skipped).
   // With no DOM/catalog here every render fails, which is exactly the channel under
   // test: an 'error' event carries index/total (queue arithmetic) AND `row` (identity).
-  // A consumer printing `index + 1` alone prints an unanchored number — the log line
+  // A consumer printing `index + 1` alone prints an unanchored number - the log line
   // for row `r5` would read "row 3" while the user is looking at grid row 5.
   const rows = rowsOf(['r1', 'qr-code'], ['r3', 'qr-code'], ['r5', 'qr-code']);
   const seen: Array<{ index: number; total: number; status: string; uid?: string }> = [];
@@ -109,7 +109,7 @@ test('runBatch: every emitted index is a QUEUE position, and the row rides with 
   assert.deepEqual(errors.map(p => p.index), [0, 1, 2]);
   assert.ok(errors.every(p => p.total === 3));
   assert.deepEqual(errors.map(p => p.uid), ['r1', 'r3', 'r5']);
-  // The third failure is queue position 2 — and it is row 'r5', not row 3.
+  // The third failure is queue position 2 - and it is row 'r5', not row 3.
   assert.equal(errors[2]!.index, 2);
   assert.equal(errors[2]!.uid, 'r5');
 });

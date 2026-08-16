@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Capabilities content — a human-readable map of what Lolly can actually do,
+ * Capabilities content - a human-readable map of what Lolly can actually do,
  * as data. Extracted from the old Capabilities view so the merged Dashboard
  * (#/d) can render it with progressive disclosure. Content here is descriptive
  * prose about settled capabilities; kept in step with docs/exporting.md,
@@ -71,12 +71,12 @@ export interface CapCard {
   title: string;
   features: CapFeature[];
   /**
-   * Slug of a committed docs screenshot to show in this card's detail dialog —
+   * Slug of a committed docs screenshot to show in this card's detail dialog - 
    * `<slug>` resolves to `/info/shots/<slug>.svg`, the same signed vector
    * captures the /info site uses (see scripts/build-docs-shots.ts).
    *
-   * Three rules, all load-bearing:
-   *  - BASE SLUG ONLY — never a variant suffix. The dialog appends `.dark`
+   * Three rules, all essential:
+   *  - BASE SLUG ONLY - never a variant suffix. The dialog appends `.dark`
    *    itself under a dark/brand theme and falls back to the light capture when
    *    a slug has no committed dark twin (a light-only recipe). Writing
    *    `<slug>.dark` here would double the suffix into a 404.
@@ -85,13 +85,13 @@ export interface CapCard {
    *    file, and to a dark twin unless it is a documented light-only shot.
    *  - The shot must actually DEPICT the card. Each slug here was picked by
    *    reading its recipe's alt text in docs/*.md, not by guessing from the
-   *    name. A screenshot of the wrong screen is worse than no screenshot —
+   *    name. A screenshot of the wrong screen is worse than no screenshot - 
    *    which is why `shot` is optional and roughly a third of the cards have
    *    none rather than a loose approximation.
    */
   shot?: string;
   /**
-   * Extra search terms for this card — NOT rendered and NOT translated.
+   * Extra search terms for this card - NOT rendered and NOT translated.
    * The visible copy is already indexed by the Capabilities search; this is for
    * the words a person types that the copy doesn't literally use (format ids,
    * competitor/app names, spelling variants, the thing they call it at work).

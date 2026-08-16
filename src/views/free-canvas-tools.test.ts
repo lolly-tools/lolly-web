@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The canvas editor's TOOL MODE — the pointer tool, mutual exclusion between the modes, and
+ * The canvas editor's TOOL MODE - the pointer tool, mutual exclusion between the modes, and
  * the Escape ladder.
  *
  * The bug this file locks down was never the missing Pointer button on its own: the modes
  * used to be four independent booleans, so "enter pen" and "leave connect" were unrelated
  * events and nothing in the code said they could not both be true. So the exclusion
- * assertions here are exhaustive over the ORDERED PAIRS rather than sampled — a one-way
+ * assertions here are exhaustive over the ORDERED PAIRS rather than sampled - a one-way
  * check is exactly what let `armConnect` keep the pen armed.
  *
  * The fourth mode in the matrix is the LINE tool as of plan 96 P2. Connect lost its rail
- * button there (one primitive, one way in — a line is a path box now, and P3 binds it by
+ * button there (one primitive, one way in - a line is a path box now, and P3 binds it by
  * dragging an endpoint onto a box), and a mode with no way in cannot be driven "the way a
  * user would". Line took its place rather than the matrix shrinking to three: the exclusion
  * claim is about the modes a tool actually offers at once, and Line is one of them.
@@ -87,7 +87,7 @@ function canvasCfg(): Record<string, unknown> {
     // The plan 96 path decorations, exactly as both Design manifests declare them.
     // They are DECLARED rather than defaulted: the editor only authors a head or a binding
     // into a tool whose manifest named the field, so a fixture that omits them would be
-    // testing Sequence Studio's shape of the feature, not Design's.
+    // testing Sequence Studio's version of the feature, not Design's.
     headStartField: 'headStart', headEndField: 'headEnd',
     bindStartField: 'bindStart', bindEndField: 'bindEnd',
     strokeDashArrayField: 'strokeDashArray', dashFitField: 'dashFit',
@@ -180,7 +180,7 @@ const dblClick = (f: Fixture, x: number, y: number): void => {
   frames();
 };
 
-/** A path box whose curve passes near (400, 480) — the double-click target for node edit. */
+/** A path box whose curve passes near (400, 480) - the double-click target for node edit. */
 function pathBox(o: { id?: string } = {}): Box {
   const nodes: SplineNode[] = [
     { x: 0, y: 1, hOutX: 0.2, hOutY: -0.4, continuity: 'corner' },
@@ -215,7 +215,7 @@ function enter(f: Fixture, m: Mode): void {
   frames();
 }
 
-/** The mode as the STAGE reports it — the classes the CSS and the cursor key off, read back
+/** The mode as the STAGE reports it - the classes the CSS and the cursor key off, read back
  *  independently of the rail so a passing rail cannot cover for stale stage state. */
 function stageMode(f: Fixture): Mode {
   const c = f.stageEl.classList;
@@ -347,7 +347,7 @@ test('Escape ends node editing, returns to Pointer, and changes nothing in the m
 test('Escape in node editing still works after the object bar has opened a panel', () => {
   // The reported defect: `morePanel` is the innermost rung of the ladder, and a panel that
   // went away by any route OTHER than closeMorePanel left the variable pointing at a
-  // detached element — after which every Escape was eaten by the popover rung and the pen
+  // detached element - after which every Escape was eaten by the popover rung and the pen
   // never saw the key.
   const f = mount([pathBox()]);
   enterNodeEdit(f);
@@ -356,7 +356,7 @@ test('Escape in node editing still works after the object bar has opened a panel
   click(stroke!);
   frames();
   assert.ok(f.stageEl.querySelector('.fc-panel'), 'the stroke panel is open');
-  // Something else tears the panel out of the DOM — a re-render, a view swap, anything that
+  // Something else tears the panel out of the DOM - a re-render, a view swap, anything that
   // is not the overlay's own dismissal path.
   f.stageEl.querySelector('.fc-panel')!.remove();
   key('Escape');
@@ -464,7 +464,7 @@ test('V and P are inert while focus is in a field, and while a text edit is live
 
   // A live inline text edit is a focused contenteditable inside the canvas (the tool owns
   // the .lolly-box elements, which this harness does not render, so the editable stands in
-  // for it — `typingTarget()` reads `isContentEditable`, which is the whole test).
+  // for it - `typingTarget()` reads `isContentEditable`, which is the whole test).
   const ed = dom.window.document.createElement('div');
   ed.contentEditable = 'true';
   ed.tabIndex = 0;                          // jsdom only focuses a focusable area
@@ -517,7 +517,7 @@ test('the mode buttons work from a touch pointer, and pen mode leaves the two-fi
 
 // ══ the Line tool (plan 96 P2) ════════════════════════════════════════════════
 //
-// The line USED to write a row into the `connectors` blocks input — an edge with no nodes,
+// The line USED to write a row into the `connectors` blocks input - an edge with no nodes,
 // which is why it could not be node-edited or given a spline kind. It writes a path box
 // now, through the same `commitPathBox` the pen commits through. These pin the switch: the
 // connectors input must stay untouched, and what lands must be a real authored path.
@@ -566,7 +566,7 @@ test('the retired Connect button is gone from the rail, and its mode with it', (
   const f = mount([plainBox('a', 700, 700)]);
   assert.equal(f.stageEl.querySelector('.fc-btn-connect'), null, 'no Connect tool in the rail');
   assert.equal(f.stageEl.classList.contains('fc-connecting'), false, 'and nothing can be in it');
-  // The Line tool took its place next to the Pen — both are the one path primitive.
+  // The Line tool took its place next to the Pen - both are the one path primitive.
   assert.ok(f.stageEl.querySelector('.fc-btn-line'), 'the Line tool is there');
   assert.ok(f.stageEl.querySelector('.fc-btn-pen'), 'beside the Pen');
   f.destroy();

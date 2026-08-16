@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stable BOX ids — plan 100 §3's "Hard prerequisite", from the canvas editor's side.
+ * Stable BOX ids - plan 100 §3's "Hard prerequisite", from the canvas editor's side.
  *
  * Two claims, and the second is the one that used to be false:
  *
  *  1. A box minted here carries a ULID, not a per-mount counter. Two devices opening the
  *     SAME saved session and adding a box each could previously mint the same id
- *     ('b' + a 4-char clock slice + a counter that restarts at 0 on every mount) — which
+ *     ('b' + a 4-char clock slice + a counter that restarts at 0 on every mount) - which
  *     is precisely what a collab makes routine, and what makes a late field op land on
  *     somebody else's box.
  *  2. `idOf` no longer falls back to the ARRAY INDEX for an id-bearing manifest. The
  *     fixture below is the honest demonstration: a document holding a box whose id is
  *     literally "1" plus a legacy row at index 1. Under the index fallback both keyed to
- *     '1', so selecting one selected — and dragged — the other.
+ *     '1', so selecting one selected - and dragged - the other.
  *
  * Driven through the real `initFreeCanvas` on the jsdom harness free-canvas-tools.test.ts
  * established: an in-memory runtime that echoes `setInput` back through `getModel`, so
@@ -67,7 +67,7 @@ function pointerEvent(type: string, o: { x: number; y: number }): MouseEvent {
 const NATIVE = 1000;
 
 /** Design's canvas block, trimmed to what identity needs. `fields` declares the
- *  id sub-field exactly as every shipped canvas manifest does — that declaration is what
+ *  id sub-field exactly as every shipped canvas manifest does - that declaration is what
  *  tells the editor rows are id-bearing. */
 const CANVAS_CFG = {
   idField: 'id', xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot',
@@ -80,7 +80,7 @@ interface Fixture {
   stageEl: HTMLElement;
   canvasEl: HTMLElement;
   boxes(): Box[];
-  /** Write the array straight into the model, bypassing the editor's own commit path —
+  /** Write the array straight into the model, bypassing the editor's own commit path - 
    *  what a hook patch or another surface does. Nothing normalises such a write. */
   setBoxes(next: Box[]): void;
   writes: () => number;
@@ -126,7 +126,7 @@ function mount(initial: Box[], cfg: Record<string, unknown> = CANVAS_CFG, fields
 
 const click = (el: Element): void => { el.dispatchEvent(new W.MouseEvent('click', { bubbles: true })); };
 
-/** Press, optionally drag, release — the pointer gesture the editor commits on. */
+/** Press, optionally drag, release - the pointer gesture the editor commits on. */
 function drag(f: Fixture, from: [number, number], to: [number, number]): void {
   f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: from[0], y: from[1] }));
   f.canvasEl.dispatchEvent(pointerEvent('pointermove', { x: to[0], y: to[1] }));
@@ -211,8 +211,8 @@ test('a manifest with no id field keeps the historical index behaviour', () => {
 // ══ no index fallback ═════════════════════════════════════════════════════════
 
 test('selection never keys on the array index — a box whose id is "1" is not row 1', () => {
-  // Under the old `idOf`, the legacy row at index 1 keyed to '1' — the SAME key as the
-  // box whose declared id happens to be the string "1" — so dragging one dragged both.
+  // Under the old `idOf`, the legacy row at index 1 keyed to '1' - the SAME key as the
+  // box whose declared id happens to be the string "1" - so dragging one dragged both.
   const f = mount([box({ id: '1', x: 100, y: 100 }), box({ x: 600, y: 600 })]);
   const ids = f.boxes().map(b => String(b.id));
   assert.equal(ids[0], '1');
@@ -231,7 +231,7 @@ test('selection never keys on the array index — a box whose id is "1" is not r
 test('the index fallback is dead, not merely unreachable', () => {
   // The same collision, but reached the ONE way normalisation cannot cover: a write that
   // bypasses the editor's commit path (a hook patch, another surface). The id-less row
-  // must not answer to the key '1' just because it sits at index 1 — this is the
+  // must not answer to the key '1' just because it sits at index 1 - this is the
   // assertion that fails if `idOf`'s `String(i)` ever comes back for an id-bearing tool.
   const f = mount([box({ id: '1', x: 100, y: 100 })]);
   f.setBoxes([box({ id: '1', x: 100, y: 100 }), box({ x: 600, y: 600 })]);

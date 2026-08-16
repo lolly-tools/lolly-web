@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * host.text — text-to-path bridge primitive (HarfBuzz WASM backed).
+ * host.text - text-to-path bridge primitive (HarfBuzz WASM backed).
  *
  * Replaces the opentype.js window global that lockup was reaching for.
  * One module-level HarfBuzz instance, one font-cache entry per URL.
@@ -58,7 +58,7 @@ async function loadFace(fontUrl: string): Promise<FaceEntry> {
  * A shaped-ready Font for `fontUrl` at the given variation instance.
  *
  * `variations` are HarfBuzz axis strings (`'wght=700'`). Each distinct setting
- * gets its own cached Font over the SHARED face — hb_font_set_variations is
+ * gets its own cached Font over the SHARED face - hb_font_set_variations is
  * per-font state, so a bold and a regular run must not share one Font object.
  * Unparseable axis strings are dropped rather than throwing (a caller's typo
  * degrades to the default instance, it doesn't fail the export).
@@ -84,7 +84,7 @@ async function loadFont(fontUrl: string, variations?: string[]): Promise<FontEnt
  * Split `text` into maximal runs that one face in `chain` can draw, mirroring
  * how a browser resolves font fallback: keep the current face while it covers
  * the character, else take the first face in the chain that does. A character
- * NO face covers stays with the current face — it shapes as .notdef and gets
+ * NO face covers stays with the current face - it shapes as .notdef and gets
  * counted, so the caller can prefer its own fallback over a tofu outline.
  *
  * Whitespace never forces a face change (it carries no visible glyph).
@@ -148,7 +148,7 @@ export function createTextAPI(): TextAPI {
      *
      * With `fallbackFonts`, the run is split into maximal single-face segments
      * (see segmentByFace) and each is shaped by its own face, the pen carried
-     * across in PIXELS — faces may differ in units-per-em, so nothing else is
+     * across in PIXELS - faces may differ in units-per-em, so nothing else is
      * comparable between them. Shaping per segment means no kerning across a
      * face boundary, exactly as in a browser.
      */
@@ -197,7 +197,7 @@ export function createTextAPI(): TextAPI {
             yOffset  = 0,
           } = g;
 
-          // Glyph 0 is .notdef by OpenType definition — no face in the chain has
+          // Glyph 0 is .notdef by OpenType definition - no face in the chain has
           // the character. Counted, not thrown: the caller decides whether a tofu
           // outline is worse than its <text> fallback.
           if (glyphId === 0) notdef++;
@@ -252,11 +252,11 @@ export function createTextAPI(): TextAPI {
     },
 
     /**
-     * Resolve a font FAMILY to a fetchable sfnt via the shell's registry —
+     * Resolve a font FAMILY to a fetchable sfnt via the shell's registry - 
      * brand-catalog statics, user-uploaded/Google faces, then the platform SUSE face
      * (v1.60). There is no run text at resolve time, so faces are ranked
      * against a basic-latin sample; the chain's primary face is returned and
-     * sibling unicode subsets are dropped (the contract is one file — a caller
+     * sibling unicode subsets are dropped (the contract is one file - a caller
      * shaping non-latin keeps its own fallback via toPath's `notdef`). Lazily
      * imported so hosts that only ever shape explicit fontUrls never pull the
      * registry (and its IndexedDB dependency) into their path.

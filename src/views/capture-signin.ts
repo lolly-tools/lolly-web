@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Sign in to a site" — the authenticated-capture affordance for a tool that declares
+ * "Sign in to a site" - the authenticated-capture affordance for a tool that declares
  * the `capture` capability (url-shot). Desktop only.
  *
  * Many pages worth screenshotting sit behind a login or a client-side setting. The
@@ -9,7 +9,7 @@
  * log in / accept cookies / arrange the view once, and every later screenshot RIDES
  * that session. "Clear saved sign-ins" wipes the profile (a full sign-out).
  *
- * Pure SHELL chrome, like live-controls — the TOOL never sees any of it (a tool hook
+ * Pure SHELL chrome, like live-controls - the TOOL never sees any of it (a tool hook
  * can't drive a multi-step interactive login) and it reaches the native commands the
  * way nearby/collab do: the `__TAURI_INTERNALS__.invoke` global, never an
  * `@tauri-apps/api` import that would break the web build. On the web PWA (no capture
@@ -37,7 +37,7 @@ export interface CaptureSigninDeps {
 export function mountCaptureSignin({ inputsEl, runtime, t, announce }: CaptureSigninDeps): void {
   if (!runtime.manifest.capabilities?.includes('capture')) return;
   const invoke = tauriInvoke();
-  if (!invoke) return; // not the desktop shell — no native sign-in window
+  if (!invoke) return; // not the desktop shell - no native sign-in window
   const parent = inputsEl.parentElement;
   if (!parent || parent.querySelector('[data-capture-signin]')) return; // idempotent
 

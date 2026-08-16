@@ -10,7 +10,7 @@ import type { Profile } from '@lolly-tools/core/host-v1';
 const POOL = ['#30ba78', '#0c322c', '#fe7c3f', '#2453ff'];
 const ID = 'lolly/modules/take-a-walk';
 
-/** A host whose profile.set just records — enough to assert what would be persisted. */
+/** A host whose profile.set just records - enough to assert what would be persisted. */
 function fakeHost() {
   const saved: Profile[] = [];
   return { saved, host: { profile: { set: async (p: Profile) => { saved.push(structuredClone(p)); } } } as never };

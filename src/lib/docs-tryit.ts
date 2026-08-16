@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Interactive "Try it" embeds for the in-app docs reader (views/docs.ts) — plan M3.
+ * Interactive "Try it" embeds for the in-app docs reader (views/docs.ts) - plan M3.
  *
  * PROGRESSIVE ENHANCEMENT over the static screenshots. The reader injects the built
  * `.docs-content` fragment, whose tool screenshots are committed, C2PA-signed <img>s
  * captured from `url-shot` recipes. For each shot whose capture recipe is a live TOOL
  * render (recoverable from `/info/docs-render-manifest.json`'s `recipes` map, keyed by
- * shot slug — emitted by docs/build.ts's writeDocsManifest), this overlays:
+ * shot slug - emitted by docs/build.ts's writeDocsManifest), this overlays:
  *
  *   1. a keyboard-accessible "Try it" affordance that OPENS the tool live in the app,
  *      at the recipe's exact route, under the ACTIVE brand (the tool route inherits it);
  *   2. an opt-in in-place LIVE embed that swaps a same-origin <iframe> of the tool over
  *      the static image (the image stays beneath as the baseline until the frame loads,
- *      and is restored on any frame error) — RM-gated (see below).
+ *      and is restored on any frame error) - RM-gated (see below).
  *
  * INVARIANTS this module holds to:
  *   - ADDITIVE ONLY. The signed static <img> is never removed; a missing/failed manifest,
@@ -20,7 +20,7 @@
  *   - CONTENT-GATED. Only shots whose recipe route is `/#/tool/<id>` or `/t/<id>` are
  *     enhanced. View captures (`/#/`, `/#/start`, `/#/u`, …) get nothing.
  *   - REDUCED MOTION. Under reduce, the in-place live embed (which boots a whole app and
- *     can auto-animate) is NOT offered — only the navigate affordance, which leaves for
+ *     can auto-animate) is NOT offered - only the navigate affordance, which leaves for
  *     the tool route that already respects the pref.
  *   - The mastheads and the C2PA cred puck are untouched (the reader hides the puck; this
  *     never re-signs or re-bakes anything).
@@ -39,7 +39,7 @@ interface DocsRenderManifest {
 
 /** Recover a shot's recipe slug from its served src, matching build.ts's
  *  `file.split('.')[0]` (strips the extension, the `.dark` twin marker, and any `.<lang>`
- *  locale segment — recipes are English-keyed). */
+ *  locale segment - recipes are English-keyed). */
 export function shotSlug(src: string): string {
   const file = src.split('/').pop() ?? '';
   return file.split('.')[0] ?? '';
@@ -75,7 +75,7 @@ function loadManifest(): Promise<DocsRenderManifest | null> {
   return manifestPromise;
 }
 
-/** Reset the cached manifest — test seam only. */
+/** Reset the cached manifest - test seam only. */
 export function _resetManifestCache(): void {
   manifestPromise = null;
 }
@@ -132,7 +132,7 @@ function enhanceShot(wrapper: HTMLElement, route: string, allowEmbed: boolean): 
   overlay.className = 'shot-tryit';
 
   // (1) Navigate: a real anchor at the recipe route. The reader's own anchor handler only
-  // claims `a[href^="#"]`, and this href is path-form `/#/…`, so it navigates natively —
+  // claims `a[href^="#"]`, and this href is path-form `/#/…`, so it navigates natively - 
   // hashchange → the app router mounts the tool. Works with no JS, right-clickable, and
   // keyboard-focusable (revealing the overlay via :focus-within).
   const open = document.createElement('a');
@@ -141,7 +141,7 @@ function enhanceShot(wrapper: HTMLElement, route: string, allowEmbed: boolean): 
   fillPill(open, icon('externalLink'), t('Try it in the app'));
   overlay.appendChild(open);
 
-  // (2) In-place live embed — opt-in, and only when motion is allowed.
+  // (2) In-place live embed - opt-in, and only when motion is allowed.
   if (allowEmbed) {
     const embedSrc = embedSrcFor(route);
     const live = document.createElement('button');

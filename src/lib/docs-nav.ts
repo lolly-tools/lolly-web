@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * In-app documentation reader — navigation extraction + derivation (#/docs).
+ * In-app documentation reader - navigation extraction + derivation (#/docs).
  *
  * The reader (views/docs.ts) fetches a built /info/<lang>/<slug>.html page and
  * rehosts its `.docs-content` fragment into #view. That same fetched document ALSO
- * carries the site's real navigation — the top pathways bar, the docs sidebar rail,
- * and the footer sitemap — which the reader used to throw away, stranding the reader
+ * carries the site's real navigation - the top pathways bar, the docs sidebar rail,
+ * and the footer sitemap - which the reader used to throw away, stranding the reader
  * on a single page with no way to reach any other doc. This module pulls those nodes
  * out of the parsed document, rewrites their `/info/*.html` links to the in-app reader
  * route, and (for the on-page table of contents) DERIVES a fresh nav from the rehosted
@@ -22,16 +22,16 @@ import { t } from '../i18n.ts';
  * the in-app reader route, so internal navigation stays in the SPA (music keeps
  * playing, no full page reload) rather than leaving to the static site.
  *
- *   - Any `<lang>` prefix is dropped — the reader already runs in the app's locale.
+ *   - Any `<lang>` prefix is dropped - the reader already runs in the app's locale.
  *   - A trailing `#anchor` is CARRIED as `?h=<anchor>` (a second '#' can't ride a hash
  *     route; the reader reads `?h=` and scrolls that heading into view). This is the
  *     fix for the old gap where the anchor was silently discarded.
  *   - `index.html` is the marketing LANDING, which has no `.docs-content` fragment, so
  *     `#/docs/index` would render "could not be displayed". It maps to the app front
- *     door `/#/` instead — still an in-app navigation, never a dead reader route.
+ *     door `/#/` instead - still an in-app navigation, never a dead reader route.
  *
  * Returns null for a link this rule does not own (signed screenshots, downloads, app
- * `/#/…` links, external URLs) — the caller then leaves the href untouched.
+ * `/#/…` links, external URLs) - the caller then leaves the href untouched.
  */
 export function toReaderHref(href: string): string | null {
   const m = /^\/info\/(?:[a-z][a-z-]*\/)?([^/]+?)\.html(?:\?[^#]*)?(?:#(.*))?$/.exec(href);
@@ -60,7 +60,7 @@ function adopt(src: Element | null): HTMLElement | null {
 }
 
 /**
- * The docs SIDEBAR rail (cross-doc nav) — the fetched page's own `.docs-sidebar`,
+ * The docs SIDEBAR rail (cross-doc nav) - the fetched page's own `.docs-sidebar`,
  * which already marks the CURRENT page `.active` (we fetched that page's build, so its
  * rail is contextually correct for free) and carries the AI / inclusive-design landmark
  * chips. Links rewritten to `#/docs/…`.
@@ -69,13 +69,13 @@ export function extractSidebar(doc: Document): HTMLElement | null {
   return adopt(doc.querySelector('.docs-sidebar'));
 }
 
-/** The footer SITEMAP — the whole docs index (`.footer-sitemap`), links rewritten. */
+/** The footer SITEMAP - the whole docs index (`.footer-sitemap`), links rewritten. */
 export function extractSitemap(doc: Document): HTMLElement | null {
   return adopt(doc.querySelector('.footer-sitemap'));
 }
 
 /**
- * The top PATHWAYS section switcher — the `.nav-group` anchors from the fetched page's
+ * The top PATHWAYS section switcher - the `.nav-group` anchors from the fetched page's
  * top bar (Quickstart · For Creators · For Builders · For Operators · Trust), rebuilt
  * into a compact bar. Rebuilt rather than cloned so the search box + language menu that
  * ride the same `<nav>` are dropped. The fetched page marks the active pathway, which
@@ -110,13 +110,13 @@ export function extractPathways(doc: Document): HTMLElement | null {
 export interface DocsToc {
   /** The `<nav class="docs-toc">` element, ready to mount. */
   el: HTMLElement;
-  /** The content headings the TOC links to, in document order — for scroll-spy. */
+  /** The content headings the TOC links to, in document order - for scroll-spy. */
   headings: HTMLElement[];
 }
 
 /**
  * Derive an on-page table of contents from the rehosted content's stamped heading ids
- * (h2 / h3 — the build stamps both). Returns null when there are fewer than two h2
+ * (h2 / h3 - the build stamps both). Returns null when there are fewer than two h2
  * sections, since a single section is not a table of contents. Each link scroll-jumps
  * within the reader (the caller wires the click to `scrollToHeading`); the `data-toc-target`
  * carries the raw id so the caller need not re-parse the href.

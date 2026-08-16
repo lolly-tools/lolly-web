@@ -1,64 +1,65 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Colour Lab (#/lab) — one colour, comprehensively.
+ * Colour Lab (#/lab) - one colour, in full detail.
  *
- * A single scrolling report rather than a sidebar-and-stage tool: there is no
- * canvas to zoom and nothing to export, so the page IS the document. Every
- * control lives in the flow of the report, next to the thing it changes.
+ * A single scrolling report, not a sidebar-and-stage tool. There is no canvas
+ * to zoom and nothing to export, so the page is the document. Every control
+ * sits in the flow of the report, next to the thing it changes.
  *
  * ## Why a view and not a tool
  *
- * The interesting controls here are the shell's own: `mountColorField` with the
- * tabbed multi-space picker and the OKLCH rings/sliders. Tools are DATA — they
- * cannot import shell modules — so a tool version would have had to reimplement
- * the picker, which is the one component the component audit went out of its way
- * to unify. Being a view also means the page can simply be tall, which no
- * `render.layout` mode allows (every one of them keeps a fixed zoom-to-fit
- * stage). The cost, accepted deliberately: no CLI render, no URL-mode export.
+ * The controls here are the shell's own: `mountColorField` with its tabbed
+ * multi-space picker and the OKLCH rings/sliders. Tools are DATA - they
+ * cannot import shell modules - so a tool version would have to reimplement
+ * the picker, the one component the component audit unified. A view can also
+ * be tall, which no `render.layout` mode allows (each keeps a fixed
+ * zoom-to-fit stage). Trade-off accepted: no CLI render, no URL-mode export.
  *
- * ## The order of the page is the order of the questions
+ * ## The page follows the order of the questions
  *
- *   1. **Set a colour** — in any space. The picker, a free-text field, the brand
- *      rail. This is the only thing a first-time visitor has to understand.
- *   2. **The charts** — where it sits, four ways, with the comparison-target
- *      control that governs what they draw: sRGB, Display-P3, Rec.2020, and a
- *      press profile of your own if you have added one. High up, because they
- *      are the reason to open the page.
- *   3. **Every notation** — the same colour written for each space, copyable.
- *   4. **Tones and blends** — ramps out of it: through its own lightness, and
- *      across to a second colour you choose, at a step count you set.
- *   5. **Displayable range and readability** — the verdict and the contrast
- *      scores. Real, but reference: you look them up once you have a candidate,
- *      so they sit at the bottom rather than in front of the charts.
+ *   1. **Set a colour** - in any space. The picker, a free-text field, the
+ *      brand rail. This is the only thing a first-time visitor needs to
+ *      understand.
+ *   2. **The charts** - where it sits, four ways, with the comparison-target
+ *      control that sets what they draw: sRGB, Display-P3, Rec.2020, and a
+ *      press profile if you have added one. High up, because they are the
+ *      reason to open the page.
+ *   3. **Every notation** - the same colour written for each space, copyable.
+ *   4. **Tones and blends** - ramps built from it: through its own lightness,
+ *      and across to a second colour you choose, at a step count you set.
+ *   5. **Displayable range and readability** - the verdict and the contrast
+ *      scores. Real, but reference: you check these once you have a
+ *      candidate, so they sit at the bottom, below the charts.
  *
- * Easy at the top, detailed as you go down.
+ * Simple at the top, detailed further down.
  *
- * Picking happens in five places — the picker, the text field, the brand rail,
- * a drag on any 2D chart, and any ramp step — and all of them funnel through
+ * Picking happens in five places: the picker, the text field, the brand
+ * rail, a drag on any 2D chart, and any ramp step. All of them go through
  * `setSubject`, so no two paths can disagree.
  *
  * ## The subject is never collapsed to sRGB
  *
  * The colour is kept as the string the user authored and described by the
- * engine's `describeColor`, so `color(display-p3 1 0 0)` is reported at its real
- * chroma (0.299) and its real gamut (P3) — not flattened to `#ff0000` and then
- * trivially declared sRGB-safe.
+ * engine's `describeColor`, so `color(display-p3 1 0 0)` reports its real
+ * chroma (0.299) and its real gamut (P3). It is not flattened to `#ff0000`
+ * and then wrongly marked sRGB-safe.
  *
- * It is also PAINTED from the authored value. Every swatch on this page sets the
- * colour as CSS wrote it, so a wide-gamut display shows the real thing and only a
- * narrower one falls back — the browser does that mapping itself, per display,
- * which is strictly better than us deciding in advance that nobody can see it.
- * `srgbHex` is used only where a hex is structurally unavoidable — the dots drawn
- * over the charts and the 3D canvas, which take a colour as a hex. The chart FILLS
- * are no longer among those places: they are painted in the display's own space
- * (lib/display-gamut.ts), so on a P3 screen the plot shows the real colour out to
- * P3's boundary. Where a hex does stand in, it is labelled rather than passed off
- * as the value.
+ * It is also PAINTED from the authored value. Every swatch on this page sets
+ * the colour as CSS wrote it, so a wide-gamut display shows the real colour
+ * and a narrower one falls back - the browser does that mapping itself, per
+ * display, which is better than deciding in advance that nobody can see it.
+ * `srgbHex` is used only where a hex is required - the dots drawn over the
+ * charts and the 3D canvas, which take a colour as a hex. Chart FILLS are no
+ * longer in that group: they paint in the display's own space
+ * (lib/display-gamut.ts), so on a P3 screen the plot shows the real colour
+ * out to P3's boundary. Where a hex does stand in, it is labelled, not
+ * passed off as the value.
  *
- * The picker is no longer one of those places: it is seeded with the authored string
- * and read back through its `detail.css`, so the subject survives a round trip
- * through the control at its real chroma. Its sliders still gamut-map what they
- * PAINT, which is a display honesty question, not a value one.
+ * The picker is no longer in that group either: it is seeded with the
+ * authored string and read back through its `detail.css`, so the subject
+ * survives a round trip through the control at its real chroma. Its sliders
+ * still gamut-map what they PAINT, which is a display honesty question, not
+ * a value one.
  */
 
 import '../styles/parts/color-lab.css';
@@ -120,7 +121,7 @@ import { t, tRaw } from '../i18n.ts';
  * One brand colour as `host.tokens.colors()` hands it over. `value` is ALWAYS an
  * sRGB hex (the engine bakes the canonical value down in `tokens.ts` `toSwatch`);
  * the only place a wider-gamut value survives is an authored `faces` override
- * (v1.77 — keyed by a CSS space name like `display-p3`/`rec2020`, or a profile id),
+ * (v1.77 - keyed by a CSS space name like `display-p3`/`rec2020`, or a profile id),
  * which is what lets a display-gamut badge ever be meaningful (see `renderBrand`).
  */
 interface LabSwatchInput {
@@ -132,11 +133,11 @@ interface LabSwatchInput {
 
 /** A brand swatch resolved once at mount, then re-badged as the target moves. */
 interface BrandSwatch {
-  /** What a click seeds — the token's own sRGB hex, so picking is unchanged. */
+  /** What a click seeds - the token's own sRGB hex, so picking is unchanged. */
   pick: string;
   /** The guaranteed-parseable sRGB hex, painted as the fallback fill and shown in the tip. */
   hex: string;
-  /** The richest CSS value available (a wide face, else `hex`) — painted on top so a
+  /** The richest CSS value available (a wide face, else `hex`) - painted on top so a
    *  wide-gamut brand colour shows as itself, and the basis for the gamut verdict. */
   real: string;
   name: string;
@@ -144,9 +145,9 @@ interface BrandSwatch {
   oklch: { l: number; c: number; h: number } | null;
 }
 
-/** The host surface this view needs — only the brand palette, and optionally. */
+/** The host surface this view needs - only the brand palette, and optionally. */
 export interface ColorLabHost {
-  /** Only what the theme toggle persists through — the profile is the canonical
+  /** Only what the theme toggle persists through - the profile is the canonical
    *  theme store. Optional: without it the switch still applies and still sings,
    *  it just is not remembered. */
   profile?: { get(): Promise<object>; set?(profile: object): Promise<unknown> };
@@ -165,7 +166,7 @@ const PLANES: SlicePlane[] = ['lc', 'ch', 'lh'];
  * That pairing is the whole interactive model: a panel is "Lightness" because its
  * slider and its number set lightness, and its chart happens to be the plane with
  * lightness as an axis. Titling them by plane ("Lightness × Chroma") described the
- * picture instead of the control, and — worse — invited the slider under it to
+ * picture instead of the control, and - worse - invited the slider under it to
  * drive the plane's FIXED channel, which is a different knob from the one the
  * panel is about.
  */
@@ -198,7 +199,7 @@ const GAMUT_TITLE: Record<GamutName, string> = {
  * What each verdict MEANS, stated as capability rather than as a restriction.
  *
  * Leading with the limitation ("needs a wide-gamut screen") frames reaching past
- * sRGB as a problem, when it is usually the intent — a vivid colour that modern
+ * sRGB as a problem, when it is usually the intent - a vivid colour that modern
  * displays genuinely reach. Only the last case is a warning, and it earns it by
  * being true regardless of what the user was targeting.
  */
@@ -206,7 +207,7 @@ const GAMUT_TITLE: Record<GamutName, string> = {
  * A comparison target's name, whatever kind it is: the display gamut's title, or
  * a profile source's own label ('Coated FOGRA39 (relative)').
  *
- * A NAME is the claim, and that is the whole honesty model here — a measured
+ * A NAME is the claim, and that is the whole honesty model here - a measured
  * target carries the profile's own name and an intent, a derived one carries a
  * standard's name, and an approximate one (the picker's bare CMYK) carries no
  * name at all. So this never invents a label for a source that has one.
@@ -222,7 +223,7 @@ const GAMUT_BLURB: Record<GamutName, string> = {
 };
 
 /**
- * The blend's default style — Vivid, not the gradient spec's OKLab.
+ * The blend's default style - Vivid, not the gradient spec's OKLab.
  *
  * Module level because `shellHtml()` writes the pressed state and the mount's own
  * state initialises from it, and those two must not be able to disagree.
@@ -231,7 +232,7 @@ const BLEND_DEFAULT_SPACE: ColorSpaceTag = 'oklch';
 const BLEND_DEFAULT_HUE: HueDirection = 'shorter';
 
 /** The alternate notations shown ON the swatch, in order. A short list on
- *  purpose — the full set lives in the notation table. */
+ *  purpose - the full set lives in the notation table. */
 const SWATCH_ALT_SPACES: readonly string[] = ['oklch', 'lch', 'display-p3'];
 
 /**
@@ -239,7 +240,7 @@ const SWATCH_ALT_SPACES: readonly string[] = ['oklch', 'lch', 'display-p3'];
  * the value in the space the user is actually picking in.
  *
  * `cmyk` maps to null: there is no CSS `cmyk()`, and the picker's own CMYK is an
- * approximate conversion for print rather than a colour notation — so the swatch
+ * approximate conversion for print rather than a colour notation - so the swatch
  * falls back to hex there rather than inventing a syntax. A press profile's tab
  * (`icc:…`) is the same case and is not listed at all; {@link pickerSpaceFor}
  * answers null for it, and for anything else the registry grows.
@@ -269,12 +270,12 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void }
  * The gamut the Lab opens on: **always Rec.2020**, the widest one we classify, so
  * nothing is hidden until the reader narrows it. `&limit=` in a link still wins.
  *
- * It was briefly seeded from the display — a P3 screen opened on the P3 tab — and
+ * It was briefly seeded from the display - a P3 screen opened on the P3 tab - and
  * Andy asked for Rec.2020 back. The reasoning holds up: the tab is a *comparison
  * target*, a question the reader is asking ("how far past sRGB is this?"), and
  * answering it with the reader's hardware narrows the picture before they have asked
  * anything. Opening at the widest shows the whole envelope, and the tier wash already
- * says which parts of it this display can actually deliver — so nothing is lost by
+ * says which parts of it this display can actually deliver - so nothing is lost by
  * starting wide, while starting narrow hides colour that exists.
  *
  * The display still decides everything it should: the opacity anchor (so a P3 band is
@@ -286,14 +287,14 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void }
 const DEFAULT_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
 
 /**
- * The chroma ceiling the CONTROLS are scaled to — the sliders, the typed boxes and
- * their scrub gesture — which is deliberately NOT the ceiling the charts are drawn
+ * The chroma ceiling the CONTROLS are scaled to - the sliders, the typed boxes and
+ * their scrub gesture - which is deliberately NOT the ceiling the charts are drawn
  * to.
  *
  * A chart's axis follows the comparison target, because a chart is a picture OF that
  * gamut: the envelope should fill the plot. A control is not a picture of anything;
- * it is how the colour gets edited. Scale it to the target and pressing "sRGB" — a
- * lens, not an editor — takes away chroma that was reachable a moment earlier, and
+ * it is how the colour gets edited. Scale it to the target and pressing "sRGB" - a
+ * lens, not an editor - takes away chroma that was reachable a moment earlier, and
  * the range input's own `max` silently rewrites the subject on the way down. So the
  * controls stay at the widest gamut we classify, whichever tab is pressed, and the
  * chart says where that gamut stops. Indicate, never clamp.
@@ -303,8 +304,8 @@ const CONTROL_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
 /**
  * The contrast matrix is N×N over the palette (plus white and black), and N is
  * capped so the grid stays readable and the O(N²) APCA recompute stays cheap. A
- * cap that bites is SURFACED — `renderCvdMatrix` logs it and shows a "first N of M"
- * note — never silently swallowed (the no-silent-caps rule).
+ * cap that bites is SURFACED - `renderCvdMatrix` logs it and shows a "first N of M"
+ * note - never silently swallowed (the no-silent-caps rule).
  */
 const MATRIX_MAX = 12;
 
@@ -322,7 +323,7 @@ interface ActiveProfile {
   paper: [number, number, number] | null;
   /**
    * Is the round-trip ΔE what decides membership for this file? False for a
-   * matrix/TRC or gray profile, whose device cube is tested directly — so the
+   * matrix/TRC or gray profile, whose device cube is tested directly - so the
    * `Shift` readout and the card's tolerance sentence are both withheld rather
    * than stating a rule the verdict beside them does not follow.
    */
@@ -333,23 +334,23 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   document.title = 'Colour Lab · Lolly';
 
   // ── State ────────────────────────────────────────────────────────────────
-  /** The colour as AUTHORED — any CSS colour, not necessarily inside sRGB. */
+  /** The colour as AUTHORED - any CSS colour, not necessarily inside sRGB. */
   let subject = seedFrom(params) ?? FALLBACK;
   let desc = describeColor(subject) ?? describeColor(FALLBACK)!;
   /**
-   * Which gamut the charts and the solid extend to — the comparison target.
+   * Which gamut the charts and the solid extend to - the comparison target.
    *
    * Seeded ONCE, before any markup exists: `&limit=` if the link carried one, else
    * {@link DEFAULT_LIMIT}. Computed here rather than inside `shellHtml` because the
    * pressed pill, the typed inputs' bounds, the legend and the charts all read it and
    * must not be able to disagree on first paint.
    *
-   * The tab is a comparison target, so it is the USER's choice and nothing else's — not
+   * The tab is a comparison target, so it is the USER's choice and nothing else's - not
    * the display's, and not the subject's. A later monitor change repaints (see
    * `onDisplayGamutChange`) and does not move the tab.
    *
    * A {@link GamutLimit} rather than a name, so a press profile is the comparison
-   * target by the same route a display gamut is — the whole point of the engine's
+   * target by the same route a display gamut is - the whole point of the engine's
    * gamut-source abstraction.
    */
   const urlLimit = limitFrom(params);
@@ -357,7 +358,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     ? urlLimit as Exclude<GamutName, 'none'>
     : DEFAULT_LIMIT;
   /**
-   * What `&limit=` should say, VERBATIM — not derived from `limit` on the way out.
+   * What `&limit=` should say, VERBATIM - not derived from `limit` on the way out.
    *
    * The difference only shows for a link naming a profile this device does not
    * have: the charts fall back to {@link DEFAULT_LIMIT}, but rewriting the URL to
@@ -365,11 +366,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * The id stays, the pill says the profile is absent, and adding the file heals it.
    */
   let limitParam: string | null = urlLimit;
-  /** Whether the URL should carry `&limit=` — true once the reader has chosen one
+  /** Whether the URL should carry `&limit=` - true once the reader has chosen one
    *  (or arrived on a link that had). A detected default is not worth pinning into
    *  a shared link; a decision is. */
   let limitPinned = urlLimit != null;
-  /** The mounted press profile, when there is one. At most one at a time — see
+  /** The mounted press profile, when there is one. At most one at a time - see
    *  `renderLimitSeg` for why the row carries exactly one profile pill. */
   let activeProfile: ActiveProfile | null = null;
   /** A `&limit=icc:…` from a link whose profile is not on this device. */
@@ -378,7 +379,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *  end of mount) and re-badged by `renderBrand` whenever the comparison target moves. */
   let brandSwatches: BrandSwatch[] = [];
   /**
-   * The vision-preview mode driving the contrast matrix AND the brand rail — a
+   * The vision-preview mode driving the contrast matrix AND the brand rail - a
    * read-only diagnostic that never writes a token. `normal` is the identity;
    * `grayscale`/`protan`/`deutan`/`tritan` recolour the swatches through the engine
    * (Machado 2009 / Rec.709) and RESCORE the matrix's APCA on the simulated colours,
@@ -388,7 +389,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /** Simulation severity as a percentage (0–100). Only the three graded CVD types
    *  read it; grayscale and normal ignore it. 100% = full dichromacy, 0% = identity. */
   let cvdSeverity = 100;
-  /** Logged at most once when the palette is capped — the no-silent-caps rule. */
+  /** Logged at most once when the palette is capped - the no-silent-caps rule. */
   let cvdCapLogged = false;
 
   // A link that names a profile is resolved BEFORE the first paint: it is one
@@ -403,7 +404,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /**
    * Mount the profile a `limit` id names and adopt it as {@link activeProfile}.
    * Null when the file is not on this device, will not parse, or cannot answer
-   * under that intent — never a source that quietly used a different table.
+   * under that intent - never a source that quietly used a different table.
    */
   async function adoptProfileLimit(id: string): Promise<GamutSource | null> {
     const parsed = parseProfileLimit(id);
@@ -434,31 +435,31 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * Default OFF, deliberately: reaching past sRGB is usually the intent, not a
    * mistake, and the app's job is to show the consequence rather than prevent it.
-   * ON is for the times you must stay reproducible — proofing to a press, or
-   * keeping a palette sRGB-safe — and then chroma yields rather than the axis you
+   * ON is for the times you must stay reproducible - proofing to a press, or
+   * keeping a palette sRGB-safe - and then chroma yields rather than the axis you
    * are dragging (see clampIntoGamut).
    */
   let boundsOn = false;
-  /** The tone ramp's step count. The blend carries its own — see `blendStops`. */
+  /** The tone ramp's step count. The blend carries its own - see `blendStops`. */
   let steps = 9;
   /**
    * The blend: its far end, how it interpolates, and how many stops it is cut into.
    *
-   * The style vocabulary is the canvas gradient panel's (Smooth / Vivid / sRGB —
+   * The style vocabulary is the canvas gradient panel's (Smooth / Vivid / sRGB - 
    * see lib/blend-style.ts), so the two surfaces name the same thing the same way.
    * The stop count is separate from the tone ramp's on purpose: they answer
-   * different questions — a tone ramp is usually a palette of 5–9, while a blend
+   * different questions - a tone ramp is usually a palette of 5–9, while a blend
    * gets cut finely to find one particular intermediate.
    *
    * **Vivid is the default here**, unlike the gradient spec's OKLab (which is a wire
    * format defaulting to what `color-mix()` does). This page is where someone comes
    * to see how much colour a blend can hold, and going round the hue circle is the
-   * answer that shows it — travelling through the middle is the thing they came to
+   * answer that shows it - travelling through the middle is the thing they came to
    * avoid. sRGB stays one click away for matching an existing asset.
    *
    * The TONE ramp needs no style knob to match: its anchors are all at the subject's
    * own hue, and interpolating between two colours of equal hue is the same operation
-   * in OKLab and OKLCH (a = C·cos h, b = C·sin h — a lerp of a and b at fixed h is a
+   * in OKLab and OKLCH (a = C·cos h, b = C·sin h - a lerp of a and b at fixed h is a
    * lerp of C). It is hue-locked, so it is already vivid by construction, and adding
    * a control that provably changes nothing would be a lie.
    */
@@ -470,7 +471,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /**
    * The third surface the colour is read against, beyond black and white.
    *
-   * Defaults to an ordinary light UI surface — near-white but not white, because
+   * Defaults to an ordinary light UI surface - near-white but not white, because
    * that is what most colours actually sit on and because the white card already
    * covers the extreme.
    *
@@ -478,20 +479,20 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * part: the page's own `--background`, which on a light theme IS white and made
    * this card an exact duplicate of the white one; black, the same problem inverted;
    * and a mid grey (#767676, WCAG's 4.5:1 boundary against white), which is the most
-   * *interesting* surface but scores Lc 0.0 against any mid-tone subject — true,
+   * *interesting* surface but scores Lc 0.0 against any mid-tone subject - true,
    * since the two are near-isoluminant, but it reads as a broken card rather than as
    * a finding.
    */
   let ink = '#f4f4f5';
-  /** The 3D view angles, and the solid meshes (cached — each costs a build). */
+  /** The 3D view angles, and the solid meshes (cached - each costs a build). */
   const solidView = { yaw: 28, pitch: 18, scale: 0.92 };
   const solidCache = new Map<string, GamutSolid>();
   /**
-   * How the solid is embedded. Default 'landscape' — hue laid out flat, so the
+   * How the solid is embedded. Default 'landscape' - hue laid out flat, so the
    * peaks and troughs per hue are directly comparable.
    *
    * 'lab' is the ColorSync/iccview view: the opponent axes on the floor,
-   * lightness standing up, and — the reason it matters here — ONE scale for all
+   * lightness standing up, and - the reason it matters here - ONE scale for all
    * three axes. The cylinder divides chroma by the gamut's own peak, which makes
    * every gamut fill the frame identically and destroys exactly the comparison a
    * press profile is loaded to make; in 'lab' sRGB stays squat and Rec.2020 wide,
@@ -510,7 +511,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // The theme cycle, icon-only. `host.profile` may be absent (the components view
   // mounts this bare, and so do the tests), and the shared tail treats the profile
-  // write as best-effort — but the call itself needs an object, so stub it.
+  // write as best-effort - but the call itself needs an object, so stub it.
   const chrome = $('[data-lab-chrome]');
   if (chrome) {
     // The home escape is baked into shellHtml()'s chrome (no new raw-HTML sink);
@@ -527,7 +528,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // ── The out-of-gamut toast ───────────────────────────────────────────────
   // Transient by design: the toast is the nudge when you cross the boundary, and
   // the gamut card in step 5 is the standing record. A latch means a drag that
-  // wanders in and out does not strobe it — it fires once per excursion.
+  // wanders in and out does not strobe it - it fires once per excursion.
   let toastEl: HTMLElement | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let announcedOut = false;
@@ -558,7 +559,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   /** True while the picker is being re-seeded, so its own onChange is ignored. */
   let seeding = false;
-  /** The hex the picker emits when it merely restates the colour it was handed —
+  /** The hex the picker emits when it merely restates the colour it was handed - 
    *  the seed baked to sRGB. NOT `srgbHex`, which is gamut-MAPPED (chroma reduced),
    *  so the two differ for a wide-gamut subject and both have to be recognised. */
   let seedBake = '';
@@ -598,7 +599,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * where the intent buttons and the remove buttons already live.
    *
    * The native row holds no mounted control, so rebuilding its markup is safe.
-   * The JELLY row does — see `renderJellyLimit`.
+   * The JELLY row does - see `renderJellyLimit`.
    */
   function renderLimitSeg(): void {
     if (jellyActive()) { renderJellyLimit(); return; }
@@ -614,7 +615,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ));
     } else if (absentLimit) {
       // Never pressed, and clicking it opens the panel rather than switching to a
-      // gamut we cannot compute. The URL is untouched — see `limitParam`.
+      // gamut we cannot compute. The URL is untouched - see `limitParam`.
       pills.push(`<button type="button" class="view-seg-btn lab-limit-press"
         data-lab-limit-absent aria-pressed="false" data-state="absent"
         title="${escape(t('This link compares against a profile that isn’t on this device.'))}"
@@ -624,7 +625,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // The name has to be the panel's own: it opens "Colour profiles" (Print /
       // Display / Other), and announcing "Print profile" reinstated exactly the
       // restriction that rename retracted. `data-tip`, not `title`, which no phone
-      // can open — and a word beside the glyph, because a lone `+` at the end of a
+      // can open - and a word beside the glyph, because a lone `+` at the end of a
       // segmented row reads as an overflow control rather than an invitation.
       pills.push(`<button type="button" class="view-seg-btn lab-limit-add" data-lab-profiles
         aria-label="${escape(t('Colour profiles'))}" data-tip="${escape(t('Colour profiles'))}"
@@ -634,7 +635,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   /**
-   * The same row under Jelly effects — one <jelly-segmented> for the choices,
+   * The same row under Jelly effects - one <jelly-segmented> for the choices,
    * with the `+ Add` left as an ordinary button beside it.
    *
    * `+` is deliberately NOT a segment. A segmented control's pill means "this is
@@ -643,7 +644,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * sitting next to a choice, and the native row already treats it that way.
    *
    * Rebuilt only when the SET of options changes, never on an ordinary
-   * selection — the whole reason to mount a jelly control is that its pill
+   * selection - the whole reason to mount a jelly control is that its pill
    * travels from the old choice to the new one, and re-writing innerHTML would
    * throw that away and park a fresh pill at the destination. Steering the
    * `value` attribute is what makes it slide. Same rule as the nav pill
@@ -694,13 +695,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * Split in two for one reason: a profile-backed target is EXPENSIVE the first
    * time. Its ceiling grid is ~9.4k bisections against a CLUT (`ceilingGrid` in
    * engine/src/gamut.ts) and the 3D solid another 3.8k probes, measured at
-   * 400–700 ms per profile × intent in Chrome — one blocking task with no
+   * 400–700 ms per profile × intent in Chrome - one blocking task with no
    * feedback if it runs inside the click. So the cheap half (the pressed pill, the
    * press card, the URL) paints first, the section is marked `aria-busy`, and the
    * charts follow on the next frame. The work still blocks once; it no longer
    * blocks BEFORE the reader has been told their press was pressed.
    *
-   * A built-in gamut goes the straight-through path — its grid is a millisecond,
+   * A built-in gamut goes the straight-through path - its grid is a millisecond,
    * and deferring would make a synchronous tab press stop being synchronous for
    * everything that reads it, tests included.
    */
@@ -717,7 +718,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (!heavy) { repaintForLimit(); return; }
     chartsSection?.setAttribute('aria-busy', 'true');
     // Two frames: one to get the pressed state and the busy attribute on screen,
-    // the second to run in. One frame is not enough — the callback of the first
+    // the second to run in. One frame is not enough - the callback of the first
     // still lands before that frame's paint.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       repaintForLimit();
@@ -739,12 +740,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * (Re)paint the brand rail, badging every swatch whose TRUE colour cannot fit
    * the CURRENT comparison target.
    *
-   * A read-only diagnostic: it INDICATES, it never writes — a click still seeds
+   * A read-only diagnostic: it INDICATES, it never writes - a click still seeds
    * the swatch's own colour verbatim (`pick`), and nothing here mutates the token.
-   * The badge is a corner dot (no border on the rounded tile — house rule) plus a
+   * The badge is a corner dot (no border on the rounded tile - house rule) plus a
    * `title`/`aria-label` naming the target, the sRGB hex the colour would clip to,
    * and the ΔE of that clip. The verdict is `swatchGamutState`, which asks the
-   * ACTUAL gamut (never an ordering — P3 ⊄ Rec.2020), so a press profile narrower
+   * ACTUAL gamut (never an ordering - P3 ⊄ Rec.2020), so a press profile narrower
    * than sRGB lights up its plain-hex brand colours, and a display gamut only
    * badges a swatch that carries a genuinely wider face.
    *
@@ -760,7 +761,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const g = sw.oklch ? swatchGamutState(sw.oklch, limit) : null;
       const oog = !!g?.outOfGamut;
       const badge = oog ? '<span class="lab-brand-badge" aria-hidden="true"></span>' : '';
-      // The tip's extra line explains the badge — "clamped" alone means nothing,
+      // The tip's extra line explains the badge - "clamped" alone means nothing,
       // the same reasoning as the notation table's fit note. The gamut verdict is on
       // the TRUE colour, so it is unaffected by the vision preview.
       const tip = oog
@@ -774,7 +775,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // Normal mode paints exactly as before: --sw the sRGB hex fallback, --sw-real
       // the richest value the CSS layers on top. A vision preview replaces BOTH with
       // the simulated sRGB hex (the simulation is sRGB-only), so the rail shows the
-      // palette as that vision type sees it — a diagnostic overlay, never a token edit.
+      // palette as that vision type sees it - a diagnostic overlay, never a token edit.
       const fill = cvdMode === 'normal' ? sw.hex : simulatePalette(sw.hex, cvdMode, sev);
       const real = cvdMode === 'normal' ? sw.real : fill;
       return `<button type="button" class="lab-brand-sw"${oog ? ' data-oog="true"' : ''} data-lab-brand-pick="${escape(sw.pick)}"
@@ -785,20 +786,20 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /**
    * The APCA contrast matrix and, above it, the vision-preview segmented control.
    *
-   * A diagnostic panel — it never writes a token. The grid is every axis colour as
+   * A diagnostic panel - it never writes a token. The grid is every axis colour as
    * TEXT over every axis colour as BACKGROUND, where the axis is [white, black, …the
    * brand palette]. APCA is polarity-dependent and asymmetric, so cell(row, col) is
    * `apcaContrast(text = row, bg = col)`: the diagonal (a colour on itself) reads ~0,
    * and cell(i,j) generally differs from cell(j,i). Each cell is painted in the
-   * pairing's own colours — background the column colour, the |Lc| number in the row
-   * colour — so the readability is legible at a glance as well as numerically.
+   * pairing's own colours - background the column colour, the |Lc| number in the row
+   * colour - so the readability is legible at a glance as well as numerically.
    *
    * When a vision mode is active every axis colour is simulated FIRST and the whole
-   * grid is rescored on the simulated colours — the point of the panel is to see how
+   * grid is rescored on the simulated colours - the point of the panel is to see how
    * the palette's contrasts survive that vision, not merely how it looks.
    *
    * Independent of the subject and the comparison target (APCA is sRGB-only), so it
-   * is rebuilt only when the palette resolves or the vision mode/severity changes —
+   * is rebuilt only when the palette resolves or the vision mode/severity changes - 
    * never on a subject drag.
    */
   function renderCvdMatrix(): void {
@@ -807,7 +808,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const shown = brandSwatches.slice(0, MATRIX_MAX);
     const capped = brandSwatches.length > MATRIX_MAX;
     const sev = cvdSeverity / 100;
-    // White and black first — the ceilings of what any colour can carry — then the
+    // White and black first - the ceilings of what any colour can carry - then the
     // (capped) palette. Each axis entry keeps its NAME for the cell tooltips and its
     // SIMULATED paint for both the fill and the rescore.
     const axis = [
@@ -831,7 +832,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           text: rowA.name, bg: colA.name, lc: String(lc), use: t(bandLabel),
         });
         // Background is the COLUMN colour (the ground), the number the ROW colour (the
-        // text) — the pairing painted as itself. `data-use` carries the APCA band for
+        // text) - the pairing painted as itself. `data-use` carries the APCA band for
         // the cue strip; the number is already integer, so it needs no escaping.
         return `<td class="lab-mx-cell" data-use="${escape(cell.band)}" title="${escape(tip)}"
           style="background:${escape(colA.paint)};color:${escape(rowA.paint)}">${lc}</td>`;
@@ -871,14 +872,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         const id = `icc:${digest}:${intent}`;
         const src = await adoptProfileLimit(id);
         // Pressing an intent is a choice of comparison target, so it moves the
-        // charts as well as the tab — that is the whole reason the button is here.
+        // charts as well as the tab - that is the whole reason the button is here.
         if (!src) return false;
         setLimit(src, id);
         remountPickers();
         return true;
       },
       onIngest: async (digest) => {
-        // A dropped file only stocks the library — EXCEPT when it is the one a
+        // A dropped file only stocks the library - EXCEPT when it is the one a
         // link was waiting for, in which case the pill goes live where it stood.
         // Nothing else needs doing: the id in the URL already matches.
         const want = absentLimit ? parseProfileLimit(absentLimit) : null;
@@ -914,7 +915,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     else if ((GAMUTS as readonly string[]).includes(next)) setLimit(next as Exclude<GamutName, 'none'>, next);
   };
 
-  // Jelly's segmented control reports through `change`, not a click on a button —
+  // Jelly's segmented control reports through `change`, not a click on a button - 
   // its segments are canvas-painted inside a shadow root, so the delegation below
   // never sees them.
   limitSeg.addEventListener('change', (e) => {
@@ -934,7 +935,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // A display change (a window dragged to another monitor, or a surface refusing
   // the wide-gamut option) only REPAINTS: the encode space is part of the paint
   // key, and the "your display" contour is set during the paint. It must not move
-  // the tab — the display changing is not the reader changing their comparison.
+  // the tab - the display changing is not the reader changing their comparison.
   cleanups.push(onDisplayGamutChange(() => { paintCharts(); }));
 
   const boundsBox = $<HTMLInputElement>('[data-lab-bounds]');
@@ -942,7 +943,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const onBounds = (): void => {
       boundsOn = boundsBox.checked;
       // Turning it ON pulls the CURRENT colour in, rather than waiting for the next
-      // drag — otherwise the report would sit out of bounds while claiming to hold them.
+      // drag - otherwise the report would sit out of bounds while claiming to hold them.
       if (boundsOn) setSubject(formatOklch(clampIntoGamut(desc.oklch, limit)));
       else paintSliders();
     };
@@ -961,7 +962,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * The stretch is what makes "never clamp" literal. A range input cannot hold a
    * value above its own `max`, so any ceiling that could sit below the subject is a
-   * value-destroying ceiling — `?c=oklch(0.5 0.7 328)` from a link, or a typed 0.6,
+   * value-destroying ceiling - `?c=oklch(0.5 0.7 328)` from a link, or a typed 0.6,
    * has to remain expressible and draggable rather than being pulled back to 0.5.
    */
   const controlCMax = (): number => Math.max(chromaAxisMax(CONTROL_LIMIT), desc.oklch.c);
@@ -973,8 +974,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // orthogonal cuts through one colour rather than three unrelated views.
     st.fixed = sliceFixedOf(plane, desc.oklch);
     st.limit = limit;
-    // The chroma axis reaches exactly as far as this gamut does — 0.34 on sRGB,
-    // 0.5 on Rec.2020 — so the envelope fills the plot instead of being squashed
+    // The chroma axis reaches exactly as far as this gamut does - 0.34 on sRGB,
+    // 0.5 on Rec.2020 - so the envelope fills the plot instead of being squashed
     // into the lower half (sRGB) or clipped flat at the top (Rec.2020). Derived
     // from the LIMIT alone, never from the subject's lightness, so it cannot
     // rescale under the cursor mid-drag.
@@ -990,8 +991,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (!mount) continue;
       const st = chartStateFor(plane);
       mount.innerHTML = renderSliceChart(st, [
-        // `hex` paints the dot; `oklch` PLACES it. Placing from the hex — which is
-        // gamut-mapped, chroma reduced — sat an out-of-sRGB marker exactly on the sRGB
+        // `hex` paints the dot; `oklch` PLACES it. Placing from the hex - which is
+        // gamut-mapped, chroma reduced - sat an out-of-sRGB marker exactly on the sRGB
         // contour on the two planes with a chroma axis, while L×H (whose axes both
         // survive the clamp) showed it outside and the 3D panel said "off the surface".
         { idx: 0, hex: desc.srgbHex, oklch: desc.oklch, label: t('This colour') },
@@ -1004,10 +1005,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         // a gamut boundary feeds the mapped colour back in every frame and the dot
         // shakes away from the pointer.
         oklchOf: () => desc.oklch,
-        // Dragging the dot or clicking empty space both pick — on a report,
+        // Dragging the dot or clicking empty space both pick - on a report,
         // every chart is an input as well as a readout.
         // Dragging into a chart's P3 band should GIVE you that P3 colour, not its
-        // sRGB bake — so this goes through setOklch like the sliders do.
+        // sRGB bake - so this goes through setOklch like the sliders do.
         onRecolor: (_idx, o) => setOklch(o, { silent: true, live: true }),
         onCommit: () => {
           // The one full-fidelity pass per gesture: re-seed the picker, repaint
@@ -1064,7 +1065,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         num.addEventListener('change', onNum);
         chartTeardowns.push(() => num.removeEventListener('change', onNum));
 
-        // Drag the number sideways to change it — the design-tool gesture, on the
+        // Drag the number sideways to change it - the design-tool gesture, on the
         // shared primitive (lib/scrub.ts). Sensitivity is per channel because the
         // three axes are nothing like each other in scale: at the default 1/px,
         // chroma would cross its whole range inside a pixel. These give roughly a
@@ -1080,7 +1081,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           decimals: DECIMALS[ch2],
           touch: true,                  // paired with `touch-action: pan-y` in the CSS
           getFallback: () => desc.oklch[ch2],
-          // Live while dragging, at draft quality — the same treatment a chart drag
+          // Live while dragging, at draft quality - the same treatment a chart drag
           // and a slider drag get, so all three feel like one control surface.
           onDrag: (_el, v) => setOklch({ ...desc.oklch, [ch2]: v }, { silent: true, live: true }),
           onCommit: onNum,
@@ -1089,7 +1090,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }
   }
 
-  /** Apply the bounds rule, if it is on. Off, the value passes through untouched —
+  /** Apply the bounds rule, if it is on. Off, the value passes through untouched - 
    *  the report then says where it landed rather than stopping it getting there. */
   const bounded = (o: { l: number; c: number; h: number }): { l: number; c: number; h: number } =>
     (boundsOn ? clampIntoGamut(o, limit) : o);
@@ -1098,7 +1099,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * An OKLCH triple → the subject, as an `oklch()` STRING.
    *
    * Not via `oklchToHex`: that gamut-maps into sRGB, so handing it a wide-gamut
-   * request quietly returns the sRGB bake — which made "bounds off" meaningless
+   * request quietly returns the sRGB bake - which made "bounds off" meaningless
    * (asking for chroma 0.34 came back as 0.2672, the sRGB ceiling) and is exactly
    * the silent collapse this whole view exists to avoid. The string keeps the
    * authored value; `describeColor` parses it back losslessly.
@@ -1107,13 +1108,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     setSubject(formatOklch(bounded(o)), opts);
 
   /** The slider's world: the other two channels held at the subject, tiered against
-   *  the gamut the charts are drawn to — but scaled to controlCMax(), so pressing a
+   *  the gamut the charts are drawn to - but scaled to controlCMax(), so pressing a
    *  narrower tab recolours the track without shortening it. */
   function sliderState(ch: GamutChannel) {
     return { channel: ch, base: desc.oklch, limit, cMax: controlCMax() };
   }
 
-  /** Repaint the broken tracks — their segments depend on the OTHER two channels,
+  /** Repaint the broken tracks - their segments depend on the OTHER two channels,
    *  so every one of them changes whenever the colour does. */
   function paintSliders(): void {
     for (const plane of PLANES) {
@@ -1152,7 +1153,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── The 3D solid ─────────────────────────────────────────────────────────
   // `let`, because `acquire2d` replaces the node when the display's gamut changes
-  // under us — a 2D context cannot change colour space after creation. Everything
+  // under us - a 2D context cannot change colour space after creation. Everything
   // that touches it must go through `adoptSolidCanvas`, or the turn gesture would
   // stay bound to a detached node and die silently.
   let solidCanvas = $<HTMLCanvasElement>('[data-lab-solid]');
@@ -1163,7 +1164,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * subject and becomes the reference frame it is drawn against.
    *
    * `screen` is the last painted projection of `cloud.points`, kept so a click
-   * can be hit-tested without re-projecting — the paint has just done that work
+   * can be hit-tested without re-projecting - the paint has just done that work
    * for the exact view the reader is looking at, and re-deriving it at click time
    * is how a pick lands on a different point than the one under the cursor.
    */
@@ -1173,12 +1174,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   function solidFor(lim: GamutLimit): GamutSolid {
     // Keyed by `gamutSourceId` AND the embedding: a GamutSource stringifies to
     // '[object Object]', so two profiles would share one cache entry and the
-    // second would silently show the first one's mesh — and two embeddings of one
+    // second would silently show the first one's mesh - and two embeddings of one
     // gamut are two different meshes.
     const key = `${gamutSourceId(lim)}|${solidEmbed}`;
     let s = solidCache.get(key);
     // 'landscape': hue laid out flat, lightness in depth, chroma standing up.
-    // The peaks and troughs per hue are then directly comparable — on a cylinder
+    // The peaks and troughs per hue are then directly comparable - on a cylinder
     // half of them are round the back.
     // 192x80 ≈ 15k quads. The ridges are where the mesh shows, and they run along
     // hue, so hue gets the higher count. Built once per gamut and cached (~50ms),
@@ -1186,7 +1187,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     //
     // A profile-backed source gets a COARSER mesh (96x40, ~3.8k quads). Its
     // boundary comes from `maxChroma` bisections against a CLUT rather than a
-    // matrix, so the full mesh is ~280ms — long enough that pressing the press
+    // matrix, so the full mesh is ~280ms - long enough that pressing the press
     // pill would look stuck. The press gamut's silhouette is smooth and its
     // ridges are shallower than a display gamut's, so the coarser mesh costs
     // little of what the picture is for.
@@ -1201,14 +1202,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /**
    * A COARSE mesh of a comparison gamut, stroked as a cage rather than filled.
    *
-   * Deliberately not a second filled solid: two translucent surfaces over each
-   * other read as one muddy shape and lie about which is in front. A cage says
-   * the same thing the 2D charts already say with a hairline contour — this is
-   * where that gamut stops — in the language the reader has already learned two
-   * panels above.
+   * Not a second filled solid: two translucent surfaces over each other read
+   * as one muddy shape and hide which is in front. A cage shows the same
+   * thing the 2D charts already show with a hairline contour: where that
+   * gamut stops.
    *
-   * Coarse on purpose. The cage is a reference, not the subject, and a dense one
-   * would hide the surface it is drawn over.
+   * Coarse on purpose. The cage is a reference, not the subject. A dense
+   * mesh would hide the surface it is drawn over.
    */
   function cageFor(lim: GamutLimit): GamutSolid {
     const key = `cage|${gamutSourceId(lim)}|${solidEmbed}`;
@@ -1234,7 +1234,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.round(box.width * dpr), h = Math.round(box.height * dpr);
     // Ask the platform for the widest surface it will give us, and let its ANSWER
-    // decide how the fills are written — the same order the slice charts use, so
+    // decide how the fills are written - the same order the slice charts use, so
     // the context and the colours can never name different spaces. A browser that
     // refuses hands back 'srgb' and every fill below is today's rendering.
     const acquired = acquire2d(solidCanvas);
@@ -1248,15 +1248,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
     const solid = solidFor(limit);
     const fills = projectGamutSolid(solid, solidView);
-    // The comparison cage — a reference gamut's surface as ribs over the fill.
+    // The comparison cage - a reference gamut's surface as ribs over the fill.
     //
-    // Only against a PROFILE limit, and that restriction is the whole design.
-    // Between the three screen gamuts the nesting is already told, better, by the
-    // 2D contours and the tier ladder, and measuring it here (by looking at the
-    // render) it came out as scribble over the surface it was meant to annotate.
-    // A press gamut is the case no other panel can tell: it is inside sRGB in the
-    // cyans and OUTSIDE it in the yellows, so "which is bigger" has no answer and
-    // the crossing itself is the information.
+    // Only against a PROFILE limit, and that restriction is deliberate.
+    // Between the three screen gamuts the nesting is already shown, better, by
+    // the 2D contours and the tier ladder; tested by rendering it here, the
+    // result was unreadable clutter over the surface it was meant to annotate.
+    // A press gamut is the case no other panel can show: it is inside sRGB in
+    // the cyans and OUTSIDE it in the yellows, so "which is bigger" has no
+    // answer and the crossing itself is the information.
     //
     // Merged into ONE depth-sorted list rather than drawn as a layer on top: a rib
     // that is genuinely behind the surface has to be occluded by it, or the picture
@@ -1270,19 +1270,20 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // Painter's algorithm, already sorted far-to-near by the engine.
     //
     // A quad is stroked in its own colour as well as filled, to close the hairline
-    // antialiasing gap between abutting fills that otherwise makes a mesh read as
-    // chicken wire. But stroking doubles the path work, and on a dense mesh each
-    // quad is only a few pixels across — the gaps are then sub-pixel and the
-    // stroke buys nothing. So it is spent only where it shows.
+    // antialiasing gap between abutting fills. Without the stroke, the mesh shows
+    // visible gaps between tiles. But stroking doubles the path work, and on a
+    // dense mesh each quad is only a few pixels across - the gaps are then
+    // sub-pixel and the stroke buys nothing. So it is spent only where it shows.
     const areaPerQuad = (w * h) / Math.max(1, fills.length);
     const seal = areaPerQuad > 24; // ≈ 5px per side
-    // With a cloud loaded the gamut stops being the subject and becomes the frame
-    // the cloud is read against, so it is painted as a ghost of itself. An opaque
-    // surface would simply hide every point inside it, which is most of them —
-    // the interesting ones are near and past the boundary, and those are exactly
-    // the ones you would still see. Dimming the surface rather than making the
-    // POINTS translucent keeps each point's own colour true, which is the one
-    // thing on this chart that must not be tinted by its rendering.
+    // With a cloud loaded the gamut stops being the subject and becomes the
+    // frame the cloud is read against, so it is painted faint, as a reference
+    // only. An opaque surface would hide every point inside it, which is most
+    // of them - the interesting ones are near and past the boundary, and those
+    // are exactly the ones you would still see. Dimming the surface rather
+    // than making the POINTS translucent keeps each point's own colour true,
+    // which is the one thing on this chart that must not be tinted by its
+    // rendering.
     if (cloud) ctx.globalAlpha = 0.28;
     for (const q of quads) {
       const [p0, ...rest] = q.points;
@@ -1293,19 +1294,20 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ctx.closePath();
       if (q.wire) {
         // RIBS, not a grid. A full lattice of both cages over a fine surface is
-        // unreadable — measured by looking at it: the Rec.2020 view with sRGB and
-        // P3 inside it came out as scribble. One edge per quad, the one running
-        // along lightness, leaves a set of hoops that read as a shape at a glance
-        // while still being drawn strictly in depth order.
+        // unreadable, confirmed by testing it: the Rec.2020 view with sRGB and
+        // P3 inside it came out as clutter. One edge per quad, the one running
+        // along lightness, leaves a set of hoops that read as a shape at a
+        // glance while still being drawn strictly in depth order.
         //
         // White, the ink every gamut boundary is drawn in across this view; the
         // wider reference reads heavier, the same key the 2D legend already uses.
         ctx.beginPath();
-        // Which edge, by embedding. On the landscape hue runs across the picture
-        // and lightness into it, so the hue-direction edge draws contour lines
-        // along the ridge — the topographic reading. On the closed embeddings the
-        // lightness-direction edge draws meridians, which is what gives a turnable
-        // body its shape. Picking the wrong one for the embedding gives hatching.
+        // Which edge to draw depends on the embedding. On the landscape, hue
+        // runs across the picture and lightness runs into it, so the
+        // hue-direction edge draws contour lines along the ridge. On the
+        // closed embeddings the lightness-direction edge draws meridians,
+        // which gives a turnable body its shape. The wrong edge for the
+        // embedding produces hatching instead.
         const [a, b] = solidEmbed === 'landscape'
           ? [q.points[0], q.points[1]]
           : [q.points[1], q.points[2]];
@@ -1367,8 +1369,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * The image's colours as dots in the same space the solid is drawn in.
    *
    * Painted far-to-near so a near point covers a far one, the same painter's
-   * order the mesh uses — without it the cloud reads as a flat spray and the
-   * rotation stops carrying any depth.
+   * order the mesh uses. Without it the cloud looks flat and the rotation no
+   * longer shows depth.
    *
    * A dot's radius follows how much of the image it is, on a cube root: linear
    * area would make one dominant colour a disc that swallows the plot, and equal
@@ -1409,12 +1411,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   //    side-by-side comparison ────────────────────────────────────────────────
   //
   // The canvas above is the live turntable; these are STILLS, in vector. They
-  // exist for two reasons. First the house docs-are-vector rule: a screenshot of
-  // the solid should be an SVG of real polygons, not a raster of a canvas. Second,
-  // two screen gamuts genuinely cannot be read as overlapping wire cages in the
-  // live view — see the "scribble" reasoning in `paintSolid`; drawn side by side
-  // at one shared angle and scale, the fact that Display-P3 is NOT contained by
-  // Rec.2020 reads as SHAPE instead.
+  // exist for two reasons. First, the house docs-are-vector rule: a screenshot
+  // of the solid should be an SVG of real polygons, not a raster of a canvas.
+  // Second, two screen gamuts cannot be shown clearly as overlapping wire
+  // cages in the live view - see the clutter problem noted in `paintSolid`.
+  // Drawn side by side at one shared angle and scale, the fact that
+  // Display-P3 is NOT contained by Rec.2020 becomes visible as shape instead.
   //
   // Painted with `gamutSolidToSvg`'s default sRGB encode: a static SVG can only
   // show colours the viewer's browser can render, so it shows the hull's STRUCTURE
@@ -1428,7 +1430,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     gamutSolidToSvg(projectGamutSolid(solid, solidView), { size: SNAP_SVG_SIZE });
 
   /**
-   * A MODERATE mesh for a comparison gamut — coarser than the main canvas solid on
+   * A MODERATE mesh for a comparison gamut - coarser than the main canvas solid on
    * purpose. The compare panel is about silhouette, not surface detail, and a fine
    * mesh would inject tens of thousands of `<polygon>` nodes per hull. Cached by
    * source id + embedding, in the same map as the canvas meshes.
@@ -1440,7 +1442,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     return s;
   };
 
-  /** Repaint the single-solid still — only while its panel is open. `solidFor` is
+  /** Repaint the single-solid still - only while its panel is open. `solidFor` is
    *  the SAME cached mesh the canvas draws, so the still is geometrically identical
    *  to the turntable, just frozen and in vector. */
   function renderSolidSvg(): void {
@@ -1450,7 +1452,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     box.innerHTML = svgForSolid(solidFor(limit));
   }
 
-  /** Repaint the Display-P3 vs Rec.2020 comparison — only while its panel is open. */
+  /** Repaint the Display-P3 vs Rec.2020 comparison - only while its panel is open. */
   function renderCompare(): void {
     const panel = $<HTMLDetailsElement>('[data-lab-compare-panel]');
     const body = $('[data-lab-compare-body]');
@@ -1467,7 +1469,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   /** rAF-throttled: rebuild whichever vector stills are open. Called on a turn
-   *  commit, an embedding change and a target change — never per drag frame (these
+   *  commit, an embedding change and a target change - never per drag frame (these
    *  are stills, not a second live view), and a no-op when both panels are closed. */
   let vectorFrame = 0;
   function refreshVectors(): void {
@@ -1494,10 +1496,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /**
    * Point the turn gesture at `next` when the canvas node has been swapped.
    *
-   * A no-op in the overwhelmingly common case (same node), so it is safe to call
-   * on every frame. The swap only happens when the window moves to a monitor of a
-   * different gamut, which is rare enough that the cost of getting it wrong —
-   * a solid that silently stops turning — is worth this much ceremony.
+   * A no-op in the common case (same node), so it is safe to call on every
+   * frame. The swap happens only when the window moves to a monitor with a
+   * different gamut, which is rare. But getting it wrong means the solid
+   * silently stops turning, so this extra check is worth it.
    */
   function adoptSolidCanvas(next: HTMLCanvasElement): void {
     if (next === solidCanvas) return;
@@ -1513,7 +1515,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * Nearest in SCREEN space using the projection the last paint produced, which
    * is the only definition that matches what the reader saw. Ties are broken by
-   * depth, taking the NEARER point — two dots overlapping on screen are one in
+   * depth, taking the NEARER point - two dots overlapping on screen are one in
    * front of the other, and the front one is the one that was pointed at.
    *
    * A miss does nothing at all. Snapping to the closest point however far away
@@ -1547,14 +1549,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
      * A TOUCH press that has not yet been resolved into a rotation.
      *
      * The canvas is `touch-action: pan-y` (see color-lab.css) so the page can still
-     * be scrolled through it — it takes ~60% of a phone's viewport height, and under
+     * be scrolled through it - it takes ~60% of a phone's viewport height, and under
      * the previous `touch-action: none` a vertical swipe anywhere on it moved
      * nothing whatsoever: the page was frozen and the solid does not turn on
      * vertical travel alone. Allowing the pan on its own is not enough either, or
-     * the rotation would be gone — so the FIRST movement decides, the same axis lock
+     * the rotation would be gone - so the FIRST movement decides, the same axis lock
      * the 2D plots use (lib/oklch-slice.ts): mostly sideways is a turn and the
      * pointer is captured; mostly vertical is the page scrolling past and the
-     * gesture is abandoned. A mouse or pen is exempt — a press with a button down is
+     * gesture is abandoned. A mouse or pen is exempt - a press with a button down is
      * unambiguous, and there is no page pan to protect.
      */
     let pending = false;
@@ -1605,7 +1607,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // hanging the pick on that would move the subject every time someone let go
       // of a rotation.
       if (Math.hypot(e.clientX - startX, e.clientY - startY) < AXIS_SLOP) pickFromCloud(e, el);
-      else refreshVectors();   // a turn ended — bring any open still up to the new angle
+      else refreshVectors();   // a turn ended - bring any open still up to the new angle
     };
     // Keyboard equivalent: a drag-only control is unusable without one.
     const onKey = (e: KeyboardEvent): void => {
@@ -1617,7 +1619,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       else return;
       e.preventDefault();
       scheduleSolid();
-      refreshVectors();   // keyboard turns are discrete — refresh the open stills
+      refreshVectors();   // keyboard turns are discrete - refresh the open stills
     };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
@@ -1661,14 +1663,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           restoreLabel: t('Put back'),
           // INSIDE the view, not on the body. `$` here is `view.querySelector`, so
           // a figure parked on the body is invisible to every lookup this file
-          // makes — measured: the popped chart's canvas stayed at its old backing
+          // makes - measured: the popped chart's canvas stayed at its old backing
           // size through four resizes because `paintCharts` could no longer find
           // its mount. Verified there is no transform/filter/contain between `.lab`
           // and `<body>`, so `position: fixed` still floats it.
           mount: view,
           // Every canvas in this view sizes itself from `getBoundingClientRect`,
           // so a resize is only real once something repaints. Both are called
-          // unconditionally — the charts' own paint no-ops when nothing changed
+          // unconditionally - the charts' own paint no-ops when nothing changed
           // (see paintSliceChart's PAINTED key), and the solid's is rAF-gated.
           onResize: () => { paintCharts(); scheduleSolid(); },
           onClose: () => { openPanels.delete(fig); btn.setAttribute('aria-pressed', 'false'); },
@@ -1681,7 +1683,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     chartsRoot.addEventListener('click', onPop);
     cleanups.push(() => {
       chartsRoot.removeEventListener('click', onPop);
-      // Leaving the view must take the panels with it — they are mounted at body
+      // Leaving the view must take the panels with it - they are mounted at body
       // level, so the router replacing `#view` would otherwise leave them floating
       // over whatever comes next, holding a canvas nothing repaints.
       for (const p of openPanels.values()) p.close();
@@ -1740,7 +1742,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       paintSolid();
     } catch (err) {
       // A file that will not decode is the user's file being wrong, not the app
-      // breaking — one line, no stack, and the previous cloud (if any) survives.
+      // breaking - one line, no stack, and the previous cloud (if any) survives.
       showGamutToast(escape(t('That image could not be read.')));
       console.warn('lab: image cloud failed', err);
     }
@@ -1749,7 +1751,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   if (cloudFile) {
     const onFile = (): void => {
       const f = cloudFile.files?.[0];
-      // Cleared so re-choosing the SAME file fires `change` again — otherwise a
+      // Cleared so re-choosing the SAME file fires `change` again - otherwise a
       // reader who cleared the plot cannot put the same image back.
       cloudFile.value = '';
       if (f) void loadCloud(f);
@@ -1813,7 +1815,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── Vision preview (CVD / grayscale) ──────────────────────────────────────
   // Diagnostic only: it recolours the matrix and the brand rail and rescores the
-  // grid, and writes nothing. A plain `.view-seg` like the embedding row above —
+  // grid, and writes nothing. A plain `.view-seg` like the embedding row above - 
   // no jelly, because the choice is not on a hot path.
   const cvdSeg = $('[data-lab-cvd]');
   const cvdSevRow = $('[data-lab-cvd-sev]');
@@ -1852,10 +1854,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // The two ramps mean different things, so a click on them does different things.
   //
   //  · TONES are derived from the subject, so picking one is "move along my own
-  //    ramp" — it re-seeds the report.
+  //    ramp" - it re-seeds the report.
   //  · A BLEND stop is an output: an intermediate between this colour and another
   //    one you chose. You want to take it away and use it, not make it the new
-  //    subject — doing that would also destroy the blend it came from, since the
+  //    subject - doing that would also destroy the blend it came from, since the
   //    near end IS the subject.
 
 
@@ -1874,7 +1876,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // ── The blend's style, hue route, and stop count ─────────────────────────
   /**
    * Make a static `.view-seg` row selectable, and upgrade it to a Jelly control
-   * where the flag is on — one selection API either way, so the caller never
+   * where the flag is on - one selection API either way, so the caller never
    * learns which form it got.
    *
    * The row's own markup is the source of truth for the options: the upgrade
@@ -1883,7 +1885,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * `tipFor` exists because of a real loss. The blend row's labels are one word
    * each (Smooth / Vivid / sRGB) and the reason to pick one lives in a `data-tip`
-   * on each button — but a jelly segment is painted on canvas inside a shadow
+   * on each button - but a jelly segment is painted on canvas inside a shadow
    * root, so a per-segment tooltip has nowhere to hang. The rationale for the
    * SELECTED style moves onto the host instead: still discoverable by hover,
    * focus and touch, and it describes the choice that is actually in effect.
@@ -1972,7 +1974,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   const blendStepsBox = $('[data-lab-blend-steps]');
   if (blendStepsBox) {
-    // The mixer slider's own input — the same `.gsl` markup the channel sliders use,
+    // The mixer slider's own input - the same `.gsl` markup the channel sliders use,
     // so it inherits their skin, but its axis is a count rather than a colour and it
     // has no gamut runs to break the rail into.
     const wired = wireGamutSlider(blendStepsBox, {
@@ -1986,21 +1988,21 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   // Once, at mount: the readability cards are stable markup, so this picker is
-  // never torn down and re-created by a re-score. (Hoisted declaration — the
+  // never torn down and re-created by a re-score. (Hoisted declaration - the
   // function is defined further down with the rest of the render helpers.)
   mountInkPicker();
 
   /**
-   * The blend target's picker — the SAME expanded picker as the subject's, with
+   * The blend target's picker - the SAME expanded picker as the subject's, with
    * tabs, dials and sliders.
    *
-   * It was a compact `float` popover, on the theory that a secondary control
-   * should carry less weight. But the dials are gated on `inline` inside the
-   * component (colorModesHtml's third parameter is passed `inline`), so a float
-   * popover can only ever offer the hex field, alpha and swatches — you cannot
-   * pick a blend target perceptually, which is the whole reason the dials exist.
-   * Hierarchy is better carried by placement and heading than by crippling the
-   * control.
+   * It used to be a compact `float` popover, on the idea that a secondary
+   * control should carry less weight. But the dials are gated on `inline`
+   * inside the component (colorModesHtml's third parameter is passed
+   * `inline`), so a float popover can only offer the hex field, alpha and
+   * swatches. You cannot pick a blend target perceptually, which is the
+   * whole reason the dials exist. Hierarchy should come from placement and
+   * heading, not from crippling the control.
    */
   function mountBlendPicker(): void {
     const blendPicker = $('[data-lab-blend-picker]');
@@ -2021,8 +2023,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * `colorSpaces()` once) and subscribes to nothing, so mounting or unmounting a
    * profile leaves any field that is not re-mounted holding a stale strip. Only
    * the subject picker used to be re-seeded: the blend and ink pickers never grew
-   * the profile tab in-session — the same page showed two different tab rows
-   * depending on whether the reader arrived by link or by drop — and after a
+   * the profile tab in-session - the same page showed two different tab rows
+   * depending on whether the reader arrived by link or by drop - and after a
    * remove they kept a tab `getColorSpace` no longer resolves.
    *
    * Safe here and not from `renderContrast`: no drag can be in flight while the
@@ -2054,7 +2056,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * `fromPicker` skips re-seeding the picker (it already holds the value, and
    * writing back mid-drag fights the user's slider). `silent` suppresses the
-   * screen-reader announcement for continuous gestures — a chart drag would
+   * screen-reader announcement for continuous gestures - a chart drag would
    * otherwise announce on every frame.
    */
   function setSubject(
@@ -2066,7 +2068,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     subject = next.trim();
     desc = parsed;
 
-    // Re-mounting the picker replaces its markup and re-wires it — far too heavy
+    // Re-mounting the picker replaces its markup and re-wires it - far too heavy
     // to run on every frame of a chart drag, and most of what made dragging feel
     // laggy. Skip it while a gesture is live; catch up on release.
     if (!opts.fromPicker && !opts.live) reseedPicker();
@@ -2091,11 +2093,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * catches a different echo of a value the picker was HANDED, and letting one
    * through replaces the authored colour with the picker's restatement of it:
    *
-   *   - `seeding` — the emit that fires synchronously during wiring.
-   *   - `seedBake` / `srgbHex` — an emit that arrives after the flag has cleared,
+   *   - `seeding` - the emit that fires synchronously during wiring.
+   *   - `seedBake` / `srgbHex` - an emit that arrives after the flag has cleared,
    *     recognised by its sRGB hex. Both, because the seed and the mapped fallback
    *     are the same string for an sRGB subject and different for a wider one.
-   *   - `detail.css` vs `desc.input` — the same echo in the authored space, which
+   *   - `detail.css` vs `desc.input` - the same echo in the authored space, which
    *     is the only form that survives a picker holding a P3 or OKLCH value.
    *
    * Past those it is a real interaction, and `detail.css` is preferred over `value`
@@ -2144,8 +2146,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /** Everything that is text or a swatch, rebuilt from `desc`. */
   function renderReadouts(): void {
     paintSwatch(swatch, desc);
-    // The swatch leads with the value in the space the PICKER is set to — OKLCH by
-    // default — so the number on the swatch and the number under your hands are
+    // The swatch leads with the value in the space the PICKER is set to - OKLCH by
+    // default - so the number on the swatch and the number under your hands are
     // the same number. The authored form is never lost: it stays in the entry
     // field, in the alternates below, and in the notation table.
     const mode = pickerMode();
@@ -2160,11 +2162,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // `data-tip` (styles/parts/tooltip.css), not `title`: this value looks like
       // text, nothing else says pressing it copies, and a `title` is invisible to
       // exactly the touch users who cannot hover to discover it. aria-label carries
-      // the same sentence — the bubble is a pseudo-element and never read.
+      // the same sentence - the bubble is a pseudo-element and never read.
       // Focusable with a button role, which is what makes the bubble reachable at
       // all: the primitive opens on `:focus` where there is no hover, and a bare
       // <code> can take neither hover nor focus from a finger. The delegated keydown
-      // below completes the bargain — announcing a button and then ignoring Enter
+      // below completes the bargain - announcing a button and then ignoring Enter
       // would be worse than the tooltip being hidden.
       primary.dataset.tip = tRaw('Copy {v}', { v: shown });
       primary.setAttribute('aria-label', tRaw('Copy {v}', { v: shown }));
@@ -2187,7 +2189,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const alts = $('[data-lab-sw-alts]');
     if (alts) {
       const want: Array<[string, string]> = [];
-      // The authored space first when the swatch is leading with a different one —
+      // The authored space first when the swatch is leading with a different one - 
       // it is the most relevant alternate, being what the user actually typed.
       const spaces = desc.parsed.space !== leadSpace
         ? [desc.parsed.space, ...SWATCH_ALT_SPACES]
@@ -2198,7 +2200,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         if (n) want.push([space, n.css]);
       }
       // Hex last and always: sRGB-only, so it is the fallback expression rather
-      // than a peer — but it is still the one most tools demand.
+      // than a peer - but it is still the one most tools demand.
       if (leadSpace) want.push(['hex', desc.srgbHex.toUpperCase()]);
       // Same treatment as the primary value above, and for the same reason: a
       // `title` on a <code> is an affordance no touch or keyboard user can reach.
@@ -2237,7 +2239,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       : tRaw('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
 
     const ceils = $('[data-lab-ceilings]')!;
-    // A ceiling row per comparison target — the three display gamuts, and the
+    // A ceiling row per comparison target - the three display gamuts, and the
     // mounted press profile when there is one. Its gain is frequently NEGATIVE
     // against sRGB, which is the point of showing it, so the sign is explicit
     // rather than a hard-coded '+'.
@@ -2286,7 +2288,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const floor = $('[data-lab-contrast-note]');
     if (floor) {
       // APCA leads. The pairing named is the one APCA prefers, which is NOT always
-      // the one WCAG prefers — that disagreement is the whole reason both are here,
+      // the one WCAG prefers - that disagreement is the whole reason both are here,
       // so when they part company the line says so instead of quietly picking one.
       const white = apcaVerdict('#ffffff', desc.srgbHex);
       const black = apcaVerdict('#000000', desc.srgbHex);
@@ -2310,7 +2312,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * Fill one card's numbers, in place. APCA first, WCAG second.
    *
    * That order is deliberate and it is the opposite of how most tools present it.
-   * APCA models polarity — light text on dark reads worse than the same pair
+   * APCA models polarity - light text on dark reads worse than the same pair
    * inverted, which WCAG 2's ratio cannot express at all, since it scores both
    * directions identically. So the Lc is the number to design against and the ratio
    * is the number to report to a conformance checklist. Both are shown because both
@@ -2335,7 +2337,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (use) use.textContent = apca ? t(apca.label) : '';
       const pol = card.querySelector<HTMLElement>('[data-lab-apca-pol]');
       if (pol) {
-        // Shown only when the text is LIGHTER than its ground — precisely the case
+        // Shown only when the text is LIGHTER than its ground - precisely the case
         // WCAG's ratio cannot see.
         pol.hidden = !apca?.reversed;
         pol.textContent = t('light on dark');
@@ -2354,7 +2356,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   /**
-   * The third surface's picker — the compact `float` popover, which is what a
+   * The third surface's picker - the compact `float` popover, which is what a
    * secondary control on a card wants: the card is already carrying two numbers,
    * and the expanded form's rings would dominate it.
    *
@@ -2383,25 +2385,25 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * The press card: what this colour costs on the mounted profile.
    *
    * Rendered only while a profile is active, and every number in it is
-   * MEASURED — it comes from that file's own tables under the named intent.
+   * MEASURED - it comes from that file's own tables under the named intent.
    * Nothing derived and nothing approximate appears here, which is what lets the
    * card carry the profile's own name as its claim.
    *
    * `Shift` is the round-trip ΔE the membership threshold is applied to. Showing
    * it turns {@link ICC_GAMUT_DELTA_E} from a hidden rule into a readable
    * quantity: at 0.4 the colour is solidly inside, at 2.8 it "passes" and will
-   * visibly move. No traffic lights — the number is the finding.
+   * visibly move. No traffic lights - the number is the finding.
    *
    * It is ABSENT, with the card's tolerance note, for a matrix/TRC or gray
    * profile. `iccGamutSource` decides those on their device cube instead, so the
-   * round trip is near zero well outside the gamut — printing it would put
+   * round trip is near zero well outside the gamut - printing it would put
    * "Outside the gamut / Shift ΔE 0.1" directly above a sentence saying ΔE 3.0
    * decides, which is a rule the card visibly breaks. Any RGB or gray display
    * profile is this case, and they mount like any other.
    *
    * `Ink` is total area coverage in the trade's own units (channels × 100, so
    * 0–400%), never normalised, and the row is ABSENT rather than zeroed for a
-   * profile that has no ink — every RGB and display profile. There is no ink
+   * profile that has no ink - every RGB and display profile. There is no ink
    * LIMIT control: a press's limit is the pressroom's number, not the profile's,
    * and a control for it here would be either a policing device or a decoration.
    */
@@ -2430,7 +2432,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (shift != null) rows.push(row(t('Shift'), `ΔE ${shift.toFixed(1)}`));
     if (ink != null) rows.push(row(t('Ink'), `${Math.round(ink * 100)}%`));
     if (ap.paper) {
-      // Painted as CSS lab(), which is the space the number is IN — no hop
+      // Painted as CSS lab(), which is the space the number is IN - no hop
       // through a hex, so a paper whiter or warmer than sRGB's white shows as
       // itself wherever the display can reach it.
       const [pl, pa, pb] = ap.paper;
@@ -2447,7 +2449,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       <tr${n.exact ? '' : ' class="is-inexact"'}>
         <th scope="row">${escape(n.space)}</th>
         <td><code>${escape(n.css)}</code></td>
-        ${/* The marker's explanation IS its content — "clamped" alone means nothing —
+        ${/* The marker's explanation IS its content - "clamped" alone means nothing - 
               so it goes on `data-tip` rather than `title`, which no phone can open. */''}
         <td class="lab-note-fit">${n.exact ? '' : `<span data-tip="${escape(t('This space cannot hold the colour — CSS would clamp these numbers.'))}" tabindex="0">${escape(t('clamped'))}</span>`}</td>
         <td><button type="button" class="lab-copy" data-lab-copy="${escape(n.css)}">${escape(t('Copy'))}</button></td>
@@ -2479,7 +2481,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const fits = inGamut(desc.oklch.l, desc.oklch.c, desc.oklch.h, ap.src);
     // The ΔE wording only where the ΔE is what decided it (see renderPress): a
     // matrix/TRC profile is refused by its device cube, and "round-trips 0.0 ΔE
-    // away — past the 3.0 tolerance" is a sentence that refutes itself.
+    // away - past the 3.0 tolerance" is a sentence that refutes itself.
     const shift = ap.roundTripDecides
       ? iccRoundTripDeltaE(ap.profile, ap.intent, desc.oklch.l, desc.oklch.c, desc.oklch.h)
       : null;
@@ -2500,7 +2502,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *
    * Labelled in OKLCH, with the hex demoted to the second line. Hex is sRGB-only,
    * which makes it the weakest expression of a colour on a page about colour
-   * spaces — useful to have, wrong to lead with. The step's own OKLCH says what it
+   * spaces - useful to have, wrong to lead with. The step's own OKLCH says what it
    * IS; the hex is what you paste into something that can't take better.
    */
   function stepHtml(hex: string, action: 'use' | 'copy' = 'use'): string {
@@ -2561,7 +2563,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * The blend ramp, its continuous rail, and the stop count's readout.
    *
    * Cut with the engine's `interpolateColor` rather than `rampOklab`, because the
-   * space is the user's choice here and `rampOklab` is — by name and by contract —
+   * space is the user's choice here and `rampOklab` is - by name and by contract - 
    * OKLab only. It is also the same primitive the canvas gradient panel and the
    * gradient spec bake through, so a blend previewed here and a gradient authored
    * on canvas with the same style agree stop for stop.
@@ -2599,7 +2601,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (out) out.textContent = String(blendStops);
   }
 
-  /** A hex's oklch() form — what a step's body copies, matching its visible label. */
+  /** A hex's oklch() form - what a step's body copies, matching its visible label. */
   const oklchStringFor = (hex: string): string => {
     const o = describeColor(hex)?.oklch;
     return o ? formatOklch(o) : hex;
@@ -2614,7 +2616,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }).catch(() => announce(t('Copy failed')));
   }
 
-  // ONE delegated click handler, on the `.lab` root — which shellHtml replaces on
+  // ONE delegated click handler, on the `.lab` root - which shellHtml replaces on
   // every mount. Bound to `view` instead, the listeners survived the innerHTML
   // swap and stacked up, so a single click fired once per previous mount.
   const labRoot = $('.lab');
@@ -2622,14 +2624,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const target = e.target as HTMLElement;
 
     // Most specific first: anything showing a value copies THAT value. Clicking the
-    // oklch line gives you oklch, clicking the hex line gives you the hex — you get
+    // oklch line gives you oklch, clicking the hex line gives you the hex - you get
     // what you pointed at, rather than whichever form we decided was canonical.
     const copy = target.closest<HTMLElement>('[data-lab-copy]');
     if (copy?.dataset.labCopy) { copyValue(copy.dataset.labCopy, copy); return; }
 
     // Then the ramps. The two mean different things: a TONE step is a point on the
     // subject's own ramp, so it re-seeds; a BLEND stop is an output between this
-    // colour and another, so it copies — re-seeding would destroy the blend it came
+    // colour and another, so it copies - re-seeding would destroy the blend it came
     // from, since the near end IS the subject.
     const step = target.closest<HTMLElement>('[data-lab-step]');
     const hex = step?.dataset.labStep;
@@ -2677,7 +2679,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const diag = $('[data-lab-diag]');
       if (diag) diag.hidden = false;
       renderCvdMatrix();
-      // Delegated once — `renderBrand` rewrites innerHTML, so a per-swatch listener
+      // Delegated once - `renderBrand` rewrites innerHTML, so a per-swatch listener
       // would be lost on every re-badge. Click still SEEDS the colour; the badge is
       // a read-only overlay and does not touch this path.
       mount.addEventListener('click', (e) => {
@@ -2686,14 +2688,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       });
       // Honest about the limits of the data: `value` is always an sRGB hex, and
       // Display-P3/Rec.2020 both CONTAIN sRGB, so a palette with no wide-gamut faces
-      // can only ever badge against a press profile narrower than sRGB — never P3 or
+      // can only ever badge against a press profile narrower than sRGB - never P3 or
       // Rec.2020. That is correct, not a bug; don't fake a badge to fill the gap.
       if (!brandSwatches.some((s) => s.real !== s.hex)) {
         console.info('[color-lab] brand palette is sRGB-sourced (no wide-gamut faces); ' +
           'display-gamut targets (Display-P3/Rec.2020) will not badge — only a narrower press profile can.');
       }
     } else if (section) {
-      section.hidden = true; // no brand mounted — say nothing rather than show an empty rail
+      section.hidden = true; // no brand mounted - say nothing rather than show an empty rail
     }
   } catch { /* a brandless build simply has no rail */ }
 
@@ -2713,7 +2715,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── "This screen" ────────────────────────────────────────────────────────
   // Off the first-paint path: the probe touches WebGL and UA-hints, neither of
-  // which the charts wait on. The cards come from lib/device-info.ts verbatim —
+  // which the charts wait on. The cards come from lib/device-info.ts verbatim - 
   // the Dashboard's renderer, so the gamut named here and the one named at
   // #/d?tab=device are the same read, not two implementations of it.
   //
@@ -2730,15 +2732,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const cards = order
         .map((k) => snap.groups.find((g) => g.key === k))
         .filter((g): g is ClientGroup => !!g);
-      if (!cards.length) return; // no probe answered — say nothing rather than show an empty rail
+      if (!cards.length) return; // no probe answered - say nothing rather than show an empty rail
       grid.innerHTML = renderDeviceCards(cards);
       grid.classList.add('plat-hydrated');
       sec.hidden = false;
       cleanups.push(wireDeviceLive(grid)); // the Display card's viewport rows are live
     })
-    .catch(() => { /* device snapshot is best-effort — the section stays hidden */ });
+    .catch(() => { /* device snapshot is best-effort - the section stays hidden */ });
 
-  // `#view` is PERSISTENT — the router calls `view.replaceChildren()` and mounts the
+  // `#view` is PERSISTENT - the router calls `view.replaceChildren()` and mounts the
   // next view into the same element, so waiting for it to disconnect never fires and
   // this view's rAF loop, ResizeObserver and body-level toast would outlive it.
   // `view._cleanup` is the shell's supported hook (main.ts:148). Chain any existing
@@ -2753,19 +2755,19 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * The gamut verdict for ONE swatch against ONE comparison target — the whole
+ * The gamut verdict for ONE swatch against ONE comparison target - the whole
  * badge decision, pure and in one testable place.
  *
  * `clippedHex` is what the colour BECOMES inside `limit`: chroma given up at
  * constant lightness/hue (CSS Color 4 §14.2, via `clipToGamut`), rendered to an
  * sRGB hex. `deltaE` is the perceptual distance (ΔEOK) between the swatch and
- * that clip — so a badge can say not just "outside" but "outside, by THIS much";
+ * that clip - so a badge can say not just "outside" but "outside, by THIS much";
  * it is exactly 0 when the colour already fits, where `clipToGamut` returns the
  * input untouched and so `clippedHex === oklchToHex(oklch)`.
  *
  * Membership is asked of the ACTUAL gamut (`inGamut`), never inferred from an
  * area ordering: sRGB ⊂ Display-P3 holds, but Display-P3 ⊄ Rec.2020 (P3's red sits
- * outside the Rec.2020 triangle — see the engine's `inGamut`), and a press profile
+ * outside the Rec.2020 triangle - see the engine's `inGamut`), and a press profile
  * can be narrower than sRGB. Works for a display gamut NAME or any `GamutSource`
  * (an ICC print profile) alike.
  */
@@ -2783,15 +2785,15 @@ export function swatchGamutState(
 }
 
 /**
- * The full asymmetric APCA grid over `colors` — the whole matrix, pure and
+ * The full asymmetric APCA grid over `colors` - the whole matrix, pure and
  * testable in one place.
  *
  * `cell[i][j]` scores `colors[i]` as TEXT on `colors[j]` as BACKGROUND. APCA is
- * polarity-dependent, so this is deliberately NOT symmetric — white-on-black and
- * black-on-white have opposite-signed Lc — and the diagonal (a colour on itself)
+ * polarity-dependent, so this is deliberately NOT symmetric - white-on-black and
+ * black-on-white have opposite-signed Lc - and the diagonal (a colour on itself)
  * is ~0, because the engine returns 0 when text and background luminance coincide.
  * `lc` is the SIGNED engine value (`apcaContrast`); `band` is its APCA use-band
- * (`apcaUse`) — the existing band interpretation, not a reinvented threshold. The
+ * (`apcaUse`) - the existing band interpretation, not a reinvented threshold. The
  * caller prepends white and black to `colors`.
  */
 export function contrastMatrix(colors: string[]): { lc: number; band: string }[][] {
@@ -2851,7 +2853,7 @@ function seedFrom(params: string): string | null {
 }
 
 /**
- * `?…&limit=` from the route params — an explicit comparison target, which beats
+ * `?…&limit=` from the route params - an explicit comparison target, which beats
  * every kind of detection. One of the three display gamut names, or a profile id
  * exactly as `iccGamutSource` mints it (`icc:<16 hex>:<intent>`).
  *
@@ -2875,7 +2877,7 @@ function limitFrom(params: string): string | null {
  * paper), device white otherwise.
  *
  * This is the one number that explains why absolute colorimetric looks different
- * on newsprint, and it is measured rather than assumed — a coated stock and an
+ * on newsprint, and it is measured rather than assumed - a coated stock and an
  * uncoated one differ by several ΔE at the white point alone. Null when the
  * profile cannot answer under this intent.
  */
@@ -2892,7 +2894,7 @@ function paperWhite(p: IccProfile, intent: RenderingIntent): [number, number, nu
  * Two assignments on purpose: the first is a value every browser understands, the
  * second is the real thing. A browser that can't parse `color(display-p3 …)`
  * ignores the second and keeps the first; one that can uses the real colour and
- * does its own per-display mapping — which beats us deciding up front that
+ * does its own per-display mapping - which beats us deciding up front that
  * nobody can see it.
  */
 function paintSwatch(el: HTMLElement, d: ColorDescription): void {
@@ -2900,22 +2902,22 @@ function paintSwatch(el: HTMLElement, d: ColorDescription): void {
   el.style.background = d.input;
   // Ink is chosen against the RENDERED fallback: it has to be readable on the
   // narrow-gamut result too, and the two are close enough that one choice serves.
-  // The shared inversion rule (contrastText) — the big swatch used to flip to black
+  // The shared inversion rule (contrastText) - the big swatch used to flip to black
   // a good deal earlier than the dial disc sitting right below it.
   el.style.color = contrastText(d.srgbHex);
 }
 
-/** Multiply a hex toward black by `k` — the solid's soft top-light. */
+/** Multiply a hex toward black by `k` - the solid's soft top-light. */
 /**
  * A solid patch's fill: its OKLCH encoded for the surface, times the shading.
  *
  * The two branches are the same operation at different widths, which is the whole
- * point — on an sRGB surface this is exactly what `shade(hex, k)` produced, and on
+ * point - on an sRGB surface this is exactly what `shade(hex, k)` produced, and on
  * a P3 one the colour is real rather than mapped. `encodeOklch` is the engine's
  * own painter path, so a quad here and a pixel in a slice chart cannot disagree.
  *
  * The multiply lands on the ENCODED channels, not on L, matching what the hex path
- * has always done — shading is a lighting effect on the drawing, not a claim about
+ * has always done - shading is a lighting effect on the drawing, not a claim about
  * the colour, and moving it into OKLCH would quietly change every existing chart.
  */
 function shadedFill(o: { l: number; c: number; h: number }, k: number, encode: EncodeSpace): string {
@@ -2958,14 +2960,14 @@ function contrastCardShell(key: string, label: string, pickable = false): string
  * whether a link's profile is absent), and two places building the same row is
  * exactly the drift this file's comments keep warning about. One owner.
  *
- * Nothing here reaches the typed inputs' bounds either — those are scaled to
+ * Nothing here reaches the typed inputs' bounds either - those are scaled to
  * CONTROL_LIMIT, because a comparison target must not change what is editable.
  */
 function shellHtml(): string {
   const seg = (): string =>
     `<div class="view-seg lab-seg lab-limit" role="group" aria-label="${escape(t('See it against'))}" data-lab-limit></div>`;
 
-  // Plot first, caption under it — a figure/figcaption, so "this text describes
+  // Plot first, caption under it - a figure/figcaption, so "this text describes
   // the thing above" is in the markup and not just in the CSS order.
   /**
    * The "pop this figure out" affordance.
@@ -2975,7 +2977,7 @@ function shellHtml(): string {
    * it would eat presses meant for the chart.
    */
   /** The entry point's own glyph, so it reads as an invitation rather than as one
-   *  more text button in a caption. Through `icon()` rather than inlined — the
+   *  more text button in a caption. Through `icon()` rather than inlined - the
    *  glyph is already in its registry, and the primitive guard exists precisely to
    *  stop a second copy of a Lucide path drifting from the first. */
   const IMG_GLYPH = icon('image');
@@ -2999,7 +3001,7 @@ function shellHtml(): string {
       <div class="lab-chart-bar">
         <h3 class="lab-chart-title">${escape(PANEL_TITLE[plane])}</h3>
         ${/* Typed entry with steppers, for the times a slider cannot be precise
-              enough — matching a hue to a spec, nudging a ramp step by 0.001. */''}
+              enough - matching a hue to a spec, nudging a ramp step by 0.001. */''}
         <input type="number" class="lab-chart-num" data-lab-num="${plane}"
           min="${r.min}" max="${r.max}" step="${ch === 'h' ? 0.01 : ch === 'l' ? 0.001 : 0.0001}"
           aria-label="${escape(PANEL_TITLE[plane])}">
@@ -3008,7 +3010,7 @@ function shellHtml(): string {
       <div data-lab-chart="${plane}"></div>
       ${/* The axis this plane is sliced along, as a broken track: the solid runs
             are the values that stay displayable, the gaps are the ones that do
-            not. Complements dragging INSIDE the chart — the slider moves the
+            not. Complements dragging INSIDE the chart - the slider moves the
             slice, the drag moves the colour within it. */''}
       <div class="lab-chart-slider" data-lab-slider="${plane}"></div>
       <figcaption class="lab-chart-head">
@@ -3020,11 +3022,11 @@ function shellHtml(): string {
     </figure>`;
   };
 
-  // The page reads top to bottom as one narrowing sequence — see the module
+  // The page reads top to bottom as one narrowing sequence - see the module
   // header. Each numbered step below is one of those questions.
   return `
   <div class="lab">
-    ${/* Back on the left, screen-context controls on the right — the same division the
+    ${/* Back on the left, screen-context controls on the right - the same division the
           editor's stage HUD uses, and the reason the theme toggle is here at all: this
           page is about how a colour READS, and a colour reads differently in each
           theme. Icon-only, like the zoom controls it is modelled on. */''}
@@ -3057,7 +3059,7 @@ function shellHtml(): string {
                 and two of them was one too many. Wide-gamut values still arrive by
                 `?c=`, and will be typeable directly once the picker carries tabs
                 for those spaces. */''}
-          ${/* The out-of-gamut notice is a TOAST, not a block here — see labToast.
+          ${/* The out-of-gamut notice is a TOAST, not a block here - see labToast.
                 In the flow it pushed the whole column around whenever a colour
                 crossed the sRGB boundary, which is most of what you do in this
                 tool. The persistent record of the fact is the gamut card. */''}
@@ -3084,7 +3086,7 @@ function shellHtml(): string {
         ${seg()}
         ${/* Bounds sits WITH the gamut tabs: "bounds" means the bounds of whichever
               target those tabs select, so separating them would orphan it. */''}
-        ${/* `.field-toggle` + `.field-check` — the ONE form-control recipe
+        ${/* `.field-toggle` + `.field-check` - the ONE form-control recipe
               (styles/parts/fields.css). A bare checkbox was drawn by the UA at 13×13
               and so missed the recipe's coarse-pointer bump to 20px. */''}
         <label class="lab-bounds field-toggle">
@@ -3105,7 +3107,7 @@ function shellHtml(): string {
             <p class="lab-chart-why">${escape(t('The shape the three flat charts are slicing. Turn it once and their curves stop looking arbitrary.'))}</p>
             ${/* Two embeddings of one solid, not two pictures. Landscape lays hue
                   out flat so per-hue peaks line up; Lab axes is the ColorSync view,
-                  and the one to compare gamuts in — it holds ONE scale across all
+                  and the one to compare gamuts in - it holds ONE scale across all
                   three axes, so a press solid is visibly smaller than sRGB instead
                   of being normalised to the same frame. */''}
             <div class="view-seg lab-embed" role="group" aria-label="${escape(t('How the solid is drawn'))}" data-lab-embed>
@@ -3114,7 +3116,7 @@ function shellHtml(): string {
             </div>
             ${/* The second way in (plans/60-color-spaces.md §11.5): a colour, or an
                   image. It sits on the solid rather than up in step 1 because the
-                  result appears HERE — the cloud is drawn in this figure, and an
+                  result appears HERE - the cloud is drawn in this figure, and an
                   affordance three sections away from its own effect reads as an
                   unrelated upload. Not a dashed box: in this design language a
                   dashed border means drop area and nothing else, and the whole
@@ -3134,7 +3136,7 @@ function shellHtml(): string {
             <p class="lab-chart-at"><strong data-lab-solid-note></strong></p>
             ${/* A STILL of the same solid, in vector. The canvas is the turntable;
                   this is what a docs screenshot captures (real polygons, not a
-                  raster) and what you take away. Folded, and rendered on open —
+                  raster) and what you take away. Folded, and rendered on open - 
                   see renderSolidSvg. Painted in sRGB, so it shows structure, not
                   colour beyond sRGB. */''}
             <details class="lab-vecsnap" data-lab-solid-svg-panel>
@@ -3147,10 +3149,10 @@ function shellHtml(): string {
         </figure>
       </div>
       ${/* The two-shell comparison. Deliberately SIDE BY SIDE, not overlaid: two
-            translucent screen gamuts over each other read as one muddy shape and
-            lie about which is in front (see paintSolid). At one shared angle and
+            translucent screen gamuts over each other look like one unclear shape
+            and hide which is in front (see paintSolid). At one shared angle and
             scale, Display-P3 NOT being contained by Rec.2020 shows up as SHAPE.
-            Folded; rendered on open — see renderCompare. */''}
+            Folded; rendered on open - see renderCompare. */''}
       <details class="lab-compare" data-lab-compare-panel>
         <summary>${escape(t('Compare gamuts: Display-P3 vs Rec.2020'))}</summary>
         <p class="lab-section-note">${escape(t('The two widest screen gamuts, side by side at the same angle and scale — turn the solid above and reopen this to match it. Display-P3 is not contained by Rec.2020, which is why the shapes differ. Painted in sRGB: these stills show the hulls’ structure, not colours beyond sRGB.'))}</p>
@@ -3206,7 +3208,7 @@ function shellHtml(): string {
       ${/* TWO COLUMNS: the far-end picker BESIDE the ramp it changes, stacking on a
             narrow viewport. Stacked everywhere, the expanded picker's ~554px of tabs,
             dials, channel sliders and alpha pushed the style pills, the stop count and
-            every swatch off the bottom of the screen — so the one thing you need while
+            every swatch off the bottom of the screen - so the one thing you need while
             picking, the ramp changing under your hands, was the one thing you could not
             see. Source order still reads pick-then-result when it folds. */''}
       <div class="lab-blend">
@@ -3214,7 +3216,7 @@ function shellHtml(): string {
           <div class="lab-blend-to-head">
             <span class="lab-field-label">${escape(t('Blend to'))}</span>
             ${/* Still the only way to type a far end in a space the picker has no tab
-                  for — same reason the subject keeps one, and it goes when the picker
+                  for - same reason the subject keeps one, and it goes when the picker
                   gains those tabs. */''}
             <input type="text" class="field-input lab-blend-raw" data-lab-blend-raw spellcheck="false"
               autocapitalize="off" autocomplete="off"
@@ -3224,7 +3226,7 @@ function shellHtml(): string {
         </div>
 
         <div class="lab-blend-side">
-          ${/* Full width of its column, above the ramp — the same shape as the gamut
+          ${/* Full width of its column, above the ramp - the same shape as the gamut
                 control above the charts: it governs everything under it, so it reads
                 as a heading row rather than as one more field. */''}
           <div class="lab-blend-styles">
@@ -3240,7 +3242,7 @@ function shellHtml(): string {
                 aria-pressed="${b.space === BLEND_DEFAULT_SPACE}">${escape(t(b.label))}</button>`).join('')}
             </div>
             ${/* Hue travel only means anything in a polar space, so the row is present but
-                  inert until one is chosen — hidden rather than absent, so choosing Vivid
+                  inert until one is chosen - hidden rather than absent, so choosing Vivid
                   does not reflow the section. */''}
             <div class="view-seg lab-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
               data-lab-blend-hue${isPolarSpace(BLEND_DEFAULT_SPACE) ? '' : ' hidden'}>
@@ -3249,7 +3251,7 @@ function shellHtml(): string {
             </div>
           </div>
           ${/* The stops slider wears the colour-mixer sliders' skin (.gsl, from
-                oklch-slice.css) and its rail is painted with the blend itself — so the
+                oklch-slice.css) and its rail is painted with the blend itself - so the
                 control shows the thing it is subdividing. */''}
           <div class="gsl lab-mix" data-lab-blend-steps>
             <span class="gsl-key" aria-hidden="true">${escape(t('Stops').charAt(0))}</span>
@@ -3295,7 +3297,7 @@ function shellHtml(): string {
           <p class="lab-press-name" data-lab-press-name></p>
           <p class="lab-card-value lab-press-verdict" data-lab-press-verdict></p>
           <ul class="lab-press-rows" data-lab-press-rows></ul>
-          ${/* The one caveat that is genuinely load-bearing, per card rather than
+          ${/* The one caveat that is genuinely essential, per card rather than
                 per readout: the tolerance is a TOLERANCE, and this reader's round
                 trip is markedly conservative in light yellows and deep shadows.
                 The number is interpolated, not typed, because a threshold stated
@@ -3313,7 +3315,7 @@ function shellHtml(): string {
       <h3 class="lab-h3">${escape(t('Readability'))}</h3>
       <p class="lab-section-note">${escape(t('APCA first, WCAG second: APCA models polarity — light text on dark reads worse than the same pair inverted — which the WCAG ratio scores identically. Black and white are the ceiling on what the colour can carry; the third surface is yours to set.'))}</p>
       <p class="lab-section-note">${escape(t(APCA_SRGB_ONLY))}</p>
-      ${/* The three cards are STABLE markup, scored in place — they are NOT rebuilt on
+      ${/* The three cards are STABLE markup, scored in place - they are NOT rebuilt on
             every change. The third one hosts a live popover picker, and re-rendering
             the card destroyed that picker on its own first `input` event: the slider
             you were dragging vanished mid-gesture. Anything that owns a mounted
@@ -3362,7 +3364,7 @@ function shellHtml(): string {
 
     ${/* 6 · WHAT YOU ARE JUDGING IT ON. Deliberately unnumbered and last: every
           step above is something you DO to the colour, and this is the one thing
-          on the page you can't change — the screen the whole page is being read
+          on the page you can't change - the screen the whole page is being read
           through. It matters here more than anywhere else in the app (a P3 pixel
           on an sRGB panel is a promise the display can't keep), so the same three
           device cards the Dashboard draws sit at the foot of the tool that

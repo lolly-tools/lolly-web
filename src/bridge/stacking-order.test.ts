@@ -5,11 +5,11 @@
  * This suite is the whole defence against the ONE way the paint-order work can
  * make correct output wrong: a MISSED context creator, which lets the walker
  * hoist a node out of a context it should never have left. So there is a row per
- * spec clause in the module, and a row per known trap — the cases where the
+ * spec clause in the module, and a row per known trap - the cases where the
  * obvious implementation is silently wrong (`parseInt('auto')`, `contain: style`,
  * `scale: 1` while `transform` reads `none`, `will-change: contents`).
  *
- * Pure node:test — the module takes a plain record of computed values rather
+ * Pure node:test - the module takes a plain record of computed values rather
  * than a CSSStyleDeclaration precisely so this needs no browser and runs
  * everywhere, including public CI with no brand pack mounted.
  */
@@ -119,7 +119,7 @@ const ROWS: Row[] = [
   { name: 'will-change:opacity IS', s: { willChange: 'opacity' }, ctx: true, reason: 'will-change' },
   { name: 'will-change:"top, transform" IS', s: { willChange: 'top, transform' }, ctx: true, reason: 'will-change' },
   { name: 'will-change:auto is NOT', s: { willChange: 'auto' }, ctx: false },
-  // A browser that doesn't implement a property reports '' — must read as absent.
+  // A browser that doesn't implement a property reports '' - must read as absent.
   { name: 'unimplemented properties report "" and are not creators',
     s: { transform: '', filter: '', clipPath: '', containerType: '', contentVisibility: '' }, ctx: false },
 ];
@@ -136,7 +136,7 @@ for (const r of ROWS) {
 
 test('stackingRole: every creator row names a distinct, non-empty reason', () => {
   // A reason of '' on a createsContext:true row would mean the `claim()` chain
-  // silently short-circuited — the table would still pass its boolean assertions
+  // silently short-circuited - the table would still pass its boolean assertions
   // while telling logs nothing about WHY a subtree stopped hoisting.
   for (const r of ROWS.filter(x => x.ctx)) {
     assert.notEqual(stackingRole(r.s, r.parentDisplay ?? '', r.topLayer ?? false).reason, '', r.name);

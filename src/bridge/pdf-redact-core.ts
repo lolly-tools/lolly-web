@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The DOM-free core of PDF redaction (host.pdf.redact) — everything that can be
+ * The DOM-free core of PDF redaction (host.pdf.redact) - everything that can be
  * asserted in node. pdf.ts owns the canvas work (render page SVG, burn bars,
  * encode JPEG) and calls in here for the maths and for the rebuild:
  *
@@ -9,8 +9,8 @@
  * - the grayscale pass over raw RGBA pixels,
  * - buildImagePdf: a BRAND-NEW pdf-lib document whose pages contain only the
  *   supplied page images at the original sizes in points. Nothing is copied
- *   from the source document — no Info values, no XMP, no annotations,
- *   attachments, layers or scripts — so removed content cannot survive by
+ *   from the source document - no Info values, no XMP, no annotations,
+ *   attachments, layers or scripts - so removed content cannot survive by
  *   construction.
  */
 
@@ -42,7 +42,7 @@ export function clampMaxPages(v: unknown): number {
 
 /**
  * Drive the per-page loop of host.pdf.pages: run `renderOne` for the first
- * `maxPages` of `count` pages, SKIPPING any page whose render throws — one
+ * `maxPages` of `count` pages, SKIPPING any page whose render throws - one
  * broken page must not kill the whole preview. A skipped page is never silent:
  * its 1-based number lands in `failed` so the caller can say which pages have
  * no preview. `truncated` reports that the document has more pages than the
@@ -75,7 +75,7 @@ export interface PixelRect {
  * raster of `cw`×`ch` device pixels rendered at `dpi`. The result is snapped
  * OUTWARD to whole pixels, inflated by BAR_INFLATE_PX on every side, and
  * clamped to the canvas. Returns null for a bar that is degenerate, not finite,
- * or entirely off the page — the caller skips it.
+ * or entirely off the page - the caller skips it.
  */
 export function barToPixels(
   bar: { x: number; y: number; w: number; h: number },
@@ -106,7 +106,7 @@ export const REDACT_INK_FALLBACK = '#14161a';
 /**
  * Read a caller-supplied fill as a canonical `#rrggbb`, or null.
  *
- * TRANSLUCENCY IS REFUSED. Colour is security-neutral; alpha is not — a bar at
+ * TRANSLUCENCY IS REFUSED. Colour is security-neutral; alpha is not - a bar at
  * 90% opacity leaves the covered ink faintly recoverable, and a canvas
  * `fillStyle` assignment silently IGNORES an unreadable string, leaving whatever
  * colour was set before it (in the page rebuild that is the opaque white
@@ -144,7 +144,7 @@ export interface RoundedPixelRect extends PixelRect {
  * centres exactly on the requested rectangle's own corners. Every point of the
  * requested rect is at most `radius` from such a centre and lies inside the
  * enclosing box, so the requested rect is contained in the rounded shape by
- * construction — no sampling, no epsilon.
+ * construction - no sampling, no epsilon.
  *
  * The inflated box is clamped to the canvas afterwards, and a corner whose
  * sides had to clamp is painted SQUARE: with the arc centre pulled inward by the
@@ -180,7 +180,7 @@ export function inflateForRadius(r: PixelRect, radius: number, cw: number, ch: n
 /**
  * Where an attribution stamp sits on a finished bar: centred, at a size the bar
  * can actually hold. Returns null when the bar is too small for the label to be
- * legible — a stamp is decoration on an already-opaque mark, so it is dropped
+ * legible - a stamp is decoration on an already-opaque mark, so it is dropped
  * rather than squeezed. Width is estimated at 0.62em per character, which is
  * wide enough for the condensed sans a canvas falls back to.
  */
@@ -196,7 +196,7 @@ export function stampLayout(r: PixelRect, text: string, maxSize: number): { size
 /**
  * Convert tightly-packed RGBA pixels to grayscale IN PLACE, using the CSS
  * `grayscale()` luminance weights (Rec. 709) so the result matches what a
- * canvas filter would produce. Alpha is left alone — the caller has already
+ * canvas filter would produce. Alpha is left alone - the caller has already
  * composited onto an opaque background.
  */
 export function grayscaleInPlace(data: Uint8ClampedArray): void {
@@ -218,7 +218,7 @@ export interface RedactedPageImage {
  * size in points, containing only the page image, scaled to fill the page
  * exactly. The document is created from scratch, and the Info dictionary
  * pdf-lib pre-fills at create() is emptied before save, so the result carries
- * no metadata at all — a redacted file must not even say what wrote it beyond
+ * no metadata at all - a redacted file must not even say what wrote it beyond
  * its own bytes.
  */
 export async function buildImagePdf(pages: RedactedPageImage[]): Promise<Uint8Array> {
@@ -230,7 +230,7 @@ export async function buildImagePdf(pages: RedactedPageImage[]): Promise<Uint8Ar
     const page = doc.addPage([p.widthPt, p.heightPt]);
     page.drawImage(img, { x: 0, y: 0, width: p.widthPt, height: p.heightPt });
   }
-  // PDFDocument.create() pre-fills Producer/Creator/dates — remove every entry,
+  // PDFDocument.create() pre-fills Producer/Creator/dates - remove every entry,
   // the same way stripPdf does, so the output's Info dictionary is empty.
   const infoRef = doc.context.trailerInfo && doc.context.trailerInfo.Info;
   if (infoRef) {

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Recent-creations card STACK — an interactive deck of session preview thumbnails.
+ * Recent-creations card STACK - an interactive deck of session preview thumbnails.
  *
  * The cards are the SAME rendered previews the Projects / gallery tiles already cache
  * (host.state.list().thumb), so nothing re-renders. The front card sits proud with the
  * next few peeking behind it like a hand of cards; the user reorders the stack by:
  *   • dragging / swiping the front card (fling past a threshold → next comes up),
- *   • a horizontal trackpad swipe (wheel deltaX) — vertical scroll still scrolls the page,
+ *   • a horizontal trackpad swipe (wheel deltaX) - vertical scroll still scrolls the page,
  *   • the ‹ / › buttons, or ← / → keys.
  * A clean tap on the front card opens that session. Everything transitions smoothly.
  */
@@ -32,7 +32,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
   root.innerHTML = `
     <div class="dash-stack-deck" data-deck>
       ${items.map((it) => `
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — callers build this as `#/tool/<id>…` (views/dashboard.ts), so the fixed `#/` prefix makes a scheme impossible */ ''}
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - callers build this as `#/tool/<id>…` (views/dashboard.ts), so the fixed `#/` prefix makes a scheme impossible */ ''}
         <a class="dash-stack-card" href="${escapeHtml(it.href)}" aria-label="${escapeHtml(it.label)}">
           <span class="dash-stack-imgwrap"><img class="dash-stack-img" src="${escapeHtml(it.thumb)}" alt="" draggable="false" loading="lazy" decoding="async"></span>
           <span class="dash-stack-cap">${escapeHtml(it.label)}</span>
@@ -43,7 +43,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
       <span class="dash-stack-count" data-count aria-live="polite"></span>
       <button type="button" class="dash-stack-nav" data-next aria-label="Next">›</button>
     </div>
-    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — same `#/tool/<id>…` construction as the deck cards above */ ''}
+    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - same `#/tool/<id>…` construction as the deck cards above */ ''}
     <a class="dash-stack-open" data-open href="${escapeHtml(items[0]!.href)}">Open<span class="dash-stack-open-label" data-open-label>${escapeHtml(items[0]!.label)}</span></a>`;
 
   const deck = root.querySelector<HTMLElement>('[data-deck]')!;
@@ -89,7 +89,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
 
   // Fling the front card off in the swipe direction, then bring the next one up. The
   // flung card lands at the back of the deck (hidden) while off-screen, so the reset is
-  // invisible — a clean "next card, please".
+  // invisible - a clean "next card, please".
   let flinging = false;
   function fling(dir: number): void {
     if (flinging || reduce) { advance(1); return; }

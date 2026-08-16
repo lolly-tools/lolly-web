@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the pure core of @font-face discovery — the url() extraction that
+ * Unit tests for the pure core of @font-face discovery - the url() extraction that
  * turns a CSS `src` list into a fetchable font URL. The document.styleSheets walk
  * (discoverFontFaces) is DOM-side and exercised in the browser (vector export of a
  * brand @font-face family); it returns [] with no document, which is asserted here.

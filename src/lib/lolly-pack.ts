@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The `.lolly` share file — one saved tool session, the assets it references, and a
+ * The `.lolly` share file - one saved tool session, the assets it references, and a
  * provenance block on who made it, in a single portable zip.
  *
  * It exists because a share LINK cannot carry everything (plans/114): device-local
  * uploads never ride in a URL, and long text / big designs blow the URL ceiling. A
- * `.lolly` is the faithful vehicle — the thing you download, AirDrop, or beam when a
+ * `.lolly` is the faithful vehicle - the thing you download, AirDrop, or beam when a
  * link would open empty.
  *
  * Architecturally it is the intersection of two shapes the codebase already has:
  *   - the signed-zip ENVELOPE (`lib/bundle.ts`) that backups + brand packs speak
  *     (fflate entries, a `minReader`-gated manifest, an SRI integrity map, a README);
- *   - the beam's session CLOSURE (`collectSessionAssetRefs`) — exactly which assets a
+ *   - the beam's session CLOSURE (`collectSessionAssetRefs`) - exactly which assets a
  *     session references, split into device-local `user/*` and catalog `library`.
  *
  * The one deliberate DIFFERENCE from a beam: a `.lolly` carries the `library` bytes a
  * beam sends only by reference, so the file opens faithfully on a device that lacks
- * the sender's brand pack. Brand-locked/licensed catalog bytes are the exception —
+ * the sender's brand pack. Brand-locked/licensed catalog bytes are the exception - 
  * they travel only behind an explicit licensed-content confirmation (`includeLicensed`).
  *
  * This module is PURE + DOM-free: the caller (the shell) fetches the session, the
@@ -54,29 +54,29 @@ import {
 
 export const LOLLY_FILE_FORMAT = 'lolly-share' as const;
 export const LOLLY_FILE_VERSION = 1;
-/** Readers gate on this, never `formatVersion` — additive parts stay compatible. */
+/** Readers gate on this, never `formatVersion` - additive parts stay compatible. */
 export const LOLLY_MIN_READER = 1;
 /** The `+zip` structured suffix (RFC 6839) advertises the container to OS/tooling. */
 export const LOLLY_MIME = 'application/vnd.lolly+zip';
 export const LOLLY_EXT = '.lolly';
 
-// Read caps — a .lolly can legitimately carry a video, so allow well past the
+// Read caps - a .lolly can legitimately carry a video, so allow well past the
 // brand-pack defaults while still bounding a malicious archive.
 const LOLLY_MAX_ENTRY_BYTES = 512 * 1024 * 1024;
 const LOLLY_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/** Who made this — embedded only with the user's opt-in (`Profile.useDetails`).
+/** Who made this - embedded only with the user's opt-in (`Profile.useDetails`).
  *  `createdWith`/`createdAt` are not personal and always travel. */
 export interface LollyCreator {
-  /** "First Last" — only when the user opted into using their details. */
+  /** "First Last" - only when the user opted into using their details. */
   name?: string;
-  /** Contact email — only when opted in. */
+  /** Contact email - only when opted in. */
   email?: string;
-  /** Organisation — `Profile.org` when opted in, else the instance name (org context). */
+  /** Organisation - `Profile.org` when opted in, else the instance name (org context). */
   org?: string;
-  /** "Lolly x.y.z" — the app that wrote the file. */
+  /** "Lolly x.y.z" - the app that wrote the file. */
   createdWith: string;
   /** ISO timestamp of export. */
   createdAt: string;
@@ -87,7 +87,7 @@ export interface LollyCreator {
  *  or a licensed asset the sender chose not to embed). */
 export interface LollyAssetEntry {
   kind: 'asset' | 'asset-ref';
-  /** The sender's base asset id — matched to a receiver-local id on import. */
+  /** The sender's base asset id - matched to a receiver-local id on import. */
   id: string;
   source: 'user' | 'library';
   label: string;
@@ -100,7 +100,7 @@ export interface LollyAssetEntry {
   checksum?: string;
   /** Zip path of the carried bytes (`assets/blobs/…`). */
   path?: string;
-  /** Brand-pack / licensed content — carried only when `includeLicensed`. */
+  /** Brand-pack / licensed content - carried only when `includeLicensed`. */
   licensed?: boolean;
   meta?: Record<string, unknown>;
 }
@@ -131,7 +131,7 @@ export interface LollyLibraryAsset {
   type: string;
   format: string;
   label?: string;
-  /** Brand-pack / licensed — gated behind `includeLicensed`. */
+  /** Brand-pack / licensed - gated behind `includeLicensed`. */
   licensed?: boolean;
   meta?: Record<string, unknown>;
 }
@@ -152,7 +152,7 @@ export interface LollySummary {
 }
 
 export interface LollyBuildInput {
-  /** The saved session — `sessionSnapshot()`'s `SavedStateData` (or a slot's data). */
+  /** The saved session - `sessionSnapshot()`'s `SavedStateData` (or a slot's data). */
   session: unknown;
   toolId: string;
   toolVersion?: string;
@@ -179,7 +179,7 @@ export interface LollyBuildResult {
   summary: LollySummary;
 }
 
-/** Parsed, integrity-verified contents of a `.lolly` — the input to ingest. */
+/** Parsed, integrity-verified contents of a `.lolly` - the input to ingest. */
 export interface LollyFileContents {
   manifest: LollyManifest;
   session: unknown;
@@ -192,7 +192,7 @@ export interface LollyFileContents {
 /**
  * Assemble the creator block from the user profile. Name / email / org are embedded
  * ONLY when the user opted into `useDetails` (same gate as export provenance in
- * engine/src/metadata.ts) — with no opt-in, the block is just "made with Lolly, when".
+ * engine/src/metadata.ts) - with no opt-in, the block is just "made with Lolly, when".
  * `orgFallback` is the control-plane instance name, used for the org line when the
  * user has no `Profile.org` of their own (org context, not personal identity).
  */
@@ -242,12 +242,12 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
   let licensedExcluded = 0;
   let blobIndex = 0;
 
-  // Device-local (user/*) assets — carried whenever we hold the bytes, always.
+  // Device-local (user/*) assets - carried whenever we hold the bytes, always.
   for (const id of refs.user) {
     const record = byId.get(id);
     const blob = record?.blob;
     if (!record || !blob) {
-      // Referenced but the bytes aren't here (a stale ref) — record it honestly so
+      // Referenced but the bytes aren't here (a stale ref) - record it honestly so
       // the recipient sees a broken ref rather than the image vanishing silently.
       assets.push({ kind: 'asset-ref', id, source: 'user', label: id, type: 'data', format: '', mime: '' });
       continue;
@@ -264,7 +264,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     });
   }
 
-  // Catalog (library) assets — the bit a beam does NOT send. Carry bytes by default;
+  // Catalog (library) assets - the bit a beam does NOT send. Carry bytes by default;
   // a licensed/brand-pack asset travels only when the caller confirmed it.
   for (const id of refs.library) {
     const lib = input.resolveLibrary ? await input.resolveLibrary(id) : null;
@@ -304,7 +304,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
   };
 
   // Integrity over every payload part (session + blobs), BEFORE the manifest (which
-  // carries the map) and the README — mirroring bundle.ts's contract.
+  // carries the map) and the README - mirroring bundle.ts's contract.
   const integrity = await buildIntegrity(entries);
   if (integrity) for (const a of assets) if (a.path) a.checksum = integrity[a.path];
 
@@ -364,7 +364,7 @@ function lollyReadme(manifest: LollyManifest, summary: LollySummary): string {
  * Parse and integrity-verify a `.lolly`'s bytes. Refuses a genuinely newer format
  * (`minReader`) and a corrupted transfer (integrity) with a plain message, exactly
  * like the backup reader. The returned `files` let the shell's ingest pull each
- * asset's bytes by `entry.path` and rewrite refs — that wiring lives with the host.
+ * asset's bytes by `entry.path` and rewrite refs - that wiring lives with the host.
  */
 export async function readLollyFile(bytes: ArrayBuffer | Uint8Array): Promise<LollyFileContents> {
   const files = await unzipBundle(bytes, {
@@ -402,8 +402,8 @@ export interface LollyIngestResult {
 /**
  * Rewrite a session's asset refs to the receiver-local ids a `.lolly` import minted.
  * Generalises the beam's user-only `rewriteSessionAssetRefs`: a `.lolly` carries
- * catalog (`library`) bytes too, which land as user assets, so ANY ref — user or
- * library — whose id was re-keyed becomes a `source:'user'` ref at the new id. A ref
+ * catalog (`library`) bytes too, which land as user assets, so ANY ref - user or
+ * library - whose id was re-keyed becomes a `source:'user'` ref at the new id. A ref
  * NOT in the map (a catalog asset the receiver already resolves, or a licensed one held
  * back) is left untouched; baked refs (own bytes) are never rewritten. Pure + immutable.
  */
@@ -426,7 +426,7 @@ export function applyLollyRekey<T>(data: T, rekey: ReadonlyMap<string, string>):
   return walk(data, 0) as T;
 }
 
-/** A collision-free new slot for the imported session (never overwrites — same rule as a beam). */
+/** A collision-free new slot for the imported session (never overwrites - same rule as a beam). */
 function mintLollySlot(toolId: string, taken: ReadonlySet<string>): string {
   const base = `${toolId}:${Date.now()}`;
   let slot = base;
@@ -437,13 +437,13 @@ function mintLollySlot(toolId: string, taken: ReadonlySet<string>): string {
 
 /**
  * Open a `.lolly`: land its assets and its session onto this device. Reuses the beam
- * ingest wholesale (`ingestBeamItem` — SVG sanitising, checksum dedup, byte-exact
+ * ingest wholesale (`ingestBeamItem` - SVG sanitising, checksum dedup, byte-exact
  * verify, provenance re-extraction, rollback-on-failure), translating the file's carried
  * assets into the beam's item shape. Then rewrites the session's refs (user AND carried
- * library) to the receiver-local ids and saves it as a new slot — never overwriting.
+ * library) to the receiver-local ids and saves it as a new slot - never overwriting.
  *
  * `host` is the beam host slice (the shell casts its web host to it, as `beam-session.ts`
- * does). No tool CODE ever travels — the session resolves its tool from the local catalog,
+ * does). No tool CODE ever travels - the session resolves its tool from the local catalog,
  * so a `.lolly` for a not-yet-installed tool simply lands as a saved session.
  */
 export async function ingestLollyFile(

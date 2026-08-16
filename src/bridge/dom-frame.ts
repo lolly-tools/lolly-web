@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Deterministic DOM-motion frame sampling — the shared primitive behind
+ * Deterministic DOM-motion frame sampling - the shared primitive behind
  * frame-accurate rasterisation of ANY animated DOM subtree (CSS `@keyframes`,
  * CSS transitions, Web-Animations, and SMIL inside inline SVG). It is NOT
  * SVG-specific: any live DOM node whose motion is declarative can be seeked to
  * an exact time and snapshotted, so the same code drives (a) the non-camera
  * live source that feeds `onFrame` tools like `filter`, and (b) the sequence
- * compositor's frame-addressable DOM layer — the way `<video>` (currentTime)
+ * compositor's frame-addressable DOM layer - the way `<video>` (currentTime)
  * and Lottie (goToAndStop) are already frame-addressable.
  *
  * Why this exists: a CSS-animated element only advances at wall-clock while it
- * is live in the DOM, and exposes no seek API of its own — so every path that
+ * is live in the DOM, and exposes no seek API of its own - so every path that
  * rasterises it once (dom-to-image, an `<img>` decode) freezes it at whatever
  * phase it held. The Web Animations API is the missing seek: `getAnimations()`
  * enumerates the running animations on a subtree and each one's `currentTime`
@@ -56,7 +56,7 @@ export function scrubAnimations(node: Element, ms: number, opts: ScrubOptions = 
         a.pause();          // make the seek stick; without this it resumes next tick
         a.currentTime = t;  // CSS animation currentTime is in ms
         seeked++;
-      } catch { /* a finished/idle animation may reject a seek — skip it */ }
+      } catch { /* a finished/idle animation may reject a seek - skip it */ }
     }
   }
 
@@ -66,7 +66,7 @@ export function scrubAnimations(node: Element, ms: number, opts: ScrubOptions = 
     if (typeof (node as SVGSVGElement).setCurrentTime === 'function') svgs.push(node as SVGSVGElement);
     node.querySelectorAll?.('svg').forEach((s) => svgs.push(s as SVGSVGElement));
     for (const s of svgs) {
-      try { s.pauseAnimations?.(); s.setCurrentTime?.(t / 1000); } catch { /* no SMIL clock — skip */ }
+      try { s.pauseAnimations?.(); s.setCurrentTime?.(t / 1000); } catch { /* no SMIL clock - skip */ }
     }
   }
 

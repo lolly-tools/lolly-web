@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * oklch-slice-paint.test.ts — the chart paint's three-way agreement.
+ * oklch-slice-paint.test.ts - the chart paint's three-way agreement.
  * Run: node --test shells/web/src/lib/oklch-slice-paint.test.ts
  *
  * The failure this file exists to catch: the canvas context's `colorSpace`, the
  * ImageData's, and the engine's `encode` naming DIFFERENT spaces. Nothing on screen
- * says so — every pixel just shifts. So the bytes actually handed to
+ * says so - every pixel just shifts. So the bytes actually handed to
  * `putImageData` are compared against `oklchSlice` computed for each candidate
  * space, and the test asserts they match the space the SURFACE reported and not the
  * other one. A wrong-space paint therefore fails rather than merely looking odd.
@@ -61,7 +61,7 @@ interface Recorder {
  * On the PROTOTYPE rather than on one element, because a display change makes the
  * paint replace the canvas node (a 2D context keeps the colour space it was created
  * with, so a new space needs a new surface) and a stub bolted onto the original node
- * would vanish with it — the test would then be measuring jsdom's missing canvas
+ * would vanish with it - the test would then be measuring jsdom's missing canvas
  * support instead of the code. One current factory at a time; the cases are
  * sequential.
  */
@@ -71,9 +71,9 @@ dom.window.HTMLCanvasElement.prototype.getContext = ((_id: string, o?: { colorSp
 
 /**
  * A canvas whose context reports `granted` and behaves per `mode`:
- *   'honour' — createImageData returns an ImageData in the space it was asked for
- *   'ignore' — it silently returns an sRGB one (the accept-and-ignore engine)
- *   'throw'  — the options bag is rejected outright
+ *   'honour' - createImageData returns an ImageData in the space it was asked for
+ *   'ignore' - it silently returns an sRGB one (the accept-and-ignore engine)
+ *   'throw' - the options bag is rejected outright
  */
 function mountChart(
   granted: EncodeSpace,
@@ -176,7 +176,7 @@ test('an ImageData that quietly comes back srgb still cannot desync the slice', 
   paintSliceChart(root, STATE);
   assert.deepEqual(rec.ctxAsked, ['display-p3']);
   assert.deepEqual(rec.imgAsked, ['display-p3']);
-  // The readback is the second, independent check — the bytes follow the buffer.
+  // The readback is the second, independent check - the bytes follow the buffer.
   assert.deepEqual(Array.from(rec.written[0] as Uint8ClampedArray), Array.from(expected('srgb')));
   assert.equal(displayAnchor(), 'srgb');
 });
@@ -205,7 +205,7 @@ test('the encode space is part of the repaint key', () => {
   assert.equal(rec.written.length, 1, 'an identical repaint is still skipped');
 
   // The window moves to an sRGB monitor and the surface follows it. Same plane, same
-  // size, same limit — only the encode differs, and without it in the key the stale
+  // size, same limit - only the encode differs, and without it in the key the stale
   // P3 pixels would silently stay on screen.
   claim = 'srgb';
   setGranted('srgb');
@@ -223,7 +223,7 @@ test('a display change re-acquires the surface, so the fill follows the marking'
 
   // The window moves to an sRGB monitor. A 2D context cannot change space, and a
   // second getContext ignores the options bag, so honouring the move means a NEW
-  // canvas — otherwise the fill stays P3-mapped for the rest of the session while the
+  // canvas - otherwise the fill stays P3-mapped for the rest of the session while the
   // contour marked "your display" narrows, which is the disagreement the module's
   // docstring forbids.
   claim = 'srgb';
@@ -269,7 +269,7 @@ test("the display's own boundary is the emphasised contour, on the chart and in 
   assert.equal(srgbEdge.dataset.display, undefined);
   assert.equal(root.querySelector<HTMLElement>('.okls-key--p3')?.dataset.display, '1',
     'the legend key carries the same weight as the line');
-  // The container marker is what scopes the weight SWAP — without it the two
+  // The container marker is what scopes the weight SWAP - without it the two
   // contours would both be heavy and stop being tellable apart.
   assert.equal(root.querySelector<HTMLElement>('[data-okls-edges]')?.dataset.display, 'p3');
   assert.equal(root.querySelector<HTMLElement>('.okls-legend')?.dataset.display, 'p3');

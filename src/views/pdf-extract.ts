@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unpack (#/unpack, alias #/pdf) — take a design file apart: the extraction surface.
+ * Unpack (#/unpack, alias #/pdf) - take a design file apart: the extraction surface.
  *
  * A PDF is a container, and almost every tool that opens one treats it as a
  * single opaque thing you either read whole or convert whole. This view opens it
@@ -8,14 +8,14 @@
  * attachments inside it, each one viewable, downloadable, and addable to the
  * catalogue.
  *
- * Everything runs on-device. The words are not OCR'd and never uploaded — a
+ * Everything runs on-device. The words are not OCR'd and never uploaded - a
  * born-digital PDF already contains its glyphs and their positions, so
  * `extractPageText` (engine/src/pdf-text.ts) simply puts them back into reading
  * order. The one case that genuinely cannot be served offline is a SCANNED page,
  * which carries a picture of text and no text at all; those are reported as such
  * per page rather than quietly contributing nothing.
  *
- * Structure: one tab per extraction pass — Text, Images, Fonts, Attachments. A
+ * Structure: one tab per extraction pass - Text, Images, Fonts, Attachments. A
  * tab whose pass found nothing is not rendered at all, so the strip reflects what
  * this document actually contains rather than what a PDF could contain, and a
  * plain text-only document still reads as a single uncluttered column.
@@ -24,7 +24,7 @@
  * exact vector marks, the palette they are drawn in and real font files, so this
  * view keeps everything it already does and gains three doors into the studio:
  * a font row installs its face, a mark goes to the Logos room, and the bar sends
- * the whole scan. None of them RE-SCANS — every hand-off is built from what the
+ * the whole scan. None of them RE-SCANS - every hand-off is built from what the
  * passes above already extracted, so a send costs a census and a state write, not
  * a second walk of the document.
  */
@@ -57,22 +57,22 @@ const MAX_BYTES = 120 * 1024 * 1024;
 interface Extracted {
   fileName: string;
   pages: PageText[];
-  /** Pages/slides this container holds (capped at MAX_PAGES) — the count art and
+  /** Pages/slides this container holds (capped at MAX_PAGES) - the count art and
    *  the page strip are built from, so a no-text file still shows its pictures. */
   pageCount: number;
   /** Whether the handle offered a text pass at all. False for a container whose
-   *  reader has no words to give (a deck's slide renderer today) — the Text panel
+   *  reader has no words to give (a deck's slide renderer today) - the Text panel
    *  then says so plainly instead of presenting an empty column as "no text". */
   textSupported: boolean;
   /** Pages we refused to walk because the document is enormous. */
   truncated: number;
-  /** Text an opaque shape is painted over — the failed-redaction check. */
+  /** Text an opaque shape is painted over - the failed-redaction check. */
   hidden: HiddenTextFinding[];
   /** The distinct colours the container paints with, as hex strings. */
   palette: string[];
   fonts: EmbeddedFont[];
   images: EmbeddedImage[];
-  /** Rasters found but not handed over here — undecodable compression (PDF) or a
+  /** Rasters found but not handed over here - undecodable compression (PDF) or a
    *  linked/external reference we will not fetch (SVG). */
   imagesSkipped: number;
   /** The compression filters behind `imagesSkipped`, when the reason is a codec
@@ -105,10 +105,10 @@ function download(host: HostV1, text: string, filename: string, mime: string): v
   void host.export.download(new Blob([text], { type: `${mime};charset=utf-8` }), filename);
 }
 
-/** Words in a page's reconstructed prose — the honest measure of what came out. */
+/** Words in a page's reconstructed prose - the honest measure of what came out. */
 const wordCount = (p: PageText): number => (p.text.match(/\S+/g) ?? []).length;
 
-// Counts. Two whole keys per phrase behind a ternary — the app-wide convention
+// Counts. Two whole keys per phrase behind a ternary - the app-wide convention
 // (see catalog.ts / gallery.ts), because a translator needs the whole sentence,
 // not "{n}" glued to a noun that inflects differently at one.
 const nPages = (n: number): string => (n === 1 ? t('1 page') : t('{n} pages', { n }));
@@ -119,11 +119,11 @@ const nPlaces = (n: number): string => (n === 1 ? t('1 place') : t('{n} places',
 
 /**
  * The page picture beside the prose. Rendered LAZILY (an IntersectionObserver
- * fills it as it approaches the viewport — a 400-page document must not pay for
+ * fills it as it approaches the viewport - a 400-page document must not pay for
  * 400 SVG renders up front) and vector: the same `pageToSvg` path design-import
  * uses, so what you see is the actual page, not a raster approximation.
  * `user-select: none` in CSS keeps a drag-select over the report picking up
- * words only — the picture is a duplicate of the text beside it, which is also
+ * words only - the picture is a duplicate of the text beside it, which is also
  * why it is aria-hidden.
  */
 const pageArtMarkup = (index: number): string =>
@@ -163,7 +163,7 @@ function pageMarkup(p: PageText, index: number): string {
     return `<p class="pdfx-b">${escape(b.text)}</p>`;
   }).join('');
 
-  // Notes the reader needs to judge the reconstruction — how many columns it was
+  // Notes the reader needs to judge the reconstruction - how many columns it was
   // read as, and whether anything was left out of the flow.
   const notes: string[] = [];
   if (p.columns > 1) notes.push(t('read as {n} columns', { n: p.columns }));
@@ -184,13 +184,13 @@ function pageMarkup(p: PageText, index: number): string {
 }
 
 /**
- * The floating page strip — quick nav, docked to the right centre of the view.
+ * The floating page strip - quick nav, docked to the right centre of the view.
  *
  * One button per page, filled with the SAME lazily-rendered SVG the page art
  * uses (the handle caches per page, so a thumb and its full-size twin cost one
  * render between them). Clicking scrolls the reading column to that page; the
  * button carrying `.is-current` follows the scroll position. Not rendered for a
- * single page — one thumbnail is not navigation.
+ * single page - one thumbnail is not navigation.
  */
 function thumbsMarkup(count: number): string {
   if (count < 2) return '';
@@ -210,7 +210,7 @@ function thumbsMarkup(count: number): string {
  * next more than anything else on the page: a document whose black bars do not
  * actually remove the words underneath must not be sent anywhere.
  *
- * It shows the hidden words. That is the whole point — the words are already
+ * It shows the hidden words. That is the whole point - the words are already
  * trivially readable by any extractor, and seeing them is what makes the problem
  * believable rather than theoretical. The wording stays an observation ("not
  * visible"), never an accusation about why.
@@ -252,7 +252,7 @@ function sizeLabel(n: number): string {
 }
 
 /**
- * The Images panel — every raster at its STORED resolution.
+ * The Images panel - every raster at its STORED resolution.
  *
  * Stored, not displayed: a logo placed at 20mm may be a 4000px original, and the
  * original is what someone extracting assets actually wants. Each tile previews
@@ -282,7 +282,7 @@ function imagesMarkup(x: Extracted): string {
       </figure>`;
   }).join('');
 
-  // Skipped rasters are STATED, never silently dropped — otherwise a page of
+  // Skipped rasters are STATED, never silently dropped - otherwise a page of
   // JPEG2000 scans looks like a document with no images in it. The reason is read
   // from the data (a codec name vs none), not from the file's format, so the view
   // never special-cases one kind: a codec skip explains the codec, and a linked
@@ -298,12 +298,12 @@ function imagesMarkup(x: Extracted): string {
 }
 
 /**
- * The Vectors panel — the logos.
+ * The Vectors panel - the logos.
  *
  * Most logos in a PDF are vector, so this is usually the most valuable tab:
  * what comes out stays sharp at any size, unlike the raster in the Images tab.
  * Each mark previews as the actual SVG (inline, so it scales in the tile) and
- * carries the reason it was believed to be artwork rather than page furniture —
+ * carries the reason it was believed to be artwork rather than page furniture - 
  * the judgement is a heuristic and the user should be able to see it was made.
  *
  * "Send to Logos" hands one mark to the Logos room, where it is classified and
@@ -343,7 +343,7 @@ function vectorsMarkup(x: Extracted): string {
  *
  * Two caveats ride on every row, and they are the honest part of this feature.
  * A SUBSET carries only the glyphs the document printed, so it will silently
- * lose characters anywhere else — it is not a usable font, whatever its name
+ * lose characters anywhere else - it is not a usable font, whatever its name
  * says. And `fsType` is the font's own machine-readable statement about reuse;
  * a restrictive one is an unambiguous no, and a permissive one still is not the
  * licence. Both are shown per font rather than buried in a general disclaimer.
@@ -354,7 +354,7 @@ function vectorsMarkup(x: Extracted): string {
  * button is offered only on a face that is a whole installable file: a `cff` or
  * `pfb` row is raw font-program bytes, the row already says so, and a button
  * guaranteed to answer "could not add" would be a worse way to say it. The
- * caveats do not soften on the way in — a SUBSET installs as a subset and says
+ * caveats do not soften on the way in - a SUBSET installs as a subset and says
  * so, because the alternative is a family that quietly loses characters later.
  */
 function fontsMarkup(x: Extracted): string {
@@ -369,7 +369,7 @@ function fontsMarkup(x: Extracted): string {
   };
 
   const rows = x.fonts.map((f, i) => {
-    // A names-only face carries no bytes — the file merely REFERENCES the family
+    // A names-only face carries no bytes - the file merely REFERENCES the family
     // (an SVG @font-face with no embedded source, an IDML that links its fonts).
     // There is nothing to download or install, and the caveats and buttons must
     // say exactly that rather than talk about bytes that are not here.
@@ -412,7 +412,7 @@ function fontsMarkup(x: Extracted): string {
   return `<div class="pdfx-panel" data-panel="fonts" hidden><ul class="pdfx-fonts">${rows}</ul></div>`;
 }
 
-/** The Attachments panel — the files the document carries inside it. */
+/** The Attachments panel - the files the document carries inside it. */
 function attachmentsMarkup(x: Extracted): string {
   if (!x.attachments.length) return '';
   const rows = x.attachments.map((a, i) => `
@@ -431,7 +431,7 @@ function attachmentsMarkup(x: Extracted): string {
 }
 
 /**
- * The Palette panel — the distinct colours the container paints with.
+ * The Palette panel - the distinct colours the container paints with.
  *
  * One row per colour: a swatch, the hex value the extractor normalised it to, and
  * a copy button. The value is what someone rebuilding a brand actually reaches for,
@@ -450,7 +450,7 @@ function paletteMarkup(x: Extracted): string {
 
 /**
  * The reading column for a container whose reader has no text pass (a slide deck
- * today). One honest line, then the page pictures the SVG pass can still render —
+ * today). One honest line, then the page pictures the SVG pass can still render - 
  * so the file opens and shows what it is, rather than failing or pretending it
  * holds no words. Each `.pdfx-page` carries `data-page` so the strip and the
  * current-page highlight wire up exactly as they do for a text document.
@@ -471,7 +471,7 @@ function resultMarkup(x: Extracted): string {
 
   // Page count comes from `pageCount` (== pages.length on the text path, so a PDF
   // is unchanged), so a no-text file still reports its slides. Words only when
-  // there was a text pass — a deck with no reader for its words must not say "0".
+  // there was a text pass - a deck with no reader for its words must not say "0".
   const summary: string[] = [nPages(x.pageCount)];
   if (x.textSupported) summary.push(nWords(words));
   if (scans) summary.push(t('{n} scanned', { n: scans }));
@@ -487,7 +487,7 @@ function resultMarkup(x: Extracted): string {
 
   // Only passes that FOUND something get a tab, so the strip describes this
   // document rather than what a PDF could theoretically hold. The count rides in
-  // a separate badge (not appended to the label) so the CSS can make it loud — the
+  // a separate badge (not appended to the label) so the CSS can make it loud - the
   // whole point of the strip is that a reader scrolling the pages SEES that their
   // images, fonts and colours came out too.
   const tabs = [
@@ -495,7 +495,7 @@ function resultMarkup(x: Extracted): string {
     ...(x.palette.length ? [{ id: 'palette', label: t('Palette'), icon: 'palette' as IconName, n: x.palette.length }] : []),
     ...(x.vectors.length ? [{ id: 'vectors', label: t('Logos'), icon: 'shapes' as IconName, n: x.vectors.length }] : []),
     // The Images tab appears when a raster was decoded OR when some were only
-    // referenced/undecodable — so the honest "not here" note is reachable, never
+    // referenced/undecodable - so the honest "not here" note is reachable, never
     // orphaned behind a tab that never shows.
     ...(x.images.length || x.imagesSkipped ? [{ id: 'images', label: t('Images'), icon: 'image' as IconName, n: x.images.length }] : []),
     ...(x.fonts.length ? [{ id: 'fonts', label: t('Fonts'), icon: 'font' as IconName, n: x.fonts.length }] : []),
@@ -579,7 +579,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   const out = viewEl.querySelector<HTMLElement>('[data-out]')!;
 
   let current: Extracted | null = null;
-  /** The open document — kept for the lazy per-page SVG renders. */
+  /** The open document - kept for the lazy per-page SVG renders. */
   let curHandle: UnpackHandle | null = null;
   /** Memoised page → object-URL renders, so page art and its thumb share one. */
   let artPromises = new Map<number, Promise<string | null>>();
@@ -596,10 +596,10 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
    * nothing leaks past `releasePreviews`.
    *
    * The SVG is destined for an `<img>`, where the browser loads no external
-   * resources and no document fonts — a bare `<text>` run would paint in a
+   * resources and no document fonts - a bare `<text>` run would paint in a
    * generic fallback face at the original face's positions. So text is outlined
    * to real paths through the app's shaper, with `embedFonts` inlining an
-   * @font-face for any run the outliner could not resolve — the same recipe as
+   * @font-face for any run the outliner could not resolve - the same recipe as
    * lib/pdf-vector-shot.ts, whose comment explains it, for the same destination.
    */
   function pageArtUrl(i: number): Promise<string | null> {
@@ -612,7 +612,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
           const { makeTextOutliner, embedFonts } = await import('../lib/pdf-vector-shot.ts');
           const page = await h.pageToSvg(i, {
             outlineText: makeTextOutliner([], host.text),
-            // Terminal <img> output, never re-exported — safe to hoist repeats.
+            // Terminal <img> output, never re-exported - safe to hoist repeats.
             dedupePaths: true,
           });
           const svg = await embedFonts(page.svg, []);
@@ -642,8 +642,8 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     unwire();
     const strip = out.querySelector<HTMLElement>('[data-thumbs]');
 
-    // Two stacked sticky headers — the action bar, then the tab strip pinned right
-    // under it — both wrap (narrow viewports, largeText), so their real heights are
+    // Two stacked sticky headers - the action bar, then the tab strip pinned right
+    // under it - both wrap (narrow viewports, largeText), so their real heights are
     // measured into custom properties rather than hard-coded. `--pdfx-bar-bottom`
     // is where the tab strip pins; `--pdfx-chrome-bottom` (bar + tabs) is what the
     // pages and the sticky page art must clear so neither hides under the strip.
@@ -678,7 +678,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
         });
       }
     }, { rootMargin: '600px 0px' });
-    // The strip is its own scroller, so its thumbs observe against it — a thumb
+    // The strip is its own scroller, so its thumbs observe against it - a thumb
     // far down a 200-page strip renders when scrolled to, not on load.
     const thumbIo = strip ? new IntersectionObserver((entries) => {
       for (const en of entries) {
@@ -706,7 +706,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
         for (const th of strip.querySelectorAll<HTMLElement>('.pdfx-thumb')) {
           const on = Number(th.dataset.goto) === cur;
           th.classList.toggle('is-current', on);
-          // Keep the lit thumb inside the strip's own scroll window — but only
+          // Keep the lit thumb inside the strip's own scroll window - but only
           // nudge the strip, never the page (scrollIntoView would move both).
           if (on && (th.offsetTop < strip.scrollTop
             || th.offsetTop + th.offsetHeight > strip.scrollTop + strip.clientHeight)) {
@@ -727,7 +727,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       const visible = new Set<number>();
       const apply = (): void => {
         // At the bottom of the scroller the reader is on the LAST page, even
-        // when it is too short to ever reach the middle band — without this its
+        // when it is too short to ever reach the middle band - without this its
         // thumb can never light and clicking it appears to do nothing.
         if (atEnd()) { setCurrent(pageCount - 1); return; }
         if (visible.size) setCurrent(Math.min(...visible));
@@ -817,7 +817,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     }
 
     // The redaction check reuses the interpreted nodes the text pass just built,
-    // so it costs almost nothing here — and it is the finding most worth having.
+    // so it costs almost nothing here - and it is the finding most worth having.
     let hidden: HiddenTextFinding[] = [];
     try {
       hidden = handle.findHiddenText?.({ maxPages: count })?.findings ?? [];
@@ -825,7 +825,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       host.log('warn', 'pdf-extract: hidden-text scan failed', { error: (err as Error)?.message });
     }
 
-    // Assets. Each pass is independently guarded — a document with an
+    // Assets. Each pass is independently guarded - a document with an
     // unwalkable font table should still hand over its images.
     let fonts: EmbeddedFont[] = [];
     try { fonts = handle.listFonts?.() ?? []; }
@@ -908,7 +908,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
    *
    * The File MUST carry an explicit image/svg+xml MIME: storeUserUpload detects
    * vectors by MIME *or* extension so the SVG would still be sanitised, but the
-   * stored `format` comes from the MIME alone — without it the asset is recorded
+   * stored `format` comes from the MIME alone - without it the asset is recorded
    * as 'bin' and displayed as "logo.bin". The name is counter-unique because the
    * asset id is minted from `Date.now()` plus the filename, so two same-named
    * files stored in one millisecond silently overwrite each other.
@@ -938,7 +938,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
    * body: a keyboard user who activates Add lands nowhere, and on the failure
    * path there is nothing to return them to. `aria-disabled` says the same thing
    * to assistive tech, keeps the button focusable, and leaves the guard to the
-   * handler — which is what `busy()` is.
+   * handler - which is what `busy()` is.
    */
   const busy = (btn: HTMLElement): boolean => btn.getAttribute('aria-disabled') === 'true';
   function setBusy(btn: HTMLElement, on: boolean): void {
@@ -954,7 +954,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   /**
    * Install an embedded face as a user font (plan 97 §7.2 / M5).
    *
-   * `installFontFromBytes` is the whole vetting story — the size cap, the magic
+   * `installFontFromBytes` is the whole vetting story - the size cap, the magic
    * number, the name table, the `fsType` reading and the variable-axis handling
    * all live there, and it returns null rather than throwing for bytes it cannot
    * use, because a drop zone handling several files must not abandon the rest.
@@ -971,7 +971,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     // A throw is NOT the same answer as a null, and the difference is what the
     // sentence below is allowed to claim. `installFontFromBytes` writes the
     // asset first and registers/promotes it afterwards, so a throw can land
-    // with the face already stored — "nothing was added" would be false.
+    // with the face already stored - "nothing was added" would be false.
     let threw = false;
     try {
       const { installFontFromBytes } = await import('../user-fonts.ts');
@@ -1021,7 +1021,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     if (busy(btn)) return;
     const was = btn.textContent;
     setBusy(btn, true);
-    /** Put the button back to being an offer — nothing travelled. */
+    /** Put the button back to being an offer - nothing travelled. */
     const failed = (label: string, said: string): void => {
       btn.textContent = label;
       announce(said, { assertive: true });
@@ -1050,8 +1050,8 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   /**
    * The whole scan to the studio (plan 97 §8).
    *
-   * Built from what the passes already extracted — the marks and their per-mark
-   * fill palettes, and the embedded families — so this costs a census, not a
+   * Built from what the passes already extracted - the marks and their per-mark
+   * fill palettes, and the embedded families - so this costs a census, not a
    * second walk of the document. Colours and fonts land as tray CANDIDATES,
    * never as installs: the tray is the one place a source's findings wait, and
    * nothing joins the design system without a tap there.
@@ -1064,7 +1064,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
    * this view offered them: the tray dedupes (a re-send of the same document
    * keeps nothing), the stash refuses a mark over its byte cap, and counting
    * colours alone would report "0 colours and 0 marks" for the commonest
-   * document of all — a text PDF whose embedded families did reach the tray.
+   * document of all - a text PDF whose embedded families did reach the tray.
    */
   async function sendToStudio(btn: HTMLButtonElement): Promise<void> {
     const x = current;
@@ -1079,7 +1079,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
         import('../lib/design-system/pending-files.ts'),
       ]);
       // The label is the provenance chip every candidate then wears ("from
-      // guidelines"), so it is the file's STEM — the same thing the source
+      // guidelines"), so it is the file's STEM - the same thing the source
       // picker's own door passes, or the two doors chip one document two ways.
       const census = pdfScanToCensus({ vectors: x.vectors, fonts: x.fonts }, stem(x.fileName));
       const candidates = candidatesFromCensus(census);
@@ -1088,7 +1088,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       const kept = await tray.add(candidates);
 
       // The marks travel as files, the tray carries the colours and the
-      // families, and both are the same send — so the studio opens with
+      // families, and both are the same send - so the studio opens with
       // everything this document had to offer.
       //
       // WHICH marks is `pdfLogoPicks`' judgement, not this view's: a document
@@ -1096,7 +1096,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       // ranks the same way, so the two doors into the studio never disagree
       // about what a PDF holds. Each pick is named after the tile it came from
       // (the tile's own Download SVG writes that filename), so a mark arriving
-      // in the Logos room is traceable back to the row it was sent from — off
+      // in the Logos room is traceable back to the row it was sent from - off
       // the pick's own `index`, because two pages can carry the same mark
       // verbatim and matching the SVG text back would name both after the first.
       const marks = pdfLogoPicks(x.vectors, { max: pending.PENDING_LOGO_MAX_FILES })
@@ -1167,7 +1167,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       tab.setAttribute('aria-selected', String(on));
     }
     // The strip navigates the reading column, so it rides with the Text panel
-    // only — floating page numbers over the Fonts list would point at nothing.
+    // only - floating page numbers over the Fonts list would point at nothing.
     const strip = out.querySelector<HTMLElement>('[data-thumbs]');
     if (strip) strip.hidden = id !== 'text';
   }
@@ -1255,7 +1255,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     const saveFont = el.closest<HTMLElement>('[data-save-font]');
     if (saveFont) {
       const f = current.fonts[Number(saveFont.dataset.saveFont)];
-      // The stored name keeps the subset prefix when there is one — the file IS a
+      // The stored name keeps the subset prefix when there is one - the file IS a
       // subset, and naming it plainly would invite installing it as the real face.
       if (f) saveBytes(f.bytes, `${f.name.replace(/[^a-z0-9.+-]/gi, '_')}.${f.ext}`, 'font/otf');
       return;

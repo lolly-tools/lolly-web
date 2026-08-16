@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Theme cycle toggle — one compact, icon-only button that steps through the
+ * Theme cycle toggle - one compact, icon-only button that steps through the
  * themes (light → dark → brand → …) on click, showing the active theme's glyph.
  * It lives in the canvas zoom HUD (.stage-nav) so every tool with a live canvas
- * — including the chromeless editor/Design — carries a theme switcher,
+ * - including the chromeless editor/Design - carries a theme switcher,
  * and the sidebar header stays uncluttered.
  *
  * Icon-only with a tooltip (title + aria-label carry the theme name), styled as
@@ -11,7 +11,7 @@
  * .stage-nav-theme in editor.css).
  *
  * The profile is the canonical theme store (localStorage is only the FOUC mirror,
- * kept in sync by applyTheme), so each switch is persisted there too — mirroring
+ * kept in sync by applyTheme), so each switch is persisted there too - mirroring
  * the profile view's segmented control.
  *
  * createThemeToggle(host, opts?) → HTMLButtonElement
@@ -20,7 +20,7 @@
  * editor.css, which only the editor routes load. A view that wants the same
  * icon-only cycle without pulling the whole editor chrome in (Colour Lab, whose
  * users switch theme to see a colour in each screen context) passes its own class
- * and styles it locally — the cycling, the sting and the profile write are the
+ * and styles it locally - the cycling, the sting and the profile write are the
  * parts worth sharing, not the skin.
  */
 import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme } from '../theme.ts';
@@ -62,7 +62,7 @@ export function createThemeToggle(
 
 /**
  * Append the theme-cycle FAB (skinned `.theme-fab`, topbar.css) to a view's
- * fixed top-right cluster — the shared way the nav-less views (#/start,
+ * fixed top-right cluster - the shared way the nav-less views (#/start,
  * Dashboard, Verify, Convert, Spreadsheet, PDF, Script) expose light/dark/brand
  * beside the home + language FABs, wherever there's real estate for it. A no-op
  * when the cluster isn't present, so a view that skips the row (or a loading
@@ -74,7 +74,7 @@ export function mountThemeFab(cluster: Element | null, host: ThemeToggleHost): v
 
 /**
  * The theme picker as a segmented control (Light / Dark / Brand) for a view-settings
- * popover — matching the `.view-seg` controls those popovers already carry (the gallery's
+ * popover - matching the `.view-seg` controls those popovers already carry (the gallery's
  * "Featured view", the catalog's "Favourites"). Returned as an HTML string so it drops
  * straight into the popover markup; wire the clicks with wireThemeSegment() once it's in
  * the DOM. `headClass` styles the section label to match the host popover: `filter-pop-head`
@@ -83,7 +83,7 @@ export function mountThemeFab(cluster: Element | null, host: ThemeToggleHost): v
 export function themeSegmentHtml(headClass = 'filter-pop-head'): string {
   const cur = currentTheme();
   // The shared segmented-control primitive (lib/seg.ts). `attr` stamps this control's
-  // own `data-theme-seg` value-hook — which wireThemeSegment() keys off — alongside the
+  // own `data-theme-seg` value-hook - which wireThemeSegment() keys off - alongside the
   // canonical `data-val`, so no markup fork is needed for it.
   return `<p class="${headClass}">${t('Theme')}</p>
       ${segHtml('theme', THEMES.map(th => ({ id: th, label: t(THEME_LABELS[th]) })), cur, t('Theme'), { attr: 'data-theme-seg' })}`;

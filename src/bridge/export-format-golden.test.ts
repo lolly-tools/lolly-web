@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Byte-exact golden tests for the FULL web renderer outputs — plan step 1 of
+ * Byte-exact golden tests for the FULL web renderer outputs - plan step 1 of
  * plans/archive/maintainability-2026-07-29.md: pin renderSvg / renderEmf / renderEps /
  * renderDxf (export.ts's renderFormatDispatch entry points) as exact snapshots
  * BEFORE decomposing export.ts, so the split can be proven byte-neutral.
@@ -9,26 +9,26 @@
  * for the rationale): esbuild stdin bundle of export.ts + text.ts, ONE shared
  * Chromium for the whole file, page.route serving the committed platform
  * Outfit[wght].ttf and harfbuzz.wasm, and createExportAPI({ text:
- * createTextAPI() }) armed in-page — export.ts's outlining branch is gated on
+ * createTextAPI() }) armed in-page - export.ts's outlining branch is gated on
  * its module-level `_host?.text`, so skipping that call would make every text
  * run silently fall back to <text> and the goldens would pin the WRONG bytes.
  * The `<path` structural marker on the text fixtures is the canary for exactly
  * that mistake.
  *
  * DETERMINISM PROTOCOL: every fixture x format renders TWICE in the same run
- * and must be byte-identical BEFORE the golden comparison — extending the
+ * and must be byte-identical BEFORE the golden comparison - extending the
  * emission suite's SVG determinism check to all four formats. A flaky byte
  * (id counter, Map order, timestamp) fails here with a clear message instead
  * of as an inscrutable golden diff.
  *
  * NON-VACUITY: each golden must carry a format-specific structural marker and
  * a minimum size, and a perturbed fixture must produce different bytes in
- * every format — a golden that would pass on empty output is a bug.
+ * every format - a golden that would pass on empty output is a bug.
  *
  * CAVEAT the goldens inherit from the plan: renderSvgFromHtml reads Chromium's
  * computed layout, so the committed bytes are pinned to the Playwright
  * Chromium build (and this repo's font files). A Chromium upgrade may
- * legitimately move them — regenerate and diff-review, exactly as with the
+ * legitimately move them - regenerate and diff-review, exactly as with the
  * toPath goldens. The same applies ACROSS OSes at the same Chromium version:
  * text layout goes through the platform font backend (CoreText on macOS,
  * FreeType on Linux), so glyph advances in the text-bearing fixtures can
@@ -39,7 +39,7 @@
  * Run directly:            node --test shells/web/src/bridge/export-format-golden.test.ts
  * Regenerate the goldens:  UPDATE_GOLDENS=1 node --test shells/web/src/bridge/export-format-golden.test.ts
  *   (then re-run without UPDATE_GOLDENS to confirm green, and diff-review the
- *   fixture change before committing — the golden diff IS the review artefact.)
+ *   fixture change before committing - the golden diff IS the review artefact.)
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -52,7 +52,7 @@ const EXPORT_MODULE = fileURLToPath(new URL('./export.ts', import.meta.url));
 // bridge/ -> src/ -> web/ -> shells/ -> repo root.
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-/** The platform face, committed in the web shell itself — not a brand asset. */
+/** The platform face, committed in the web shell itself - not a brand asset. */
 const OUTFIT_TTF = join(REPO_ROOT, 'shells/web/public/fonts/Outfit[wght].ttf');
 const HB_WASM = join(REPO_ROOT, 'node_modules/harfbuzzjs/dist/harfbuzz.wasm');
 
@@ -80,7 +80,7 @@ async function bundle(): Promise<string> {
     stdin: {
       // The four per-format entry points are exported from export.ts solely for
       // this suite (see the export statement's comment there). createExportAPI
-      // arms the module-level `_host` they all read — see the file header.
+      // arms the module-level `_host` they all read - see the file header.
       contents: `import { renderSvg, renderEmf, renderEps, renderDxf, createExportAPI } from ${JSON.stringify(EXPORT_MODULE)};
                  import { createTextAPI } from ${JSON.stringify(join(HERE, 'text.ts'))};
                  window.__setup = () => createExportAPI({ text: createTextAPI(), log: () => {} });
@@ -110,7 +110,7 @@ async function bundle(): Promise<string> {
 const FONT_CSS =
   `@font-face{font-family:Outfit;src:url('/fonts/Outfit[wght].ttf') format('truetype');font-weight:100 900}`;
 
-/** One browser for the whole file — launching per test dominates the runtime. */
+/** One browser for the whole file - launching per test dominates the runtime. */
 let shared: any = null;
 async function page(): Promise<any> {
   const { chromium } = browser as { chromium: any };
@@ -144,7 +144,7 @@ type Format = 'svg' | 'emf' | 'eps' | 'dxf';
 /**
  * Render `inner` inside #root through the REAL per-format entry point, TWICE in
  * the same page, and return both outputs (EMF as base64, the text formats
- * verbatim). Deliberately does NOT set opts.c2pa — a credential hashes the
+ * verbatim). Deliberately does NOT set opts.c2pa - a credential hashes the
  * finished bytes and would make every golden run-unique.
  */
 async function renderTwice(inner: string, format: Format): Promise<[string, string]> {
@@ -161,7 +161,7 @@ async function renderTwice(inner: string, format: Format): Promise<[string, stri
       if (fmt !== 'emf') return await blob.text();
       const bytes = new Uint8Array(await blob.arrayBuffer());
       let bin = '';
-      // Chunked — a spread over one large Uint8Array overflows the arg stack.
+      // Chunked - a spread over one large Uint8Array overflows the arg stack.
       for (let i = 0; i < bytes.length; i += 0x8000) {
         bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       }
@@ -188,7 +188,7 @@ const regenerated: Record<string, string> = {};
 
 test.after(() => {
   if (!UPDATE_GOLDENS) return;
-  // Every golden test skipped, so `regenerated` is empty — writing it would
+  // Every golden test skipped, so `regenerated` is empty - writing it would
   // silently blank the committed fixture. Refuse loudly instead.
   if (SKIP) assert.fail(`UPDATE_GOLDENS=1 but the suite cannot run here (${SKIP}); refusing to overwrite the fixture`);
   mkdirSync(join(HERE, '__fixtures__'), { recursive: true });
@@ -218,7 +218,7 @@ const FIXTURES: Record<string, string> = {
     '<div style="font-family:Outfit;font-size:24px;color:#123456;' +
     'background:#ffcc00;border-radius:12px;width:300px;height:80px;' +
     'padding:8px 16px">Golden card</div>',
-  // A tool whose canvas IS an <svg> — the renderSvg fast-path clone (and, for
+  // A tool whose canvas IS an <svg> - the renderSvg fast-path clone (and, for
   // EMF/EPS/DXF, the svgDomToIr walk over the LIVE svg), with a <text> run
   // that must come out outlined.
   'svg-native':

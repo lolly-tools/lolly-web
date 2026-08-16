@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Unit coverage for the DesignCensus keystone (census.ts): every source adapter,
- * the merge, and — the point of the whole module — that a census reaches the
+ * the merge, and - the point of the whole module - that a census reaches the
  * SHIPPED role proposer unchanged. `brand-propose.ts` is imported here on
  * purpose: it is the compatibility being asserted, not an implementation detail.
  *

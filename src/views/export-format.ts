@@ -4,7 +4,7 @@
  *
  * A "mode" select can drive the export FORMAT bar: any select input whose options
  * carry a `formats` list narrows the download bar to that option's formats while it
- * is selected — so a unified filter tool's effect picker offers svg/pdf/emf on a
+ * is selected - so a unified filter tool's effect picker offers svg/pdf/emf on a
  * vector effect but only png/jpg on a raster one, while `render.formats` stays the
  * union (the superset the shell may ever show). The dual of exportSizeDriver, which
  * drives dimensions the same way; kept DOM-free so the manifest→formats parsing is

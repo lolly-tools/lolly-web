@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/collab-share-private.ts — the "Private collab" section of the Share dialog
+ * lib/collab-share-private.ts - the "Private collab" section of the Share dialog
  * (plans/100 §0/§6, Track A: P2P pairs). An OSS individual feature, deliberately
- * NOT under src/org/ (§1 — org/ is control-plane awareness only, and a private
+ * NOT under src/org/ (§1 - org/ is control-plane awareness only, and a private
  * collab is exactly the "airgapped edge user's dream" the org boundary excludes).
  *
  * Registers into the generic lib/share-sections.ts seam once, as a side effect of
- * being imported — main.ts imports this module for exactly that effect (see its
+ * being imported - main.ts imports this module for exactly that effect (see its
  * boot sequence, right beside the other one-shot install*()/hydrate*() calls).
  * Unlike org/collab-share.ts's registration (routed through org/index.ts's async
  * initOrg(), because it depends on a control-plane probe that may never resolve),
  * this section needs no such gate: it self-registers unconditionally, and the
  * builder itself decides on every dialog open whether it has anything to show.
  * The registry starts empty (lib/share-sections.ts), so this import is what turns
- * the row on at all — nothing else in the boot path depends on its load order.
+ * the row on at all - nothing else in the boot path depends on its load order.
  *
  * Two independent gates, both required, checked fresh on every dialog open:
- *   - `isFlagOnSync(PRIVATE_COLLAB_FLAG)` — the `private-collab` flag
+ *   - `isFlagOnSync(PRIVATE_COLLAB_FLAG)` - the `private-collab` flag
  *     (feature-flags.ts), ON by default since 2026-08-10, so this row is part of the
  *     ordinary Share dialog rather than a beta anyone had to find first. It is still
  *     a gate: a user who turned the flag off, or an instance that governs it off,
  *     gets no row. The SYNC mirror, not the profile-aware `isFlagOn`, because the
  *     Share dialog's builder runs outside any profile-aware view.
- *   - a `'private'` opener registered in lib/collab-launch.ts — the actual
+ *   - a `'private'` opener registered in lib/collab-launch.ts - the actual
  *     invite/accept ceremony (plans/100 §6.1). `collab/private-opener.ts` registers
  *     one unconditionally and `main.ts` imports it for that effect, so on a shipped
  *     boot this gate is satisfied and the flag is the one that decides.
  *
  * Row copy follows plans/100 §0's naming: "Private collab" heading, "Start a
- * collab" verb — never "rooms"/"multiplayer". `announce()` on a successful open,
+ * collab" verb - never "rooms"/"multiplayer". `announce()` on a successful open,
  * exactly like org/share-links.ts's rows and org/collab-share.ts's "Work collab"
  * row; a missing/throwing opener degrades to silence (openCollabLaunch's own
- * tolerance — see lib/collab-launch.ts).
+ * tolerance - see lib/collab-launch.ts).
  */
 
 import { registerShareSection } from './share-sections.ts';
@@ -62,7 +62,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
   row.style.cssText = 'display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap';
   const note = document.createElement('span');
   note.className = 'share-shortest-note';
-  // Hyphen, not an em-dash — house copy rule; the catalog keys moved with it.
+  // Hyphen, not an em-dash - house copy rule; the catalog keys moved with it.
   note.textContent = t('Invite one other device to co-edit this session directly - no account, no server.');
   row.appendChild(note);
 
@@ -75,7 +75,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
 
   // The other end of the same feature, and the reason this row has two buttons: an
   // invite is a link OR a code (plans/100 §6.1's three skins), and until the code door
-  // landed the code half had nowhere to go — a person handed a code in a chat had to be
+  // landed the code half had nowhere to go - a person handed a code in a chat had to be
   // sent a link as well. Secondary, because starting one is the common case; it opens
   // the door at #/join rather than duplicating it, so both entrances are one screen.
   const join = document.createElement('button');
@@ -92,7 +92,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
     if (opened) {
       // Dismiss like the join button does: the ceremony dialog takes over, and a
       // share modal left open under it keeps the whole tool inert after adoption
-      // (drill finding 2026-08-10 — focus trapped on this very button).
+      // (drill finding 2026-08-10 - focus trapped on this very button).
       ctx.close?.();
       announce(t('Starting a collab'));
     }
@@ -113,7 +113,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
   return section;
 }
 
-// Register once, as a side effect of import — see the header. A module re-eval
+// Register once, as a side effect of import - see the header. A module re-eval
 // (Vite HMR touching this file in dev) would register a second builder, since
 // lib/share-sections.ts's registry has no dedupe; harmless (the row would just
 // render twice, until the next full reload) and never a concern in a production

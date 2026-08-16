@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pure crop arithmetic for the screencap tool — the design's load-bearing math,
+ * Pure crop arithmetic for the screencap tool - the design's essential math,
  * kept DOM-free so it is unit-testable without a layout engine or rasteriser
  * (screen-capture-crop.test.ts). The interactive overlay and the export-size push
  * live in screen-capture-control.ts and are verified manually in real Chromium.
@@ -42,7 +42,7 @@ export function composeCropRect(
 
 /**
  * The crop's true pixel size (what the export bar is set to). Returns null when the
- * shot has no usable dimensions — never a NaN/0 the bar would choke on.
+ * shot has no usable dimensions - never a NaN/0 the bar would choke on.
  */
 export function cropPixelSize(
   crop: CropRect, nw: number, nh: number,

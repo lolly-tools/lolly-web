@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * markdownToSpokenText is the dialog's one pure piece — the rest is element
+ * markdownToSpokenText is the dialog's one pure piece - the rest is element
  * wiring over host.speech, verified in a real browser. What matters here is the
  * speech contract: structure goes, words stay, and nothing unspeakable (code,
  * image URLs, table plumbing) leaks into the synthesized clip.
@@ -121,7 +121,7 @@ test('saveTtsClip persists a signed credential store carrying the script recipe'
   assert.ok(rec.credential instanceof Uint8Array && rec.credential.length > 0, 'a credential store rides the record');
   assert.equal(rec.credentialFormat, 'wav');
   // The store reads back: AI source type on the created step, the exact
-  // script + voice/model/lang in its parameters — the machine-readable mark.
+  // script + voice/model/lang in its parameters - the machine-readable mark.
   const { prepareC2paIngredientFromStore, GENERATED_SOURCE_TYPE } = await import('@lolly/engine');
   const ing = prepareC2paIngredientFromStore(rec.credential, rec.credentialFormat);
   assert.equal(ing?.digitalSourceType, GENERATED_SOURCE_TYPE);

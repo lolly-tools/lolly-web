@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * #/convert tabular-data conversion — the grid round-trip (plan 87 Phase 3). Proven
+ * #/convert tabular-data conversion - the grid round-trip (plan 87 Phase 3). Proven
  * against the real engine writers/readers; the JSON ⇄ grid mapping (not covered by
  * engine tests) is pinned here.
  */

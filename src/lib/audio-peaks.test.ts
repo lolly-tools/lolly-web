@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tests for audio-peaks.ts — the measured overview waveform cache behind the
+ * Tests for audio-peaks.ts - the measured overview waveform cache behind the
  * audio thumbnails in the asset picker and catalog.
  *
- * WHAT IS COVERED HERE (the real module, a fake store and a fake host — no mock
+ * WHAT IS COVERED HERE (the real module, a fake store and a fake host - no mock
  * theatre): the byte round-trip and its precision; the validation that rejects a
  * short/corrupt/wrong-bucket row instead of drawing half a waveform as a whole
  * one; `cachedPeaks` as a pure read that never reaches a decoder; `derivePeaks`
  * deduping a grid of tiles down to one decode, capping concurrency, refusing an
- * over-long clip, and returning null (never throwing) for every failure —
+ * over-long clip, and returning null (never throwing) for every failure - 
  * including a host with no `audio` at all; and `storePeaks` filling the cache
  * from the ingest path.
  *
- * WHAT IS **NOT** COVERED — browser-only, and a fake would prove nothing: the
+ * WHAT IS **NOT** COVERED - browser-only, and a fake would prove nothing: the
  * actual decode (`OfflineAudioContext.decodeAudioData`) and the engine's
  * `analysePcm`, which have their own coverage; the IndexedDB-backed PeaksStore
- * (node has no indexedDB — the degraded "no database" path IS covered, since
+ * (node has no indexedDB - the degraded "no database" path IS covered, since
  * that is what node produces here).
  */
 import { test } from 'node:test';
@@ -73,7 +73,7 @@ interface FakeHost {
   };
   calls: number;
   lastOpts: Record<string, unknown> | undefined;
-  /** Peak concurrent analyse() calls seen — the concurrency cap's witness. */
+  /** Peak concurrent analyse() calls seen - the concurrency cap's witness. */
   peakConcurrency: number;
 }
 
@@ -134,7 +134,7 @@ test('encodePeaks: out-of-range and non-finite values are clamped, never stored 
 
 test('encodePeaks: a producer that returned the wrong count is resampled, not truncated', () => {
   // A short input clipped to the front would draw the first seconds of a track
-  // across the whole tile — a false claim about the sound.
+  // across the whole tile - a false claim about the sound.
   const src = new Float32Array(16);
   src[15] = 1;
   const back = decodePeaks(encodePeaks(src));
@@ -222,7 +222,7 @@ test('cachedPeaks: a broken store reads as "no peaks", never a throw', async () 
 
 test('cachedPeaks: with no database at all it resolves null', async () => {
   // setPeaksStore(null) restores the REAL IndexedDB-backed store, which cannot
-  // open under node — the genuine degraded environment, not a fake.
+  // open under node - the genuine degraded environment, not a fake.
   reset(null);
   assert.equal(await cachedPeaks('a'), null);
 });

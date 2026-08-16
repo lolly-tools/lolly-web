@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * confirmDialog — a styled modal confirmation for destructive actions.
+ * confirmDialog - a styled modal confirmation for destructive actions.
  *
  * Returns a Promise<boolean>: true on confirm, false on Cancel / Escape / a
  * backdrop click. One shared component (the Projects view + the profile Storage
  * manager) so every destructive flow looks and behaves identically. Built on
- * mountModal (components/modal.ts) — this file supplies content + wiring only,
+ * mountModal (components/modal.ts) - this file supplies content + wiring only,
  * the open/Escape/backdrop/teardown lifecycle lives there. Reuses the `.modal`
  * <dialog> CSS already in app.css. Escape-to-close is an app-wide convention;
  * the safe Cancel button takes default focus.
@@ -15,12 +15,12 @@ import { jellyActive } from '../lib/jelly.ts';
 import { mountModal } from './modal.ts';
 
 // Open dialogs live on <body>, so a view unmount can't remove them by clearing
-// its own container — track them here and tear any down via closeConfirmDialogs().
+// its own container - track them here and tear any down via closeConfirmDialogs().
 const openDialogs = new Set<HTMLDialogElement>();
 
-// One dialog action button — the plain .btn, or its <jelly-button> stand-in when
+// One dialog action button - the plain .btn, or its <jelly-button> stand-in when
 // the Jelly effects flag is active (neutral platinum cancel/plain, accent primary,
-// rose danger — rose is bridged to --destructive in lib/jelly.ts). The jelly host
+// rose danger - rose is bridged to --destructive in lib/jelly.ts). The jelly host
 // must NOT carry .btn (those border/fill styles would paint a second box behind
 // its canvas), but it keeps the modal-* classes: the delegated [data-act]/
 // [data-choice] click handlers and the initialFocus selectors work unchanged
@@ -77,13 +77,13 @@ export interface ChoiceDialogOpts {
   choices?: DialogChoice[];
   /** Tags this dialog so a targeted `closeConfirmDialogs(tag)` can dismiss just
    *  this one (and others sharing the tag) without touching unrelated confirm/
-   *  choice/notice/prompt dialogs open elsewhere in the app — e.g. a rapid
+   *  choice/notice/prompt dialogs open elsewhere in the app - e.g. a rapid
    *  second Android share superseding the previous share's still-open chooser. */
   tag?: string;
 }
 
 /**
- * choiceDialog — the same modal chrome, but a pick-one-of-N decision instead of
+ * choiceDialog - the same modal chrome, but a pick-one-of-N decision instead of
  * a yes/no confirm. Resolves the chosen choice id, or null on Cancel / Escape /
  * backdrop. Choices render right-to-left as given, with `primary: true` styled
  * as the brand call-to-action; a Cancel button is always prepended.
@@ -121,7 +121,7 @@ export interface NoticeDialogOpts {
 }
 
 /**
- * noticeDialog — the same modal chrome, but a purely informational notice with a
+ * noticeDialog - the same modal chrome, but a purely informational notice with a
  * single acknowledge button (no yes/no, no Cancel). Escape / backdrop / the button
  * all dismiss. Used for friendly one-shot nudges (e.g. asset-library milestones).
  */
@@ -152,7 +152,7 @@ export interface PromptDialogOpts {
   message: string;
   confirmLabel?: string;
   placeholder?: string;
-  /** Pre-fill the field (and select it) — for editing an existing value, e.g. a rename. */
+  /** Pre-fill the field (and select it) - for editing an existing value, e.g. a rename. */
   value?: string;
   inputType?: 'text' | 'password';
   /** Shown in destructive colour above the field (e.g. "Incorrect password"). */
@@ -160,7 +160,7 @@ export interface PromptDialogOpts {
 }
 
 /**
- * promptDialog — the same modal chrome with a single text/password field. Resolves
+ * promptDialog - the same modal chrome with a single text/password field. Resolves
  * the typed string on OK / Enter, or null on Cancel / Escape / backdrop. Used for
  * the client-side password prompt on an encrypted (`zx`) share link.
  */
@@ -172,7 +172,7 @@ export function promptDialog({ title, message, confirmLabel = 'OK', placeholder 
       <p class="modal-msg">${escape(message)}</p>
       ${errHtml}
       ${jellyActive()
-        // jelly-input paints its own capsule — only the field's footprint is
+        // jelly-input paints its own capsule - only the field's footprint is
         // styled here. `label` carries the accessible name to the shadow input.
         ? `<jelly-input type="${inputType === 'password' ? 'password' : 'text'}" class="modal-input"
              label="${escape(message)}"
@@ -208,7 +208,7 @@ export function promptDialog({ title, message, confirmLabel = 'OK', placeholder 
 }
 
 /**
- * Tear down still-open confirm dialogs — call on view unmount. With no `tag`,
+ * Tear down still-open confirm dialogs - call on view unmount. With no `tag`,
  * closes EVERY open dialog (the view-unmount use). Pass the `tag` a `choiceDialog`
  * was opened with to close only dialogs sharing it, leaving unrelated confirm/
  * choice/notice/prompt dialogs elsewhere in the app untouched.

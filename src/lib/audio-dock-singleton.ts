@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The app-global SINGLETON audio dock — ONE draggable/resizable window on document.body
+ * The app-global SINGLETON audio dock - ONE draggable/resizable window on document.body
  * that BOTH the music player and the docs narration reader feed, so the user never sees
  * two competing windows (plan "this-is-a-very-sparkling-eich", unification pass).
  *
@@ -15,7 +15,7 @@
  * Unregistering removes that block; when no source remains the window hides. The window,
  * its drag position + size, and its collapse pref are shared across both.
  *
- * The audio ENGINES (lib/neurospicy.ts, docs-narration-host's own <audio>) are untouched —
+ * The audio ENGINES (lib/neurospicy.ts, docs-narration-host's own <audio>) are untouched - 
  * this only owns the shared shell + composition.
  */
 import {

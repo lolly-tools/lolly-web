@@ -1,7 +1,7 @@
 // Regression guard for the "gradient SVG vanishes from PDF" bug.
 //
 // The <img>→SVG PDF branch appends the inlined SVG off-screen so the vector walk can
-// read computed fills — style="position:absolute;left:-99999px;top:0;width:Npx;height:Mpx".
+// read computed fills - style="position:absolute;left:-99999px;top:0;width:Npx;height:Mpx".
 // When the SVG contains a gradient it takes the raster escape-hatch instead, which CLONES
 // that same element, serialises it, and loads it standalone as an <img>. If the off-screen
 // layout style rides into the clone, left:-99999px shifts the whole artwork off the raster
@@ -47,7 +47,7 @@ test('stripRasterLayoutStyle preserves paint-bearing declarations (currentColor,
 
   const s = (svg as unknown as HTMLElement).style;
   assert.equal(s.getPropertyValue('position'), '', 'layout prop still stripped alongside paint props');
-  // color drives currentColor; the custom property drives var() fills — both must survive
+  // color drives currentColor; the custom property drives var() fills - both must survive
   // or a legitimately-styled artwork would lose its paint in the raster.
   assert.equal(s.getPropertyValue('color'), 'rgb(255, 0, 0)', 'color (currentColor source) must be preserved');
   assert.equal(s.getPropertyValue('--brand'), '#00ff88', 'custom property (var() fill source) must be preserved');

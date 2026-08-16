@@ -7,7 +7,7 @@
  * it, and RE-OPENS the bytes before scanning. That round trip is the point: the
  * scanner's job is to find things in a file someone else wrote, and a graph
  * asserted only in the memory that built it proves nothing about what survives
- * serialisation — indirect references in particular only become PDFRefs once
+ * serialisation - indirect references in particular only become PDFRefs once
  * the document has been through the context.
  *
  * The graphs here are hand-built rather than harvested from sample files so each
@@ -25,12 +25,12 @@ type Any = any;
 
 // pdf-lib is loaded once at module scope so the fixtures below can build string
 // objects synchronously. This matters: `context.obj('x')` yields a PDFName, not a
-// PDFString — filenames, script bodies, URIs, field values and comment text are
+// PDFString - filenames, script bodies, URIs, field values and comment text are
 // all TEXT STRINGS in the spec, so a fixture that spells them as bare JS strings
 // builds a document no real producer would write, and tests nothing.
 const { PDFDocument, PDFName, PDFString } = await import('pdf-lib') as Any;
 
-/** A PDF text string — the type the spec requires wherever prose is stored. */
+/** A PDF text string - the type the spec requires wherever prose is stored. */
 const S = (v: string): Any => PDFString.of(v);
 
 /** A one-page document to hang structures off. */
@@ -40,7 +40,7 @@ async function doc1(): Promise<Any> {
   return d;
 }
 
-/** Save and reopen, then scan — what a READER of the file actually finds. */
+/** Save and reopen, then scan - what a READER of the file actually finds. */
 async function scan(doc: Any): Promise<PdfFinding[]> {
   const bytes = await doc.save({ updateFieldAppearances: false });
   const reopened = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
@@ -81,7 +81,7 @@ test('a document with nothing in it reports only its page count', async () => {
   const findings = await scan(await doc1());
   assert.deepEqual(labels(findings), ['Pages']);
   assert.equal(find(findings, 'Pages')!.detail, '1 page');
-  // Nothing structural means nothing flagged — a clean file must read as clean.
+  // Nothing structural means nothing flagged - a clean file must read as clean.
   assert.equal(findings.some((f) => f.tone === 'warn'), false);
 });
 
@@ -131,7 +131,7 @@ test('a /FileAttachment annotation is found even with no name tree', async () =>
   const f = find(await scan(doc), 'Attachments')!;
   assert.match(f.detail, /1 embedded file/);
   assert.match(f.detail, /pinned\.docx/);
-  // A FileAttachment is a payload, not authored commentary — it must not also
+  // A FileAttachment is a payload, not authored commentary - it must not also
   // inflate the annotation count.
   assert.equal(find(await scan(doc), 'Annotations'), undefined);
 });
@@ -252,7 +252,7 @@ test('outbound links are summarised by host', async () => {
   const f = find(await scan(doc), 'Links')!;
   assert.match(f.detail, /2 outbound links/);
   assert.match(f.detail, /track\.example/);
-  // Links are disclosure, not hidden behaviour — neutral tone.
+  // Links are disclosure, not hidden behaviour - neutral tone.
   assert.equal(f.tone, '');
 });
 
@@ -279,7 +279,7 @@ test('filled form fields are reported by qualified name and value', async () => 
 
 test('a nested field tree yields dotted qualified names and inherits /FT', async () => {
   const doc = await doc1();
-  const kid = reg(doc, { T: S('city'), V: S('Berlin') });          // no /FT — inherits
+  const kid = reg(doc, { T: S('city'), V: S('Berlin') });          // no /FT - inherits
   const parent = reg(doc, { FT: 'Tx', T: S('address'), Kids: [kid] });
   onCatalog(doc, 'AcroForm', doc.context.obj({ Fields: [parent] }));
 

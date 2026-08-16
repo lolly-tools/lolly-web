@@ -16,7 +16,7 @@ const SANS_TAIL = "'Outfit', ui-sans-serif, system-ui, sans-serif";
 test('brandFontStack builds a safe stack ending in the platform tail', () => {
   assert.equal(brandFontStack('SUSE', SANS_TAIL), `'SUSE', ${SANS_TAIL}`);
   // A brand naming a platform default doesn't duplicate it in the tail
-  // (SUSE's font.mono is 'SUSE Mono' — the mono tail's own first family).
+  // (SUSE's font.mono is 'SUSE Mono' - the mono tail's own first family).
   assert.equal(
     brandFontStack('SUSE Mono', "'SUSE Mono', ui-monospace, monospace"),
     "'SUSE Mono', ui-monospace, monospace",
@@ -33,7 +33,7 @@ test('brandFontStack builds a safe stack ending in the platform tail', () => {
 
 test('brandFontStack rejects families that could smuggle CSS', () => {
   // The value comes from an untrusted imported tokens doc and lands in a style
-  // value — anything beyond plain name characters must be dropped.
+  // value - anything beyond plain name characters must be dropped.
   assert.equal(brandFontStack("x'; background:url(//evil)", SANS_TAIL), null);
   assert.equal(brandFontStack('a}*{color:red', SANS_TAIL), null);
   assert.equal(brandFontStack('url(//evil.example/f.woff2)', SANS_TAIL), null);
@@ -55,7 +55,7 @@ test('brandRadiusValue rejects anything that isn\'t a bare length', () => {
   assert.equal(brandRadiusValue('1rem; background:url(//evil)'), null); // CSS smuggling
   assert.equal(brandRadiusValue('calc(1rem + 1px)'), null); // not a bare length
   assert.equal(brandRadiusValue('1vw'), null); // unit not in the allowed set
-  assert.equal(brandRadiusValue('-1rem'), null); // negative — meaningless for a radius
+  assert.equal(brandRadiusValue('-1rem'), null); // negative - meaningless for a radius
   assert.equal(brandRadiusValue(-1), null); // wrong type entirely (a number, not a string)
 });
 
@@ -63,10 +63,10 @@ test('hexToHslTriple produces shadcn "H S% L%" triples', () => {
   assert.equal(hexToHslTriple('#000000'), '0 0% 0%');
   assert.equal(hexToHslTriple('#ffffff'), '0 0% 100%');
   assert.equal(hexToHslTriple('#ff0000'), '0 100% 50%');
-  // SUSE Jungle #30ba78 — the triple tokens.css derived its dark-theme accent from.
+  // SUSE Jungle #30ba78 - the triple tokens.css derived its dark-theme accent from.
   assert.equal(hexToHslTriple('#30ba78'), '151.3 59% 45.9%');
   assert.equal(hexToHslTriple('not-a-hex'), null);
-  assert.equal(hexToHslTriple('#fff'), null); // 6-digit only — resolver output is normalised
+  assert.equal(hexToHslTriple('#fff'), null); // 6-digit only - resolver output is normalised
 });
 
 test('chromeBrandCss emits light/dark accent blocks plus the constructed brand theme', () => {
@@ -84,7 +84,7 @@ test('chromeBrandCss emits light/dark accent blocks plus the constructed brand t
 });
 
 test('brandThemeCss constructs the full mid-toned chrome from the two primaries', () => {
-  // The SUSE palette itself: surfaces from Pine, accent Jungle — the construction
+  // The SUSE palette itself: surfaces from Pine, accent Jungle - the construction
   // should land in the neighbourhood of the static tokens.css block.
   const css = brandThemeCss('#0c322c', '#30ba78');
   for (const name of ['background', 'foreground', 'card', 'popover', 'muted', 'secondary',
@@ -104,7 +104,7 @@ test('brandThemeCss constructs the full mid-toned chrome from the two primaries'
   assert.ok(Math.abs(parseFloat(bg[1]!) - 171) < 12, `background hue ${bg[1]} ≈ Pine`);
   const bgL = parseFloat(bg[3]!);
   assert.ok(bgL > 6 && bgL < 22, `background stays mid-dark (${bgL}%)`);
-  // A neutral (ink) brand constructs a *grey* chrome — low saturation everywhere.
+  // A neutral (ink) brand constructs a *grey* chrome - low saturation everywhere.
   const neutral = brandThemeCss('#0e1217', '#f3f5f8');
   const sats = [...neutral.matchAll(/--(?:background|card|muted|border): [\d.]+ ([\d.]+)%/g)].map(m => parseFloat(m[1]!));
   assert.ok(sats.length >= 4 && sats.every(s => s < 20), `neutral brand stays near-grey (${sats.join(', ')})`);
@@ -114,7 +114,7 @@ test('an unresolvable primary yields no block; both missing yields empty css', (
   const darkOnly = chromeBrandCss({ primary: null, onPrimary: null }, { primary: '#f7f7f5', onPrimary: null });
   assert.ok(!darkOnly.includes('[data-theme="light"]'));
   assert.ok(darkOnly.includes('[data-theme="dark"]'));
-  // The foreground is COMPUTED from the fill (contrastText — the app-wide
+  // The foreground is COMPUTED from the fill (contrastText - the app-wide
   // inversion rule), so it is always stated, authored on-primary or not:
   // #f7f7f5 is a near-white fill, so its ink is black.
   const ungatedDark = /^\[data-theme="dark"\] \{[^}]*\}/m.exec(darkOnly)?.[0] ?? '';
@@ -140,7 +140,7 @@ test('apcaLcAbs matches the engine apcaContrast (the port must not drift)', () =
 
 test('highContrastAccent lifts any hue over the target Lc while holding hue and chroma', () => {
   // The finding: SUSE Jungle pairs at Lc 53 with its own ink and ~54 with pure
-  // black or white — under even APCA's large-text floor.
+  // black or white - under even APCA's large-text floor.
   assert.ok(apcaLcAbs('#08211d', '#30ba78') < 60);
   const cases: Array<[string, string | null]> = [
     ['#30ba78', '#08211d'],  // SUSE Jungle — dark/brand accent
@@ -167,7 +167,7 @@ test('highContrastAccent lifts any hue over the target Lc while holding hue and 
       const d = Math.abs(after.h - before.h) % 360;
       // 3°, not 0: the search holds hue and chroma in OKLCH, but the result has to
       // come back as an sRGB hex, and near the top of the lightness range sRGB
-      // cannot hold a high chroma at all. Amber is the worst case here — asking
+      // cannot hold a high chroma at all. Amber is the worst case here - asking
       // for its own h 86.05 / c 0.162 at the lightness that clears the bar
       // (L 0.867) already reads back at h 87.1 before the search picks anything,
       // because the requested colour is outside the gamut and gets clipped. Two
@@ -186,7 +186,7 @@ test('highContrastAccent lifts any hue over the target Lc while holding hue and 
 });
 
 test('highContrastAccent leaves a pair that already clears the bar alone', () => {
-  // SUSE Pine (the light accent) is at Lc 98 — nothing to fix, so no block and
+  // SUSE Pine (the light accent) is at Lc 98 - nothing to fix, so no block and
   // the brand's own colour stands untouched even under the pref.
   assert.equal(highContrastAccent('#0c322c', '#f7f7f5'), null);
   assert.equal(highContrastAccent('#7b3fe4', '#ffffff'), null);   // Lc 83
@@ -204,21 +204,21 @@ test('chromeBrandCss appends attribute-gated high-contrast accents, per theme', 
   assert.ok(!css.includes('html[data-a11y-contrast="high"]:not('));
   assert.ok(css.includes('html[data-a11y-contrast="high"][data-theme="dark"] {'));
   assert.ok(css.includes('html[data-a11y-contrast="high"][data-theme="brand"] {'));
-  // Gated blocks carry the pair and NOTHING else — --ring stays with tokens.css,
+  // Gated blocks carry the pair and NOTHING else - --ring stays with tokens.css,
   // which forces the theme's brightest ink there on purpose.
   for (const m of css.matchAll(/html\[data-a11y-contrast="high"\][^{]*\{([^}]*)\}/g)) {
     const decls = [...m[1]!.matchAll(/--([\w-]+):/g)].map(d => d[1]);
     assert.deepEqual(decls, ['primary', 'primary-foreground']);
   }
   // A brand whose light accent ALSO fails gets the "neither dark nor brand"
-  // block — spelled that way so it cannot leak into the two themes that carry
+  // block - spelled that way so it cannot leak into the two themes that carry
   // their own (same reasoning as tokens.css's high-contrast blocks).
   const amber = chromeBrandCss({ primary: '#eab308', onPrimary: null }, { primary: '#eab308', onPrimary: null });
   assert.ok(amber.includes('html[data-a11y-contrast="high"]:not([data-theme="dark"]):not([data-theme="brand"]) {'));
 });
 
 test('high contrast forces an explicit ink when the theme ink is unknowable', () => {
-  // The gated block never reads the ungated one's computed ink — it states the
+  // The gated block never reads the ungated one's computed ink - it states the
   // maximal one itself; the fill is left where the brand put it (Lc 101 already).
   const css = chromeBrandCss({ primary: null, onPrimary: null }, { primary: '#f7f7f5', onPrimary: null });
   const gated = /html\[data-a11y-contrast="high"\]\[data-theme="dark"\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
@@ -229,7 +229,7 @@ test('high contrast forces an explicit ink when the theme ink is unknowable', ()
 test('the ungated chrome CSS is pinned, with computed accent inks', () => {
   // The gated high-contrast blocks are appended last; everything above them is
   // the no-pref stylesheet, pinned here for the SUSE palette. The accent inks
-  // are contrastText's picks (white on the dark teal AND on Jungle green) —
+  // are contrastText's picks (white on the dark teal AND on Jungle green) - 
   // the authored on-primary pair is deliberately not consulted.
   const css = chromeBrandCss(
     { primary: '#0c322c', onPrimary: '#f7f7f5' },

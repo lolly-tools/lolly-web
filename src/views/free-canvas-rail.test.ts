@@ -5,7 +5,7 @@
  *
  * Three claims are worth locking down, and each failed in an obvious way while this was
  * being built:
- *   • the drag must position with left/top and NEVER a transform — a transformed
+ *   • the drag must position with left/top and NEVER a transform - a transformed
  *     ancestor becomes the containing block for the rail's position:fixed colour
  *     popover and throws it off-screen (a bug already fixed once in this file), so the
  *     "no transform anywhere on the dock or the rail" assertion is the regression guard;
@@ -13,7 +13,7 @@
  *     affordance, so the rows must exist, must reflect the history stack live (the
  *     menu stays open while you step back), and must still be driven by the shell's
  *     registered callback;
- *   • Arrange acts on a selection, so it hides without one — but only the BUTTON goes;
+ *   • Arrange acts on a selection, so it hides without one - but only the BUTTON goes;
  *     the right-click menu and the keyboard are untouched.
  *
  * Everything runs against the real `initFreeCanvas` on the same jsdom harness
@@ -61,7 +61,7 @@ function pointerEvent(type: string, o: { x: number; y: number; id?: number; butt
   // `buttons` is part of the gesture, not decoration: the rail's move handler treats a
   // move with NO button held as "the pointerup was lost" and finishes the drag, which is
   // the escape from a stolen pointer capture. Default to held for down/move, released for
-  // up/cancel — what a real browser sends.
+  // up/cancel - what a real browser sends.
   const buttons = o.buttons ?? (type === 'pointerdown' || type === 'pointermove' ? 1 : 0);
   const e = new W.MouseEvent(type, { bubbles: true, cancelable: true, clientX: o.x, clientY: o.y, button: 0, buttons });
   Object.defineProperty(e, 'pointerId', { value: o.id ?? 1 });
@@ -230,7 +230,7 @@ test('placePopover pulls a tall menu up so its foot stays on the stage', () => {
 });
 
 test('placePopover keeps the anchored placement when the stage cannot be measured', () => {
-  // jsdom has no layout, and a display:none stage measures zero in a real browser too —
+  // jsdom has no layout, and a display:none stage measures zero in a real browser too - 
   // clamping against zeroes would slam every menu into the corner.
   const pos = placePopover({ left: 10, right: 54, top: 40 }, { w: 0, h: 0 }, { w: 0, h: 0 });
   assert.deepEqual(pos, { left: 62, top: 40 });
@@ -420,7 +420,7 @@ test('the dragged position is remembered for the session and re-clamped on the n
 });
 
 test('a lost pointer capture ends the drag instead of gluing the rail to the cursor', () => {
-  // Losing capture fires NEITHER pointerup nor pointercancel — the export shutter sets
+  // Losing capture fires NEITHER pointerup nor pointercancel - the export shutter sets
   // `pointer-events: none` on the rail mid-drag, which releases capture implicitly. Before
   // this was handled the drag state stuck: `.is-dragging` stayed on, a bare HOVER kept
   // sliding the rail, and onRailDown refused to start a new drag ever again.
@@ -471,7 +471,7 @@ test('clampRailPos hands back the wanted position when the stage cannot be measu
 
 test('the rail keeps clear of the docked timeline panel, not just the export pill', () => {
   // The panel is z-index 22 with pointer-events:auto against the dock's 16, so a rail
-  // dragged under it is both invisible (the rail is opacity:0 at rest) and unclickable —
+  // dragged under it is both invisible (the rail is opacity:0 at rest) and unclickable - 
   // and the position survives a tool switch with no way to recover it.
   const f = mount([plainBox('a', 300, 300)]);
   const panel = f.stageEl.ownerDocument.createElement('div');

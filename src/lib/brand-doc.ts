@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand document surgery — the pure, DOM-free half of the brand editor.
+ * Brand document surgery - the pure, DOM-free half of the brand editor.
  *
  * The editor treats the installed DTCG document (host.tokens.raw()) as the
  * single source of truth for the palette: every colour leaf is a swatch, and
@@ -11,7 +11,7 @@
  * tested without a browser (see brand-doc.test.ts). Nothing in this module
  * imports the DOM, the bridge, or any component.
  *
- * Shape notes: a derived brand (engine deriveBrandTokens) is multi-set —
+ * Shape notes: a derived brand (engine deriveBrandTokens) is multi-set - 
  * `base` holds the ramps + spectrum, and `light` / `dark` each hold the seven
  * `color.semantic.*` ROLES, which are `{alias}` references into the ramps. An
  * imported Tokens-Studio/W3C export may be single-set with colour leaves at any
@@ -35,7 +35,7 @@ export { getExcludedSwatches };
 type Rec = Record<string, unknown>;
 
 export const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
-/** `{color.ramp.primary.5}` — a reference, not a literal colour. */
+/** `{color.ramp.primary.5}` - a reference, not a literal colour. */
 export const isAliasStr = (v: unknown): v is string => typeof v === 'string' && /^\{[^}]+\}$/.test(v.trim());
 const isColorString = (v: unknown): v is string =>
   typeof v === 'string' && v.length > 0 && (isAliasStr(v) || colorToHex(v) !== null);
@@ -44,7 +44,7 @@ const isSpotColor = (v: unknown): v is SpotColor => {
   if (!isRec(v) || typeof v.name !== 'string') return false;
   return v.book === undefined || typeof v.book === 'string';
 };
-/** Kept deliberately in step with `readSpotColor` in engine/src/tokens.ts — that
+/** Kept deliberately in step with `readSpotColor` in engine/src/tokens.ts - that
  *  one gates the READ side, this one the WRITE side (`readPrintLock`), and a
  *  divergence means a lock the editor stores reads back differently everywhere
  *  else. `finish` is checked as a plain string because `FinishKind` is an open
@@ -56,7 +56,7 @@ const readSpotColor = (v: unknown): SpotColor | null => {
   return rest as SpotColor;
 };
 
-/** A swatch's print-export lock. `cmyk` and `spot` are independent — a token
+/** A swatch's print-export lock. `cmyk` and `spot` are independent - a token
  *  may carry either, both, or neither (absent fields, not present at all, when
  *  not locked): `cmyk` is the process-colour fallback used for preview,
  *  non-PDF export, and the Separation alternate-space value regardless of
@@ -92,7 +92,7 @@ export interface BrandSwatch {
   group: string;
   /** Label shown on the tile ($description, else a prettified leaf key). */
   name: string;
-  /** The stored `$value` — may be an `oklch()` string or a `{alias}`. */
+  /** The stored `$value` - may be an `oklch()` string or a `{alias}`. */
   raw: string;
   /** Resolved sRGB hex for the tile ('' when it can't be resolved, e.g. an alias). */
   hex: string;
@@ -114,7 +114,7 @@ export interface BrandSwatch {
  * (defaulting to light); ramps + spectrum live in `base` and are always shown.
  *
  * `resolve` (the caller's TokenSet, typically) supplies the displayable colour
- * for leaves whose `$value` is an `{alias}` — every semantic role is one, so
+ * for leaves whose `$value` is an `{alias}` - every semantic role is one, so
  * without it those tiles would render blank. It is optional so this module stays
  * pure and unit-testable.
  */
@@ -125,7 +125,7 @@ export function walkSwatches(
   const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
   const wantSet = theme === 'dark' ? 'dark' : 'light';
   // Where a custom swatch tagged "Roles" files: the CURRENT theme's Roles
-  // section. The tag is stored theme-less by contract — a persisted
+  // section. The tag is stored theme-less by contract - a persisted
   // "Roles · Light" would strand the swatch under a phantom stale-theme
   // section the moment the app theme flips (toSwatch tolerates legacy
   // suffixed tags by mapping them here too).
@@ -135,7 +135,7 @@ export function walkSwatches(
   // passes an unrecognised bare ident straight through, so `colorToHex('SUSE')`
   // is 'SUSE' and `colorToHex('Outfit')` is 'Outfit'. Without this, a
   // `$type: "fontFamily"` leaf whose value is a single-word family surfaced as a
-  // phantom colour tile in the Colour room — brands/suse has done exactly that
+  // phantom colour tile in the Colour room - brands/suse has done exactly that
   // (`color.font.brand`, hex "SUSE") since it gained font tokens, and the starter
   // pack would have joined it on 2026-08-10 when its own font tokens landed.
   // A doc that states NO type still walks as before (imported docs often don't),
@@ -172,7 +172,7 @@ function toSwatch(
   let group = prettify(path[path.length - 2] ?? 'Colour');
   let deletable = true;
   if (at('ramp') >= 0) {
-    // Ramp steps (primary/neutral/secondary shades) are user-deletable — the shade
+    // Ramp steps (primary/neutral/secondary shades) are user-deletable - the shade
     // count is theirs to shape (a semantic role aliasing a deleted step just falls
     // back to a blank chip until re-derived, same as any dangling alias).
     kind = 'ramp'; deletable = true;
@@ -192,11 +192,11 @@ function toSwatch(
   }
   // A per-group "+ Add" on a derived section (Primary/Neutral/…) creates a
   // CUSTOM swatch tagged with that section's heading (addSwatch's displayGroup)
-  // — the tag only relabels where the tile renders, never what the token is.
+  // - the tag only relabels where the tile renders, never what the token is.
   const extNs = isRec(extensions) ? (extensions as Rec)[TOKEN_EXT] : null;
   let groupTag = isRec(extNs) && typeof (extNs as Rec).group === 'string' ? String((extNs as Rec).group) : null;
   // A "Roles" tag means "the current theme's Roles section", never a section
-  // of its own — the walker passes the live label (a legacy theme-suffixed
+  // of its own - the walker passes the live label (a legacy theme-suffixed
   // "Roles · Light" tag maps there too, instead of stranding the swatch under
   // a stale-theme heading with its own duplicate + Add).
   if (groupTag && /^roles(\s*·.*)?$/i.test(groupTag)) groupTag = rolesGroup ?? groupTag;
@@ -223,7 +223,7 @@ export function setSwatchValue(doc: unknown, path: string[], hex: string): boole
   return true;
 }
 
-/** Rename a swatch (its `$description` — the label pickers show). */
+/** Rename a swatch (its `$description` - the label pickers show). */
 export function setSwatchName(doc: unknown, path: string[], name: string): boolean {
   const leaf = leafAt(doc, path);
   if (!leaf) return false;
@@ -243,7 +243,7 @@ export function deleteSwatch(doc: unknown, path: string[]): boolean {
 
 /**
  * Point `color.semantic.<role>` (both the light and dark sets, when present) at
- * a different ramp step — how the brand editor's neutral/secondary swatch
+ * a different ramp step - how the brand editor's neutral/secondary swatch
  * picker overrides a fresh `deriveBrandTokens` doc before install. `secondary`
  * already carries such an alias (the engine hardcodes step 5); `neutral` has no
  * slot of its own today, so this simply adds one, in the same shape.
@@ -256,17 +256,17 @@ export function setSemanticRampAlias(doc: unknown, role: 'neutral' | 'secondary'
   }
 }
 
-// ── Print (CMYK / spot) override — any swatch ────────────────────────────────
+// ── Print (CMYK / spot) override - any swatch ────────────────────────────────
 // "Auto-convert until you lock one": a swatch's screen colour ($value) is the
-// source of truth (sRGB/OKLCH), and print/PDF-CMYK export auto-converts it —
+// source of truth (sRGB/OKLCH), and print/PDF-CMYK export auto-converts it - 
 // UNLESS a print value is locked here, which the export palette then substitutes
 // exactly. The lock rides in the DTCG `$extensions` vendor namespace (TOKEN_EXT)
 // as EITHER `cmyk` (a plain process-ink anchor) OR `spot` (a named spot/Pantone
-// colour with a CMYK equivalent for preview/fallback) — never both; setting one
+// colour with a CMYK equivalent for preview/fallback) - never both; setting one
 // clears the other. tokens.colors() already surfaces both as `.cmyk`/`.spot`,
 // which the CMYK export and the Separation tint-transform's alternate space read.
 
-/** JSON path to the primary ramp's anchor swatch — the MIDDLE step (the brand
+/** JSON path to the primary ramp's anchor swatch - the MIDDLE step (the brand
  *  colour), computed from however many steps the ramp carries (5 on a 9-step
  *  ramp, 3 on a 5-step ramp; = the engine's `at(0.5)`). Null if absent. A
  *  re-derive rebuilds the ramp, so the editor re-applies its lock after deriving. */
@@ -335,7 +335,7 @@ function cleanupExt(leaf: Rec): void {
 }
 
 /** Lock (or clear, with null) the swatch at `path`'s process-CMYK print value.
- *  Independent of `setSwatchSpotLock` — locking or clearing one never touches
+ *  Independent of `setSwatchSpotLock` - locking or clearing one never touches
  *  the other, so a token can carry a CMYK fallback alongside a spot lock. */
 export function setSwatchCmykLock(doc: unknown, path: string[], cmyk: [number, number, number, number] | null): boolean {
   const leaf = leafAt(doc, path);
@@ -377,7 +377,7 @@ export function setSwatchSpotLock(doc: unknown, path: string[], spot: SpotColor 
  * swatch has somewhere to live. Slugs collide-safely. Returns the new leaf's
  * JSON path so the caller can select it.
  *
- * `displayGroup` tags the new leaf's vendor extension with a section heading —
+ * `displayGroup` tags the new leaf's vendor extension with a section heading - 
  * how a per-group "+ Add" on a derived section (Primary/Neutral/Roles…) files a
  * CUSTOM swatch under that heading in the palette grid without pretending it's
  * a derived step (walkSwatches reads the tag back as the swatch's `group`).
@@ -405,11 +405,11 @@ export function addSwatch(
   return [...(multiSet ? ['base'] : []), 'color', group, slug];
 }
 
-// ── Swatch exclusions — "delete" for derived leaves ──────────────────────────
+// ── Swatch exclusions - "delete" for derived leaves ──────────────────────────
 // Derived ramp steps (and the theme roles) are structural: the ramp stays
 // derived, so deleting one from the palette means HIDING it, not removing the
 // token. The exclusion list is the doc-level `$extensions` vendor entry
-// `excluded` — an array of canonical swatch keys (`color.ramp.primary.2`).
+// `excluded` - an array of canonical swatch keys (`color.ramp.primary.2`).
 // Excluded swatches disappear from the palette grid + picker swatches, while
 // the tokens keep resolving (semantic roles and gradient aliases that point at
 // an excluded step never dangle). A re-derive carries the list forward but
@@ -432,26 +432,26 @@ export function setSwatchExcluded(doc: unknown, key: string, excluded: boolean):
   return true;
 }
 
-// ── Per-ramp tonal curve — the editable master behind a ramp's baked steps ────
+// ── Per-ramp tonal curve - the editable master behind a ramp's baked steps ────
 // A ramp's tonal curve (engine ColorCurve: per-channel L/C/H control points over
 // tone position t) rides in the ramp GROUP node's DTCG `$extensions` vendor
-// namespace as a serialized ColorCurveJSON OBJECT — the same doc-level pattern
+// namespace as a serialized ColorCurveJSON OBJECT - the same doc-level pattern
 // as `excluded`. The BAKED step literals stay the source of truth for the
 // runtime and tools (they read colours, never a curve); the curve is only the
 // editor's re-editable superset. A ramp with no stored curve is pure-derive and
-// byte-identical to today — nothing here writes a curve until the user edits one.
+// byte-identical to today - nothing here writes a curve until the user edits one.
 //
 // Group-level `$extensions` is invisible to walkSwatches (its walker skips every
 // `$`-prefixed key), so the curve never surfaces as a phantom swatch.
 
 export type RampId = 'primary' | 'neutral' | 'secondary';
-/** Per-ramp curves the editor has tuned — sparse: only edited ramps appear. */
+/** Per-ramp curves the editor has tuned - sparse: only edited ramps appear. */
 export type RampCurves = Partial<Record<RampId, ColorCurve>>;
 /** The three ramps a brand derives, in derive order. */
 export const RAMP_IDS: readonly RampId[] = ['primary', 'neutral', 'secondary'];
 
-/** JSON path to a ramp's GROUP node — `base.color.ramp.<ramp>` on a multi-set
- *  derived doc, `color.ramp.<ramp>` on a single-set import — multiSet-detected
+/** JSON path to a ramp's GROUP node - `base.color.ramp.<ramp>` on a multi-set
+ *  derived doc, `color.ramp.<ramp>` on a single-set import - multiSet-detected
  *  exactly like primaryAnchorPath. */
 function rampGroupPath(doc: unknown, ramp: string): string[] {
   const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
@@ -500,7 +500,7 @@ export function setRampCurve(doc: unknown, ramp: string, curve: ColorCurve | nul
 // back to the exact stored values at the same length.
 const seedStepT = (i: number, n: number): number => (n <= 1 ? 0.5 : i / (n - 1));
 
-/** Seed an editable curve from a ramp's CURRENT step tokens — read at full OKLCH
+/** Seed an editable curve from a ramp's CURRENT step tokens - read at full OKLCH
  *  precision (parseOklch, never a hex round-trip) so re-baking the seed at the
  *  same shade count reproduces a DERIVED ramp byte-for-byte (deriveBrandTokens
  *  emits its step literals with the same formatOklch, and formatOklch∘parseOklch
@@ -537,11 +537,11 @@ export function seedRampCurve(doc: unknown, ramp: string, steps: number): ColorC
 const clamp01Curve = (n: number): number => Math.min(1, Math.max(0, n));
 const wrap360 = (h: number): number => ((h % 360) + 360) % 360;
 
-/** Shift a curve by the primary's per-channel delta (pOld → pNew) — the
+/** Shift a curve by the primary's per-channel delta (pOld → pNew) - the
  *  re-anchor a primary edit runs when a ramp already carries a hand-tuned curve,
  *  so the curve TRACKS the new brand colour instead of being silently dropped
  *  (the user gets an explicit "Rebuild from colour" to return to the pure
- *  derive). H is an additive rotation mod 360 — a wrap across 0° is handled by
+ *  derive). H is an additive rotation mod 360 - a wrap across 0° is handled by
  *  the arithmetic itself, so the choice of delta representative is immaterial; L
  *  is additive, clamped to [0,1]; C is additive, clamped to ≥ 0. Any resulting
  *  out-of-gamut stop is the bake's problem (oklchToHex gamut-maps), not this
@@ -556,11 +556,11 @@ export function reanchorCurve(curve: ColorCurve, pOld: Oklch, pNew: Oklch): Colo
 }
 
 /**
- * Rotate a ramp's whole tonal curve bodily around the hue wheel — shift EVERY H
+ * Rotate a ramp's whole tonal curve bodily around the hue wheel - shift EVERY H
  * control point by `degrees` (wrapped mod 360), leaving L and C untouched. The
  * shell dual of the engine's `rotateRampHue` (which rotates a baked ramp's hex
  * stops): this rotates the editable master so the rotation persists and stays
- * hand-editable afterwards. One control point per existing point — no resample,
+ * hand-editable afterwards. One control point per existing point - no resample,
  * so the curve's shape is unchanged, only its hues turn. Gamut is the bake's
  * problem (`oklchToHex` gamut-maps at emit time), exactly like `rotateRampHue`.
  *
@@ -577,14 +577,14 @@ export function rotateCurveHue(curve: ColorCurve, degrees: number): ColorCurve {
 }
 
 /**
- * Apply per-ramp tonal curves onto a doc IN PLACE — the editor's authority seam.
+ * Apply per-ramp tonal curves onto a doc IN PLACE - the editor's authority seam.
  * For each EDITED ramp: regenerate its oklch() step literals from the curve
  * (sampleCurve → formatOklch, the identical literal form deriveBrandTokens
  * emits) and re-stamp the curve extension so a persist / re-derive carries it.
  *
  * A ramp with NO curve is skipped entirely, so an empty `curves` map is a
  * deep-equal no-op and a curve-less brand stays BYTE-IDENTICAL to today's pure
- * derive — the load-bearing guarantee. `steps` sets how many literals are baked;
+ * derive - the essential guarantee. `steps` sets how many literals are baked;
  * the CURVE is the master and is resampled to that count (curve resolution is
  * independent of the shade count).
  */
@@ -605,12 +605,12 @@ export function overlayRampCurves(doc: unknown, curves: RampCurves, steps: numbe
   }
 }
 
-// ── Contrast-lock — a CURVE TRANSFORM, not a parallel ramp system ─────────────
+// ── Contrast-lock - a CURVE TRANSFORM, not a parallel ramp system ─────────────
 // "Contrast-lock" retones a ramp so each step hits a per-step APCA target against
 // a background, KEEPING that step's hue and chroma. It PRODUCES an ordinary
 // ColorCurve, which the editor then hands to the exact same machinery every other
 // curve rides (setRampCurve / overlayRampCurves / reanchorCurve / the curve
-// editor) — a one-shot transform, hand-editable and persisted afterwards like any
+// editor) - a one-shot transform, hand-editable and persisted afterwards like any
 // curve. The target math is shared verbatim with the Palette Lab tool
 // (community/color-palette/hooks.js `_targets`/`_fitTargets`/`_parseLc`) so both
 // surfaces agree on what "even / text-first / ui" means.
@@ -628,7 +628,7 @@ const CONTRAST_LOCK_SPANS: Record<ContrastLockPreset, readonly [number, number]>
   ui: [8, 66],
 };
 
-// One-decimal rounding — hooks.js `_r1`, kept so the numbers match to the digit.
+// One-decimal rounding - hooks.js `_r1`, kept so the numbers match to the digit.
 const lcRound1 = (n: number): number => Math.round(n * 10) / 10;
 
 /** A comma list of Lc magnitudes → a clean numeric array (blank/junk dropped).
@@ -669,7 +669,7 @@ function fitLcTargets(list: number[], steps: number): number[] {
  */
 export function contrastTargets(preset: ContrastLockPreset, steps: number, custom = ''): number[] {
   const n = Math.max(1, Math.floor(steps));
-  // "non-empty custom wins, else the preset" — the ONE place this corrects a
+  // "non-empty custom wins, else the preset" - the ONE place this corrects a
   // latent tool bug: hooks.js `_parseLc('')` returns [0] (because Number('') === 0),
   // so the tool's own default empty `lcTargets` would zero every step. The tool's
   // help ("Overrides the curve when set") intends empty → preset, so guard it here.
@@ -691,7 +691,7 @@ export function contrastTargets(preset: ContrastLockPreset, steps: number, custo
 export interface ContrastLockResult {
   curve: ColorCurve;
   /** Count of steps whose target magnitude exceeded what that hue/chroma can
-   *  carry on the background — the solver returned `reachable === false`. */
+   *  carry on the background - the solver returned `reachable === false`. */
   unreachable: number;
 }
 
@@ -699,8 +699,8 @@ export interface ContrastLockResult {
  * Retone `current` so each of its `steps` stops hits `targets[i]` APCA-Lc against
  * `bgHex`, KEEPING that stop's hue and chroma. Samples `current` to `steps` OKLCH
  * stops (engine `sampleCurve`) and, per stop, inverts APCA via
- * `solveLightnessForApca(stop.h, stop.c, targets[i], bgHex)` — using the solver's
- * returned `{l, chroma, hue}` (already gamut-clamped at the solved lightness) —
+ * `solveLightnessForApca(stop.h, stop.c, targets[i], bgHex)` - using the solver's
+ * returned `{l, chroma, hue}` (already gamut-clamped at the solved lightness) - 
  * then assembles an ordinary ColorCurve (one control point per step at t = i/(n-1),
  * a single centre at 0.5 for n === 1, matching `seedRampCurve`'s `seedStepT`).
  *
@@ -730,15 +730,15 @@ export function contrastLockCurve(
 
 // ── Keyboard channel nudging (palette grid) ─────────────────────────────────────
 
-/** One arrow-press step per OKLCH channel — the huetone-style nudge the palette
+/** One arrow-press step per OKLCH channel - the huetone-style nudge the palette
  *  grid drives from the keyboard. Shift multiplies these by {@link NUDGE_BIG}. */
 export const NUDGE_STEP: Record<'L' | 'C' | 'H', number> = { L: 0.02, C: 0.01, H: 2 };
-/** Shift-held multiplier — a coarse jump for getting close fast. */
+/** Shift-held multiplier - a coarse jump for getting close fast. */
 export const NUDGE_BIG = 5;
 
 /**
  * Nudge one OKLCH channel of a hex colour by one keyboard step and return the
- * resulting hex — the pure maths behind the palette grid's L/C/H arrow-nudging.
+ * resulting hex - the pure maths behind the palette grid's L/C/H arrow-nudging.
  *
  *   hexToOklch → step the armed channel → clipToGamut('srgb') → oklchToHex
  *
@@ -748,8 +748,8 @@ export const NUDGE_BIG = 5;
  * brand swatch stays translucent. An unparseable hex is returned unchanged, so
  * a caller can nudge unconditionally.
  *
- * The result is always in sRGB — clipToGamut holds L and H and gives up chroma,
- * and oklchToHex gamut-maps whatever remains — so a nudged swatch is a real,
+ * The result is always in sRGB - clipToGamut holds L and H and gives up chroma,
+ * and oklchToHex gamut-maps whatever remains - so a nudged swatch is a real,
  * displayable colour every step of the way.
  */
 export function nudgeSwatch(hex: string, channel: 'L' | 'C' | 'H', dir: 1 | -1, big: boolean): string {

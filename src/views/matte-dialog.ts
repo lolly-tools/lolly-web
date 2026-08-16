@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Remove Background — pick or drop a raster image, cut the subject out on-device
+ * Remove Background - pick or drop a raster image, cut the subject out on-device
  * with the optional host.matte bridge (v1.103), then save the cutout as an
  * ordinary user raster asset. A host-owned modal like the Upscale sheet: opened
  * lazily from an embedding (free-canvas context menu, picker, Bitmap Studio),
- * nested focus trap, Escape/backdrop/nav closes. Everything runs locally — the
+ * nested focus trap, Escape/backdrop/nav closes. Everything runs locally - the
  * model downloads once (consent line up front), and the pixels never leave the
  * device.
  *
@@ -13,10 +13,10 @@
  *  1. PROVENANCE, not destruction. Every other remover strips the file's
  *     metadata, ICC and Content Credential. Here the result carries a C2PA
  *     credential that NAMES the operation ("Background removed with <model>
- *     <version>") and keeps the ORIGINAL as an ingredient — so an AI image's
+ *     <version>") and keeps the ORIGINAL as an ingredient - so an AI image's
  *     credential survives the cut-out instead of being erased. And because a
  *     matte INVENTS nothing (every RGB pixel is the original; only the alpha is
- *     computed), the asset is NOT flagged AI-generated — it is an edit, disclosed
+ *     computed), the asset is NOT flagged AI-generated - it is an edit, disclosed
  *     honestly, not a generated composite.
  *  2. FORMAT. A cutout needs alpha, so the output keeps an alpha-capable format:
  *     a PNG/WebP/AVIF source stays its format; a JPEG (no alpha) switches to PNG
@@ -136,7 +136,7 @@ function frameToBlob(frame: MatteFrame, fmt: OutFormat): Promise<{ blob: Blob; f
   });
 }
 
-/** A human, actionable message for a failed matte run — never the raw runtime
+/** A human, actionable message for a failed matte run - never the raw runtime
  *  string. 'aborted' is handled by the caller (silent), so it's not mapped here. */
 function matteErrorMessage(kind: Exclude<MatteErrorKind, 'aborted'>): string {
   switch (kind) {
@@ -144,7 +144,7 @@ function matteErrorMessage(kind: Exclude<MatteErrorKind, 'aborted'>): string {
       return t("Couldn't download the model. Check your connection and try again.");
     case 'memory':
       // canRun can't see a transformer's activation memory, so a run can still run
-      // out after a green check — point at the two levers that actually help.
+      // out after a green check - point at the two levers that actually help.
       return t('Ran out of memory removing the background. Try a smaller image, or the fast model, which needs the least.');
     default:
       return t("Couldn't remove the background. Try a smaller image, or a different model.");
@@ -164,7 +164,7 @@ function matteAssetIds(sourceName: string, now: number): { id: string; name: str
  * so a stale button can never strand the user in a dead dialog.
  */
 // The last matte model the user picked, remembered per device so the dialog reopens
-// on their choice (models differ in size, quality and download — a silent reset to
+// on their choice (models differ in size, quality and download - a silent reset to
 // the default is exactly the accidental-wrong-model case this avoids).
 const MATTE_MODEL_KEY = 'lolly:matteModel';
 const readMatteModel = (): string => { try { return localStorage.getItem(MATTE_MODEL_KEY) || ''; } catch { return ''; } };
@@ -299,8 +299,8 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       } catch { consentEl.hidden = true; }
     };
 
-    // If the source was a JPEG (or other alpha-less format), we CANNOT keep it —
-    // a cutout needs alpha — so say the format is changing, honestly.
+    // If the source was a JPEG (or other alpha-less format), we CANNOT keep it - 
+    // a cutout needs alpha - so say the format is changing, honestly.
     const paintFormatNote = (): void => {
       const chosen = formatSel.value as OutFormat;
       if (outputFormatFor(srcFormat) !== chosen && srcFormat.replace('jpeg', 'jpg') === 'jpg') {
@@ -399,7 +399,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
 
         // Provenance: stamp the operation and keep the original as an ingredient.
         // A matte invents nothing, so this is a c2pa.edited step, NOT an
-        // AI-generated claim — and a source credential (e.g. an AI image's) is
+        // AI-generated claim - and a source credential (e.g. an AI image's) is
         // preserved rather than erased. Never throws (stampDerivedC2pa is
         // try/catch internally); a failed re-sign still ships the cut-out.
         let blob = rawBlob;

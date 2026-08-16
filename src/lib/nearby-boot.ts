@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby-boot — the one import `main.ts` makes to (maybe) wire up LAN discovery.
+ * nearby-boot - the one import `main.ts` makes to (maybe) wire up LAN discovery.
  *
  * On a plain web build there is nothing to wire: a PWA cannot do mDNS/multicast/raw
  * sockets, so `installNearbyBoot()` probes for the Tauri runtime and, finding none,
  * returns having registered nothing. The registry (`lib/nearby.ts`) then stays empty
- * and every Nearby affordance stays absent — the web bundle is byte-identical to one
+ * and every Nearby affordance stays absent - the web bundle is byte-identical to one
  * without this feature.
  *
  * ── Why a runtime probe, not the vite bridge-override swap ───────────────────────
@@ -13,7 +13,7 @@
  * The Tauri shells' `overrideBridgeModules()` plugin only rewrites imports made from
  * inside a `bridge/` dir (it matches the importer path), and this module is imported
  * from `main.ts`. Rather than bend that plugin or misfile this under `bridge/`, we use
- * the pattern the codebase already blesses for exactly this shape — the Design System
+ * the pattern the codebase already blesses for exactly this shape - the Design System
  * "Website" source (`lib/design-system/sources/website.ts`) reaches Tauri through its
  * own `__TAURI_INTERNALS__.invoke` global instead of a build-time swap, "the one that
  * cannot miss". Same here: detect the global, and talk to the native `nearby_*`
@@ -23,7 +23,7 @@
  *
  * ── The native contract (all over `invoke`, poll-based) ─────────────────────────
  *
- * Discovery's wire — mDNS TXT records, the TCP invite exchange — is parsed
+ * Discovery's wire - mDNS TXT records, the TCP invite exchange - is parsed
  * authoritatively in Rust (that is where the bytes are; a second TS codec would only
  * drift). Rust surfaces already-clean JSON:
  *   nearby_set_visible({name})     start advertising under a chosen name
@@ -35,7 +35,7 @@
  *   nearby_decline({exchangeId})             refuse an inbound invite
  *
  * Even though Rust is ours, its output is validated/clamped here (peer-list length,
- * string lengths) — defence in depth, the same discipline every other boundary keeps.
+ * string lengths) - defence in depth, the same discipline every other boundary keeps.
  */
 
 import {
@@ -48,7 +48,7 @@ import {
   visibilityRemainingMs,
 } from './nearby.ts';
 
-/** A minimal shape of Tauri's invoke, so we never import `@tauri-apps/api`. */
+/** A minimal type for Tauri's invoke, so we never import `@tauri-apps/api`. */
 export type TauriInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 
 /** Reach Tauri's invoke via the global it always installs, or null off Tauri.
@@ -59,7 +59,7 @@ export function tauriInvoke(): TauriInvoke | null {
   return typeof invoke === 'function' ? (invoke as TauriInvoke) : null;
 }
 
-// Clamps — Rust output is trusted but not blindly. A runaway peer list or an
+// Clamps - Rust output is trusted but not blindly. A runaway peer list or an
 // over-long name never reaches the UI.
 const MAX_PEERS = 64;
 const MAX_NAME_CHARS = 32;
@@ -159,7 +159,7 @@ export function createNearbyLanProvider(env: NearbyLanEnv): NearbyProvider {
         const fromName = str(r?.fromName, MAX_NAME_CHARS) ?? '';
         if (!exchangeId || !token || seenInvites.has(exchangeId)) continue;
         seenInvites.add(exchangeId);
-        if (!inviteSubs.size) continue; // no acceptor listening — let it time out natively
+        if (!inviteSubs.size) continue; // no acceptor listening - let it time out natively
         const inv: NearbyInboundInvite = {
           token,
           fromName,
@@ -244,7 +244,7 @@ let installed = false;
 export function installNearbyBoot(): void {
   if (installed) return;
   const invoke = tauriInvoke();
-  if (!invoke) return; // web / CLI — nothing to register, stay dormant
+  if (!invoke) return; // web / CLI - nothing to register, stay dormant
   installed = true;
   registerNearbyProvider(createNearbyLanProvider({ invoke }));
 }

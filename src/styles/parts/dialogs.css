@@ -112,6 +112,17 @@
 .save-card-row .btn { flex: none; }
 .save-new-project { margin-top: 8px; width: 100%; }
 
+/* Create-a-tool: a narrow emoji/icon field beside the name, and the format checkbox row. */
+.save-tool-icon { flex: 0 0 64px; text-align: center; }
+.save-tool-formats {
+  display: flex; flex-wrap: wrap; gap: 8px 14px;
+  margin: 10px 0 0; padding: 0; border: 0;
+}
+.save-tool-format {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--foreground));
+}
+
 /* Shared control look for the dialog's selects + text inputs. */
 .save-input {
   height: 32px; padding: 0 10px;

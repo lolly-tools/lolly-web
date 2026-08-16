@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — spreadsheet-style keyboard navigation for the grid.
+ * Pro / Batch mode - spreadsheet-style keyboard navigation for the grid.
  *
  * Two states, exactly like a spreadsheet:
- *   • FOCUSED (nav)  — the cell <td> itself holds focus. Arrow keys move between
+ *   • FOCUSED (nav) - the cell <td> itself holds focus. Arrow keys move between
  *                      cells; Enter / F2 / typing / double-click begin editing.
- *   • EDITING        — the cell's inner control holds focus. Arrows move the
+ *   • EDITING - the cell's inner control holds focus. Arrows move the
  *                      caret (NOT between cells); Escape / Enter / Tab release
  *                      back to the focused state on the same cell.
  *
@@ -13,7 +13,7 @@
  * focusable, but only the active one is in the tab order (tabindex 0); inner
  * controls are taken out of the tab order (tabindex -1) and are reached only by
  * entering edit mode (or a direct click). So the whole grid is one tab stop and
- * focus state is the single source of truth — we derive "am I editing?" from
+ * focus state is the single source of truth - we derive "am I editing?" from
  * whether the focused element is the cell or a control inside it.
  *
  * Self-contained: attach to the grid container, call refresh() after every
@@ -38,7 +38,7 @@ export interface GridNav {
 }
 
 export interface GridNavOptions {
-  /** Move the focused row up (-1) or down (+1) — the keyboard equivalent of the
+  /** Move the focused row up (-1) or down (+1) - the keyboard equivalent of the
    *  grip-drag reorder. The owner reorders its state and re-renders; refresh() then
    *  restores focus to the moved row (tracked by rowUid), so focus follows it. */
   onReorderRow?: (rowUid: string, dir: -1 | 1) => void;
@@ -111,7 +111,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
     const c = editableIn(td);
     if (!c) return false;
     // Trigger cells open their own popover (asset picker / colour swatches /
-    // template search) — click to open, or just focus on a quiet vertical move.
+    // template search) - click to open, or just focus on a quiet vertical move.
     if (c.matches('[data-asset-pick], .color-trigger, .pro-template-trigger, .pro-blocks-trigger')) {
       if (openPicker) c.click(); else c.focus();
       return true;
@@ -124,7 +124,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
         else c.select();
       } catch { /* number inputs don't support selection ranges */ }
     }
-    // Pop the native picker open for date/time cells. NOT colour — the shell
+    // Pop the native picker open for date/time cells. NOT colour - the shell
     // never opens the OS colour picker (colour cells are our own color-field, a
     // button, so they never reach this branch anyway). Requires user activation
     // in some browsers, so it's best-effort (guarded).
@@ -208,14 +208,14 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
   // ── Keyboard ────────────────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent) {
     const target = e.target;
-    // The colour popover runs its own inputs (hex, swatches) — let it handle keys.
+    // The colour popover runs its own inputs (hex, swatches) - let it handle keys.
     if (target instanceof HTMLElement && target.closest('.color-popover')) return;
     const td = target instanceof HTMLElement ? target.closest<HTMLElement>(CELL_SEL) : null;
     if (!td || !container.contains(td)) return;
     const editing = target !== td;
 
     if (editing) {
-      // Up/Down jump to the same input one row away, staying in edit mode — but
+      // Up/Down jump to the same input one row away, staying in edit mode - but
       // leave textareas alone so the caret can move between their lines.
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (target as HTMLElement).tagName !== 'TEXTAREA') {
         moveEditing(e.key === 'ArrowDown' ? 1 : -1, 0); e.preventDefault(); return;
@@ -228,7 +228,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
         return;
       }
       if (e.key === 'Escape') { endEdit(td); e.preventDefault(); return; }
-      // Tab commits and moves to the next/prev cell (selected, not editing) —
+      // Tab commits and moves to the next/prev cell (selected, not editing) - 
       // spreadsheet-style, so focus visibly steps right instead of just dropping
       // edit mode on the same cell.
       if (e.key === 'Tab') { moveFocus(0, e.shiftKey ? -1 : 1, { wrap: true }); e.preventDefault(); return; }
@@ -240,7 +240,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
     }
 
     // FOCUSED (nav) state.
-    // Alt+↑/↓ reorders the focused row — the keyboard equivalent of grip-drag.
+    // Alt+↑/↓ reorders the focused row - the keyboard equivalent of grip-drag.
     // The owner re-renders; refresh() re-focuses by rowUid, so focus follows the row.
     if (opts.onReorderRow && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && active.rowUid) {
       opts.onReorderRow(active.rowUid, e.key === 'ArrowDown' ? 1 : -1);
@@ -284,7 +284,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
    * the render), move focus to the active cell so keyboard flow is unbroken.
    */
   function refresh({ restoreFocus = false }: { restoreFocus?: boolean } = {}) {
-    _matrix = null; // the DOM was (re)built — drop the cached cell matrix
+    _matrix = null; // the DOM was (re)built - drop the cached cell matrix
     container.querySelectorAll<HTMLElement>(CONTROL_SEL).forEach(c => { c.tabIndex = -1; });
     const cells = allCells();
     if (!cells.length) { activeEl = null; return; }
@@ -302,7 +302,7 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
 
   /**
    * Move focus to the active cell (the first cell after a fresh mount).
-   * With { edit: true } it also opens that cell's editor — used on entry so the
+   * With { edit: true } it also opens that cell's editor - used on entry so the
    * template chooser is open and keyboard-selectable straight away.
    */
   function focusActive({ edit = false }: { edit?: boolean } = {}) {

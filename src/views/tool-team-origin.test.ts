@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * A team-session origin never outlives the mount that consumed it — INCLUDING the
+ * A team-session origin never outlives the mount that consumed it - INCLUDING the
  * mounts that never happen (plan 100 §7; `org/team-session-origin.ts` rule 3).
  *
  * `org/team-session-origin.test.ts` proves the module: one-shot arming, a mismatch that
  * clears both states, and a release that drops the live one. What it cannot prove is the
- * half that decides whether any of that holds in the product — THE VIEW WIRING — because
+ * half that decides whether any of that holds in the product - THE VIEW WIRING - because
  * `mountTool` imports stylesheets and reaches modules that resolve siblings with `.js`
  * specifiers, so no suite outside Vite can mount it (the reason `views/tool-collab-mount.
  * test.ts` and `views/block-row-id.test.ts` scan rather than mount).
@@ -13,12 +13,12 @@
  * The gap this file closes was real. `consumeTeamSessionOrigin` does not merely SPEND the
  * stash: on a tool-id match it PROMOTES it to the module's live slot, and the view's only
  * release sits inside the `viewEl._cleanup` closure that is not assigned until the mount
- * is fully built, ~1500 lines later. Every abandoned mount in between — a 404, an offline
- * load, a validation failure, a capability this shell cannot fulfil — therefore left an
+ * is fully built, ~1500 lines later. Every abandoned mount in between - a 404, an offline
+ * load, a validation failure, a capability this shell cannot fulfil - therefore left an
  * origin live with nothing to release it (`main.ts`'s `navigate()` calls
  * `view._cleanup?.()`, and this view had given it none). The concrete cost, on a governed
  * instance: open a team session of a `capture` tool on Safari, get the "desktop only"
- * card, go to Projects, share a LOCAL session of the same tool — and `org/collab-share.ts`
+ * card, go to Projects, share a LOCAL session of the same tool - and `org/collab-share.ts`
  * reads the stale team `sessionId` at press time and keys a work collab on somebody
  * else's session. An id that is present and wrong is precisely what that module exists to
  * prevent, and it can only be prevented here.
@@ -27,10 +27,10 @@
  *
  *  1. THE TEXT. Every `return` between the consume and the `_cleanup` assignment releases
  *     first. Nested function bodies are stripped before the scan, so the invariant covers
- *     the WHOLE danger zone rather than the five branches that exist today — a sixth
+ *     the WHOLE danger zone rather than the five branches that exist today - a sixth
  *     early return added tomorrow fails this test rather than shipping the bug back.
  *  2. THE BEHAVIOUR. The module, driven through the same sequence the view performs, ends
- *     with nothing readable — proof that the calls added to the view are the ones that
+ *     with nothing readable - proof that the calls added to the view are the ones that
  *     actually close the hole.
  *
  * Run directly:  node --test shells/web/src/views/tool-team-origin.test.ts
@@ -55,7 +55,7 @@ const TOOL_TS = readFileSync(join(HERE, 'tool.ts'), 'utf8');
 /** Source with comments removed, so "does this path release?" cannot be answered by
  *  prose about it. Line comments are cut at a `//` that is not part of a `://` scheme;
  *  block comments are dropped wholesale. (The same reader `tool-collab-mount.test.ts`
- *  uses — kept local so neither suite can quietly change the other's evidence.) */
+ *  uses - kept local so neither suite can quietly change the other's evidence.) */
 function stripComments(src: string): string {
   const noBlocks = src.replace(/\/\*[\s\S]*?\*\//g, '');
   return noBlocks
@@ -82,8 +82,8 @@ function matchBrace(src: string, open: number): number {
  *
  * A `return` belongs to the function whose body it sits in, and `mountTool`'s prologue is
  * full of callbacks (a promise executor, a click handler) whose returns are not exits from
- * the mount. Depth alone cannot tell the two apart — the early returns live inside `if`
- * and `try` blocks, which are braces too — so the closures are removed instead, outermost
+ * the mount. Depth alone cannot tell the two apart - the early returns live inside `if`
+ * and `try` blocks, which are braces too - so the closures are removed instead, outermost
  * first, and whatever `return`s remain are exits from `mountTool` itself.
  */
 function stripNestedFunctions(src: string): string {
@@ -96,7 +96,7 @@ function stripNestedFunctions(src: string): string {
     if (close < 0) break;
     // The BRACES go with the body. Leaving them would re-match this same closure on the
     // next pass (the replacement is identical), which is an infinite loop rather than a
-    // failed assertion — and a scanner that hangs teaches nobody anything.
+    // failed assertion - and a scanner that hangs teaches nobody anything.
     out = `${out.slice(0, open)}BODY${out.slice(close + 1)}`;
   }
   return out;

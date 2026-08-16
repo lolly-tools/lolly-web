@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * font-resolve.ts — the pure family-name resolver of plan 97 §7.2 (gap 3).
+ * font-resolve.ts - the pure family-name resolver of plan 97 §7.2 (gap 3).
  *
  * A face discovered inside a PDF or on a website arrives as one string and
  * nothing else: "ABCDEF+Inter-SemiBold", "HelveticaNeue-Bold",
  * "RobotoCondensed-LightItalic". Until that string is split into a family, a
- * weight and a slant it is a dead end — it cannot be compared on the specimen
+ * weight and a slant it is a dead end - it cannot be compared on the specimen
  * stage, cannot be matched against Google Fonts, and cannot be assigned a role.
  * This module does the splitting, and only the splitting: no DOM, no network,
  * no state. The Type room decides what to DO with the result.
@@ -15,7 +15,7 @@
  *  1. **A guess is labelled a guess.** The weight and slant come from words in
  *     a name, not from the font program. `parseFaceName` reads what the name
  *     SAYS. Where the bytes are in hand the file always wins, and the one
- *     reading of the file that lives here is `variableWeightRange` — the `fvar`
+ *     reading of the file that lives here is `variableWeightRange` - the `fvar`
  *     axis a name cannot state (see its note for why it is here and not in
  *     `font-utils.ts`).
  *  2. **A lookalike is never the font.** `googleMatch` returns a Google family
@@ -31,7 +31,7 @@
  * as family "Archivo" at 900, because a catalogue-free parser cannot tell a
  * family word from a style word. Callers that have a
  * catalogue should try `googleMatch(raw)` on the whole spelled name FIRST and
- * fall back to `googleMatch(parseFaceName(raw).family)` — the test suite pins
+ * fall back to `googleMatch(parseFaceName(raw).family)` - the test suite pins
  * that two step order.
  */
 
@@ -42,7 +42,7 @@ export interface ParsedFaceName {
   /**
    * Human spelling of the family: "Helvetica Neue", "Roboto Condensed".
    *
-   * Best effort on word boundaries — "JetBrainsMono" comes back as "Jet Brains
+   * Best effort on word boundaries - "JetBrainsMono" comes back as "Jet Brains
    * Mono", because camelCase alone cannot say which capital starts a new word.
    * `googleMatch` ignores spacing entirely, so a mis-spaced family still
    * resolves; only the label shown to a person is affected, and they can retype
@@ -108,7 +108,7 @@ const MODIFIERS = new Set(['extra', 'ultra', 'semi', 'demi', 'ext']);
 const ITALICS = new Set(['italic', 'italics', 'ital', 'it', 'oblique', 'obl']);
 
 /**
- * Width words, kept in the family and normalised to their long spelling —
+ * Width words, kept in the family and normalised to their long spelling - 
  * Google's own family names carry the width ("Roboto Condensed", "Archivo
  * Narrow"), so dropping it would resolve a condensed face to the wrong file.
  * The `condensed` flag is for callers that want to fold width themselves.
@@ -142,7 +142,7 @@ const DEFAULT_WEIGHT = 400;
  * up: hyphenated ("Inter-SemiBold"), underscored ("Open_Sans_Bold"), spaced
  * ("Helvetica Neue Bold") and camelCase ("HelveticaNeueBold").
  *
- * The digit rule is deliberately narrow — only lowercase→digit splits, so
+ * The digit rule is deliberately narrow - only lowercase→digit splits, so
  * "Exo2" becomes "Exo 2" while "B612" stays one word.
  */
 function tokenize(raw: string): string[] {
@@ -175,7 +175,7 @@ const spell = (token: string): string =>
  * Read a face name. Weight words, slant words and format noise are lifted out;
  * whatever is left, in its original order, is the family.
  *
- * Style words are only lifted while at least one other word remains — a name
+ * Style words are only lifted while at least one other word remains - a name
  * that is nothing BUT style words ("Bold") keeps its word as the family rather
  * than resolving to an empty string.
  */
@@ -258,8 +258,8 @@ function tagAt(view: DataView, offset: number): string {
  * The `wght` axis range a VARIABLE font declares, as a CSS weight descriptor
  * ("100 900"), or null for a static face.
  *
- * Why this matters: `OS/2.usWeightClass` — the only weight `parseFontMetadata`
- * reads — describes the font's DEFAULT INSTANCE, not the file. Outfit[wght].ttf
+ * Why this matters: `OS/2.usWeightClass` - the only weight `parseFontMetadata`
+ * reads - describes the font's DEFAULT INSTANCE, not the file. Outfit[wght].ttf
  * says 100 there while carrying every weight from 100 to 900, so storing (and
  * registering) that face as `weight: '100'` pins the whole app to Thin and makes
  * every other weight a browser-synthesised fake. The `fvar` table is where the
@@ -270,11 +270,11 @@ function tagAt(view: DataView, offset: number): string {
  * file's `FontMetadata` is a fixed-shape record with a dozen readers (the upload
  * validator, the font registry, the brand editor, the export path), and widening
  * it would change what all of them get. This is an ADDITIVE read, used by the two
- * callers that care — the bytes install path and the compare stage.
+ * callers that care - the bytes install path and the compare stage.
  *
  * Pure and defensive: a truncated table, a nonsense axis count or a range CSS
  * cannot express all return null rather than a half-read number. Only an sfnt is
- * readable — a WOFF/WOFF2 wrapper hides the table directory, exactly as it hides
+ * readable - a WOFF/WOFF2 wrapper hides the table directory, exactly as it hides
  * `OS/2` from `readFontEmbedding`.
  */
 export function variableWeightRange(buffer: ArrayBuffer): string | null {
@@ -298,7 +298,7 @@ export function variableWeightRange(buffer: ArrayBuffer): string | null {
       const at = axesAt + i * axisSize;
       if (at + FVAR_AXIS_SIZE > buffer.byteLength) return null;
       if (tagAt(view, at) !== 'wght') continue;
-      // Fixed 16.16 — the axis bounds, rounded to the integers CSS accepts.
+      // Fixed 16.16 - the axis bounds, rounded to the integers CSS accepts.
       const min = Math.round(view.getInt32(at + 4, false) / 65536);
       const max = Math.round(view.getInt32(at + 12, false) / 65536);
       if (!(min >= WEIGHT_MIN && max <= WEIGHT_MAX && min < max)) return null;
@@ -336,7 +336,7 @@ const FAMILY_ALIASES: Readonly<Record<string, string>> = {
  * so nobody "helpfully" adds them to FAMILY_ALIASES later.
  *
  * A metric-compatible face occupies the same advance widths as the face it
- * substitutes, which is why documents reflow identically — and it is why these
+ * substitutes, which is why documents reflow identically - and it is why these
  * pairs are so tempting to resolve. They are still DIFFERENT typefaces drawn by
  * different people: Arial is not Helvetica, Tinos is not Times New Roman.
  * Claiming otherwise would put someone's brand into the wrong letterforms and
@@ -422,7 +422,7 @@ const EMBEDDING_VALUES = new Set(['installable', 'restricted', 'preview-print', 
  * The chips shown beside a face that came out of a document rather than out of
  * a font shop.
  *
- * NO CALLER YET, and that is a seam rather than an oversight — say so plainly so
+ * NO CALLER YET, and that is a seam rather than an oversight - say so plainly so
  * the next reader does not take it for live code. It reads `{subset, embedding}`,
  * which is precisely what `views/pdf-import.ts`'s `EmbeddedFont` already carries
  * off a real document; what does not exist yet is the route from there into the
@@ -441,7 +441,7 @@ const EMBEDDING_VALUES = new Set(['installable', 'restricted', 'preview-print', 
  * - Exactly one embedding chip, always: the fsType permission when the source
  *   stated one we recognise, and `unknown` otherwise. Unstated is not
  *   permission and it is not refusal, so it is neither of those words. An
- *   unrecognised string is also `unknown` — repeating a word whose meaning we
+ *   unrecognised string is also `unknown` - repeating a word whose meaning we
  *   cannot vouch for would dress a guess as a fact.
  *
  * `subset: false` produces no chip. Saying "FULL" would claim the source

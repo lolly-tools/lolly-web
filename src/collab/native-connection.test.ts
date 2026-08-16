@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-connection — the native session → CollabConnection assembly (collab/native-connection.ts):
+ * native-connection - the native session → CollabConnection assembly (collab/native-connection.ts):
  * the RtcHandleTransport adapter (send encodes + fires, state, on('message') decodes, close),
  * the beam lane (json/binary send + drain-on-resolution), and nativeCollabConnection building
  * on the REAL createRtcCollabHandle (so this verifies the adapter is contract-accepted).

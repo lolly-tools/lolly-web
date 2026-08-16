@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * easing-editor.ts — a cubic-bezier curve editor: the unit square, the curve, two
+ * easing-editor.ts - a cubic-bezier curve editor: the unit square, the curve, two
  * draggable control points, the wire string as a live editable readout, and a strip
  * showing the motion the curve actually produces.
  *
  * It owns NO validation of its own. `easingPoints` (lib/transitions.ts) is the single
- * definition of what a legal authored ease is — x pinned to [0,1] because it is time,
- * y unbounded because that is the entire overshoot family — and every value that
+ * definition of what a legal authored ease is - x pinned to [0,1] because it is time,
+ * y unbounded because that is the entire overshoot family - and every value that
  * enters here (a seed, a pasted string) goes through it. Re-deriving those bounds
  * beside the drag maths is how the two drift.
  *
  * It also owns no popover lifecycle: it builds DOM into whatever parent it is given.
  * The timeline mounts it inside a body-mounted popover (mountBodyPopover), which is
- * what supplies Escape, the outside-click dismissal and the focus restore — this
+ * what supplies Escape, the outside-click dismissal and the focus restore - this
  * module never reaches for `document` beyond the pointer capture a drag needs.
  *
  * Commit law, matching the timeline panel's: the model is written ONCE per gesture.
  * A drag commits on pointerup, a keyboard nudge on keyup (so a held arrow key is one
- * undo step, not thirty), a typed readout on `change`. Nothing commits on mount — an
+ * undo step, not thirty), a typed readout on `change`. Nothing commits on mount - an
  * editor that is opened and closed again must leave the box exactly as unauthored as
  * it found it.
  */
@@ -29,7 +29,7 @@ import '../styles/parts/easing-editor.css';
 type Pts = [number, number, number, number];
 
 /* Plot geometry, in SVG user units. The unit square is PLOT_W x PLOT_H; Y_OVER is how
-   far outside it the view extends in each direction, expressed in unit-y — enough
+   far outside it the view extends in each direction, expressed in unit-y - enough
    headroom to SEE an overshoot without making the card tall enough to need a scroller.
    A pasted curve with a y beyond that range is still legal and still drawn; only its
    handle leaves the frame, which is a better failure than silently rewriting the
@@ -45,7 +45,7 @@ const SVG_H = PLOT_H + OVER_PX * 2;
 const toPx = (x: number): number => PAD_X + x * PLOT_W;
 const toPy = (y: number): number => OVER_PX + (1 - y) * PLOT_H;
 
-/** The curve the editor opens on when the field is UNAUTHORED — a shape to push
+/** The curve the editor opens on when the field is UNAUTHORED - a shape to push
  *  around, never a value: nothing is written until the user moves something. */
 const SEED: Pts = [0.33, 1, 0.68, 1];
 
@@ -65,7 +65,7 @@ export interface EasingEditorOptions {
 
 export interface EasingEditorHandle {
   root: HTMLElement;
-  /** What the popover should focus on open — the readout, which is the one control
+  /** What the popover should focus on open - the readout, which is the one control
    *  here that both announces the whole value and accepts a pasted one. */
   focusTarget: HTMLElement;
   /** The live points, for a caller that wants to read without waiting for a commit. */
@@ -76,7 +76,7 @@ export interface EasingEditorHandle {
 export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions): EasingEditorHandle {
   let pts: Pts = (easingPoints(opts.value) as Pts | null) ?? ([...SEED] as Pts);
   /** The last value handed to onCommit, so a gesture that ends where it started is
-   *  not an edit — the same reason the panel's number fields commit on `change`. */
+   *  not an edit - the same reason the panel's number fields commit on `change`. */
   let committed = easingToWire(opts.value);
 
   const root = document.createElement('div');
@@ -159,7 +159,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
 
   // ── the motion strip ───────────────────────────────────────────────────────
   // What the curve DOES, not what it looks like: the same object, moved by this ease.
-  // Under reduced motion it becomes a static trail of samples — the clustering IS the
+  // Under reduced motion it becomes a static trail of samples - the clustering IS the
   // easing, so the information survives without anything moving.
   const PREV_W = 168, PREV_H = 26, PREV_PAD = 9;
   const strip = svgEl('svg');
@@ -234,7 +234,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
     const i = n === 1 ? 0 : 2;
     // x through the same [0,1] gate easingPoints enforces; y clamped only to the
     // VISIBLE range, so a dragged handle can never end up somewhere the user cannot
-    // see it. A typed value is not clamped at all — see the readout handler.
+    // see it. A typed value is not clamped at all - see the readout handler.
     pts[i] = round3(clamp(x, 0, 1));
     pts[i + 1] = round3(clamp(y, -Y_OVER, 1 + Y_OVER));
     paint();
@@ -276,7 +276,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
   svg.addEventListener('pointermove', onMove as EventListener);
   svg.addEventListener('pointerup', onUp as EventListener);
   svg.addEventListener('pointercancel', onUp as EventListener);
-  // A drag that leaves the plot still has to end somewhere — without this, releasing
+  // A drag that leaves the plot still has to end somewhere - without this, releasing
   // outside the card leaves `dragging` set and the next stray move keeps editing.
   document.addEventListener('pointerup', onUp as EventListener);
 
@@ -299,7 +299,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
     e.preventDefault();
     // Arrows are a selection gesture almost everywhere this could be mounted (the
     // timeline nudges the selected clip with them), so a curve nudge stops here rather
-    // than also moving whatever is selected behind the card. Only the arrows — Escape
+    // than also moving whatever is selected behind the card. Only the arrows - Escape
     // and Tab have already returned above, and they belong to the popover shell.
     e.stopPropagation();
     setPoint(n, pts[i]! + dx, pts[i + 1]! + dy);
@@ -324,7 +324,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
   });
   read.addEventListener('keydown', (e) => {
     // Enter applies without waiting for a blur. Nothing ELSE is swallowed: Escape
-    // belongs to the popover shell, and Tab belongs to its focus trap — both of which
+    // belongs to the popover shell, and Tab belongs to its focus trap - both of which
     // listen on `document`, so a blanket stopPropagation here would quietly break the
     // dismissal and the tab cycle rather than protect anything.
     if (e.key !== 'Enter') return;
@@ -342,7 +342,7 @@ export function mountEasingEditor(parent: HTMLElement, opts: EasingEditorOptions
     // DOM would paint a detached node forever, once per frame, for the life of the view.
     // `landed` because the card is built into a parent that is itself not in the
     // document yet (the popover shell appends its own element after this render
-    // returns) — without the latch the first frame would read "detached" and stop the
+    // returns) - without the latch the first frame would read "detached" and stop the
     // loop before it ever ran.
     let landed = false;
     const tick = (now: number): void => {

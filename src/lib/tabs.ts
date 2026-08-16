@@ -3,7 +3,7 @@
  * Shared roving-tabindex keyboard machinery for `role="tablist"` tab bars
  * (component audit rec 1). Dashboard's `.dash-tabs` and #/start's `.start-tabs`
  * (and, more loosely, `.color-mode-tabs`) each hand-rolled the identical ARIA
- * tabs pattern — click-to-select, Left/Right/Up/Down arrow + Home/End
+ * tabs pattern - click-to-select, Left/Right/Up/Down arrow + Home/End
  * navigation, one tab stop (`tabindex`) on the strip at a time. This module is
  * that pattern, extracted once.
  *
@@ -11,19 +11,19 @@
  * half): a segmented control (lib/seg.ts's `segHtml`) picks a VALUE and uses
  * `aria-pressed`; a tab bar switches between PANELS and uses `aria-selected`.
  * `.is-active` is kept alongside `aria-selected` on every tab as a purely
- * presentational hook for CSS (`.dash-tab.is-active`, `.start-tab.is-active`) —
+ * presentational hook for CSS (`.dash-tab.is-active`, `.start-tab.is-active`) - 
  * it carries no semantics of its own and callers should never branch on it.
  */
 
 export type TabSelectReason = 'click' | 'key' | 'programmatic';
 
 export interface WireTabsOptions {
-  /** The tab buttons' shared dataset key, camelCase — e.g. `'dashTab'` for
+  /** The tab buttons' shared dataset key, camelCase - e.g. `'dashTab'` for
    *  `[data-dash-tab]` / `el.dataset.dashTab`. Matched against `container`'s
    *  descendants (not `container` itself). */
   key: string;
   /** Fires after a tab's DOM state (aria-selected/.is-active/tabindex/focus)
-   *  has been applied — owns whatever view-specific side effects follow
+   *  has been applied - owns whatever view-specific side effects follow
    *  (panel visibility, URL sync, sound, closing an unrelated popover, …).
    *  `reason` distinguishes a live user action (`'click'`/`'key'`) from a
    *  programmatic jump (the initial paint, a deep link, "Save & continue") so
@@ -33,7 +33,7 @@ export interface WireTabsOptions {
 
 /**
  * Wire one tab bar's keyboard + click behaviour inside `container` (the
- * `role="tablist"` element, or any ancestor of the tab buttons — listeners are
+ * `role="tablist"` element, or any ancestor of the tab buttons - listeners are
  * delegated). Returns a `select(value, opts?)` function for the view's own
  * programmatic jumps (deep links, "next tab" flows); calling it always reports
  * `reason: 'programmatic'` to `onSelect`.

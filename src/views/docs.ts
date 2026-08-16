@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * In-app documentation reader (#/docs/<slug>) — plan "this-is-a-very-sparkling-eich"
- * M2, Phase 1 (reader only; no narration/Listen player — that is a later phase).
+ * In-app documentation reader (#/docs/<slug>) - plan "this-is-a-very-sparkling-eich"
+ * M2, Phase 1 (reader only; no narration/Listen player - that is a later phase).
  *
  * This brings the /info docs INTO the app so they render inside #view and inherit the
  * ACTIVE brand's design tokens (unlike the published static site, which is neutral for
  * anonymous/SEO). It is a routed utility view like #/ask or the Colour Lab: the shared
  * back pill, a home + theme cluster, and its own scroll.
  *
- * CONTENT SOURCE — "fragment rehost" (the plan's recommended path). Rather than
+ * CONTENT SOURCE - "fragment rehost" (the plan's recommended path). Rather than
  * client-rendering markdown (which would need localized `.md` twins the build doesn't
  * yet emit), it fetches the built per-locale page `/info/<lang>/<slug>.html` (English is
- * unprefixed, `/info/<slug>.html` — exactly docsHref/docsInfoHref), extracts the tested
+ * unprefixed, `/info/<slug>.html` - exactly docsHref/docsInfoHref), extracts the tested
  * `.docs-content` fragment with DOMParser, and injects it into #view. That reuses the
  * exact static-build output, works for all 27 locales for free, shows the committed
  * neutral signed screenshots as <img>, and picks up the active brand purely via CSS
@@ -51,7 +51,7 @@ type DocsHost = HostV1;
  *  `inner` seeds the content column; the pathways / sidebar / TOC / sitemap slots
  *  start empty + hidden and are filled from the fetched page once it parses (each a
  *  graceful no-op if that page lacks the landmark). The scaffold is fixed class markup
- *  + component HTML + t() labels only — no free/user text reaches this sink. */
+ *  + component HTML + t() labels only - no free/user text reaches this sink. */
 function shellHtml(inner: string): string {
   return `
     ${backPillHtml()}
@@ -77,7 +77,7 @@ export async function mountDocs(
   params: string,
 ): Promise<void> {
   // Explicit route lang (#/docs/<lang>/<slug>) beats a ?lang= override beats the app's
-  // current locale — the fetched page must match whatever language the app is showing.
+  // current locale - the fetched page must match whatever language the app is showing.
   const lang: Lang =
     normalizeLang(routeLang) ?? normalizeLang(new URLSearchParams(params).get('lang')) ?? currentLang();
 
@@ -101,7 +101,7 @@ export async function mountDocs(
     const res = await fetch(url, { credentials: 'same-origin' });
     if (!viewEl.isConnected) return;
     if (!res.ok) {
-      // 404 etc. — a real message, plus the static page as an escape hatch.
+      // 404 etc. - a real message, plus the static page as an escape hatch.
       showStatus(
         t('That documentation page could not be found.'),
         ` <a href="${escape(url)}" target="_blank" rel="noopener">${t('Open the docs')}</a>`,
@@ -129,13 +129,13 @@ export async function mountDocs(
     return;
   }
 
-  // Title from the fetched page (falls back to the slug) — for the tab and history entry.
+  // Title from the fetched page (falls back to the slug) - for the tab and history entry.
   const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[—-]\s*Lolly\s*$/, '').trim();
   if (pageTitle) document.title = tRaw('{name} — Lolly', { name: pageTitle });
 
   // Sanitise: never run a fetched page's scripts, and drop the Listen bar (the dock owns
   // narration now). KEEP <style>: the only style nodes inside `.docs-content` are a figure's
-  // OWN scoped block (e.g. `.cmp-fig` for the comparison matrix) — the page-global CSS lives
+  // OWN scoped block (e.g. `.cmp-fig` for the comparison matrix) - the page-global CSS lives
   // in <head>, which we never extract. Those blocks also DEFINE the figure's local tokens
   // (`--cmp-*`), so stripping them left figures unstyled and their headings mashed. This is
   // our own trusted, brand-scoped build output, not arbitrary fetched markup.
@@ -145,8 +145,8 @@ export async function mountDocs(
   rewriteDocLinks(fragment);
 
   // Adopt the fragment into this document and mount it. `.docs-content` is a <main> in the
-  // built page, but #view is ALREADY <main id="view"> — a nested/second <main> is an
-  // invalid, duplicate landmark — so rehost its guts in an <article> (valid inside <main>,
+  // built page, but #view is ALREADY <main id="view"> - a nested/second <main> is an
+  // invalid, duplicate landmark - so rehost its guts in an <article> (valid inside <main>,
   // and the right role for a doc page), keeping the `docs-content page-<slug>` classes so
   // docs.css applies. importNode(true) deep-clones across the parsed document.
   const imported = document.importNode(fragment, true) as HTMLElement;
@@ -164,7 +164,7 @@ export async function mountDocs(
     return true;
   };
 
-  // In-page anchors (`#heading-id`) must NOT set location.hash — that IS the SPA route,
+  // In-page anchors (`#heading-id`) must NOT set location.hash - that IS the SPA route,
   // so a bare `#foo` would navigate away. Intercept plain clicks and scroll within #view.
   const onAnchorClick = (e: MouseEvent): void => {
     const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]');
@@ -213,19 +213,19 @@ export async function mountDocs(
   // from /info/docs-render-manifest.json, keyed by shot slug) gets a keyboard-accessible
   // "Try it" overlay that opens the tool in-app, plus an opt-in in-place live embed. The
   // signed <img> stays as the baseline; non-tool (view/gallery) shots and a missing
-  // manifest are silent no-ops. Fire-and-forget — it fetches the manifest and never
+  // manifest are silent no-ops. Fire-and-forget - it fetches the manifest and never
   // throws. See lib/docs-tryit.ts.
   void hydrateDocsTryIt(node);
 
   // Deep-link: a spotlight/Ask docs result routes here as #/docs/<slug>?h=<anchor>
   // (the section heading rides a ?h= query param, since a second '#' can't ride the
-  // hash route). Scroll that heading into view now that the fragment is in the DOM —
+  // hash route). Scroll that heading into view now that the fragment is in the DOM - 
   // a no-op when absent or the id isn't on the page.
   const initialHeading = new URLSearchParams(params).get('h');
   if (initialHeading) scrollToHeading(initialHeading, 'auto');
 
   // ── Narration "Listen" dock (unified audio-dock migration, Phase 2a) ──────────
-  // ADDITIVE: the reader had no player. Content-gated — mounted ONLY when this slug
+  // ADDITIVE: the reader had no player. Content-gated - mounted ONLY when this slug
   // has committed narration audio in /info/audio-index.json, AND only on the English
   // reader page (all committed audio is English, and the follow-along block map is
   // re-derived from the English markdown twin). No track / non-English → no narration (the
@@ -240,7 +240,7 @@ export async function mountDocs(
     }
     if (narration) {
       if (!viewEl.isConnected) {
-        // The reader unmounted while the track was resolving — never leave audio behind.
+        // The reader unmounted while the track was resolving - never leave audio behind.
         narration.destroy();
         narration = null;
       } else {

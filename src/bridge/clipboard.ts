@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ClipboardAPI — text and image clipboard ops with graceful fallback.
+ * ClipboardAPI - text and image clipboard ops with graceful fallback.
  */
 import type { ClipboardAPI } from '@lolly-tools/core/host-v1';
 
@@ -19,7 +19,7 @@ function imageExt(mime: string): string {
 }
 
 /**
- * HostV1's ClipboardAPI plus writeHtml — a host-UI helper (the tool view's
+ * HostV1's ClipboardAPI plus writeHtml - a host-UI helper (the tool view's
  * "copy as rich text"), not part of the tool-facing contract.
  */
 export interface WebClipboardAPI extends ClipboardAPI {
@@ -83,7 +83,7 @@ export function createClipboardAPI(): WebClipboardAPI {
         }
       }
       // Fallback: trigger a download instead. Tools that ask for clipboard
-      // get a guaranteed outcome — the user gets the image one way or another.
+      // get a guaranteed outcome - the user gets the image one way or another.
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

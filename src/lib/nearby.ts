@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby — the seam between the collab ceremony and a *discovery* transport: a way
+ * nearby - the seam between the collab ceremony and a *discovery* transport: a way
  * to find another Lolly device on the same network and hand it an invite without
  * anyone scanning a QR (plans/110 §3).
  *
@@ -9,7 +9,7 @@
  * It is a REGISTRY, exactly like `lib/collab-launch.ts` one purpose over. A provider
  * registers here; surfaces (the ceremony dialog, the share sheets) consult it to
  * decide whether a "Nearby" affordance can render at all. With no provider
- * registered — every plain web build — `listNearbyProviders()` is empty, nothing
+ * registered - every plain web build - `listNearbyProviders()` is empty, nothing
  * renders, no timer runs, nothing touches the network. That dormancy is the whole
  * contract on the web side: a PWA cannot do mDNS/multicast/raw sockets, so the web
  * build registers nothing and is byte-identical to one without this file
@@ -17,10 +17,10 @@
  *
  * Two provider SOURCES are anticipated, and the registry holds one slot each so
  * they never shadow one another:
- *   - `'lan'`  — a Tauri shell's native mDNS/DNS-SD discovery (desktop `nearby.rs`,
+ *   - `'lan'` - a Tauri shell's native mDNS/DNS-SD discovery (desktop `nearby.rs`,
  *                Android NsdManager). Registered by `lib/nearby-boot.ts` when it
  *                detects the Tauri runtime. This is real device discovery.
- *   - `'org'`  — a control-plane instance grouping connected members by network
+ *   - `'org'` - a control-plane instance grouping connected members by network
  *                (lolly-work `plans/26` §8). Registered from `org/nearby-source.ts`
  *                only on an instance that grants `collab.nearby`. A SORTING HINT,
  *                never true discovery, and its `exchangeInvite` deliberately refuses
@@ -30,7 +30,7 @@
  * ── The trust boundary this does NOT move ───────────────────────────────────────
  *
  * Discovery replaces only the TRANSPORT of the invite/reply tokens. mDNS is
- * unauthenticated — anyone on a café network can advertise any name — so tapping a
+ * unauthenticated - anyone on a café network can advertise any name - so tapping a
  * discovered peer starts the SAME accept ceremony, and the SAS matching plates
  * remain the authentication (plans/110 §3, plan 100 §11.23). "Discoverable" never
  * means "trusted", and nothing here weakens the ceremony. The tokens exchanged are
@@ -38,7 +38,7 @@
  */
 
 /** A device found nearby. `id` is a provider-scoped OPAQUE handle used only to call
- *  back into the provider — never a raw address, and never shown to the user. */
+ *  back into the provider - never a raw address, and never shown to the user. */
 export interface NearbyPeer {
   readonly id: string;
   /** The peer's chosen display name (already length-capped by the provider). Shown. */
@@ -46,7 +46,7 @@ export interface NearbyPeer {
   readonly kind: 'desktop' | 'mobile';
   readonly source: NearbySource;
   /** Only meaningful for `source: 'org'`: the instance's "likely on the same
-   *  network" hint (a hint, never an identity claim — CGNAT/VPN make it approximate).
+   *  network" hint (a hint, never an identity claim - CGNAT/VPN make it approximate).
    *  A LAN peer is on the LAN by definition, so the `'lan'` provider omits it. */
   readonly near?: boolean;
 }
@@ -56,7 +56,7 @@ export type NearbySource = 'lan' | 'org';
 export type NearbyVisibilityMode = 'hidden' | 'timed' | 'standing';
 
 /** How discoverable the local device currently is. `until` (epoch ms) is set only
- *  for a `'timed'` window — the AirDrop-style "visible for 10 minutes" default.
+ *  for a `'timed'` window - the AirDrop-style "visible for 10 minutes" default.
  *  `'standing'` is the opt-in "always visible on networks I join" for trusted LANs;
  *  it is the only mode that is persisted (on the profile), and even it advertises
  *  only while the app is running. */
@@ -67,7 +67,7 @@ export interface NearbyVisibility {
 
 /** An invite that arrived FROM a nearby peer (this device is the acceptor). The
  *  consumer shows the normal accept ceremony over `token`, then calls exactly one of
- *  `respond`/`decline` — the provider holds the transport open until it does. */
+ *  `respond`/`decline` - the provider holds the transport open until it does. */
 export interface NearbyInboundInvite {
   /** The opaque invite token the peer sent (the same blob a QR would carry). */
   readonly token: string;
@@ -116,7 +116,7 @@ export function getNearbyProvider(source: NearbySource): NearbyProvider | undefi
 }
 
 /** All registered providers, in a stable order ('lan' before 'org'). Empty on the
- *  web (the dormant default) — the ceremony gate reads `.length`. */
+ *  web (the dormant default) - the ceremony gate reads `.length`. */
 export function listNearbyProviders(): readonly NearbyProvider[] {
   const out: NearbyProvider[] = [];
   const lan = providers.get('lan');
@@ -126,7 +126,7 @@ export function listNearbyProviders(): readonly NearbyProvider[] {
   return out;
 }
 
-/** Whether any discovery transport is available at all — the single gate a surface
+/** Whether any discovery transport is available at all - the single gate a surface
  *  checks (alongside the `nearby-discovery` flag) before rendering a Nearby row. */
 export function anyNearbyAvailable(): boolean {
   return providers.size > 0;
@@ -137,11 +137,11 @@ export function _clearNearbyProvidersForTests(): void {
   providers.clear();
 }
 
-// ── Pure visibility-window helpers (no DOM, no timers — the UI owns the clock) ────
+// ── Pure visibility-window helpers (no DOM, no timers - the UI owns the clock) ────
 
 /** Whether a visibility window is currently advertising, at time `now` (epoch ms).
  *  `hidden` never; `standing` always; `timed` until its deadline passes. A `timed`
- *  window with no `until` is treated as expired (defensive — a malformed window must
+ *  window with no `until` is treated as expired (defensive - a malformed window must
  *  not advertise forever). */
 export function isVisibilityActive(v: NearbyVisibility, now: number): boolean {
   switch (v.mode) {

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand logos — on-device USER ASSETS, mirroring user-fonts.ts. The canonical
+ * Brand logos - on-device USER ASSETS, mirroring user-fonts.ts. The canonical
  * matrix (orientation × treatment = 8 optional slots) still anchors the UI, but
  * a brand can also carry user-named CUSTOM VARIANTS ("icon", "crest") and whole
  * extra IDENTITIES (a second distinct logo with its own slots). Every mark is
  * one image asset plus a matching `asset.*` token recording which asset id
- * fills the slot — so the brand file carries them (see brand-transfer.ts) and
+ * fills the slot - so the brand file carries them (see brand-transfer.ts) and
  * tools can reference them later.
  *
- * Id / token scheme (both are permanent contracts — existing installs only
+ * Id / token scheme (both are permanent contracts - existing installs only
  * know the default form):
  *   default identity   user/logo/<variant>              asset.logo.<variant>
  *   other identities   user/logo/<identity>/<variant>   asset.logo.<identity>.<variant>
@@ -27,7 +27,7 @@ import { t, tRaw } from '../i18n.ts';
 /** Every logo asset id starts here (fixed namespace, like USER_FONT_PREFIX). */
 export const USER_LOGO_PREFIX = 'user/logo/';
 
-/** The unnamed first identity — its ids/tokens carry NO identity segment. */
+/** The unnamed first identity - its ids/tokens carry NO identity segment. */
 export const LOGO_DEFAULT_IDENTITY = 'default';
 
 /** Custom variant and identity slugs: lowercase kebab, 1–40 chars, no leading
@@ -36,7 +36,7 @@ export const LOGO_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 // A canonical logo variant is TWO independent axes: an ORIENTATION (how the
 // mark is laid out) × a TREATMENT (its colour form). Every combination is its
-// own optional slot — you can supply a primary horizontal AND a reverse
+// own optional slot - you can supply a primary horizontal AND a reverse
 // vertical AND a mono horizontal, etc. The variant key is
 // `<orientation>-<treatment>`. Custom variants live beside these under any slug.
 export const LOGO_ORIENTATIONS = ['horizontal', 'vertical'] as const;
@@ -72,7 +72,7 @@ export function isCanonicalVariant(v: string): v is LogoVariant {
 export function isReverseTreatment(t: LogoTreatment): boolean { return t.endsWith('reverse'); }
 
 /** Split a canonical variant key back into its two axes; a custom slug has no
- *  axes, so both come back null — callers must guard. */
+ *  axes, so both come back null - callers must guard. */
 export function splitVariant(v: string): { orientation: LogoOrientation | null; treatment: LogoTreatment | null } {
   if (!isCanonicalVariant(v)) return { orientation: null, treatment: null };
   const i = v.indexOf('-');
@@ -88,7 +88,7 @@ export function variantLabel(v: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The asset id for a slot — the default identity keeps the original two-segment
+/** The asset id for a slot - the default identity keeps the original two-segment
  *  form so pre-identity installs stay valid. */
 export function logoAssetId(variant: string, identity: string = LOGO_DEFAULT_IDENTITY): string {
   return identity === LOGO_DEFAULT_IDENTITY
@@ -123,7 +123,7 @@ export interface LogoSlot {
   custom: boolean;
 }
 
-// PNG / JPEG / SVG / WebP, up to 4 MB — a logo, not a hero photo.
+// PNG / JPEG / SVG / WebP, up to 4 MB - a logo, not a hero photo.
 const ACCEPT = /^image\/(png|jpeg|svg\+xml|webp)$/;
 const EXT: Record<string, string> = {
   'image/png': 'png', 'image/jpeg': 'jpg', 'image/svg+xml': 'svg', 'image/webp': 'webp',
@@ -133,10 +133,10 @@ const MAX_BYTES = 4 * 1024 * 1024;
 // ── Doc surgery (pure) ────────────────────────────────────────────────────────
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
-/** Non-$ keys — what "empty" means when pruning DTCG groups. */
+/** Non-$ keys - what "empty" means when pruning DTCG groups. */
 const named = (r: Rec): number => Object.keys(r).filter(k => !k.startsWith('$')).length;
 
-/** Which set to write the `asset` group into — `base` on a layered doc, else root. */
+/** Which set to write the `asset` group into - `base` on a layered doc, else root. */
 function assetTargetOf(out: Rec): Rec {
   const layered = Array.isArray(out.$themes) && out.$themes.length > 0;
   if (!layered) return out;
@@ -163,7 +163,7 @@ export function logoGroupOf(doc: unknown, identity: string = LOGO_DEFAULT_IDENTI
 }
 
 /**
- * Merge (or clear, with null) a slot's token into a tokens doc, on a copy —
+ * Merge (or clear, with null) a slot's token into a tokens doc, on a copy - 
  * `asset.logo.<variant>` for the default identity, `asset.logo.<identity>.<variant>`
  * otherwise. Pure; exported for tests. `$type:'asset'` + `$value` = the user
  * asset id. Clearing prunes empty groups all the way up (identity → logo → asset).
@@ -180,7 +180,7 @@ export function withLogoToken(
     else delete logo[variant];
   } else {
     // A token at the identity key (a default-identity variant of the same name)
-    // is replaced by the group — installLogo rejects such identities up front.
+    // is replaced by the group - installLogo rejects such identities up front.
     const cur = logo[identity];
     const group = isRec(cur) && !('$value' in cur) ? cur as Rec : {};
     if (assetId) { group[variant] = { $type: 'asset', $value: assetId }; logo[identity] = group; }
@@ -203,7 +203,7 @@ async function userDoc(host: LogoHost): Promise<Rec> {
   return {};
 }
 
-/** Every stored logo — canonical AND custom, all identities — each with a fresh
+/** Every stored logo - canonical AND custom, all identities - each with a fresh
  *  object URL for preview. Identity + variant come from the id (existing
  *  installs never wrote them into meta); only malformed slugs are skipped. */
 export async function listLogos(host: LogoHost): Promise<LogoSlot[]> {
@@ -238,7 +238,7 @@ export async function installLogo(
   }
   const identity = opts.identity || LOGO_DEFAULT_IDENTITY;
   if (opts.identity === LOGO_DEFAULT_IDENTITY) {
-    // 'default' is the UNNAMED identity's reserved key — naming a second logo
+    // 'default' is the UNNAMED identity's reserved key - naming a second logo
     // "default" would silently merge it into the primary one.
     throw new Error(t('“default” is reserved — pick a different name for the identity.'));
   }
@@ -255,7 +255,7 @@ export async function installLogo(
   if (!ACCEPT.test(file.type)) throw new Error(t('Use a PNG, JPEG, SVG or WebP image.'));
   if (file.size > MAX_BYTES) throw new Error(t('That logo is {size} MB — the limit is 4 MB.', { size: (file.size / 1024 / 1024).toFixed(1) }));
   // asset.logo.<key> is ONE namespace shared by default-identity variants and
-  // identity groups — refuse a write whose key currently holds the OTHER shape,
+  // identity groups - refuse a write whose key currently holds the OTHER shape,
   // instead of letting withLogoToken silently destroy it.
   {
     const cur = logoGroupOf(await userDoc(host))?.[identity !== LOGO_DEFAULT_IDENTITY ? identity : variant];
@@ -271,7 +271,7 @@ export async function installLogo(
   const id = logoAssetId(variant, identity);
   const format = EXT[file.type] || 'png';
   // Store under a real catalogue asset type (the schema enum has no 'image'):
-  // an SVG mark is vector, everything else raster — so it shows in the catalog.
+  // an SVG mark is vector, everything else raster - so it shows in the catalog.
   const type = format === 'svg' ? 'vector' : 'raster';
   const label = opts.label?.trim();
   await host.assets._uploadUserAsset({

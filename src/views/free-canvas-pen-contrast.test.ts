@@ -5,7 +5,7 @@
  * The pen's path preview, nodes, handles and arms were all painted in a single flat
  * --primary: on a shape filled with the brand colour they disappeared outright, and the
  * arms (a 1px hairline at 60%) disappeared against almost anything. The fix is a dual
- * halo — a light casing tight around each mark, a dark edge just beyond it — so one of
+ * halo - a light casing tight around each mark, a dark edge just beyond it - so one of
  * the two always separates from the backdrop.
  *
  * This is a purely visual rule and jsdom applies no stylesheet, so there is nothing to

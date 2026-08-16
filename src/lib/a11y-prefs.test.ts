@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Accessibility preferences — the runtime half of lib/a11y-prefs.ts: attribute
+ * Accessibility preferences - the runtime half of lib/a11y-prefs.ts: attribute
  * application, the localStorage FOUC mirror, profile persistence, and the
  * prefersReducedMotion OR.
  *
@@ -8,10 +8,10 @@
  *
  * jsdom with a real origin (localStorage throws SecurityError on the default
  * opaque `about:blank` origin, and the mirror is half of what's under test).
- * matchMedia isn't implemented by jsdom, so it's a controllable stub here —
+ * matchMedia isn't implemented by jsdom, so it's a controllable stub here - 
  * which is also how the "no matchMedia at all" CLI/jsdom case gets exercised.
  *
- * All four prefs are pure attribute switches here — the visual half is CSS
+ * All four prefs are pure attribute switches here - the visual half is CSS
  * gated on the attribute (largeText scales chrome type through the `--a11y-fs`
  * multiplier), so nothing below asserts a rendered size. The CSS side's shape is
  * pinned statically in a11y-prefs-contract.test.ts.
@@ -312,7 +312,7 @@ test('prefersReducedMotion does not throw where matchMedia does not exist (CLI/j
   // A FRESH module instance: the query is matched lazily and then cached, so the
   // module already loaded above holds a list from when matchMedia existed. Only
   // an instance that first runs in a realm without matchMedia exercises the
-  // absent-API branch — the one a CLI/bare-Node import actually takes.
+  // absent-API branch - the one a CLI/bare-Node import actually takes.
   const bare = await import(`./a11y-prefs.ts?no-matchmedia=${Date.now()}`) as typeof import('./a11y-prefs.ts');
   assert.equal(bare.prefersReducedMotion(), false);
   bare.applyA11yPrefs({ reduceMotion: true });

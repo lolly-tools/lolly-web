@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Folder overlay — a shared, file-manager style modal for organizing saved work.
+ * Folder overlay - a shared, file-manager style modal for organizing saved work.
  *
  * One overlay serves three callers (gallery, /pro, picker). It shows folders
  * (groups) over loose root items, lets the user create/rename/delete folders and
- * move sessions/images between them, and — when the pro-batch flag is on — render a
+ * move sessions/images between them, and - when the pro-batch flag is on - render a
  * whole folder to one nested zip.
  *
  * Isolation: this module imports only the host bridge, the folder store, and the
@@ -67,7 +67,7 @@ export interface FolderOverlayOpts {
   showCreateFolder?: boolean;
   allowBatchExport?: boolean;
   /** Show the downloads log (lib/export-history.ts) as a "Recent exports" reopen
-   *  rail beside the saved sessions — the history-fab contexts (gallery/projects). */
+   *  rail beside the saved sessions - the history-fab contexts (gallery/projects). */
   showRecentExports?: boolean;
 }
 
@@ -100,7 +100,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   // intended-output slice (IndexedTool) for the tool spec.
   const toolById = new Map<string | undefined, IndexedTool>((window.__toolIndex?.tools ?? []).map(t => [t.id, t as IndexedTool]));
 
-  // In-memory working copies — mutated in place so re-renders are instant; the
+  // In-memory working copies - mutated in place so re-renders are instant; the
   // backing stores (host.state / host.assets / profile) are the source of truth.
   const sessionByRef = new Map<string, OverlayEntry>(sessionEntries.map(e => [e.slot, { ...e }]));
   const imageByRef = new Map<string, OverlayImageRef>(imageRefs.map(r => [r.id, r]));
@@ -114,8 +114,8 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   // window/document listeners (Escape, outside-click, resize, route-change) that must
   // tear down with the dialog or they leak. onClose is their home: mountModal fires it
   // exactly once on EVERY dismissal path (Escape, backdrop, the ✕ button, programmatic
-  // close()). A 'close' listener on the element would also fire — mountModal closes the
-  // same native dialog — but at whatever point the UA dispatches that event (the spec
+  // close()). A 'close' listener on the element would also fire - mountModal closes the
+  // same native dialog - but at whatever point the UA dispatches that event (the spec
   // queues it as a task, after the node is already removed), so the explicit hook is
   // the dependable ordering. closeMenu is a hoisted function declaration.
   const modal = mountModal(
@@ -203,7 +203,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
           <h3 class="folder-exports-title">${t('Recent exports')}</h3>
           <div class="folder-exports-rail">
             ${recentExports.map(x => `
-              ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — exportReopenHref() builds a fixed '#/tool/<id>' hash route */ ''}
+              ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - exportReopenHref() builds a fixed '#/tool/<id>' hash route */ ''}
               <a class="folder-export-tile" href="${escape(x.href)}" data-open-export
                  title="${escape(x.caption)} · ${escape(new Date(x.at).toLocaleDateString())}">
                 <img src="${escape(x.thumb)}" alt="${escape(x.caption)}" loading="lazy">
@@ -265,7 +265,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
       return;
     }
 
-    // A recent export reopens the tool with the exact state it was downloaded with —
+    // A recent export reopens the tool with the exact state it was downloaded with - 
     // plain hash navigation (a fresh mount re-resolves asset refs). Modified clicks
     // keep browser semantics (new tab), so the overlay stays open for those.
     const openExport = t.closest<HTMLAnchorElement>('[data-open-export]');
@@ -332,7 +332,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   }
 
   // ── Item menu (move / rename / delete) ──────────────────────────────────────
-  // A body-mounted popover (mountBodyPopover) rather than a hand-rolled one — but
+  // A body-mounted popover (mountBodyPopover) rather than a hand-rolled one - but
   // mounted INSIDE `dialog` (the `container` option), not document.body: this overlay
   // is a native <dialog> shown via showModal(), so only ITS OWN subtree paints above
   // its ::backdrop (a body-appended popover would render invisibly behind it). The
@@ -487,7 +487,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     // The shared progress toast (components/progress-toast.ts). Deliberately NOT tracked
     // to this dialog's lifecycle: mountModal uses showModal(), so while the overlay is up
     // the body-level toast sits below the top layer and is invisible. The user only ever
-    // sees this progress by closing the overlay — tying the toast to onClose would destroy
+    // sees this progress by closing the overlay - tying the toast to onClose would destroy
     // it at the exact moment it becomes visible. It outlives the overlay by design and is
     // dismissed by its own ✕ (matching the pre-dedupe behaviour).
     mountProgressToast(async (mount) => {
@@ -528,7 +528,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
         finish(input.value.trim() || null);
       });
       // preventDefault suppresses the UA's dialog close-request, so Escape cancels
-      // only this prompt — not the whole overlay (same pattern as body-popover's menu).
+      // only this prompt - not the whole overlay (same pattern as body-popover's menu).
       ask.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); } });
     });
   }

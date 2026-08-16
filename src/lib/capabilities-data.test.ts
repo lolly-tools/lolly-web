@@ -4,10 +4,10 @@
  *
  * The DATA SHAPE the Dashboard's Capabilities panel and its search rely on.
  * The panel escapes titles and feature names but renders `desc` RAW, so the
- * inline HTML authored there is a trusted-by-review surface — these tests are
+ * inline HTML authored there is a trusted-by-review surface - these tests are
  * that review, mechanised: the tag allowlist, balance, and the rule that an
  * external link carries rel="noopener". Plus the two optional per-card fields
- * the panel reads — `keywords` (live search) and `shot` (the detail-dialog
+ * the panel reads - `keywords` (live search) and `shot` (the detail-dialog
  * screenshot slug).
  *
  * The `shot` slug becomes /info/shots/<slug>.svg at runtime, but that directory
@@ -35,7 +35,7 @@ test('sections and cards are structurally sound', () => {
       assert.ok(c.title.trim(), `a card in ${s.id} has no title`);
       assert.ok(c.icon.startsWith('<svg'), `card "${c.title}" has no icon`);
       // A card with no features renders a "0" count badge and pops an empty
-      // dialog — the one shape the panel has no sensible rendering for.
+      // dialog - the one shape the panel has no sensible rendering for.
       assert.ok(c.features.length > 0, `card "${c.title}" has no features`);
       for (const f of c.features) {
         assert.ok(f.name.trim(), `a feature in "${c.title}" has no name`);
@@ -114,11 +114,11 @@ test('every card carries search keywords', () => {
 
 // The `shot` slug becomes /info/shots/<slug>.svg in the detail dialog, but that
 // directory is gitignored build output. The committed baselines live in the
-// docs submodule at repo-root docs/shots/ — four levels up from src/lib/.
+// docs submodule at repo-root docs/shots/ - four levels up from src/lib/.
 const shotsDir = new URL('../../../../docs/shots/', import.meta.url);
 
 test('every card screenshot resolves to a committed file', () => {
-  // A `shot` typo or a retired slug is a broken image inside a dialog —
+  // A `shot` typo or a retired slug is a broken image inside a dialog - 
   // invisible until someone opens that one card. Assert every slug resolves to a
   // committed docs baseline. When the docs submodule is not checked out (a bare
   // parent clone), the source of truth is absent, so skip rather than fail.

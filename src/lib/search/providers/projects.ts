@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Projects spotlight provider (plans/99 §2b) — the user's OWN items:
+ * The Projects spotlight provider (plans/99 §2b) - the user's OWN items:
  * folders (by name) and saved sessions (label/filename/tool name/tool id, plus
  * the literal 'batch' keyword), matched through the SAME shared source the
  * projects view uses (lib/search/projects-source.ts), so the overlay and the
@@ -16,7 +16,7 @@
  * Session hits open exactly as a projects tile does (sessionOpenHref): batch →
  * its /pro grid, single-tool → the tool with the saved slot. Hits navigate by
  * href only, so the tile's one-shot Save-return marker (armSessionReturn) is
- * NOT armed here — Save falls back to its default return, which is right for
+ * NOT armed here - Save falls back to its default return, which is right for
  * an open that didn't start on the projects page.
  */
 
@@ -40,7 +40,7 @@ export interface ProjectsSearchSession {
 }
 
 /**
- * Minimal structural host slice (repo convention — see SyncHost): what
+ * Minimal structural host slice (repo convention - see SyncHost): what
  * createFolderStore needs (profile get/set, state.list, _listUserAssets) with
  * state.list() narrowed to the richer web rows. The concrete WebHost satisfies
  * it; never the full HostV1.

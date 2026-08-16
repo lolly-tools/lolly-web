@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * approval-request — a generic seam for opening the "request approval" flow.
+ * approval-request - a generic seam for opening the "request approval" flow.
  *
  * The sibling of lib/share-sections.ts one purpose over: where that lets a feature
  * register EXTRA sections into the Share dialog, this lets a feature register the
@@ -11,7 +11,7 @@
  *
  * It knows nothing about WHO registers the opener: a deployment's optional control
  * plane registers one that opens the approval dialog (see src/org/), but the registry
- * is a standalone primitive — a test or a future feature can drive it the same way.
+ * is a standalone primitive - a test or a future feature can drive it the same way.
  * The opener is handed a small, product-neutral context (the tool id, an optional
  * subject reference, and a default title) and owns everything else.
  */

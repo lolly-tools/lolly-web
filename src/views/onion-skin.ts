@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * onion-skin.ts — the OPT-IN ghost layer: faint outlines (or faint pictures) of the
+ * onion-skin.ts - the OPT-IN ghost layer: faint outlines (or faint pictures) of the
  * scenes either side of the one on screen at the playhead.
  *
  * Default OFF, toggled explicitly, preference persisted by the timeline panel. This is
@@ -16,7 +16,7 @@
  * A ghost must never reach a rendered file. Three INDEPENDENT guarantees, each with its
  * own test in onion-skin.test.ts:
  *
- *   1. The layer is a child of `.fc-overlay`, a STAGE SIBLING of `#tool-canvas` — it is
+ *   1. The layer is a child of `.fc-overlay`, a STAGE SIBLING of `#tool-canvas` - it is
  *      outside the node `runtime.export` is ever handed.
  *   2. It carries `data-export-hide`, so bridge/export.ts's `detachExportHidden` REMOVES
  *      it from the DOM upstream of every format dispatch (including parseSequenceStage),
@@ -26,20 +26,20 @@
  *      baked straight into every exported plate, and we KNOW CSS-only hiding is not
  *      export-safe here because sequence-render.ts actively strips `.seq-off` before
  *      photographing each layer (otherwise dom-to-image clones `display:none` and
- *      rasterises blank). So this module only ever READS the live element — its
- *      `classList.contains` and an `<img>`'s `currentSrc` — and a source scan pins that.
+ *      rasterises blank). So this module only ever READS the live element - its
+ *      `classList.contains` and an `<img>`'s `currentSrc` - and a source scan pins that.
  *
  * Deliberately NOT built on clip-thumbs' `nodeStill`: that shares a module-global
  * dom-to-image queue with `suspendNodeRasters()` / `drainNodeRasters()`, and a second
  * owner of that queue is a landmine for no proportionate gain. Filled mode uses the box's
- * own fill colour plus its already-browser-cached `<img>` URL — zero decode work. A video
+ * own fill colour plus its already-browser-cached `<img>` URL - zero decode work. A video
  * box degrades to fill-only, an audio box draws nothing at all.
  *
  * Colour coding is the universal past = warm, but the future is Aseprite's cool BLUE
  * rather than Krita/Procreate/Animate's green: red/green is the worst possible pair for
  * deuteranopia and protanopia (~8% of men) and there is no reason to inherit it. The
  * redundant non-colour channel (WCAG 1.4.1) is a corner chip reading `-1` / `+1`, drawn
- * by CSS from `data-offset` — NOT a dash pattern, because dashed borders are reserved
+ * by CSS from `data-offset` - NOT a dash pattern, because dashed borders are reserved
  * for drop areas throughout this shell.
  */
 import { num, type Box } from './free-canvas-math.ts';
@@ -61,7 +61,7 @@ export interface OnionGeomCfg {
   fitField?: string;
 }
 
-/** What `nativeToStage` needs, and nothing more — so a test can pass plain objects. */
+/** What `nativeToStage` needs, and nothing more - so a test can pass plain objects. */
 export interface OnionMetrics {
   cr: { left: number; top: number };
   sr: { left: number; top: number };
@@ -79,13 +79,13 @@ export interface OnionPaintState {
   /**
    * The ids on screen at the playhead (`tl-time`'s own `activeIds`), used ONLY to
    * detect the coincident case below. Absent reads as "nothing active", which simply
-   * means no ghost escalates — the austere outline, exactly as before.
+   * means no ghost escalates - the austere outline, exactly as before.
    */
   active?: unknown;
 }
 
 export interface MountOnionSkinOpts {
-  /** `.fc-overlay` — the ghosts become its FIRST child, under every selection chrome. */
+  /** `.fc-overlay` - the ghosts become its FIRST child, under every selection chrome. */
   overlayEl: HTMLElement;
   /** `#tool-canvas`, read-only: the live `.lolly-box` elements are the media source. */
   canvasEl: HTMLElement;
@@ -99,7 +99,7 @@ export interface OnionSkinHandle {
   destroy(): void;
 }
 
-/** Below this the ghost is a smudge, not a shape — and its corner chip would not fit. */
+/** Below this the ghost is a smudge, not a shape - and its corner chip would not fit. */
 const MIN_GHOST_PX = 2;
 /** The `fit` values that map to a legal `object-fit`; anything else falls back. */
 const FITS = new Set(['contain', 'cover', 'fill', 'none', 'scale-down']);
@@ -138,7 +138,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
 
   let destroyed = false;
 
-  /** The live boxes, by id — one pass of the model per paint. */
+  /** The live boxes, by id - one pass of the model per paint. */
   function boxIndex(): Map<string, Box> {
     const out = new Map<string, Box>();
     for (const b of getBoxes()) {
@@ -151,7 +151,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
   }
 
   /**
-   * The live `.lolly-box` elements, by id — READ ONLY. Nothing below writes to any of
+   * The live `.lolly-box` elements, by id - READ ONLY. Nothing below writes to any of
    * these; the whole export contract rests on that (see the module doc, guarantee 3).
    */
   function liveIndex(): Map<string, Element> {
@@ -170,7 +170,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
     const w = num(box[cfg.wField], 0);
     const h = num(box[cfg.hField], 0);
     if (!(w >= MIN_GHOST_PX) || !(h >= MIN_GHOST_PX)) return null;
-    // An audio box has no picture and no geometry worth outlining — sequence-studio
+    // An audio box has no picture and no geometry worth outlining - sequence-studio
     // renders it as a `display:none` marker. Match sequence-plan.ts's reading: the
     // marker may BE the box element or sit inside it.
     if (live && (live.classList.contains('lolly-box-audio') || live.querySelector('.lolly-box-audio'))) return null;
@@ -181,7 +181,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
     g.className = 'onion-ghost';
     g.setAttribute('data-offset', offset);
     // The same native→stage mapping free-canvas's own outlines use, from the metrics it
-    // injects — so a ghost tracks pan and zoom exactly as the selection outline does.
+    // injects - so a ghost tracks pan and zoom exactly as the selection outline does.
     g.style.left = `${m.cr.left - m.sr.left + x * m.scale}px`;
     g.style.top = `${m.cr.top - m.sr.top + y * m.scale}px`;
     g.style.width = `${w * m.scale}px`;
@@ -194,14 +194,14 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
     // A ghost whose rect COINCIDES with the scene on screen is the one case an outline
     // cannot serve: the ring lands exactly on the active scene's own edge (and on the
     // other ghost's), so the feature reads as doing nothing at all. That is the normal
-    // shape of a sequence — scenes are same-size, usually full-canvas — which is why
+    // layout of a sequence - scenes are same-size, usually full-canvas - which is why
     // "onion skin does nothing" was the reasonable report. Here, and ONLY here, the
     // ghost shows the neighbour's PICTURE instead of its border: what an animator wants
     // from a coincident frame is what is in it, and there is no geometry left to draw.
     // The `filled` default stays outline everywhere the rects genuinely differ.
     if (mode === 'filled' || coincident) {
       // A data attribute, not a class: the module's source scan bans `classList.*`
-      // outright (guarantee 3 — a class is the shape that would reach an exported
+      // outright (guarantee 3 - a class is the shape that would reach an exported
       // plate), and `data-offset` above is already the idiom for a per-ghost flag.
       if (coincident) g.setAttribute('data-coincident', '');
       const fill = cfg.fillField ? colorOf(box[cfg.fillField]) : '';
@@ -224,7 +224,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
         img.style.objectFit = FITS.has(fit) ? fit : 'contain';
         g.appendChild(img);
       }
-      // The box's OWN text element, CLONED — the same read-only borrow the <img> above
+      // The box's OWN text element, CLONED - the same read-only borrow the <img> above
       // is, and the reason a text-driven scene ghosts as anything at all: a scene whose
       // whole content is a word has no fill worth 12% and no <img>, so fill+picture
       // alone came back empty. Cloning (rather than re-implementing align/valign/fit)
@@ -239,7 +239,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
         holder.style.width = `${w}px`;
         holder.style.height = `${h}px`;
         // PAST above, FUTURE below. Two coincident ghosts otherwise centre their words
-        // on the active scene's and on each other — measured: "One"/"Two"/"Three" came
+        // on the active scene's and on each other - measured: "One"/"Two"/"Three" came
         // out as one unreadable smear, which is the colour-mud objection in text form.
         // Nudging is honest here in a way it would not be for a differing rect: the
         // geometry is identical BY DEFINITION in this branch, so there is no position
@@ -252,7 +252,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
         const shift = (offset.startsWith('-') ? -1 : 1) * Math.min(0.42, 0.25 * step) * h * m.scale;
         holder.style.transform = `translateY(${shift}px) scale(${m.scale})`;
         // The box's vertical/horizontal alignment lives as INLINE flex on the box
-        // itself (free-canvas writes valign/align there), not on the text element — so
+        // itself (free-canvas writes valign/align there), not on the text element - so
         // a clone dropped into a plain div lands at the top-left regardless of where
         // the scene puts it. Read the two values straight off the live element's style
         // object: no computed style, so this works identically under test.
@@ -262,7 +262,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
         const clone = textEl.cloneNode(true) as HTMLElement;
         clone.removeAttribute('id');
         for (const sub of clone.querySelectorAll('[id]')) sub.removeAttribute('id');
-        // The ghost's DIRECTION colour, not the scene's own — two coincident ghosts
+        // The ghost's DIRECTION colour, not the scene's own - two coincident ghosts
         // otherwise draw the same-coloured words in the same place and turn to mush,
         // and a neighbour whose text colour matches the active scene's would vanish
         // entirely. Dropping the inline `color` is what lets the sheet's
@@ -302,7 +302,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
 
     // The rects on screen at the playhead. A ghost matching one of them to within half
     // a model pixel is the coincident case ghostFor escalates. "Hide colourful previews"
-    // suppresses the escalation outright rather than routing round it — that pref exists
+    // suppresses the escalation outright rather than routing round it - that pref exists
     // to remove exactly the pictures escalating would add, and an austere invisible
     // outline is the honest answer when the user has asked for no previews.
     const activeRects = hidden ? [] : idList(state?.active)

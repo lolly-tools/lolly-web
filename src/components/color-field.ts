@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared colour picker — the ONE colour field used across the app.
+ * Shared colour picker - the ONE colour field used across the app.
  *
  * Renders the palette swatches + value entry + alpha + native picker + current
  * swatch, and wires their behaviour. Both the single-tool sidebar (views/tool.ts)
@@ -8,14 +8,14 @@
  * maintain (no per-view variations).
  *
  * Markup styling lives in styles/parts/components.css (`.color-picker-field`,
- * `.color-popover`, `.color-swatch`, `.color-trigger`, …) — global, so it applies
+ * `.color-popover`, `.color-swatch`, `.color-trigger`, …) - global, so it applies
  * wherever this markup is mounted.
  *
  *   colorFieldHtml(id, value, { float, modes, dials })   → HTML string for one field
  *   wireColorField(scopeEl, { onChange, onInteractStart, onInteractEnd })
  *
  * `float` makes the popover position itself (fixed) anchored to the trigger and
- * close on outside-click — for hosts where the field sits inside a clipping /
+ * close on outside-click - for hosts where the field sits inside a clipping /
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
  *
@@ -23,7 +23,7 @@
  * A field's truth is a single `CssColor` in `STATE`, in the space it was authored
  * in. Everything on screen is a projection of it, and every space is DATA (see
  * color-spaces.ts) rather than a hand-written state machine. What that replaced:
- * an sRGB-hex spine — `genFromHex`/`genToHex` round-tripped every HSL/RGB/CMYK
+ * an sRGB-hex spine - `genFromHex`/`genToHex` round-tripped every HSL/RGB/CMYK
  * drag through `#rrggbb`, which is precisely why a wide-gamut or perceptual space
  * could not exist here. A `color(display-p3 1 0 0)` handed to the picker came back
  * as `#ff0b0c`, so Colour Lab reported every colour as sRGB.
@@ -36,7 +36,7 @@
  * with `'#'` on every compact-URL round trip, and three consumers silently
  * DISCARD a non-hex rather than erroring.
  *
- * Exactly one function emits — `emit()` — and it is called only from a pointer /
+ * Exactly one function emits - `emit()` - and it is called only from a pointer /
  * keyboard / `input` / click handler. Never from `selectMode`, `onSelect`, any
  * `seed*` or any `paint*`. A mount-time emit is the bug that made every Colour Lab
  * colour read "sRGB", and jsdom never fires `input`, so the only guard against
@@ -62,7 +62,7 @@ export interface ColorSwatchOption {
   value: string;
   label?: string | null;
   group?: string | null;
-  /** canonical token reference ('{color.brand.jungle}') — null for plain colours */
+  /** canonical token reference ('{color.brand.jungle}') - null for plain colours */
   ref?: string | null;
 }
 
@@ -73,12 +73,12 @@ export type ColorFieldValue = string | { ref: string; value: string };
  * The additive second half of a change: the colour the user actually authored.
  *
  * `value` (onChange's first payload) is a gamut-mapped sRGB hex and always will
- * be — that is the contract 23 call sites and the compact-URL format depend on.
+ * be - that is the contract 23 call sites and the compact-URL format depend on.
  * `css` / `color` are the unflattened truth, for a host that wants to persist it.
  * `baked` says whether the two differ, so a consumer never has to guess.
  */
 export interface ColorChangeDetail {
-  /** `formatColor(canonical)` — 'oklch(64.857% 0.29949 28.96)', 'color(display-p3 1 0 0)'. */
+  /** `formatColor(canonical)` - 'oklch(64.857% 0.29949 28.96)', 'color(display-p3 1 0 0)'. */
   css: string;
   /** The canonical colour. Treat as frozen; it is cloned on the way out. */
   color: CssColor;
@@ -96,7 +96,7 @@ export interface WireColorFieldOpts {
 }
 
 // The swatch source the picker renders. Defaults to the built-in brand palette
-// (so the picker works before — and without — tokens), and is replaced at runtime
+// (so the picker works before - and without - tokens), and is replaced at runtime
 // by setSwatches() with swatches resolved from design tokens. Shape per swatch:
 //   { value: '#rrggbb' | 'transparent', label, group, ref|null }
 // `ref` is the canonical token reference ('{color.brand.jungle}'); choosing such a
@@ -110,7 +110,7 @@ export function setSwatches(list: ColorSwatchOption[]): void {
 
 /**
  * Repopulate the already-visible swatch grids under `scope` from the current
- * SWATCHES — call after setSwatches() when the brand palette changed so open
+ * SWATCHES - call after setSwatches() when the brand palette changed so open
  * pickers (the dashboard/start inline primary) reflect added/deleted swatches
  * live. Closed popovers rebuild lazily on next open, so only touch grids that
  * are already built (or belong to an always-open inline field). Clicks are
@@ -134,7 +134,7 @@ function toHex(value: unknown): string {
 
 /**
  * The palette name for a colour value ("Persimmon 3"), or '' when it isn't a named
- * swatch (a custom colour). Matches on the RGB channels — alpha is ignored — against
+ * swatch (a custom colour). Matches on the RGB channels - alpha is ignored - against
  * the active swatch list (the brand palette, or tokens once setSwatches() has run).
  * The FIRST matching swatch wins, so a hex shared by several ramps takes its primary
  * name (e.g. #0c322c → "Pine", not "Jungle 1").
@@ -153,7 +153,7 @@ export function swatchName(value: unknown): string {
 
 /**
  * The perceptually nearest swatch to a custom colour (ΔEOK over the active
- * swatch list, alpha ignored) — the "snap back to the brand" hint. Returns the
+ * swatch list, alpha ignored) - the "snap back to the brand" hint. Returns the
  * winning swatch + its distance; the caller decides whether the distance is
  * close enough to be worth showing. Transparent and non-hex swatch values
  * (token aliases mid-resolve) are skipped.
@@ -178,7 +178,7 @@ function nearestSwatch(value: string): { value: string; ref: string | null; labe
 // whose arguments contain no nested parens/quotes/semicolons/braces, or a plain
 // ident ('rebeccapurple', 'transparent'). Swatch values can come from a
 // user-IMPORTED tokens document (setSwatches ← host.tokens.colors(), fed by the
-// #/start wizard), and escape() doesn't neutralise CSS metacharacters — so a
+// #/start wizard), and escape() doesn't neutralise CSS metacharacters - so a
 // malicious $value like `#000; background-image:url(https://evil.example/x)`
 // would otherwise smuggle a live declaration into the attribute and fire an
 // external request. The engine's colour parser is the primary gate upstream; this
@@ -194,7 +194,7 @@ function safeCssColor(v: unknown): string {
 // ── One field's state ────────────────────────────────────────────────────────
 
 interface FieldColorState {
-  /** 'transparent' is NOT expressible as a CssColor — the engine's parseColor maps
+  /** 'transparent' is NOT expressible as a CssColor - the engine's parseColor maps
    *  it to opaque-black-at-alpha-0, which loses the sentinel. Any code path that
    *  reads `color` without checking `kind` resurrects the black-transparent bug. */
   kind: 'color' | 'transparent';
@@ -205,7 +205,7 @@ interface FieldColorState {
   /** Hue memory, degrees. ONE number shared by every space that has a hue: it is
    *  written from whichever hue slider moved last (so it is in that space's
    *  degrees) and read only when a conversion reports the hue POWERLESS, i.e. for
-   *  a grey — where any hue is as good as any other. */
+   *  a grey - where any hue is as good as any other. */
   lastHue: number;
   /** Token ref from the last swatch pick, cleared by any manual edit. */
   ref: string | null;
@@ -227,7 +227,7 @@ const BLACK: CssColor = { space: 'srgb', components: [0, 0, 0], alpha: 1, missin
 export const LCH_MAX = { l: 100, c: 0.4, h: 360 } as const;
 
 /** The sliders' fallback when the value has no colour to seed from ('transparent',
- *  or an unparsable string): a pleasant mid-blue, not black — black sits at C=0
+ *  or an unparsable string): a pleasant mid-blue, not black - black sits at C=0
  *  where the H slider does nothing, a dead-feeling start. */
 const SEED: CssColor = { space: 'oklch', components: [0.62, 0.11, 250], alpha: 1, missing: 0 };
 
@@ -248,7 +248,7 @@ function bakedHex(st: FieldColorState): string {
 // as an approximation rather than rounding noise.
 const BAKED_SLACK = 1e-4;
 
-/** The single value+detail production site — every emit goes through it. */
+/** The single value+detail production site - every emit goes through it. */
 function bake(st: FieldColorState): { value: string; detail: ColorChangeDetail } {
   const srgb = convertColor(st.color, 'srgb').components;
   return {
@@ -275,10 +275,10 @@ function sameColor(a: CssColor, b: CssColor): boolean {
 // An axis's ramp is generated ONCE, as runs (see channelRuns), and poured into two
 // shapes: a linear-gradient (the slider track) and a conic-gradient (the dial).
 // Same runs, same positions, so the dial can never disagree with the slider
-// beneath it — gaps included.
+// beneath it - gaps included.
 
 const linearStops = (stops: readonly string[]): string => `linear-gradient(to right, ${stops.join(', ')})`;
-/** `from 0deg` puts the range's start at 12 o'clock and sweeps it clockwise —
+/** `from 0deg` puts the range's start at 12 o'clock and sweeps it clockwise - 
  *  which is exactly how the needle angle (frac × 360°) is measured. */
 const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
@@ -288,8 +288,8 @@ const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0d
  * Tier 0 is the active limit and paints opaque; each ring out is fainter, so an
  * unreachable stretch reads as "the axis continues, this limit cannot reach it"
  * rather than as a hole. The VALUES live in CSS (`--track-tier-*` on `:root` in
- * styles/tokens.css — on :root because lib/gamut-slider.ts's segments read the same
- * scale) so the wash brightness is tunable without touching this — the judgement of
+ * styles/tokens.css - on :root because lib/gamut-slider.ts's segments read the same
+ * scale) so the wash brightness is tunable without touching this - the judgement of
  * when a wash starts to look *available* is a design one.
  */
 const tierVar = (t: number): string => (t === BEYOND_TIER ? '--track-tier-beyond' : `--track-tier-${t}`);
@@ -299,14 +299,14 @@ const tierVar = (t: number): string => (t === BEYOND_TIER ? '--track-tier-beyond
  *
  * Asked once, in JS, because it has to be: the tiers are stops inside the single
  * `background` shorthand this module assigns, and if the wrapper fails to parse the
- * WHOLE declaration is dropped — the track would lose even its rail, which is worse
+ * WHOLE declaration is dropped - the track would lose even its rail, which is worse
  * than today. `@supports` in the stylesheet cannot guard a value built here.
  * Verified true in Chromium; when it is false the tiers paint `transparent`, which
  * is exactly the behaviour that shipped before them.
  *
  * The probe carries a LITERAL percentage, not the `var()` the shipped stops use, and
  * that is the whole point: a declaration containing `var()` cannot be validated
- * before substitution, so `CSS.supports` answers TRUE for it unconditionally — it
+ * before substitution, so `CSS.supports` answers TRUE for it unconditionally - it
  * says yes to `totally-not-a-color(in oklab, red var(--x), transparent)` as well,
  * which made the earlier form of this probe unable to fail. The literal form
  * discriminates (verified both ways in Chromium 149), and it is a sound proxy: a
@@ -331,7 +331,7 @@ const tiersSupported = (): boolean => {
  *
  * `color-mix` rather than the two alternatives, deliberately:
  *
- * - element `opacity` is unavailable — there is no element per band, and a conic
+ * - element `opacity` is unavailable - there is no element per band, and a conic
  *   ring cannot be split into positioned children the way `.gsl-seg` can without
  *   giving the dial and the slider two different paint paths.
  * - relative colour syntax is wrong here: `rgb(from X r g b / var(--a))` CLIPS a
@@ -356,9 +356,9 @@ const wash = (css: string, t: number): string => {
  *
  * `washed` is what separates the two shapes this feeds. A TRACK washes the rings
  * out by their tier's token (the onion), because a slider is the control of record
- * and the shape of its solid band is the information. A DIAL does not: Andy asked
+ * and the form of its solid band is the information. A DIAL does not: Andy asked
  * for the full colour on both sides of the boundary there, with the crossing
- * carried by a hairline instead (see dialEdgesHtml) — so the same run list, at the
+ * carried by a hairline instead (see dialEdgesHtml) - so the same run list, at the
  * same fractions, pours into the ring at full strength.
  */
 function runParts(runs: readonly ChannelRun[], washed = true): string[] {
@@ -372,7 +372,7 @@ function runParts(runs: readonly ChannelRun[], washed = true): string[] {
     if (run.from > cursor) parts.push(`transparent ${at(cursor)}`, `transparent ${at(run.from)}`);
     const n = run.stops.length;
     // A single-sample run still spans its (bisected) stretch, so state its one
-    // colour at BOTH ends — otherwise the band fades into the transparent gap
+    // colour at BOTH ends - otherwise the band fades into the transparent gap
     // beside it instead of reading as the solid sliver of reachable colour it is.
     if (n < 2) {
       const one = paint(String(run.stops[0]), run.tier);
@@ -387,7 +387,7 @@ function runParts(runs: readonly ChannelRun[], washed = true): string[] {
 }
 
 /**
- * Every tier crossing along an axis, as 0–1 fractions — the boundaries the dial
+ * Every tier crossing along an axis, as 0–1 fractions - the boundaries the dial
  * hairlines stand on.
  *
  * Read off the SAME run list the ramp is poured from, which is the whole point: a
@@ -399,7 +399,7 @@ function runParts(runs: readonly ChannelRun[], washed = true): string[] {
  *
  * There is deliberately no "first boundary" special case: a hue ring at high
  * chroma leaves and re-enters a gamut several times, and each of those crossings
- * is a place the display stops. 0 and 1 are excluded — the axis ends there, it does
+ * is a place the display stops. 0 and 1 are excluded - the axis ends there, it does
  * not cross there.
  */
 export function runBoundaries(runs: readonly ChannelRun[]): number[] {
@@ -411,7 +411,7 @@ export function runBoundaries(runs: readonly ChannelRun[]): number[] {
   return out;
 }
 
-/** The rail the gaps read against, as the BOTTOM background layer — the axis
+/** The rail the gaps read against, as the BOTTOM background layer - the axis
  *  carries on there, the gamut just cannot reach it. It rides in the same
  *  `background` shorthand as the runs because that shorthand is what JS assigns:
  *  a `background-color` from the stylesheet would be wiped by it, and an inset
@@ -425,7 +425,7 @@ const dialFromRuns = (runs: readonly ChannelRun[]): string =>
   runs.length ? `${conicStops(runParts(runs, false))}, ${RAIL}` : RAIL;
 
 /**
- * The three OKLCH axis ramps as stop lists — the ORIGINAL full-range builder,
+ * The three OKLCH axis ramps as stop lists - the ORIGINAL full-range builder,
  * kept because `lchTrackGradients` is a public export with pinned output (see
  * color-field.test.ts). The picker's own tracks come from `channelRuns`, which
  * breaks the ramp where the colour stops being displayable; this one never does.
@@ -448,13 +448,13 @@ export function lchTrackGradients(l: number, c: number, h: number): { l: string;
 }
 
 /**
- * Black or white — whichever reads on `hex`. Perceptual luminance threshold.
+ * Black or white - whichever reads on `hex`. Perceptual luminance threshold.
  *
  * **This is the ONE inversion rule for ink sitting on a colour**, and every surface
  * that flips ink must use it: the dial's output disc, the value pill, the swatch
  * tips, and Colour Lab's big swatch and ramp step labels. There were three
- * different rules before — this luma threshold, a WCAG-ratio winner, and a
- * `>= 4.5 against white` test — and the last two both flip around relative
+ * different rules before - this luma threshold, a WCAG-ratio winner, and a
+ * `>= 4.5 against white` test - and the last two both flip around relative
  * luminance 0.18, far darker than this one. The visible result was ink flipping to
  * black on the pill and the swatch while the disc beside them was still white:
  * `#CF6CA9` (luma 144.6) and `#DD79B6` (157.9) sit either side of THIS threshold
@@ -463,7 +463,7 @@ export function lchTrackGradients(l: number, c: number, h: number): { l: string;
  *
  * Why the luma threshold rather than the WCAG ratio: the ratio's crossover is where
  * the two ratios are numerically equal, which is a contrast-compliance question, not
- * a legibility one — it hands black to almost every mid-tone. 0.299/0.587/0.114 at
+ * a legibility one - it hands black to almost every mid-tone. 0.299/0.587/0.114 at
  * 150 flips where the eye flips.
  *
  * The implementation lives in brand-vars.ts now (re-exported here unchanged):
@@ -475,24 +475,24 @@ export { contrastText };
 // ── Dials ────────────────────────────────────────────────────────────────────
 // A ring per channel, sitting above the sliders: the axis's ramp poured into a
 // conic gradient, with a needle at value → angle. A `circular` channel (a genuine
-// hue) is the real shape of that axis; the others are a sweep whose two ends meet
-// at 12 o'clock, which is why there is a visible seam there — that is the range's
+// hue) is the real form of that axis; the others are a sweep whose two ends meet
+// at 12 o'clock, which is why there is a visible seam there - that is the range's
 // edge, not an artefact.
 //
 // The dials are painted from the CURRENT colour, so they carry the context the
-// sliders do. Dragging one is a convenience — the slider under it stays the
+// sliders do. Dragging one is a convenience - the slider under it stays the
 // control of record (it is the accessible one, and the precise one), and a dial
 // drag simply drives it. Hence aria-hidden + tabindex="-1" on every ring.
 //
 // The fourth disc is the OUTPUT: the colour these axes currently make. It's split
-// in half — the top picks a colour off the screen (eyedropper), the bottom opens
-// the swatch menu — with the glyphs struck through it in its own contrast colour.
+// in half - the top picks a colour off the screen (eyedropper), the bottom opens
+// the swatch menu - with the glyphs struck through it in its own contrast colour.
 //
 // Whether they render at all is the caller's `dials` option. It DEFAULTS to
 // `inline` (the spacious always-open panel), which is what it used to be hard-wired
 // to; a float popover can now ask for them.
 
-/** `runs: null` = "leave this ring's gradient alone, only move its needle" — what a
+/** `runs: null` = "leave this ring's gradient alone, only move its needle" - what a
  *  repaint of the channel being dragged asks for, since that axis's own ramp did not
  *  change. The needle must still move, or the ring stops following the finger. */
 interface DialSpec { ch: string; label: string; aria: string; frac: number; runs: ChannelRun[] | null }
@@ -501,7 +501,7 @@ interface DialSpec { ch: string; label: string; aria: string; frac: number; runs
 const needleDeg = (frac: number): string => `${(clamp01(frac) * 360).toFixed(1)}deg`;
 
 /**
- * The boundary hairlines for one ring — one radial line per tier crossing.
+ * The boundary hairlines for one ring - one radial line per tier crossing.
  *
  * The colour continues at full strength on BOTH sides of it (see runParts' `washed`):
  * this marks where a display stops, it does not withhold anything. The dials'
@@ -510,20 +510,20 @@ const needleDeg = (frac: number): string => `${(clamp01(frac) * 360).toFixed(1)}
  * ELEMENTS rather than stops inside the conic gradient, for three reasons, in order
  * of weight:
  *
- * - a gradient stop pair spans an ANGLE, so its mark is a wedge — hair-thin at the
+ * - a gradient stop pair spans an ANGLE, so its mark is a wedge - hair-thin at the
  *   hub and several pixels wide at the rim. A rotated element carries one width at
  *   every radius, which is what "hairline" means, and it is the geometry the needle
  *   beside it already uses.
  * - the appearance then lives entirely in CSS. JS writes one `transform` per
  *   crossing and nothing else, so the colour, the width and the length are tunable
  *   the way the tier opacities are. Stops would have to be assembled here, in the
- *   one `background` shorthand this module assigns — where a stylesheet
+ *   one `background` shorthand this module assigns - where a stylesheet
  *   `background-color` is wiped, which is exactly why the rail rides in the
  *   shorthand as a layer (see RAIL).
  * - interpolation would fight it: gradient stops premultiply, so a mark meeting a
  *   translucent wash smears rather than staying a line.
  *
- * They go in their own container, and that container is the innerHTML target —
+ * They go in their own container, and that container is the innerHTML target - 
  * never the dial, which hosts the needle and the hub.
  */
 function dialEdgesHtml(runs: readonly ChannelRun[] | null): string {
@@ -537,7 +537,7 @@ const EDIT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" f
 /** The dial row: one ring per channel + the output disc. `outHex` is machine-made
  *  (colorToHexString), so it's always a safe `#rrggbb` for a CSS context.
  *
- *  `slots` is how many discs the row must SIZE for — the widest space's channel
+ *  `slots` is how many discs the row must SIZE for - the widest space's channel
  *  count + the output disc, not this row's own count. The rings share the width by
  *  slot rather than by sibling count, so a 3-channel space and a 4-channel one draw
  *  the same size ring and the band's height stops depending on which tab is open
@@ -568,7 +568,7 @@ function paintDials(panel: HTMLElement, dials: readonly DialSpec[], outHex: stri
     if (!dial) continue;
     if (d.runs) {
       dial.style.background = dialFromRuns(d.runs);
-      // Only when this axis's ramp changed — `runs: null` is the dragged channel,
+      // Only when this axis's ramp changed - `runs: null` is the dragged channel,
       // whose own boundaries stand where they were. The container holds nothing but
       // these spans, so it is a safe innerHTML target; the dial itself is not (the
       // needle and the hub live there).
@@ -606,7 +606,7 @@ function colorInputPaint(hex: string): Record<string, string> {
     const c = parseInt(rgb.slice(i, i + 2), 16);
     return Math.round(c * a + CHECKER_AVG * (1 - a)).toString(16).padStart(2, '0');
   }).join('');
-  // The shared inversion rule — see contrastText. The compositing above still
+  // The shared inversion rule - see contrastText. The compositing above still
   // matters (a translucent value is judged as the eye sees it, over the
   // checkerboard); only the black/white DECISION is now shared.
   const fg = contrastText(eff);
@@ -617,7 +617,7 @@ function colorInputPaint(hex: string): Record<string, string> {
   };
 }
 
-/** (Re)paint a value input as the given colour's swatch — or back to the
+/** (Re)paint a value input as the given colour's swatch - or back to the
  *  neutral chrome when the value has no colour (transparent / mid-edit junk).
  *  The custom props land on the .color-input-wrap (they inherit), so the
  *  eyedropper button beside the input flips contrast along with the text. */
@@ -648,7 +648,7 @@ function alphaTrackHex(v: string | null | undefined): string {
 
 // ── Space panels ─────────────────────────────────────────────────────────────
 // One `.color-space` per registered mode: a channel row per ChannelSpec, plus the
-// optional dial row. There is no `switch (space)` anywhere in this path — the rows
+// optional dial row. There is no `switch (space)` anywhere in this path - the rows
 // come from the registry's data and the ramps from `channelRuns`, so a press
 // profile mounted at runtime renders with no new code.
 
@@ -690,8 +690,8 @@ function spacePanelHtml(
 ): string {
   const vals = decomposeColor(spec, seed, lastHue);
   const runs = spec.channels.map(ch => channelRuns(spec, ch, vals, seed.alpha));
-  // Every panel in a tab strip carries the same number of row slots — the widest
-  // space's — so switching a 3-channel space ↔ a 4-channel one moves nothing below
+  // Every panel in a tab strip carries the same number of row slots - the widest
+  // space's - so switching a 3-channel space ↔ a 4-channel one moves nothing below
   // the panel. The fillers are real (empty) rows rather than a CSS min-height
   // guess: the reservation is then exactly one row tall at any width or font size,
   // which the guessed 18px-per-row constant never was (a row is 2em).
@@ -720,7 +720,7 @@ const FAMILY_LABEL: Record<ColorModeFamily, string> = {
   perceptual: 'Perceptual', device: 'Device', output: 'Output',
 };
 
-/** One tab. Profile entries are two-line full-width rows — §11.6b wants the
+/** One tab. Profile entries are two-line full-width rows - §11.6b wants the
  *  profile name ON the tab, and a bare "CMYK" pill cannot carry it. */
 function modeTabHtml(eid: string, spec: SpaceSpec, active: boolean): string {
   const slug = slugMode(spec.mode);
@@ -745,7 +745,7 @@ function modeTabHtml(eid: string, spec: SpaceSpec, active: boolean): string {
  * families' aria-selected, and an arrow press at a family boundary would land
  * focus inside a `hidden` panel. One tablist gets one tab stop, arrows that walk
  * every entry in visual order across group boundaries, and the grouping stays
- * VISIBLE as headings — which serves "the grouping is real information" better
+ * VISIBLE as headings - which serves "the grouping is real information" better
  * than a control that hides two thirds of it.
  *
  * The family names reach assistive tech through each tab's aria-label
@@ -811,14 +811,14 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   const alphaInt = isTransparent ? 0 : Math.round(clamp01(color.alpha) * 255);
   const alphaPct = Math.round(alphaInt / 255 * 100);
   // The value field shows the colour in the active space (with modes) or as a hex
-  // (without). An unparsable value keeps its own text — mid-edit junk is held, not
+  // (without). An unparsable value keeps its own text - mid-edit junk is held, not
   // silently replaced.
   const shown = isTransparent ? 'transparent'
     : parsed ? (modes ? spaceText(getColorSpace(st.mode)!, color) : hex)
     : (String(rawVal) || '#000000');
   const painted = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(shown);
   // The trigger preview paints the BAKED hex, matching what updateTrigger writes
-  // on every later edit — a wide-gamut colour previews as the colour a screen can
+  // on every later edit - a wide-gamut colour previews as the colour a screen can
   // actually show, in one notation, rather than as `color(srgb …)` here and a hex
   // a moment later.
   const previewBg = isTransparent ? '' : `style="background:${escape(safeCssColor(parsed ? hex : String(rawVal)) || '#000000')}"`;
@@ -827,11 +827,11 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   const name = swatchName(value);
   const wantDials = dials ?? inline;
 
-  // Swatches are NOT rendered here — they're the heaviest part (the whole
+  // Swatches are NOT rendered here - they're the heaviest part (the whole
   // palette per field) and are built lazily on first popover open (see
   // buildSwatches in wireColorField). Keeps the initial grid DOM light.
   //
-  // The trigger shows the swatch circle + the colour NAME (small, muted SUSE Mono) —
+  // The trigger shows the swatch circle + the colour NAME (small, muted SUSE Mono) - 
   // NOT the hex; the hex value lives only inside the popover picker. A CSS container
   // query on the button collapses the name away, leaving just the circle, when the
   // field is squeezed in next to other controls (see .color-trigger in components.css).
@@ -841,20 +841,20 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // block-color-field branch spans the popover across the sidebar, and the block
   // host routes its onChange by the composite id ("blockId:idx:fieldId").
   // `inline` drops the trigger entirely and keeps the popover always-open, laid
-  // out in flow (no floating/positioning) — for hosts with room to spare that
+  // out in flow (no floating/positioning) - for hosts with room to spare that
   // want the picker as a spacious inline panel, not a click-to-open popover (the
   // brand editor's Primary colour and swatch editor). CSS (.color-field--inline)
   // turns the popover static and gives the dials the full width.
   //
   // It carries NO swatch palette: every inline host is the brand editor, where
-  // the swatches would be the very palette being edited — offering the brand's
+  // the swatches would be the very palette being edited - offering the brand's
   // own colours as presets for a brand colour is circular. Omitted rather than
   // hidden: the grid is the heaviest part of the popover's DOM.
   //
   // `data-color-canon` is the server-render → wire handoff: the canonical colour
   // as a CSS Color 4 string (or 'transparent', or empty for "no colour yet").
   // wireColorField re-parses it with the engine's strict parseColor, which is why
-  // the hidden native input is now WRITE-ONLY — it is the OS picker's own control
+  // the hidden native input is now WRITE-ONLY - it is the OS picker's own control
   // and can only speak `#rrggbb`, so it cannot be the authority.
   const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
   return `<div class="${cls}" data-color-field="${eid}" data-color-canon="${escape(canon)}">
@@ -867,7 +867,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       ${/* NO maxlength: this field takes any CSS colour ('rebeccapurple',
             'color(display-p3 1 0 0)'), and the 9-character hex cap silently
             truncated every one of them mid-paste. What it SHOWS is still a hex
-            where there are no space tabs to say otherwise — see writeValueField. */''}
+            where there are no space tabs to say otherwise - see writeValueField. */''}
       <input type="text" class="color-input${painted ? ' color-input--painted' : ''}${shown.length > LONG_VALUE ? ' color-input--long' : ''}" data-color-hex="${eid}"
              value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}" title="${escape(shown)}"
              spellcheck="false" autocomplete="off" aria-label="Colour value">
@@ -876,7 +876,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       ${modes
         ? colorModesHtml(eid, seed, st.lastHue, st.mode, wantDials)
         // In a click-to-open POPOVER (float / regular sidebar / block), the sliders start
-        // COLLAPSED — the popover opens compact (value + alpha + swatches), which keeps it in
+        // COLLAPSED - the popover opens compact (value + alpha + swatches), which keeps it in
         // the viewport, and they expand when the user focuses the .color-input. The INLINE
         // panel (brand editor) is a dedicated always-open editor, so its sliders/dials stay shown.
         : spacePanelHtml(eid, getColorSpace('oklch')!, seed, st.lastHue, { hidden: !inline, dials: wantDials, tabbed: false }) + noteHtml(eid)}
@@ -896,14 +896,14 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       ${inline
         // Inline has no always-open palette (the brand editor's own tiles ARE the
         // palette). The swatch grid instead lives in a menu the result disc's edit
-        // action opens — "the swatch context menu" — so presets stay one click away.
+        // action opens - "the swatch context menu" - so presets stay one click away.
         ? '<div class="color-swatch-menu" data-swatch-menu hidden><div class="color-swatches"></div></div>'
         : '<div class="color-swatches"></div>'}
     </div>
   </div>`;
 }
 
-/** The palette swatch buttons for a field — built lazily on first popover open. */
+/** The palette swatch buttons for a field - built lazily on first popover open. */
 function swatchButtonsHtml(id: string): string {
   const eid = escape(id);
   return SWATCHES.map(s => {
@@ -914,9 +914,9 @@ function swatchButtonsHtml(id: string): string {
     // Each swatch carries its own colour (--sw-c) + a black/white contrast colour
     // (--sw-fg) as inline custom props; the floating hover tooltip paints itself in
     // those (see showSwatchTip). Transparent has no colour of its own, so give the
-    // tooltip a neutral chip. No native `title` — the graphical tip replaces it.
+    // tooltip a neutral chip. No native `title` - the graphical tip replaces it.
     // safeCssColor: this is a CSS context, so attribute-escaping alone isn't
-    // enough — an unvalidated token value could smuggle extra declarations.
+    // enough - an unvalidated token value could smuggle extra declarations.
     const val = safeCssColor(s.value);
     const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${escape(val || '#c9ccd1')};--sw-fg:${contrastText(val)};background:${escape(val)}`;
     return `<button type="button"
@@ -931,7 +931,7 @@ function swatchButtonsHtml(id: string): string {
 // A graphical hover label for the palette swatches: a little chip painted in the
 // swatch's OWN colour with a contrasting black/white name. It lives on document.body
 // as position:fixed, so the swatch grid's own scroll/overflow never clips it (a CSS
-// ::after would be), pops in after a tiny delay, and is pointer-events:none — hovering
+// ::after would be), pops in after a tiny delay, and is pointer-events:none - hovering
 // it never steals a click, so you can slide straight onto the next swatch. One shared
 // element + delegated listeners cover every field's (lazily built) swatches.
 let swatchTip: HTMLElement | null = null;
@@ -974,18 +974,18 @@ function armSwatchTip(): void {
   document.addEventListener('mouseout', (e) => {
     if ((e.target as Element | null)?.closest('.color-swatch')) hideSwatchTip();
   });
-  // A fixed chip doesn't follow a scrolling swatch grid — drop it rather than strand it.
+  // A fixed chip doesn't follow a scrolling swatch grid - drop it rather than strand it.
   window.addEventListener('scroll', hideSwatchTip, true);
 }
 
 /**
  * The viewport origin of the box a `position:fixed` descendant of `el` is laid out
  * against. `fixed` is viewport-relative ONLY when no ancestor establishes a containing
- * block — a `transform`, the individual `translate`/`scale`/`rotate` properties,
+ * block - a `transform`, the individual `translate`/`scale`/`rotate` properties,
  * `perspective`, `filter`, `backdrop-filter`, `will-change`, or `contain` on an ancestor
  * all make `fixed` resolve against THAT box's padding edge instead. Two traps bite here:
  * the sidebar carries `backdrop-filter: blur()`, and every `.input-row` keeps a computed
- * `translate: 0px` from the `card-in` enter animation's `both` fill-mode — and a non-`none`
+ * `translate: 0px` from the `card-in` enter animation's `both` fill-mode - and a non-`none`
  * `translate` establishes a containing block even at zero (a computed value other than
  * `none`, not a visible offset, is the trigger). Either way a popover portalled to `fixed`
  * lands on the controls below its trigger. Callers subtract this origin so their
@@ -995,8 +995,8 @@ export function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: num
   for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
     const s = getComputedStyle(a);
     const backdrop = s.backdropFilter || s.getPropertyValue('-webkit-backdrop-filter');
-    // container-type: size/inline-size applies layout containment — a fixed containing
-    // block — but computed `contain` does NOT reflect it, so it needs its own check
+    // container-type: size/inline-size applies layout containment - a fixed containing
+    // block - but computed `contain` does NOT reflect it, so it needs its own check
     // (e.g. the record tool's `.tool-stage.has-record { container-type: inline-size }`).
     const ctype = s.getPropertyValue('container-type');
     if (s.transform !== 'none' || s.translate !== 'none' || s.scale !== 'none' || s.rotate !== 'none' ||
@@ -1016,7 +1016,7 @@ export function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: num
 // ── Repaint scheduling ───────────────────────────────────────────────────────
 // A panel's tracks cost up to 4 channels × 24 samples × a conversion + a gamut
 // test. The dragged channel's OWN track never changes (the other channels are
-// held), so it is skipped — the old paintLch repainted all three for nothing —
+// held), so it is skipped - the old paintLch repainted all three for nothing - 
 // and the rest is coalesced to one paint per frame. The state write and the emit
 // stay synchronous with the event; only pixels wait.
 
@@ -1053,7 +1053,7 @@ function paintTracks(panel: HTMLElement, { spec, alpha, dials, skip }: PaintJob)
     if (slider) slider.style.background = trackFromRuns(r);
   });
   if (!dials) return;
-  // Every channel goes to paintDials, the skipped one included — with `runs: null`,
+  // Every channel goes to paintDials, the skipped one included - with `runs: null`,
   // which repaints its needle and leaves its gradient. Dropping it here is how the
   // dragged channel's needle used to freeze while its slider moved, and how a dial
   // drag stopped following the finger on the very ring being dragged.
@@ -1067,7 +1067,7 @@ function paintTracks(panel: HTMLElement, { spec, alpha, dials, skip }: PaintJob)
   );
 }
 
-/** Sync the readouts (and the pin flag) — cheap, so it runs synchronously. */
+/** Sync the readouts (and the pin flag) - cheap, so it runs synchronously. */
 function paintReadouts(panel: HTMLElement, spec: SpaceSpec, vals: Record<string, number>): boolean {
   let anyPinned = false;
   for (const ch of spec.channels) {
@@ -1091,7 +1091,7 @@ function paintReadouts(panel: HTMLElement, spec: SpaceSpec, vals: Record<string,
  */
 export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInteractStart, onInteractEnd }: WireColorFieldOpts = {}): void {
   const interact = (on: boolean): void => { (on ? onInteractStart : onInteractEnd)?.(); };
-  /** Fields whose FOCUS opened an interaction — so the matching release fires once,
+  /** Fields whose FOCUS opened an interaction - so the matching release fires once,
    *  wherever inside the field the focus wandered first (see the focusout handler). */
   const FOCUS_HELD = new WeakSet<HTMLElement>();
   armSwatchTip();
@@ -1104,7 +1104,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     return getColorSpace(st?.mode ?? 'oklch') ?? getColorSpace('oklch')!;
   };
 
-  /** The panel for the field's active mode — NOT `:not([hidden])`: a popover whose
+  /** The panel for the field's active mode - NOT `:not([hidden])`: a popover whose
    *  sliders have not been expanded yet still has to be kept in step, or opening
    *  them later shows a stale colour. */
   const activePanel = (field: HTMLElement, spec: SpaceSpec): HTMLElement | null =>
@@ -1112,7 +1112,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
   const wantsDials = (panel: HTMLElement): boolean => Boolean(panel.querySelector('.color-dials'));
 
-  /** A panel's display values — cached, because re-decomposing mid-drag makes a
+  /** A panel's display values - cached, because re-decomposing mid-drag makes a
    *  lossy space (CMYK's K) jump under the user's hand. */
   const panelVals = (panel: HTMLElement, spec: SpaceSpec, st: FieldColorState): Record<string, number> => {
     const cached = PANEL_VALS.get(panel);
@@ -1154,7 +1154,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   /**
    * Write the caution line. A slider drag is throttled to one update every NOTE_MS;
    * a SPACE SWITCH passes `now` and jumps the queue, because the line names the space
-   * and it is `role="status"` — deferring it makes assistive tech announce the space
+   * and it is `role="status"` - deferring it makes assistive tech announce the space
    * the user just left, and an arrow-key walk across the strip announces nothing but
    * the first step.
    *
@@ -1190,7 +1190,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
    * Paint the alpha track: this colour fading to nothing, over the checkerboard.
    *
    * The slider is otherwise identical to its channel siblings above it, and it used
-   * to be a 4px native rail with `accent-color` — which made the one control whose
+   * to be a 4px native rail with `accent-color` - which made the one control whose
    * subject IS transparency the only one that showed you nothing about it. The two
    * custom properties are the gradient's ends; the checkerboard lives in CSS
    * because it never changes.
@@ -1206,7 +1206,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   /**
    * The text the value field shows.
    *
-   * With a tab strip, the ACTIVE space's notation — that is the point of the strip.
+   * With a tab strip, the ACTIVE space's notation - that is the point of the strip.
    * Without one, a hex: those hosts (the sidebar, the /pro grid, free-canvas) render
    * a ~150px field whose placeholder is `#rrggbbaa`, and writing `oklch(70.085%
    * 0.15123 157.2 / 0.7843)` into it left the user unable to re-enter the string the
@@ -1235,7 +1235,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     input.classList.toggle('color-input--invalid', on);
   };
 
-  /** Write the value field — in the notation valueText picks. Never clobbers its
+  /** Write the value field - in the notation valueText picks. Never clobbers its
    *  TEXT while the user is typing in it, but always repaints its swatch chrome. */
   const writeValueField = (field: HTMLElement, st: FieldColorState): void => {
     const input = field.querySelector<HTMLInputElement>('.color-input[data-color-hex]');
@@ -1282,7 +1282,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
   // ── Nearest-brand hint ("Snap to Jungle") ────────────────────────────────────
   // A custom colour that lands NEAR a brand swatch is usually a drifted brand
-  // colour — offer the snap. Shown only when the value is not already a swatch
+  // colour - offer the snap. Shown only when the value is not already a swatch
   // (ΔEOK > a rounding hair) and the nearest one is close enough to be the
   // intended colour (≤ 0.12 ≈ clearly-related); clicking re-emits through
   // applySwatch, so a token-backed swatch RE-LINKS the value to its ref.
@@ -1302,7 +1302,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // ── THE one emit ──────────────────────────────────────────────────────────
   /**
    * The ONLY place onChange is called. Reachable exclusively from a pointer /
-   * keyboard / `input` / click handler — never from selectMode, onSelect, a seed*
+   * keyboard / `input` / click handler - never from selectMode, onSelect, a seed*
    * or a paint*. See the module header: a mount-time emit made every Colour Lab
    * colour report "sRGB", and jsdom cannot catch it for us.
    */
@@ -1316,7 +1316,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   /**
    * Everything that follows a real edit, once the state has been written: the
    * handoff attribute, the sibling controls, the trigger, the visible panel, the
-   * caution line, then the emit. `owner` is the panel currently being dragged —
+   * caution line, then the emit. `owner` is the panel currently being dragged - 
    * it owns its own display values, so it must not be re-seeded from the colour
    * (that is what makes a lossy space stable under the hand). Every other
    * projection is idempotent, so it is written unconditionally.
@@ -1366,7 +1366,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   });
 
   /** Seed the nearest-brand hint from the field's own colour when the popover
-   *  opens — updateTrigger only runs on later edits. */
+   *  opens - updateTrigger only runs on later edits. */
   function seedNearest(field: HTMLElement | null): void {
     const st = stateOf(field);
     if (field && st) updateNearest(field, bakedHex(st));
@@ -1384,7 +1384,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     applyColor(field, { kind: transparent ? 'transparent' : 'color', color: parsed, ref });
   }
 
-  // Build the swatch grid the first time a field's popover opens — deferring the
+  // Build the swatch grid the first time a field's popover opens - deferring the
   // whole palette (the heaviest part of each colour cell) until it's needed.
   // Clicks are DELEGATED to the (persistent) box, so the grid can be repopulated
   // later (refreshSwatches, when the brand palette changes) without re-wiring.
@@ -1398,7 +1398,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-swatch-value]');
         if (!btn) return;
         applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null);
-        // Picking from the disc's swatch menu closes it — a menu, not a panel.
+        // Picking from the disc's swatch menu closes it - a menu, not a panel.
         closeSwatchMenu(field);
       });
     }
@@ -1420,7 +1420,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   function toggleSwatchMenu(field: HTMLElement, menu: HTMLElement, btn: HTMLElement): void {
     if (!menu.hidden) { closeSwatchMenu(field); return; }
     buildSwatches(field);
-    // Anchor to the VISIBLE panel's disc — a hidden panel's offsets are zero.
+    // Anchor to the VISIBLE panel's disc - a hidden panel's offsets are zero.
     const disc = field.querySelector<HTMLElement>('[data-space-group]:not([hidden]) [data-dial-out]')
       ?? field.querySelector<HTMLElement>('[data-dial-out]');
     if (disc) { menu.style.top = `${disc.offsetTop + disc.offsetHeight + 6}px`; menu.style.left = `${disc.offsetLeft}px`; }
@@ -1445,7 +1445,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
   // ── Seed each field's state from the server-render handoff ───────────────────
   // data-color-canon is the authority (S1–S4/S7 used to be: the native input, the
-  // hex text, the alpha slider, the OKLCH dataset — four places to disagree).
+  // hex text, the alpha slider, the OKLCH dataset - four places to disagree).
   // Re-parsed with the engine's STRICT parseColor, so an unreadable attribute
   // yields black rather than a guess.
   scope.querySelectorAll<HTMLElement>('[data-color-field]').forEach(field => {
@@ -1464,7 +1464,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
   });
 
-  // Inline fields have no trigger, so the on-open hooks below never fire — seed
+  // Inline fields have no trigger, so the on-open hooks below never fire - seed
   // their nearest-brand hint up front. (They carry no swatch grid to build.)
   scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => seedNearest(f));
 
@@ -1487,7 +1487,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
 
     // Escape closes this field's open popover and returns focus to the trigger.
-    // Bound to the field (re-created on each render) — not the persistent scope —
+    // Bound to the field (re-created on each render) - not the persistent scope - 
     // so re-wiring on re-render doesn't accumulate listeners.
     field?.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
@@ -1502,7 +1502,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
   // Off-screen height of the popover measured as if the collapsed sliders were EXPANDED.
   // Positioning uses this so the popover opens in the direction its full (expanded) size fits
-  // and reserves that room — then revealing the sliders (value-field focus) grows into the
+  // and reserves that room - then revealing the sliders (value-field focus) grows into the
   // reserved space and NEVER re-positions. Repositioning on reveal was the cause of both the
   // "swatch component jumps" flip and the "clicking a slider closes the picker" miss (the
   // popover moved out from under the pointer between press and release).
@@ -1520,7 +1520,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   function positionPopover(field: HTMLElement, trigger: HTMLElement, popover: HTMLElement): void {
     // Force-settle any in-flight entrance cascade on the field's ancestors first: while
     // `card-in` is running, the animated `translate` makes that ancestor the popover's
-    // containing block — mispositioned AND clipped by the section — and the trap would
+    // containing block - mispositioned AND clipped by the section - and the trap would
     // flip anyway (a visible jump) the moment the animation ends. Stripping .reveal-item
     // cancels the animation and snaps the item straight to its natural (settled) state.
     for (let a = field.closest<HTMLElement>('.reveal-item'); a;
@@ -1529,7 +1529,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       a.style.removeProperty('--reveal-delay');
     }
     // We compute viewport-space coords below, then translate into the box `fixed`
-    // is actually laid out against (the sidebar's backdrop-filter traps it — see
+    // is actually laid out against (the sidebar's backdrop-filter traps it - see
     // fixedContainingBlockOrigin). `cb` is {0,0} when `fixed` is truly viewport-relative.
     const cb = fixedContainingBlockOrigin(popover);
     if (field.classList.contains('block-color-field')) {
@@ -1540,11 +1540,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         const t = trigger.getBoundingClientRect();
         popover.style.cssText = `position:fixed;top:${t.bottom + 4 - cb.y}px;left:${sb.left + 14 - cb.x}px;width:${sb.width - 28}px;right:auto;z-index:10001;`;
       }
-      // Same close-on-outside/scroll as the other fixed branches — without it the
+      // Same close-on-outside/scroll as the other fixed branches - without it the
       // popover survives a click on another block's field and strands on scroll.
       armOutside(field, popover);
     } else if (field.classList.contains('color-field--float')) {
-      // Float: dock to the CELL frame's top-left (not the trigger's — the field's
+      // Float: dock to the CELL frame's top-left (not the trigger's - the field's
       // padding would otherwise leave the popover a few px low), escaping any
       // scroll container; close on outside. Match the cell width when it's wider
       // than the minimum (the field is fluid at 100%), squaring the docked corner.
@@ -1552,7 +1552,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const W = Math.max(224, Math.round(t.width));
       const left = Math.max(8, Math.min(t.left, window.innerWidth - W - 8));
       // Measure the EXPANDED height (sliders reserved), then clamp vertically so the popover
-      // never spills off the bottom (or top) of the viewport — even after the sliders expand.
+      // never spills off the bottom (or top) of the viewport - even after the sliders expand.
       const ph = measuredFullHeight(popover, W);
       let top = t.top;
       if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
@@ -1564,8 +1564,8 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     } else {
       // Regular sidebar field: portal to position:fixed anchored to the field (like the
       // block/float branches). An absolute popover was trapped whenever an ancestor
-      // formed a stacking context — the focus-spotlight dim on non-focused
-      // sections, or the section's own clip — and a later section painted over it (the
+      // formed a stacking context - the focus-spotlight dim on non-focused
+      // sections, or the section's own clip - and a later section painted over it (the
       // "picker renders below" bug). Fixed escapes every ancestor stacking context and
       // overflow clip, so it's always on top. Flip above when it would overflow the
       // sidebar's bottom; close on any outside interaction.
@@ -1591,7 +1591,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     disarmOutside();
     const close = (): void => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
     outside = (e) => { if (!field.contains(e.target as Node | null)) close(); };
-    // A fixed popover doesn't follow the field — close it on scroll rather than leave it
+    // A fixed popover doesn't follow the field - close it on scroll rather than leave it
     // stranded over unrelated controls (capture catches the sidebar's own scroll). BUT don't
     // close while the user is actively inside the popover: pressing a range slider (or the value
     // input) can trigger a browser scroll-into-view, and closing on THAT dropped the picker
@@ -1611,7 +1611,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // ── Channel sliders (every space, one handler) ───────────────────────────────
   // A drag reads the panel's display values, writes the dragged channel, composes
   // straight to a CssColor and assigns it. There is no hex in this path, which is
-  // why the old low-chroma hue drift cannot come back — and why it cannot appear
+  // why the old low-chroma hue drift cannot come back - and why it cannot appear
   // in any of the other spaces with a hue either.
   scope.querySelectorAll<HTMLElement>('[data-space-group]').forEach(panel => {
     const field = panel.closest<HTMLElement>('[data-color-field]');
@@ -1648,7 +1648,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // and drives the slider for that channel, whose `input` handler already owns the
   // whole path. One control of record per channel; the dial is a second way to move
   // it. The output disc's two halves delegate to the eyedropper button the popover
-  // already carries and to the swatch menu. No-ops where no dials render — the row
+  // already carries and to the swatch menu. No-ops where no dials render - the row
   // simply isn't there.
   scope.querySelectorAll<HTMLElement>('.color-dials').forEach(row => {
     const field = row.closest<HTMLElement>('[data-color-field]');
@@ -1663,7 +1663,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
       // Angle → value, measured the same way the needle and the conic are: 0° at
       // 12 o'clock, clockwise. A non-circular range's two ends meet at the top, so
-      // a drag across that seam jumps min↔max — inherent to putting a linear axis
+      // a drag across that seam jumps min↔max - inherent to putting a linear axis
       // on a ring, and precisely why the slider stays.
       const setFromPointer = (e: PointerEvent): void => {
         const r = dial.getBoundingClientRect();
@@ -1707,7 +1707,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // ── The space tab strip ──────────────────────────────────────────────────────
   // ONE wireTabs call for the whole strip: one tab stop, one roving tabindex, and
   // arrows that cross family boundaries in DOM order. A mode switch is cheap and,
-  // critically, emits NOTHING — it changes which numbers you are looking at, not
+  // critically, emits NOTHING - it changes which numbers you are looking at, not
   // the colour.
   scope.querySelectorAll<HTMLElement>('.color-modes[data-color-modes]').forEach(modes => {
     const field = modes.closest<HTMLElement>('[data-color-field]');
@@ -1745,7 +1745,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       },
     });
     // Establish the roving tabindex for the server-rendered active mode and seed
-    // that panel. This runs at WIRE time, so it must not emit — and does not.
+    // that panel. This runs at WIRE time, so it must not emit - and does not.
     selectMode(modes.dataset.activeMode ?? DEFAULT_COLOR_MODE);
   });
 
@@ -1766,7 +1766,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   });
 
   // ── Screen eyedropper ────────────────────────────────────────────────────────
-  // The EyeDropper API's overlay samples ANYWHERE on screen — other windows and
+  // The EyeDropper API's overlay samples ANYWHERE on screen - other windows and
   // the desktop included, not just this page (Chromium; secure contexts). Where
   // it doesn't exist (Firefox/Safari, the Tauri WebViews) the button is removed,
   // never a dead control. The picked colour applies exactly like a swatch: current
@@ -1800,7 +1800,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     input.addEventListener('focus', () => {
       if (!FOCUS_HELD.has(field)) { FOCUS_HELD.add(field); interact(true); }
       // Expand the collapsed sliders on first focus/tap of the value input. Only the simple
-      // popover's panel (a DIRECT child of .color-popover) — never the modes picker's nested
+      // popover's panel (a DIRECT child of .color-popover) - never the modes picker's nested
       // panels, whose visibility the tabs own. NO re-position here: the popover was already
       // laid out for its expanded height (measuredFullHeight), so the sliders grow into
       // reserved space. Repositioning on reveal is exactly what caused the popover to jump and
@@ -1814,15 +1814,15 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     // host's drag-suppression (tool-inputs' _sliderDragging), so the slider's very first
     // change rebuilds the sidebar row and the picker vanishes mid-drag. But a blur handler
     // on the input alone can only fire when focus goes STRAIGHT from it to the outside
-    // world — hop via a tab or a swatch first and the release never came at all, leaving
+    // world - hop via a tab or a swatch first and the release never came at all, leaving
     // the host latched and its sidebar frozen until some unrelated drag freed it.
     // `focusout` on the field sees every hop and fires once, when focus really leaves.
     field.addEventListener('focusout', (e) => {
       const to = (e as FocusEvent).relatedTarget;
       if (to instanceof Node && field.contains(to)) return;
       if (FOCUS_HELD.delete(field)) interact(false);
-      // Text that never parsed is left on screen while typing — deliberately, so the
-      // user can keep going — but on the way out it would sit there claiming to be a
+      // Text that never parsed is left on screen while typing - deliberately, so the
+      // user can keep going - but on the way out it would sit there claiming to be a
       // colour it is not. Put the colour's own notation back; the invalid flag was
       // the warning, not a state to leave behind.
       const st = STATE.get(field);
@@ -1834,13 +1834,13 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const raw = input.value.trim();
       if (/^transparent$/i.test(raw)) { applyColor(field, { kind: 'transparent', color: TRANSPARENT, ref: null }); return; }
       // The active space's own notation first, then a bare component list in its
-      // display units, then the FULL CSS parser — so a hex pasted while OKLCH is
+      // display units, then the FULL CSS parser - so a hex pasted while OKLCH is
       // active, or an `oklch()`/`color(display-p3 …)` pasted anywhere, lands
       // instead of being silently held as unparseable.
       const parsed = spaceParse(activeSpec(field), raw);
       if (!parsed) { markInvalid(input, true); return; }   // hold the last good colour, and say so
       markInvalid(input, false);
-      // A notation with no alpha of its own keeps the alpha the slider is showing —
+      // A notation with no alpha of its own keeps the alpha the slider is showing - 
       // typing `#30ba78` over a 60% colour must not make it opaque. An alpha it DID
       // state is an instruction, `ff` / `/ 1` included: inferring "stated nothing"
       // from `alpha === 1` made the field a one-way ratchet downward, with no typed
@@ -1864,7 +1864,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       // Byte-exact both ways: alpha = byte/255 in, Math.round(alpha*255) out.
       st.color = { ...st.color, alpha: clamp01((Number.isFinite(byte) ? byte : 255) / 255) };
       // Touching the alpha of a transparent swatch turns it into a real colour at
-      // that opacity (black, since that is what transparent's components are) —
+      // that opacity (black, since that is what transparent's components are) - 
       // the same thing it did when the native input was the source.
       st.kind = 'color';
       st.ref = null;
@@ -1883,7 +1883,7 @@ export interface MountColorFieldOpts {
   swatchesOnly?: boolean;
   inline?: boolean;
   modes?: boolean;
-  /** Show the conic dials. Defaults to `inline` — a float popover can opt in. */
+  /** Show the conic dials. Defaults to `inline` - a float popover can opt in. */
   dials?: boolean;
   onInteractStart?(): void;
   onInteractEnd?(): void;
@@ -1891,7 +1891,7 @@ export interface MountColorFieldOpts {
 
 /**
  * Mount our colour picker into `container`, in place of a native
- * `<input type=color>` — the shell never opens the OS colour picker, so every
+ * `<input type=color>` - the shell never opens the OS colour picker, so every
  * colour surface routes through this one component. Fills the container with a
  * single field and wires it; `onChange` gets the canonical value string
  * (#rrggbb / #rrggbbaa / 'transparent'). Returns the field element so callers
@@ -1905,7 +1905,7 @@ export function mountColorField(container: HTMLElement, id: string, opts: MountC
   wireColorField(container, {
     // A token-backed swatch emits a token value OBJECT ({ ref, value }) so the sidebar can keep
     // the colour linked to its brand token. mountColorField's callers all speak plain colour
-    // STRINGS (MountColorFieldOpts.onChange(value: string)), so unwrap to the hex here — a bare
+    // STRINGS (MountColorFieldOpts.onChange(value: string)), so unwrap to the hex here - a bare
     // String() would hand them "[object Object]", which then stores as an invalid CSS colour.
     onChange: (_id, value, detail) => opts.onChange(
       value && typeof value === 'object' ? String((value as { value?: unknown }).value ?? '') : String(value),

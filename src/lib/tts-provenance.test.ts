@@ -121,7 +121,7 @@ test('an already stamped clip never re-heals', () => {
 test('uploaded or recorded audio is never stamped', () => {
   // An uploaded mp3 without a recipe.
   assert.equal(shouldHealTts(ttsRef({ format: 'mp3', meta: { name: 'song.mp3' } }), bareWav()), false);
-  // A user wav recording without meta.tts — same bytes, no proof of origin.
+  // A user wav recording without meta.tts - same bytes, no proof of origin.
   assert.equal(shouldHealTts(ttsRef({ id: 'user/rec/1', meta: { name: 'take 1' } }), bareWav()), false);
   // Even WITH a recipe, an mp3 container is not the wav heal's business.
   assert.equal(shouldHealTts(ttsRef({ format: 'mp3' }), bareWav()), false);

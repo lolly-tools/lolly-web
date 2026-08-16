@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * extensions.ts — the chrome extension slot registry + mount + governance.
+ * extensions.ts - the chrome extension slot registry + mount + governance.
  *
- * Proves the acceptance criterion — DORMANCY — and the hydration/governance
+ * Proves the acceptance criterion - DORMANCY - and the hydration/governance
  * contract that Apply and future consumers code against:
  *   - empty slot renders nothing (el untouched, no-op disposer);
  *   - registering then mounting works, and the disposer tears down;
@@ -14,7 +14,7 @@
  *
  * DOM-free by construction: cost-authoring is a `single` slot, so mountSlot uses
  * the passed element directly and never touches `document`. A tiny fake element
- * records whether it was touched — the dormancy assertion.
+ * records whether it was touched - the dormancy assertion.
  *
  * Run directly:  node --test shells/web/src/lib/extensions.test.ts
  */

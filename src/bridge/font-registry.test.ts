@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Font-registry unit tests — the pure resolution logic that decides WHICH face
+ * Font-registry unit tests - the pure resolution logic that decides WHICH face
  * outlines a run: family-stack parsing, unicode-range coverage, and face/axis
  * selection. The IndexedDB + woff2-decompression halves are exercised
  * end-to-end in the browser (see the export verification), not here.
@@ -119,7 +119,7 @@ test('the chain leads with the face covering most of the run', () => {
   assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, 'Hello').map(c => c.face.assetId), ['latin']);
   // Mostly ext: ext leads, latin follows for the ASCII tail.
   assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, 'ĲĲĲa').map(c => c.face.assetId), ['ext', 'latin']);
-  // A mixed run keeps both — the disjoint subsets each carry half of "Łódź".
+  // A mixed run keeps both - the disjoint subsets each carry half of "Łódź".
   assert.equal(pickFaces(faces, { fontFamily: 'X' }, 'Łódź').length, 2);
 });
 
@@ -150,7 +150,7 @@ test('a run no face can draw yields an empty chain (caller keeps <text>)', () =>
   assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, '漢字'), []);
 });
 
-// ── isFontContentType — the SPA-fallback trap ────────────────────────────────
+// ── isFontContentType - the SPA-fallback trap ────────────────────────────────
 // A dev/dist server answers a MISSING /catalog font with 200 text/html (SPA
 // fallback), so "resp.ok" alone would mint an HTML page as a font. This pure
 // predicate is what keeps that out of the registry.

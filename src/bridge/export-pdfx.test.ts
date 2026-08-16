@@ -25,7 +25,7 @@ import { pressProfileBytes } from '../../../../tests/helpers/icc-fixture.ts';
 
 // ─── harness ──────────────────────────────────────────────────────────────────
 
-/** A one-page document with nothing on it — the neutral case for the claim gate. */
+/** A one-page document with nothing on it - the neutral case for the claim gate. */
 async function blankDoc(): Promise<any> {
   const { PDFDocument } = await import('pdf-lib') as any;
   const doc = await PDFDocument.create();
@@ -57,7 +57,7 @@ function intentOf(doc: any, PDFName: any): { dict: any; count: number } | null {
 const str = (v: any): string =>
   (v == null ? '' : String(v.decodeText ? v.decodeText() : v).replace(/^\//, ''));
 
-/** Info-dict + XMP agreement on the conformance claim — they must never differ. */
+/** Info-dict + XMP agreement on the conformance claim - they must never differ. */
 function claimOf(doc: any, bytes: Uint8Array, PDFName: any): { info: boolean; xmp: boolean } {
   const info = Boolean(doc.getInfoDict().get(PDFName.of('GTS_PDFXVersion')));
   const xmp = new TextDecoder().decode(bytes).includes('<pdfxid:GTS_PDFXVersion>');
@@ -102,7 +102,7 @@ test('a paired profile is embedded, and the reopened file proves it', async () =
   assert.equal(str(dest.dict.get(PDFName.of('Filter'))), 'FlateDecode');
   assert.equal(Number(dest.dict.get(PDFName.of('N')).asNumber()), 4);
 
-  // The bytes in the file ARE the profile that was handed in — the whole point.
+  // The bytes in the file ARE the profile that was handed in - the whole point.
   const inflated = new Uint8Array(inflateSync(Buffer.from(dest.contents)));
   assert.deepEqual(inflated, profile, 'the embedded profile must round-trip byte for byte');
 
@@ -150,7 +150,7 @@ test('a 1-channel press profile writes /N 1, not a hard-coded 4', async () => {
 
 test('a registry-name condition writes the intent and claims nothing', async () => {
   // The honest tightening: naming FOGRA39 without embedding it was never PDF/X-4.
-  // Everything else about the file — the intent, the boxes, the XMP — is unchanged.
+  // Everything else about the file - the intent, the boxes, the XMP - is unchanged.
   const { reopened, bytes, PDFName } = await roundTrip(await blankDoc(), {}, 'fogra39', {});
   const intent = intentOf(reopened, PDFName)!;
   assert.equal(intent.count, 1);
@@ -205,7 +205,7 @@ test('a DeviceRGB transparency group blocks the claim', async () => {
 
 test('a non-embedded font blocks the claim (the standard 14 are no exception)', async () => {
   // pdf-lib's StandardFonts write /Type1 /BaseFont /Helvetica with NO FontDescriptor
-  // and no FontFile — which is exactly what drawPrintMarks uses for the provenance
+  // and no FontFile - which is exactly what drawPrintMarks uses for the provenance
   // labels today. Withholding the claim is the honest interim answer; drawing those
   // labels as paths is the fix, and is deliberately not part of this change.
   const { StandardFonts, PDFName } = await import('pdf-lib') as any;
@@ -233,7 +233,7 @@ test('AES-256 has the last word: intent written, claim withheld', async () => {
 test('an unresolvable own profile writes NO intent and no claim', async () => {
   // A stale saved session or a hand-edited URL naming a profile this device cannot
   // use. Falling back to the default condition would re-declare something the user
-  // never chose, so nothing is declared at all — and the export still succeeds.
+  // never chose, so nothing is declared at all - and the export still succeeds.
   const logged: string[] = [];
   const { reopened, bytes, PDFName } = await roundTrip(
     await blankDoc(), {}, 'own', { embed: null, log: (_l, m) => logged.push(m) },
@@ -269,7 +269,7 @@ test('one intent only — a second pass replaces rather than appends', async () 
 test('an ordinary jsPDF export still claims PDF/X-4 exactly as it did before', async () => {
   // The non-regression that matters most: the RGB `pdf` path re-saves a jsPDF blob
   // and has always claimed X-4 (sRGB intent, profile embedded). Lolly outlines text
-  // to vector paths on export, so a real document selects no font — and the new font
+  // to vector paths on export, so a real document selects no font - and the new font
   // check must not take that claim away.
   const lib = await import('pdf-lib') as any;
   const { jsPDF } = await import('jspdf') as any;
@@ -295,8 +295,8 @@ test('the document checks answer honestly on a bare document', async () => {
 
 test('usedFontsEmbedded: a declared-but-unused standard font is not a violation', async () => {
   // The reason the check reads Tf operators rather than resource dicts. jsPDF
-  // declares ALL FOURTEEN standard fonts in every page's /Resources — verified: 14
-  // /Font dicts, none with a FontDescriptor, on a document containing one word — so
+  // declares ALL FOURTEEN standard fonts in every page's /Resources - verified: 14
+  // /Font dicts, none with a FontDescriptor, on a document containing one word - so
   // judging resources would withhold the claim from every Lolly PDF ever exported,
   // including the ones that are conformant because their text was outlined to paths.
   const lib = await import('pdf-lib') as any;
@@ -320,7 +320,7 @@ test('usedFontsEmbedded: a declared-but-unused standard font is not a violation'
 test('usedFontsEmbedded: a real embedded face passes where Helvetica fails', async () => {
   const lib = await import('pdf-lib') as any;
   const { PDFName, PDFDocument } = lib;
-  // A CIDFontType2 descendant with a FontFile2 — the shape an embedded TrueType
+  // A CIDFontType2 descendant with a FontFile2 - the shape an embedded TrueType
   // takes, and what the walker has to recognise through a /Type0 parent.
   const doc = await PDFDocument.create();
   const page = doc.addPage([200, 200]);
@@ -342,7 +342,7 @@ test('usedFontsEmbedded: a real embedded face passes where Helvetica fails', asy
   ));
   assert.equal(usedFontsEmbedded(doc, lib), true);
 
-  // Strip the file and the same graph must fail — the check reads /FontFile*, not
+  // Strip the file and the same graph must fail - the check reads /FontFile*, not
   // the presence of a descriptor.
   doc.context.lookup(descriptor).delete(PDFName.of('FontFile2'));
   assert.equal(usedFontsEmbedded(doc, lib), false);
@@ -354,7 +354,7 @@ test('a DeviceRGB shading blocks the claim EVEN WITH a profile embedded', async 
   // The vector form of a CSS gradient, built through the REAL export path: an opaque
   // linear-gradient becomes a jsPDF ShadingPattern whose /ColorSpace is /DeviceRGB.
   // It is a bare dict, not a content stream, so renderCmykPdf's rg/RG substitution
-  // never converts it — and neither of the other two checks can see it, which is the
+  // never converts it - and neither of the other two checks can see it, which is the
   // whole reason this one exists.
   const lib = await import('pdf-lib') as any;
   const { jsPDF } = await import('jspdf') as any;
@@ -418,7 +418,7 @@ test('shadingCsOk: a CMYK shading passes, in a resource dict as well as standing
 
 test('a profile description with parens, backslashes or non-ASCII still produces a readable file', async () => {
   // The desc and the filename come out of a file the user loaded, and pdf-lib's
-  // PDFString escapes nothing — an unbalanced paren used to terminate the literal
+  // PDFString escapes nothing - an unbalanced paren used to terminate the literal
   // early and leave the catalog unparseable, and a byte over 0x7f used to be
   // truncated into a control character inside a value of record.
   const lib = await import('pdf-lib') as any;

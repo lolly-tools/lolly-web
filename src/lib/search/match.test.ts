@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shared search matcher (plans/99 M0) — folding, tokenizing and scoring.
+ * The shared search matcher (plans/99 M0) - folding, tokenizing and scoring.
  *
  * Run directly:  node --test shells/web/src/lib/search/match.test.ts
  *

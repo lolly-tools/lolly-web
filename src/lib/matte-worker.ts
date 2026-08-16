@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * On-device background-removal WORKER — the twin of lib/upscale-worker.ts. A
+ * On-device background-removal WORKER - the twin of lib/upscale-worker.ts. A
  * matte run is a multi-second ONNX forward pass, so it never touches the thread a
  * tool is being used on: onnxruntime-web, the weights, and the letterbox/compose
  * maths in lib/matter.ts all load and run HERE, dynamically, off the boot chunk.
@@ -19,7 +19,7 @@ import {
   abortError, canRun, currentBackend, modelCached, probeBackend, runMatte, type MatteRunCtx,
 } from './matter.ts';
 
-/** Options that survive structured clone — no `signal`/`onProgress`. */
+/** Options that survive structured clone - no `signal`/`onProgress`. */
 export type SerializableMatteOpts = Omit<MatteOpts, 'signal' | 'onProgress'>;
 
 export type MatteWorkerRequest =
@@ -32,15 +32,15 @@ export interface MatteWorkerReply {
   id: number;
   backend?: 'webgpu' | 'wasm';
   progress?: MatteProgress;
-  /** Terminal — a run result (its buffer is transferred). */
+  /** Terminal - a run result (its buffer is transferred). */
   frame?: MatteFrame;
-  /** Terminal — a canRun result. */
+  /** Terminal - a canRun result. */
   feasibility?: MatteFeasibility;
-  /** Terminal — a cached() result. */
+  /** Terminal - a cached() result. */
   cached?: boolean;
-  /** Terminal — a real failure. */
+  /** Terminal - a real failure. */
   error?: string;
-  /** Terminal — the run was aborted (bridge rejects with AbortError). */
+  /** Terminal - the run was aborted (bridge rejects with AbortError). */
   aborted?: boolean;
 }
 

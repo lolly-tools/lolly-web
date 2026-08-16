@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Palette download — export every swatch a brand carries (BrandSwatch[], from
+ * Palette download - export every swatch a brand carries (BrandSwatch[], from
  * brand-doc.ts) as a standalone file in one of six formats: a DTCG design-tokens
  * JSON (nested under each swatch's canonical dotted key), a plain CSS custom-
  * properties block, a set of CSS utility classes (bg/text/border), an SCSS `$var`
@@ -9,12 +9,12 @@
  *
  * The serializers themselves LIVE IN THE ENGINE now (engine/src/palette-export.ts,
  * ENGINE 1.108) so a tool reaches them through host.color.paletteExport and every
- * shell produces identical bytes — see MEMORY/CLAUDE. This module is the thin web
+ * shell produces identical bytes - see MEMORY/CLAUDE. This module is the thin web
  * adapter over them: it keeps the BrandSwatch-typed names the brand editor + catalog
  * import (swatchesTo…), plus the two web-only helpers below (rebuild BrandSwatch rows
  * from live PaletteEntry rows, and wrap a serializer's output in a Blob + filename).
  * BrandSwatch structurally satisfies the engine's PaletteSwatch, so no adaptation is
- * needed. Pure — no DOM, no host — so it stays unit-testable like brand-doc.ts.
+ * needed. Pure - no DOM, no host - so it stays unit-testable like brand-doc.ts.
  */
 import type { BrandSwatch } from './brand-doc.ts';
 import type { PaletteEntry } from '../palette.ts';
@@ -27,7 +27,7 @@ export type SwatchExportFormat = 'tokens-json' | 'css-vars' | 'css-classes' | 's
 
 // The engine serializers under the names the brand editor + catalog (and the
 // existing test) import. BrandSwatch carries key/name/group/hex and more, so it
-// structurally satisfies the engine's PaletteSwatch — these are pure renames.
+// structurally satisfies the engine's PaletteSwatch - these are pure renames.
 export {
   paletteTokensJson as swatchesToTokensJson,
   paletteCssVariables as swatchesToCssVariables,
@@ -46,7 +46,7 @@ function slug(key: string): string {
 }
 
 /**
- * The Catalog's Swatches section shows the LIVE palette (lib/live-palette.ts —
+ * The Catalog's Swatches section shows the LIVE palette (lib/live-palette.ts - 
  * the resolved brand tokens, so catalog-shipped colours AND everything added in
  * the brand editor alike) as PaletteEntry rows. Rebuild BrandSwatch-shaped
  * entries from them so the same exporters serve that section's download links:

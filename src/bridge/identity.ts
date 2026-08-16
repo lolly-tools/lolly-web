@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * IdentityAPI — Content Credentials signing identity (device key + CA cert).
+ * IdentityAPI - Content Credentials signing identity (device key + CA cert).
  *
  * The device holds a non-extractable ECDSA P-256 keypair (WebCrypto
- * extractable:false, persisted in the 'identity' IDB store — CryptoKey objects
+ * extractable:false, persisted in the 'identity' IDB store - CryptoKey objects
  * structured-clone into IndexedDB natively, and even our own code can never
  * export the private key). Enrollment sends only the public key plus a
  * proof-of-possession signature to the Lolly CA (/api/ca/*), which binds an
@@ -12,7 +12,7 @@
  * enrolled) everything falls back to the engine's ephemeral self-signed path.
  * See docs/content-credentials-identity.md.
  *
- * Shell-internal (host.identity, like host.previews) — deliberately NOT a
+ * Shell-internal (host.identity, like host.previews) - deliberately NOT a
  * HostV1 capability: tools can never observe or depend on enrollment.
  */
 
@@ -36,7 +36,7 @@ interface IdentityCache {
 
 // Same-origin base path for the Lolly CA service. In dev, Vite proxies it to
 // the standalone service (node services/ca/server.mjs); in prod it's a function
-// on the same Vercel project — no configuration needed either way.
+// on the same Vercel project - no configuration needed either way.
 const CA_BASE = '/api/ca';
 
 const STORE = 'identity';
@@ -75,7 +75,7 @@ async function postJson(path: string, body: unknown): Promise<any> {
 // Open the provider's OIDC flow in a popup and wait for the CA callback page to
 // postMessage the enrollment token back (correlation/timeout/cleanup shape as
 // in capture-extension.js). Rejects on popup-blocked, closed-without-a-token,
-// or timeout. Only messages from our own origin are accepted — the callback
+// or timeout. Only messages from our own origin are accepted - the callback
 // page posts to the origin it was handed at /auth time.
 function popupToken(provider: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -123,7 +123,7 @@ export function createIdentityAPI(db: IDBPDatabase) {
   // Cross-tab invalidation: enroll/forget in one tab must not leave another tab
   // signing from a stale cache (still signing after "Forget", or with the old
   // cert after a renew). A BroadcastChannel ping drops every tab's cache; each
-  // tab re-reads IDB on the next call. Guarded — not every host has it.
+  // tab re-reads IDB on the next call. Guarded - not every host has it.
   const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('lolly:identity') : null;
   if (channel) channel.onmessage = () => { cache = null; };
   const announceChange = () => { try { channel?.postMessage('changed'); } catch { /* channel closed */ } };
@@ -140,7 +140,7 @@ export function createIdentityAPI(db: IDBPDatabase) {
   }
 
   // Inside the cert's validity window? Not-yet-valid (clock skew) reads the
-  // same as expired — either way the cert can't sign and needs renewal.
+  // same as expired - either way the cert can't sign and needs renewal.
   function within(record: CertRecord, now: number = Date.now()): boolean {
     return now >= Date.parse(record.notBefore) && now <= Date.parse(record.notAfter);
   }
@@ -162,10 +162,10 @@ export function createIdentityAPI(db: IDBPDatabase) {
   // Second half of enrollment: prove possession of the device key and trade the
   // short-lived enrollment token for a certificate chain. Also the re-entry
   // point for the email magic-link flow. `days` is the user's lifetime pick
-  // (7/30/90/365) — advisory only; the CA clamps it server-side. The email
+  // (7/30/90/365) - advisory only; the CA clamps it server-side. The email
   // flow's choice rides inside the token instead (minted at /email/start).
   async function completeEnrollment(token: string, days?: number) {
-    // Ensure the device keypair. extractable:false is the whole point — the
+    // Ensure the device keypair. extractable:false is the whole point - the
     // private key can never leave the device, only signatures do.
     let { keypair } = await load();
     if (!keypair) {
@@ -173,7 +173,7 @@ export function createIdentityAPI(db: IDBPDatabase) {
       await db.put(STORE, keypair, KEYPAIR_KEY);
     }
     // CSR-less enrollment: raw SPKI + a proof-of-possession signature over the
-    // token bytes (raw 64-byte r||s — WebCrypto's native ECDSA output).
+    // token bytes (raw 64-byte r||s - WebCrypto's native ECDSA output).
     const pop = new Uint8Array(await crypto.subtle.sign(
       { name: 'ECDSA', hash: 'SHA-256' },
       keypair.privateKey,
@@ -219,7 +219,7 @@ export function createIdentityAPI(db: IDBPDatabase) {
       return completeEnrollment(await popupToken(provider), days);
     },
 
-    // The engine signer (embedC2pa opts.signer) — null unless enrolled AND the
+    // The engine signer (embedC2pa opts.signer) - null unless enrolled AND the
     // cert is currently valid, so an expired identity falls back to the
     // engine's ephemeral self-signed path automatically.
     async signer() {

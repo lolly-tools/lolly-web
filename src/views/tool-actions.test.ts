@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * tool-actions (export bar) — the SEQUENCE duration contract.
+ * tool-actions (export bar) - the SEQUENCE duration contract.
  *
  * A timed composition's artboard carries [data-sequence] + data-seq-ms="<derived
  * length>". The export bar must take its Duration from THAT, keep following it as
  * the timeline changes, stop following it the moment the user types their own
  * value, and flag that user value out to the export opts as `durationUserSet` so
- * the tool hook leaves it alone. "Record live" is SUPPRESSED for a sequence — the
- * compositor is the only motion path there — and untouched for every other tool;
+ * the tool hook leaves it alone. "Record live" is SUPPRESSED for a sequence - the
+ * compositor is the only motion path there - and untouched for every other tool;
  * there are guards below for both halves of that.
  *
  * Section 5 covers the other half of the sequence export bar: the "Frames" contact
- * sheet control (spec §4.6) — present only for a timed composition on a still
+ * sheet control (spec §4.6) - present only for a timed composition on a still
  * format, and the sole source of `opts.cuts`.
  *
  * Everything here is driven through the REAL renderActions against a jsdom canvas:
  * the assertions read the rendered DOM and the opts object the export actually
- * receives. The runtime/host stubs are inputs to the subject, not the subject —
+ * receives. The runtime/host stubs are inputs to the subject, not the subject - 
  * nothing asserts that a stub was called.
  *
  * NOT covered here (needs a browser): the live-capture path itself, MediaRecorder,
@@ -70,7 +70,7 @@ class FakeRecorder { static isTypeSupported(): boolean { return true; } }
 (dom.window.HTMLCanvasElement.prototype as unknown as { captureStream: () => unknown }).captureStream = () => ({});
 // jsdom has no 2D context; the TIFF probe (also module-load) calls getContext and
 // logs a "not implemented" wall of text otherwise. Returning null is the honest
-// answer — no readback — and only affects the TIFF format option, not this suite.
+// answer - no readback - and only affects the TIFF format option, not this suite.
 (dom.window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () => null;
 // liveCaptureSupport() also needs a display-capture source, else the "Record live"
 // toggle is never rendered at all and test 4 would pass vacuously. Node has its own
@@ -88,10 +88,10 @@ interface Harness {
   stage: HTMLElement | null;
   duration: () => HTMLInputElement;
   liveLabel: () => HTMLElement | null;
-  /** Only the exports that carry the video params — the thumbnail capture the
+  /** Only the exports that carry the video params - the thumbnail capture the
    *  export-history record takes is a second, unrelated runtime.export call. */
   exports: () => Array<{ format: string; opts: Record<string, unknown> }>;
-  /** Every exportUnscaled(fn, opts) call, with the formats exported INSIDE it — the
+  /** Every exportUnscaled(fn, opts) call, with the formats exported INSIDE it - the
    *  export-history thumbnail capture also wraps itself, so the shutter decision can
    *  only be judged against the call that produced the actual format. */
   unscaled: () => Array<{ shutter?: boolean; formats: string[] }>;
@@ -293,7 +293,7 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   // steering the export away from the compositor.
   const h = mount({ seqMs: null });
   (h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement).checked = true;
-  // The canvas only BECOMES a timed composition now — the harness builds no stage
+  // The canvas only BECOMES a timed composition now - the harness builds no stage
   // for a non-sequence tool, so this is what the MutationObserver has to notice.
   const stage = dom.window.document.createElement('div');
   stage.setAttribute('data-sequence', '');
@@ -308,9 +308,9 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
 });
 
-// ── 5. "Frames" — the contact sheet (plans/51-fable-timeline-editing.md §4.6) ────
+// ── 5. "Frames" - the contact sheet (plans/51-fable-timeline-editing.md §4.6) ────
 // A still export of a sequence renders the playhead frame. `cuts=N` instead samples
-// N stills at equal midpoint intervals across the timeline — a zip for raster/SVG,
+// N stills at equal midpoint intervals across the timeline - a zip for raster/SVG,
 // N pages for PDF. The control belongs to timed compositions on still formats ONLY,
 // and `opts.cuts` is the pinned name the export bridge reads.
 
@@ -413,7 +413,7 @@ test('a zipped contact sheet downloads as .zip, not the still extension', () => 
 
 test('a single-cut still keeps its own extension', () => {
   assert.equal(extFor('png', new dom.window.Blob(['x'], { type: 'image/png' })), 'png');
-  // A multi-page PDF sheet is ONE pdf, not a zip — it must stay .pdf.
+  // A multi-page PDF sheet is ONE pdf, not a zip - it must stay .pdf.
   assert.equal(extFor('pdf', new dom.window.Blob(['x'], { type: 'application/pdf' })), 'pdf');
 });
 
@@ -425,11 +425,11 @@ test('the video container fallback still wins over the requested format', () => 
 // ── 7. the export shutter covers ANIMATED exports too ────────────────────────
 // It used to be gated `shutter: !isAnimated`, on the reasoning that an animated
 // format records the live canvas. That is true only of a LIVE take, which never
-// reaches exportUnscaled at all — every other motion path composites off-screen,
+// reaches exportUnscaled at all - every other motion path composites off-screen,
 // and `.export-shutter` is a sibling of #tool-canvas-outer so it is outside the
 // captured subtree regardless. Meanwhile the resize shake is just as visible for
 // video. A regression here puts a camera-iris inside someone's exported file, or
-// puts the shake back on screen — neither is something a type checker will catch.
+// puts the shake back on screen - neither is something a type checker will catch.
 
 test('an animated export runs behind the shutter', async () => {
   const h = mount({ seqMs: 6000 });
@@ -458,7 +458,7 @@ test('a LIVE take bypasses exportUnscaled entirely — the shutter would be film
   h.download();
   await settle();
   // A live take keeps the fit-to-stage scale AND films the screen, so the webm
-  // itself must not be produced inside a wrapper. (Other wrapped calls may exist —
+  // itself must not be produced inside a wrapper. (Other wrapped calls may exist - 
   // the export-history thumbnail capture wraps its own png.)
   assert.equal(h.unscaled().some(o => o.formats.includes('webm')), false,
     'the live take must not run inside exportUnscaled at all');
@@ -467,7 +467,7 @@ test('a LIVE take bypasses exportUnscaled entirely — the shutter would be film
 // ── the pro float formats (exr/hdr) open only for a deep-capable tool ─────────
 // A tool that owns a float-compose exportStill hook and has host.codec can
 // originate exr/hdr on-device (runtime.export routes those to exportStill before
-// the 8-bit DOM path) — so the format picker opens the Pro <optgroup> for it even
+// the 8-bit DOM path) - so the format picker opens the Pro <optgroup> for it even
 // though the generic Node float rasteriser (proFormatSupport) is absent on the web.
 
 /** Mount just the export bar and return the format <select>'s option values. */
@@ -526,8 +526,8 @@ test('exr/hdr open for a tool with exportStill + host.codec (Bitmap Studio on th
 // A dimension change resizes #tool-canvas via refreshCanvasPreview. For a preview
 // tool the canvas is a thumbnail and is CLAMPED so its longest side never exceeds
 // the native render size (fitCanvas's transform then does the on-screen fit). For a
-// freeform EDITOR (render.layout:'editor') the canvas IS the artboard — its box
-// coordinates are absolute pixels in its own space — so it must take the TRUE export
+// freeform EDITOR (render.layout:'editor') the canvas IS the artboard - its box
+// coordinates are absolute pixels in its own space - so it must take the TRUE export
 // px with no clamp, or a bigger export size shrinks the artboard under fixed boxes
 // and pushes them off the frame (thread B). Both drive through the same input event.
 
@@ -602,8 +602,8 @@ test('carousel editor (render.pages): the page strip owns the size — no 1:1 re
 });
 
 // ── 9. per-artboard still fan-out for the Design frame primitive ──────────────
-// A multi-artboard Design doc — render.layout:'editor' with a boxes
-// input declaring canvas.frameField — emits one [data-pdf-page] per frame box. A STILL
+// A multi-artboard Design doc - render.layout:'editor' with a boxes
+// input declaring canvas.frameField - emits one [data-pdf-page] per frame box. A STILL
 // export must fan out ONE image per artboard (a zip for several, a single file for one),
 // matching carousel-maker (render.pages). The gate is the ONLY [data-pdf-page] fanout in
 // the export path; render.paged (multi-page-pdf / doc-studio) must stay a single flat file,
@@ -693,7 +693,7 @@ test('Design with NO frames (zero page els) stays a single flat export', async (
 
 test('the frame arm requires canvas.frameField, not merely a boxes canvas (Org Chart is excluded)', async () => {
   // A fixed-canvas editor (org-chart) declares canvas but NO frameField. Even if page els
-  // were somehow present, the gate must not fan out — it renders a single .artboard.
+  // were somehow present, the gate must not fan out - it renders a single .artboard.
   const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }] });
   h.download();
   await settle();
@@ -731,7 +731,7 @@ test('a framed still fanout drops the inert cuts opt from the per-page render', 
 // print INTENT is only the separating press formats (pdf-cmyk / cmyk-tiff /
 // eps-cmyk), an explicit ?bleed=/?marks= (or saved) setting, a manual toggle, or
 // a manifest that declares render.printMarks: true. An everyday PDF or SVG must
-// export trim-sized with no marks — and physical units (mm + dpi) are a size
+// export trim-sized with no marks - and physical units (mm + dpi) are a size
 // statement, never print intent.
 
 interface PrintDefaults { format?: string; bleed?: string; marks?: Record<string, boolean> | null; unit?: string; dpi?: number }

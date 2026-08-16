@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand-palette grouping + swatch markup — shared by the Platform view and the Catalog
+ * Brand-palette grouping + swatch markup - shared by the Platform view and the Catalog
  * view so both render the swatches identically (and click-to-copy works the same). The
  * source of truth for the colours themselves is palette.ts (PALETTE).
  *
@@ -9,12 +9,12 @@
  * `.plat-swatch-chip[data-copy]` buttons.
  *
  * `swatchTile()` is a second, smaller markup factory (component-audit rec 12) for the
- * two SHAPE-ONLY tiles — the brand studio's editable grid (`.be-swatch`) and the mobile
- * palette sheet's read-only mirror chip (`.stu-chip`) — which show no visible text, only
+ * two SHAPE-ONLY tiles - the brand studio's editable grid (`.be-swatch`) and the mobile
+ * palette sheet's read-only mirror chip (`.stu-chip`) - which show no visible text, only
  * a colour + title/aria-label. It's deliberately separate from `swatch()` above: that one
  * renders a full read-only card (name + hex + CMYK row) and its three call sites
  * (dashboard.ts, catalog.ts) are outside this refactor. The palette-wheel dot stays its
- * own thing too — it's geometry (positioned on a hue/lightness disc), not a tile.
+ * own thing too - it's geometry (positioned on a hue/lightness disc), not a tile.
  */
 import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
@@ -25,7 +25,7 @@ export const isTransparent = (hex: string): boolean => !hex || hex.toLowerCase()
 export const cmykText = (cmyk: PaletteEntry['cmyk']): string =>
   Array.isArray(cmyk) ? `C ${cmyk[0]}  M ${cmyk[1]}  Y ${cmyk[2]}  K ${cmyk[3]}` : 'RGB→CMYK (generic)';
 
-/** A swatch carries a locked print value — a CMYK anchor, a named spot colour,
+/** A swatch carries a locked print value - a CMYK anchor, a named spot colour,
  *  or both (independent locks; see palette.ts's PaletteEntry doc comment). */
 export const isLockedInk = (c: Pick<PaletteEntry, 'cmyk' | 'spot'>): boolean => Array.isArray(c.cmyk) || !!c.spot;
 
@@ -80,7 +80,7 @@ export function swatch(c: PaletteEntry): string {
   const measured = isLockedInk(c);
   const trans = isTransparent(c.hex);
   const chipStyle = trans ? '' : `style="background:${escape(c.hex)}"`;
-  // Transparent has no ink at all — a generic RGB→CMYK note would be misleading, so mark
+  // Transparent has no ink at all - a generic RGB→CMYK note would be misleading, so mark
   // it N/A. Locked colours show their exact/spot values; everything else, the generic note.
   const cmykLabel = trans ? 'CMYK N/A' : inkText(c);
   const flag = c.spot
@@ -99,13 +99,13 @@ export function swatch(c: PaletteEntry): string {
     </div>`;
 }
 
-// ── Shape-only swatch tile (.be-swatch / .stu-chip) — rec 12 ────────────────────
+// ── Shape-only swatch tile (.be-swatch / .stu-chip) - rec 12 ────────────────────
 
-/** Minimal data a shape-only tile needs — a subset any palette source (a
+/** Minimal data a shape-only tile needs - a subset any palette source (a
  *  brand-editor `BrandSwatch`, or a scraped-DOM mirror) can supply. */
 export interface SwatchTileEntry {
   /** `size:'md'`: the raw swatch name, composed into the accessible label below.
-   *  `size:'sm'`: the FULL accessible label already, verbatim — a mirror chip
+   *  `size:'sm'`: the FULL accessible label already, verbatim - a mirror chip
    *  scrapes it pre-formatted off the tile it mirrors, so it's passed through
    *  as-is rather than re-composed (re-composing would need the raw name and
    *  lock state back out of a locale-formatted string). */
@@ -123,15 +123,15 @@ export interface SwatchTileOptions {
   size?: 'md' | 'sm';
   /** Grid index, wired as `data-be-tile` (md) / `data-stu-tile` (sm) so click
    *  delegation can look the swatch back up. Always rendered when given, even
-   *  as `""` — callers that always expect the attribute rely on that. */
+   *  as `""` - callers that always expect the attribute rely on that. */
   idx?: number | string;
-  /** md only: whether to show the locked/empty state classes. Default true —
+  /** md only: whether to show the locked/empty state classes. Default true - 
    *  the brand studio's own grid always wants them; a caller reusing the 'md'
    *  shape purely for layout (none currently) can opt out. */
   editable?: boolean;
 }
 
-/** The tile's accessible name — the visible grid is shape-only, so name + hex
+/** The tile's accessible name - the visible grid is shape-only, so name + hex
  *  live in title/aria-label (and are kept fresh by the in-place recolour paths). */
 export function tileLabel(name: string, hex: string, locked: boolean): string {
   const hexPart = hex || t('unset');

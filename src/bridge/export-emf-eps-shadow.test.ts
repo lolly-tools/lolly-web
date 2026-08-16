@@ -3,7 +3,7 @@
  * Box shadows in EMF and EPS.
  *
  * These formats have no blur primitive, so the walker used to skip shadows entirely
- * for them (`opts.noBoxShadow`) — an EMF of a card deck came out with flat, floating
+ * for them (`opts.noBoxShadow`) - an EMF of a card deck came out with flat, floating
  * cards. A blur does not need a blur primitive: it is reproducible as concentric
  * bands (see §13 of plans/69-svg-snapshot-without-print.md), and for a format with no
  * alpha the bands have to be non-overlapping RINGS at absolute coverage, because
@@ -12,7 +12,7 @@
  *
  * ## Why these assertions are structural
  *
- * The shadow-fidelity suites diff pixels, which is the right oracle — but nothing on
+ * The shadow-fidelity suites diff pixels, which is the right oracle - but nothing on
  * this machine renders EMF, and macOS dropped EPS rendering. So the ring GEOMETRY is
  * verified by pixels elsewhere (export-shadow-fidelity.test.ts drives the same code
  * path via `noBoxShadow`, measuring 0.13% mean on a soft shadow and 0.00% on a hard
@@ -21,7 +21,7 @@
  * a colour ramp, painted BEFORE the element's own background.
  *
  * That paint order is what makes the missing box-cut safe. The rings are not clipped
- * out of the border box — a clipPath would be ignored, svg-ir skips those — so the
+ * out of the border box - a clipPath would be ignored, svg-ir skips those - so the
  * shadow does pass under the element. svg-ir turns the element's background into an
  * opaque shape drawn after them, which covers it.
  */
@@ -66,7 +66,7 @@ async function bundle(): Promise<string> {
 }
 
 /** Render `#root` the way the EMF/EPS exporters do (noBoxShadow), then run it through
- *  svg-ir — the shared stage EMF, EPS and DXF all consume. */
+ *  svg-ir - the shared stage EMF, EPS and DXF all consume. */
 async function irPrims(inner: string): Promise<any[]> {
   const { chromium } = browser as { chromium: any };
   const b = await chromium.launch();
@@ -85,7 +85,7 @@ async function irPrims(inner: string): Promise<any[]> {
 }
 
 /** Greyness of a prim's fill, 0 = black … 1 = white. The shadow ramp runs from near
- *  the page white at its outer edge to the shadow colour at its core. */
+ *  the page white at its outer edge to the shadow colour at its center. */
 const grey = (p: any): number | null => {
   const f = p?.fill;
   if (!f || typeof f.r !== 'number') return null;

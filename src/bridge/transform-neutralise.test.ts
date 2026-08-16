@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The two pure predicates behind the walkers' transform guard
- * (bridge/transform-neutralise.ts — plans/104 §9 P3.1 failure 2).
+ * (bridge/transform-neutralise.ts - plans/104 §9 P3.1 failure 2).
  *
  * The guard's BEHAVIOUR needs a real cascade and a real animation timeline, so it is
  * pinned in `export-transform-animation.test.ts`, which drives the real walker in a
@@ -22,14 +22,14 @@ test('wrapsInWalker mirrors the walker branches exactly', () => {
   // Pure translate: the AABB path already carries it, so it is not a wrap.
   assert.equal(wrapsInWalker('matrix(1, 0, 0, 1, 30, 10)'), false);
   // Rotation, skew, and scale (scale wraps because computed LENGTHS in the subtree
-  // are not scaled by the client rect — the walker's own reason).
+  // are not scaled by the client rect - the walker's own reason).
   assert.equal(wrapsInWalker('matrix(0.866025, 0.5, -0.5, 0.866025, 0, 0)'), true);
   assert.equal(wrapsInWalker('matrix(1, 0, 0.4, 1, 0, 0)'), true);
   assert.equal(wrapsInWalker('matrix(1.2, 0, 0, 1.2, 0, 0)'), true);
   // Sub-threshold scale is not a wrap (the 1e-4 the branch uses).
   assert.equal(wrapsInWalker('matrix(1.00001, 0, 0, 1, 0, 0)'), false);
   // Real 3-D/perspective: parseCssMatrix refuses it and the AABB path owns it, so
-  // there is nothing for the guard to do — it must NOT report a wrap.
+  // there is nothing for the guard to do - it must NOT report a wrap.
   assert.equal(wrapsInWalker('matrix3d(1,0,0,0, 0,1,0,-0.002, 0,0,1,0, 0,0,0,1)'), false);
   assert.equal(wrapsInWalker('perspective(500px) rotateY(20deg)'), false);
 });
@@ -60,7 +60,7 @@ test('animatesTransform picks out exactly the animations that defeat the neutral
   assert.equal(animatesTransform({}), false);
   assert.equal(animatesTransform({ effect: null }), false);
   // The independent transform properties do NOT fold into computed `transform`, so
-  // an animation on one of them cannot be what outranks the inline neutralise —
+  // an animation on one of them cannot be what outranks the inline neutralise - 
   // stopping it would take motion from the page for nothing.
   assert.equal(animatesTransform({ transitionProperty: 'rotate' }), false);
   assert.equal(animatesTransform({ effect: { getKeyframes: () => [{ offset: 0, scale: '1.4' }] } }), false);

@@ -2,14 +2,14 @@
 /**
  * The CANVAS half of playhead-contextual keyframe writes (plans/104 §8).
  *
- * `timeline-panel.test.ts` covers the panel's half — the latch, the diamonds, the
+ * `timeline-panel.test.ts` covers the panel's half - the latch, the diamonds, the
  * inspector, and the `kfPoseIds` / `kfPoseWrite` seam as a pure pair. This file covers
  * the only place the two meet: free-canvas's SINGLE pointerup commit, which is where a
  * drag decides whether it moved a box or posed a keyframe.
  *
  * The rule being pinned, in one sentence: **the gesture is untouched**. The preview
  * path never learns about keyframes, nothing is written while the pointer is down, and
- * the redirection happens at the one commit — so a keyframed drag is exactly one undo
+ * the redirection happens at the one commit - so a keyframed drag is exactly one undo
  * step, exactly like an ordinary one, and there is no mode to enter or leave.
  *
  * Everything runs against the real `initFreeCanvas` and the real, lazily imported
@@ -95,7 +95,7 @@ interface Fixture {
   destroy(): void;
 }
 
-/** The same fixture with ONE canvas sub-field taken away — the progressive-capability
+/** The same fixture with ONE canvas sub-field taken away - the progressive-capability
  *  gate every optional field in this cfg lives under. */
 function mountWithout(drop: string, seed: Box[]): Fixture {
   const cfg = canvasCfg();
@@ -261,9 +261,9 @@ test('a MIXED selection splits: the posed boxes are posed, the rest move, in ONE
 //
 // plans/104 §8's M2.5 revision, directive 1: "a diamond-glyph button in the timeline
 // transport's LEFT additive cluster AND a diamond in the canvas selected-object
-// contextual bar — both always reactive to the canvas selection". `timeline-panel.test.ts`
+// contextual bar - both always reactive to the canvas selection". `timeline-panel.test.ts`
 // owns the transport half; this file owns the canvas half and, crucially, the seam
-// between them — that the ctxbar button routes to the panel's ONE action rather than
+// between them - that the ctxbar button routes to the panel's ONE action rather than
 // growing a second copy of the rules.
 
 /** The contextual bar's diamond. */
@@ -273,7 +273,7 @@ function ctxKf(f: Fixture): HTMLButtonElement {
   return b!;
 }
 
-/** Click a box on the canvas — the ordinary way a selection is made. */
+/** Click a box on the canvas - the ordinary way a selection is made. */
 async function selectBox(f: Fixture, at: [number, number]): Promise<void> {
   f.canvasEl.dispatchEvent(pointerEvent('pointerdown', at[0], at[1]));
   f.canvasEl.dispatchEvent(pointerEvent('pointerup', at[0], at[1]));
@@ -295,14 +295,14 @@ test('the ctxbar diamond sits beside duplicate/delete and routes to the panel\'s
     assert.equal(ctxKf(f).getAttribute('aria-disabled'), 'false');
 
     // The press opens the timeline (the playhead's position IS the arm, so the surface
-    // that shows it has to be up) and then writes through the panel — never through a
+    // that shows it has to be up) and then writes through the panel - never through a
     // second copy of the rules living in free-canvas.
     const before = f.writes();
     ctxKf(f).click();
     await settle();
     assert.ok(f.stageEl.querySelector('.tl-panel'), 'the timeline is up — the arm has to be visible');
     // The playhead has not moved from 0, and the clip starts at 0, so this lands ON the
-    // track's existing first diamond, holding the pose it already holds — which
+    // track's existing first diamond, holding the pose it already holds - which
     // `writeKfPose` reports by identity, so it is not an edit and not an undo step.
     assert.equal(f.writes() - before, 0, 're-posing a diamond to the pose it already has writes nothing');
     assert.deepEqual(parseKf(String(f.box().kf)).map((k) => k.t), [0, 2000]);
@@ -318,7 +318,7 @@ test('the ctxbar diamond sits beside duplicate/delete and routes to the panel\'s
 
 test('the ctxbar diamond auto-promotes an UNTIMED box, in ONE commit', async () => {
   // The same single-commit promotion the transport button does, reached from the canvas
-  // — which is the case the revision was written for: a box the user has just drawn,
+  // - which is the case the revision was written for: a box the user has just drawn,
   // never on the timeline, one press from being animated.
   const scenery = {
     id: 'a', x: 100, y: 100, w: 200, h: 100, rot: 0,
@@ -369,8 +369,8 @@ test('a press-and-release on the rotate handle writes no pose — zero delta is 
 
 test('the ctxbar diamond takes its DISABLED state from the panel\'s rule, live canvas and all', async () => {
   // "TWO homes, one action" has to mean one ENABLEMENT rule too. The panel decides scope
-  // from the model row AND the live canvas — a box carrying an audio asset is a sound
-  // whatever its `kind` says — so a model-only copy here rendered exactly that box
+  // from the model row AND the live canvas - a box carrying an audio asset is a sound
+  // whatever its `kind` says - so a model-only copy here rendered exactly that box
   // ENABLED, and pressing it wrote nothing, announced nothing and explained nothing.
   const f = mount([ANIMATED()]);
   try {

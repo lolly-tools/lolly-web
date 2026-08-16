@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Collaborator colours (plans/100 §4.4) — property tests against the REAL packs.
+ * Collaborator colours (plans/100 §4.4) - property tests against the REAL packs.
  *
  * The whole module is a set of guarantees about colours nobody has drawn yet, so
  * examples prove almost nothing here: an assertion that lolly-start's second
  * collaborator is `#b285d3` pins a hex, not a promise, and would go red on a
  * harmless chroma tweak while a genuine regression (two people seated 12° apart)
  * slipped past. So the tests are the guarantees themselves, quantified over
- * every colour the module can produce — every hue on the circle for the band
+ * every colour the module can produce - every hue on the circle for the band
  * floor, every anchor for the count, and both shipped packs end to end.
  *
  * The packs are read from `brands/` rather than the `catalog/` view because the
  * view is whichever profile happens to be active; reading both directly is what
  * makes "and the OTHER pack still works" testable on one checkout. `brands/suse`
  * is a private submodule (`update = none`), so a public clone has no such
- * directory — those tests skip with a reason rather than failing, which is the
+ * directory - those tests skip with a reason rather than failing, which is the
  * same stance `npm run validate:catalog:all` takes.
  */
 import { test } from 'node:test';
@@ -41,7 +41,7 @@ const brandsDir = new URL('../../../../brands/', import.meta.url);
 
 interface Pack { palette: { value: string }[]; accent: string | null }
 
-/** A pack's colour tokens through the engine's own reader — the same
+/** A pack's colour tokens through the engine's own reader - the same
  *  `ColorSwatch[]` the shell gets from `host.tokens.colors()`, so the module is
  *  tested against the shape it will actually be handed. */
 function readPack(rel: string): Pack | null {
@@ -65,7 +65,7 @@ const PACKS: { name: string; pack: Pack | null }[] = [
 
 const THEMES = Object.keys(CHROME_SURFACES) as CollabTheme[];
 
-/** Re-measure a produced colour against the real surfaces — never trusting the
+/** Re-measure a produced colour against the real surfaces - never trusting the
  *  `lc` the module reported about itself. */
 function measure(hex: string, surfaces: readonly string[]): number {
   let worst = Infinity;
@@ -79,7 +79,7 @@ function assertProperties(colors: readonly CollabColor[], label: string): void {
   for (const c of colors) {
     assert.match(c.hex, /^#[0-9a-f]{6}$/i, `${label}: ${c.hex} is not a plain sRGB hex`);
 
-    // 1. Legible in BOTH themes — measured, not taken on the module's word.
+    // 1. Legible in BOTH themes - measured, not taken on the module's word.
     for (const theme of THEMES) {
       const lc = measure(c.hex, CHROME_SURFACES[theme]);
       assert.ok(
@@ -234,7 +234,7 @@ test('the band clears the floor for every hue on the circle, in both themes', ()
  * that test: the stylesheet is parsed, each theme's surface tokens are resolved the
  * way the browser resolves them (base block, then the theme block, then the
  * high-contrast override on top), converted with the shell's OWN hsl→rgb, and
- * compared against the constants. Without it the copy is a comment, not a guard —
+ * compared against the constants. Without it the copy is a comment, not a guard - 
  * which is exactly how the shipped high-contrast block moved three surfaces without
  * anything noticing.
  */
@@ -297,13 +297,13 @@ test('the enumerated surfaces are the ones tokens.css actually declares', () => 
   expect('high-contrast light', surfaceHexes(css, [LIGHT_SEL, HC_LIGHT_SEL]), HIGH_CONTRAST_SURFACES.light);
   expect('high-contrast dark', surfaceHexes(css, [LIGHT_SEL, DARK_SEL, HC_DARK_SEL]), HIGH_CONTRAST_SURFACES.dark);
   expect('brand', surfaceHexes(css, [LIGHT_SEL, BRAND_SEL]), BRAND_THEME_SURFACES);
-  // The high-contrast BRAND block repairs inks and edges only — the module says so.
+  // The high-contrast BRAND block repairs inks and edges only - the module says so.
   expect('high-contrast brand', surfaceHexes(css, [LIGHT_SEL, BRAND_SEL, 'html[data-a11y-contrast="high"][data-theme="brand"]']), BRAND_THEME_SURFACES);
 });
 
 test('the two themes that cannot reach the floor are measured, not assumed', () => {
   // Same stance as the brand theme below: state the cost, pin it, let the halo carry
-  // it — and re-derive the "no band clears 40 everywhere" claim rather than trusting
+  // it - and re-derive the "no band clears 40 everywhere" claim rather than trusting
   // the docstring, because that claim is what justifies not enforcing these.
   let worstDark = Infinity;
   let worstLight = Infinity;
@@ -398,7 +398,7 @@ test('assignment is first-unused-wins, keyed by join order', () => {
 });
 
 test('every client computes the same colour for the same person', () => {
-  // Two peers with the same roster and the same join order must agree — the
+  // Two peers with the same roster and the same join order must agree - the
   // property the whole scheme rests on. Order of the `taken` iterable must not
   // matter either; one peer's set is not the other's insertion order.
   const roster = [0, 1, 2, 3];
@@ -412,7 +412,7 @@ test('every client computes the same colour for the same person', () => {
 
 test('a departed collaborator does not reshuffle everyone else', () => {
   // Peer 1 has left; `taken` is what the OTHERS hold, never the asker's own.
-  // Peer 2 keeps colour 2 rather than sliding into the gap — which is also what
+  // Peer 2 keeps colour 2 rather than sliding into the gap - which is also what
   // stops two clients handing out colour 1 at once while a late presence packet
   // is still in flight.
   assert.equal(assignColor(2, [COLORS[0]!.hex], COLORS)!.hex, COLORS[2]!.hex, 'peer 2 moved');
@@ -433,7 +433,7 @@ test('assignment tolerates the shapes a roster actually arrives in', () => {
   assert.equal(assignColor(0, null, COLORS)!.hex, COLORS[0]!.hex);
   assert.equal(assignColor(0, undefined, COLORS)!.hex, COLORS[0]!.hex);
   assert.equal(assignColor(0, new Set([COLORS[0]!.hex]), COLORS)!.hex, COLORS[1]!.hex);
-  // Case is not identity — a peer that upper-cased its hex must not double-book.
+  // Case is not identity - a peer that upper-cased its hex must not double-book.
   assert.equal(assignColor(0, [COLORS[0]!.hex.toUpperCase()], COLORS)!.hex, COLORS[1]!.hex);
   // Negative and non-finite join orders are still deterministic.
   assert.equal(assignColor(-1, [], COLORS)!.hex, COLORS[COLORS.length - 1]!.hex);

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-clock.ts — the playhead (Fable timeline, phase 2 §3).
+ * sequence-clock.ts - the playhead (Fable timeline, phase 2 §3).
  *
  * One mounted composition's *time*: where the playhead is, what that means for
- * every timed box on the live canvas, and — while playing — a conductor that keeps
+ * every timed box on the live canvas, and - while playing - a conductor that keeps
  * the <video>s, the Lottie players and the wall clock in step.
  *
  * THE ONE RULE THIS MODULE LIVES BY: it is a READER. Timing comes exclusively from
  * the DOM the tool hook already stamped (`data-t-start` & friends on each
  * `.lolly-box`, `data-seq-ms` on the `[data-sequence]` artboard). It never reads the
  * input model, never calls `runtime.setInput`, never runs a hook and never writes
- * innerHTML. Everything it *does* write — one class and two inline properties per
- * box — is captured first and restored exactly on `destroy()`, so removing the clock
+ * innerHTML. Everything it *does* write - one class and two inline properties per
+ * box - is captured first and restored exactly on `destroy()`, so removing the clock
  * leaves every declaration as it found it. That is what lets a scrub run at
  * 60 Hz with zero re-renders and zero undo-stack entries.
  *
- * Composition, not clobbering: a box carries AUTHORED inline styles from the hook —
+ * Composition, not clobbering: a box carries AUTHORED inline styles from the hook - 
  * `transform:rotate(-4deg)`, `opacity:0.8`. An entrance animation must add to those,
  * never replace them, so the authored string is captured once per element and the
  * animation is rebuilt around it every frame (declaration-identical, not byte-identical:
@@ -27,7 +27,7 @@
  * which multiplies out to the same matrix order the video compositor uses in
  * bridge/export.ts (`translate → rotate(authored+anim) → scale`), so a scrubbed
  * preview and the rendered file agree. The transition maths itself is IMPORTED from
- * lib/transitions.ts — never re-derived here.
+ * lib/transitions.ts - never re-derived here.
  *
  * Master clock is `AudioContext.currentTime`, not `performance.now()`: audio is the
  * one media element that cannot be nudged without an audible artefact, so everything
@@ -35,25 +35,25 @@
  * drift past ~80 ms.
  *
  * AUDIO BOXES ARE SCHEDULED, NOT DRIVEN. A `[data-audio-src]` box has no element to
- * play — the tool hook emits an inert marker div — so each one is handed to that same
+ * play - the tool hook emits an inert marker div - so each one is handed to that same
  * AudioContext as a single `AudioBufferSourceNode.start(when, offset, duration)`,
  * placed once, ahead of time, against `t0`. The frame loop never advances it: it only
  * asserts the invariant "every box that should be sounding has a placement", and every
  * exit from playback (pause, seek, repaint, hidden tab, destroy) stops the sources
- * outright. Semantics are the export mix's, so preview and file agree — see driveAudio.
+ * outright. Semantics are the export mix's, so preview and file agree - see driveAudio.
  *
- * Seeks are strictly serialised per element (the Safari rule — a seek issued while
+ * Seeks are strictly serialised per element (the Safari rule - a seek issued while
  * another is in flight is silently cancelled, so scrubbing returns a lottery of
  * frames). The queue is the shared, already-tested one from lib/clip-thumbs.ts; this
  * module adds only what playback needs on top: latest-wins scrub throttling and a
  * single confirm-and-nudge retry when a decoder lands short of the requested time.
  *
  * NOT EVERY AUDIO SOURCE IS A CONTAINER. A box may carry a TRACKER MODULE
- * (.mod/.xm/.it/.s3m/.stm/.mtm) — a score plus its instrument samples, not encoded
+ * (.mod/.xm/.it/.s3m/.stm/.mtm) - a score plus its instrument samples, not encoded
  * audio, so `decodeAudioData` cannot parse a byte of it. Those are rendered to PCM by
  * libopenmpt (lib/mod-render.ts, lazily imported) and enter the ordinary decode cache
- * as an AudioBuffer, so everything downstream — the ceilings, the abort plumbing, the
- * scheduling triple — is unchanged. See "tracker modules" below for how one is
+ * as an AudioBuffer, so everything downstream - the ceilings, the abort plumbing, the
+ * scheduling triple - is unchanged. See "tracker modules" below for how one is
  * recognised, and bridge/sequence-providers.ts for the export half of the same story.
  *
  * BROWSER-ONLY SURFACES (deliberately isolated behind injectable seams so the rest is
@@ -89,20 +89,20 @@ export const MEDIA_END_EPS_S = 0.04;
 /**
  * How many DISTINCT audio sources one preview will ever decode.
  *
- * Decoded PCM is raw f32 — roughly 10 MB per minute per channel — and there is no
+ * Decoded PCM is raw f32 - roughly 10 MB per minute per channel - and there is no
  * streaming decode in the platform API, so the only defence is refusing to start.
  * The compressed fetch is already bounded by MAX_AUDIO_DECODE_BYTES (shared with the
  * waveform reader, so a file the timeline refused to draw is never decoded for
  * preview either); these two ceilings bound what a composition full of music beds can
- * cost. Past either one the box is simply silent in preview and a warning is logged —
+ * cost. Past either one the box is simply silent in preview and a warning is logged - 
  * NEVER a throw, because the picture must keep playing.
  */
 export const MAX_PREVIEW_AUDIO_SOURCES = 6;
 /**
  * Ceiling on the decoded PCM this clock will hold at once, bytes.
  *
- * A tracker module is bounded differently on the way IN — its file is a few hundred
- * kB, so MAX_AUDIO_DECODE_BYTES says nothing useful about how long it plays — and its
+ * A tracker module is bounded differently on the way IN - its file is a few hundred
+ * kB, so MAX_AUDIO_DECODE_BYTES says nothing useful about how long it plays - and its
  * own ceiling is the decode worker's `MAX_SECONDS` (480 s, lib/mod-worker.ts), after
  * which it stops rendering. What lands here is then accounted exactly like a decoded
  * file: a pathological module spends the whole budget and the tracks after it are
@@ -113,42 +113,42 @@ export const MAX_PREVIEW_PCM_BYTES = 96 * 1024 * 1024;
 /** Clamps mirroring the tool hook's own attribute clamps. */
 export { MIN_SPEED, MAX_SPEED };
 // MIN_/MAX_TRANSITION_MS are re-exported below, from the module that now owns the
-// applier — one declaration, same names on this module's surface as before.
+// applier - one declaration, same names on this module's surface as before.
 
 // ── tracker modules: recognising one ────────────────────────────────────────
 //
-// A .mod/.xm/.it/.s3m/.stm/.mtm file is a SCORE plus the instrument samples it plays —
+// A .mod/.xm/.it/.s3m/.stm/.mtm file is a SCORE plus the instrument samples it plays - 
 // there is no encoded audio stream in it at all. `decodeAudioData` fails on one and so
 // does mediabunny; the only thing in this codebase that can turn it into sound is
 // libopenmpt (lib/mod-render.ts). So before either decoder is handed the bytes,
-// something has to say "this is a module" — and that is harder than it sounds:
+// something has to say "this is a module" - and that is harder than it sounds:
 //
 //   • THE FORMAT FIELD WOULD BE THE BEST SIGNAL AND IS NOT AVAILABLE HERE. An uploaded
 //     asset's `AssetRef.format` is exactly 'mod'/'xm'/… (that is what the export bar
-//     switches on — views/tool-actions.ts, `isModuleFormat(r.format)`), but the
+//     switches on - views/tool-actions.ts, `isModuleFormat(r.format)`), but the
 //     sequence tool's hook emits only `data-audio-src="<url>"`, so by the time a box
 //     reaches this module the format has been thrown away. Recovering it means a new
-//     `data-audio-format` attribute in community/sequence-studio/hooks.js — reported,
+//     `data-audio-format` attribute in community/sequence-studio/hooks.js - reported,
 //     not done here.
 //   • THE EXTENSION IS NOT ENOUGH. A user upload resolves to a `blob:` URL minted by
 //     bridge/assets.ts (`URL.createObjectURL`) with no path, no extension and a MIME
-//     type of whatever the OS guessed — and an upload is the ONLY way a module gets
+//     type of whatever the OS guessed - and an upload is the ONLY way a module gets
 //     into a composition today (no brand catalog ships one; the picker accepts
 //     .mod/.xm/.it/.s3m/.stm/.mtm as uploads).
 //
 // So the signal is the BYTES, with the extension as a free fast path when there is
 // one. Both live here, pure and exported, and bridge/sequence-providers.ts imports
-// them for the export mix — one definition, so preview and export can never disagree
+// them for the export mix - one definition, so preview and export can never disagree
 // about what is a module. (That import direction, bridge → this file, is the same
 // read-only reuse the seek helpers below already have; the reverse would be a cycle.)
 
 /** The module formats libopenmpt decodes for us. Mirrors `MODULE_FORMATS` in
- *  lib/mod-render.ts, which is the shipped list — a test asserts they are identical
+ *  lib/mod-render.ts, which is the shipped list - a test asserts they are identical
  *  rather than importing it, because that module must stay out of the eager graph. */
 export const MODULE_EXTENSIONS = ['mod', 'xm', 's3m', 'it', 'stm', 'mtm'] as const;
 
 /** A url's own path extension, lowercased. '' for a blob:/data: url, or a query-only
- *  match — the query and fragment are cut first, so `?src=x.mod` is NOT an extension. */
+ *  match - the query and fragment are cut first, so `?src=x.mod` is NOT an extension. */
 export function urlExtension(url: string): string {
   const path = (url.split('#')[0] ?? '').split('?')[0] ?? '';
   const base = path.slice(path.lastIndexOf('/') + 1);
@@ -156,7 +156,7 @@ export function urlExtension(url: string): string {
   return dot > 0 ? base.slice(dot + 1).toLowerCase() : '';
 }
 
-/** Does this url NAME a tracker module? A fast path only — see the section header. */
+/** Does this url NAME a tracker module? A fast path only - see the section header. */
 export function isModuleUrl(url: string): boolean {
   return (MODULE_EXTENSIONS as readonly string[]).includes(urlExtension(url));
 }
@@ -166,7 +166,7 @@ const MOD_MAGIC = new Set([
   'M.K.', 'M!K!', 'M&K!', 'N.T.', 'FLT4', 'FLT8', 'EXO4', 'EXO8',
   'OCTA', 'OKTA', 'CD81', 'FA04', 'FA06', 'FA08',
 ]);
-/** `4CHN`, `16CH`, `TDZ3` — the channel-count magics, written as patterns. */
+/** `4CHN`, `16CH`, `TDZ3` - the channel-count magics, written as patterns. */
 const MOD_MAGIC_RE = /^(?:[1-9]CHN|[1-9][0-9]C[HN]|TDZ[1-9])$/;
 /** ScreamTracker 2 identifies itself at offset 20, with 0x1A as the EOF marker at 28. */
 const STM_TAGS = new Set(['!scream!', 'bmod2stm', 'wuzamod!', 'swavepro']);
@@ -176,11 +176,11 @@ const STM_TAGS = new Set(['!scream!', 'bmod2stm', 'wuzamod!', 'swavepro']);
  *
  * Each of the six formats carries a magic, just not all in the same place: IT and XM
  * at the very start, MTM likewise, S3M at 0x2C, STM at 0x14, and the original MOD
- * family at 1080 — AFTER its 31 sample headers, which is why the buffer has to be at
+ * family at 1080 - AFTER its 31 sample headers, which is why the buffer has to be at
  * least 1084 bytes before that one can be read at all.
  *
  * HONEST LIMIT: a 15-instrument SoundTracker MOD (pre-1987 layout) has NO magic
- * anywhere — nothing can identify it but its extension and a heuristic on its sample
+ * anywhere - nothing can identify it but its extension and a heuristic on its sample
  * table, and a heuristic that guesses wrong sends an mp3 to libopenmpt. So this
  * returns false for one, the extension path catches the ones named `.mod`, and the
  * rest degrade to the same logged silence as any other undecodable box. libopenmpt
@@ -234,7 +234,7 @@ export interface SequenceClock {
   destroy(): void;
 }
 
-/** The (optional) host slice this module uses — logging only. */
+/** The (optional) host slice this module uses - logging only. */
 export interface ClockHost {
   log?(level: string, msg: string): void;
 }
@@ -246,7 +246,7 @@ export interface SequenceClockOpts {
   raf?: (cb: () => void) => number;
   /** Test seam: cancel a scheduled frame. */
   caf?: (handle: number) => void;
-  /** Test seam: monotonic ms — scrub throttling and the fallback playback timebase. */
+  /** Test seam: monotonic ms - scrub throttling and the fallback playback timebase. */
   now?: () => number;
   /**
    * Test seam: fetch + decode ONE audio source, or null when it must stay silent.
@@ -266,8 +266,8 @@ export interface SequenceClockOpts {
  * The shipped module renderer, behind a dynamic import.
  *
  * lib/mod-render.ts spawns a Worker carrying the libopenmpt WASM. A static import
- * would put its chunk in this module's eager graph — and this module is on the editor's
- * first-paint path — for a format almost no composition contains. So it is pulled only
+ * would put its chunk in this module's eager graph - and this module is on the editor's
+ * first-paint path - for a format almost no composition contains. So it is pulled only
  * when a box's bytes actually turn out to be a module, exactly as mediabunny is in
  * bridge/sequence-providers.ts.
  */
@@ -334,17 +334,17 @@ export interface SeekerDeps {
 }
 
 /**
- * Serialised seeking for one element — the Safari rule made mechanical.
+ * Serialised seeking for one element - the Safari rule made mechanical.
  *
  * Two seeks in flight on one element is not "slower", it is WRONG: WebKit cancels
  * the earlier one and the frame you get back is whichever the decoder felt like. So
  * the underlying queue (shared with lib/clip-thumbs.ts, already tested there) never
  * runs two, and this wrapper adds the two things playback needs:
  *
- *   • scrub throttling — at most one request per SCRUB_THROTTLE_MS while the pointer
+ *   • scrub throttling - at most one request per SCRUB_THROTTLE_MS while the pointer
  *     is down, ALWAYS with a trailing flush so the final position of a drag lands
  *     even if it arrived inside the throttle window;
- *   • one nudge — decoders routinely land on the nearest keyframe rather than the
+ *   • one nudge - decoders routinely land on the nearest keyframe rather than the
  *     requested time. If the confirmed frame is more than SEEK_TOLERANCE_S away we
  *     ask once more, a quarter-frame past the target. ONCE: a decoder that cannot
  *     hit the time will not hit it on the third try either, and a retry loop on a
@@ -372,7 +372,7 @@ export function createVideoSeeker(el: SeekableMedia, deps: SeekerDeps): VideoSee
     void queue.seek(t, { supersede: true }).then((landed) => {
       if (dead || landed == null) return;
       // A newer target has been issued since: nudging toward THIS one would fight it.
-      // The generation check is the load-bearing one — `pending()` is NOT enough,
+      // The generation check is the required one - `pending()` is NOT enough,
       // because the queue's pump shifts the next job off SYNCHRONOUSLY before this
       // `.then` microtask runs, so by now the newer seek is in flight (pending 0)
       // and a nudge toward the stale target would be queued behind it and land LAST.
@@ -489,7 +489,7 @@ interface VideoRec {
 /**
  * One audio box's place in the preview mix.
  *
- * `node` is null both BEFORE the decode lands and AFTER a source ends or is refused —
+ * `node` is null both BEFORE the decode lands and AFTER a source ends or is refused - 
  * the record's existence, not its node, is what says "this box has been dealt with at
  * the current playhead", so a box that cannot sound is never re-attempted 60 times a
  * second. `key` is every attribute that decides WHETHER and WHERE it sounds: when it
@@ -557,7 +557,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function boxes(): HTMLElement[] {
     // THE APPLIER'S OWN ENUMERATION, imported rather than re-typed: this selector and
     // `createSequenceTime`'s were two copies of the same rule and drifted apart from
-    // the planner's (plans/104 P1 review, HIGH 1 — an untimed "Always on" camera has no
+    // the planner's (plans/104 P1 review, HIGH 1 - an untimed "Always on" camera has no
     // `data-t-start`, so the preview could not see the one box whose job is to move
     // everything else). See `sequenceTimeElements` for what is in the set and why.
     return sequenceTimeElements(sequenceStageOf(canvasEl) ?? canvasEl);
@@ -597,8 +597,8 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   //
   // An audio box paints nothing (the tool hook emits a bare `[data-audio-src]`
   // marker), so unlike a <video> there is no element whose own clock could carry it.
-  // It is placed directly on the shared AudioContext instead — the same context whose
-  // `currentTime` IS this module's timebase — with one AudioBufferSourceNode per box:
+  // It is placed directly on the shared AudioContext instead - the same context whose
+  // `currentTime` IS this module's timebase - with one AudioBufferSourceNode per box:
   //
   //     start(t0 + boxStart, clipIn + alreadyElapsed, howMuchIsLeft)
   //
@@ -610,7 +610,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   //
   // Semantics are the export mix's, deliberately, so a preview and the rendered file
   // agree: silent when `data-t-mute` is set, silent at speed ≠ 1 (v1 does not
-  // time-stretch, and a chipmunk voiceover is worse than a silent one — the identical
+  // time-stretch, and a chipmunk voiceover is worse than a silent one - the identical
   // rule bridge/sequence-render.ts states), offset by `data-clip-in`, and clipped both
   // to the box's own window and to the sequence's end.
 
@@ -675,7 +675,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // `renderMod` TRANSFERS this buffer to the worker; nothing below reads it again.
         return await renderModule(c, new Uint8Array(bytes));
       } catch (err) {
-        // Named, never swallowed — bufferFor's catch logs it against this url.
+        // Named, never swallowed - bufferFor's catch logs it against this url.
         throw new Error(`tracker module could not be rendered (${err instanceof Error ? err.message : String(err)})`);
       }
     }
@@ -728,7 +728,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     return p;
   }
 
-  /** A box's end on the timeline, seconds — its own window, capped by the sequence. */
+  /** A box's end on the timeline, seconds - its own window, capped by the sequence. */
   function audioEndSec(timing: Timing, seq: number): number {
     const end = endOf(timing, seq);
     return (seq > 0 ? Math.min(end, seq) : end) / 1000;
@@ -740,7 +740,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
    * `from` is where on the TIMELINE the sound begins: the box's start when it is still
    * ahead of the playhead (the look-ahead case, scheduled precisely), or the playhead
    * itself when we are already inside the box (play from the middle, a seek into it, a
-   * decode that landed late) — in which case `when` is already past and the platform
+   * decode that landed late) - in which case `when` is already past and the platform
    * starts it immediately with the matching offset, which is exactly right.
    */
   function startAudio(el: HTMLElement, timing: Timing, buf: AudioBuffer): void {
@@ -827,7 +827,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     // the same frame re-place it against the new attributes.
     if (rec && rec.key !== key) { stopAudioFor(el); }
     if (!isPlaying) { stopAudioFor(el); return; }
-    // PAST the window (not merely "not yet in it" — a box scheduled ahead of the
+    // PAST the window (not merely "not yet in it" - a box scheduled ahead of the
     // playhead is inactive on purpose and must keep its pending source).
     if (!active && tMs >= timing.start) { stopAudioFor(el); return; }
     placeAudio(el, url, timing, key);
@@ -839,7 +839,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       const rec = seekerFor(video);
       // Clamp against the SOURCE's own length. A clip can legitimately be trimmed
       // longer than its media (dur is clamped to MAX_TIME_S, never to the file), and
-      // without this the element pins at its end while the target keeps climbing —
+      // without this the element pins at its end while the target keeps climbing - 
       // drift stays above tolerance and a corrective seek is issued EVERY frame for
       // the rest of the clip. Past the end we hold the last frame instead.
       const rawSec = sourceMs / 1000;
@@ -872,7 +872,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       return;
     }
     // Lottie: the player is mounted asynchronously by lottie-mount, so it is simply
-    // absent for the first frames after a repaint — that is a no-op, not an error.
+    // absent for the first frames after a repaint - that is a no-op, not an error.
     // goToAndStop(value, isFrame=false) takes MILLISECONDS of the animation's own
     // timeline, which is exactly what `sourceMs` is (clipIn + local × speed).
     const marker = el.matches?.('[data-lottie-src]') ? el : el.querySelector('[data-lottie-src]');
@@ -894,11 +894,11 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     store.prune(new Set(els));
     // Never let one bad element kill the frame: an exception escaping the rAF
     // callback would strand playback with `isPlaying === true`, videos still
-    // playing and mute flags unrestored. Log and carry on — the release pass and
+    // playing and mute flags unrestored. Log and carry on - the release pass and
     // the subscriber fan-out below MUST still run.
     try {
       // PAUSED means an export (or another photographer) is holding this stage at its
-      // AUTHORED pose — plans/104 §6 point 0. The clock keeps its own time and keeps
+      // AUTHORED pose - plans/104 §6 point 0. The clock keeps its own time and keeps
       // fanning out ticks; what it must not do is put a frame back on the DOM between
       // two plate shots, because the exporter reads authored geometry off these very
       // elements. `store` was handed back when the pause was taken, so there is
@@ -923,14 +923,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     }
     // Videos a repaint orphaned: PAUSE and un-mute them before dropping the record.
     // `releaseVideo` is the only path that restores `muted` and stops playback, so
-    // skipping it leaves a detached element playing its audio until GC — one more
+    // skipping it leaves a detached element playing its audio until GC - one more
     // overlapping soundtrack per repaint during playback.
     for (const [video, rec] of [...videos]) {
       if (!canvasEl.contains(video)) { releaseVideo(video, rec); rec.seeker.destroy(); videos.delete(video); }
     }
     // Audio boxes a repaint orphaned. A scheduled source is on the AUDIO THREAD, not
     // on the element, so dropping the detached box without stopping it leaves the
-    // track playing to the end of the sequence with nothing on screen to explain it —
+    // track playing to the end of the sequence with nothing on screen to explain it - 
     // and a second copy starts the moment the fresh box is placed.
     for (const [el] of [...audios]) if (!canvasEl.contains(el)) stopAudioFor(el);
     for (const cb of [...ticks]) { try { cb(tMs); } catch { /* a bad subscriber never stops the clock */ } }
@@ -952,7 +952,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   }
 
   /**
-   * Elapsed playback time, ms. The AudioContext is the master timebase — but ONLY
+   * Elapsed playback time, ms. The AudioContext is the master timebase - but ONLY
    * while it is actually running. A context refused by the autoplay policy (or one
    * whose `resume()` never settles) has a frozen `currentTime`, which would freeze
    * the playhead forever with `playing()` still true and the rAF loop still burning
@@ -977,7 +977,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function tick(): void {
     if (dead || !isPlaying) return;
     // A context the autoplay policy refused has a FROZEN currentTime, so elapsedMs
-    // keeps re-basing t0 against wall time while it stays suspended — which means
+    // keeps re-basing t0 against wall time while it stays suspended - which means
     // anything scheduled meanwhile sits at the wrong place on the audio timeline. The
     // frame `resume()` finally lands is the one frame where every source has to be
     // re-placed; the apply pass below does it from the cached buffers.
@@ -1039,7 +1039,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // against the new playhead (from the cached buffers, so no refetch).
         stopAllAudio();
       } else {
-        // Seeking while paused must be silent — including a scrub that crosses an
+        // Seeking while paused must be silent - including a scrub that crosses an
         // audio box, and including the settling pass pause() itself runs.
         stopAllAudio();
       }
@@ -1069,7 +1069,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     reapply() {
       if (dead) return;
       // The canvas was rebuilt: every element the store remembers is detached, so
-      // there is nothing to restore — just forget them and paint the new nodes.
+      // there is nothing to restore - just forget them and paint the new nodes.
       store.prune(new Set(boxes()));
       applyNow();
     },
@@ -1096,14 +1096,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       buffers.clear();               // the last reference to every decoded buffer
       audioFailed.clear();
       pcmBytes = 0;
-      // Every class and inline property this clock ever wrote, undone — plus any
+      // Every class and inline property this clock ever wrote, undone - plus any
       // thumbnail shot's borrow, so a restore landing after this cannot re-hide a box
       // nothing is left to un-hide it again.
       for (const el of boxes()) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
       store.restoreAll();
       ticks.clear();
       // Nothing composes on this canvas any more, so the read/restore seam must stop
-      // counting this clock — a registry entry outliving its clock would hold the
+      // counting this clock - a registry entry outliving its clock would hold the
       // canvas element alive and answer authored reads out of a dead store.
       unregisterWriter();
       try { void ctx?.close?.(); } catch { /* already closed */ }
@@ -1114,7 +1114,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   // The clock announces itself to the export-time read/restore seam (plans/104 §6
   // point 0): it is the writer whose per-frame transform/opacity/filter/z-index sit on
   // the very elements an export is about to read authored geometry off. `reapply` is
-  // the clock's own — re-asserting the CURRENT playhead, so an export that finishes
+  // the clock's own - re-asserting the CURRENT playhead, so an export that finishes
   // hands the editor back the frame the user was looking at, not frame 0.
   const writer: SequenceWriter = {
     root: canvasEl,

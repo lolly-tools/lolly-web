@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-overlay — the remote x/y cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
+ * collab-overlay - the remote x/y cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
  *
  * A cursor is the ONE presence primitive that moves, and it is the only one that
  * costs a frame loop. Everything about this module is shaped by that: it runs a
  * single rAF ticker, only while at least one remote cursor is live, and it paints
- * into a layer that is a SIBLING of the canvas stage — never a child. The tool's
+ * into a layer that is a SIBLING of the canvas stage - never a child. The tool's
  * render is untouched, byte for byte, which is the §4.6 rule ("presence chrome
  * never goes inside `.tool-canvas`/`#tool-content` or any export stage"): a
  * collaborator's cursor must not be able to change what a PNG comes out looking
@@ -15,17 +15,17 @@
  * 0..1 of the design's unit space, so a phone at 0.4× and a desktop at 2× paint the
  * same point on the same artwork. The mapping is one multiply through the STAGE's
  * live rect, re-read each tick, then rebased into the layer's own coordinate space
- * — so a zoom, a scroll or a sidebar resize needs no invalidation protocol at all.
+ * - so a zoom, a scroll or a sidebar resize needs no invalidation protocol at all.
  *
  * THE RENDER-LOOP DISCIPLINE IS BORROWED, THE DEPENDENCY IS NOT (§11.14, Andy
- * 2026-08-09 — "worth learning from the pixijs.com folks"). Four rules, all of them
- * cheap and all of them load-bearing:
+ * 2026-08-09 - "worth learning from the pixijs.com folks"). Four rules, all of them
+ * cheap and all of them essential:
  *
  *   1. ONE TICKER for every peer, not one per cursor. A frame measures the two
  *      rects ONCE and then writes N transforms.
  *   2. POOLED NODES. A peer that leaves returns its node to a free list; the next
- *      peer to arrive takes that same node back. A roster that churns — the normal
- *      shape of a session where people come and go — allocates nothing after the
+ *      peer to arrive takes that same node back. A roster that churns - the normal
+ *      pattern of a session where people come and go - allocates nothing after the
  *      first few joins, and never leaves detached nodes for the GC to sweep mid-drag.
  *   3. INTERPOLATE, NEVER EXTRAPOLATE (§4.3, stated in the plan as a rule). The
  *      ticker renders the segment BETWEEN the last two samples, one sample-interval
@@ -36,7 +36,7 @@
  *      job that never invalidates layout, never reflows the sidebar, and never
  *      touches the tool render beneath.
  *
- * WHEN IT STOPS. The ticker is not a heartbeat — it exists only while something is
+ * WHEN IT STOPS. The ticker is not a heartbeat - it exists only while something is
  * moving, and "moving" is measured, not assumed: a frame re-arms only while some
  * peer still has a segment left to walk between its last two samples. A peer who
  * parks their pointer is painted at rest and the loop stands down, so a live roster
@@ -54,7 +54,7 @@
  * NAMES ARE UNTRUSTED (§11.21/§11.23). A display name arrives over the wire from a
  * peer, so it is written with `textContent` and never interpolated into markup.
  *
- * IT CARRIES ITS OWN STYLESHEET, injected into `<head>` on first mount — the
+ * IT CARRIES ITS OWN STYLESHEET, injected into `<head>` on first mount - the
  * `music-player.ts`/`neuro-dock.ts`/`collab-pill.ts` pattern for lazy chrome that
  * must cost a single-player build nothing. `styles/parts/collab.css` deliberately
  * owns only the `.collab-tile-*` family and says so in its own header: a shared
@@ -169,7 +169,7 @@ export function ensureOverlayStyles(doc: Document | null | undefined): void {
 // ── Geometry ──────────────────────────────────────────────────────────────────
 
 /** The slice of a DOMRect this module reads. Structural so a test can hand over a
- *  plain object — jsdom's `getBoundingClientRect` is all zeros, which would make
+ *  plain object - jsdom's `getBoundingClientRect` is all zeros, which would make
  *  every mapping assertion vacuously true. */
 export interface RectLike {
   readonly left: number;
@@ -211,12 +211,12 @@ export interface CursorSample {
 export const CURSOR_SNAP_GAP_MS = 500;
 
 /**
- * Where to draw a peer's cursor right now — the segment between the last two
+ * Where to draw a peer's cursor right now - the segment between the last two
  * samples, rendered ONE sample-interval behind live.
  *
  * The lag is the whole trick and it is deliberate. If `u` were `(t - prev.t)/dur`
  * the interpolator would already be AT `next` the instant `next` arrived, and the
- * only way to keep moving after that is to extrapolate — which is exactly the rule
+ * only way to keep moving after that is to extrapolate - which is exactly the rule
  * §4.3 forbids. Anchoring the window at `next.t` instead means a freshly arrived
  * sample starts the glide at `prev` and reaches `next` one interval later, so the
  * cursor is always drawing a segment it has both ends of. The cost is ~50 ms of
@@ -242,7 +242,7 @@ export function cursorPosition(
 
 // ── The layer ─────────────────────────────────────────────────────────────────
 
-/** What a mounted overlay layer hands back — the element, and the exact undo. */
+/** What a mounted overlay layer hands back - the element, and the exact undo. */
 export interface OverlayLayer {
   readonly el: HTMLElement;
   readonly host: HTMLElement;
@@ -256,7 +256,7 @@ export const CANVAS_LAYER_CLASS = 'collab-canvas-layer';
 /**
  * Mount an absolutely-positioned overlay layer as a SIBLING of `stage`.
  *
- * The containment check is not defensive programming for its own sake — it is the
+ * The containment check is not defensive programming for its own sake - it is the
  * §4.6 invariant made unbypassable. A caller that passes the canvas itself as the
  * host (an easy mistake: `#tool-canvas` is the element everything else in the tool
  * view is measured from) would put presence chrome inside the export stage, and the
@@ -266,7 +266,7 @@ export const CANVAS_LAYER_CLASS = 'collab-canvas-layer';
  *
  * With no host given the preference is `.tool-stage` over the canvas's immediate
  * parent, matching what the sheet below assumes ("a dedicated sibling layer over
- * `.tool-stage`") — and it is the better anchor on its own merits: the intervening
+ * `.tool-stage`") - and it is the better anchor on its own merits: the intervening
  * `.tool-canvas-outer` is `overflow: hidden`, so a cursor near the artboard's edge
  * would be clipped by the wrapper rather than by the stage the user can see.
  */
@@ -321,7 +321,7 @@ export function mountOverlayLayer(
  * and both re-anchor on scroll, on resize and on a ResizeObserver. A canvas ZOOM or
  * PAN fires none of the three: `views/tool-stage-nav.ts` applies both as a CSS
  * `transform` on `.tool-canvas-outer` and dispatches no event. A transform changes
- * no scroll offset, no window size, and — crucially — no observed BORDER BOX, so
+ * no scroll offset, no window size, and - crucially - no observed BORDER BOX, so
  * ResizeObserver reports nothing. Every ring therefore stayed at its pre-zoom
  * position until an unrelated model change happened to repaint it. Cursors hid it,
  * because their rAF ticker re-measures every frame; under `prefersReducedMotion()`
@@ -331,7 +331,7 @@ export function mountOverlayLayer(
  * measured element and the layer's host is the precise answer: it is exactly the
  * set of boxes a transform can move the overlay relative to, it costs nothing while
  * nothing moves, and it needs no cooperation from (or import of) the stage-nav
- * controller. `stopAt` is EXCLUDED — a transform on the host moves the layer and the
+ * controller. `stopAt` is EXCLUDED - a transform on the host moves the layer and the
  * canvas together, so there is nothing to re-anchor.
  *
  * Returns a disposer; a document with no MutationObserver (or no chain) yields a
@@ -351,7 +351,7 @@ export function observeAnchorTransforms(
   const chain: HTMLElement[] = [];
   let node: HTMLElement | null = from;
   // Bounded by construction: stop at the host, at the documentElement, or at the
-  // root — a detached subtree must not walk forever.
+  // root - a detached subtree must not walk forever.
   while (node && node !== stopAt && node !== node.ownerDocument?.documentElement) {
     chain.push(node);
     node = node.parentElement;
@@ -367,7 +367,7 @@ export function observeAnchorTransforms(
 
 /** One collaborator, as far as the cursor layer is concerned. */
 export interface CursorPeer {
-  /** The peer's collab client id — the pool key. */
+  /** The peer's collab client id - the pool key. */
   readonly id: string;
   readonly name: string;
   /** The assigned collaborator colour (lib/collab-colors.ts). */
@@ -376,14 +376,14 @@ export interface CursorPeer {
    *  cursor to show (a sidebar-only tool, or a peer that never moved). */
   readonly cursor?: { readonly x: number; readonly y: number } | null;
   /** A hidden tab (§11.4). Away peers keep their roster entry but drop their
-   *  cursor — a pointer that has not moved for minutes is noise, not presence. */
+   *  cursor - a pointer that has not moved for minutes is noise, not presence. */
   readonly away?: boolean;
 }
 
 export interface CollabCursorOptions {
   /** The canvas stage. Its live rect is what unit space maps through. */
   stage: HTMLElement;
-  /** An ALREADY-MOUNTED `.collab-canvas-layer` to paint into — how the focus rings
+  /** An ALREADY-MOUNTED `.collab-canvas-layer` to paint into - how the focus rings
    *  and the cursors share one layer, which is the arrangement the two sheets' internal
    *  z-order assumes (`.collab-focus-box` 1, `.collab-cursor` 2). Omit and this
    *  module mounts its own; `dispose()` only ever unmounts a layer it created. */
@@ -400,11 +400,11 @@ export interface CollabCursorOptions {
   cancelRaf?: (handle: number) => void;
   /** Motion preference read (defaults to the shared `prefersReducedMotion`). */
   reducedMotion?: () => boolean;
-  /** Rect seams — default to the real elements' `getBoundingClientRect`. */
+  /** Rect seams - default to the real elements' `getBoundingClientRect`. */
   measureStage?: () => RectLike;
   measureLayer?: () => RectLike;
   /** Re-anchor when an ancestor between the stage and the layer's host is
-   *  re-positioned — a canvas zoom/pan, which fires no event of its own (see
+   *  re-positioned - a canvas zoom/pan, which fires no event of its own (see
    *  {@link observeAnchorTransforms}). Default true. */
   observe?: boolean;
   doc?: Document;
@@ -415,7 +415,7 @@ export interface CollabCursors {
   readonly el: HTMLElement | null;
   /** Replace the live cursor set. Peers with no cursor (or away) are released. */
   setPeers(peers: readonly CursorPeer[]): void;
-  /** Re-measure and repaint without waiting for a frame — the hook the runtime's
+  /** Re-measure and repaint without waiting for a frame - the hook the runtime's
    *  paint, a scroll and a resize all call. Cheap: two rects and N transforms. */
   reanchor(): void;
   /** Live counters, for tests and for a diagnostics readout. */
@@ -432,7 +432,7 @@ interface CursorNode {
   label: HTMLElement;
 }
 
-/** One tracked peer — its node and the two samples the interpolator walks. */
+/** One tracked peer - its node and the two samples the interpolator walks. */
 interface LiveCursor {
   node: CursorNode;
   prev: CursorSample | null;
@@ -451,13 +451,13 @@ export const CURSOR_STILL_CLASS = 'collab-cursor--still';
  *
  * The sheet draws `.collab-cursor-arrow` as a clip-path silhouette in the
  * collaborator's colour with a four-way white halo. A dot is that same painted box
- * with the silhouette dropped and the corners rounded — so the colour, the size, the
+ * with the silhouette dropped and the corners rounded - so the colour, the size, the
  * halo and the `--a11y-fs` scaling all still come from the sheet, and exactly two
- * properties are stated here — the sheet's own `.collab-cursor--still` rule carries
+ * properties are stated here - the sheet's own `.collab-cursor--still` rule carries
  * the SIZE, which an inline style could not express in `--a11y-fs` terms.
  *
  * The transition goes too. The sheet already kills it under both reduced-motion
- * gates, but this module's preference read is an INJECTED seam — a caller with its
+ * gates, but this module's preference read is an INJECTED seam - a caller with its
  * own policy (a capture harness, a test) must get a still cursor from that seam
  * alone, not only from the two the stylesheet can see.
  */
@@ -506,12 +506,12 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
   const reducedMotion = opts.reducedMotion ?? prefersReducedMotion;
 
   // A borrowed layer never goes through mountOverlayLayer, so the sheet is ensured
-  // here too — the styles must land whoever mounted the node.
+  // here too - the styles must land whoever mounted the node.
   ensureOverlayStyles(doc);
 
   // `let`, so `dispose()` can drop it: an `el` that still hands back a DETACHED node
-  // is the shape of bug where a caller keeps decorating a layer nobody can see.
-  // A layer handed IN is borrowed — never unmounted here (the lender owns it).
+  // is the kind of bug where a caller keeps decorating a layer nobody can see.
+  // A layer handed IN is borrowed - never unmounted here (the lender owns it).
   const borrowed = opts.layer ?? null;
   let layer: OverlayLayer | null = borrowed
     ? { el: borrowed, host: borrowed.parentElement ?? borrowed, unmount: () => {} }
@@ -522,7 +522,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
     ?? ((): RectLike => (layer ? rectOf(layer.el) : { left: 0, top: 0, width: 0, height: 0 }));
 
   const live = new Map<string, LiveCursor>();
-  /** Free list — pooled nodes keep their identity across roster churn (rule 2). */
+  /** Free list - pooled nodes keep their identity across roster churn (rule 2). */
   const pool: CursorNode[] = [];
   let frame: number | null = null;
   let disposed = false;
@@ -553,7 +553,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
   }
 
   /** Write one peer's position. `stage`/`layer` are measured once per frame by the
-   *  caller — a per-peer `getBoundingClientRect` is the classic way to turn a smooth
+   *  caller - a per-peer `getBoundingClientRect` is the classic way to turn a smooth
    *  overlay into a layout-thrash machine. */
   function place(entry: LiveCursor, stage: RectLike, layerRect: RectLike, t: number, still: boolean): void {
     const unit = still
@@ -576,8 +576,8 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
   /**
    * Is this peer still WALKING the segment between its two samples?
    *
-   * The same three cases {@link cursorPosition} refuses to interpolate — no previous
-   * sample, a non-positive interval, a gap past the snap window — plus the one that
+   * The same three cases {@link cursorPosition} refuses to interpolate - no previous
+   * sample, a non-positive interval, a gap past the snap window - plus the one that
    * matters for the loop: a segment already walked to its end. Once `t` reaches
    * `next.t + dur` the interpolator returns `next` forever, so every further frame
    * would paint the identical transform.
@@ -591,7 +591,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
   }
 
   /** Does ANY peer still have a segment left to walk? The ticker's whole reason to
-   *  exist — see {@link tick}. */
+   *  exist - see {@link tick}. */
   function anyMoving(t: number): boolean {
     for (const entry of live.values()) {
       if (moving(entry, t)) return true;
@@ -608,7 +608,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
     // inside it (a subscriber that tears the tool down), and re-arming there would
     // leave a frame pending forever. And a roster that is merely PRESENT is not a
     // reason to keep a frame loop alive: a peer who parks their pointer would
-    // otherwise hold a 60 fps loop — two forced layouts a frame, forever — painting
+    // otherwise hold a 60 fps loop - two forced layouts a frame, forever - painting
     // the same transform, which is the opposite of this module's stated cost model.
     // The resting position is always painted before the loop stands down, because
     // the check happens after this frame's paint, not instead of it.
@@ -651,7 +651,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
       for (const peer of peers) {
         const c = peer.cursor;
         // No cursor and no presence to fake: a peer that is away, or on a tool with
-        // no x/y lane at all (§4.3 — the cursor is opt-in per tool).
+        // no x/y lane at all (§4.3 - the cursor is opt-in per tool).
         if (!c || peer.away || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
         seen.add(peer.id);
         let entry = live.get(peer.id);
@@ -694,7 +694,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
         return;
       }
       if (still) {
-        // No ticker under reduced motion (§4.8) — repaint on arrival instead, so the
+        // No ticker under reduced motion (§4.8) - repaint on arrival instead, so the
         // dots are current without anything animating between frames.
         stopTicker();
         paint(t);
@@ -702,7 +702,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
       }
       // A node fresh out of the pool carries the previous tenant's transform (or
       // none at all), so it would sit at the layer origin for one frame before the
-      // ticker moved it — a visible flick in the corner every time someone joins.
+      // ticker moved it - a visible flick in the corner every time someone joins.
       // Placing on arrival costs two rect reads at presence rate, not frame rate.
       if (arrived) paint(t);
       // Only a peer with a segment left to walk is worth a frame loop. An arrival

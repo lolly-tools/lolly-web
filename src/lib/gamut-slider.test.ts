@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * gamut-slider.ts — the broken OKLCH axis, and the onion rings on it.
+ * gamut-slider.ts - the broken OKLCH axis, and the onion rings on it.
  *
  * Run directly:  node --test shells/web/src/lib/gamut-slider.test.ts
  *
  * What matters here is that this surface and the picker's tracks share ONE tier
  * model (engine/src/gamut-tier.ts): a stretch the limit cannot show is still
  * painted, at the tier of the narrowest gamut that CAN show it. Written after the
- * fact — the module had no coverage at all — so it pins the intent rather than the
+ * fact - the module had no coverage at all - so it pins the intent rather than the
  * numbers: the opacities live in CSS tokens and are meant to be tuned.
  */
 import test from 'node:test';
@@ -37,7 +37,7 @@ test('a run carries HOW FAR out it is, not merely that it is out', () => {
   assert.ok(runs.length >= 2, 'the axis must break somewhere');
   assert.equal(runs[0]!.tier, 0, 'the axis starts at grey, which every gamut holds');
   assert.ok(runs.some(r => r.tier > 0), 'and the unreachable part is a RING, not a hole');
-  // Every run still carries colours to paint across it — a wash shades in the
+  // Every run still carries colours to paint across it - a wash shades in the
   // direction the axis is going rather than flat-lining at the boundary colour.
   for (const r of runs) {
     assert.ok(r.to > r.from, 'no zero-width runs');
@@ -56,7 +56,7 @@ test('the tiers come from membership, so sRGB is never a ring under a P3 limit',
     assert.equal(inGamut(HUE.base.l, HUE.base.c, mid, 'srgb'), false,
       `hue ${mid.toFixed(0)}° is inside sRGB, so it cannot be a ring under a P3 limit`);
   }
-  // Under sRGB the same axis shows more than one ring — the onion.
+  // Under sRGB the same axis shows more than one ring - the onion.
   const tiers = new Set(gamutRuns(HUE).map(r => r.tier));
   assert.ok(tiers.has(1) && tiers.has(2), `expected two rings, got ${[...tiers].join(',')}`);
   assert.ok(tiers.has(BEYOND_TIER), 'and hues no display holds at this chroma');

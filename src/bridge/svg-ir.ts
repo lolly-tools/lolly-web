@@ -5,7 +5,7 @@
  * Walks a rendered SVG element into the flat, device-pixel, sRGB, alpha-composited
  * IR that engine/src/emf.js serializes. Mirrors drawSvgVectorsInRegion in
  * export.js (viewBox mapping, <g> translate+scale incl. d3.zoom, non-scaling
- * stroke) but emits IR prims instead of jsPDF calls — and, critically, ALWAYS
+ * stroke) but emits IR prims instead of jsPDF calls - and, critically, ALWAYS
  * outlines <text> to vector paths via host.text.toPath (the "always text-as-paths"
  * rule). A <text> run that can't be vectorized throws, so EMF never ships a
  * partially-textless file. See plans/63-emf-support.md.
@@ -16,7 +16,7 @@
  *
  * SUSE-specific font resolution lives in the shell (text-svg.js), never the
  * engine. This module is DOM-light: it only reads attributes + (optionally)
- * computed style, so it runs under jsdom for native-SVG tools in the CLI — except
+ * computed style, so it runs under jsdom for native-SVG tools in the CLI - except
  * the text outlining, which needs host.text (absent in the lean CLI).
  */
 
@@ -38,8 +38,8 @@ type RgbTuple = [number, number, number];
 // Parse an SVG/CSS colour to [r,g,b], or null for none/transparent/unparseable.
 // The engine's CSS Color 4 parser is the single source of truth (this file used to
 // carry a 12-name table and a legacy-rgb regex, so oklch()/oklab()/color() paints
-// vanished from EMF). `currentColor` is the one case it can't answer — its value
-// depends on inherited state — and EMF's walk resolves it to black as before.
+// vanished from EMF). `currentColor` is the one case it can't answer - its value
+// depends on inherited state - and EMF's walk resolves it to black as before.
 export function parseColor(input: string | null | undefined): RgbTuple | null {
   if (!input) return null;
   if (String(input).trim().toLowerCase() === 'currentcolor') return [0, 0, 0];
@@ -127,7 +127,7 @@ interface Mat {
 }
 const IDENTITY: Mat = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
-/** m ∘ n — apply n first, then m (SVG transform-list composition order). */
+/** m ∘ n - apply n first, then m (SVG transform-list composition order). */
 function matMul(m: Mat, n: Mat): Mat {
   return {
     a: m.a * n.a + m.c * n.b,
@@ -140,8 +140,8 @@ function matMul(m: Mat, n: Mat): Mat {
 }
 
 // Parse an SVG transform LIST into one matrix, composing each function in order.
-// translate/scale reproduce the old accumulator exactly (verified); rotate — incl.
-// the rotate(θ cx cy) pivot form — matrix, and skew are now honoured too, so
+// translate/scale reproduce the old accumulator exactly (verified); rotate - incl.
+// the rotate(θ cx cy) pivot form - matrix, and skew are now honoured too, so
 // rotated text (angled axis labels, word-cloud verticals) and tilted groups
 // survive to EMF/WMF/EPS/DXF instead of flattening. Unknown functions are skipped.
 function parseTransformList(str: string): Mat {
@@ -171,7 +171,7 @@ function parseTransformList(str: string): Mat {
 }
 
 // Compose an element's own `transform` onto the inherited CTM. Applies to
-// containers AND leaf drawables — a <path transform="translate() scale()">
+// containers AND leaf drawables - a <path transform="translate() scale()">
 // (brand-lockup's per-leaf layout) must scale/position like a <g> would.
 function applyElementTransform(el: Element, t: Mat): Mat {
   const transform = el.getAttribute?.('transform') || '';
@@ -202,7 +202,7 @@ export interface VectorIrResult {
   prims: VectorPrim[];
 }
 
-// Decode an <image> href (a data:/blob: URL — e.g. the vector escape-hatch's PNG) to
+// Decode an <image> href (a data:/blob: URL - e.g. the vector escape-hatch's PNG) to
 // opaque RGB, compositing any alpha over `bg` (EMF/EPS have no alpha channel).
 // Browser-only (canvas); returns null under jsdom (CLI) or on any failure, so the
 // caller warns + skips rather than throwing.
@@ -244,13 +244,13 @@ export interface SvgDropShadow { dx: number; dy: number; stdDeviation: number; r
  * Recognise a drop-shadow `<filter>`.
  *
  * EMF, EPS and DXF have no filter primitive, so `<filter>` is in SKIP and every
- * shadow used to vanish from those exports — including from the Penpot plugin, whose
+ * shadow used to vanish from those exports - including from the Penpot plugin, whose
  * entire input is Penpot's SVG and whose shadows arrive exactly this way.
  *
  * Two spellings are accepted: the `feDropShadow` shorthand, and the classic chain
  * (`feGaussianBlur` + `feOffset` + `feFlood` + composite) that most tools, Penpot
- * included, still emit. The parse is deliberately tolerant — it reads the first blur,
- * the first offset and the flood colour, and ignores the plumbing between them —
+ * included, still emit. The parse is deliberately tolerant - it reads the first blur,
+ * the first offset and the flood colour, and ignores the plumbing between them - 
  * because the goal is "is this a drop shadow, and roughly what one", not a filter
  * interpreter. Anything with primitives we do not expect returns null and is left
  * alone rather than approximated into something wrong.
@@ -311,7 +311,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
   const bg: RgbTuple = ctx.background ? (parseColor(ctx.background) ?? [255, 255, 255]) : [255, 255, 255];
 
   // viewBox: prefer the live SVGRect (browser), fall back to parsing the
-  // attribute string — jsdom often leaves viewBox.baseVal unimplemented, so the
+  // attribute string - jsdom often leaves viewBox.baseVal unimplemented, so the
   // CLI path must read the attribute (qr-code relies on it).
   const base = (svgEl as Element & { viewBox?: SVGAnimatedRect }).viewBox?.baseVal;
   let vbX = 0, vbY = 0, vbW = 0, vbH = 0, hasVb = false;
@@ -420,7 +420,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
       // The vector rasterise escape-hatch (visitSvgNode) emits <image href="data:…">
       // for a node whose CSS the walker can't express. Decode it to an opaque RGB
       // prim so it survives to EMF/EPS bytes instead of being dropped. Everything
-      // vectorisable stays a path — this is the last resort.
+      // vectorisable stays a path - this is the last resort.
       const href = el.getAttribute('href') || el.getAttribute('xlink:href')
         || el.getAttributeNS?.('http://www.w3.org/1999/xlink', 'href') || '';
       if (!href) { warn('image with no href (skipped)'); return; }
@@ -435,7 +435,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
       // asset-export, filter-*) use the SVG default 'meet' → fit the source aspect
       // inside the box and align (default xMidYMid = centred) so a non-square asset
       // letterboxes instead of squishing. 'slice' is approximated as meet (EMF/EPS
-      // can't cheaply source-crop) — aspect preserved, no distortion.
+      // can't cheaply source-crop) - aspect preserved, no distortion.
       const par = (prop(el, style, 'preserveAspectRatio') || 'xMidYMid meet').trim();
       let x = bx, y = by, w = bw, h = bh;
       if (!/^none/i.test(par) && dec.w > 0 && dec.h > 0) {
@@ -482,7 +482,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     // decreasing coverage (engine gaussianShadowRings). The bands are drawn as
     // STROKES of the shape's own outline rather than as offset copies of it: a stroke
     // of width 2t covers exactly the t-wide margin on either side, which gives the
-    // outset for free and — unlike offsetting — works on an arbitrary path. Offsetting
+    // outset for free and - unlike offsetting - works on an arbitrary path. Offsetting
     // a general path needs a boolean geometry library we do not have.
     //
     // Widest and lightest first, then narrower and darker, then the shadow's solid
@@ -548,7 +548,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const letterSpacingCss = prop(el, style, 'letter-spacing', null) ?? cs?.letterSpacing;
     const fontStyleObj = { fontFamily: family, fontWeight: weight, fontStyle: italic ? 'italic' : 'normal',
       letterSpacing: letterSpacingCss };
-    // SUSE statics, the user's own Google fonts, or the platform face — this
+    // SUSE statics, the user's own Google fonts, or the platform face - this
     // format has no <text> fallback, so an unresolvable family is fatal.
     const vf = textApi ? await resolveVectorFont(fontStyleObj, raw) : null;
     const fontUrl = vf?.url ?? null;

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * recolor-logo.ts — derived logo variants by pure SVG recolour (plan 97 §7.3).
+ * recolor-logo.ts - derived logo variants by pure SVG recolour (plan 97 §7.3).
  *
  * From a placed colour SVG the Logos room offers two GENERATED marks, added
  * only on tap: a **mono** version (every paint becomes one ink) and a
  * **reverse** version (dark ink flipped to white so the mark reads on a dark
- * ground). SVG only in v1 — a raster recolour is a different job with different
+ * ground). SVG only in v1 - a raster recolour is a different job with different
  * failure modes, and this module is the one that must stay pure.
  *
  * Three properties hold, and the tests pin all three:
@@ -29,7 +29,7 @@
  * split, the same `!important` peel, the same `url(…)`/keyword exclusions. One
  * deliberate difference: that module does not bother telling a `style="…"`
  * attribute apart from a `<style>` block or from any other run of text, because
- * it only READS. A rewrite must tell them apart — otherwise a `<text>` node that
+ * it only READS. A rewrite must tell them apart - otherwise a `<text>` node that
  * happens to read "fill: red" would be edited, which is a visible corruption of
  * the artwork. So the declaration pass here runs only inside real CSS containers
  * (a `style` attribute value, a `<style>` element body), and skips comments.
@@ -47,7 +47,7 @@ const DARK_L_MAX = 0.35;
 const REVERSE_INK: CssColor = { space: 'srgb', components: [1, 1, 1], alpha: 1, missing: 0 };
 
 /** Upper bound on regex matches scanned per call, shared by every pass, so a
- *  pathological input cannot spin — same guard convention as svg-colors.ts. */
+ *  pathological input cannot spin - same guard convention as svg-colors.ts. */
 const MATCH_CAP = 100_000;
 
 /** Syntactically paint-shaped keywords that name no colour. Left verbatim: they
@@ -80,7 +80,7 @@ interface PaintSite { start: number; end: number; value: string }
 interface Scan {
   /** True when the text carries an `<svg>` root at all. */
   isSvg: boolean;
-  /** True when any paint references a paint server — gradient, pattern, `<use>`
+  /** True when any paint references a paint server - gradient, pattern, `<use>`
    *  paint. Blocks both derivations. */
   paintServer: boolean;
   sites: PaintSite[];
@@ -114,7 +114,7 @@ function commentRanges(text: string): [number, number][] {
 
 /**
  * Trim a raw captured value down to its colour token, returning the token plus
- * how many characters were dropped from the front — the caller turns that into
+ * how many characters were dropped from the front - the caller turns that into
  * an absolute span. A trailing `!important` is peeled (declarations only, but
  * harmless on an attribute value), exactly as svg-colors.ts does.
  */
@@ -265,7 +265,7 @@ export function deriveMonoSvg(svgText: string, ink: string): string | null {
 
 /**
  * Light-for-dark recolour: dark ink becomes white, mid and light ink is kept, so
- * the mark reads on a dark ground. `currentColor` is kept too — its lightness is
+ * the mark reads on a dark ground. `currentColor` is kept too - its lightness is
  * not knowable from the text, and guessing would be the kind of silent lie this
  * module refuses elsewhere. Returns null when the mark uses a gradient or
  * pattern, and when nothing changes.

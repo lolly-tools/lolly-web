@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Unit tests for the PDF function/shading/pattern decoders (lib/pdf-objects.ts),
- * driven by REAL in-memory pdf-lib objects — the same object graph a loaded
+ * driven by REAL in-memory pdf-lib objects - the same object graph a loaded
  * document produces, just assembled by hand.
  *
  * These are the four gates that, closed, turned the Brand Studio colours tab into a
@@ -86,7 +86,7 @@ test('shadingComps buckets device spaces by component count', () => {
 test('a CONSTANT Type-4 function-based shading resolves to a flat colour', () => {
   const c = ctx();
   const h = harness(c);
-  // `{ pop pop 0.2 0.4 0.6 }` — drop both inputs, push a fixed RGB.
+  // `{ pop pop 0.2 0.4 0.6 }` - drop both inputs, push a fixed RGB.
   const sh = buildShading(h.ec, type1Shading(c, type4(c, '{ pop pop 0.2 0.4 0.6 }')));
   assert.ok(sh, 'shading decoded');
   assert.equal(sh!.type, 1);
@@ -126,7 +126,7 @@ test('an irreducibly 2-D Type-4 shading registers a raster tile plus a mean colo
   assert.deepEqual(h.warns, ['shading.type1.tiled']);
   assert.equal(h.tiles.size, 1, 'the tile source is registered but NOT rasterised here');
   assert.ok(h.tiles.get('shd0')!.evaluate(0.9, 0.7), 'the registered evaluator works');
-  // The wheel's exact centre is `0 0 atan` — undefined, so the evaluator faults
+  // The wheel's exact centre is `0 0 atan` - undefined, so the evaluator faults
   // there rather than inventing a colour. That pixel renders transparent and the
   // node's flat back-stop shows through.
   assert.equal(h.tiles.get('shd0')!.evaluate(0.5, 0.5), null);

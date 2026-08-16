@@ -4,7 +4,7 @@
  *
  * A control's value is not a text node. `<input value="hello">` has no children, a
  * `<select>`'s chosen option lives in a UA-rendered box, and a checkbox's tick is
- * drawn by the widget. So the walker's text pass — which walks text nodes — sees
+ * drawn by the widget. So the walker's text pass - which walks text nodes - sees
  * nothing, draws the box, and produces the empty fields visible on every tool-page
  * snapshot (12 controls on the qr fixture alone: 3 text, 2 number, 3 select, 2 range,
  * 2 checkbox).
@@ -12,8 +12,8 @@
  * This module answers only "what does it say / how far along is it", as pure
  * functions over a plain descriptor. The DOM adapter is a thin read at the bottom,
  * and the SVG assembly stays in export.ts. Split that way because the interesting
- * cases — a password's bullets, a placeholder standing in for an empty value, a
- * multi-select, a range with a backwards or degenerate min/max — are all decidable
+ * cases - a password's bullets, a placeholder standing in for an empty value, a
+ * multi-select, a range with a backwards or degenerate min/max - are all decidable
  * without layout, and testing them through a browser would only make them slower to
  * check, not better checked.
  */
@@ -34,7 +34,7 @@ export interface ControlDesc {
 
 export interface ControlText {
   text: string;
-  /** True when `text` is the placeholder standing in for an empty value — the caller
+  /** True when `text` is the placeholder standing in for an empty value - the caller
    *  paints it in the ::placeholder colour rather than the control's own. */
   placeholder: boolean;
   /** Multi-line content is laid out with `pre-wrap`; single-line is centred and clipped. */
@@ -105,7 +105,7 @@ export function controlText(d: ControlDesc): ControlText | null {
  *
  * Mirrors the HTML range-state algorithm's clamping rather than trusting the value:
  * `max` below `min` collapses the range to `min` (§ range state), a non-numeric or
- * absent value falls back to the midpoint, and a zero-width range is 0 — all of which
+ * absent value falls back to the midpoint, and a zero-width range is 0 - all of which
  * appear in real markup and none of which should produce a NaN in a coordinate.
  */
 export function rangeFraction(d: ControlDesc): number {

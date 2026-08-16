@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Tracker-module decode worker. libopenmpt (vendored WASM, BSD-3 + permissive internal
- * codecs — see src/vendor/libopenmpt/) decodes .mod/.xm/.s3m/.it/.stm/.mtm bytes to
+ * codecs - see src/vendor/libopenmpt/) decodes .mod/.xm/.s3m/.it/.stm/.mtm bytes to
  * stereo PCM off the main thread. The Neurospicy player and the video music-bed
  * exporter both post module bytes here and get back transferable channel buffers to
- * wrap in an AudioBuffer — the identical shape zzfxm-worker.ts uses. Headless: no
+ * wrap in an AudioBuffer - the identical shape zzfxm-worker.ts uses. Headless: no
  * AudioContext and no live-player wrapper, just bytes → PCM, so the module flows
  * through the existing player graph (meter, seek, loop) exactly like an encoded loop.
  */
@@ -19,7 +19,7 @@ const MAX_SECONDS = 480;
 const CHUNK_FRAMES = 4096;
 
 // Worker scope: postMessage here is the DedicatedWorkerGlobalScope overload
-// (message, transfer), not Window's — narrow it so the transfer list type-checks.
+// (message, transfer), not Window's - narrow it so the transfer list type-checks.
 const post = postMessage as (message: unknown, transfer: Transferable[]) => void;
 
 // One WASM instance per worker, created lazily on the first decode.
@@ -38,13 +38,13 @@ async function decode(bytes: Uint8Array, sampleRate: number): Promise<{ left: Fl
 
   const filePtr = M._malloc(bytes.length);
   M.HEAPU8.set(bytes, filePtr);
-  // logfunc, loguser, errfunc, erruser, error, error_message, ctls — all null/none.
+  // logfunc, loguser, errfunc, erruser, error, error_message, ctls - all null/none.
   // libopenmpt sniffs the format from the bytes, so the file extension is irrelevant;
   // an unrecognized file yields a null handle.
   const mod = create(filePtr, bytes.length, 0, 0, 0, 0, 0, 0, 0);
   M._free(filePtr);
   if (!mod) throw new Error('not a recognized tracker module');
-  setRep(mod, 0); // play once — the player owns looping (AudioBufferSourceNode.loop)
+  setRep(mod, 0); // play once - the player owns looping (AudioBufferSourceNode.loop)
 
   const lPtr = M._malloc(CHUNK_FRAMES * 4);
   const rPtr = M._malloc(CHUNK_FRAMES * 4);
@@ -55,8 +55,8 @@ async function decode(bytes: Uint8Array, sampleRate: number): Promise<{ left: Fl
       const n = readSt(mod, sampleRate, CHUNK_FRAMES, lPtr, rPtr);
       if (n === 0) break; // end of song
       // Re-read the heap view each iteration. The module is built with a FIXED heap
-      // (no memory growth — see the build script; a growable/resizable heap breaks
-      // crypto.getRandomValues in Chrome), so it won't actually detach — but re-reading
+      // (no memory growth - see the build script; a growable/resizable heap breaks
+      // crypto.getRandomValues in Chrome), so it won't actually detach - but re-reading
       // is free insurance and keeps this correct if the build ever changes.
       const H = M.HEAPF32;
       chunks.push([H.slice(lPtr >> 2, (lPtr >> 2) + n), H.slice(rPtr >> 2, (rPtr >> 2) + n)]);

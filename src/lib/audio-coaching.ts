@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Audio coaching for capture tools — turns a live `AudioLevel` (host.recorder meter /
+ * Audio coaching for capture tools - turns a live `AudioLevel` (host.recorder meter /
  * record session) into a compact HUD: a level bar + a plain-language warning about
  * levels (too quiet / too loud / clipping) and, when the meter exposes the v1.19
  * spectral cues, the ROOM (electrical hum / background hiss / noisy).
@@ -45,7 +45,7 @@ const EYE_SVG =
  * ([data-export-hide]). Feed it with updateAudio() (per AudioLevel) and updateExposure()
  * (per camera-frame verdict).
  *
- * `opts.audio` (default true) controls whether the audio row is rendered — a video-only
+ * `opts.audio` (default true) controls whether the audio row is rendered - a video-only
  * capture tool shows just the exposure row.
  */
 export function mountCoachHud(parent: HTMLElement, opts: { audio?: boolean } = {}): CoachHud {

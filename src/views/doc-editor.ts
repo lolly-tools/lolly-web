@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-// doc-editor.ts — the TipTap (ProseMirror) rich-document editor for Doc Studio
+// doc-editor.ts - the TipTap (ProseMirror) rich-document editor for Doc Studio
 // (render.layout:'document'). Lazy-imported only for document-layout tools, so the
 // gallery and every other tool stay lean.
 //
-// WHY TipTap: a real word-processor editing model — ONE contenteditable over the whole
+// WHY TipTap: a real word-processor editing model - ONE contenteditable over the whole
 // document, so selection/delete crosses paragraphs, tables, lists and images freely, and
 // tables/lists/inline images are first-class nodes. The custom per-block editor could not
 // do cross-content selection; ProseMirror does it natively.
@@ -13,7 +13,7 @@
 // EDITOR owns the on-screen editing surface (a scrolling, page-width document); the ENGINE
 // hook (tools/doc-studio/hooks.js) renders that SAME JSON → paginated [data-pdf-page] pages
 // into #tool-canvas underneath, which is what export / CLI / OG-previews rasterise. Editing
-// is continuous (Notion-style); pages appear in the exported PDF. Everything is offline —
+// is continuous (Notion-style); pages appear in the exported PDF. Everything is offline - 
 // TipTap/ProseMirror are pure JS, no network.
 
 import { Editor, Extension } from '@tiptap/core';
@@ -64,7 +64,7 @@ const FONT_STACK: Record<string, string> = {
   'SUSE Mono': "'SUSE Mono', ui-monospace, SFMono-Regular, monospace",
 };
 
-// Block-level typography — line-height and letter-spacing as attributes on paragraph
+// Block-level typography - line-height and letter-spacing as attributes on paragraph
 // and heading nodes (the correct model for a document: both are per-paragraph settings,
 // not inline marks). renderHTML emits them as inline style so the on-screen editor shows
 // them live; the export hook (tools/doc-studio/hooks.js `blockStyle`) reads the same attrs
@@ -231,7 +231,7 @@ const DocTableCell = TableCell.extend({ addAttributes() { return { ...(this as a
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DocTableHeader = TableHeader.extend({ addAttributes() { return { ...(this as any).parent?.(), ...CELL_BG }; } });
 // Table-level border + padding presets. Kept whole-table (not per-cell) so the vector
-// export stays clean — arbitrary per-cell borders would double-draw at the grid seams.
+// export stays clean - arbitrary per-cell borders would double-draw at the grid seams.
 const DocTable = Table.extend({
   addAttributes() {
     return {
@@ -242,7 +242,7 @@ const DocTable = Table.extend({
     };
   },
   // With resizable:true the table's DOM is owned by prosemirror-tables' TableView, which
-  // ignores the border/pad renderHTML attrs — so styling the live editor from those attrs
+  // ignores the border/pad renderHTML attrs - so styling the live editor from those attrs
   // needs a node DECORATION (decorations DO apply over a custom node view). Stamp the
   // preset classes onto each table's node-view DOM so the editor matches the export.
   addProseMirrorPlugins() {
@@ -327,13 +327,13 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
     content: readDoc(),
     autofocus: 'end',
     editorProps: {
-      // TipTap already stamps role="textbox" on the editable (@tiptap/core createView) —
+      // TipTap already stamps role="textbox" on the editable (@tiptap/core createView) - 
       // do NOT add a second one. What it does not give the textbox is a NAME: the
       // aria-label on .doc-tt-holder is invisible to AT because the wrapper is not the
       // focusable element, so the name goes on the editable itself.
       attributes: { 'aria-label': 'Document body' },
       // Paste raw Markdown → fully-formatted nodes. If the clipboard's HTML carries real
-      // block STRUCTURE (Word / Docs / a web page — tables, lists, headings), let
+      // block STRUCTURE (Word / Docs / a web page - tables, lists, headings), let
       // ProseMirror parse that (richer). But code editors (VS Code) and browsers attach an
       // HTML copy that is only styled <span>s of the SAME literal Markdown; there we prefer
       // converting the Markdown so '# ', '- ', '| … |' land formatted, not literal.
@@ -352,7 +352,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
       },
     },
     onUpdate: () => scheduleCommit(),
-    // onTransaction is a strict superset of onSelectionUpdate — TipTap emits
+    // onTransaction is a strict superset of onSelectionUpdate - TipTap emits
     // "transaction" for every applied root transaction (selection moves included),
     // so a single handler here fires refresh() once per interaction, not twice.
     onTransaction: () => refresh(),
@@ -386,7 +386,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const fontSel = el('select', 'doc-font-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   fontSel.title = 'Font'; fontSel.setAttribute('aria-label', 'Font');
   [['', 'Document font'], ['SUSE', 'SUSE'], ['SUSE Mono', 'SUSE Mono']].forEach(([v, l]) => { const op = doc.createElement('option'); op.value = v!; op.textContent = l!; fontSel.appendChild(op); });
-  // Line height + letter spacing — block-level typographic controls (applied to the
+  // Line height + letter spacing - block-level typographic controls (applied to the
   // selected paragraph/heading via the BlockTypography extension). Empty value = default.
   const lhSel = el('select', 'doc-lh-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   lhSel.title = 'Line height'; lhSel.setAttribute('aria-label', 'Line height');
@@ -403,7 +403,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const bOl = btn('fc-cbtn', IC.ol, 'Numbered list');
   const bQuote = btn('fc-cbtn', IC.quote, 'Quote');
   // Text colour: our own picker, mounted invisibly over the button (the visible
-  // face is the ::after "A"). No focus() on apply — the popover is in-page, so
+  // face is the ::after "A"). No focus() on apply - the popover is in-page, so
   // stealing focus would break a slider drag; ProseMirror keeps its selection
   // while blurred, so setColor still lands on the right run.
   const colorWrap = el('span', 'fc-cbtn doc-color');
@@ -434,7 +434,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const bDelRow = btn('fc-cbtn', IC.delRow, 'Delete row');
   const bDelCol = btn('fc-cbtn', IC.delCol, 'Delete column');
   const bTblHead = btn('fc-cbtn', 'H', 'Toggle header row');
-  // Cell fill — applies to the whole current cell selection (shift-click / drag a range).
+  // Cell fill - applies to the whole current cell selection (shift-click / drag a range).
   const fillWrap = el('span', 'fc-cbtn doc-color doc-cellfill');
   fillWrap.title = 'Cell fill'; fillWrap.style.setProperty('--sw', '#e8f6ee');
   mountColorField(fillWrap, 'doc-cellfill', {
@@ -483,7 +483,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
     if (stack) chain().setFontFamily(stack).run();
     else chain().unsetFontFamily().run();
   });
-  // Line height / letter spacing apply to the current paragraph OR heading — chaining both
+  // Line height / letter spacing apply to the current paragraph OR heading - chaining both
   // updateAttributes covers whichever the selection sits in (the other is a no-op). Empty → clear.
   on(lhSel, 'change', () => {
     const v = lhSel.value || null;
@@ -634,7 +634,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   stageEl.appendChild(tbarDock);
   refresh();
 
-  // Soft page-boundary guides — pages appear as content grows (infinite) and reset at any
+  // Soft page-boundary guides - pages appear as content grows (infinite) and reset at any
   // explicit page break. The per-page content step is derived inside from the paper's real
   // margins, so pass the full native page height (from the height input → A4/Letter/A5).
   const nativeH = Number(runtime.getModel().find((m) => m.id === 'height')?.value)

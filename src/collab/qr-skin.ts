@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * qr-skin — the QR half of the private-collab ceremony: draw one, scan one
+ * qr-skin - the QR half of the private-collab ceremony: draw one, scan one
  * (plan 100 §6.1 skin 2, §2.9, §11.27; wave 2.6).
  *
  * The ceremony is two payloads and the humans are the channel (§6.1). The link skin
  * covers "paste it into something we already trust"; this module covers the other
- * skin — "hold your laptops together" — which is the one that works with no network
+ * skin - "hold your laptops together" - which is the one that works with no network
  * at all, and is therefore the airgap case's primary path rather than a nicety.
  *
  * ── Why an encoder lives here at all ────────────────────────────────────────────
  *
  * The repo already renders QR codes, but not in a way shell chrome may use: the
- * `qr-code` tool is TOOL DATA — a manifest plus a `hooks.js` that inlines the MIT
+ * `qr-code` tool is TOOL DATA - a manifest plus a `hooks.js` that inlines the MIT
  * `qrcode-svg` library and runs inside the engine's `new Function('host', …)` scope.
  * Tools never import from the shell and the shell never imports from tools; that
  * boundary is what lets the same tool run unchanged in the browser, Tauri and the
@@ -28,17 +28,17 @@
  *   • **Error-correction level M only** (~15 % recovery). L is too fragile off a
  *     glossy screen at an angle, Q/H cost a version for reliability we do not need
  *     when the code is 30 cm from the camera.
- *   • **Alphanumeric and byte modes only** — no numeric, no kanji, no ECI. Byte mode
+ *   • **Alphanumeric and byte modes only** - no numeric, no kanji, no ECI. Byte mode
  *     emits UTF-8 without an ECI header (the spec's default byte charset is
  *     ISO-8859-1; every real scanner, `BarcodeDetector` included, sniffs UTF-8). The
  *     ceremony's payload is ASCII, so this only ever matters to another caller.
- *   • **Structured Append is not implemented** — one symbol, never a chain.
+ *   • **Structured Append is not implemented** - one symbol, never a chain.
  *
- * ── Why alphanumeric mode is load-bearing, not an optimisation ──────────────────
+ * ── Why alphanumeric mode is required, not an optimisation ──────────────────
  *
  * `sdp-codec.ts` dresses the QR payload in base32 (RFC 4648: `A–Z` + `2–7`)
  * specifically because every character of it is inside QR's 45-symbol alphanumeric
- * set, which packs a character PAIR into 11 bits — 5.5 bits/char against byte mode's
+ * set, which packs a character PAIR into 11 bits - 5.5 bits/char against byte mode's
  * 8. That note ends "pays off the moment an alphanumeric encoder is wired in". This
  * is that encoder, and the payoff is not cosmetic:
  *
@@ -63,12 +63,12 @@
  * ── What the QR carries ────────────────────────────────────────────────────────
  *
  * The bare codec token, not a URL. A `#/join?inv=…` link contains lowercase and `/`,
- * which forces byte mode and would blow the budget above twice over — and the QR skin
+ * which forces byte mode and would blow the budget above twice over - and the QR skin
  * exists precisely for the case where the pair has no shared network to open a link
  * on. The consequence is deliberate and worth stating in the UI: a generic phone
  * camera app pointed at this symbol shows a meaningless block of letters. The scan is
  * OUR dialog's job (below), which is also why `scanQrFromVideo` takes an `accept`
- * predicate — a stray QR in frame must not end the scan.
+ * predicate - a stray QR in frame must not end the scan.
  *
  * ── Colour: why not `currentColor` by default ──────────────────────────────────
  *
@@ -76,7 +76,7 @@
  * required to try an inverted pass, and several do not. `currentColor` in a dark
  * theme resolves to a LIGHT ink, which would silently produce a symbol that renders
  * beautifully and scans never. So the dark modules are painted `currentColor` with
- * `color="#000"` set on the `<svg>` as a PRESENTATION attribute — lowest priority in
+ * `color="#000"` set on the `<svg>` as a PRESENTATION attribute - lowest priority in
  * the cascade, so the default is always black, and a caller that genuinely controls
  * its surface (a brand-tinted code on a known light card) overrides it with one CSS
  * rule instead of a prop. The light background is a real painted rect by default,
@@ -86,21 +86,21 @@
  * ── Scanning is a progressive rung, never a dead end (§11.27) ───────────────────
  *
  * `BarcodeDetector` is Chromium-only (and even there it needs a platform barcode
- * backend, which some Linux builds lack — the API can exist and support NO formats).
+ * backend, which some Linux builds lack - the API can exist and support NO formats).
  * Safari and Firefox have nothing. There is deliberately **no fallback decoder**:
  * shipping a second image-processing pipeline to cover browsers whose users can paste
  * a token in two seconds is the wrong trade. `probeBarcodeDetector()` answers with a
  * machine-readable capability so the dialog can label the option honestly and lead
- * with paste where scanning is impossible — the copy is the dialog's (it is i18n'd,
+ * with paste where scanning is impossible - the copy is the dialog's (it is i18n'd,
  * wave 2.7), the fact is this module's.
  *
  * Camera acquisition is NOT here either. Getting a `MediaStream` and a playing
- * `<video>` is the caller's job through the shell's existing idioms —
+ * `<video>` is the caller's job through the shell's existing idioms - 
  * `navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })`,
  * exactly as `bridge/media.ts` and `views/picker.ts` do it, with the same
  * teardown discipline (stop every track when the dialog closes). This module takes a
  * video element that is already playing and reads frames off it. That split keeps one
- * camera-permission story in the shell, and it is worth noting §11.1's happy
+ * camera-permission story in the shell. Note §11.1's happy
  * accident: the camera grant that scanning needs is also what makes the browser stop
  * hiding host IPs behind mDNS names, so the scan prompt improves the odds that the
  * pairing it is part of connects at all.
@@ -130,7 +130,7 @@ export const QR_ALPHANUMERIC_SET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./
 export type QrErrorCode =
   /** Nothing to encode. */
   | 'empty'
-  /** Does not fit version 10 at level M — the caller falls back to the paste path. */
+  /** Does not fit version 10 at level M - the caller falls back to the paste path. */
   | 'too-large'
   /** Not a string, or options out of range. */
   | 'bad-input';
@@ -172,7 +172,7 @@ export interface QrEncodeOptions {
 }
 
 export interface QrSvgOptions {
-  /** Quiet-zone width in modules. Default 4 — below that, scanners start failing. */
+  /** Quiet-zone width in modules. Default 4 - below that, scanners start failing. */
   readonly margin?: number;
   /** Paint for the dark modules. Default `currentColor` (see the header). */
   readonly dark?: string;
@@ -204,7 +204,7 @@ function fail(code: QrErrorCode, reason: string): QrFailure {
 
 /**
  * EC codewords per block, and block count, at level M for versions 1–10. Everything
- * else — total codewords, data codewords, the size of each block — is DERIVED from
+ * else - total codewords, data codewords, the size of each block - is DERIVED from
  * these two rows plus the module geometry, so there is one place to be wrong rather
  * than four that must agree. The test pins the derived numbers against the published
  * table, which is the check that the two rows are right.
@@ -273,7 +273,7 @@ function countBits(version: number, mode: QrMode): number {
 // ── Bit stream ────────────────────────────────────────────────────────────────
 
 /**
- * Bits as one entry each. A version-10 symbol is 1,728 of them — the clarity of
+ * Bits as one entry each. A version-10 symbol is 1,728 of them - the clarity of
  * "one push per bit" is worth more here than the bytes a packed writer would save.
  */
 function appendBits(bits: number[], value: number, width: number): void {
@@ -365,7 +365,7 @@ function rsDivisor(degree: number): Uint8Array {
   return result;
 }
 
-/** The remainder of `data` × x^degree divided by the generator — i.e. the EC codewords. */
+/** The remainder of `data` × x^degree divided by the generator - i.e. the EC codewords. */
 export function rsEncode(data: Uint8Array, degree: number): Uint8Array {
   const divisor = rsDivisor(degree);
   const result = new Uint8Array(degree);
@@ -381,7 +381,7 @@ export function rsEncode(data: Uint8Array, degree: number): Uint8Array {
 /**
  * §8.6: split the message into blocks, append each block's EC codewords, then
  * interleave data across blocks and EC across blocks. Block sizes come out of the
- * division rather than a table — the short blocks come first, which is what the
+ * division rather than a table - the short blocks come first, which is what the
  * standard's grouping means in practice.
  */
 function addEccAndInterleave(version: number, data: Uint8Array): Uint8Array {
@@ -574,14 +574,14 @@ const FINDER_LIKE = [
  * Mask-selection penalty. Rule 3 is implemented as a literal 11-module window search
  * for the two finder-like sequences rather than the run-length formulation, which
  * differs only at the symbol's own edge (where the standard treats the outside as
- * light). The effect is confined to mask CHOICE — every candidate is a fully valid
- * symbol either way — so the simpler, obviously-correct reading wins.
+ * light). The effect is confined to mask CHOICE - every candidate is a fully valid
+ * symbol either way - so the simpler, obviously-correct reading wins.
  */
 function penalty(g: Grid): number {
   const n = g.size;
   let score = 0;
 
-  // Rule 1 — runs of five or more of one colour, in both directions.
+  // Rule 1 - runs of five or more of one colour, in both directions.
   for (let pass = 0; pass < 2; pass++) {
     for (let a = 0; a < n; a++) {
       let runColour = -1;
@@ -600,7 +600,7 @@ function penalty(g: Grid): number {
     }
   }
 
-  // Rule 2 — every 2×2 block of one colour.
+  // Rule 2 - every 2×2 block of one colour.
   for (let y = 0; y < n - 1; y++) {
     for (let x = 0; x < n - 1; x++) {
       const c = isDark(g, x, y);
@@ -610,7 +610,7 @@ function penalty(g: Grid): number {
     }
   }
 
-  // Rule 3 — 1:1:3:1:1 finder-like patterns with their four light modules.
+  // Rule 3 - 1:1:3:1:1 finder-like patterns with their four light modules.
   for (const pattern of FINDER_LIKE) {
     for (let a = 0; a < n; a++) {
       for (let b = 0; b + 11 <= n; b++) {
@@ -628,7 +628,7 @@ function penalty(g: Grid): number {
     }
   }
 
-  // Rule 4 — deviation of the dark proportion from 50 %, in 5 % steps.
+  // Rule 4 - deviation of the dark proportion from 50 %, in 5 % steps.
   let dark = 0;
   for (let i = 0; i < g.dark.length; i++) dark += g.dark[i]!;
   const total = n * n;
@@ -711,7 +711,7 @@ export function encodeQr(text: string, opts: QrEncodeOptions = {}): QrResult<QrS
         best = score;
         mask = m;
       }
-      applyMask(g, m); // XOR is self-inverse — put the unmasked data back
+      applyMask(g, m); // XOR is self-inverse - put the unmasked data back
     }
   }
   applyMask(g, mask);
@@ -787,7 +787,7 @@ export function renderQrSvg(text: string, opts: QrEncodeOptions & QrSvgOptions =
 
 /**
  * The `opts.renderQr` shape the ceremony dialog documents (§6.1): text in, SVG out.
- * Throws {@link QrRenderError} — the only throwing export in this module — because the
+ * Throws {@link QrRenderError} - the only throwing export in this module - because the
  * callback signature has nowhere to put a failure. Callers that would rather branch
  * than catch should use {@link renderQrSvg}; either way an over-capacity payload means
  * "show the paste path", not "show a broken image".
@@ -813,7 +813,7 @@ export interface QrElementOptions extends QrEncodeOptions, QrSvgOptions {
 /**
  * The shape `components/collab-ceremony.ts` asks for: `(text) => HTMLElement | null`.
  *
- * Two deliberate choices. It returns a **wrapping `<div>`**, not the `<svg>` — an
+ * Two deliberate choices. It returns a **wrapping `<div>`**, not the `<svg>` - an
  * `<svg>` is an `SVGElement`, not an `HTMLElement`, and the wrapper is also where the
  * sizing lives, so the caller's slot needs no stylesheet of its own. And it returns
  * **null instead of throwing** on a payload that will not fit or a shell with no
@@ -822,7 +822,7 @@ export interface QrElementOptions extends QrEncodeOptions, QrSvgOptions {
  * swallowed error.
  *
  * The `<svg>` is sized `width:100%; height:auto` against the wrapper's `max-width`,
- * which is the only combination that behaves in every engine — a percentage HEIGHT
+ * which is the only combination that behaves in every engine - a percentage HEIGHT
  * inside an auto-height parent is the aspect-ratio trap this codebase has been bitten
  * by before.
  */
@@ -849,7 +849,7 @@ export function createQrElementRenderer(
 
 // ── Scan (§11.27) ─────────────────────────────────────────────────────────────
 
-/** The slice of `BarcodeDetector` this module uses, typed structurally — the DOM lib has none. */
+/** The slice of `BarcodeDetector` this module uses, typed structurally - the DOM lib has none. */
 interface BarcodeDetectorLike {
   detect(source: unknown): Promise<readonly { readonly rawValue?: unknown }[]>;
 }
@@ -860,7 +860,7 @@ interface BarcodeDetectorCtor {
 }
 
 export type QrScanUnsupportedReason =
-  /** No `BarcodeDetector` at all — Safari, Firefox, older Chromium. */
+  /** No `BarcodeDetector` at all - Safari, Firefox, older Chromium. */
   | 'no-api'
   /** The API exists but the platform's backend does not decode QR (some Linux builds). */
   | 'no-qr-format'
@@ -903,7 +903,7 @@ export interface QrProbeOptions {
  * dialog that trusted `'BarcodeDetector' in window` would put a camera in front of a
  * user and then never decode anything. Where the static `getSupportedFormats` is
  * missing entirely (a polyfill, an older build) the fallback is to construct the
- * detector asking for QR and believe a success — the strictest thing we can do without
+ * detector asking for QR and believe a success - the strictest thing we can do without
  * refusing a scanner that actually works.
  */
 export function probeBarcodeDetector(opts: QrProbeOptions = {}): Promise<QrScanCapability> {
@@ -942,7 +942,7 @@ export function probeBarcodeDetector(opts: QrProbeOptions = {}): Promise<QrScanC
   return promise;
 }
 
-/** Drop the cached probe. Tests only — the answer is stable within a page load. */
+/** Drop the cached probe. Tests only - the answer is stable within a page load. */
 export function resetQrScanProbe(): void {
   probeCache = null;
 }
@@ -957,7 +957,7 @@ export interface QrVideoLike {
 export interface QrScanOptions {
   /** Abort the scan (dialog closed, step cancelled). Resolves `null`, never rejects. */
   readonly signal?: AbortSignal;
-  /** Poll period. Default 200 ms ≈ 5 Hz — enough for a held-still code, cheap enough
+  /** Poll period. Default 200 ms ≈ 5 Hz - enough for a held-still code, cheap enough
    *  to leave the camera preview smooth. */
   readonly intervalMs?: number;
   /** Where to find `BarcodeDetector`. Tests pass a stub. */
@@ -979,7 +979,7 @@ export interface QrScanOptions {
  */
 const MAX_CONSECUTIVE_DETECT_FAILURES = 8;
 
-/** `HAVE_CURRENT_DATA` — below this there is no frame to read. */
+/** `HAVE_CURRENT_DATA` - below this there is no frame to read. */
 const VIDEO_HAVE_CURRENT_DATA = 2;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -1001,7 +1001,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * One decode attempt against any `ImageBitmapSource` (a `<video>`, a canvas, a blob-
  * backed `ImageBitmap`). Resolves the first accepted `rawValue`, or `null`. Rejections
- * from `detect()` propagate — the polling loop above is what decides they are survivable.
+ * from `detect()` propagate - the polling loop above is what decides they are survivable.
  */
 async function detectOnce(
   detector: BarcodeDetectorLike,
@@ -1021,12 +1021,12 @@ async function detectOnce(
 
 /**
  * Poll a playing `<video>` until a QR decodes, the signal aborts, or the detector gives
- * up. Resolves the decoded string or `null` — it never rejects and never throws, because
+ * up. Resolves the decoded string or `null` - it never rejects and never throws, because
  * the caller is a dialog step whose alternative path (paste) must always stay reachable.
  *
  * The camera is NOT this function's business: the caller owns `getUserMedia`, the
  * element, and stopping every track afterwards (see `bridge/media.ts` for the shell's
- * idiom). Scanning without support resolves `null` immediately rather than pretending —
+ * idiom). Scanning without support resolves `null` immediately rather than pretending - 
  * probe first, and lead with paste when the answer is no.
  */
 export async function scanQrFromVideo(video: QrVideoLike, opts: QrScanOptions = {}): Promise<string | null> {
@@ -1071,13 +1071,13 @@ export async function scanQrFromVideo(video: QrVideoLike, opts: QrScanOptions = 
 /**
  * Bind a video element once and hand the ceremony dialog its `opts.scan`: the returned
  * function takes an optional `{ signal }`, so it also satisfies the no-argument
- * `() => Promise<string | null>` the dialog declares — bind the dialog's own abort
+ * `() => Promise<string | null>` the dialog declares - bind the dialog's own abort
  * signal here and a closed dialog stops the poll loop even though `scan()` is called
  * with nothing.
  *
  * The whole wiring, in one place so nobody invents a second camera story. The dialog
  * exposes no abort signal of its own, so the caller owns one and fires it from
- * `onClose` — which is also what stops the poll loop when the ceremony is cancelled
+ * `onClose` - which is also what stops the poll loop when the ceremony is cancelled
  * mid-scan:
  *
  * ```ts

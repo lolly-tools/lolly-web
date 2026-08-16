@@ -3,8 +3,8 @@
  * Unit tests for the pure vector operations behind the canvas editor's context menu.
  * Run directly:  node --test shells/web/src/views/vector-ops.test.ts
  *
- * Every assertion is against an INDEPENDENT oracle — a closed-form area, a bounding box
- * worked out by hand, a membership question answered by reasoning about the shapes — never
+ * Every assertion is against an INDEPENDENT oracle - a closed-form area, a bounding box
+ * worked out by hand, a membership question answered by reasoning about the shapes - never
  * against this module's own output. The one place a tolerance appears is where a cubic
  * approximates a circular arc: the kappa construction encloses about 2.7e-4 more than the
  * true circle, and (per the kernel plan's own warning) checking an exact formula against an
@@ -100,7 +100,7 @@ const okOf = (r: { ok: boolean }): r is { ok: true; boxes: Box[]; skipped: numbe
 /**
  * How exact a round trip THROUGH PERSISTENCE can be, and why it is not 1e-9.
  *
- * A stored node is a fraction of the box frame written at six decimals — the codec fixes
+ * A stored node is a fraction of the box frame written at six decimals - the codec fixes
  * the precision (see engine/src/geom/authored-url.ts) so that the same shape always
  * encodes to the same bytes and an opened, re-shared link does not churn. A control point
  * therefore returns within about 1e-6 of the frame's side in px (a node's own rounding
@@ -180,7 +180,7 @@ test('boxToPath: a pill is exactly the clamped radius, not a shape of its own', 
 test('boxToPath: a pill on a SQUARE box is a circle-radius shape with no straight edges', () => {
   const p = boxToPath(shapeBox({ shape: 'pill', w: 100, h: 100 }));
   assertFinite(p, 'square pill');
-  // r = 50 = w/2 = h/2, so all four straight edges are zero-length and are dropped —
+  // r = 50 = w/2 = h/2, so all four straight edges are zero-length and are dropped - 
   // never emitted as degenerate cubics the intersector cannot take a tangent from.
   assert.equal(p[0]!.curves.length, 4);
   assertClose(area(p), 2500 * Math.PI, 3e-4, 'square pill area');
@@ -315,7 +315,7 @@ test('boxToPath: unusable path fields lower to null, never to a rectangle', () =
     '1!cubic!1_0!0',          // one node lowers to no curves
     '%7B%22kind',             // percent-encoded anything: this format needs no escaping
     // The OLD shell-side format (percent-encoded JSON) is refused outright rather than
-    // partly read — the seam this module's codec delegation exists to close.
+    // partly read - the seam this module's codec delegation exists to close.
     encodeURIComponent(JSON.stringify(linePath([[0, 0], [1, 0], [1, 1]]))),
     JSON.stringify(linePath([[0, 0], [1, 0], [1, 1]])),
   ];
@@ -326,7 +326,7 @@ test('boxToPath: unusable path fields lower to null, never to a rectangle', () =
 
 test('boxToPath: an EMPTY handle field reads as "no handle", not as a handle of zero', () => {
   // Written literally, because the encoder trims the trailing empties this exercises:
-  // node 0 declares a handle block of four blanks, which must mean "absent" — a handle
+  // node 0 declares a handle block of four blanks, which must mean "absent" - a handle
   // pinned at the point would collapse the segment instead of leaving it straight.
   const p = boxToPath({ kind: 'path', w: 100, h: 100, path: '1!cubic!1_0!0!!!!_1!0_1!1' } as Box);
   assertFinite(p, 'empty handle fields');
@@ -335,13 +335,13 @@ test('boxToPath: an EMPTY handle field reads as "no handle", not as a handle of 
 
 test('boxToPath: a non-finite handle is rejected rather than propagated', () => {
   // `1e999` is Infinity to `Number()`, and the exponent form is not something this
-  // format emits — either reason is enough to refuse the whole value.
+  // format emits - either reason is enough to refuse the whole value.
   assert.equal(boxToPath({ kind: 'path', w: 100, h: 100, path: '1!cubic!1_0!0!1e999!0!0!0_1!1' } as Box), null);
 });
 
 test('decodeAuthoredPath: too-complex and malformed stay apart, and agree with the engine', () => {
-  // The distinction is the ENGINE's to make — the shell must not guess where the
-  // boundary is — so the oracle is the engine's own reason for the same value.
+  // The distinction is the ENGINE's to make - the shell must not guess where the
+  // boundary is - so the oracle is the engine's own reason for the same value.
   const nodes = (n: number): { x: number; y: number; hInX: number; hOutY: number }[] =>
     Array.from({ length: n }, (_, i) => ({ x: i / n, y: 0.123456, hInX: -0.027345, hOutY: 0.019876 }));
   // Legal to encode (20k nodes is the ceiling, not past it) but far past the character
@@ -612,7 +612,7 @@ test('booleanBoxes: an unreadable path field is bad-input, distinct from no-outl
 });
 
 test('booleanBoxes: past the kernel ceiling, difference refuses as too-complex', () => {
-  // 8100 line segments in one operand — over boolean.ts's MAX_CURVES, where difference
+  // 8100 line segments in one operand - over boolean.ts's MAX_CURVES, where difference
   // throws GeomLimitError rather than hand back the first operand unchanged.
   const nodes: { x: number; y: number }[] = [];
   for (let i = 0; i < 8100; i++) nodes.push({ x: i / 8100, y: i % 2 });
@@ -631,7 +631,7 @@ const square100 = shapeBox({ id: 'sq', x: 0, y: 0, w: 100, h: 100, bg: '#123456'
 test('offsetBoxes: a square grown by d has the area each join style implies', () => {
   const d = 10;
   const cases: [NonNullable<Parameters<typeof offsetBoxes>[2]>['join'], number][] = [
-    // miter: the full (w+2d)(h+2d) box — the mitres fill each corner square.
+    // miter: the full (w+2d)(h+2d) box - the mitres fill each corner square.
     ['miter', (100 + 2 * d) * (100 + 2 * d)],
     // round: the box plus a quarter disc per corner → w·h + 2d(w+h) + πd².
     ['round', 10000 + 2 * d * 200 + Math.PI * d * d],
@@ -736,7 +736,7 @@ test('strokeBoxesToPath: CORNERS default to the box\'s own, and a bad value is i
   assertClose(outlined({ ...square100, strokeJoin: 'miter' }), 4000, 1e-9, 'miter from the box');
   assertClose(outlined({ ...square100, strokeJoin: 'bevel' }), 3950, 1e-9, 'bevel from the box');
   assertClose(outlined({ ...square100, strokeJoin: 'round' }), 4000 - 4 * 25 + Math.PI * 25, 1e-3, 'round from the box');
-  // An explicit option still wins over the box — the caller is the outer authority.
+  // An explicit option still wins over the box - the caller is the outer authority.
   assertClose(outlined({ ...square100, strokeJoin: 'bevel' }, { join: 'miter' }), 4000, 1e-9, 'opts override');
   // A value that is not a join at all is the KERNEL'S DEFAULT, never a refused operation:
   // the box carries whatever the model holds, and a URL can write anything into it.
@@ -762,7 +762,7 @@ test('strokeBoxesToPath: CORNERS default to the box\'s own, and a bad value is i
 });
 
 test('strokeBoxesToPath: the outlined result carries no dash', () => {
-  // `strokeToPath` outlines the whole centreline — the kernel has no dash stage — so a
+  // `strokeToPath` outlines the whole centreline - the kernel has no dash stage - so a
   // dashed stroke outlines as one continuous shape and the dash describes nothing about
   // the result. Carrying it through would leave a style waiting to reappear the moment
   // someone gives the filled result a stroke of its own.
@@ -796,7 +796,7 @@ test('pathToBox: stroke DECORATION is inherited with the rest of the paint', () 
   assert.equal(out.opacity, 40);
   assert.equal(out.blend, 'multiply');
 
-  // A donor that never set them does not gain them — an absent field stays absent rather
+  // A donor that never set them does not gain them - an absent field stays absent rather
   // than being written as a default, which would put three columns into every shared URL.
   const plain = booleanBoxes([donor, lower], 'union');
   assert.ok(okOf(plain));
@@ -821,7 +821,7 @@ test('simplifyBoxes: fewer nodes, same shape', () => {
   assertFinite(before, 'dense circle');
   // 2px, not 0.05: the kernel's `simplifyCubics` refuses to shorten this loop below a
   // tolerance of about 2, even though the 4-segment kappa circle it eventually returns is
-  // accurate to 0.03 on r=100. Conservative, not wrong — but the number is the kernel's.
+  // accurate to 0.03 on r=100. Conservative, not wrong - but the number is the kernel's.
   const r = simplifyBoxes([b], 3);
   assert.ok(okOf(r), JSON.stringify(r));
   assertFinite(r.path, 'simplified');

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Neurospicy Mode — a background focus-beat player. Loops ONE catalog audio asset (any
- * type:'audio' catalog entry — the focus loops/songs tagged 'neurospicy' plus the brand's
+ * Neurospicy Mode - a background focus-beat player. Loops ONE catalog audio asset (any
+ * type:'audio' catalog entry - the focus loops/songs tagged 'neurospicy' plus the brand's
  * other audio, e.g. licensed music beds) continuously while using the app, with a
  * volume. State (enabled / loop id / volume) persists to the PROFILE (canonical) + a
  * localStorage mirror (known before the profile loads), exactly like the sfx mute. Gapless:
  * each loop is decoded into an AudioBuffer and played via an AudioBufferSourceNode(loop=true)
- * — so mp3/aac priming gaps never apply. Shell chrome (host audio), never the engine.
+ * - so mp3/aac priming gaps never apply. Shell chrome (host audio), never the engine.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
@@ -15,12 +15,12 @@ import { renderModToAudioBuffer, isModuleFormat } from './mod-render.ts';
 import { RADIO_STATIONS, radioStation, isRadioId, radioAvailable, resolveStreamUrl } from './radio.ts';
 import { isSfxMuted } from './sfx.ts';
 
-// Just the host surface this module uses — the catalog assets (loop list + bytes) and the
+// Just the host surface this module uses - the catalog assets (loop list + bytes) and the
 // profile (persist). host.profile.set is a web-shell capability, not on the read-only engine
 // ProfileAPI, so this is the shared shape the shell and this module agree on.
 export type NeurospicyHost = {
   // `_listUserAssets` is a web-shell-internal method (not on the read-only engine
-  // AssetAPI) — used to surface the user's OWN uploaded audio (which query() can't
+  // AssetAPI) - used to surface the user's OWN uploaded audio (which query() can't
   // see, as it only reads catalog assets). Optional so non-web hosts just skip it.
   assets: Pick<HostV1['assets'], 'get' | 'query'> & {
     _listUserAssets?(): Promise<Array<{ id: string; type?: string; format?: string; url?: string; meta?: Record<string, unknown> }>>;
@@ -30,7 +30,7 @@ export type NeurospicyHost = {
 
 export interface NeurospicyState { enabled: boolean; loopId: string; volume: number; repeat: boolean; }
 const KEY = 'lolly:neurospicy';
-// repeat: the classic behaviour — the selected track loops forever. false = play
+// repeat: the classic behaviour - the selected track loops forever. false = play
 // FORWARD through the list, advancing to the next track when the current one ends.
 // Defaults to repeat (true), so nothing changes for anyone who never touches the
 // toggle; spread into readInitial/hydrate so older persisted states inherit it.
@@ -47,7 +47,7 @@ async function persistProfile(host: NeurospicyHost): Promise<void> {
 }
 export function getNeurospicy(): NeurospicyState { return { ...state }; }
 /** Demo override for the ?neuro deep-link (lib/neuro-demo.ts): assign player state
- *  IN MEMORY only — no persistLocal, no persistProfile — so a shared demo link
+ *  IN MEMORY only - no persistLocal, no persistProfile - so a shared demo link
  *  affects exactly one page load. `paused: false` makes isNeurospicyPlaying()
  *  report the "playing" look; nothing here touches the audio graph, so no audio
  *  ever autoplays. */
@@ -78,12 +78,12 @@ let srcStartedAt = 0;
 let srcOffset = 0;
 // Radio plays through an <audio> element (a live stream has no buffer to decode), but it
 // is routed INTO the graph via createMediaElementSource so the meter and the visualizer
-// see it — SomaFM's icecast sends `Access-Control-Allow-Origin: *`, which is exactly what
+// see it - SomaFM's icecast sends `Access-Control-Allow-Origin: *`, which is exactly what
 // a MediaElementSource needs, and radio is where people end up once they've heard their
 // own catalogue enough times.
 //
 // The tap is FAIL-CLOSED: `crossOrigin` must be set before `src`, and an element loading a
-// stream whose server omits the header refuses to play at all — silence, not just a dark
+// stream whose server omits the header refuses to play at all - silence, not just a dark
 // meter. So a refused load remembers that host and replays the same URL on a fresh,
 // untapped element. An element can only ever produce ONE MediaElementSource, so the
 // element and its node are created and dropped together.
@@ -93,18 +93,18 @@ let radioSource: MediaElementAudioSourceNode | null = null;
  *  header is a property of the server, so one station without it must not cost every other
  *  station its meter for the rest of the session. */
 const untappedHosts = new Set<string>();
-/** There's no graph to tap into at all (no Web Audio in this browser) — then nothing is
+/** There's no graph to tap into at all (no Web Audio in this browser) - then nothing is
  *  ever tapped, and that IS session-wide. */
 let graphTapUnavailable = false;
 let playingId = '';
-let paused = false;   // transient transport pause (the play/pause button) — mode stays enabled
+let paused = false;   // transient transport pause (the play/pause button) - mode stays enabled
 const buffers = new Map<string, AudioBuffer>();
 const urlById = new Map<string, string>();
 // A track is either an encoded audio file (fetch + decodeAudioData) or a ZzFXM
 // song (format 'zzfxm' → render to PCM). Cache the format alongside the URL so
 // loadBuffer picks the right path.
 const formatById = new Map<string, string>();
-// The most recent host play() ran with — so seekNeurospicy (which carries no host
+// The most recent host play() ran with - so seekNeurospicy (which carries no host
 // of its own) and a source's natural-end handler can advance the playlist in
 // FORWARD mode without threading host through every call site.
 let activeHost: NeurospicyHost | null = null;
@@ -114,7 +114,7 @@ let activeHost: NeurospicyHost | null = null;
  * repeat → loop forever (onended never fires); forward → play once and advance to
  * the next track when it ends. onended ALSO fires on a manual stop() (track
  * switch, seek, pause), so those paths null it out BEFORE stopping (see
- * stopSource / seekNeurospicy) — leaving only a natural end to trigger an advance.
+ * stopSource / seekNeurospicy) - leaving only a natural end to trigger an advance.
  */
 function armSourceEnd(s: AudioBufferSourceNode, host: NeurospicyHost | null): void {
   s.loop = state.repeat;
@@ -123,7 +123,7 @@ function armSourceEnd(s: AudioBufferSourceNode, host: NeurospicyHost | null): vo
     // shouldn't keep going (paused, disabled, sound muted).
     if (s !== src || !state.enabled || paused || isSfxMuted()) return;
     // Drop the spent one-shot BEFORE advancing: cycleNeurospicyLoop → play() and,
-    // for a single-track (or wrap-to-self) list, that lands on the SAME id — where
+    // for a single-track (or wrap-to-self) list, that lands on the SAME id - where
     // play()'s idempotency guard (`src && playingId === loopId`) would otherwise
     // short-circuit and never build a fresh source, leaving audio dead. Clearing
     // src here forces the rebuild.
@@ -154,7 +154,7 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
 export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
 
 /**
- * The shared focus-audio context, built and resumed on demand — for the Atmosphere
+ * The shared focus-audio context, built and resumed on demand - for the Atmosphere
  * ambience layers (lib/atmosphere.ts), which sound alongside the music rather than
  * through it. Browsers cap how many AudioContexts a page may hold, so ambience
  * borrows this one instead of opening a second; it connects to `ctx.destination`
@@ -169,14 +169,14 @@ export function isNeurospicyRadio(): boolean {
 }
 
 /**
- * Whether anything is actually reaching the analyser, and if not, why — the one predicate
+ * Whether anything is actually reaching the analyser, and if not, why - the one predicate
  * the level meter and the visualizer both branch on, so they can never disagree about
  * whether there's a signal.
  *
- *   live          — a local buffer source, or a tapped radio stream, is sounding
- *   idle          — paused, disabled, or interface sound is muted
- *   connecting    — playing, but the track/stream hasn't started producing samples yet
- *   unanalysable  — a radio stream whose server wouldn't allow the tap, so it plays but
+ *   live - a local buffer source, or a tapped radio stream, is sounding
+ *   idle - paused, disabled, or interface sound is muted
+ *   connecting - playing, but the track/stream hasn't started producing samples yet
+ *   unanalysable - a radio stream whose server wouldn't allow the tap, so it plays but
  *                   can't be drawn. A UI that shows a meter has to say this out loud, or
  *                   it just looks broken.
  */
@@ -186,13 +186,13 @@ export function neurospicySignalState(): NeuroSignalState {
   if (radioSource && radioEl && !radioEl.paused && radioEl.readyState >= 2) return 'live';
   if (!isNeurospicyPlaying()) return 'idle';
   // An untapped element on a radio selection can never produce samples, however well it's
-  // playing — say so rather than leaving the UI on "connecting" forever.
+  // playing - say so rather than leaving the UI on "connecting" forever.
   if (isNeurospicyRadio() && radioEl && !radioSource) return 'unanalysable';
   return 'connecting';
 }
 
 /** Position within the current LOCAL track (a looping buffer, so it wraps). Null for
- *  radio or while no local source is sounding — callers hide their seek bar then. */
+ *  radio or while no local source is sounding - callers hide their seek bar then. */
 export function getNeurospicyProgress(): { position: number; duration: number } | null {
   if (!src?.buffer || !ctx) return null;
   const dur = src.buffer.duration;
@@ -209,7 +209,7 @@ export function seekNeurospicy(seconds: number): void {
   const buf = src?.buffer;
   if (!a || !src || !buf) return;
   const offset = ((seconds % buf.duration) + buf.duration) % buf.duration;
-  src.onended = null; // our own swap, not a natural end — don't advance the list
+  src.onended = null; // our own swap, not a natural end - don't advance the list
   try { src.stop(); } catch { /* already stopped */ }
   src.disconnect();
   const s = a.ctx.createBufferSource();
@@ -275,7 +275,7 @@ function ensureRadioEl(tap: boolean): HTMLAudioElement {
   return el;
 }
 
-/** Drop the element AND its source node together — the only way to un-tap, since an element
+/** Drop the element AND its source node together - the only way to un-tap, since an element
  *  that has produced a MediaElementSource can never produce another. */
 function dropRadioEl(): void {
   if (radioSource) { try { radioSource.disconnect(); } catch { /* already gone */ } radioSource = null; }
@@ -289,7 +289,7 @@ function dropRadioEl(): void {
 }
 
 /** Volume lives on the graph's gain when the stream is tapped, and on the element itself
- *  when it isn't — otherwise the slider would move nothing in one of the two paths. */
+ *  when it isn't - otherwise the slider would move nothing in one of the two paths. */
 function applyRadioVolume(): void {
   if (!radioEl) return;
   if (radioSource) {
@@ -305,7 +305,7 @@ function applyRadioVolume(): void {
  *
  * A load error on a TAPPED element is treated as the CORS refusal it almost always is: drop
  * the tap and replay the same URL untapped, so the worst case is a dark visualizer rather
- * than silence. Exactly one retry — the rebuilt element is untapped, so a second error falls
+ * than silence. Exactly one retry - the rebuilt element is untapped, so a second error falls
  * through as the genuine stream failure it then is.
  */
 function startRadioStream(url: string, id: string): void {
@@ -314,7 +314,7 @@ function startRadioStream(url: string, id: string): void {
   el.onerror = (): void => {
     el.onerror = null;
     // A cleared src (our own stop) is not a failure, and an already-untapped element that
-    // errors is a real stream problem — leave it silent, as before.
+    // errors is a real stream problem - leave it silent, as before.
     if (!el.getAttribute('src') || !radioSource) return;
     console.warn('[lolly:neuro] the station refused a CORS-tapped load — replaying it without the analyser tap');
     untappedHosts.add(streamHost(url));
@@ -323,7 +323,7 @@ function startRadioStream(url: string, id: string): void {
   };
   // A stream takes a moment to connect and buffer, so it is NOT yet 'live' when play() is
   // called. The meter and the visualizer both stand themselves down when there's no signal
-  // and restart on this event — without it they'd park on the baseline for the whole track.
+  // and restart on this event - without it they'd park on the baseline for the whole track.
   el.onplaying = (): void => notifyPlaying();
   el.src = url;
   applyRadioVolume();
@@ -344,11 +344,11 @@ async function playRadio(): Promise<void> {
     const streamUrl = await resolveStreamUrl(station.pls);
     if (state.loopId !== id || !state.enabled || paused || isSfxMuted()) return; // state changed while resolving
     startRadioStream(streamUrl, id);
-  } catch { /* offline / stream unavailable — leave silent */ }
+  } catch { /* offline / stream unavailable - leave silent */ }
 }
 
 // Decoded PCM is big (~1.4 MB per stereo second) and the track list now spans the
-// whole catalog, including multi-minute music beds (tens of MB each decoded) — so the
+// whole catalog, including multi-minute music beds (tens of MB each decoded) - so the
 // cache is bounded by BYTES, not entries, evicting least-recently-played first. The
 // currently-sounding buffer is skipped (its source holds it alive regardless, so
 // evicting it would only force a pointless re-decode on replay).
@@ -368,7 +368,7 @@ async function loadBuffer(id: string, url: string, format: string | undefined): 
     } else if (isModuleFormat(format)) {
       // A tracker module (.mod/.xm/.s3m/.it/…): tiny sample-based song data no browser
       // <audio> can play. libopenmpt (WASM) decodes it to PCM in a worker, one pass, so
-      // it flows through this same buffer path — meter, seek, loop all come for free.
+      // it flows through this same buffer path - meter, seek, loop all come for free.
       const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
       buf = await renderModToAudioBuffer(a.ctx, bytes);
     } else {
@@ -400,7 +400,7 @@ async function play(host: NeurospicyHost): Promise<void> {
   const a = audio(); if (!a) return;
   // Capture the target now: awaits below can interleave with another play() (rapid
   // next/next, or a concurrent playRadio), so re-validate the selection afterwards
-  // — otherwise a slow load could start a stale source over the current one.
+  // - otherwise a slow load could start a stale source over the current one.
   const id = state.loopId;
   let url = urlById.get(id);
   let format = formatById.get(id);
@@ -425,7 +425,7 @@ async function play(host: NeurospicyHost): Promise<void> {
   notifyPlaying();
 }
 
-// Signal that audio just started, so the dock's level meter (re)starts its rAF —
+// Signal that audio just started, so the dock's level meter (re)starts its rAF - 
 // notably on the boot autoplay-resume path, where the analyser doesn't exist until
 // the armed gesture fires play(). Kept as a DOM event to avoid the lib↔component dep.
 function notifyPlaying(): void {
@@ -433,7 +433,7 @@ function notifyPlaying(): void {
 }
 
 // Signal that the enabled flag changed, so other rendered instances of the Sound-settings
-// toggle (e.g. an already-open popover elsewhere) can repaint to match — see wireNeurospicy
+// toggle (e.g. an already-open popover elsewhere) can repaint to match - see wireNeurospicy
 // in sound-toggle.ts.
 function notifyEnabledChanged(): void {
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-enabled'));
@@ -454,7 +454,7 @@ export async function setNeurospicyEnabled(host: NeurospicyHost, on: boolean): P
 export function isNeurospicyPlaying(): boolean {
   return state.enabled && !paused && !isSfxMuted();
 }
-/** The play/pause transport — pause/resume WITHOUT turning the mode off. Returns the new playing state. */
+/** The play/pause transport - pause/resume WITHOUT turning the mode off. Returns the new playing state. */
 export async function toggleNeurospicyPlay(host: NeurospicyHost): Promise<boolean> {
   paused = !paused;
   if (paused) stopSource(); else await play(host);
@@ -471,21 +471,21 @@ export function setNeurospicyVolume(host: NeurospicyHost, v: number): void {
 }
 /** Switch between repeat (loop the current track) and forward (advance through
  *  the list when a track ends). Re-arms the live source so it takes effect at once
- *  — repeat→forward lets the current track finish then advances; forward→repeat
+ * - repeat→forward lets the current track finish then advances; forward→repeat
  *  makes it loop from here on. */
 export async function setNeurospicyRepeat(host: NeurospicyHost, repeat: boolean): Promise<void> {
   state.repeat = repeat; persistLocal(); void persistProfile(host);
   activeHost = host;
   if (src) armSourceEnd(src, host);
 }
-/** Stop playback now WITHOUT changing the saved enabled state — used when the
+/** Stop playback now WITHOUT changing the saved enabled state - used when the
  *  Neurospicy feature flag is switched off (hide + silence, keep the preference). */
 export function stopNeurospicy(): void { stopSource(); }
 
 // ── the track catalogue (every type:'audio' catalog asset) ──────────────────────
 // Optional hand-picked slugs (no path prefix) to float to the top of the picker;
 // everything else sorts alphabetically. Shared by BOTH the Neurospicy select and the
-// video music picker (tool.ts). Empty by default — populate with real catalog ids.
+// video music picker (tool.ts). Empty by default - populate with real catalog ids.
 export const FEATURED_LOOPS: string[] = [];
 export function loopRank(id: string): number {
   const slug = id.split('/').pop() ?? '';
@@ -500,7 +500,7 @@ export interface NeuroTrack { id: string; name: string; tags: string[]; format: 
 // ── playlist order ──────────────────────────────────────────────────────────
 // ONE order for the whole feature: listLoops returns tracks in it, the player's
 // picker renders them in it (grouped by these keys), and prev/next + the
-// end-of-track advance walk it. They must not diverge — "next" has to go where
+// end-of-track advance walk it. They must not diverge - "next" has to go where
 // the list says it goes.
 export const NEURO_CATEGORY_ORDER: string[] = ['catalog', 'uploads', 'lolly', 'ambient', 'beats', 'radio'];
 
@@ -531,7 +531,7 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
   if (!localLoopsCache) {
     let loops: NeuroTrack[] = [];
     try {
-      // ALL catalog audio, not just the 'neurospicy'-tagged focus sets — the brand's
+      // ALL catalog audio, not just the 'neurospicy'-tagged focus sets - the brand's
       // other audio (e.g. licensed music beds) is playable here too; the player's
       // picker groups it under a separate "Catalog" section (see trackCategory).
       const refs = await host.assets.query({ type: 'audio' });
@@ -543,9 +543,9 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
         format: r.format ?? '',
       }));
     } catch { loops = []; }
-    // The user's OWN uploaded audio — query() only reads catalog assets, so pull user
+    // The user's OWN uploaded audio - query() only reads catalog assets, so pull user
     // uploads separately and merge them in. ANY user audio plays here (tags only drive
-    // the picker grouping/mood chip — older uploads, e.g. MIDI-converted songs, predate
+    // the picker grouping/mood chip - older uploads, e.g. MIDI-converted songs, predate
     // the ingest tagging and must not be dropped).
     try {
       const userAssets = host.assets._listUserAssets ? await host.assets._listUserAssets() : [];
@@ -567,7 +567,7 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
     if (loops.length) localLoopsCache = loops;
     else return radioTracks();
   }
-  // Opt-in radio (SomaFM) trails the local tracks — re-evaluated each call so it
+  // Opt-in radio (SomaFM) trails the local tracks - re-evaluated each call so it
   // appears/disappears with `navigator.onLine` instead of freezing in the cache.
   return localLoopsCache.concat(radioTracks());
 }
@@ -580,14 +580,14 @@ function radioTracks(): NeuroTrack[] {
 }
 
 /** Drop the cached track list (an audio upload changed it) and nudge any mounted
- *  player to rebuild — listLoops re-queries on its next call. */
+ *  player to rebuild - listLoops re-queries on its next call. */
 export function invalidateNeurospicyTracks(): void {
   localLoopsCache = null;
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }
 
 /** DELETED assets need more than a list rebuild: purge them from every player cache,
- *  and if one of them is the CURRENT track, stop it — the looping source would keep
+ *  and if one of them is the CURRENT track, stop it - the looping source would keep
  *  sounding with no row in the picker and a dangling persisted loopId. When the mode
  *  was actively sounding, move on to the first remaining track (like pressing next);
  *  otherwise just clear the selection. */
@@ -598,7 +598,7 @@ export async function dropNeurospicyTracks(host: NeurospicyHost, ids: string[]):
     const wasSounding = !!src && state.enabled && !paused && !isSfxMuted();
     stopSource();
     state.loopId = '';
-    // Skip radio when advancing: it's an OPT-IN networked source — a delete
+    // Skip radio when advancing: it's an OPT-IN networked source - a delete
     // gesture must never silently start (and persist) a live internet stream.
     const next = (await listLoops(host)).find((t) => !ids.includes(t.id) && t.format !== 'stream' && !t.tags.includes('radio'));
     if (next && wasSounding) {
@@ -612,11 +612,11 @@ export async function dropNeurospicyTracks(host: NeurospicyHost, ids: string[]):
 
 /** Boot reconcile for a persisted selection that no longer exists. A loopId lives in the
  *  PROFILE (+ localStorage mirror), so an asset RETIRED FROM THE CATALOG since the user
- *  last picked it (they didn't delete it — we did) leaves a dangling id that nothing
+ *  last picked it (they didn't delete it - we did) leaves a dangling id that nothing
  *  self-heals: play() calls assets.get(), it throws, the catch silently returns, and the
  *  mode sits enabled-but-silent with no row selected. Same cure as dropNeurospicyTracks:
  *  clear it, and advance to the first real track if the mode was left on.
- *  Call ONLY after the catalog sync resolves — see the empty-list guard below. */
+ *  Call ONLY after the catalog sync resolves - see the empty-list guard below. */
 export async function reconcileNeurospicySelection(host: NeurospicyHost): Promise<void> {
   const id = state.loopId;
   if (!id || isRadioId(id)) return;              // nothing picked, or a station (always resolvable)
@@ -626,8 +626,8 @@ export async function reconcileNeurospicySelection(host: NeurospicyHost): Promis
   // on a cold/offline boot listLoops() legitimately returns radio-only, and treating that
   // as "your track is gone" would wipe a perfectly good selection.
   const local = loops.filter((t) => t.format !== 'stream' && !t.tags.includes('radio'));
-  if (!local.length) return;                     // catalog not loaded yet — never clear on no evidence
-  if (local.some((t) => t.id === id)) return;    // still there — nothing to do
+  if (!local.length) return;                     // catalog not loaded yet - never clear on no evidence
+  if (local.some((t) => t.id === id)) return;    // still there - nothing to do
   const wasEnabled = state.enabled;
   stopSource();
   state.loopId = '';
@@ -640,11 +640,11 @@ export async function reconcileNeurospicySelection(host: NeurospicyHost): Promis
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }
 
-/** Step to the previous/next track in picker order (wraps) — the SAME order the
+/** Step to the previous/next track in picker order (wraps) - the SAME order the
  *  player's list shows, since listLoops owns it. Keeps the mode enabled.
  *  `skipStreams` walks past the radio stations: used by the end-of-track advance,
  *  which must never silently (and persistently) start a live internet stream.
- *  A pressed next/prev button passes it off — radio is right there in the list. */
+ *  A pressed next/prev button passes it off - radio is right there in the list. */
 export async function cycleNeurospicyLoop(
   host: NeurospicyHost, dir: 1 | -1, opts: { skipStreams?: boolean } = {},
 ): Promise<void> {

@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * motion-path — the keyframe path overlay, and above all its EXPORT CONTRACT.
+ * motion-path - the keyframe path overlay, and above all its EXPORT CONTRACT.
  *
  * The feature is a polyline and one very hard constraint, exactly as onion skin is:
  * a path must never reach a rendered file. This file pins the same three independent
- * guarantees that module's test pins, deliberately in the same shape — independent on
+ * guarantees that module's test pins, deliberately in the same shape - independent on
  * purpose, so no single refactor can quietly remove all three:
  *
- *   (a) the layer is NOT a descendant of the canvas — it is outside the node
+ *   (a) the layer is NOT a descendant of the canvas - it is outside the node
  *       `runtime.export` is handed;
  *   (b) it carries [data-export-hide], so bridge/export.ts's detachExportHidden
  *       REMOVES it from the DOM even if an export node were ever widened to the stage;
  *   (c) the module never writes a class or an inline style to a `.lolly-box`. Here
- *       that is STRUCTURAL — it is handed no canvas element at all — and a source scan
+ *       that is STRUCTURAL - it is handed no canvas element at all - and a source scan
  *       plus a byte-identity probe both say so.
  *
  * Plus the two claims that make the overlay honest rather than decorative:
@@ -20,9 +20,9 @@
  *     selection outline uses (`tests/timeline-math.test.ts` owns the projection
  *     parity against a moving camera; this file owns the DOM mapping);
  *   • the one ANIMATED affordance is gated on `prefersReducedMotion()` by NOT BEING
- *     MINTED — a DOM fact, not a CSS property jsdom cannot see.
+ *     MINTED - a DOM fact, not a CSS property jsdom cannot see.
  *
- * NOT covered here (browser-only): that the path LOOKS right — jsdom has no layout,
+ * NOT covered here (browser-only): that the path LOOKS right - jsdom has no layout,
  * no `oklch()` and no SVG rendering, so the stroke weights, the dash flow and the
  * contrast branch are assertions about the stylesheet's text, made below.
  *
@@ -61,7 +61,7 @@ const { mountMotionPath, motionRuns } = await import('./motion-path.ts');
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(join(HERE, 'motion-path.ts'), 'utf8');
 /** Comments STATE the contract (and quote the selectors it bans), so the scans below
- *  read the code alone — otherwise the module doc would fail its own test. */
+ *  read the code alone - otherwise the module doc would fail its own test. */
 const stripComments = (s: string): string =>
   s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 const CODE = stripComments(SOURCE);
@@ -99,7 +99,7 @@ interface Fixture {
   teardown(): void;
 }
 
-/** A 200×100 box at (100, 100) — centre (200, 150) — on screen 0…1s. */
+/** A 200×100 box at (100, 100) - centre (200, 150) - on screen 0…1s. */
 const moving = (extra: Record<string, unknown> = {}): Box => ({
   id: 'a', x: 100, y: 100, w: 200, h: 100, rot: 0,
   start: 0, dur: 1, clipIn: 0, speed: 1, lane: '',
@@ -188,7 +188,7 @@ test('(c) source scan: the module is never handed the canvas, and writes only to
     assert.equal(CODE.includes(sink), false, `motion-path.ts must never call ${sink}`);
   }
   // STRUCTURAL guarantee 3: there is no artboard in reach at all. The module takes an
-  // overlay, a model getter and two measurement callbacks — no canvas element, no
+  // overlay, a model getter and two measurement callbacks - no canvas element, no
   // artboard selector, no `document.querySelector` of any kind.
   assert.equal(/lolly-box/.test(CODE), false, 'the module must not know the artboard selector');
   assert.equal(/querySelector/.test(CODE), false, 'and must not reach into the document at all');
@@ -331,7 +331,7 @@ test('a tool with no `kf` field never draws — progressive capability, not a sp
 
 test('a moving CAMERA bends the path — a flat one would lie about what the export does', () => {
   // The camera's window covers the whole clip (windows are half-open, so a `dur` of 1
-  // would leave the box's LAST sample — at exactly t = 1000 — outside it and back on
+  // would leave the box's LAST sample - at exactly t = 1000 - outside it and back on
   // the default camera, which is a real rule and a poor probe of this one).
   const camera = {
     id: 'cam', kind: 'camera', x: 0, y: 0, w: 0, h: 0, rot: 0,
@@ -428,7 +428,7 @@ test('motion-path.css: layered, pointer-transparent, and the flow has both a11y 
   assert.equal(/border[^:]*:\s*[^;]*dashed/.test(css), false,
     'dashed borders are reserved for drop areas throughout this shell');
   // Both belt-and-braces gates on the one animated thing, beside the OS block each
-  // extends — the module's own `prefersReducedMotion()` is the third.
+  // extends - the module's own `prefersReducedMotion()` is the third.
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.mp-flow/);
   assert.match(css, /html\[data-a11y-motion="reduce"\] \.mp-flow/);
   assert.match(css, /html\[data-a11y-contrast="high"\] \.mp-layer/);

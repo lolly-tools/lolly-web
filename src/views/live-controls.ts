@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Live frame-source controls — the "Go live" (camera) and "Play" (animated asset)
+ * Live frame-source controls - the "Go live" (camera) and "Play" (animated asset)
  * affordances for tools with an `onFrame` hook, e.g. the filter effects.
  *
  * ONE controller per mounted tool owns the whole live state machine, and every
- * button — the sidebar pair riding the asset picker's slot-actions row AND the
- * canvas-stage fallback pair — is just a view of it, so the two placements can
+ * button - the sidebar pair riding the asset picker's slot-actions row AND the
+ * canvas-stage fallback pair - is just a view of it, so the two placements can
  * never disagree. Placement rule (Andy, 2026-08-10): when the tool has a sidebar
  * with an asset slot, Play + Go live belong THERE, with the picker button that
  * chooses what they act on; the floating canvas toggles remain only for tools
  * with no sidebar to ride (canvas layout, or no asset input at all).
  *
  * The frame path is the camera's, exactly: the media bridge's anim source
- * (bridge/media.ts AnimSourceSpec) replays the asset — a CSS/SMIL-animated SVG,
- * a GIF/APNG/animated-WebP (via ImageDecoder), or a video — as plain RGBA frames,
+ * (bridge/media.ts AnimSourceSpec) replays the asset - a CSS/SMIL-animated SVG,
+ * a GIF/APNG/animated-WebP (via ImageDecoder), or a video - as plain RGBA frames,
  * and `runtime.startLive({ source: 'asset' })` drives the tool's onFrame from
  * them with the same drop-overlap throttle. `source: 'asset'` is the provenance
  * guard: replayed file content must never claim a live camera capture (engine
- * 1.113). Camera permission gating is untouched — getUserMedia only ever runs on
+ * 1.113). Camera permission gating is untouched - getUserMedia only ever runs on
  * the Go live path.
  *
  * What plays:
  *   - the PICKED asset, when the tool's source asset input holds something
  *     animated (lib/anim-detect.ts decides; SVG markup is fetched + sniffed).
- *     Picking an animated asset in-session AUTO-plays it — that pick is the
+ *     Picking an animated asset in-session AUTO-plays it - that pick is the
  *     user asking to see it move ("come alive"), and pause freezes the current
  *     frame so the still export path keeps working.
  *   - else the tool's sample animation (`render.liveDefault`), exactly the old
- *     Play behaviour — still manual-start only (the auto-play-on-open decision
+ *     Play behaviour - still manual-start only (the auto-play-on-open decision
  *     stays gated, see the TODO that used to live in tool.ts).
  *
  * Lottie catalog assets are deliberately not playable here yet (no lottie lane
@@ -62,7 +62,7 @@ export interface LiveControlsOpts {
   host: LiveHostLike;
   t: (s: string) => string;
   announce: (msg: string, opts?: { assertive?: boolean }) => void;
-  /** Dev fps meter hooks (frame-fps.ts) — no-ops by default. */
+  /** Dev fps meter hooks (frame-fps.ts) - no-ops by default. */
   onStart?: () => void;
   onStop?: () => void;
   /** Fetch + sanitise SVG markup for a URL. Defaults to anim-svg-mount's cached
@@ -80,7 +80,7 @@ export interface LiveControls {
   readonly sourceInputId: string | null;
   /** Append the floating canvas-stage toggles (fallback placement). */
   mountStage(stageEl: HTMLElement): void;
-  /** True once mountStage placed the toggles — the sidebar then never doubles them. */
+  /** True once mountStage placed the toggles - the sidebar then never doubles them. */
   stageHosted(): boolean;
   /** Populate a sidebar slot-actions cluster (mountSidebarLiveControls calls this). */
   mountSidebarCluster(cluster: HTMLElement): void;
@@ -110,7 +110,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
   const arm = (src: AnimSourceSpec | null): void => host.media?.armAnimSource?.(src);
   const liveDefault = (runtime.manifest.render as { liveDefault?: string } | undefined)?.liveDefault ?? null;
 
-  // The tool's image SOURCE input: the first declared asset input — the same slot
+  // The tool's image SOURCE input: the first declared asset input - the same slot
   // whose swap retires the runtime's live-capture flag, and the row the sidebar
   // buttons ride. Null when the tool has no asset input (stage fallback only).
   const sourceInputId = enabled
@@ -123,14 +123,14 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
   // ── Source classification ──────────────────────────────────────────────────
   // `playSource` is the resolved thing Play would start right now: the picked
   // asset when it's animated, else the sample (liveDefault). `fromPick` gates
-  // auto-play — only an explicit user pick auto-starts.
+  // auto-play - only an explicit user pick auto-starts.
   let playSource: { spec: AnimSourceSpec; fromPick: boolean } | null = null;
   let classifyToken = 0;
   let lastKey: string | null | undefined; // undefined = never synced
 
   // Fetch + brand-bake SVG markup (cached per URL): the sampler renders it in an
   // isolated <img>, which can't inherit :root's --brand-primary, so the var is
-  // resolved to the live brand value here — same trick the old sample path used.
+  // resolved to the live brand value here - same trick the old sample path used.
   const svgCache = new Map<string, Promise<string | null>>();
   const svgSourceFor = (url: string): Promise<string | null> => {
     let p = svgCache.get(url);
@@ -341,11 +341,11 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
       const first = lastKey === undefined;
       if (!first && key === lastKey) return;
       lastKey = key;
-      // The frames the canvas is showing came from the OLD source — stop cleanly.
+      // The frames the canvas is showing came from the OLD source - stop cleanly.
       const wasPlaying = mode === 'asset';
       if (wasPlaying) stopPlayback({ silent: true });
       void classify().then((pickedAnimated) => {
-        // Auto-play an animated PICK (the user chose motion — let it move), but
+        // Auto-play an animated PICK (the user chose motion - let it move), but
         // never on the initial hydrate (URL/session restore keeps the deliberate
         // no-autoplay-on-open behaviour), and never over a running camera.
         if (!first && pickedAnimated && mode === null && !runtime.isLive() && !disposed) {
@@ -380,8 +380,8 @@ export function registerLiveControls(runtime: object, lc: LiveControls): void {
 /**
  * Sidebar placement (called by renderInputs after each panel rebuild): put the
  * Play + Go live buttons at the head of the source asset input's slot-actions
- * row — the established per-slot affordance cluster (Fit canvas / Match length /
- * Preview live there too) — creating the row when the slot has none yet.
+ * row - the established per-slot affordance cluster (Fit canvas / Match length /
+ * Preview live there too) - creating the row when the slot has none yet.
  * No registered controller (or no asset input) → no-op.
  */
 export function mountSidebarLiveControls(panel: HTMLElement, runtime: unknown): void {

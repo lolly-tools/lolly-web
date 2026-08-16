@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * typing-target — "is the user typing right now?", answered through shadow roots.
+ * typing-target - "is the user typing right now?", answered through shadow roots.
  *
  * Every keyboard shortcut in the shell has to bail while focus sits in a field,
- * or the keystroke gets eaten. The classic test — `document.activeElement.tagName
- * === 'INPUT'` — silently stopped working once the sidebar's text fields became
+ * or the keystroke gets eaten. The classic test - `document.activeElement.tagName
+ * === 'INPUT'` - silently stopped working once the sidebar's text fields became
  * <jelly-input> custom elements: the real <input> lives in the host's shadow root,
  * so `document.activeElement` reports the HOST (`JELLY-INPUT`), which is neither
- * an INPUT nor contentEditable. Result: single-key shortcuts fired mid-typing —
+ * an INPUT nor contentEditable. Result: single-key shortcuts fired mid-typing - 
  * the stage's `0` (fit) and `1` (100%) meant those two digits could never be
  * typed into a text field at all.
  *
@@ -19,7 +19,7 @@
 /**
  * Follow `el`'s own shadow-root focus down to the innermost focused node.
  * Each hop descends one shadow root, and the chain is shallow. A closed shadow
- * root reports `shadowRoot === null`, so the walk stops at the host — the best
+ * root reports `shadowRoot === null`, so the walk stops at the host - the best
  * answer available, and the same one a plain tagName test used to give.
  */
 export function deepestFocus(el: Element | null | undefined): Element | null {
@@ -58,7 +58,7 @@ export function isTypingTarget(el: Element | null | undefined = deepActiveElemen
 // use isTextEditingTarget rather than isTypingTarget.
 const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', 'password', '']);
 
-/** True only for a caret-bearing text field — a strict subset of isTypingTarget. */
+/** True only for a caret-bearing text field - a strict subset of isTypingTarget. */
 export function isTextEditingTarget(el: Element | null | undefined = deepActiveElement()): boolean {
   const node = deepestFocus(el);
   if (!node) return false;

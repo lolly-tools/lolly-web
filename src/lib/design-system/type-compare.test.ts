@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Type room's compare stage (plan 97 §7.2, M4) — what it models, what it
+ * The Type room's compare stage (plan 97 §7.2, M4) - what it models, what it
  * renders, and what it refuses to pretend.
  *
  * Run directly:
@@ -9,7 +9,7 @@
  * jsdom supplies the DOM (the tray-ui.test.ts harness, same flags and for the
  * same reason: announce() defers its live-region write to requestAnimationFrame,
  * which jsdom only supplies under `pretendToBeVisual`). jsdom has NO FontFace and
- * no `document.fonts`, so both are stubbed here — which is fortunate rather than
+ * no `document.fonts`, so both are stubbed here - which is fortunate rather than
  * unfortunate: the stub is what lets the suite assert that a preview
  * registration is added under the expected family name and DELETED again when
  * the card leaves or the stage is torn down. A preview that persisted would be
@@ -17,7 +17,7 @@
  *
  * The other thing pinned here is the network gate. `fetch` is a counting double
  * for the whole suite, and the Google path is only ever allowed to touch it
- * AFTER consentGoogle() resolves true — asserted in both directions, because
+ * AFTER consentGoogle() resolves true - asserted in both directions, because
  * Google Fonts is this studio's one egress.
  */
 import test from 'node:test';
@@ -33,13 +33,13 @@ globalThis.document = dom.window.document;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.Event = dom.window.Event;
 // jsdom's addEventListener only accepts ITS AbortSignal, and the stage wires every
-// listener through one controller — so the realm's controller has to be jsdom's
+// listener through one controller - so the realm's controller has to be jsdom's
 // (trim-offer.test.ts hit the same wall).
 globalThis.AbortController = dom.window.AbortController as unknown as typeof globalThis.AbortController;
 
 // ── FontFace + document.fonts, which jsdom does not have ─────────────────────
 
-/** Substrings of a preview family whose load() rejects — the "this file is not a
+/** Substrings of a preview family whose load() rejects - the "this file is not a
  *  font" path. Matched loosely because a preview family carries the MOUNT serial
  *  (`__ds-preview-liar-<mount>-<card>`), which a test cannot predict: mounts are
  *  counted for the life of the module, so the number depends on how many stages
@@ -108,7 +108,7 @@ import { escape } from '../../utils.ts';
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 /** The identity translator: the module's copy is English source strings, so this
- *  is exactly what ships, minus the catalog lookup. This is `tRaw` — the one
+ *  is exactly what ships, minus the catalog lookup. This is `tRaw` - the one
  *  whose params come through untouched. */
 const tRaw = (s: string, params?: Record<string, string | number>): string => {
   let out = s;
@@ -150,7 +150,7 @@ function card(over: Partial<CompareCard> = {}): CompareCard {
 
 /** A minimal but REAL sfnt: an OTTO header with one OS/2 table whose fsType is
  *  `value`. detectFontFormat reads the magic, readFontEmbedding walks the table
- *  directory — neither is faked here. */
+ *  directory - neither is faked here. */
 function sfnt(fsType: number, tag = 'OS/2'): Uint8Array {
   const headerLen = 12 + 16;
   const os2Off = headerLen;
@@ -176,7 +176,7 @@ function gface(over: Partial<GoogleFontFace> = {}): GoogleFontFace {
 
 const settle = (): Promise<void> => new Promise((r) => { setTimeout(r, 0); });
 
-/** The registered preview families with the MOUNT serial folded out —
+/** The registered preview families with the MOUNT serial folded out - 
  *  `__ds-preview-inter-3-1` → `__ds-preview-inter-*-1`. The mount number counts
  *  every stage this module has ever mounted, so it is a property of test ORDER
  *  and pinning it would make these assertions break for the wrong reason. What
@@ -193,7 +193,7 @@ function stage(): HTMLElement {
   return el;
 }
 
-/** A host with no tokens asset — the plain "nothing installed" case. */
+/** A host with no tokens asset - the plain "nothing installed" case. */
 const bareHost = { assets: {} } as unknown as HostV1;
 
 function ctxFor(over: Partial<TypeCompareCtx> = {}): TypeCompareCtx {
@@ -221,7 +221,7 @@ test('slugFamily reduces a family to a charset that cannot escape a CSS string',
 test('previewFamilyName is session-scoped and unique per card, not per family', () => {
   assert.equal(previewFamilyName('Inter', 1), '__ds-preview-inter-0-1');
   assert.equal(previewFamilyName('SUSE Mono', 12, 3), '__ds-preview-suse-mono-3-12');
-  // The same family from two sources must never share one registration —
+  // The same family from two sources must never share one registration - 
   // removing either would blank the other.
   assert.notEqual(previewFamilyName('Inter', 1), previewFamilyName('Inter', 2));
   // ...and neither must two STAGES, which is what the mount serial is for:
@@ -575,7 +575,7 @@ test('the source chips a stage did not write are still escaped on the way in', (
 
 test('a card names itself and points at the sentence that explains a disabled action', () => {
   // "Use this face" is DISABLED on every non-ready card, and a disabled button is
-  // out of the tab order and carries no state text — so the reason has to hang
+  // out of the tab order and carries no state text - so the reason has to hang
   // off the thing an AT user can actually land on.
   const holder = parseCards(compareCardsHtml([card({ state: 'failed', reason: 'fetch-failed' })], 'Aa', t));
   const article = holder.querySelector('[data-tycmp-card]') as HTMLElement;
@@ -671,7 +671,7 @@ test('a file that is not a font fails honestly — no card pretending, no regist
   const el = stage();
   const ui = mountTypeCompare(el, ctxFor());
   failing.add('__ds-preview-liar-');
-  // Real sfnt magic (so it is admitted) whose decode then rejects — the shape of
+  // Real sfnt magic (so it is admitted) whose decode then rejects - the form of
   // a truncated or corrupt font file.
   ui.addCandidate({ kind: 'upload', family: 'Liar', bytes: sfnt(0) });
   await settle();
@@ -789,7 +789,7 @@ test('the install path follows the bytes, and a face nobody has seen cannot be c
   await settle();
   assert.equal(chosen[0]!.install, 'bytes');
 
-  // And the real Google shape — a card with no bytes of its own — cannot be
+  // And the real Google shape - a card with no bytes of its own - cannot be
   // selected at all until its face has loaded, which is the point of the stage.
   const el2 = stage();
   const ui2 = mountTypeCompare(el2, ctxFor({ onSelect: async (c) => { chosen.push(c); } }));
@@ -832,7 +832,7 @@ test('the specimen field is one control mirrored into every card, at one size', 
   const lines = [...el.querySelectorAll('[data-tycmp-specimen]')];
   assert.equal(lines.length, 2);
   assert.ok(lines.every((n) => n.textContent === 'Handgloves'), 'one string, every card');
-  // The size is a property of the STAGE, not of a card — a comparison where each
+  // The size is a property of the STAGE, not of a card - a comparison where each
   // card could differ would not be one.
   assert.equal(el.querySelectorAll('[style*="font-size"]').length, 0);
   ui.teardown();
@@ -903,7 +903,7 @@ test('pressing Preview never parks the keyboard on Remove', async () => {
   press.click();
 
   // The load is in flight: Preview is gone and "Use this face" is disabled, so
-  // there is no control left to hold. The CARD takes it — never the one button
+  // there is no control left to hold. The CARD takes it - never the one button
   // that destroys the thing being loaded.
   const loading = document.activeElement as HTMLElement;
   assert.equal(loading.getAttribute('data-tycmp-card'), 'tycmp-card-1',
@@ -940,7 +940,7 @@ test('a card that finishes loading says so, whether or not anyone is looking at 
   el.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-2"]')!.click();
   assert.equal(await spoken(), 'Inter: Could not fetch this face from Google Fonts.');
 
-  // A decline is an outcome too — nothing broke, and saying nothing would read
+  // A decline is an outcome too - nothing broke, and saying nothing would read
   // as nothing happening.
   const el2 = stage();
   const ui2 = mountTypeCompare(el2, ctxFor({ consentGoogle: async () => false }));

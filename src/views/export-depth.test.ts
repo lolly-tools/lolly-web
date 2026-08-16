@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * views/export-depth.ts — the export panel's pro-format grouping and depth fact
+ * views/export-depth.ts - the export panel's pro-format grouping and depth fact
  * (plans/61-deeprichpixels.md §10 item 3).
  *
  * Run directly:  node --test shells/web/src/views/export-depth.test.ts
@@ -105,7 +105,7 @@ test('an HDR PNG states 16-bit, because that is what the writer emits', () => {
   assert.equal(fact.kind, 'deep');
   assert.equal(fact.label, '16-bit');
   assert.ok(fact.why.length > 20 && fact.why.endsWith('.'), 'the why is one plain sentence');
-  // Two words maximum — this is the whole visible affordance.
+  // Two words maximum - this is the whole visible affordance.
   assert.ok(fact.label.split(' ').length <= 2, fact.label);
 });
 
@@ -155,7 +155,7 @@ test('the default case adds nothing to the panel markup', () => {
   assert.equal(el.innerHTML, before, 'markup changed with nothing to say');
   assert.equal(el.querySelector('[data-depth-fact]'), null);
   assert.equal(el.querySelector('.export-depth-fact'), null);
-  // Not a hidden placeholder either — the class name appears nowhere in the panel.
+  // Not a hidden placeholder either - the class name appears nowhere in the panel.
   assert.equal(el.innerHTML.includes('depth-fact'), false);
 });
 
@@ -232,7 +232,7 @@ test('the fact is a note, not a control, and carries its why for assistive tech'
   assert.equal(node.hasAttribute('disabled'), false);
   assert.equal(node.querySelectorAll('input, select, button, a').length, 0);
   assert.equal(node.getAttribute('role'), 'note');
-  // The why lives in the tooltip layer, via the app's [data-tip] primitive — not a
+  // The why lives in the tooltip layer, via the app's [data-tip] primitive - not a
   // hand-rolled title=, which is invisible to keyboard and touch users.
   assert.equal(node.getAttribute('data-tip'), fact.why);
   assert.equal(node.hasAttribute('title'), false);

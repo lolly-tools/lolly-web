@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * versions-io.ts — publishing, activating and restoring design-system versions
+ * versions-io.ts - publishing, activating and restoring design-system versions
  * (plans/97 §6a), over the REAL assets + tokens bridges.
  *
  * Run with:
@@ -84,7 +84,7 @@ const doc = (jungle = '#30ba78') => ({
  * Edit the head the way the studio does: every committed action installs a
  * document DERIVED from the current head (studio-state clones it, the brand-doc
  * helpers mutate the clone), so the ledger rides along. A caller that installs a
- * document built from nothing replaces the head wholesale, ledger included —
+ * document built from nothing replaces the head wholesale, ledger included - 
  * which is why importing a pack has to merge rather than overwrite (§8.1).
  */
 async function editHead(h: ReturnType<typeof makeHost>, next: Record<string, unknown>): Promise<void> {
@@ -275,7 +275,7 @@ test('a pinned logo survives being replaced — the version renders the old byte
   const oldHex = await sha256Hex(new Uint8Array(await bytes('LOGO-A').arrayBuffer()));
   const frozenId = frozenAssetId(oldHex);
 
-  // The user replaces their logo — the ordinary upload path, same id.
+  // The user replaces their logo - the ordinary upload path, same id.
   await h.assets._uploadUserAsset({ id: LOGO_ID, type: 'raster', format: 'png', blob: bytes('LOGO-B'), meta: { name: 'Logo' } });
 
   // The published bytes were preserved, content-keyed…
@@ -348,7 +348,7 @@ test('a FONT pin is recorded but never frozen — nothing could ever read the co
 
   // Replace the face. Version-scoped indirection is a rewrite of `$type: 'asset'`
   // leaves; a font is resolved by FAMILY out of the user font store, which no
-  // `user/frozen/*` id can join — so a frozen copy would be storage billed to the
+  // `user/frozen/*` id can join - so a frozen copy would be storage billed to the
   // user for fidelity they do not get.
   await h.assets._uploadUserAsset({
     id: FONT_ID, type: 'font', format: 'woff2', blob: bytes('FONT-B'), meta: { family: 'Acme Sans' },
@@ -390,7 +390,7 @@ test('deleting a pinned file is never refused for want of space', async () => {
       h.assets._uploadUserAsset({ id: 'user/upload/2-big', type: 'raster', format: 'png', blob: bytes('X') }),
       /Not enough local storage space/, 'the quota guard is genuinely live');
     // The delete preserves the pinned bytes first, and that copy replaces the bytes
-    // it is saving rather than joining them — so charging quota for it would leave
+    // it is saving rather than joining them - so charging quota for it would leave
     // the user unable to free the very space the refusal is about.
     await h.assets._deleteUserAsset(LOGO_ID);
   } finally {
@@ -439,7 +439,7 @@ test('with nothing published the copy-on-write hook reads nothing and writes not
 test('a version is read relative to the head it belongs to, not to the user id', async () => {
   // A device whose design system came from a PACK: the head is a catalogue id and
   // its versions ship beside it. Addressing them under `user/tokens/brand` makes
-  // every read here return null while the panel cheerfully lists them — restore
+  // every read here return null while the panel cheerfully lists them - restore
   // says "could not be read", the compat card diffs against nothing and reports
   // the whole system as added, and storage reports zero bytes.
   stubFetch();

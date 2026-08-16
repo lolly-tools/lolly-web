@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the /pro run REPORT — the rows that produced no file, and the
+ * Unit tests for the /pro run REPORT - the rows that produced no file, and the
  * `preflight.json` envelope. Run directly:
  *   node --test shells/web/src/pro/manifest.test.ts
  *
@@ -39,7 +39,7 @@ test('a failed row is reported at its SOURCE row number, not its queue position'
   const unmade = collectUnmade({
     rows: ROWS,
     srcIndex: SRC_INDEX,
-    // runner index 1 failed — that is source index 2, i.e. the user's row 3.
+    // runner index 1 failed - that is source index 2, i.e. the user's row 3.
     results: [
       { index: 0, ok: true, name: '01-poster.png' },
       { index: 1, ok: false, error: 'Render timed out after 10s' },
@@ -177,7 +177,7 @@ test('the money fields ship as null from Phase 2 so no consumer can read an abse
   assert.equal(r.estimatedTotalFromSuppliedRates, null);
   assert.equal(r.ratesFrom, null);
   assert.equal(r.disclaimer, PREFLIGHT_DISCLAIMER);
-  // Present as an explicit null in the SERIALIZED form too — a dropped key would be
+  // Present as an explicit null in the SERIALIZED form too - a dropped key would be
   // indistinguishable from a consumer that never learned to look.
   const json = JSON.parse(preflightJson(r));
   assert.ok('estimatedTotalFromSuppliedRates' in json);

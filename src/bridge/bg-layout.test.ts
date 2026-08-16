@@ -5,7 +5,7 @@
  *
  * The defect this replaced was one line: the walker painted every background image at
  * the element's full border box. So the cases worth pinning are the ones where the
- * right answer is NOT the box — a fixed-size icon, a one-value size whose other axis
+ * right answer is NOT the box - a fixed-size icon, a one-value size whose other axis
  * is auto, a percentage position (which aligns the image's own X% with the area's X%,
  * not its top-left with X%), and an edge-offset like the `right 12px center` that puts
  * the chevron in this app's selects.
@@ -38,7 +38,7 @@ const SIZES: [string, { w: number; h: number } | null, [number, number]][] = [
   ['contain', { w: 40, h: 10 }, [200, 50]],
   ['cover', { w: 40, h: 10 }, [400, 100]],
   // No intrinsic size: CSS falls back to the area, which is also the pre-fix
-  // behaviour — an undiscoverable image degrades rather than disappears.
+  // behaviour - an undiscoverable image degrades rather than disappears.
   ['auto', null, [200, 100]],
   ['cover', null, [200, 100]],
   ['14px', null, [14, 100]],
@@ -63,7 +63,7 @@ test('a degenerate intrinsic size does not produce NaN', () => {
 const POS: [string, number, number, number][] = [
   ['0%', 200, 24, 0],
   ['left', 200, 24, 0],
-  // Not 100 — a centred 24px image sits at (200-24)/2.
+  // Not 100 - a centred 24px image sits at (200-24)/2.
   ['50%', 200, 24, 88],
   ['center', 200, 24, 88],
   ['100%', 200, 24, 176],

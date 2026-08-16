@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-work-opener — the `'work'` slot of `lib/collab-launch.ts`, and the inbox
+ * org/collab-work-opener - the `'work'` slot of `lib/collab-launch.ts`, and the inbox
  * affordance that joins one from an invite (plan 100 §7 items 9 + 11, §12 Q3; wave 3.3).
  *
  * The Track B sibling of `collab/private-opener.ts`, one track over. Read that file's
  * header first: the two are deliberately the same shape (an opener registered into a
  * named slot, the heavy half behind a dynamic import, the live session handed to
  * `lib/collab-mount.ts` and nowhere else), and everything below is the delta a SERVER
- * room brings — no ceremony, no SDP, no pairing. A work collab is joined, not agreed:
+ * room brings - no ceremony, no SDP, no pairing. A work collab is joined, not agreed:
  * the room already exists, keyed by the session id the instance holds.
  *
  * ── The one chain, stated once ─────────────────────────────────────────────────
@@ -17,7 +17,7 @@
  *       → deliverCollabConnection({role:'member', …})        lib/collab-mount.ts
  *
  * Both entry points below funnel into exactly that, so there is one way a work collab
- * starts. The mount takes it from there — it registers the session source, seeds the
+ * starts. The mount takes it from there - it registers the session source, seeds the
  * copy and takes the user to the tool (`lib/collab-mount.ts`'s header). This module
  * therefore navigates nowhere and touches no runtime: doing either here would be a
  * second half-implementation of the adoption contract.
@@ -28,11 +28,11 @@
  * its adapter wrapper ONCE, at construction, from `handle.role`, and the gateway does
  * not assign the seat until the `join-ack`. A handle built while the provider still
  * holds its pre-join `'writer'` default hands an OBSERVER the writer wrapper for the
- * life of the session — survivable (the provider refuses their ops on its own) but it
+ * life of the session - survivable (the provider refuses their ops on its own) but it
  * means their local doc records edits the room never saw. Waiting costs one promise and
  * removes the whole class. It is also when `self.name` is known.
  *
- * The wait is bounded ({@link CONNECT_TIMEOUT_MS} — §7.11 targets join-to-interactive
+ * The wait is bounded ({@link CONNECT_TIMEOUT_MS} - §7.11 targets join-to-interactive
  * under 3 s, so several times that is already a failure) and every exit that is not
  * `'live'` closes the provider. A socket left open behind a failure message is a room
  * the user has silently joined.
@@ -42,7 +42,7 @@
  * The invite path fetches the session BEFORE it connects, through
  * `org/session-source.ts`'s status-carrying `fetchTeamSession`. Not to warm a cache:
  * an invite outlives the thing it invites you to, and the three ways that happens need
- * three different sentences — the session was deleted (410), your access was revoked
+ * three different sentences - the session was deleted (410), your access was revoked
  * (403), or it is not there at all (404). A ws connect answers all three as "the socket
  * closed", which is how a product ends up telling someone to check their network when
  * an administrator removed them from a project.
@@ -50,8 +50,8 @@
  * What the fetch does NOT do is seed the copy. `CollabConnection.seed` is URL-mode
  * parameters, and it is documented as absent for a `'member'`: the server owns this
  * session's state and delivers it in the `join-ack` snapshot, so handing the mount a
- * second, older copy of it — in a different currency, fetched over a different
- * connection — is two sources of truth for one document. The fetch's other product is
+ * second, older copy of it - in a different currency, fetched over a different
+ * connection - is two sources of truth for one document. The fetch's other product is
  * the SERVER's `toolId`, which is §7.11's preload (the mount can start loading the tool
  * while the handshake completes) and is the one fact the invite could have gone stale on.
  *
@@ -60,7 +60,7 @@
  *  - STARTING one (`openWorkCollab`) needs `collab.edit`: you are proposing that other
  *    people co-edit this session, which is an editing act.
  *  - JOINING one (`joinWorkCollabFromInvite`, and whether the invite action renders at
- *    all) needs `collab.join`. Absent or false ⇒ NO action element — the message still
+ *    all) needs `collab.join`. Absent or false ⇒ NO action element - the message still
  *    reads as ordinary text, because an invite you cannot act on is still news you are
  *    entitled to.
  *  - Both bits default false and are read LIVE, on every press, through
@@ -72,13 +72,13 @@
  * ── Copy ───────────────────────────────────────────────────────────────────────
  *
  * Every user-visible string is in {@link STRINGS}, and every read of it goes through
- * `tRaw()` — the same convention `collab/join-route.ts` uses, and the reason the map is
+ * `tRaw()` - the same convention `collab/join-route.ts` uses, and the reason the map is
  * a corpus source in scripts/translate.ts's COLLAB_SOURCES. The copy rides the lazy
  * `collab` namespace (i18n.ts) because that is what this surface is: a work collab is
  * the server-room half of the same feature, and its sentences are the same register.
  * Both async entry points await `loadNamespace('collab')` before they can produce a
  * message, and the one synchronous painter (`buildCollabInviteAction`) re-stamps its
- * label when the namespace lands — an unloaded namespace renders English, exactly like
+ * label when the namespace lands - an unloaded namespace renders English, exactly like
  * a missing key. Server-supplied text never reaches the DOM from here at all.
  */
 
@@ -98,10 +98,10 @@ import type { CollabSessionHandle } from '../lib/collab-session.ts';
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
 // One map, one wave (§11.28). No interpolation: none of these name a person, a
-// session or an instance, deliberately — an invite's own title already did.
+// session or an instance, deliberately - an invite's own title already did.
 //
 // These are catalog KEYS, not the rendered copy: the English source doubles as the
-// lookup key (i18n.ts), so every read below is `tRaw(STRINGS.x)` — tRaw and not t
+// lookup key (i18n.ts), so every read below is `tRaw(STRINGS.x)` - tRaw and not t
 // because every sink here is text (`textContent`, `announce()`), where escaping would
 // show a reader `O&#39;Brien`. A bare read would render English in all 26 languages
 // with nothing failing, which is what collab-i18n.test.ts pins.
@@ -153,7 +153,7 @@ export const MAX_ID_CHARS = 200;
 // ── The invite payload ────────────────────────────────────────────────────────
 
 /** The machine-readable half of a collab invite (lolly-work `collab/invites.ts`'s
- *  `buildInviteMessage`). `cta.url` is the human half and is not read here — the
+ *  `buildInviteMessage`). `cta.url` is the human half and is not read here - the
  *  server has no shell route to bake in, which is exactly why `data` exists. */
 export interface WorkCollabInvite {
   readonly sessionId: string;
@@ -162,7 +162,7 @@ export interface WorkCollabInvite {
   readonly toolVersion?: string;
 }
 
-/** The shape this module needs off an inbox message — structural on purpose, so
+/** The shape this module needs off an inbox message - structural on purpose, so
  *  `org/banner.ts`'s `InboxMessage` satisfies it without either file importing the
  *  other's type (the banner imports this module lazily, and only for an invite). */
 export interface InviteMessageLike {
@@ -179,8 +179,8 @@ function readId(value: unknown): string | undefined {
 /**
  * The invite carried by a message, or `null` when it carries none.
  *
- * Both markers are accepted — the message's own `kind: 'collab'` and the payload's
- * `data.kind: 'collab-invite'` — because the server sets both and neither is the
+ * Both markers are accepted - the message's own `kind: 'collab'` and the payload's
+ * `data.kind: 'collab-invite'` - because the server sets both and neither is the
  * documented one on its own. Either alone is enough; a usable `sessionId` is the
  * thing that actually decides, since without it there is nothing to join.
  *
@@ -213,11 +213,11 @@ export function readCollabInvite(msg: InviteMessageLike | null | undefined): Wor
 export type WorkCollabFailure =
   | 'no-session'      // nothing to join: this mount is not a team session (see CollabLaunchContext.sessionId)
   | 'not-permitted'   // the instance withholds the capability bit
-  | 'gone'            // 410 — the session was deleted
-  | 'forbidden'       // 403 — access revoked
-  | 'missing'         // 404 — no such session
-  | 'signed-out'      // 401 — the instance answered; the cookie is what expired
-  | 'server-error'    // 5xx — the instance answered, and the fault is its own
+  | 'gone'            // 410 - the session was deleted
+  | 'forbidden'       // 403 - access revoked
+  | 'missing'         // 404 - no such session
+  | 'signed-out'      // 401 - the instance answered; the cookie is what expired
+  | 'server-error'    // 5xx - the instance answered, and the fault is its own
   | 'unreachable'     // no verdict at all (network, non-JSON, unusable body)
   | 'cross-origin'    // the derived gateway endpoint cannot carry this instance's cookie
   | 'refused'         // the room closed the socket on us
@@ -238,7 +238,7 @@ const fail = (reason: WorkCollabFailure, message: string): WorkCollabOutcome => 
  * Behind a factory so the module that RENDERS the invite button costs a banner
  * nothing: `buildCollabInviteAction` runs with none of it loaded, and the provider +
  * adapter chunk arrives only once somebody presses the button. It is also the entire
- * test seam — no WebSocket, no IndexedDB outbox, no timers of the real client.
+ * test seam - no WebSocket, no IndexedDB outbox, no timers of the real client.
  */
 export interface WorkCollabWiring {
   /** Build the provider for a session (the registered factory when there is one). */
@@ -260,7 +260,7 @@ export interface WorkCollabDeps {
   readonly clearTimer?: (handle: unknown) => void;
 }
 
-/** This member's principal — the partition key of the provider's durable outbox.
+/** This member's principal - the partition key of the provider's durable outbox.
  *  Read here for the fallback path below; the registered factory already carries it. */
 function memberPrincipal(): string | undefined {
   const s = orgSession();
@@ -283,7 +283,7 @@ async function loadWiring(): Promise<WorkCollabWiring> {
     import('./collab-provider.ts'),
     import('./collab-handle.ts'),
   ]);
-  // The durable per-device client id must exist before a provider is built — two
+  // The durable per-device client id must exist before a provider is built - two
   // clients on the wire from one device is what it prevents. Idempotent.
   await provider.initWorkCollab().catch(() => { /* an in-memory id still works */ });
   return {
@@ -319,7 +319,7 @@ function awaitLive(provider: WorkCollabHandle, deps: WorkCollabDeps): Promise<Li
     let settled = false;
     let timer: unknown;
     let off: (() => void) | null = null;
-    // Set when `done` runs before `provider.on()` has returned its unsubscribe — a
+    // Set when `done` runs before `provider.on()` has returned its unsubscribe - a
     // listener that fires synchronously would otherwise leave the subscription live.
     let dropped = false;
 
@@ -422,7 +422,7 @@ async function connectAndDeliver(plan: ConnectPlan, deps: WorkCollabDeps): Promi
     close: () => { try { handle.close(); } catch { stop(); } },
     ...(plan.toolId ? { toolId: plan.toolId } : {}),
     ...(plan.launch ? { launch: plan.launch } : {}),
-    // A work collab edits the instance's own durable session — the server is the
+    // A work collab edits the instance's own durable session - the server is the
     // authority and the persistence (§7.3), so nothing about this copy is ephemeral.
     // That is the opposite of a private collab's acceptor (§6.2a/§11.17).
     ephemeral: false,
@@ -434,7 +434,7 @@ async function connectAndDeliver(plan: ConnectPlan, deps: WorkCollabDeps): Promi
   // `false` means nothing owns co-editing yet, so the connection is PARKED rather than
   // dropped (lib/collab-mount.ts) and a mount registering a moment later still adopts
   // it. The user is told the truth about what they can see NOW rather than a promise
-  // about a race — the same call `collab/join-route.ts`'s `handOffConnection` makes.
+  // about a race - the same call `collab/join-route.ts`'s `handOffConnection` makes.
   if (!deliver(conn)) return fail('no-mount', tRaw(STRINGS.noMount));
   return { ok: true };
 }
@@ -475,13 +475,13 @@ export async function openWorkCollab(
  * The fetch is what makes the failures honest (see the header), and `toolId` prefers the
  * SERVER's answer over the invite's: the invite is a snapshot from whenever it was sent,
  * and the session is what is actually being joined. The session's inputs are read and
- * deliberately not forwarded — the join-ack owns this copy's state.
+ * deliberately not forwarded - the join-ack owns this copy's state.
  */
 export async function joinWorkCollabFromInvite(
   invite: WorkCollabInvite,
   deps: WorkCollabDeps = {},
 ): Promise<WorkCollabOutcome> {
-  await loadNamespace('collab'); // see openWorkCollab — the copy loads before a message exists
+  await loadNamespace('collab'); // see openWorkCollab - the copy loads before a message exists
   const canJoin = deps.canJoin ?? canJoinCollab;
   if (!canJoin()) return fail('not-permitted', tRaw(STRINGS.cannotJoin));
 
@@ -513,7 +513,7 @@ export async function joinWorkCollabFromInvite(
 /**
  * The "Open the collab" control for an invite message, or `null`.
  *
- * `null` for anything that is not an invite, and — the honesty rule — for a member
+ * `null` for anything that is not an invite, and - the honesty rule - for a member
  * whose instance has not granted `collab.join`. No disabled button, no "ask your
  * administrator": the message still renders as ordinary text, which is what it always
  * was. An affordance that cannot work is worse than none.
@@ -551,7 +551,7 @@ export function buildCollabInviteAction(
   // re-stamps the label in place. Only the label, and only while the button is still
   // idle: a press swaps in `opening` and the two entry points await the namespace
   // themselves, so re-stamping a pressed button would overwrite a later truth with an
-  // earlier one. Deliberately NOT gated on `isConnected` — this element is returned
+  // earlier one. Deliberately NOT gated on `isConnected` - this element is returned
   // detached and the caller appends it, so a namespace that is already loaded resolves
   // its microtask before that happens and the guard would silently skip the repaint.
   if (currentLang() !== 'en') {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * pending-files.ts — the one-shot mark handoff (plan 97 §8, M5). Pure module
+ * pending-files.ts - the one-shot mark handoff (plan 97 §8, M5). Pure module
  * semantics only: stash / take / has, the two caps, and the single-use rule the
  * Logos room's drain depends on.
  *
@@ -20,7 +20,7 @@ function mark(name: string, bytes = 64): File {
   return new File([new Uint8Array(bytes)], name, { type: 'image/svg+xml' });
 }
 
-/** Collect console.warn while a block runs — the over-cap drop is meant to be
+/** Collect console.warn while a block runs - the over-cap drop is meant to be
  *  visible, so the test asserts it is said rather than swallowed. */
 let warnings: string[] = [];
 const realWarn = console.warn;

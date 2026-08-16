@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — view entry point and orchestrator.
+ * Pro / Batch mode - view entry point and orchestrator.
  *
  * mountPro(viewEl, host) owns the batch state and wires every interaction:
  * template selection, per-cell editing, bulk column writes, the batch run, and
@@ -75,7 +75,7 @@ interface ProHost extends HostV1 {
 // Options the shell injects when mounting /pro (lazy route in main.js).
 interface ProMountOpts {
   sessionSlot?: string;
-  /** Session refs to open verbatim as grid rows — the Projects "Edit as sheet"
+  /** Session refs to open verbatim as grid rows - the Projects "Edit as sheet"
    *  selection (`#/pro?s=slot,slot…`). Each becomes a row (tool-less if it has no
    *  inputs); see {@link rowsFromRefs}. Takes precedence over `sessionSlot`. */
   seedRefs?: string[];
@@ -84,7 +84,7 @@ interface ProMountOpts {
 }
 
 // One batch row. `manifest` is the loaded tool manifest (null until the tool
-// resolves); `values` is the row's per-input value map (loose — coerced per the
+// resolves); `values` is the row's per-input value map (loose - coerced per the
 // input's declared type at render time).
 interface GridRow {
   uid: string;
@@ -98,7 +98,7 @@ interface GridRow {
   outHeight?: number;
   filename?: string;
   height?: number;
-  /** Per-row print overrides — beat the run-level toolbar values when set. */
+  /** Per-row print overrides - beat the run-level toolbar values when set. */
   profile?: string;
   bleed?: string;
   marks?: string;
@@ -122,7 +122,7 @@ interface BatchState {
   unit: string;
   dpi: number;
   /**
-   * RUN-LEVEL print settings — the toolbar's Print popover. Exactly the same
+   * RUN-LEVEL print settings - the toolbar's Print popover. Exactly the same
    * kind of thing as `format`/`unit`/`dpi` above: a default every row inherits
    * and any row may override (pro/batch.ts `resolvePrintSettings` is the one
    * statement of that precedence). Empty string = not set; there is no separate
@@ -188,7 +188,7 @@ function shellCanRun(tool: IndexedTool, host: ProHost): boolean {
 
 let _uidSeq = 0;
 const newRow = (): GridRow => ({ uid: `r${++_uidSeq}`, toolId: '', manifest: null, values: {} });
-// Start with a single blank row, template search ready — the user grows the
+// Start with a single blank row, template search ready - the user grows the
 // batch with the "=" shortcut (or + Row), which keeps each new row's flow fast.
 const DEFAULT_ROWS = 1;
 const blankRows = (): GridRow[] => Array.from({ length: DEFAULT_ROWS }, newRow);
@@ -284,7 +284,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const printBtn = viewEl.querySelector<HTMLButtonElement>('#pro-print')!;
   // Declared HERE, not beside its open/close pair below: `syncPrintButton` is a
   // hoisted function declaration called from the first `renderGrid()`, which runs
-  // before that point in the body — a `let` down there would still be in its
+  // before that point in the body - a `let` down there would still be in its
   // temporal dead zone and throw.
   let _printPop: PopoverEl | null = null;
 
@@ -335,7 +335,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // CSS `zoom` property, which reflows the whole page like native zoom. Works
   // on desktop AND lets a zoomed mobile display be shrunk back down. Applied
   // to <html> so it affects the entire UI, and persisted across the session.
-  // This is an INTERFACE scale, not a canvas zoom — there's no "Fit" concept
+  // This is an INTERFACE scale, not a canvas zoom - there's no "Fit" concept
   // (nothing to fit to), so the HUD renders no Fit button; its readout is a
   // real control instead (clicking it resets to 100%, same job Fit does
   // elsewhere), which is what onFit maps to here.
@@ -383,7 +383,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const markClean = () => { baseline = serialize(); };
 
   // Leaving /pro via the back pill. The pill owns the actual navigation (it goes
-  // back to wherever you came from, not unconditionally to the gallery — see
+  // back to wherever you came from, not unconditionally to the gallery - see
   // components/back-pill.ts); this only takes the click over when the batch is
   // dirty, to offer saving it as a session first, and hands the pill's own `go`
   // back once the user has decided.
@@ -398,7 +398,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       goHome = go;
       showSaveSessionDialog({
         // Open the Sessions popover, then arm the one-shot "leave after saving"
-        // intent — openSessions() runs closeSessions() synchronously (which clears
+        // intent - openSessions() runs closeSessions() synchronously (which clears
         // the flag), so it must be set *after* the call. doSave consumes it; an
         // abandoned popover clears it via closeSessions, so a later normal save
         // won't navigate.
@@ -411,7 +411,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
   // Spreadsheet keyboard navigation (roving focus + focused/editing states).
   const nav = createGridNav(gridHost, {
-    // Alt+↑/↓ reorders the focused row — the keyboard peer of the grip-drag. state
+    // Alt+↑/↓ reorders the focused row - the keyboard peer of the grip-drag. state
     // is authoritative (dirty is computed from it); renderGrid() re-renders and
     // nav.refresh({restoreFocus}) re-focuses the row by uid, so focus rides along.
     onReorderRow: (rowUid, dir) => {
@@ -476,7 +476,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     ctx.unit = state.unit; ctx.dpi = state.dpi; // toolbar defaults that rows inherit
     ctx.collapsed = state.collapsed;            // export-column collapse for bodyRow (incl. addRows)
     const all = deriveColumns(state.rows.filter(r => r.manifest));
-    // Collapsed columns are hidden from the matrix but keep their data — they're
+    // Collapsed columns are hidden from the matrix but keep their data - they're
     // shown as restorable tags below the grid. Visible columns drive everything.
     const visible = all.filter((c: any) => !state.collapsed.has(c.key));
     const hidden = all.filter((c: any) => state.collapsed.has(c.key));
@@ -495,8 +495,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
   // Swap a single row's <tr> in place. A per-row format/unit change touches only
   // that row (the column set is derived from the chosen tools, which don't
-  // change), so a full renderGrid() — with its scroll capture/restore and total
-  // re-wire — is wasted work. Re-wires just this row's colour fields and asks nav
+  // change), so a full renderGrid() - with its scroll capture/restore and total
+  // re-wire - is wasted work. Re-wires just this row's colour fields and asks nav
   // to re-find the active cell inside the fresh <tr>. Falls back to a full render
   // if the row's gone.
   function replaceRow(uid: string) {
@@ -531,7 +531,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
   let columns = renderGrid();
   // The first cell's ring is set by nav.refresh (in renderGrid). Actually OPENING
-  // its template search waits until the end of mount (openFirstTemplateSearch) —
+  // its template search waits until the end of mount (openFirstTemplateSearch) - 
   // the grid's click/focusin handlers are wired below, so doing it here would
   // fire before them and the chooser wouldn't open (you'd have to press Return).
 
@@ -546,7 +546,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   });
 
   // Drag-to-scrub the Width/Height cells. Commits by firing a normal `input`
-  // event so the same handler that catches typing updates the row state — no
+  // event so the same handler that catches typing updates the row state - no
   // re-render, just a value write per frame (see scrub.js for the perf notes).
   const detachScrub = attachScrub(gridHost, {
     selector: 'input.pro-num',
@@ -587,7 +587,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       row.values = Object.fromEntries(Object.entries(row.values).filter(([k]) => ids.has(k)));
       // Drop a per-row format the new tool can't produce.
       if (row.format && !(loaded.manifest.render?.formats ?? []).includes(row.format)) row.format = undefined;
-      // Hide only the columns this tool just introduced — EXCEPT a whitelist of
+      // Hide only the columns this tool just introduced - EXCEPT a whitelist of
       // common, high-value inputs (headshot/image/photo/heading) that are worth
       // showing straight away when a tool uses them.
       for (const c of deriveColumns(state.rows.filter(r => r.manifest))) {
@@ -645,7 +645,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       search.setAttribute('aria-activedescendant', listEl.querySelector('.pro-tpl-opt.is-active')?.id ?? '');
     };
     const draw = (q: string) => {
-      // lib/search matching (plans/99 M3): folded token AND over the NAME only —
+      // lib/search matching (plans/99 M3): folded token AND over the NAME only - 
       // deliberately narrow (plan §1 documents the scope), this list is short
       // and its rows show nothing but the name.
       const tokens = tokenize(q);
@@ -716,7 +716,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     if (t.matches('[data-out-unit]')) {
       const row = rowByUid(t.dataset.row);
       // The DPI cell + width/height placeholders depend on the unit, but all live
-      // in this row — swap just its <tr> (no column-set change).
+      // in this row - swap just its <tr> (no column-set change).
       if (row) { row.unit = t.value; replaceRow(row.uid); }
       return;
     }
@@ -766,8 +766,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     if (preview) { openPreview(preview.dataset.previewRow!); return; }
 
     // Two-step delete: a stray click only arms the ✕; a deliberate second click on
-    // the same (now red "Remove?") button confirms. Any other click — handled by
-    // the disarm guard at the top of this listener — or a 3s timeout cancels it.
+    // the same (now red "Remove?") button confirms. Any other click - handled by
+    // the disarm guard at the top of this listener - or a 3s timeout cancels it.
     const remove = (e.target as HTMLElement).closest<HTMLElement>('[data-action="remove-row"]');
     if (remove) {
       if (remove === _armedRemove) {
@@ -820,7 +820,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     if ((e.target as HTMLElement).closest('[data-show-all-cols]')) { state.collapsed.clear(); columns = renderGrid(); return; }
 
     // Full-cell hit target: clicking the cell's own area (not a child control)
-    // activates the cell's control — toggle a checkbox, open a picker, or focus
+    // activates the cell's control - toggle a checkbox, open a picker, or focus
     // a text field for editing. Makes the whole cell selectable. Skip the bottom
     // edge, which is the row-resize grab zone.
     if (isOnResizeEdge(e)) return;
@@ -835,7 +835,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
   // Navigating onto an EMPTY template cell auto-opens its search popover (the
   // obvious next action is to pick a tool). A cell that already has a tool stays
-  // put — the user hits Enter (or clicks/taps) to change it. The suppress flag
+  // put - the user hits Enter (or clicks/taps) to change it. The suppress flag
   // stops an immediate reopen when we refocus the cell after closing.
   gridHost.addEventListener('focusin', (e) => {
     highlightRelevantTags(); // moving onto a new row re-aims the relevance outline
@@ -899,8 +899,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     return formats[0] ?? null;
   }
   // Render `row` at native size with `records` applied to its blocks `key`, for
-  // the blocks panel's live preview. Native size keeps it fast — the block editor
-  // changes content, not dimensions — and the same engine path the batch uses.
+  // the blocks panel's live preview. Native size keeps it fast - the block editor
+  // changes content, not dimensions - and the same engine path the batch uses.
   async function renderBlocksPreview(row: GridRow, key: string, records: any) {
     if (!row?.toolId || !row.manifest || !isExportable(row.manifest)) return null;
     const fmt = previewFormat(row.manifest);
@@ -1046,7 +1046,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // batch snapshot, so a print run reopens print-ready.
   //
   // Gating is the panel's, unchanged: marks & bleed apply to pdf / pdf-cmyk /
-  // cmyk-tiff, the press profile to the two CMYK formats only — read off the
+  // cmyk-tiff, the press profile to the two CMYK formats only - read off the
   // RESOLVED format of each row (`row.format || state.format`), because a grid can
   // be all-PNG at run level with three rows overridden to Print PDF.
 
@@ -1056,7 +1056,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     return new Set(picked.length ? picked : [state.format]);
   }
   // Function DECLARATIONS, not consts: `syncPrintButton` runs inside the first
-  // `renderGrid()`, which happens earlier in this function body than these lines —
+  // `renderGrid()`, which happens earlier in this function body than these lines - 
   // a `const` arrow would still be in its temporal dead zone and throw.
   function anyPrintFormat(): boolean { return [...effectiveFormats()].some(isPrintFmt); }
   function anyCmykFormat(): boolean { return [...effectiveFormats()].some(isCmykFmt); }
@@ -1064,7 +1064,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   /**
    * Show the Print button only when the run produces something printable, and
    * badge it when settings are actually set. Settings are NOT cleared when the
-   * format moves away from print — they are inert for a non-print format and come
+   * format moves away from print - they are inert for a non-print format and come
    * back untouched if the user switches back, exactly like a per-row DPI.
    */
   function syncPrintButton() {
@@ -1090,7 +1090,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     closeSessions();
     if (_printPop) { closePrintPopover(); return; }   // second click closes
 
-    const marks = csvToMarks(state.marks);            // null when unset — keep it that way
+    const marks = csvToMarks(state.marks);            // null when unset - keep it that way
     const enabled = Boolean(state.bleed || state.marks);
     const mm = state.bleed ? (parseFloat(state.bleed) || DEFAULT_BLEED_MM) : DEFAULT_BLEED_MM;
     const initProfile = (state.profile && (CMYK_CONDITIONS as Record<string, unknown>)[state.profile])
@@ -1141,7 +1141,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const bleedEl = pop.querySelector<HTMLInputElement>('[data-print-bleed]')!;
     const profileEl = pop.querySelector<HTMLSelectElement>('[data-cmyk-profile]')!;
 
-    // Read the card back into run-level state on every change — no Apply step, so
+    // Read the card back into run-level state on every change - no Apply step, so
     // the popover behaves like the rest of the toolbar (change it, it's set).
     const readBack = () => {
       if (!enableEl.checked) { state.bleed = ''; state.marks = ''; }
@@ -1157,7 +1157,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         });
       }
       // The press profile is its own card in the panel and stays independent of the
-      // marks toggle here too — a CMYK run can name a press condition with no marks.
+      // marks toggle here too - a CMYK run can name a press condition with no marks.
       state.profile = anyCmykFormat() ? profileEl.value : state.profile;
       bodyEl.hidden = !enableEl.checked;
       syncPrintButton();
@@ -1200,7 +1200,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     state.unit = data.unit ?? 'px';
     state.dpi = data.dpi ?? 300;
     // Run-level print settings. Absent (a snapshot saved before they existed) is
-    // "not set" — never a fabricated default bleed.
+    // "not set" - never a fabricated default bleed.
     state.profile = data.profile ?? '';
     state.bleed = data.bleed ?? '';
     state.marks = data.marks ?? '';
@@ -1245,7 +1245,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     setTimeout(() => document.addEventListener('pointerdown', onOutside), 0);
   }
 
-  // (Re)render the popover body — the saved list plus the save-current control.
+  // (Re)render the popover body - the saved list plus the save-current control.
   async function drawSessions(pop: HTMLElement) {
     const list = await sessions.list();
     pop.innerHTML = `
@@ -1313,7 +1313,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // Open the shared folder overlay to organize sessions and open a whole folder
-  // (group) into the grid — flattened, with each row's "Save as" carrying its
+  // (group) into the grid - flattened, with each row's "Save as" carrying its
   // group/subgroup path. Folder *creation* is disabled here (done in the gallery);
   // /pro only browses, loads, and flattens.
   async function openFoldersOverlay() {
@@ -1377,7 +1377,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // + Row / +5 live in the bottom bar (re-rendered with the grid), so they're
   // wired by delegation in the gridHost click handler via [data-add-rows].
 
-  // Append empty rows incrementally — they never change the column set (columns
+  // Append empty rows incrementally - they never change the column set (columns
   // derive only from rows with a tool), so we just append <tr>s instead of
   // rebuilding the whole table. Falls back to a full render if the body's gone.
   function addRows(n: number): GridRow[] {
@@ -1392,7 +1392,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // The "Fill last" button lives outside the table, so the incremental addRows
-  // path doesn't re-render it — keep its disabled state in sync by hand. (A full
+  // path doesn't re-render it - keep its disabled state in sync by hand. (A full
   // renderGrid bakes the same state in via addRowsHtml.)
   function refreshFillLast() {
     const btn = gridHost.querySelector<HTMLButtonElement>('[data-fill-last]');
@@ -1403,7 +1403,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // "Fill last": copy the last row that has a template into every row that has
-  // none yet — turning one set-up row into a batch in a click. Each target gets
+  // none yet - turning one set-up row into a batch in a click. Each target gets
   // its OWN deep copy of the values (so later per-row edits stay independent) plus
   // the source's format / size / unit / dpi. The manifest is read-only data, so
   // it's shared by reference. Per-row filename is left auto so outputs don't
@@ -1447,8 +1447,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     addRowAndPick();
   }, true);
 
-  // ⌘/Ctrl+Enter adds a row from ANYWHERE in /pro — mid-edit, in the template
-  // search, in the toolbar — since it produces no character it never fights
+  // ⌘/Ctrl+Enter adds a row from ANYWHERE in /pro - mid-edit, in the template
+  // search, in the toolbar - since it produces no character it never fights
   // typing. Document-level + capture so it beats the per-cell / search Enter
   // handlers (and the body-mounted search popover, which isn't inside the grid).
   const onAddRowKey = (e: KeyboardEvent) => {
@@ -1475,7 +1475,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const onDocPointer = (e: PointerEvent) => { if (toolbarEl.classList.contains('is-open') && !toolbarEl.contains(e.target as Node)) closeMenu(); };
   document.addEventListener('pointerdown', onDocPointer);
 
-  // CSV import/export — the buttons live inside the Sessions dialog (wired in
+  // CSV import/export - the buttons live inside the Sessions dialog (wired in
   // drawSessions); the file input stays here so the OS picker survives the
   // dialog closing. Importing replaces the grid, so close the dialog after.
   const fileInput = viewEl.querySelector<HTMLInputElement>('#pro-csv-file')!;
@@ -1494,7 +1494,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const model = (tool.manifest.inputs ?? []).map((i: any) => ({ ...i, value: row.values[i.id] ?? i.default }));
     const qs = serializeUrlState(model, { format: row.format || state.format });
     // Carry per-row export dimensions (reserved w/h params), and `full` so the
-    // single-tool view hides its sidebar — a clean preview. The preview canvas
+    // single-tool view hides its sidebar - a clean preview. The preview canvas
     // is on-screen px, so physical units are shown at their CSS-px (96dpi) size.
     const u = row.unit ?? state.unit;
     const toPreviewPx = (v: number) => Math.round(u === 'px' ? v : toCssPx({ value: v, unit: u as Unit }));
@@ -1578,18 +1578,18 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     // `state.running` only knows about runs THIS grid started. A retry launched from the
     // previous run's overlay is a second run that this flag never saw, and two runs
     // sharing the offscreen stage and the same progress mount is the failure mode the
-    // overlay's lock exists for — so ask the overlay too, not just ourselves.
+    // overlay's lock exists for - so ask the overlay too, not just ourselves.
     if (isBatchRunActive()) {
       showProgress(`<p class="pro-progress-msg">An export is still running — this will be ready when it finishes.</p>`);
       return;
     }
     closeBulkPopover();
 
-    // `srcIndex` maps each renderable row back to its position in state.rows — which IS
+    // `srcIndex` maps each renderable row back to its position in state.rows - which IS
     // the grid's visible numbering, so it is the only thing that lets the overlay and the
     // zip manifest say "row 7" and mean the row the user is looking at. planBatch
     // compacts; nothing may re-filter `renderable` between here and the run.
-    // The pre-pass. STATIC ONLY: it never mounts, renders or exports — it maps each
+    // The pre-pass. STATIC ONLY: it never mounts, renders or exports - it maps each
     // row to a PreflightJob and runs the engine's rules over it, so the user is told
     // what is wrong with row 7 BEFORE 200 rows render. The run-level settings handed
     // in are the same four the run itself is given below, which is what makes the
@@ -1608,7 +1608,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     }
 
     // Ask before committing to the render (a batch can be large) and always offer the
-    // whole-download lock + optional AES-256 password — it protects EVERY member (incl.
+    // whole-download lock + optional AES-256 password - it protects EVERY member (incl.
     // image-only batches) and R6-locks any PDFs inside. Blank password = no lock; cancel aborts.
     const { ok, strongPassword, zipLock } = await askExportLock(`${renderable.length} file${renderable.length === 1 ? '' : 's'}`, true);
     if (!ok) return;                          // cancelled
@@ -1619,7 +1619,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
     // Author details ride into the zip manifest only when the user has opted in
     // (Profile → "Use my details"); otherwise the [ Author Information ] block is
-    // dropped. The CSV is the exact settings that produced these files —
+    // dropped. The CSV is the exact settings that produced these files - 
     // re-importable to reproduce or tweak the run (Sessions ▸ Upload CSV).
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const zipBase = state.zipName.trim().replace(/\.zip$/i, '') || `lolly-batch-${stamp}`;
@@ -1636,7 +1636,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       // Run-level print settings, same precedence: a row carrying its own bleed /
       // marks / press profile keeps it (batch.ts resolvePrintSettings). Passed
       // unconditionally because runBatch GATES them on each row's resolved format
-      // (batch.ts printSettingsFor) — the Print button hides when the format leaves
+      // (batch.ts printSettingsFor) - the Print button hides when the format leaves
       // print but deliberately does not clear these, and an ungated merge signed a
       // C2PA claim about bleed and marks onto rasters that rendered neither.
       profile: state.profile || undefined,
@@ -1646,7 +1646,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       srcIndex,
       // Per-row preflight findings, keyed by queue position. Skipped rows have no
       // queue position, so theirs travel by identity in `skippedFindings`, and the
-      // run-invariant ones ride `runFindings` — three channels, none of them able to
+      // run-invariant ones ride `runFindings` - three channels, none of them able to
       // stand in for another.
       notes: notesFromFindings(findings, renderable.length),
       skippedFindings: skippedFindings(plan),
@@ -1665,7 +1665,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   function showProgress(html: string) { progressEl.hidden = false; progressEl.innerHTML = html; }
 
   // Screen-reader announcer for batch milestones (start / done / cancelled).
-  // Per-row progress is intentionally NOT announced — it would be far too chatty.
+  // Per-row progress is intentionally NOT announced - it would be far too chatty.
   // A local live region (not the shared a11y helper) keeps /pro's import isolation.
   let _srEl: HTMLDivElement | null = null;
   function srAnnounce(msg: string) {
@@ -1695,7 +1695,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   //  · a saved batch session (#/pro?session=…), e.g. resuming from the gallery's
   //    Saved-sessions list;
   //  · otherwise drop straight into the first (blank) row's template search, ready
-  //    to type — now that the grid's click + focusin handlers are wired.
+  //    to type - now that the grid's click + focusin handlers are wired.
   if (opts.seedRefs?.length) {
     const rows = await rowsFromRefs(host, opts.seedRefs);
     if (rows.length) {
@@ -1726,7 +1726,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
 // Unsaved-changes guard for leaving /pro. Reuses the shared `.unsaved-dialog`
 // styling (app.css) and the shared mountModal lifecycle (components/modal.ts)
-// — Escape and a backdrop click now dismiss like every other app dialog (the
+// - Escape and a backdrop click now dismiss like every other app dialog (the
 // hand-rolled version only wired the three buttons + a bare Escape-remove).
 // Mirrors the single-tool dialog in views/tool.js but stays in the pro module
 // so the whole feature remains removable in one folder.

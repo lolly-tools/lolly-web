@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The colour picker's space registry — what spaces exist, what channels each one
+ * The colour picker's space registry - what spaces exist, what channels each one
  * has, and the four generic operations the picker performs on any of them.
  *
  * Before this module the picker had one hand-written state machine for OKLCH and
@@ -8,13 +8,13 @@
  * an sRGB hex (`genFromHex`/`genToHex`). That round trip is why wide-gamut and
  * perceptual spaces were impossible: a `color(display-p3 1 0 0)` handed to the
  * picker came back as `#ff0b0c` and the authored colour was gone. Here a field
- * holds ONE `CssColor` and every space is data — a channel list plus, for the
+ * holds ONE `CssColor` and every space is data - a channel list plus, for the
  * spaces the engine has no tag for, a compose/decompose pair.
  *
  * The registry is a Map rather than a record literal so a press profile × intent
  * can be mounted at runtime (`registerColorProfile`) without an enum edit: a
  * `GamutSource`'s id already carries its intent, so profile × intent is naturally
- * one key. Nothing calls that in this pass — it is the seam, exercised by tests.
+ * one key. Nothing calls that in this pass - it is the seam, exercised by tests.
  *
  * DOM-free and dependency-free on purpose: it runs under bare `node --test`, and
  * every pure function the picker needs lives here rather than in color-field.ts.
@@ -31,14 +31,14 @@ import type { CssColor, ColorSpaceTag, GamutLimit, GamutSource } from '@lolly/en
 
 export type ColorModeFamily = 'perceptual' | 'device' | 'output';
 
-/** The built-in spaces. Stable strings — they persist in `data-active-mode`. */
+/** The built-in spaces. Stable strings - they persist in `data-active-mode`. */
 export type BuiltinColorMode =
   | 'oklch' | 'oklab' | 'lch' | 'lab' | 'xyz-d65'   // family: perceptual
   | 'hex' | 'rgb' | 'hsl'                            // family: device
   | 'display-p3' | 'rec2020' | 'cmyk';               // family: output
 
 /** One press profile × rendering intent. Verbatim `GamutSource.id`
- *  ('icc:<sha256-prefix>:<intent>' — engine/src/gamut-source.ts). */
+ *  ('icc:<sha256-prefix>:<intent>' - engine/src/gamut-source.ts). */
 export type ProfileColorMode = `icc:${string}`;
 
 export type ColorMode = BuiltinColorMode | ProfileColorMode;
@@ -49,9 +49,9 @@ const FAMILY_ORDER: readonly ColorModeFamily[] = ['perceptual', 'device', 'outpu
 export interface ChannelSpec {
   /** Unique within its space; the dataset key and `data-mode-ch` / `data-dial-ch` value. */
   ch: string;
-  /** The row's glyph — 'L'. */
+  /** The row's glyph - 'L'. */
   label: string;
-  /** 'Lightness' — the slider's accessible name. */
+  /** 'Lightness' - the slider's accessible name. */
   aria: string;
   /** Range in DISPLAY units (what the slider and the readout speak). */
   min: number; max: number; step: number;
@@ -63,13 +63,13 @@ export interface ChannelSpec {
   fmt(v: number): string;
   /** Samples for the track ramp: 2 linear, 13 hue, up to 24 curved. */
   stops: number;
-  /** A genuine hue axis — only these have no 12-o'clock seam on a dial. */
+  /** A genuine hue axis - only these have no 12-o'clock seam on a dial. */
   circular?: boolean;
   /** This channel is the space's hue → powerless-hue memory applies. */
   hue?: boolean;
   /**
    * Rewrite the values the OTHER channels are held at while THIS channel's ramp
-   * is sampled — for painting only, never for the gamut test. OKLCH's hue floors
+   * is sampled - for painting only, never for the gamut test. OKLCH's hue floors
    * chroma so the sweep is still visible when the colour is near grey.
    */
   hold?(vals: Record<string, number>): Record<string, number>;
@@ -78,7 +78,7 @@ export interface ChannelSpec {
 export interface SpaceSpec {
   mode: ColorMode;
   family: ColorModeFamily;
-  /** 'OKLCH' — the tab's pill text. */
+  /** 'OKLCH' - the tab's pill text. */
   label: string;
   /** 'reference' | 'Coated FOGRA39 · perceptual'. */
   sub?: string;
@@ -120,13 +120,13 @@ const dp3 = (v: number): string => v.toFixed(3);
 
 const clamp01 = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 
-/** At most two decimals, no trailing zeros — a byte-exact colour reads as `48`. */
+/** At most two decimals, no trailing zeros - a byte-exact colour reads as `48`. */
 const short = (v: number): string => String(Math.round(v * 100) / 100);
 
 /** ` / 0.5`, or '' for an opaque colour. */
 const alphaPart = (a: number): string => (a < 1 ? ` / ${Math.round(a * 1000) / 1000}` : '');
 
-/** A 0–255 display channel over a 0–1 component — the RGB spaces' three. */
+/** A 0–255 display channel over a 0–1 component - the RGB spaces' three. */
 const rgbChannels = (): ChannelSpec[] => [
   { ch: 'r', label: 'R', aria: 'Red', min: 0, max: 255, step: 1, toComp: v => v / 255, fromComp: v => v * 255, fmt: int, stops: 2 },
   { ch: 'g', label: 'G', aria: 'Green', min: 0, max: 255, step: 1, toComp: v => v / 255, fromComp: v => v * 255, fmt: int, stops: 2 },
@@ -141,16 +141,16 @@ const register = (spec: SpaceSpec): void => { SPACES.set(spec.mode, spec); };
 
 const SRGB_CUBE: readonly (readonly [number, number])[] = [[0, 1], [0, 1], [0, 1]];
 
-// Perceptual — "describes the colour itself, independent of any device". XYZ is
+// Perceptual - "describes the colour itself, independent of any device". XYZ is
 // linear-light rather than perceptual, but it answers that same question, so it
 // sits here with the sublabel "reference" instead of earning a fourth family.
-// None of these are bounded, so a wide-gamut colour is EXACT in all of them —
+// None of these are bounded, so a wide-gamut colour is EXACT in all of them - 
 // which is the whole reason the picker now keeps one CssColor.
 
 // OKLCH samples at the 24-stop ceiling rather than the 9/9/13 its smooth
 // full-range ramp used: it is the one UNBOUNDED space whose tracks break against
 // sRGB, and at 9 samples a run's edge lands up to 12.5% of the track away from
-// the truth — for #30ba78 the lightness axis holds its chroma from L 65% to 96%
+// the truth - for #30ba78 the lightness axis holds its chroma from L 65% to 96%
 // but a 9-sample scan reports 75%–87.5%, hiding displayable colour. The other
 // spaces keep cheap stop counts because their tracks cannot break (an in-range
 // sRGB/P3/Rec.2020 component is by definition inside that gamut).
@@ -177,7 +177,7 @@ register({
 });
 
 // CIELAB-D50 LCH. NOTE the collision: `StorageFormat`'s 'lch' (lib/color-formats.ts)
-// means OKLCH, this one means CIELAB LCH — two different colours behind one
+// means OKLCH, this one means CIELAB LCH - two different colours behind one
 // four-letter string. Nothing here converts between them, but wiring a picker mode
 // id straight into a token's storage format would produce silently wrong colours.
 register({
@@ -211,7 +211,7 @@ register({
   ],
 });
 
-// Device — the sRGB notations. Bounded, so a wider colour reads "approximated".
+// Device - the sRGB notations. Bounded, so a wider colour reads "approximated".
 
 register({
   mode: 'hex', family: 'device', label: 'HEX', tag: 'srgb', limit: 'srgb',
@@ -223,11 +223,11 @@ register({
   parse: raw => parseColor(/^[0-9a-f]{3,8}$/i.test(raw.trim()) ? `#${raw.trim()}` : raw),
 });
 
-/** The sliders' own units — 0–255 per channel, in the legacy CSS form. Left
+/** The sliders' own units - 0–255 per channel, in the legacy CSS form. Left
  *  UNCLAMPED on purpose: `rgb()` parses an out-of-range component as-is, so this
  *  states exactly what the readouts beside the sliders state and reads back as the
  *  same colour. The default (`formatColor(convertColor(c,'srgb'))`) would speak
- *  0–1 fractions while the sliders speak 0–255 — one colour, two unit systems in
+ *  0–1 fractions while the sliders speak 0–255 - one colour, two unit systems in
  *  one panel. */
 const rgbText = (c: CssColor): string => {
   const s = convertColor(c, 'srgb');
@@ -243,7 +243,7 @@ register({
 
 /** HSL's saturation, CLAMPED for display. The engine's srgbToHsl reports the true
  *  (possibly >100%) saturation of a wider colour, but `hsl()` is legacy syntax and
- *  clamps s/l on the way back in — so writing the unclamped number would put a
+ *  clamps s/l on the way back in - so writing the unclamped number would put a
  *  string in the field that no consumer, this one included, resolves to the colour
  *  shown. Same convention as HEX: the text says what this space can actually say,
  *  and the caution line says it is outside sRGB. The COLOUR is untouched. */
@@ -266,7 +266,7 @@ register({
   bounds: SRGB_CUBE, boundsIn: 'srgb',
 });
 
-// Output — what a device or a press can actually put down.
+// Output - what a device or a press can actually put down.
 
 register({
   mode: 'display-p3', family: 'output', label: 'P3', tag: 'display-p3', limit: 'p3',
@@ -298,19 +298,19 @@ function cmykDecompose(c: CssColor): Record<string, number> {
   return { c: ci * 100, m: mi * 100, y: yi * 100, k: ki * 100 };
 }
 
-/** `cmyk(62% 23% 0% 38%)` — the alpha rides along, because text copied out of the
+/** `cmyk(62% 23% 0% 38%)` - the alpha rides along, because text copied out of the
  *  value field is the one place the field's opacity would otherwise be dropped. */
 const cmykTextFrom = (vals: Record<string, number>, alpha: number): string =>
   `cmyk(${['c', 'm', 'y', 'k'].map(k => `${Math.round(vals[k] ?? 0)}%`).join(' ')}${alphaPart(alpha)})`;
 
 const cmykText = (c: CssColor): string => cmykTextFrom(cmykDecompose(c), c.alpha);
 
-// CMYK survives the profile work rather than being deleted with it — the brand
-// editor reads CMYK today — but it is APPROXIMATE, and in this vocabulary a NAME
+// CMYK survives the profile work rather than being deleted with it - the brand
+// editor reads CMYK today - but it is APPROXIMATE, and in this vocabulary a NAME
 // is the claim: a measured target carries a profile's own name and an intent
 // ('Coated FOGRA39 · relative'), a derived one carries a standard's name ('sRGB'),
 // and an approximate one carries no name at all. Beside a named profile tab, a
-// bare `CMYK` already reads as unqualified — so the distinction survives for
+// bare `CMYK` already reads as unqualified - so the distinction survives for
 // screen readers (`ariaSuffix`) and disappears as visual noise, which is what the
 // old visible 'uncalibrated' sublabel had become.
 register({
@@ -326,7 +326,7 @@ register({
  * The profile's OWN transform, both ways, in PCS Lab and 0–1 device channels.
  *
  * A profile tab is registered only where this exists, because the tab wears the
- * profile's name and an intent — and a name is the claim. Numbers published under
+ * profile's name and an intent - and a name is the claim. Numbers published under
  * 'Coated FOGRA39 · relative' have to come out of that file's tables; anything
  * else is the bare, deliberately unnamed CMYK tab's job.
  */
@@ -338,11 +338,11 @@ export interface ProfileDevice {
 }
 
 export interface ProfileSpaceOpts extends Partial<SpaceSpec> {
-  /** The profile's own data colour space — 'CMYK', 'RGB', 'Lab'. Names the tab. */
+  /** The profile's own data colour space - 'CMYK', 'RGB', 'Lab'. Names the tab. */
   space?: string;
 }
 
-/** `device(0.62 0.23 0.00 0.38)` — the notation a non-CMYK ink set gets, rather
+/** `device(0.62 0.23 0.00 0.38)` - the notation a non-CMYK ink set gets, rather
  *  than a syntax invented for the occasion. Matches the Colour Lab's press row. */
 const deviceTextFrom = (inks: readonly ChannelSpec[]) =>
   (vals: Record<string, number>, _alpha: number): string =>
@@ -358,13 +358,13 @@ const deviceTextFrom = (inks: readonly ChannelSpec[]) =>
  * `device` is REQUIRED, and that is the whole point: the tab converts through the
  * profile's own tables under the named intent, so the numbers it shows are the
  * same ones the Colour Lab's press notation row prints. It used to compose
- * through the naive sRGB substitution the bare CMYK tab uses — which published an
+ * through the naive sRGB substitution the bare CMYK tab uses - which published an
  * approximation under a measured profile's name, contradicted the press row on
  * the same page, and, for any ink count other than four, threw the channel values
  * away and returned black on the first arrow key.
  *
  * `space` names the tab: 'CMYK' for a four-ink CMYK profile, 'RGB' for a monitor
- * profile, and so on. Never a blanket 'CMYK' — a three-channel RGB profile
+ * profile, and so on. Never a blanket 'CMYK' - a three-channel RGB profile
  * labelled CMYK is a false claim about the file.
  */
 export function registerColorProfile(
@@ -434,7 +434,7 @@ export function getColorSpace(mode: string): SpaceSpec | undefined {
   return SPACES.get(mode as ColorMode);
 }
 
-/** The default space — OKLCH, the one worth picking in. */
+/** The default space - OKLCH, the one worth picking in. */
 export const DEFAULT_COLOR_MODE: ColorMode = 'oklch';
 
 /**
@@ -473,8 +473,8 @@ export function composeColor(spec: SpaceSpec, vals: Record<string, number>, alph
  *
  * `lastHue` stands in for any hue channel the conversion reports as POWERLESS
  * (grey has no hue, so `convertColor` marks it missing). Reading the hue back out
- * of an achromatic conversion instead is the low-chroma hue drift — a near-grey's
- * hue wandering as you drag lightness — and it is now impossible in EVERY space
+ * of an achromatic conversion instead is the low-chroma hue drift - a near-grey's
+ * hue wandering as you drag lightness - and it is now impossible in EVERY space
  * with a hue, not just OKLCH.
  */
 export function decomposeColor(spec: SpaceSpec, canonical: CssColor, lastHue: number): Record<string, number> {
@@ -498,17 +498,17 @@ function stopCss(spec: SpaceSpec, c: CssColor): string {
  *
  * `tier` 0 is inside `spec.limit`; 1.. are the rings out (the gamut reachable one
  * step wider, then the one after that); {@link BEYOND_TIER} is the stretch no
- * display gamut holds. The runs cover [0,1] by construction — adjacent runs share
+ * display gamut holds. The runs cover [0,1] by construction - adjacent runs share
  * their boundary fraction exactly.
  */
 export interface ChannelRun { from: number; to: number; stops: string[]; tier: number }
 
 /**
- * Every run along one channel — reachable AND not — with the other channels held.
+ * Every run along one channel - reachable AND not - with the other channels held.
  *
  * The generalisation of lib/gamut-slider.ts's `gamutRuns` to any space and any
  * gamut limit, including a press profile (a `GamutSource` is a valid limit). The
- * tier-0 runs paint solid, so the shape of the track still says where you can
+ * tier-0 runs paint solid, so the layout of the track still says where you can
  * actually go; the rest paint as washes of decreasing opacity as they go up gamuts
  * (color-field.ts's `runParts`), so an unreachable stretch reads as "the axis
  * continues, your limit cannot reach it" instead of as a hole. A two-stop gradient
@@ -517,7 +517,7 @@ export interface ChannelRun { from: number; to: number; stops: string[]; tier: n
  *
  * The gamut test uses the TRUE held values; only the painted colour takes
  * `ChannelSpec.hold` (OKLCH's hue floors chroma so its sweep stays visible at
- * grey — a display trick that must not invent gamut gaps).
+ * grey - a display trick that must not invent gamut gaps).
  *
  * Three cost decisions, because this runs for every channel of the mounted space
  * on every colour change (`paintTracks`, rAF-coalesced):
@@ -534,7 +534,7 @@ export interface ChannelRun { from: number; to: number; stops: string[]; tier: n
  * - a boundary is refined ONCE and shared by the two runs it separates, which
  *   roughly halves the halvings AND keeps the runs exactly contiguous. Refining
  *   each run's own edges independently lands the two estimates up to a tolerance
- *   apart, and CSS then interpolates an alpha fade across that sliver — blurring
+ *   apart, and CSS then interpolates an alpha fade across that sliver - blurring
  *   the very edge the bisection exists to sharpen. This one is for correctness
  *   first; the probes it saves are a bonus.
  * - the refinement is where structure is DISCOVERED, so the blind sweep can stay
@@ -543,8 +543,8 @@ export interface ChannelRun { from: number; to: number; stops: string[]; tier: n
  *   find. Raising the sweep to catch the same bands instead would pay on every
  *   channel of every space.
  *
- * Measured per full panel repaint — all channels of one space, 3000 iterations,
- * node 24, seed `oklch(62% 0.19 260)` — in µs and in probes, against the earlier
+ * Measured per full panel repaint - all channels of one space, 3000 iterations,
+ * node 24, seed `oklch(62% 0.19 260)` - in µs and in probes, against the earlier
  * version of this function that classified from the paint grid alone: OKLCH 83 → 108
  * (121 → 150), OKLab 100 → 111, XYZ 90 → 110 (116 → 147), Lab 66 → 111 (80 → 141),
  * LCH 56 → 112 (77 → 126), HSL 23 → 29 (31), CMYK 13 → 18 (36), HEX/RGB/P3 8.6 →
@@ -560,25 +560,25 @@ export interface ChannelRun { from: number; to: number; stops: string[]; tier: n
  */
 
 /**
- * Tolerance at a boundary that touches tier 0 — the reachable edge, which is the
+ * Tolerance at a boundary that touches tier 0 - the reachable edge, which is the
  * information. Sampling alone leaves it short by up to one whole step (4.3% of the
  * track at 24 stops), enough to leave the thumb in a gap while the caution line
  * calls the colour exact. 0.15% of the track is a boundary the eye cannot fault.
  *
  * A TOLERANCE, not a halving count, and that distinction is a bug fixed rather than
  * a preference: a fixed count only bounds the error if the bracket width is fixed
- * too. It is not — a channel with `stops: 2` (the hex/RGB/P3/Rec.2020 components,
+ * too. It is not - a channel with `stops: 2` (the hex/RGB/P3/Rec.2020 components,
  * Lab/LCH/OKLab L, HSL S: 15 channels across 8 of the 11 registered spaces) samples
  * only frac 0 and 1, so its one interior bracket is the WHOLE axis. Two halvings of
  * that leave the edge off by up to 25% of the track, and when the true boundary sits
  * in the far quarter the keep side never moves at all, so the run came back
- * `from === to` — the ring was computed and then painted as nothing. Halving until
+ * `from === to` - the ring was computed and then painted as nothing. Halving until
  * the bracket is under a tolerance cannot do that, whatever the bracket started at.
  */
 const EDGE_TOL = 0.0015;
 
 /** Tolerance between two washes. A wash edge is decoration, so 1% of the track is
- *  plenty — but it still has to be a tolerance (see EDGE_TOL). */
+ *  plenty - but it still has to be a tolerance (see EDGE_TOL). */
 const OUTER_TOL = 0.01;
 
 /** Halvings ceiling per bracket, so a pathological tolerance cannot spin. A whole
@@ -599,7 +599,7 @@ const MAX_REFINE_PROBES = 48;
  * channel (15 of them across 8 of the 11 registered spaces, including both default
  * device tabs) was classified from its two endpoints: LCH L at `oklch(62% 0.19 260)`
  * truly carries seven bands and reported four. The sweep only has to bracket a
- * CHANGE — the refinement below finds bands hidden inside a bracket — so 9 is enough
+ * CHANGE - the refinement below finds bands hidden inside a bracket - so 9 is enough
  * wherever the endpoints of some step differ. A band between two same-tier samples is
  * still invisible, deliberately: see the sub-sample note in engine/src/gamut-tier.ts,
  * and note that a finer blind sweep pays on every channel to catch it.
@@ -610,7 +610,7 @@ const TIER_SAMPLES_MIN = 9;
  * Narrowness rank for "bisect from the narrower tier's side", so `crossing` always
  * belongs to the narrower tier.
  *
- * At a tier-0 boundary that is the original invariant verbatim — tier 0 never
+ * At a tier-0 boundary that is the original invariant verbatim - tier 0 never
  * claims a colour the limit cannot show, and the wash beside it overstates its
  * reach by at most one tolerance, which is the right direction for a hint.
  * BEYOND_TIER is numerically the lowest but describes the WIDEST region (no gamut
@@ -639,7 +639,7 @@ export function channelRuns(
   const paintAt = (frac: number): string =>
     stopCss(spec, composeColor(spec, { ...held, [ch.ch]: valueAt(frac) }, alpha));
 
-  // 1. Tiers only — the stop colours are computed once the boundaries are known, so a
+  // 1. Tiers only - the stop colours are computed once the boundaries are known, so a
   //    wash never pays for the samples it will not paint. The parts list is built left
   //    to right and each part is closed by the next one's opening fraction, so the runs
   //    are contiguous BY CONSTRUCTION rather than by two estimates agreeing.
@@ -668,7 +668,7 @@ export function channelRuns(
     loFrac: number, loTier: number, hiFrac: number, hiTier: number, depth: number, found = false,
   ): void => {
     // A band the sweep stepped over is, by definition, narrower than the bracket that
-    // hid it, so a 1% wash tolerance can land BOTH of its boundaries on one fraction —
+    // hid it, so a 1% wash tolerance can land BOTH of its boundaries on one fraction - 
     // the collapsed run again. Once a third tier turns up, its edges get the tight
     // tolerance; the cost is paid only where structure was actually found.
     const tol = loTier === 0 || hiTier === 0 || found ? EDGE_TOL : OUTER_TOL;
@@ -684,12 +684,12 @@ export function channelRuns(
     }
     // Inside the tolerance: the boundary is the endpoint held by the NARROWER tier, so
     // tier 0 never claims a colour the limit cannot show and the wash beside it
-    // overstates its reach by at most one tolerance — the right direction for a hint.
+    // overstates its reach by at most one tolerance - the right direction for a hint.
     open(hiTier, narrowness(loTier) <= narrowness(hiTier) ? loFrac : hiFrac);
   };
 
   // The sweep, taken whole before any refinement so each crossing can see whether the
-  // band on EITHER side spans a single sample — one that does is as narrow as a
+  // band on EITHER side spans a single sample - one that does is as narrow as a
   // mid-bracket discovery and gets the same tight tolerance, or its two boundaries both
   // round to that one sample's fraction and the run collapses.
   const sweep: number[] = [];
@@ -723,12 +723,12 @@ export function channelRuns(
 
 /** Slack on a range test: conversion float noise, not a real excursion. Relative to
  *  the channel's own range so it means the same thing on a 0–255 axis and a 0–0.4
- *  one. `BOUNDS_SLACK` below is the same idea in component units — the two
+ *  one. `BOUNDS_SLACK` below is the same idea in component units - the two
  *  disagreeing is what made plain white report "Outside Lab". */
 const RANGE_SLACK = 1e-6;
 
 /**
- * A display value pinned into its slider's range — `convertColor` leaves RGB
+ * A display value pinned into its slider's range - `convertColor` leaves RGB
  * components unclamped (P3 red is `color(rec2020 0.869 0.175 -0.005)`), so a
  * decomposed value can genuinely fall outside the axis. The slider goes to the
  * edge; the COLOUR is never rewritten, because looking at a colour in a narrower
@@ -748,7 +748,7 @@ export function spaceText(spec: SpaceSpec, c: CssColor): string {
   return formatColor(convertColor(c, spec.tag!));
 }
 
-// A bare component list — '62% 0.11 250', '255, 0, 0', '40, 0, 30, 10 / 0.5' —
+// A bare component list - '62% 0.11 250', '255, 0, 0', '40, 0, 30, 10 / 0.5' - 
 // in the space's own DISPLAY units. This is the notation the picker's value field
 // spoke before it spoke full CSS, and people have it in muscle memory.
 const BARE = /^[\d\s.,%/+-]+$/;
@@ -771,7 +771,7 @@ function bareComponents(spec: SpaceSpec, raw: string): CssColor | null {
 /**
  * Parse whatever the user typed into the value field: this space's own notation
  * first, then a bare component list in its display units, then the full CSS
- * parser. The last step is the point — a hex pasted while OKLCH is active, or an
+ * parser. The last step is the point - a hex pasted while OKLCH is active, or an
  * `oklch()`/`color(display-p3 …)` pasted anywhere, must land rather than be
  * silently held as unparseable.
  */
@@ -794,8 +794,8 @@ export function spaceParse(spec: SpaceSpec, raw: string): CssColor | null {
  *
  * The parsed colour cannot answer this: every parser defaults a missing alpha to 1,
  * so `alpha === 1` covers both "`#30ba78`, say nothing about opacity" and "`ff`,
- * make it opaque". The picker needs the difference — the first inherits the alpha
- * the slider is showing, the second is an instruction — and reading it off the
+ * make it opaque". The picker needs the difference - the first inherits the alpha
+ * the slider is showing, the second is an instruction - and reading it off the
  * NOTATION is the only place the difference still exists.
  */
 export function notationHasAlpha(raw: string): boolean {
@@ -803,7 +803,7 @@ export function notationHasAlpha(raw: string): boolean {
   if (!s) return false;
   const hex = /^#?([0-9a-f]+)$/i.exec(s);
   if (hex) return hex[1]!.length === 4 || hex[1]!.length === 8;   // #rgba / #rrggbbaa
-  // Modern syntax puts alpha after a slash — inside the parens for a colour
+  // Modern syntax puts alpha after a slash - inside the parens for a colour
   // function, bare for the picker's own component list ('62% 0.11 250 / 0.5').
   const args = /\(([^)]*)\)\s*$/.exec(s);
   const body = args ? args[1]! : s;
@@ -812,14 +812,14 @@ export function notationHasAlpha(raw: string): boolean {
   return /^(?:rgba?|hsla?)\(/i.test(s) && body.split(',').length === 4;
 }
 
-/** Slack on a bounds test — a byte-rounded channel lands a hair outside. */
+/** Slack on a bounds test - a byte-rounded channel lands a hair outside. */
 const BOUNDS_SLACK = 1e-4;
 
 /**
  * Can this space state the colour exactly, or only approximate it? Unbounded
  * spaces (the perceptual ones) can always state it; a bounded one cannot when a
  * component falls outside its range. This drives the "exact / approximated from a
- * wider colour" half of the caution line — the gamut half is `inGamut` against
+ * wider colour" half of the caution line - the gamut half is `inGamut` against
  * `SpaceSpec.limit`, which is a different question (a press profile is bounded by
  * ink, not by component range).
  */
@@ -849,7 +849,7 @@ export function limitLabel(limit: GamutLimit): string {
 }
 
 /** Total ink for this colour on this space's limit, in channels (1.0 = one ink
- *  at full), or null where the concept does not apply — every RGB gamut. */
+ *  at full), or null where the concept does not apply - every RGB gamut. */
 export function spaceInkCoverage(spec: SpaceSpec, canonical: CssColor): number | null {
   const src = resolveGamutSource(spec.limit);
   if (!src.inkCoverage) return null;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Colour schemes for the visualizer — the brand's palette used as several distinct
+ * Colour schemes for the visualizer - the brand's palette used as several distinct
  * combinations rather than one.
  *
  * SUSE ships pine, jungle and mint (close, supporting), plus persimmon, waterhole and
@@ -16,7 +16,7 @@
  * produced washed-out pinks that looked nothing like SUSE. Contrast belongs BESIDE the
  * ramp, not inside it.
  *
- * Schemes are scored and filtered, not merely enumerated — "good contrast" is measured
+ * Schemes are scored and filtered, not merely enumerated - "good contrast" is measured
  * (hue separation + perceptual distance + tonal range), so a brand whose colours are all
  * muddy variations of each other gets fewer schemes rather than bad ones.
  */
@@ -26,7 +26,7 @@ import {
 } from './viz-palette.ts';
 
 export interface VizScheme {
-  /** Stable id — persisted, so it must not change for a given brand. */
+  /** Stable id - persisted, so it must not change for a given brand. */
   id: string;
   /** Human label for the menu, e.g. 'Jungle' or 'Jungle / Persimmon'. */
   name: string;
@@ -38,13 +38,13 @@ export interface VizScheme {
 
 /** Below this a "contrast" pairing is too close to read as a counterpoint. */
 const MIN_SCHEME_SCORE = 0.28;
-/** Two heroes closer than this in hue are the same family — one scheme, not two. */
+/** Two heroes closer than this in hue are the same family - one scheme, not two. */
 const FAMILY_HUE_GAP = 45;
 /** Enough schemes to keep cycling interesting; more become indistinguishable. */
 const MAX_SCHEMES = 6;
 /** A hero needs real colour; greys are handled by the monochrome path in viz-palette. */
 const MIN_HERO_CHROMA = 0.04;
-/** The OKLCH lightness a field hero reads best at — bright enough to carry the image,
+/** The OKLCH lightness a field hero reads best at - bright enough to carry the image,
  *  far enough from white to leave the ramp somewhere to go. */
 const IDEAL_HERO_L = 0.65;
 
@@ -68,7 +68,7 @@ function hueName(h: number, l: number, c: number): string {
 /**
  * Collapse the brand's swatches into one representative per hue family.
  *
- * Scored on chroma plus a MID-LIGHTNESS preference, and both parts are load-bearing:
+ * Scored on chroma plus a MID-LIGHTNESS preference, and both parts matter:
  *   - chroma alone picks the dark brick #bd3314 over the actual Persimmon #fe7c3f,
  *     because a darker red carries more chroma than a brighter orange;
  *   - chroma plus a linear lightness bonus then over-corrects and picks Mint #90ebcd
@@ -102,7 +102,7 @@ function families(values: readonly string[], labels?: readonly (string | undefin
 /**
  * Score a field/counterpoint pairing. Combines how far apart the two hues sit, how
  * perceptually distinct they are (ΔEOK, which catches "far in hue but both mud"), and
- * how bright the counterpoint is — it's drawn as a highlight over a dark field, so a
+ * how bright the counterpoint is - it's drawn as a highlight over a dark field, so a
  * dark counterpoint contributes nothing however opposite its hue.
  */
 function scorePair(field: Candidate, counter: Candidate): number {
@@ -117,7 +117,7 @@ function scorePair(field: Candidate, counter: Candidate): number {
  *
  * Every chromatic family becomes a field; each is paired with the best-scoring distant
  * family as its counterpoint. Pairings below `MIN_SCHEME_SCORE` are dropped rather than
- * shipped — a scheme that doesn't actually contrast is worse than one fewer scheme.
+ * shipped - a scheme that doesn't actually contrast is worse than one fewer scheme.
  *
  * A single-hue or monochrome brand yields exactly one scheme, which is correct: it has
  * one look, and `buildVizPalette` already keeps monochrome brands in their own greys.
@@ -142,7 +142,7 @@ export function deriveVizSchemes(
     }
     const palette = buildVizPalette(values, field.hex);
     if (!best || best.score < MIN_SCHEME_SCORE) {
-      // No usable counterpoint — still a valid single-family scheme.
+      // No usable counterpoint - still a valid single-family scheme.
       out.push({ id: field.hex.slice(1), name: field.name, palette, score: 0 });
       continue;
     }
@@ -199,7 +199,7 @@ function nameOf(c: { value: string } & { name?: unknown }): string | undefined {
   return typeof c.name === 'string' && c.name.trim() ? c.name.trim() : undefined;
 }
 
-/** Drop the cache — tests, and a live token edit. */
+/** Drop the cache - tests, and a live token edit. */
 export function invalidateVizSchemes(): void {
   cached = null;
 }
@@ -209,7 +209,7 @@ export function vizSchemeById(schemes: readonly VizScheme[], id: string | null |
   return schemes.find((s) => s.id === id) ?? schemes[0]!;
 }
 
-/** The scheme after `id`, wrapping — for deterministic stepping (menus, tests). */
+/** The scheme after `id`, wrapping - for deterministic stepping (menus, tests). */
 export function nextVizSchemeId(schemes: readonly VizScheme[], id: string): string {
   if (schemes.length === 0) return id;
   const at = schemes.findIndex((s) => s.id === id);
@@ -217,7 +217,7 @@ export function nextVizSchemeId(schemes: readonly VizScheme[], id: string): stri
 }
 
 /**
- * A DIFFERENT scheme at random — what auto-cycling uses.
+ * A DIFFERENT scheme at random - what auto-cycling uses.
  *
  * Random rather than sequential because the schemes are few: stepping them in order
  * makes the rotation obviously periodic after one lap, and the brand's colours arriving

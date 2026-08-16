@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shared search matcher (plans/99-unified-search.md M0) — the ONE place
+ * The shared search matcher (plans/99-unified-search.md M0) - the ONE place
  * query text is folded, tokenized and scored against a haystack. Every search
  * surface in the shell (gallery, catalogue, projects, picker, the spotlight
  * overlay's providers) converges on this module; no new surface may hand-roll
@@ -9,13 +9,13 @@
  * Contract:
  *  - `fold` is the single normalization: lowercase, NFD, combining marks
  *    stripped (é→e, and Arabic harakat etc. via \p{M}), ß→ss. Both sides of a
- *    match must be folded — callers pre-fold their haystacks ONCE when built
+ *    match must be folded - callers pre-fold their haystacks ONCE when built
  *    (the prebuilt-haystack pattern projects/catalogue already use), and
  *    `tokenize` folds the query.
  *  - `scoreHaystack` is AND-across-tokens: every token must hit at least one
  *    field or the whole item scores 0. Each token contributes its best field's
  *    weight, doubled when the token matches at a word boundary (a prefix of a
- *    word). No word segmentation — CJK matches as a plain substring, which is
+ *    word). No word segmentation - CJK matches as a plain substring, which is
  *    deliberate (plans/99 principle 6: segmentation is out of scope).
  */
 
@@ -56,10 +56,10 @@ function matchQuality(text: string, token: string): 0 | 1 | 2 {
  * Score an item's fields against a tokenized query.
  *
  * AND semantics: every token must match at least one field, else 0. Each
- * matching token contributes the best available `weight` across the fields —
- * doubled where it sits at a word boundary — and the item's score is the sum.
+ * matching token contributes the best available `weight` across the fields - 
+ * doubled where it sits at a word boundary - and the item's score is the sum.
  * An empty token list scores 0 (an empty query means "don't rank", not
- * "everything matches" — callers gate on query length before ranking).
+ * "everything matches" - callers gate on query length before ranking).
  */
 export function scoreHaystack(fields: readonly SearchField[], tokens: readonly string[]): number {
   if (!tokens.length) return 0;

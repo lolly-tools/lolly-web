@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/index.ts + org/chrome.ts — the injectable-consumption seam (plans/19).
+ * org/index.ts + org/chrome.ts - the injectable-consumption seam (plans/19).
  *
  * The three things that MUST hold:
  *   - a member's org-config `injectables` populate the neutral injected-tools
@@ -49,7 +49,7 @@ const { _resetChromeForTests } = await import('./chrome.ts');
 /**
  * Reset between tests. ASYNC on purpose: a previous test's lazy chrome mount can
  * still be in flight, and if it lands after this clear it appears inside the NEXT
- * test — which is how "an un-wired slot renders nothing" started failing in CI the
+ * test - which is how "an un-wired slot renders nothing" started failing in CI the
  * moment the earlier tests began mounting reliably. Drain first, then clear, so
  * each test starts from a genuinely quiet DOM.
  */
@@ -78,7 +78,7 @@ const banner = () => document.querySelector('.org-chrome--banner');
 /**
  * Wait for the lazy `import('./chrome.ts')` to resolve AND mount.
  *
- * This was a single `setTimeout(0)`, which is one macrotask — enough on a warm
+ * This was a single `setTimeout(0)`, which is one macrotask - enough on a warm
  * module cache and not enough on a cold one. It passed on every developer machine
  * and failed in CI, where the import is compiled fresh: "member injectables …
  * render a chrome banner" has been red on main for several commits for exactly
@@ -87,7 +87,7 @@ const banner = () => document.querySelector('.org-chrome--banner');
  * So poll the caller's condition rather than guess a duration. With no condition
  * it keeps the old single-tick behaviour, which is all the assertion-free call
  * sites need. A test whose condition never arrives still fails, just after the
- * deadline rather than immediately — the assertion after it reports the real
+ * deadline rather than immediately - the assertion after it reports the real
  * problem either way.
  */
 const settle = async (until?: () => unknown, timeoutMs = 3000): Promise<void> => {
@@ -217,7 +217,7 @@ test('duplicate injected tool ids collapse to one registry entry (no dup card)',
   assert.equal(getInjectedTools().filter((tt) => tt.id === 'dupe').length, 1);
 });
 
-// ── Dormancy — the byte-identical guarantee ─────────────────────────────────────
+// ── Dormancy - the byte-identical guarantee ─────────────────────────────────────
 test('injectables seam is a dormant no-op with no control plane', async () => {
   await reset(); // router = 404 → no control plane
   await initOrg();

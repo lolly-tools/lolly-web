@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * URL-space cost model — the single source of truth for "what the shareable
+ * URL-space cost model - the single source of truth for "what the shareable
  * link contains and what each part costs".
  *
  * WHY THIS EXISTS. Two encoders in views/tool.ts describe the URL, and they are
@@ -10,8 +10,8 @@
  *   - syncUrl (the ADDRESS BAR): URLSearchParams (space->'+', '~'->%7E), no
  *     default-skip (that is shrinkUrl's separate pass), keeps '#', keepUserIds.
  * For the same state these emit different bytes, so ONE function cannot model
- * both. The budget gauge/ledger and the Share dialog are about the SHARE link —
- * the thing you copy / QR / send — so this module reproduces buildShareParams'
+ * both. The budget gauge/ledger and the Share dialog are about the SHARE link - 
+ * the thing you copy / QR / send - so this module reproduces buildShareParams'
  * share-link serialization EXACTLY, via one per-param decision primitive
  * (encodeModelParam) that buildShareParams itself now consumes. That makes
  * "the gauge's number" and "the copied link" the same bytes by construction.
@@ -19,7 +19,7 @@
  * raw address bar (plan 115 §3).
  *
  * Pure and DOM-free by design (unit-tested in url-budget.test.ts). The one thing
- * that lives in the DOM — the export-panel controls — is read once by the shell's
+ * that lives in the DOM - the export-panel controls - is read once by the shell's
  * collectExportParams() and passed in as already-formed `key=value` strings.
  */
 
@@ -35,18 +35,18 @@ import { asRow } from '../views/tool-types.ts';
 export const SCALAR_CAP = 150;
 /** A blocks value whose encoded form exceeds this is dropped. */
 export const BLOCKS_CAP = 8000;
-/** At/above this readable length the link auto-packs (`z=`) — the pack heuristic. */
+/** At/above this readable length the link auto-packs (`z=`) - the pack heuristic. */
 export const AUTO_PACK_MIN = 1800;
 /** At/above this readable length the Share dialog warns "very long". */
 export const SHARE_WARN_LEN = 2000;
-/** The engine's hard reopen ceiling — MIRROR of engine/src/tool-url.ts:61 (MAX_URL,
+/** The engine's hard reopen ceiling - MIRROR of engine/src/tool-url.ts:61 (MAX_URL,
  *  not exported). A link past this won't reopen even compressed. */
 export const URL_HARD_CAP = 4096;
 
-// ── The fidelity report (moved here from share-dialog.ts — it is a projection of
+// ── The fidelity report (moved here from share-dialog.ts - it is a projection of
 //    the cost model). Every share surface reads this one shape. ──
 export interface ShareFidelity {
-  /** false when anything below is non-empty — the link would silently lose content. */
+  /** false when anything below is non-empty - the link would silently lose content. */
   faithful: boolean;
   /** input ids whose scalar value exceeded SCALAR_CAP. */
   droppedScalars: { id: string; label: string }[];
@@ -61,15 +61,15 @@ export type UrlCostStatus =
   | 'kept' // in the link, costs bytes
   | 'default' // equals its default/baseline, so absent from the link (0 bytes)
   | 'baseline' // equals an active template baseline (distinct from tool default, for P3)
-  | 'dropped-len' // scalar over SCALAR_CAP — silently lost today, recorded here
-  | 'dropped-asset' // user/* or unshareable asset — silently lost today
-  | 'dropped-blocks'; // blocks over BLOCKS_CAP — silently lost today
+  | 'dropped-len' // scalar over SCALAR_CAP - silently lost today, recorded here
+  | 'dropped-asset' // user/* or unshareable asset - silently lost today
+  | 'dropped-blocks'; // blocks over BLOCKS_CAP - silently lost today
 
 /** One row emitted by the per-param decision primitive (byte-exact to buildShareParams). */
 export interface EncodedModelParam {
   id: string; // input id (drops report against this)
   key: string; // the raw url key (urlKey alias / "id.field" for vectors)
-  label: string; // input.label ?? id — for the drop report + ledger
+  label: string; // input.label ?? id - for the drop report + ledger
   /** The EXACT `key=value` string buildShareParams pushes, or '' when not kept. */
   emit: string;
   status: UrlCostStatus;
@@ -97,7 +97,7 @@ export interface UrlParamCost {
   simplifiable: boolean; // a content text/number/colour the ledger can offer to shorten
 }
 
-/** Where the link is headed — sets the budget. Callers own the preset table. */
+/** Where the link is headed - sets the budget. Callers own the preset table. */
 export interface UrlCostTarget {
   name: string;
   warn: number; // soft budget the gauge fills toward
@@ -131,7 +131,7 @@ export interface UrlCostModel {
   totalCount: number; // content inputs total
 }
 
-// ── The per-param decision primitive — reproduces buildShareParams' input loop
+// ── The per-param decision primitive - reproduces buildShareParams' input loop
 //    EXACTLY (order and bytes). buildShareParams and costUrlState both call this,
 //    so the copied link and the gauge never disagree. ──
 export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
@@ -154,9 +154,9 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
 
   // file / table: a user's file bytes or a table object are never URL-expressible.
   // buildShareParams had no branch, so they fell through to the scalar path and stamped
-  // garbage `key=%5Bobject%20Object%5D` into the link — a latent bug we fix by skipping
+  // garbage `key=%5Bobject%20Object%5D` into the link - a latent bug we fix by skipping
   // them (pinned in url-budget.test.ts). syncUrl skips 'file' too; it does NOT yet skip
-  // 'table', so a table input's ADDRESS BAR still shows that garbage — a follow-up.
+  // 'table', so a table input's ADDRESS BAR still shows that garbage - a follow-up.
   if (type === 'file' || type === 'table') return [];
 
   if (type === 'asset') {
@@ -222,7 +222,7 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
   return [row({ status: 'kept', emit: `${encodeURIComponent(key)}=${encodeURIComponent(str)}` })];
 }
 
-/** Project the fidelity report out of the costed rows — one derivation, shared by
+/** Project the fidelity report out of the costed rows - one derivation, shared by
  *  costUrlState and (implicitly, via the same encodeModelParam statuses) buildShareParams. */
 export function fidelityFromParams(params: UrlParamCost[]): ShareFidelity {
   const pick = (s: UrlCostStatus) =>
@@ -245,7 +245,7 @@ function costRowFromModel(p: EncodedModelParam): UrlParamCost {
     key: p.key,
     label: p.label,
     emit: p.emit,
-    // Dropped rows carry cost 0 — they are fidelity loss, not length; kept for the
+    // Dropped rows carry cost 0 - they are fidelity loss, not length; kept for the
     // ledger's red rows. Only kept rows cost bytes.
     cost: kept ? p.emit.length : 0,
     status: p.status,
@@ -284,7 +284,7 @@ function costRowFromExport(part: string): UrlParamCost {
 }
 
 export interface CostInput {
-  /** runtime.getModel() output — the tool's live input model. */
+  /** runtime.getModel() output - the tool's live input model. */
   model: InputModelItem[];
   /** Already-formed `key=value` (or bare-flag) strings from collectExportParams(). */
   exportParts: string[];
@@ -320,7 +320,7 @@ export function costUrlState(input: CostInput, opts: CostOpts = {}): UrlCostMode
       if (cr.category === 'content') {
         contentInputs.add(cr.id);
         // "Changed" = any non-default edit, INCLUDING one a link had to drop (a long
-        // value, a user/* image): the user did change it — it just can't travel — and
+        // value, a user/* image): the user did change it - it just can't travel - and
         // it already surfaces separately as a red fidelity row. Counting only kept rows
         // would read "changed 0 of 1" for a tool whose sole input was filled.
         if (cr.status !== 'default' && cr.status !== 'baseline') changedContent.add(cr.id);

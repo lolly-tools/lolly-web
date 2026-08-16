@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-// A slide-sorter filmstrip for paged tools (render.paged) — a rail of live thumbnails
+// A slide-sorter filmstrip for paged tools (render.paged) - a rail of live thumbnails
 // beside the canvas that lets you see every page at once, click one to jump to it, and
 // step with the ← → / ↑ ↓ arrow keys. The rail runs down the LEFT by default, or along
-// the BOTTOM when the manifest asks for it (render.filmstrip: "bottom") — the deck-strip
+// the BOTTOM when the manifest asks for it (render.filmstrip: "bottom") - the deck-strip
 // shape, which suits a card/slide deck where pages are wide and few. When a page carries a
 // `data-block-index` (deck-studio tags each slide with the sidebar block that authors it),
 // the link is two-way: clicking a thumbnail also scrolls + focuses that block, and clicking
@@ -28,8 +28,8 @@ export type FilmstripSide = 'left' | 'bottom';
 // fixes the WIDTH (heights vary with each page's aspect), a horizontal one fixes the
 // HEIGHT (widths vary). That constant is what lets the CSS reserve a fixed strip and the
 // canvas inset it, with no measure-then-relayout pass.
-const THUMB_W = 132; // px — left rail: thumbnail width
-const THUMB_H = 96;  // px — bottom rail: thumbnail height
+const THUMB_W = 132; // px - left rail: thumbnail width
+const THUMB_H = 96;  // px - bottom rail: thumbnail height
 
 export function mountFilmstrip(
   outer: HTMLElement,
@@ -66,7 +66,7 @@ export function mountFilmstrip(
     return inputs.querySelector<HTMLElement>(`.block-item[data-block-index="${CSS.escape(bi)}"]`);
   }
   // Delete the slide by clicking its sidebar block's own remove control (reuses the
-  // shell's block-removal path — undo, URL sync, re-render all come for free).
+  // shell's block-removal path - undo, URL sync, re-render all come for free).
   function deletePage(page: HTMLElement): void {
     const bi = page.getAttribute('data-block-index');
     if (bi == null || !inputs) return;
@@ -100,7 +100,7 @@ export function mountFilmstrip(
     if (next !== activeIdx) { setActive(next); scrollToPage(next); }
   }
 
-  // Arrow-key paging — only when the canvas region has focus/hover and the user isn't
+  // Arrow-key paging - only when the canvas region has focus/hover and the user isn't
   // typing in a field, so we never fight normal input or page scrolling.
   function onKey(e: KeyboardEvent): void {
     if (!thumbs.length) return;
@@ -137,7 +137,7 @@ export function mountFilmstrip(
 
   // Clone the tool's #tool-canvas-scoped <style>s and re-scope them onto the rail's
   // .pagestrip-render wrappers, so a cloned page renders with the tool's real styling
-  // (positions, colours, bullets, tables) — a scaled clone would otherwise be unstyled.
+  // (positions, colours, bullets, tables) - a scaled clone would otherwise be unstyled.
   function injectScopedStyles(): void {
     let css = '';
     canvas.querySelectorAll('style[data-lolly-scope]').forEach(s => {
@@ -166,7 +166,7 @@ export function mountFilmstrip(
         const scale = bottom ? THUMB_H / ph : THUMB_W / pw;
         const label = (page.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
 
-        // Container (not a button — it holds two buttons: jump + delete).
+        // Container (not a button - it holds two buttons: jump + delete).
         const thumb = document.createElement('div');
         thumb.className = 'pagestrip-thumb';
 
@@ -200,7 +200,7 @@ export function mountFilmstrip(
         open.addEventListener('click', () => { setActive(i); scrollToPage(i); jumpToBlock(page); });
         thumb.appendChild(open);
 
-        // Delete — only when the slide maps to a removable sidebar block (the builder).
+        // Delete - only when the slide maps to a removable sidebar block (the builder).
         if (blockOf(page)) {
           const del = document.createElement('button');
           del.type = 'button';

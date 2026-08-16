@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Accessibility-preference DRIFT GUARDS — static reads of the places the feature
+ * Accessibility-preference DRIFT GUARDS - static reads of the places the feature
  * is spelled out a second time, where a well-meaning edit can silently break an
  * invariant that no runtime unit test can see:
  *
- *   1. the gated CSS (parts/base.css, tokens.css, parts/a11y.css) — must stay
+ *   1. the gated CSS (parts/base.css, tokens.css, parts/a11y.css) - must stay
  *      attribute-gated on <html> (dormant by default) and must keep the render
  *      canvas and the offscreen export stages out of every gated rule;
- *   2. the `--a11y-fs` type multiplier — ~950 chrome `font-size` declarations, plus
+ *   2. the `--a11y-fs` type multiplier - ~950 chrome `font-size` declarations, plus
  *      the chrome icon sizes that ride the same factor (an icon that did not grow
  *      with its label left the icon-only controls unreachable by the preference),
  *      are written `calc(<len> * var(--a11y-fs))`, and their additivity rests on
  *      the unconditional default being exactly 1 and on not one of them living
  *      inside a rule that paints the user's render. No human can re-check a
  *      thousand declarations, so the scan below does it per-declaration;
- *   3. index.html's pre-paint FOUC script — a hand-inlined copy of what
+ *   3. index.html's pre-paint FOUC script - a hand-inlined copy of what
  *      lib/a11y-prefs.ts writes, so it cannot import the module and cannot be
  *      kept honest by anything except a test like this one. This repo has been
  *      bitten by two-copies drift before (see the schema drift guard);
- *   4. app.css's layer declaration — the high-contrast token overrides only win
+ *   4. app.css's layer declaration - the high-contrast token overrides only win
  *      because tokens.css is imported UNLAYERED; layering it would silently
  *      neuter the preference.
  *
  * Deliberately structural: no colour value and no multiplier NUMBER is asserted
  * (those are design choices, tunable in one edit, and pinning them would make
  * this test a chore). What is asserted is the shape that keeps the feature
- * additive — plus, for the multiplier, that the default is 1, because a default
+ * additive - plus, for the multiplier, that the default is 1, because a default
  * of anything else changes type for users who set no preference at all.
  *
  * Run directly:  node --test shells/web/src/lib/a11y-prefs-contract.test.ts
@@ -58,7 +58,7 @@ const FS_USE = /var\(\s*--a11y-fs\s*\)/;
  * `pro-export-canvas` also serves /pro batch rows, every `compose` child render,
  * featured-row renders and the boot personalize previews; views/multi-edit.ts
  * owns `.me-canvas`/`.me-scale`). A preference may not change one pixel inside
- * any of them — export geometry is shared with the CLI render path.
+ * any of them - export geometry is shared with the CLI render path.
  */
 const PROTECTED = [
   '.tool-canvas', '#tool-canvas', '#tool-canvas-outer', '#tool-content',
@@ -95,7 +95,7 @@ interface Rule { selector: string; body: string; at: string[]; line: number }
 
 /**
  * Flat rule list: every innermost `selector { … }`, with the at-rule preludes it
- * sits inside. Enough of a parser for structural assertions — the sheets here
+ * sits inside. Enough of a parser for structural assertions - the sheets here
  * are hand-written and shallow (no CSS nesting in this codebase).
  */
 function rules(css: string): Rule[] {
@@ -165,8 +165,8 @@ function arms(selector: string): string[] {
 
 /**
  * Drop every `:not(…)` (parens balanced, so `:not(:where(a, b))` goes whole).
- * A protected name inside a :not() is an EXEMPTION — it keeps the canvas OUT of
- * the rule — whereas the same name in the remaining part TARGETS the canvas, so
+ * A protected name inside a :not() is an EXEMPTION - it keeps the canvas OUT of
+ * the rule - whereas the same name in the remaining part TARGETS the canvas, so
  * the two must never be confused.
  */
 function stripNot(selector: string): string {
@@ -194,7 +194,7 @@ function protectedIn(fragment: string): string | undefined {
   return PROTECTED.find((name) => new RegExp(`${name.replace(/[.#]/g, '\\$&')}(?![-\\w])`).test(fragment));
 }
 
-/** Is this rule inside the a11y feature — gated on the selector or by an at-rule? */
+/** Is this rule inside the a11y feature - gated on the selector or by an at-rule? */
 function isA11yGated(rule: Rule): boolean {
   return rule.selector.includes('data-a11y') || rule.at.some((a) => a.includes('data-a11y'));
 }
@@ -246,7 +246,7 @@ test('each pref is gated in its documented sheet, and every gated rule names an 
 });
 
 test('every gated block in the three a11y sheets hangs off <html>, arm by arm', () => {
-  // brand-vars.ts appends an UNLAYERED <style> at (0,1,0) — `html[data-a11y-…]`
+  // brand-vars.ts appends an UNLAYERED <style> at (0,1,0) - `html[data-a11y-…]`
   // is (0,1,1) and wins, a bare `[data-a11y-…]` ties and loses on source order.
   // It is also the only form that cannot match a document with no preference:
   // an arm that drops the attribute (a stray comma while editing a selector
@@ -319,7 +319,7 @@ test('both reduce-motion blocks (OS media query AND the app attribute) exempt th
  * parts/base.css's `body { color: hsl(var(--foreground)) }` is inherited by tool
  * markup (most templates set no colour, several draw with `currentColor`), so
  * when high contrast re-points --foreground the canvas and every offscreen export
- * stage inherit the new ink — changing exported pixels, and baking into session
+ * stage inherit the new ink - changing exported pixels, and baking into session
  * thumbnails and preview renders whose cache keys carry no preference component.
  * The fix is a restore rule at the canvas boundary, which necessarily targets the
  * canvas. It is safe for exactly one reason: every value it sets comes from a
@@ -327,7 +327,7 @@ test('both reduce-motion blocks (OS media query AND the app attribute) exempt th
  *
  * So the allowance is narrow by construction rather than by good intentions: the
  * properties are enumerated, and every value must resolve through a base token.
- * A restore rule that set anything else — a size, a different token, a literal —
+ * A restore rule that set anything else - a size, a different token, a literal - 
  * fails, which is the point.
  */
 const RESTORE_PROPS = new Set(['--foreground', 'color']);
@@ -339,8 +339,8 @@ function isBaseRestore(rule: Rule): boolean {
 }
 
 test('no a11y-gated rule TARGETS the render canvas or an export stage', () => {
-  // A protected name may appear in a gated selector only inside a :not() — i.e.
-  // as an exemption keeping the surface out — or in a base-restore rule (above).
+  // A protected name may appear in a gated selector only inside a :not() - i.e.
+  // as an exemption keeping the surface out - or in a base-restore rule (above).
   // Nothing else about a preference may reach in: exports must be byte-identical
   // with the preference on, because the render path is shared with the CLI.
   let exemptions = 0;
@@ -422,12 +422,12 @@ test('largeText is a --a11y-fs multiplier: one gated override, one unconditional
 });
 
 /**
- * The properties the multiplier is allowed to leave through — GLYPH SIZE and
+ * The properties the multiplier is allowed to leave through - GLYPH SIZE and
  * nothing else.
  *
  * Type: font-size / line-height. Icons: an icon is a glyph too, so chrome svg,
  * caret and checkbox marks ride the SAME factor (there is deliberately no second
- * token — see the note in styles/parts/a11y.css), and an icon's size is written
+ * token - see the note in styles/parts/a11y.css), and an icon's size is written
  * on its box (width/height, min-* so a flex row can't shrink it back, flex-basis)
  * or on its paint (background-size / mask-size for CSS-mask marks, stroke-width).
  * Custom properties are allowed because that is where geometry which must follow
@@ -460,11 +460,11 @@ test('the --a11y-fs multiplier only ever scales a glyph size or a token declarat
 });
 
 test('ADDITIVITY: no rule that touches the render canvas or an export stage reads var(--a11y-fs)', () => {
-  // The guard that carries the whole rewrite — every scaled font-size AND every
+  // The guard that carries the whole rewrite - every scaled font-size AND every
   // icon size now written through the same factor. Invariant B says a
   // preference may not change one pixel of an on-canvas render or of any
   // exported PNG/SVG/PDF/video, and the export stages are rasterised offscreen
-  // from these same sheets — so the multiplier must not appear in any rule whose
+  // from these same sheets - so the multiplier must not appear in any rule whose
   // selector list mentions a protected surface, gated or not. (Chrome that sits
   // NEXT TO the canvas is free to scale; this is about rules reaching inside.)
   let protectedBlocks = 0;
@@ -499,7 +499,7 @@ test('the torn-out zoom mechanism cannot creep back: no gated rule declares `zoo
   // Npx` (Chrome M128+ standardized zoom, 23 positioning files here), and
   // because the counter-zoom list was incomplete, so exports came out 1.25×.
   // Scoped to GATED rules on purpose: pro/index.ts's interface scale is a real,
-  // wanted `zoom` — written from JS as an inline style, never from CSS.
+  // wanted `zoom` - written from JS as an inline style, never from CSS.
   let gatedRules = 0;
   for (const rule of ALL_RULES) {
     if (!isA11yGated(rule)) continue;

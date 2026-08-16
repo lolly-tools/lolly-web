@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * User fonts — Google Fonts faces the user added, stored ON-DEVICE and made
+ * User fonts - Google Fonts faces the user added, stored ON-DEVICE and made
  * real everywhere the brand is felt.
  *
  * The storage story is deliberately boring: every downloaded woff2 is a
  * `type:'font'` USER ASSET (`user/fonts/<slug>/<n>`), so it rides every
- * existing rail for free — the storage meter counts it, "Export my data" (and
+ * existing rail for free - the storage meter counts it, "Export my data" (and
  * the hoard) bundles the bytes, a backup import restores them, and clear-all
  * wipes them. No parallel store, no second source of truth.
  *
  * The PRIMARY font is not a separate preference: it's the brand's `font.brand`
- * token (DTCG fontFamily) in the user's installed tokens doc — exactly what
+ * token (DTCG fontFamily) in the user's installed tokens doc - exactly what
  * applyBrandFonts (brand-vars.ts) already reads to set `--font-brand` on
  * <html> for the app chrome, every tool canvas and the offscreen export
  * mounts. Setting a primary here merges the token into the active doc and
@@ -53,7 +53,7 @@ export interface UserFontsHost {
     resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
     bust?(): void;
     /** True when the shipped brand is authoritative (bridge/tokens.ts). Read
-     *  here only to skip an IMPLICIT primary promotion — every actual write
+     *  here only to skip an IMPLICIT primary promotion - every actual write
      *  still goes through installUserTokens, which is the chokepoint. */
     isLocked?(): Promise<boolean>;
   };
@@ -77,7 +77,7 @@ const slugOf = (family: string): string =>
   family.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 // The brand-font family cache, the REGISTERED FontFace map and registerUserFonts
-// itself live in lib/register-user-fonts.ts — the boot-path slice, so main.ts can
+// itself live in lib/register-user-fonts.ts - the boot-path slice, so main.ts can
 // call registerUserFonts without dragging this module's other ~24 exports (and,
 // through installGoogleFont, the whole Google-font fetcher) onto first paint. They
 // must stay a SINGLE module instance: two copies of the cache would hand a tool's
@@ -100,8 +100,8 @@ export function familyFromTokenValue(value: unknown): string {
 }
 
 /** Where a doc's `font` group belongs: the doc itself for a plain DTCG tree,
- *  or — for a layered Tokens-Studio doc (non-empty $themes ⇒ top-level keys
- *  are SETS) — a set enabled everywhere, `base` by convention. Mutates/creates
+ *  or - for a layered Tokens-Studio doc (non-empty $themes ⇒ top-level keys
+ *  are SETS) - a set enabled everywhere, `base` by convention. Mutates/creates
  *  the set container on the (already-cloned) doc it's given. */
 function fontTargetOf(out: Record<string, unknown>): Record<string, unknown> {
   const layered = Array.isArray(out.$themes) && out.$themes.length > 0;
@@ -128,7 +128,7 @@ export function fontGroupOf(doc: unknown): Record<string, unknown> | null {
 /**
  * Merge (or clear, with null) the `font.brand` token into a tokens doc, in
  * place of a copy. Handles both doc shapes createTokenSet reads (layered and
- * plain DTCG — the SUSE doc's shape). Pure; exported for tests.
+ * plain DTCG - the SUSE doc's shape). Pure; exported for tests.
  */
 export function withBrandFontToken(doc: unknown, family: string | null): Record<string, unknown> {
   return withFontRoleToken(doc, 'brand', family);
@@ -141,7 +141,7 @@ export type FontRole = 'brand' | 'mono' | 'display' | 'italic';
 /**
  * The role-aware generalisation: `font.brand` is the app's primary face,
  * `font.mono` its code/data face, `font.display` its h1/h2 heading face and
- * `font.italic` its italic face — the roles the chrome's --font-* vars read
+ * `font.italic` its italic face - the roles the chrome's --font-* vars read
  * (brand-vars.ts FONT_SLOTS). Same merge semantics as withBrandFontToken always
  * had; pure, exported for tests.
  */
@@ -164,7 +164,7 @@ export function withFontRoleToken(doc: unknown, role: FontRole, family: string |
 
 /**
  * Merge (or clear, with null) the `shape.radius` token into a tokens doc, in
- * place of a copy. Reuses fontTargetOf — it's the generic "which SET to write
+ * place of a copy. Reuses fontTargetOf - it's the generic "which SET to write
  * into" resolver (base vs. a layered doc's top level), not actually font-
  * specific despite the name. Pure; exported for tests.
  */
@@ -180,7 +180,7 @@ export function withRadiusToken(doc: unknown, value: string | null): Record<stri
 /**
  * Set (or clear, with null) the app's corner-radius override: merges
  * shape.radius into the base doc (see primaryBaseDoc), installs it as the
- * user's tokens, and re-applies chrome vars immediately — no reload needed.
+ * user's tokens, and re-applies chrome vars immediately - no reload needed.
  * Mirrors setPrimaryFont. Rejects an unsafe/malformed value up front (the
  * same CSS-length gate applyBrandRadius checks on the way back out).
  */
@@ -194,7 +194,7 @@ export async function setBrandRadius(host: UserFontsHost, value: string | null):
 /**
  * Carry the user's chosen fonts through a brand (re)install: when `doc` (a
  * freshly derived or imported tokens doc) declares no `font` group of its own,
- * graft the one from the user's currently-installed tokens onto it — otherwise
+ * graft the one from the user's currently-installed tokens onto it - otherwise
  * re-running the #/start wizard would silently snap the app back to the
  * platform face the moment the new doc lands. A doc that DOES declare fonts
  * wins (an imported brand's type choice is part of that brand).
@@ -213,7 +213,7 @@ export async function carryUserFontTokens(
 
 /** The active tokens doc as raw JSON: the user's installed doc when present,
  *  else null (setting a primary font on a catalog-branded install copies the
- *  catalog doc first — see primaryBaseDoc). */
+ *  catalog doc first - see primaryBaseDoc). */
 async function userTokensDoc(host: UserFontsHost): Promise<Record<string, unknown> | null> {
   try {
     const blob = await host.assets._getBlob(USER_TOKENS_ID);
@@ -241,7 +241,7 @@ async function primaryBaseDoc(host: UserFontsHost): Promise<Record<string, unkno
         if (typeof doc === 'object' && doc !== null) return doc as Record<string, unknown>;
       }
     }
-  } catch { /* no catalog tokens reachable — start empty */ }
+  } catch { /* no catalog tokens reachable - start empty */ }
   return {};
 }
 
@@ -253,7 +253,7 @@ export async function primaryFontFamily(host: UserFontsHost): Promise<string> {
 
 /** Write `family` (or clear, with null) as font.brand and repaint the chrome.
  *  Throws BrandLockedError when the shipped brand is authoritative (the caller's
- *  UI should already be hidden — see host.tokens.isLocked). The repaint is
+ *  UI should already be hidden - see host.tokens.isLocked). The repaint is
  *  cosmetic and never fails the write: the font IS the primary once the tokens
  *  land, even if the chrome can't be redrawn (no DOM, a broken token doc, …). */
 export async function setPrimaryFont(host: UserFontsHost, family: string | null): Promise<void> {
@@ -268,7 +268,7 @@ export async function monoFontFamily(host: UserFontsHost): Promise<string> {
   catch { return ''; }
 }
 
-/** Write `family` (or clear, with null) as font.mono — the code/data face —
+/** Write `family` (or clear, with null) as font.mono - the code/data face - 
  *  and repaint the chrome. Same contract as setPrimaryFont. */
 export async function setMonoFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withFontRoleToken(await primaryBaseDoc(host), 'mono', family);
@@ -282,8 +282,8 @@ export async function displayFontFamily(host: UserFontsHost): Promise<string> {
   catch { return ''; }
 }
 
-/** Write `family` (or clear, with null) as font.display — the heading face used
- *  for h1/h2 — and repaint the chrome. Same contract as setPrimaryFont. */
+/** Write `family` (or clear, with null) as font.display - the heading face used
+ *  for h1/h2 - and repaint the chrome. Same contract as setPrimaryFont. */
 export async function setDisplayFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withFontRoleToken(await primaryBaseDoc(host), 'display', family);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
@@ -296,7 +296,7 @@ export async function italicFontFamily(host: UserFontsHost): Promise<string> {
   catch { return ''; }
 }
 
-/** Write `family` (or clear, with null) as font.italic — the italic face — and
+/** Write `family` (or clear, with null) as font.italic - the italic face - and
  *  repaint the chrome. Same contract as setPrimaryFont. */
 export async function setItalicFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withFontRoleToken(await primaryBaseDoc(host), 'italic', family);
@@ -308,8 +308,8 @@ export async function setItalicFont(host: UserFontsHost, family: string | null):
 
 /**
  * Download a Google Fonts family and make it local: one user asset per face,
- * FontFaces registered immediately, and — when `primary` (or when it's the
- * only font) — font.brand updated so the whole app wears it. `neverPrimary`
+ * FontFaces registered immediately, and - when `primary` (or when it's the
+ * only font) - font.brand updated so the whole app wears it. `neverPrimary`
  * suppresses that only-font promotion (a design-file import must never restyle
  * the whole app via the font.brand token).
  */
@@ -327,7 +327,7 @@ export async function installGoogleFont(
     const f: DownloadedFontFace = faces[i]!;
     const id = `${USER_FONT_PREFIX}${slug}/${i}`;
     // The stored format mirrors whatever css2 actually served (see
-    // google-fonts.ts's FONT_EXT_FORMAT) — usually woff2, occasionally
+    // google-fonts.ts's FONT_EXT_FORMAT) - usually woff2, occasionally
     // truetype/opentype when the request wasn't recognised as a modern
     // browser. The MIME type is informational only; font-registry.ts sniffs
     // the bytes' own magic number rather than trusting it.
@@ -366,7 +366,7 @@ async function brandIsLocked(host: UserFontsHost): Promise<boolean> {
   catch { return false; }
 }
 
-/** A detached ArrayBuffer copy of whatever the caller handed us — a Uint8Array
+/** A detached ArrayBuffer copy of whatever the caller handed us - a Uint8Array
  *  view over a larger buffer (a face sliced out of a PDF or a zip) must not
  *  leak its neighbours into the stored blob. */
 function toArrayBuffer(bytes: ArrayBuffer | Uint8Array): ArrayBuffer {
@@ -386,22 +386,22 @@ export interface InstallFontBytesOptions {
 }
 
 /**
- * Install a font the user already has the BYTES of — an upload, a face pulled
+ * Install a font the user already has the BYTES of - an upload, a face pulled
  * out of a PDF or a design file, anything that never came from Google. The
  * second entrance into the role system: until this existed `installGoogleFont`
  * was the only way bytes could become a `font.*` token (plan 97 §4 gap 3), so
  * an uploaded family could be stored but never *assigned*.
  *
- * Everything downstream is deliberately identical to the Google path — the same
+ * Everything downstream is deliberately identical to the Google path - the same
  * `user/fonts/<slug>/<n>` user assets (so the storage meter, "Export my data",
  * a brand pack and clear-all all keep working with no new rail), the same
- * FontFace registration, the same only-font promotion — so a face's origin
+ * FontFace registration, the same only-font promotion - so a face's origin
  * stops mattering the moment it lands.
  *
  * Vetting is the existing pure validators, not a second opinion:
  * `validateFontFile` owns the size cap, `detectFontFormat` the magic number,
  * `parseFontMetadata` the family/weight/style, `readFontEmbedding` the licence
- * signal. **Nothing here throws for bad bytes** — an oversized, unrecognised,
+ * signal. **Nothing here throws for bad bytes** - an oversized, unrecognised,
  * or unparseable file returns `null` and writes nothing, because the callers
  * are drop zones handling several files at once and one bad file must not
  * abandon the rest. A `BrandLockedError` from an EXPLICIT `makePrimary` does
@@ -411,7 +411,7 @@ export interface InstallFontBytesOptions {
  * readable by everything downstream:
  * - **woff1** is unwrapped to a plain sfnt and stored that way. It is not an
  *   sfnt, `parseFontMetadata` can't read its table directory, and
- *   bridge/font-registry.ts decompresses only woff2 — a stored woff1 would be a
+ *   bridge/font-registry.ts decompresses only woff2 - a stored woff1 would be a
  *   face that installs and then silently .notdefs on vector export. Unwrapping
  *   is also the one place the size gate has to run TWICE: what lands on the
  *   device is the expanded sfnt (woff1 is zlib-per-table, so roughly 2×), and a
@@ -423,18 +423,18 @@ export interface InstallFontBytesOptions {
  *   demand), so its stored size is the size already vetted.
  *
  * A VARIABLE face is stored with its whole `wght` axis ("100 900"), not with the
- * default instance `OS/2.usWeightClass` names — see `variableWeightRange`. The
+ * default instance `OS/2.usWeightClass` names - see `variableWeightRange`. The
  * Google path has always recorded the range css2 hands it, and a file dropped in
  * by hand must not come out clamped to one weight with the other eight
  * faux-synthesised.
  *
- * A face whose own `OS/2.fsType` says `restricted` still installs — the person
- * may well hold the licence — but it is marked `deviceLocal` and its embedding
+ * A face whose own `OS/2.fsType` says `restricted` still installs - the person
+ * may well hold the licence - but it is marked `deviceLocal` and its embedding
  * statement is recorded in meta, so the honesty travels with the asset instead
  * of living in the UI that happened to be on screen at the time.
  *
  * Re-installing a face this family already has (same weight + style) REPLACES
- * it in place rather than piling up `…/1`, `…/2`, `…/3` — the natural thing
+ * it in place rather than piling up `…/1`, `…/2`, `…/3` - the natural thing
  * after fixing a font file and dropping it again. Only a face THIS path wrote is
  * ever replaced: a Google-installed face of the same weight carries subset and
  * unicodeRange metadata an upload cannot reproduce, and overwriting it would
@@ -456,7 +456,7 @@ export async function installFontFromBytes(
   // The 5MB cap lives in validateFontFile and nowhere else. It reads only size
   // and type, so bytes with no File behind them (a PDF-embedded face) can be
   // vetted by the same gate: an empty `type` skips the MIME branch, which is
-  // advisory anyway — the magic number below is the real check.
+  // advisory anyway - the magic number below is the real check.
   const withinCap = (size: number): boolean => validateFontFile({
     size, type: '', name: opts.filename ?? '',
   } as unknown as File).valid;
@@ -490,7 +490,7 @@ export async function installFontFromBytes(
   }
 
   const parsed = parseFontMetadata(sfnt);
-  // 'Unknown' is parseFontMetadata's "the name table told me nothing" — treating
+  // 'Unknown' is parseFontMetadata's "the name table told me nothing" - treating
   // it as a family would slug every such file into one bucket and label the
   // Fonts list with a non-name. Unreadable is unreadable.
   if (!parsed || !parsed.family || parsed.family === 'Unknown') return null;
@@ -553,7 +553,7 @@ export async function installFontFromBytes(
 
   await registerUserFonts(host);   // load the new face into document.fonts
 
-  // The only-font promotion, exactly as installGoogleFont applies it — except
+  // The only-font promotion, exactly as installGoogleFont applies it - except
   // that on a locked brand the IMPLICIT half is skipped rather than left to
   // throw: an upload is not a request to restyle a brand that forbids it. An
   // explicit makePrimary still goes through setPrimaryFont, so the lock refuses
@@ -600,8 +600,8 @@ export async function listUserFonts(host: UserFontsHost): Promise<UserFontFamily
 }
 
 /**
- * Remove a family: delete its assets, unload its FontFaces, and — if it was
- * the primary — hand font.brand to the next installed family (or clear it,
+ * Remove a family: delete its assets, unload its FontFaces, and - if it was
+ * the primary - hand font.brand to the next installed family (or clear it,
  * falling back to the platform default stack).
  */
 export async function removeUserFont(host: UserFontsHost, family: UserFontFamily): Promise<void> {
@@ -610,7 +610,7 @@ export async function removeUserFont(host: UserFontsHost, family: UserFontFamily
     const face = REGISTERED.get(id);
     if (face) { (document.fonts as any).delete(face); REGISTERED.delete(id); }
   }
-  bustFontRegistry();   // the family is gone — exports must stop resolving it
+  bustFontRegistry();   // the family is gone - exports must stop resolving it
   if (family.primary) {
     const rest = (await listUserFonts(host)).filter(f => f.family !== family.family);
     await setPrimaryFont(host, rest[0]?.family ?? null);

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby-accept — the acceptor's front door for a nearby pairing (plans/110 §3).
+ * nearby-accept - the acceptor's front door for a nearby pairing (plans/110 §3).
  *
  * The inviter taps a discovered peer (the ceremony's Nearby panel) and hands over the
  * invite over the nearby channel; on THIS device that arrives as a `subscribeInvites`
  * callback. This module opens the accept ceremony for it, exactly as if the human had
  * pasted the invite, and sends the minted reply back over the SAME channel (via the
  * ceremony's `onAnswer` hook) instead of showing a QR to scan. The plate compare and the
- * tool probe are unchanged — nearby only replaces the transport of the invite/reply blobs,
+ * tool probe are unchanged - nearby only replaces the transport of the invite/reply blobs,
  * never the trust ceremony (mDNS is unauthenticated; the matching plates are the auth).
  *
  * Installed once at boot beside `installNearbyBoot`. It is dormant unless a LAN provider is
- * registered (Tauri only) AND the `nearby-discovery` flag is on — so a plain web build wires
+ * registered (Tauri only) AND the `nearby-discovery` flag is on - so a plain web build wires
  * nothing. The heavy ceremony/transport code is a dynamic import behind the first invite, the
  * same discipline as `collab/private-opener.ts`.
  */
@@ -56,7 +56,7 @@ async function acceptNearbyInvite(invite: NearbyInboundInvite): Promise<void> {
       import('../i18n.ts'),
     ]);
   } catch {
-    invite.decline(); // could not even load the ceremony — do not leave the peer hanging
+    invite.decline(); // could not even load the ceremony - do not leave the peer hanging
     return;
   }
   await i18n.loadNamespace('collab').catch(() => { /* falls back to English */ });
@@ -72,7 +72,7 @@ async function acceptNearbyInvite(invite: NearbyInboundInvite): Promise<void> {
     role: 'acceptor',
     effects,
     // Explicit linkBase so the reply link never falls back to the ceremony's
-    // defaultLinkBase() (a trap from a /t/<id> crawler-stub pathname) — same pattern
+    // defaultLinkBase() (a trap from a /t/<id> crawler-stub pathname) - same pattern
     // join-route.ts and private-opener.ts already apply.
     linkBase: jr.appLinkBase(),
     renderQr: qr.createQrElementRenderer(),

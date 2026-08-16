@@ -4,8 +4,8 @@
  * document.fonts, and keep the synchronous family-name snapshot tools read.
  *
  * WHY IT IS SPLIT OUT
- * main.ts needs exactly ONE symbol from user-fonts.ts at boot —
- * `registerUserFonts` — but user-fonts.ts exports ~24, and the retained export
+ * main.ts needs exactly ONE symbol from user-fonts.ts at boot - 
+ * `registerUserFonts` - but user-fonts.ts exports ~24, and the retained export
  * set of a shared module is the UNION over every importer (the same mechanism
  * that made the engine barrel expensive). The brand editor imports the rest, so
  * boot was paying for `installGoogleFont` and, through it, the whole
@@ -18,7 +18,7 @@
  * may name one of them, and it primes the sync `brandFontFamilies()` cache a
  * deep-linked tool's font select reads. So the CALL stays; the MODULE shrank.
  *
- * The family cache and the REGISTERED face map live here and nowhere else —
+ * The family cache and the REGISTERED face map live here and nowhere else - 
  * user-fonts.ts imports them from this file. Two copies of either would be a
  * silent bug: `brandFontFamilies()` would return [] to a tool's select while
  * boot populated the other copy, and removeUserFont would fail to unload faces.
@@ -42,7 +42,7 @@ export interface RegisterFontsHost {
 // install / removal; a change fires 'lolly:brand-fonts' for anything that wants
 // to react (mounted tools re-read it on their next render regardless).
 let brandFontFamilyCache: string[] = [];
-/** The installed brand-font family names (a copy — safe to mutate). */
+/** The installed brand-font family names (a copy - safe to mutate). */
 export function brandFontFamilies(): string[] { return brandFontFamilyCache.slice(); }
 export function setBrandFontFamilyCache(families: string[]): void {
   const next = [...new Set(families.filter(Boolean))];
@@ -77,24 +77,24 @@ async function registerFace(
 
 /**
  * Load every stored user font into document.fonts. Call at boot (before the
- * brand vars land there's nothing to render in the face yet — it's async and
+ * brand vars land there's nothing to render in the face yet - it's async and
  * best-effort) and after a backup import. Idempotent per document.
  */
 export async function registerUserFonts(host: RegisterFontsHost): Promise<void> {
   // The installed set may have just changed (install, brand pack, backup restore
-  // — every path funnels through here), so the vector-export font registry must
+  // - every path funnels through here), so the vector-export font registry must
   // re-read it rather than serve a stale family map. See bridge/font-registry.ts.
   //
   // Dynamic, and that is safe rather than sloppy: the registry it busts resolves
   // fonts for VECTOR EXPORT, which cannot run before a tool has mounted and the
   // user has pressed Get/Save. Nothing at boot reads that cache, so the reset
-  // landing a microtask later is unobservable — and importing it eagerly would
+  // landing a microtask later is unobservable - and importing it eagerly would
   // put the whole export-side font resolver back on first paint.
   void import('../bridge/font-registry.ts').then(m => m.bustFontRegistry()).catch(() => { /* best-effort */ });
   let records: Array<{ id: string; type: string; blob?: Blob; meta?: Record<string, unknown> }>;
   try { records = await host.assets._exportUserAssets(); }
   catch { return; }
-  // Refresh the family cache FIRST, off the records' meta — it needs only the
+  // Refresh the family cache FIRST, off the records' meta - it needs only the
   // family names, not loaded FontFaces, so populating it before the (awaited)
   // face-load below means a tool that renders during boot (a deep link straight
   // to a font-picking tool) already sees the installed brand fonts in its select,

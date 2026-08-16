@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * HDR JPEG as an ISO 21496-1 gain-map file — Phase B2 of
+ * HDR JPEG as an ISO 21496-1 gain-map file - Phase B2 of
  * plans/61-deeprichpixels.md (§4.2, §6 B, §10 item 2), and the sibling of
  * `export-hdr-png.ts`.
  *
@@ -8,8 +8,8 @@
  * legacy byte path (`hdrBoostToPQ`: 8-bit in, 8-bit PQ code values out) and
  * tagged the result with a Rec.2100-PQ ICC profile. Two defects in one file:
  * PQ quantised to 8 bits bands in the shadows (plan §1's sharpest recorded
- * defect), and a PQ-tagged JPEG shown by any decoder that ignores the profile —
- * which is most of them — is a washed-out, wrongly-lit picture, because PQ code
+ * defect), and a PQ-tagged JPEG shown by any decoder that ignores the profile - 
+ * which is most of them - is a washed-out, wrongly-lit picture, because PQ code
  * values interpreted as sRGB are simply the wrong numbers. The SDR "fallback"
  * of the old path was not a fallback at all.
  *
@@ -29,7 +29,7 @@
  *
  * ─── One rasterisation, and why the two images are pixel-aligned ─────────────
  * `hdrViewTransform` derives the HDR rendition FROM the SDR frame, so the pair
- * is aligned by construction — there is no second render, no re-layout, and no
+ * is aligned by construction - there is no second render, no re-layout, and no
  * chance of a half-pixel drift between base and map. This is also what plan §10
  * means by depth-follows-provenance on this path: the map's values come from
  * the float view transform, never from an upsampled 8-bit intermediate.
@@ -37,13 +37,13 @@
  * ─── depth= interaction ──────────────────────────────────────────────────────
  * `depth=8` OPTS OUT to the legacy PQ path (the gate lives in `renderRaster`),
  * because unlike the PNG case there is a coherent 8-bit answer here and a caller
- * asking for one may have a reason. Everything else — 16/float/auto/absent —
+ * asking for one may have a reason. Everything else - 16/float/auto/absent - 
  * takes this path; `float` is noted and satisfied by the map, since JPEG has no
  * deep sample format of its own.
  *
  * ─── What the marks apply to ─────────────────────────────────────────────────
  * `imprint` and `durable` are applied to the SDR pixels BEFORE the base is
- * encoded, so the mark lives in the delivered base image — the one every viewer
+ * encoded, so the mark lives in the delivered base image - the one every viewer
  * and every detector actually sees. The gain map is then computed from the
  * MARKED pixels, so the HDR rendition a gain-map-aware viewer reconstructs is
  * the marked image boosted, not a different picture. (The legacy path marked
@@ -51,7 +51,7 @@
  * space.)
  *
  * DOM-free on purpose, exactly like `export-hdr-png.ts`: pixels in, bytes out,
- * with the one genuinely DOM-bound step — JPEG encoding — injected as
+ * with the one genuinely DOM-bound step - JPEG encoding - injected as
  * `encodeJpeg`. That is what lets the whole seam be driven under node:test with
  * real JPEG fixtures and no canvas (export-gainmap-jpeg.test.ts).
  */
@@ -82,7 +82,7 @@ export interface GainMapJpegOpts {
   /**
    * Encode straight (un-premultiplied) RGBA to JPEG bytes. The shell hands over
    * a canvas-backed encoder; the test hands over pre-encoded fixtures. Called
-   * twice — once for the SDR base, once for the greyscale gain map.
+   * twice - once for the SDR base, once for the greyscale gain map.
    */
   encodeJpeg: (rgba: Uint8ClampedArray, width: number, height: number, kind: 'base' | 'map') => Promise<Uint8Array>;
   /** Physical resolution -> the base image's JFIF density. Omitted/<=0 leaves it alone. */
@@ -91,7 +91,7 @@ export interface GainMapJpegOpts {
   meta?: ExportMeta | null;
   /**
    * ICC profile for the BASE image. This is an SDR JPEG now, so the honest tag
-   * is the render's own space (sRGB) — not the Rec.2100-PQ profile the legacy
+   * is the render's own space (sRGB) - not the Rec.2100-PQ profile the legacy
    * HDR path stamped. Null writes none.
    */
   icc?: Uint8Array | null;
@@ -103,14 +103,14 @@ export interface GainMapJpegOpts {
   durable?: (rgba: Uint8ClampedArray, width: number, height: number) => Promise<Uint8Array | Uint8ClampedArray | null>;
   /** Gain-map fitting knobs (gamma/offsets/forced range). Engine defaults are the right ones. */
   gainMap?: GainMapOptions;
-  /** The `depth` URL param as requested. See the header — 8 never reaches here. */
+  /** The `depth` URL param as requested. See the header - 8 never reaches here. */
   depth?: 8 | 16 | 'float' | 'auto';
   log?: (level: 'info' | 'warn', msg: string) => void;
 }
 
 export interface GainMapJpegResult {
   bytes: Uint8Array;
-  /** Byte length of the SDR base image AS DELIVERED (metadata included) — the perfect fallback every other decoder sees. */
+  /** Byte length of the SDR base image AS DELIVERED (metadata included) - the perfect fallback every other decoder sees. */
   baseLength: number;
   /** Byte length of the appended gain-map image. */
   mapLength: number;
@@ -122,7 +122,7 @@ export interface GainMapJpegResult {
  * plus the diagnostics the caller may want to log.
  *
  * Throws on genuinely unusable input (bad dimensions, an encoder that does not
- * return a JPEG, a container that will not assemble) — `renderRaster` catches
+ * return a JPEG, a container that will not assemble) - `renderRaster` catches
  * and falls back to the legacy PQ path, so an HDR export is never lost.
  */
 export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegOpts): Promise<GainMapJpegResult> {
@@ -164,7 +164,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
   const gm = computeGainMap(sdrFrame, hdrFrame, o.gainMap ?? {});
   // NO USABLE BOOST -> NO GAIN MAP. When the view transform lifts nothing (a dark
   // frame, no brand target matched, dials at zero) the fitted max is ~0, which
-  // would serialise hdrCapacityMin == hdrCapacityMax — a range the Adobe spec
+  // would serialise hdrCapacityMin == hdrCapacityMax - a range the Adobe spec
   // forbids and that makes the standard decoder weight formula 0/0. Attaching a
   // map that carries no light is also exactly the padding-as-quality this plan
   // refuses (§10, depth follows provenance), so ship the plain SDR JPEG instead.
@@ -174,7 +174,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
   }
   if (gm.stats.degenerate) {
     // A CONSTANT map that still asks for real gain (a uniform frame lifted as a
-    // whole) — valid and worth keeping, unlike the no-boost case above.
+    // whole) - valid and worth keeping, unlike the no-boost case above.
     log('info', `jpeg: gain map is constant at ${gm.meta.gainMapMax.toFixed(3)} log2 (a uniform frame lifted as a whole).`);
   }
   const mapRgba = greyToRgba(gm.map, width, height);
@@ -190,7 +190,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
   return { bytes, baseLength, mapLength: bytes.length - baseLength, stats: gm.stats };
 }
 
-/** SOI check — the encoder is injected, so its output is not taken on trust. */
+/** SOI check - the encoder is injected, so its output is not taken on trust. */
 function isJpeg(b: Uint8Array | null | undefined): b is Uint8Array {
   return !!b && b.length > 3 && b[0] === 0xff && b[1] === 0xd8;
 }
@@ -199,7 +199,7 @@ function isJpeg(b: Uint8Array | null | undefined): b is Uint8Array {
  * Splay the single-channel map across RGB (alpha opaque) so it can go through a
  * canvas JPEG encoder, which has no greyscale mode. R=G=B means the file decodes
  * identically whether a reader takes the luma plane, the red channel, or the
- * whole pixel — and `meta.channels === 1` tells it which to expect.
+ * whole pixel - and `meta.channels === 1` tells it which to expect.
  */
 function greyToRgba(map: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
   const n = width * height;

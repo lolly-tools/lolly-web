@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The acquisition seam a mounted tool asks "am I in a collab?" through
- * (plan 100 §5) — and, more importantly, what it costs to ask when nobody is
+ * (plan 100 §5) - and, more importantly, what it costs to ask when nobody is
  * listening.
  *
  * This registry is the ONLY thing standing between `views/tool.ts` and a whole
  * presence stack, so its dormant behaviour is not a detail: it is the reason a
  * single-player mount is byte-identical today. The tests below pin the three
- * properties that keep it that way — dormant by default, allocation-free while
- * dormant, and unable to fail a mount when a registered transport throws — plus
+ * properties that keep it that way - dormant by default, allocation-free while
+ * dormant, and unable to fail a mount when a registered transport throws - plus
  * the last-wins/unregister rules it inherits from `canvas-sync-provider.ts`.
  *
- * The module is imported FOR REAL (it has no runtime imports at all — the handle
+ * The module is imported FOR REAL (it has no runtime imports at all - the handle
  * type is erased), so nothing here is a source scan.
  *
  * Run directly:
@@ -29,7 +29,7 @@ import {
 import type { CollabSessionContext } from './collab-session-source.ts';
 import type { CollabSessionHandle } from './collab-session.ts';
 
-/** A handle that is never driven — identity is all these tests compare. */
+/** A handle that is never driven - identity is all these tests compare. */
 function stubHandle(): CollabSessionHandle {
   return {
     adapter: {

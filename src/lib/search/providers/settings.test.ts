@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight settings provider, over the REAL registries (plans/99 §2b) —
+ * The spotlight settings provider, over the REAL registries (plans/99 §2b) - 
  * no fixtures: NAV_SECTIONS, the feature-flag consts and DASH_SECTIONS are the
  * data the shipped provider searches, so these tests double as drift guards
  * (a renamed section that stops matching its own label fails here).
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 // jsdom globals BEFORE the dynamic imports (the provider pulls views/profile.ts,
-// whose import graph expects a window) — the search-bar.test.ts convention.
+// whose import graph expects a window) - the search-bar.test.ts convention.
 const dom = new JSDOM('<!doctype html><html><body><main id="view"></main></body></html>', { url: 'https://lolly.tools/' });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
@@ -35,7 +35,7 @@ test('provider registers as the settings group', () => {
 
 test("'contrast' surfaces the Accessibility destinations", async () => {
   const hits = await search('contrast');
-  // The pref itself (title match) outranks the section (keyword match) — both land
+  // The pref itself (title match) outranks the section (keyword match) - both land
   // on the same deep link, so either row serves the intent.
   assert.ok(hits.some((h) => h.href === '#/profile?focus=a11y-section'), 'a11y-section hit present');
   assert.equal(hits[0]!.href, '#/profile?focus=a11y-section');
@@ -58,7 +58,7 @@ test("'focus music' surfaces Neurospicy Mode (pill match, AND across tokens)", a
 test("'palette' surfaces the dashboard colour section, addressed by its unique id", async () => {
   const hits = await search('palette');
   // Keyword-addressed hrefs ('#/d?color') collided across sections and
-  // applyDeepLink resolved them to the first DOM owner — hrefs are id-keyed now.
+  // applyDeepLink resolved them to the first DOM owner - hrefs are id-keyed now.
   assert.ok(
     hits.some((h) => h.subtitle === 'Dashboard' && h.href === '#/d?dash-palette'),
     'a Dashboard hit deep-linking the colour palette section by id',
@@ -118,7 +118,7 @@ test('the four a11y pref labels are copies of the profile card rows (A11Y_ROWS)'
 
 test('every dashboard hit href takes a deep-link form applyDeepLink understands', async () => {
   // Flagged entries deep-link by their OWN unique id (dashFlag plants the id as
-  // a flag token, so applyDeepLink resolves it exactly — keyword tokens collide
+  // a flag token, so applyDeepLink resolves it exactly - keyword tokens collide
   // across sections); flagless (tab) entries by ?tab=<key> from a registry tab row.
   const tabKeys = new Set(DASH_SECTIONS.filter((s) => !s.flag).map((s) => s.tab));
   const dashHits = (await search('a', 500)).filter((h) => h.subtitle === 'Dashboard');

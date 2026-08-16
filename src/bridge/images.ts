@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Images capability (host.images) — on-device image decode / resize / re-encode.
+ * Images capability (host.images) - on-device image decode / resize / re-encode.
  *
- * Wraps machinery the upload path already ships — decodeImageBitmap (native
+ * Wraps machinery the upload path already ships - decodeImageBitmap (native
  * decoder + the lazy bundled-libheif HEIC fallback, orientation baked in, from
- * image-resize.ts/heic-decode.ts) and a browser canvas re-encode — behind the
+ * image-resize.ts/heic-decode.ts) and a browser canvas re-encode - behind the
  * DOM-free ImagesAPI contract: encoded bytes (or a Blob) in, encoded bytes +
  * dimensions out. HEIC/AVIF/TIFF decode where the platform (or bundled WASM)
  * can; output is always a web-safe format (webp/jpeg/png).
  *
  * Everything runs locally; nothing is uploaded. The module itself is loaded
  * lazily by the bridge index (first host.images call), and the heavy HEIC WASM
- * inside decodeImageBitmap is a further dynamic import — so boot cost is zero.
+ * inside decodeImageBitmap is a further dynamic import - so boot cost is zero.
  *
  * Honesty rules (per the contract): the result's mime/width/height are read
- * back from what the encoder actually produced — canvas encoders fall back to
- * PNG where a requested type is unsupported — and resize never upscales.
+ * back from what the encoder actually produced - canvas encoders fall back to
+ * PNG where a requested type is unsupported - and resize never upscales.
  */
 import type {
   ImagesAPI, ImageInfo, ImageResizeOpts, ImageEncodeOpts, ImageResult, ImageEncodeFormat,
@@ -31,7 +31,7 @@ const MIME_OF: Record<ImageEncodeFormat, string> = {
 
 // ─── Byte sniffing ───────────────────────────────────────────────────────────
 // The contract requires the reported MIME to come from the bytes, never a
-// filename — same stance as engine/src/media-sniff.ts (whose helpers aren't
+// filename - same stance as engine/src/media-sniff.ts (whose helpers aren't
 // exported, hence the tiny local copies).
 
 function has(bytes: Uint8Array, offset: number, ...sig: number[]): boolean {
@@ -85,7 +85,7 @@ async function normalise(input: Uint8Array | Blob): Promise<NormalisedInput> {
   return { blob, bytes, mime };
 }
 
-/** Decode-bomb guard — same cap as the upload path (image-resize.ts). */
+/** Decode-bomb guard - same cap as the upload path (image-resize.ts). */
 function guardPixels(width: number, height: number): void {
   if (width * height > MAX_SOURCE_PIXELS) {
     throw new Error(`Image is too large to process (${width}×${height} px).`);
@@ -162,7 +162,7 @@ async function drawAndEncode(
   if (!cx) throw new Error('Canvas 2D context unavailable.');
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = 'high';
-  // JPEG has no alpha channel — composite on white so transparency doesn't go black.
+  // JPEG has no alpha channel - composite on white so transparency doesn't go black.
   if (format === 'jpeg') {
     cx.fillStyle = '#ffffff';
     cx.fillRect(0, 0, width, height);
@@ -170,7 +170,7 @@ async function drawAndEncode(
   cx.drawImage(bitmap, 0, 0, width, height);
   const blob = await canvasToBlob(canvas, MIME_OF[format], clampQuality(quality));
   if (!blob) throw new Error('Image encoding failed.');
-  // Read the ACTUAL type back — canvas encoders fall back to PNG where the
+  // Read the ACTUAL type back - canvas encoders fall back to PNG where the
   // requested type is unsupported, and the contract reports what really happened.
   return {
     bytes: new Uint8Array(await blob.arrayBuffer()),
@@ -181,7 +181,7 @@ async function drawAndEncode(
 }
 
 /** Output default when a resize doesn't pin one: keep a web-safe source format,
- *  otherwise WebP (the upload path's re-encode choice — image-resize.ts). */
+ *  otherwise WebP (the upload path's re-encode choice - image-resize.ts). */
 function defaultFormatFor(mime: string | null): ImageEncodeFormat {
   if (mime === 'image/jpeg') return 'jpeg';
   if (mime === 'image/png') return 'png';
@@ -209,7 +209,7 @@ export function createImagesAPI(): ImagesAPI {
   return {
     async decode(input: Uint8Array | Blob): Promise<ImageInfo> {
       const { blob, bytes, mime } = await normalise(input);
-      // Full decode (orientation baked in) — the dimensions reported must match
+      // Full decode (orientation baked in) - the dimensions reported must match
       // what resize/encode will produce. Rejects with decodeImageBitmap's clear,
       // format-named error when this shell can't read the bytes.
       const bitmap = await decodeImageBitmap(blob);

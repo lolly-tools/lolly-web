@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * A small, dependency-free CSS code editor for the shell (plan 112 M4 — the Custom CSS
+ * A small, dependency-free CSS code editor for the shell (plan 112 M4 - the Custom CSS
  * panel, reusable anywhere). The classic overlay trick: a transparent <textarea> over a
  * coloured <pre> that mirrors it token-for-token (the run-web-code pattern), plus a
- * property/value autocomplete. No CodeMirror/Monaco — CSS's vocabulary is bounded, so a
+ * property/value autocomplete. No CodeMirror/Monaco - CSS's vocabulary is bounded, so a
  * ~250-word property list + a compact tokenizer covers it offline and light.
  *
- * The pure halves — `highlightCss` and `cssCompletions` — carry the logic and are unit
+ * The pure halves - `highlightCss` and `cssCompletions` - carry the logic and are unit
  * tested; `mountCssEditor` is the thin DOM wiring around them. Token colours and the
  * dropdown are theme CSS vars (styles/parts/css-editor.css), so it follows the app theme.
  */
@@ -20,7 +20,7 @@ function span(cls: string, text: string): string {
   return `<span class="tk-${cls}">${esc(text)}</span>`;
 }
 
-// At-rules whose `{ … }` holds nested RULES (selectors), not declarations — so an ident
+// At-rules whose `{ … }` holds nested RULES (selectors), not declarations - so an ident
 // inside stays a selector, not a property. `@keyframes` blocks hold keyframe selectors.
 const RULE_BLOCK_AT = new Set(['media', 'supports', 'container', 'document', 'layer', 'scope', 'keyframes']);
 
@@ -75,7 +75,7 @@ export function highlightCss(src: string): string {
 
 // ── Autocomplete ─────────────────────────────────────────────────────────────────────
 
-/** The bounded CSS property vocabulary (curated common set — the point of "not so big").
+/** The bounded CSS property vocabulary (curated common set - the point of "not so big").
  *  Enough to speed up authoring without shipping the full spec. */
 export const CSS_PROPERTIES: readonly string[] = [
   'align-content', 'align-items', 'align-self', 'animation', 'animation-delay', 'animation-direction',
@@ -250,7 +250,7 @@ export function mountCssEditor(host: HTMLElement, opts: CssEditorOpts = {}): Css
       if (e.key === 'ArrowDown') { e.preventDefault(); acIndex = (acIndex + 1) % acItems.length; highlightSel(); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; highlightSel(); return; }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); accept(); return; }
-      // Escape dismisses just the dropdown — stop it reaching the app's Escape-to-close so
+      // Escape dismisses just the dropdown - stop it reaching the app's Escape-to-close so
       // the host panel/overlay stays open (Escape with no menu open falls through to close it).
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
     }

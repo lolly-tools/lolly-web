@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Recording tips — plain-language best practice for the capture tools (voice-recorder,
+ * Recording tips - plain-language best practice for the capture tools (voice-recorder,
  * top-tail-recorder). Two things live here:
- *   • RECORDING_TIPS — the canonical list. Each tip carries a `cue` so a later step can
+ *   • RECORDING_TIPS - the canonical list. Each tip carries a `cue` so a later step can
  *     have the live audio coach (lib/audio-coaching.ts) spotlight the relevant one.
- *   • mountRecordingHelp — a "?" affordance on the tool stage that opens a tips panel.
+ *   • mountRecordingHelp - a "?" affordance on the tool stage that opens a tips panel.
  *
  * Content-first: the panel shows every tip today. The returned handle exposes flash(cue)
- * — the seam for the "detect when a tip is needed and flash it" follow-up — which opens
+ * - the seam for the "detect when a tip is needed and flash it" follow-up - which opens
  * the panel and highlights that one tip; nothing drives it from the meter yet.
  */
 import { escape } from '../utils.ts';
@@ -38,7 +38,7 @@ export const RECORDING_TIPS: RecordingTip[] = [
   { id: 'fan', cue: 'fan',
     text: 'Keep fans, AC and air vents from blowing on the mic — moving air roars.',
     alert: 'Please make sure all fans and air circulation are turned off.' },
-  // Lighting tips — shown only when the tool captures video (see mountRecordingHelp).
+  // Lighting tips - shown only when the tool captures video (see mountRecordingHelp).
   { id: 'dark', cue: 'dark', kind: 'video',
     text: 'Light your face from the front — a window or lamp in front of you, not behind. If the picture looks dark, add light or turn to face it.',
     alert: 'Too dark — add light or turn to face a window.' },
@@ -178,7 +178,7 @@ export interface TipFlasher {
 
 /**
  * Debounced, rate-limited driver for a help.flash function: a cue must persist for
- * `dwellMs` before it flashes, and the same cue won't re-flash within `cooldownMs` — so
+ * `dwellMs` before it flashes, and the same cue won't re-flash within `cooldownMs` - so
  * detection coaches rather than nags. Cue evaluation itself lives in coachAudio.
  */
 export function createTipFlasher(

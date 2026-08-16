@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * anim-detect contract tests — the decision table that decides whether a picked
+ * anim-detect contract tests - the decision table that decides whether a picked
  * asset gets the Play (live playback) affordance.
  *
  * Run with: node --test shells/web/src/lib/anim-detect.test.ts

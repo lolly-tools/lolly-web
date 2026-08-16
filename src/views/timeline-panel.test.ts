@@ -4,7 +4,7 @@
  *
  * Two layers, both reachable without a browser:
  *
- *   • the PURE viewport model — seconds ↔ pixels at a zoom and a scroll, the
+ *   • the PURE viewport model - seconds ↔ pixels at a zoom and a scroll, the
  *     zoom-about-cursor anchor, the rebuild-vs-restyle memo key, snap candidates,
  *     seam detection, the keyboard containment predicate, and the ruler/filmstrip
  *     density heuristics. These are the functions every gesture is built out of, so
@@ -22,7 +22,7 @@
  * each clip kind takes (waveform / filmstrip / tiled still / the card's own fill), the
  * classification off the live canvas that chooses it, the tiling arithmetic, and that a
  * gesture aborts a queued pass. The canvas 2D context is a recorder and the bitmaps are
- * fakes, because node has no raster — see the browser checklist below.
+ * fakes, because node has no raster - see the browser checklist below.
  *
  * NOT covered here (browser-only): that the pictures actually LOOK right (a real decode,
  * a real drawImage, a Lottie's live <svg> rasterising, CORS tainting), layout-derived
@@ -42,7 +42,7 @@ import type { Box } from './timeline-math.ts';
 
 // timeline-panel.ts imports its own stylesheet (the self-registering lazy-view
 // pattern). Node has no idea what a .css module is, so stub it in-thread for the
-// duration of this file — Vite is what resolves it for real.
+// duration of this file - Vite is what resolves it for real.
 registerHooks({
   load(url: string, ctx: unknown, next: (u: string, c: unknown) => unknown) {
     if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default {};' };
@@ -50,7 +50,7 @@ registerHooks({
   },
 } as Parameters<typeof registerHooks>[0]);
 
-// `pretendToBeVisual` is what gives jsdom a requestAnimationFrame at all — the panel
+// `pretendToBeVisual` is what gives jsdom a requestAnimationFrame at all - the panel
 // rAF-coalesces its drag painting, and without it every pointermove throws.
 const dom = new JSDOM('<!DOCTYPE html><body></body>', { pretendToBeVisual: true });
 for (const k of ['window', 'document', 'HTMLElement', 'Element', 'Node', 'Event', 'CustomEvent', 'MouseEvent', 'getComputedStyle']) {
@@ -146,7 +146,7 @@ test('zoomAbout keeps the instant under the cursor pinned, in and out', () => {
 test('zoomAbout gives up the anchor rather than scrolling before t=0', () => {
   // Zooming far out can put the anchored instant left of the viewport's origin. There is
   // no negative scroll, so the anchor is deliberately surrendered and the view pins to
-  // the start — the alternative is a scrollLeft the element would silently clamp anyway.
+  // the start - the alternative is a scrollLeft the element would silently clamp anyway.
   const z = zoomAbout(40, 0.25, 300, 200);
   assert.equal(z.pxPerSec, 10);
   assert.equal(z.scrollLeft, 0, 'pinned to the start, never negative');
@@ -166,7 +166,7 @@ test('tracksKey is stable across GEOMETRY edits and changes on STRUCTURE edits',
   const boxes = [clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1), scenery('s')];
   const base = tracksKey(boxes, cfg);
 
-  // Moving and trimming must NOT rebuild the rows — that is the whole point of the key.
+  // Moving and trimming must NOT rebuild the rows - that is the whole point of the key.
   const moved = boxes.map((b) => (b.id === 'o' ? { ...b, start: 2.5 } : b));
   assert.equal(tracksKey(moved, cfg), base, 'a move does not change the row structure');
   const trimmed = boxes.map((b) => (b.id === 'a' ? { ...b, dur: 1.2 } : b));
@@ -274,7 +274,7 @@ test('clampPanelH keeps the panel between its floor and half the stage', () => {
 });
 
 test('clampPanelH floors above the measured chrome so the tracks can never be crushed to zero', () => {
-  // Desktop-ish: one bar row, chrome well under MIN_PANEL_H — the constant still rules.
+  // Desktop-ish: one bar row, chrome well under MIN_PANEL_H - the constant still rules.
   assert.equal(clampPanelH(10, 1000, 70), MIN_PANEL_H, 'chrome below the floor changes nothing');
   // Phone-ish: .tl-bar has wrapped and a clip is selected, so the chrome alone (124px)
   // exceeds MIN_PANEL_H. Dragging the grip all the way down must still leave a lane.
@@ -338,13 +338,13 @@ test('thumbMode: every clip kind picks its own picture, and a card falls back to
   assert.equal(thumbMode('', '', 'rgb(20, 24, 29)'), 'fill');
   assert.equal(thumbMode('', '', 'rgba(0, 0, 0, 0)'), 'none', 'a transparent text box stays plain');
   assert.equal(thumbMode('', '', ''), 'none');
-  // A media kind with no resolved url yet is not a picture — it falls back like a card.
+  // A media kind with no resolved url yet is not a picture - it falls back like a card.
   assert.equal(thumbMode('image', '', 'rgb(1, 2, 3)'), 'fill');
   assert.equal(thumbMode('video', '', ''), 'none');
 });
 
 test('thumbMode: a box worth photographing beats BOTH the flat fill and painting nothing', () => {
-  // The gap this closes: a frame — a card, a text box, a pen shape, a composed group —
+  // The gap this closes: a frame - a card, a text box, a pen shape, a composed group - 
   // has no media element, so it used to be one flat rectangle of its own background,
   // or (transparent text, and EVERY kind:'path' box, whose fill the hook forces to
   // transparent) literally nothing at all. A row of frames read as a row of blanks.
@@ -376,7 +376,7 @@ test('canRasterBox: photographs what has ink, declines what would come back blan
   assert.equal(canRasterBox(box(''), 'rgba(0, 0, 0, 0)'), false);
   assert.equal(canRasterBox(box('<div class="lolly-box-text">   </div>'), ''), false, 'whitespace is not text');
   assert.equal(canRasterBox(null, 'rgb(20, 24, 29)'), false);
-  // Past the subtree ceiling we decline rather than build it — the MAX_SVG_MARKUP
+  // Past the subtree ceiling we decline rather than build it - the MAX_SVG_MARKUP
   // idiom. The limit is passed explicitly so this does not pin the constant's value.
   const big = box('<div class="lolly-box-text">Hello</div>');
   for (let i = 0; i < 12; i++) big.appendChild(doc.createElement('span'));
@@ -391,7 +391,7 @@ test('appearanceSig: a drag never invalidates a picture that has not changed a p
   const a = { id: 'a', start: 0, dur: 2, clipIn: 0, speed: 1, lane: 'seq', bg: '#123', text: 'Hi' };
   const dragged = { ...a, start: 7.25, dur: 3, clipIn: 1.5, speed: 2, lane: '' };
   assert.equal(appearanceSig(a, cfg), appearanceSig(dragged, cfg));
-  // Transitions are timing too — a fade length changes when the bar plays, not how it
+  // Transitions are timing too - a fade length changes when the bar plays, not how it
   // looks at rest.
   assert.equal(appearanceSig(a, cfg), appearanceSig({ ...a, enter: 'fade', exitMs: 400 }, cfg));
 
@@ -403,7 +403,7 @@ test('appearanceSig: a drag never invalidates a picture that has not changed a p
   // and one dom-to-image shot.
   assert.equal(appearanceSig(a, cfg), appearanceSig({ ...a, id: 'b' }, cfg));
 
-  // Insertion order must not matter — the same row built by a seed and by a patch is
+  // Insertion order must not matter - the same row built by a seed and by a patch is
   // the same picture.
   const reordered = { text: 'Hi', bg: '#123', lane: 'seq', speed: 1, clipIn: 0, dur: 2, start: 0, id: 'a' };
   assert.equal(appearanceSig(a, cfg), appearanceSig(reordered, cfg));
@@ -438,7 +438,7 @@ interface Harness {
   commits: Box[][];
   boxes: Box[];
   root: HTMLElement;
-  /** The stage the panel is docked in — where `tl-*` / `fc-seek` cross the modules. */
+  /** The stage the panel is docked in - where `tl-*` / `fc-seek` cross the modules. */
   stageEl: HTMLElement;
   /** Every ids array the panel handed to `selection.set`, in order. */
   selSets: string[][];
@@ -449,7 +449,7 @@ interface Harness {
     /** The playhead-contextual write seam free-canvas commits through (plans/104 §8). */
     kfPoseIds(ids: readonly string[]): string[];
     kfPoseWrite(boxes: Box[], ids: readonly string[], delta: Record<string, number>, mode?: 'add' | 'set'): Box[];
-    /** Camera mode, entered by SELECTION (plans/104 §8) — the P1 half of the same seam. */
+    /** Camera mode, entered by SELECTION (plans/104 §8) - the P1 half of the same seam. */
     cameraModeId(): string;
     cameraWrite(boxes: Box[], delta: Record<string, number>): Box[];
     cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null;
@@ -649,7 +649,7 @@ test('a reorder drag on the seq row commits exactly once and lands in the right 
     assert.equal(h.commits.length, 1, 'EXACTLY one write for the reorder');
 
     const seq = h.commits[0]!.filter((b) => b.lane === 'seq');
-    // b, then a — and repacked gapless, which is the whole point of the magnetic row.
+    // b, then a - and repacked gapless, which is the whole point of the magnetic row.
     assert.deepEqual(
       seq.map((b) => [b.id, b.start, b.dur]).sort((x, y) => Number(x[1]) - Number(y[1])),
       [['b', 0, 2], ['a', 2, 3]],
@@ -701,7 +701,7 @@ test('a reorder clears is-drop-target on release — a stale ring cannot outlive
     assert.deepEqual(marked(), ['b'], 'the clip the drop would displace is highlighted during the drag');
     h.root.dispatchEvent(pointer('pointerup', 200, { altKey: true }));
     // A reorder leaves array order and lanes alone, so tracksKey is unchanged and the
-    // next sync takes the restyle branch — nothing will ever rebuild this class away.
+    // next sync takes the restyle branch - nothing will ever rebuild this class away.
     assert.deepEqual(marked(), [], 'and it is gone the instant the pointer lifts');
   } finally { h.teardown(); }
 });
@@ -740,7 +740,7 @@ test('a lost pointer capture does not wedge the panel into ignoring the model fo
 // ── promotion / demotion: timing is reachable for ANY box ─────────────────────
 //
 // The regression these pin: the `text` / `image` / `lottie` / `tool` add-kinds seed
-// neither a lane nor a start, so the box is scenery — and before this the ONLY way to
+// neither a lane nor a start, so the box is scenery - and before this the ONLY way to
 // give one a time was to hand-edit the ?boxes= URL. The inspector gated on `bars`
 // (timed clips only) and the scenery chip did nothing but select.
 
@@ -827,7 +827,7 @@ test('the entrance cue runs on ARRIVAL only, not on every rebuild', async () => 
     assert.equal(ins.classList.contains('is-entering'), true, 'the arrival is announced');
 
     // A field edit rebuilds the row against new values. That is a CHANGE, not an
-    // arrival — re-running the cue on every scrub and every keystroke is its own noise.
+    // arrival - re-running the cue on every scrub and every keystroke is its own noise.
     ins.classList.remove('is-entering');
     type(field(h.root, 'Length'), '2');
     await new Promise((r) => setTimeout(r, 60));
@@ -842,7 +842,7 @@ test('the entrance cue runs on ARRIVAL only, not on every rebuild', async () => 
 });
 
 test('the inspector never right-aligns its overflow off the unreachable start edge', () => {
-  // Not a layout assertion — jsdom has no layout. This pins the STYLE RULE, because the
+  // Not a layout assertion - jsdom has no layout. This pins the STYLE RULE, because the
   // bug was purely declarative and invisible to every behavioural test: with
   // `justify-content: flex-end` on a scroll container, content overflowing the START
   // edge cannot be scrolled back to (scrollLeft is already 0), so Start, Length, Trim in,
@@ -1004,7 +1004,7 @@ test('typing a Start promotes an untimed box in EXACTLY ONE commit, onto an over
 
     const written = h.commits[0]!.find((b) => b.id === 's')!;
     assert.equal(written.start, 2, 'the typed start landed');
-    // Documented default: no media on the canvas, so the length is DEFAULT_CLIP_S — the
+    // Documented default: no media on the canvas, so the length is DEFAULT_CLIP_S - the
     // same 3 s the magnetic pack gives a clip it cannot measure.
     assert.equal(written.dur, 3, 'the length defaulted to the pack default');
     assert.equal(written.lane, '', 'promoted onto an OVERLAY lane, never onto the magnetic row');
@@ -1026,7 +1026,7 @@ test('typing only a Length promotes at the PLAYHEAD, still one commit', () => {
     type(field(h.root, 'Length'), '1.5');
     assert.equal(h.commits.length, 1, 'ONE commit');
     const written = h.commits[0]!.find((b) => b.id === 's')!;
-    // The clock has never been seeked in this harness, so the playhead is at 0 — which
+    // The clock has never been seeked in this harness, so the playhead is at 0 - which
     // is the documented default for a Length-only promotion.
     assert.equal(written.start, 0, 'start defaulted to the playhead');
     assert.equal(written.dur, 1.5, 'the typed length landed');
@@ -1120,7 +1120,7 @@ test('a promoted box round-trips: promote, demote, and the model is scenery agai
 // ── the `+` menu and the tl-add seam ──────────────────────────────────────────
 //
 // The complaint these pin (Andy, 2026-07-27): "I have no way to add audio outside of
-// the export menu, I'd like it in the timeline." The panel does not create boxes — it
+// the export menu, I'd like it in the timeline." The panel does not create boxes - it
 // dispatches `tl-add` with an add-kind id and the playhead, and free-canvas's create
 // pipeline does the rest. What is checked here is the CONTRACT: the kinds come from the
 // manifest, and the time is the live playhead.
@@ -1338,7 +1338,7 @@ const AUDIO_KINDS = [
 
 interface FakeRecorder {
   host: unknown;
-  /** Live microphone references held by the meter — must be 0 after every path. */
+  /** Live microphone references held by the meter - must be 0 after every path. */
   meterRefs(): number;
   sessions(): number;
   cancels(): number;
@@ -1426,7 +1426,7 @@ function takeReaches(root: HTMLElement, phase: string): Promise<void> {
 
 /**
  * Paint the canvas boxes the clock (and the take's mute pass) reads. `data-seq-ms` is
- * what makes the clock playable at all — it refuses to run a zero-length sequence.
+ * what makes the clock playable at all - it refuses to run a zero-length sequence.
  */
 function paintCanvasBoxes(h: Harness): HTMLElement[] {
   h.canvasEl.setAttribute('data-seq-ms', '10000');
@@ -1460,7 +1460,7 @@ test('the mic button needs a recording host and an audio add-kind — NOT a mani
     assert.equal((noAudio.root.querySelector('.tl-mic') as HTMLElement).hidden, true, 'no audio add-kind → no button');
   } finally { noAudio.teardown(); }
 
-  // Capable shell + audio vocabulary and NO declared capability — the shipping
+  // Capable shell + audio vocabulary and NO declared capability - the shipping
   // sequence-studio manifest. Progressive enhancement, like host.media's live camera:
   // declaring `microphone` would mean "cannot run without a mic", which hides the tool
   // from the TUI gallery and drops it from the CLI smoke gate. Nothing opens the mic
@@ -1609,7 +1609,7 @@ test('destroying the panel mid-take releases the microphone and writes nothing',
 test('pressing the mic through a slow permission prompt never leaves a microphone reference held', async () => {
   // The leak that a phase STRING cannot catch. Press 1 opens the prompt; press 2 abandons
   // that take while the prompt is still up; press 3 starts a fresh one. When the permission
-  // finally lands, take 1's continuation resumes and sees a phase of 'countin' — take 3's.
+  // finally lands, take 1's continuation resumes and sees a phase of 'countin' - take 3's.
   // Identity, not phase, has to decide, and each continuation may release only the meter
   // reference it took itself: the real meter tears the mic down at refcount 0 ONLY, so a
   // single unbalanced reference keeps the browser's recording indicator lit until reload.
@@ -1619,11 +1619,11 @@ test('pressing the mic through a slow permission prompt never leaves a microphon
   const h = mount([clip('a', 0, 3)], 40, AUDIO_KINDS, { host: fake.host });
   try {
     const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
-    click(mic);                       // press 1 — waiting on the prompt
+    click(mic);                       // press 1 - waiting on the prompt
     await frames(1);
-    click(mic);                       // press 2 — abandoned mid-prompt
+    click(mic);                       // press 2 - abandoned mid-prompt
     await frames(1);
-    click(mic);                       // press 3 — a new take, same in-flight prompt
+    click(mic);                       // press 3 - a new take, same in-flight prompt
 
     const live = takeReaches(h.root, 'recording');
     fake.grant();
@@ -1675,7 +1675,7 @@ test('a re-take abandoned while it saves keeps the OLD recording and commits not
 
 test('a VIDEO in the user/recording namespace is never offered as a take to record over', () => {
   // The record tool and screen capture mint `user/recording/<ts>.mp4` VIDEO assets through
-  // the same store. Matching on the id prefix alone would offer to record over one — and
+  // the same store. Matching on the id prefix alone would offer to record over one - and
   // the replace path patches the box to an audio ref and deletes the source file.
   const fake = fakeHost();
   const shot: Box = {
@@ -1697,7 +1697,7 @@ test('a VIDEO in the user/recording namespace is never offered as a take to reco
  * Fill the canvas with the markup each box kind really renders (sequence-studio's
  * hooks.js, verbatim in shape): an audio marker div, a <video>, a Lottie MARKER with
  * its mounted <svg>, a plain <img>, and a card that is nothing but a background.
- * This is what `mediaOf` reads — the panel classifies boxes off the LIVE CANVAS, not
+ * This is what `mediaOf` reads - the panel classifies boxes off the LIVE CANVAS, not
  * off the model, because the hook is what resolved the asset ref to a URL.
  */
 function paintMediaBoxes(h: Harness, media: Record<string, string>): void {
@@ -1716,7 +1716,7 @@ interface CtxOp { op: string; args: unknown[] }
 /**
  * jsdom has no layout and no 2D context, which is exactly the two things a thumb pass
  * needs. Give every bar a size and every canvas a RECORDING context, so what the pass
- * decided is observable. The drawing itself is still a browser fact — what is asserted
+ * decided is observable. The drawing itself is still a browser fact - what is asserted
  * here is which branch ran and with what.
  */
 async function withThumbStubs(fn: (ops: Map<HTMLCanvasElement, CtxOp[]>) => Promise<void>): Promise<void> {
@@ -1773,7 +1773,7 @@ test('every clip kind is classified off the live canvas — including a Lottie a
       img: '<img class="lolly-box-img" src="https://x.test/photo.png">',
       // A tool clip is a compose render: an ordinary <img> holding a data: URL.
       tool: '<img class="lolly-box-img" src="data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E">',
-      // The Lottie MARKER also carries .lolly-box-img — a naive `img.lolly-box-img`
+      // The Lottie MARKER also carries .lolly-box-img - a naive `img.lolly-box-img`
       // lookup misses it (it is a div), which is why it gets its own branch.
       anim: '<div class="lolly-box-img lolly-box-lottie" data-lottie-src="anim.json"><svg viewBox="0 0 100 50"></svg></div>',
       card: '',
@@ -1796,7 +1796,7 @@ test('every clip kind is classified off the live canvas — including a Lottie a
 
 test('a card bar paints its own fill IMMEDIATELY, and an inkless box still paints nothing', async () => {
   // The underlay half of node mode. The fill goes down synchronously, before any await,
-  // so a frame bar is never blank while its photograph is being taken — and because the
+  // so a frame bar is never blank while its photograph is being taken - and because the
   // upgrade overwrites the same canvas and `has-thumbs` is only ever ADDED, there is no
   // flash between the two. The photograph itself is the next test; here there is no
   // rasteriser installed and no createImageBitmap, so the capture bails and the
@@ -1832,7 +1832,7 @@ test('a card bar paints its own fill IMMEDIATELY, and an inkless box still paint
  * Node mode end to end, with the dom-to-image shot faked through `_setNodeRasterer`.
  *
  * There is no rasteriser in node at all, so the seam is the only way to reach the
- * branch — what is asserted is the panel's USE of it (which bars ask, how many, when it
+ * branch - what is asserted is the panel's USE of it (which bars ask, how many, when it
  * re-asks, what happens when it fails), never what the picture looks like.
  *
  * `createImageBitmap` is the other platform piece jsdom lacks: `captureNode` bails
@@ -1851,7 +1851,7 @@ async function withNodeRaster(
     calls.push(String((el as HTMLElement).getAttribute?.('data-box-id') ?? ''));
     return (await shot(el as HTMLElement, targetH)) as HTMLCanvasElement | null;
   });
-  // The LRU is module-global and node rasters are keyed by APPEARANCE, not by id — two
+  // The LRU is module-global and node rasters are keyed by APPEARANCE, not by id - two
   // tests with identically-shaped boxes would otherwise share a cached picture.
   clearClipThumbCache();
   try {
@@ -1882,7 +1882,7 @@ test('a frame bar upgrades from its fill to a photograph of the box', async () =
         const card = ops.get(thumbCanvas(h, 'card')) ?? [];
         assert.deepEqual(calls, ['card'], 'the box itself was photographed, not the bar');
         assert.equal(card.some((o) => o.op === 'fillRect'), true, 'the underlay went down first');
-        // ONCE, at the leading edge, at its own aspect — never tiled (plans/104 §8's
+        // ONCE, at the leading edge, at its own aspect - never tiled (plans/104 §8's
         // M2.5 revision, point 4). A filmstrip repeats because it is a picture of time
         // passing; a photograph of a card is identical in every tile, so a wide bar read
         // as the same 6px thumbnail printed twenty times. The fill carries the rest.
@@ -1903,7 +1903,7 @@ test('a bar NARROWER than one tile draws the WHOLE tile — the raster and its v
   // at. The twin sizes the walk to the full `tile` (preserveAspectRatio="none") and then
   // CLIPS it at `min(tile, w)`, exactly as `drawTiled` has always let the canvas edge cut
   // the last tile. A 5-arg `drawImage(bm, 0, 0, min(tile, w), h)` here SCALES instead, so
-  // a short clip — or any clip at low zoom — showed a squeezed whole thumbnail on screen
+  // a short clip - or any clip at low zoom - showed a squeezed whole thumbnail on screen
   // against an undistorted left slice in the exported SVG.
   await withNodeRaster(okShot, async () => {
     await withThumbStubs(async (ops) => {
@@ -1932,7 +1932,7 @@ test('a TRANSPARENT text box and a pen shape get pictures — before this they p
     await withThumbStubs(async (ops) => {
       // Rows that differ in APPEARANCE, not just in id: the signature deliberately
       // leaves the id out, so two boxes that look identical share one shot (and one
-      // cache entry) — which is right, but would hide the second bar here.
+      // cache entry) - which is right, but would hide the second bar here.
       const h = mount([
         { ...clip('words', 0, 2), text: 'Chapter one' },
         { ...clip('shape', 2, 2), kind: 'path', d: 'M0 0 L10 10' },
@@ -1978,7 +1978,7 @@ test('a failed photograph leaves the underlay standing rather than blanking the 
         assert.deepEqual(card.filter((o) => o.op === 'fillStyle').map((o) => o.args[0]), ['rgb(20, 24, 29)']);
         assert.equal(card.some((o) => o.op === 'drawImage'), false, 'no picture, but the fill survived');
         assert.equal(h.bar('card').classList.contains('has-thumbs'), true);
-        // The transparent one has nothing to fall back TO, so it stays undressed — a
+        // The transparent one has nothing to fall back TO, so it stays undressed - a
         // scrim over an empty canvas would be worse than no scrim.
         assert.equal(h.bar('words').classList.contains('has-thumbs'), false);
       } finally { h.teardown(); }
@@ -1990,7 +1990,7 @@ test('a crowded timeline is bounded: the pass budget refuses to queue one shot p
   // The stall this prevents: sixty frames × one uncancellable dom-to-image call each,
   // serialised behind one lock. Only MAX_NODE_RASTERS_PER_PASS misses are started per
   // pass, and at most MAX_THUMB_PASSES passes chain, so one scheduling can never spend
-  // more than the product — the row past that keeps its fill until the next gesture.
+  // more than the product - the row past that keeps its fill until the next gesture.
   await withNodeRaster(okShot, async (calls) => {
     await withThumbStubs(async () => {
       // Each box must LOOK different, or the shared-run dedup would collapse sixty
@@ -2019,7 +2019,7 @@ test('a crowded timeline is bounded: the pass budget refuses to queue one shot p
 test('a twenty-frame row CONVERGES: every bar is photographed, once, without a gesture', async () => {
   // The other half of the bound, and the one that was broken. Two compounding bugs made
   // a twenty-frame row give up part-finished: the chain capped at 3 passes × 6 = 18
-  // shots, and — worse — a continuation pass counted bars whose shot was still IN
+  // shots, and - worse - a continuation pass counted bars whose shot was still IN
   // FLIGHT as misses, so it re-spent its whole budget on them and the bars it was
   // queued to reach were skipped again, pass after pass. Nothing else re-runs a pass,
   // so those bars stayed blank until the user happened to drag something.
@@ -2077,7 +2077,7 @@ test('editing a card’s text re-photographs its bar — a stale picture would L
   // `tracksKey` is id/lane/timed only, so a text or colour edit took the restyle branch
   // and never re-ran a thumb pass: the bar went on showing a photograph of the old
   // words indefinitely. Timing is excluded from the appearance key on purpose, so this
-  // must NOT fire for a drag — the case below.
+  // must NOT fire for a drag - the case below.
   await withNodeRaster(okShot, async (calls) => {
     await withThumbStubs(async () => {
       const h = mount([{ ...clip('card', 0, 2), text: 'Chapter one' }]);
@@ -2231,7 +2231,7 @@ test('a thumb pass is idle-scheduled and a gesture aborts it before anything pai
 
 test('an image bar TILES one still across its width rather than stretching it', async () => {
   await withThumbStubs(async (ops) => {
-    // A decoded picture and a bitmap factory — the two platform pieces jsdom lacks. The
+    // A decoded picture and a bitmap factory - the two platform pieces jsdom lacks. The
     // TILING is the panel's own arithmetic, and that is what is asserted.
     const g = globalThis as Record<string, unknown>;
     const hadCib = Object.hasOwn(g, 'createImageBitmap');
@@ -2265,7 +2265,7 @@ test('an image bar TILES one still across its width rather than stretching it', 
 // ── THE ONE RULE: selecting in the timeline keeps the selection LIVE ──────────
 //
 // free-canvas.ts's header states it verbatim. The panel owns exactly one half:
-// "selecting in the timeline moves the playhead so the selection stays live" — the
+// "selecting in the timeline moves the playhead so the selection stays live" - the
 // converse (time rewriting the selection) is the Premiere failure and is deliberately
 // NOT implemented. `selectAndReveal` is the single writer; every route into a
 // selection goes through it, so what is checked below is the behaviour, not a call.
@@ -2273,8 +2273,8 @@ test('an image bar TILES one still across its width rather than stretching it', 
 // The clock applies a seek on the next frame, so the assertions read the playhead
 // element the tick paints rather than reaching into the clock.
 
-// `frames()` (above) is what lets the clock's rAF-coalesced apply pass — and the
-// onTick fan-out that paints the playhead — actually run.
+// `frames()` (above) is what lets the clock's rAF-coalesced apply pass - and the
+// onTick fan-out that paints the playhead - actually run.
 const playheadPx = (h: Harness): number =>
   parseFloat((h.root.querySelector('.tl-playhead') as HTMLElement).style.left || '0');
 
@@ -2412,7 +2412,7 @@ test('destroying the panel takes the fc-seek listener with it', async () => {
 // edgeZonePx, fmtDur, fmtDelta). What is pinned HERE is the wiring only the panel can
 // get wrong: which pointer gets which hit zone, that the LIMIT signal reads the
 // writer's own answer rather than a second copy of the clamp, that the readout says
-// what actually landed, that the ripple is live rather than deferred to release — and
+// what actually landed, that the ripple is live rather than deferred to release - and
 // that none of it broke "the model is written exactly once per gesture".
 //
 // Every mounted row set below totals FIVE seconds, because that is the length `mount`
@@ -2490,7 +2490,7 @@ test('a SUCCESSFUL trim-in on the magnetic row is not mistaken for a limit', asy
   // The seq row repacks gapless from 0, so a trim-in leaves `start` exactly where it
   // was and takes the frame off the LENGTH instead. Comparing the edge's absolute time
   // against the request would therefore report "end of the source" on every trim-in
-  // that worked — which is why the limit test compares durations.
+  // that worked - which is why the limit test compares durations.
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     const el = h.bar('a');
@@ -2653,7 +2653,7 @@ test('the CSS trim zones are the SAME numbers the hit test uses', () => {
 // `commits`, which is the module's actual output.
 
 test('Shift+S splits every clip the playhead is inside, in EXACTLY ONE commit', async () => {
-  // Three overlays stacked over the same instant plus a seq clip — four cuts, one write.
+  // Three overlays stacked over the same instant plus a seq clip - four cuts, one write.
   // 5s total, so the harness's stubbed viewport fits to exactly 40px per second and
   // `seekTo` lands on the instant it names.
   const h = mount([clip('a', 0, 5), overlay('o1', 0, 5), overlay('o2', 0, 5)]);
@@ -2806,7 +2806,7 @@ test('Detach audio needs BOTH the manifest link field and an audio add-kind', ()
     assert.equal(ctxLabels(noField, 'v').some((l) => l.startsWith('Detach audio')), false);
   } finally { noField.teardown(); }
 
-  // 4. link field, audio kind — but the box has no video to take a sound off.
+  // 4. link field, audio kind - but the box has no video to take a sound off.
   const noVideo = mount([clip('card', 0, 4)], 40, ADD_KINDS, { linkField: 'linkOf' });
   try {
     assert.equal(ctxLabels(noVideo, 'card').some((l) => l.startsWith('Detach audio')), false);
@@ -2917,7 +2917,7 @@ function fakeStorage(): Storage & { map: Map<string, string> } {
   } as Storage & { map: Map<string, string> };
 }
 
-/** AWAITS `run` before restoring — the panel reads `localStorage` lazily, so a
+/** AWAITS `run` before restoring - the panel reads `localStorage` lazily, so a
  *  synchronous try/finally would put the real global back mid-test. */
 async function withStorage(store: unknown, run: () => Promise<void>): Promise<void> {
   const had = Object.hasOwn(globalThis, 'localStorage');
@@ -3082,15 +3082,15 @@ test('`o` toggles the onion skin from the keyboard; a model change re-emits the 
 // ── discoverability: the shortcuts sheet + the blade's resolved-scope label ────
 
 /**
- * jsdom implements `<dialog>` only as far as the `open` property — there is no
+ * jsdom implements `<dialog>` only as far as the `open` property - there is no
  * showModal(), no close(), and none of the dialog-closing steps. Fill in exactly the
  * three things components/modal.ts touches. Two consequences, stated so nothing below
  * reads as more than it is:
- *   • Escape does not synthesise a `cancel` event here, so the test dispatches one —
+ *   • Escape does not synthesise a `cancel` event here, so the test dispatches one - 
  *     that IS what a browser does to an open modal dialog, and it is the event
  *     mountModal listens to;
  *   • the focus RESTORE asserted below is the panel's own (openShortcuts remembers the
- *     element that was focused and puts it back in onClose), not this stub's — the stub
+ *     element that was focused and puts it back in onClose), not this stub's - the stub
  *     deliberately does not move focus at all, so the assertion has something to prove.
  */
 {
@@ -3133,7 +3133,7 @@ test('the shortcuts sheet cannot drift from the key handler: every documented ke
   try {
     for (const row of PANEL_SHORTCUTS) {
       for (const ev of row.events) {
-        // Escape closes the panel, `o` opens a popover, `?` opens the sheet — put the
+        // Escape closes the panel, `o` opens a popover, `?` opens the sheet - put the
         // panel back in its resting state before each press so every row is driven
         // against the same panel, not against the wreckage of the last one.
         h.panel.setOpen(true);
@@ -3226,7 +3226,7 @@ test('the onion button carries both an aria-label and a data-tip, like every oth
   } finally { h.teardown(); }
 });
 
-/** The blade is inert via aria-disabled, NEVER the property — see the next test. */
+/** The blade is inert via aria-disabled, NEVER the property - see the next test. */
 const bladeOff = (b: HTMLButtonElement): boolean => b.getAttribute('aria-disabled') === 'true';
 
 test('the Split button says what it would cut, and is disabled when it would cut nothing', async () => {
@@ -3234,7 +3234,7 @@ test('the Split button says what it would cut, and is disabled when it would cut
   try {
     const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
     await frames(3);
-    // The playhead sits at 0 — every clip STARTS there, and a cut at a clip's own start
+    // The playhead sits at 0 - every clip STARTS there, and a cut at a clip's own start
     // is not a split. Disabled, rather than a refusal announced after the click.
     assert.equal(bladeOff(btn), true, 'nothing to cut at zero');
     assert.equal(btn.getAttribute('data-tip'), 'Split at playhead');
@@ -3246,7 +3246,7 @@ test('the Split button says what it would cut, and is disabled when it would cut
     assert.equal(btn.getAttribute('data-tip'), 'Split clip');
     assert.equal(btn.getAttribute('aria-label'), 'Split clip', 'the label and the tip are the same sentence');
 
-    // A selection that spans the playhead takes over the scope — and says how much.
+    // A selection that spans the playhead takes over the scope - and says how much.
     h.select(['a', 'o1', 'o2']);
     assert.equal(btn.getAttribute('data-tip'), 'Split 3 clips');
     assert.equal(bladeOff(btn), false);
@@ -3307,7 +3307,7 @@ test('the blade never promises a cut the press then refuses — the MIN_DUR band
   try {
     const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
     // 3.050s: 50ms past the a|b cut, inside b's span but inside the MIN_DUR band, and
-    // 10px from the cut at 200px/s — beyond the 8px snap tolerance, so it stays there.
+    // 10px from the cut at 200px/s - beyond the 8px snap tolerance, so it stays there.
     h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3050 } }));
     await frames(3);
     assert.equal(bladeOff(btn), true, 'the blade is inert inside the sliver band');
@@ -3330,7 +3330,7 @@ test('an OPEN-ENDED overlay is never offered as splittable — splitBox has no e
     h.select(['o']);
     h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 2000 } }));
     await frames(3);
-    // `a` is under the playhead, so the blade is live — but the SELECTION scope must not
+    // `a` is under the playhead, so the blade is live - but the SELECTION scope must not
     // pick up the open-ended overlay, or the label would read "Split 2 clips".
     assert.equal(btn.getAttribute('data-tip'), 'Split clip', 'the open-ended overlay is not counted');
     btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -3369,7 +3369,7 @@ test('the panel declines Ctrl/Cmd/Alt chords — Save, Find, Open and browser zo
   // Every binding here is a bare letter or punctuation chosen BECAUSE no browser fights
   // for it. That reasoning only holds if the handler also declines the CHORD: otherwise
   // Cmd+S splits instead of saving, Cmd+F fits instead of finding, and Ctrl+- zooms the
-  // timeline instead of the page — each of them preventDefault()ed.
+  // timeline instead of the page - each of them preventDefault()ed.
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     h.root.dispatchEvent(new dom.window.Event('pointerenter'));
@@ -3416,7 +3416,7 @@ test('the shortcuts sheet drift guard also covers the modifier chord for every d
   // Cmd/Ctrl/Alt as well. Drive the same rows again with each modifier and require the
   // event to survive untouched.
   //
-  // A chord any row DOCUMENTS is skipped, and only that exact chord — the exception
+  // A chord any row DOCUMENTS is skipped, and only that exact chord - the exception
   // is declared in the same list the sheet prints, never in an exclusion list here.
   // The set is built across ALL rows, not per row: Alt+← is documented by "Previous or
   // next keyframe", which is precisely why the bare "← →" row must not be driven with
@@ -3547,7 +3547,7 @@ test('a delete with nothing linked returns the SAME array the ripple produced', 
 test('the reachable-media ghost is SHOWN during a trim, spanning the whole source', async () => {
   // The suite already pins that it comes off on release; this pins that it goes ON, and
   // where. `left`/`width` are pure arithmetic over the model (timeToPx), so jsdom's zero
-  // rects do not reach them — only `top`/`height`, which are deliberately not asserted.
+  // rects do not reach them - only `top`/`height`, which are deliberately not asserted.
   const h = mount([clip('a', 0, 5), overlay('o', 1, 2)]);
   try {
     // A 6s source behind a 2s clip that starts 1s into it: reachable span is 0s → 6s.
@@ -3574,7 +3574,7 @@ test('the reachable-media ghost is SHOWN during a trim, spanning the whole sourc
 //
 // The toggle above is well covered; the popover behind it was not covered at all. Three
 // things only it can get wrong: that changing an option turns the feature ON (the
-// popover implies intent — you do not open it to configure something invisible), that
+// popover implies intent - you do not open it to configure something invisible), that
 // the long press and the click which ENDS it do not fight each other, and that the
 // controls write through the same clamped writers the stored record is read with.
 
@@ -3680,7 +3680,7 @@ test('a LONG press opens the options — and the click that ends it does not tog
 // ── coarse-pointer snapping ───────────────────────────────────────────────────
 
 test('the snap tolerance follows the POINTER: a finger snaps from 12px, a cursor only from 8', async () => {
-  // A 2s overlay (80px at 40px/s) dragged so its in-point lands 10px — 0.25s — short of
+  // A 2s overlay (80px at 40px/s) dragged so its in-point lands 10px - 0.25s - short of
   // the a|b cut at 3s. Inside the 12px touch window, outside the 8px cursor one. Grabbed
   // at 50px: clear of BOTH the 10px cursor zone and the 24px touch zone, so it is a move
   // either way and the only difference under test is the snap tolerance.
@@ -3702,7 +3702,7 @@ test('the snap tolerance follows the POINTER: a finger snaps from 12px, a cursor
 });
 
 test('a newly engaged snap ticks the vibrator — on a finger only, and never under reduced motion', async () => {
-  // The panel reads the AMBIENT `navigator`, not window's — node has one of its own and
+  // The panel reads the AMBIENT `navigator`, not window's - node has one of its own and
   // this file does not copy jsdom's over the top of it.
   const nav = globalThis.navigator as unknown as { vibrate?: (n: number) => boolean };
   const had = Object.prototype.hasOwnProperty.call(nav, 'vibrate');
@@ -3755,16 +3755,16 @@ test('a keyboard trim that hits a wall costs no undo entry — but still reads b
 // ── the clip inspector's grouped disclosure (plans/104 §8) ────────────────────
 //
 // The row this replaced was eleven labelled inputs in a horizontal overflow scroller,
-// and the keyframe row would have made it fourteen. It is now THREE groups — Time,
-// Animate, Keyframes — each a disclosure button whose SHUT state reads as the resolved
+// and the keyframe row would have made it fourteen. It is now THREE groups - Time,
+// Animate, Keyframes - each a disclosure button whose SHUT state reads as the resolved
 // values, with the controls that produced them one press away. (Sound was a fourth
 // until §8's M2.6 pass: mute is one bit, so it is a toggle on the strip rather than a
 // door onto a switch, and the A/V link went back to the clip context menu.)
 //
 // Three properties these pin, because all three are contracts rather than looks:
 // the disclosure is a real `aria-expanded` button (the diamonds M2 hangs off the clip
-// bars are aria-hidden pointer sugar — a `role="option"` may not carry interactive
-// children — so the inspector IS the keyboard and screen-reader route); the collapse
+// bars are aria-hidden pointer sugar - a `role="option"` may not carry interactive
+// children - so the inspector IS the keyboard and screen-reader route); the collapse
 // state is session UI state that survives the constant rebuilds a field edit causes
 // and never reaches the model or storage; and the Keyframes group does not exist at
 // all for a box with no track, which is plan 51's "nobody keyframes by accident" law.
@@ -3784,7 +3784,7 @@ const groupHead = (root: HTMLElement, gid: string): HTMLButtonElement =>
 const groupChips = (root: HTMLElement, gid: string): string[] =>
   Array.from(group(root, gid).querySelectorAll('.tl-group-chip')).map((c) => c.textContent ?? '');
 
-/** The open group popover — BODY-mounted, so it is not a descendant of the panel. */
+/** The open group popover - BODY-mounted, so it is not a descendant of the panel. */
 const groupPopEl = (): HTMLElement | null =>
   dom.window.document.querySelector<HTMLElement>('.tl-group-pop');
 
@@ -3800,7 +3800,7 @@ function groupBody(root: HTMLElement, gid: string): HTMLElement {
   return el as HTMLElement;
 }
 
-/** Anything the inspector renders, in EITHER scope — the strip or the popover. */
+/** Anything the inspector renders, in EITHER scope - the strip or the popover. */
 const inspEl = <T extends Element>(sel: string): T | null =>
   dom.window.document.querySelector<T>(`.tl-inspector ${sel}, .tl-group-pop ${sel}`);
 const inspAll = <T extends Element>(sel: string): T[] =>
@@ -3808,7 +3808,7 @@ const inspAll = <T extends Element>(sel: string): T[] =>
 
 /**
  * Force one group's disclosure. There is exactly ONE popover, so opening a second
- * group swaps rather than adding — every test below states the state it needs rather
+ * group swaps rather than adding - every test below states the state it needs rather
  * than assuming what the last one left behind.
  */
 function setGroup(root: HTMLElement, gid: string, open: boolean): HTMLButtonElement {
@@ -3842,12 +3842,12 @@ test('the inspector renders GROUPS, each an icon + a text label + a disclosure b
       assert.ok(body.id, `${gid}: the body has an id`);
       assert.equal(head.getAttribute('aria-controls'), body.id, `${gid}: aria-controls points at that body`);
     }
-    // Every id is unique — the row is rebuilt on every commit, and a duplicated
+    // Every id is unique - the row is rebuilt on every commit, and a duplicated
     // aria-controls target would point half the headers at someone else's fields.
     const ids = Array.from(h.root.querySelectorAll('.tl-group-body')).map((b) => b.id);
     assert.equal(new Set(ids).size, ids.length, 'body ids are unique');
 
-    // The fields did not merely survive — they landed in the right group.
+    // The fields did not merely survive - they landed in the right group.
     const inGroup = (gid: string, label: string): boolean => Array.from(
       group(h.root, gid).querySelectorAll<HTMLElement>('.tl-group-body .tl-field'),
     ).some((r) => r.querySelector('.field-label')?.textContent === label);
@@ -3874,14 +3874,14 @@ test('a shut group reads as its values: the summary chips', async () => {
   ]);
   try {
     h.select(['b']);
-    // Time: where it starts, how long it runs, how fast — formatted by the SAME
+    // Time: where it starts, how long it runs, how fast - formatted by the SAME
     // fmtTime/fmtDur the transport pill and the trim badge use, and spelled out here
     // rather than re-derived, so a change to either formatter has to be looked at.
     // TIME keeps its numeric readout: it is the primary glance value of a clip, and
     // §8's M2.6 pass names it as the one segment that stays as it was.
     assert.deepEqual(groupChips(h.root, 'time'), ['0:03.0', '2.0s', '×1']);
     assert.equal(fmtDur(2), '2.0s', 'the chip is the panel\'s own duration vocabulary');
-    // Animate: the two KIND names, ONE chip, one separator dot — and nothing else.
+    // Animate: the two KIND names, ONE chip, one separator dot - and nothing else.
     // M2.5 printed `In: Rise · 400ms · Ease out` / `Out: Cut (no animation)`, which is
     // every field of the group re-rendered on the door of the group ("chips must not
     // duplicate the popup's contents", §8 M2.6).
@@ -3890,7 +3890,7 @@ test('a shut group reads as its values: the summary chips', async () => {
     assert.equal(/\d/.test(chip), false, 'no ms anywhere in it');
     assert.equal(/[Ee]ase|[Cc]urve/.test(chip), false, 'and no curve name');
     assert.equal(chip.split('·').length, 2, 'exactly ONE separator dot');
-    // The ms and the curve did not vanish from the UI — they are one press away, which
+    // The ms and the curve did not vanish from the UI - they are one press away, which
     // is the whole trade this pass makes.
     setGroup(h.root, 'animate', true);
     assert.equal(field(h.root, 'In (ms)').value, '400', 'the number lives in the popup');
@@ -3904,7 +3904,7 @@ test('a shut group reads as its values: the summary chips', async () => {
       'a CUT contributes nothing — never a placeholder, never an em dash');
   } finally { closeOverlays(); h.teardown(); }
 
-  // Both directions cut — the state an untouched box is in — reads as NO chip at all.
+  // Both directions cut - the state an untouched box is in - reads as NO chip at all.
   const plain = mount([clip('a', 0, 3)]);
   try {
     plain.select(['a']);
@@ -3924,12 +3924,12 @@ test('an UNTIMED box opens Time (the only promotion route there is) and summaris
     // No mute toggle either: there is nothing playing to silence.
     assert.equal(h.root.querySelector('.tl-inspector .tl-mute'), null);
     assert.deepEqual(groupChips(h.root, 'time'), ['Always on']);
-    // SHUT — like every group since §8's M2.5 revision. Nothing auto-discloses on a
+    // SHUT - like every group since §8's M2.5 revision. Nothing auto-discloses on a
     // selection: a popover that opens itself over the canvas because you clicked a box
     // is a popover you then have to dismiss.
     assert.equal(groupHead(h.root, 'time').getAttribute('aria-expanded'), 'false');
     assert.equal(groupBody(h.root, 'time').hidden, true);
-    // The one-press promotion route is not behind that disclosure at all — it is the
+    // The one-press promotion route is not behind that disclosure at all - it is the
     // switch at the end of the strip, which is why shutting Time costs nothing.
     assert.equal(timingBtn(h.root).textContent, 'Add to the timeline');
     // And the typed route is one press away, still empty.
@@ -4014,7 +4014,7 @@ test('ONE popover at a time: opening another group swaps, and Esc closes it', ()
 test('the popover is placed ABOVE the transport, never dropped into the tracks', () => {
   const h = mount([clip('a', 0, 3)]);
   try {
-    // jsdom has no layout, so the two rects and the popover's own size are stubbed —
+    // jsdom has no layout, so the two rects and the popover's own size are stubbed - 
     // which is exactly what the placement reads and nothing more.
     h.root.getBoundingClientRect = (() => ({ top: 500, left: 0, right: 900, bottom: 700, width: 900, height: 200, x: 0, y: 500, toJSON: () => ({}) })) as never;
     h.select(['a']);
@@ -4026,8 +4026,8 @@ test('the popover is placed ABOVE the transport, never dropped into the tracks',
     Object.defineProperty(pop, 'offsetWidth', { value: 300, configurable: true });
     dom.window.dispatchEvent(new dom.window.Event('resize'));   // re-runs the placement
 
-    // The panel is docked at the BOTTOM of the stage, so "below the anchor" — the
-    // popover primitive's own default — would open into the tracks the fields exist to
+    // The panel is docked at the BOTTOM of the stage, so "below the anchor" - the
+    // popover primitive's own default - would open into the tracks the fields exist to
     // edit, and off the bottom of a short window. Bottom-aligned to the panel's top edge.
     assert.equal(pop.style.top, '332px', '500 (panel top) − 160 (its height) − 8 (the gap)');
     assert.equal(pop.style.left, '300px', 'and aligned to the near edge of the segment that opened it');
@@ -4053,7 +4053,7 @@ test('the popover survives the rebuild a model edit causes, and never reaches th
     setGroup(h.root, 'time', true);
     const before = Object.keys(h.boxes.find((x) => x.id === 'a')!).sort();
 
-    // A field edit rebuilds the whole inspector row from scratch — which destroys the
+    // A field edit rebuilds the whole inspector row from scratch - which destroys the
     // very segment the popover is anchored to AND the body it is showing. Without the
     // re-point, the popover would be left holding a detached body and Escape would
     // restore focus to a node that is no longer in the document.
@@ -4158,7 +4158,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
       'and the transport button is live for it');
   } finally { closeOverlays(); cam.teardown(); }
 
-  // A tool whose manifest declares no kf sub-field never grows one out of nothing —
+  // A tool whose manifest declares no kf sub-field never grows one out of nothing - 
   // the same progressive-capability gate `linkField` and the ease fields already carry.
   const noField = mount([{ ...clip('a', 0, 3), kf: 't0_x0*t900_x40' } as Box]);
   try {
@@ -4169,10 +4169,10 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
 
 test('a no-track box surfaces Depth directly — it writes the box z, not a keyframe (A5#1)', () => {
   // Depth is a box PROPERTY, and standing a lifted layer off the board is parallax setup,
-  // not animation — so it should not cost a keyframe track to reach. On a box with no
+  // not animation - so it should not cost a keyframe track to reach. On a box with no
   // track the Depth control now sits beside the Animate door (KF_CFG declares `zField`),
   // and setting it writes the box's `z` through the same base path the pose row uses off a
-  // diamond: it mints the scene camera (depth needs one to be seen) but NO track — §8's
+  // diamond: it mints the scene camera (depth needs one to be seen) but NO track - §8's
   // "nobody keyframes by accident" holds because a property write is not a keyframe.
   const depthCfg = { cfgPatch: { kfField: 'kf', zField: 'z' } };
   const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, depthCfg);
@@ -4193,7 +4193,7 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
     assert.equal(h.commits.length, 1, 'one gesture, one commit, one undo step');
   } finally { closeOverlays(); h.teardown(); }
 
-  // A tool that declares NO depth field gets no Depth control — the same progressive gate.
+  // A tool that declares NO depth field gets no Depth control - the same progressive gate.
   const noDepth = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { kfField: 'kf' } });
   try {
     noDepth.select(['a']);
@@ -4205,7 +4205,7 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
 
 test('a SOUND is offered no keyframe affordance anywhere — not a group, not a door, not a diamond', async () => {
   // §8's disclosure law, the other way round: "Every other box has no keyframe affordance
-  // anywhere in the UI — not a disabled one, not an empty one." `kfActionIds` excludes
+  // anywhere in the UI - not a disabled one, not an empty one." `kfActionIds` excludes
   // audio (plan 101 owns keyframed gain), so an inspector that offered the group anyway
   // gave the user an Animate door onto exactly the x/y/s/r/o track "+Keyframe" refuses to
   // write and no evaluator reads. ONE predicate, every reader.
@@ -4235,7 +4235,7 @@ test('a SOUND is offered no keyframe affordance anywhere — not a group, not a 
 });
 
 test('a curve editor opened from INSIDE a group card does not dismiss the card', async () => {
-  // The card is a body-mounted popover, and so is the curve editor it spawns — siblings
+  // The card is a body-mounted popover, and so is the curve editor it spawns - siblings
   // on <body>, so `menu.contains(target)` says false and the first press inside the editor
   // (a bezier handle, a preset) read as an outside click and closed the card mid-drag. It
   // took the borrowed group BODY with it, back into its segment with `hidden = true`, so
@@ -4245,7 +4245,7 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
   //
   // The ANIMATE group is the surface now: §8's M2.7 docked the KEYFRAME curve editor
   // inside the Keyframes popup itself (one surface, no nested popover), so the
-  // transition curves are what still spawn a `.tl-ease-pop` from inside a card — and
+  // transition curves are what still spawn a `.tl-ease-pop` from inside a card - and
   // the `isInside` exemption that keeps the card up is the same one.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
@@ -4257,7 +4257,7 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
     assert.ok(ed, 'the keyframe curve editor opened');
     assert.ok(groupPopEl(), 'precondition: the card is still up');
     // The dismissal listener is registered on a timeout (so the opening click cannot
-    // dismiss what it just opened) — a press before that proves nothing.
+    // dismiss what it just opened) - a press before that proves nothing.
     await new Promise((r) => setTimeout(r, 0));
 
     (ed!.querySelector('.ease-ed-plot') as HTMLElement).dispatchEvent(pointer('pointerdown', 40));
@@ -4266,7 +4266,7 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
       'and the select the editor will restore focus to is still in a visible subtree');
     assert.ok(groupPopEl()!.contains(sel), 'because the borrowed body never went home');
 
-    // One Escape, the innermost popover — both listen on `document`, so stopPropagation
+    // One Escape, the innermost popover - both listen on `document`, so stopPropagation
     // cannot separate them; `isInside` is what does.
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     assert.equal(openMenu('.tl-ease-pop'), null, 'the editor closed');
@@ -4280,7 +4280,7 @@ test('the A/V link is offered by the CLIP MENU alone — the inspector strip car
   // pre-M2 home)". M2.5 had put a second copy in the Sound group beside the mute, and
   // when that group became a bare toggle the copy had nowhere honest to live: detaching
   // audio grows a whole second bar on another lane, which is not a sibling of a mute
-  // switch. The writers are unchanged and still one commit each — what moved is the door.
+  // switch. The writers are unchanged and still one commit each - what moved is the door.
   const h = mount([clip('v', 0, 4)], 40, ADD_KINDS, { linkField: 'linkOf' });
   try {
     // The canvas says this clip is a video, which is what makes a detach mean anything.
@@ -4308,7 +4308,7 @@ test('the A/V link is offered by the CLIP MENU alone — the inspector strip car
 // ── mute: a toggle, not a group (plans/104 §8's M2.6 pass) ────────────────────
 //
 // "SOUND stops being a popover group entirely: it becomes a speaker/mute icon toggle
-// on the strip (direct click flips mute — the NLE convention), no popup."
+// on the strip (direct click flips mute - the NLE convention), no popup."
 //
 // Three things are pinned, and each is a rule rather than a look: the button IS the
 // state (`aria-pressed` + the glyph, so a screen reader and an eye read the same bit);
@@ -4316,7 +4316,7 @@ test('the A/V link is offered by the CLIP MENU alone — the inspector strip car
 // and there is no popover anywhere on the path, because a disclosure onto a single
 // switch is a door onto a door.
 
-/** The inspector's speaker toggle — a direct child of the strip, never inside a group. */
+/** The inspector's speaker toggle - a direct child of the strip, never inside a group. */
 const muteBtn = (h: Harness): HTMLButtonElement => {
   const b = h.root.querySelector('.tl-inspector > .tl-mute') as HTMLButtonElement;
   assert.ok(b, 'the inspector carries the mute toggle');
@@ -4368,7 +4368,7 @@ test('the mute toggle IS its state: aria-pressed, the flipped glyph and the flip
 });
 
 test('the mute toggle tracks the MODEL, not the press that changed it', async () => {
-  // A clip that is born muted paints pressed on first render — the button reads the row
+  // A clip that is born muted paints pressed on first render - the button reads the row
   // rather than a latched local flag, which is what makes it agree with a mute written
   // from anywhere else (the detach writer silences the picture it takes the sound off).
   const h = mount([{ ...clip('a', 0, 3), mute: 'true' } as Box]);
@@ -4384,7 +4384,7 @@ test('the groups work right-to-left', () => {
   // jsdom has no layout, so this is the honest half: the markup survives a dir flip and
   // the SHEET carries a direction-aware caret plus logical box properties. A physical
   // `border-left` between two chips reads as a leading rule in Arabic, Hebrew, Farsi
-  // and Urdu — four of the twenty-six languages this panel ships in.
+  // and Urdu - four of the twenty-six languages this panel ships in.
   const doc = dom.window.document;
   doc.documentElement.dir = 'rtl';
   try {
@@ -4421,7 +4421,7 @@ test('the groups work right-to-left', () => {
   const decls = css.replace(/\/\*[\s\S]*?\*\//g, '');
   // Sliced between two SELECTORS, never a comment: `decls` has had its comments
   // stripped, so a comment marker would find nothing and quietly widen the slice to the
-  // rest of the sheet — a scan that reads everything asserts nothing about anything.
+  // rest of the sheet - a scan that reads everything asserts nothing about anything.
   const block = decls.slice(decls.indexOf('.tl-group {'), decls.indexOf('.tl-ruler {'));
   assert.ok(block.length > 200, 'the group block was found');
   assert.ok(/\[dir="rtl"\][^{]*\.tl-group-caret\s*\{[^}]*rotate\(90deg\)/.test(block),
@@ -4443,12 +4443,12 @@ test('the groups work right-to-left', () => {
 //   3. PLAYHEAD-CONTEXTUAL WRITES. Parked ON a diamond an edit poses THAT keyframe as
 //      a full pose; parked OFF one the track is not touched at all.
 //   4. ONE WRITE PER GESTURE. A drag, a press and a button are each one commit and
-//      therefore one undo step — the panel's own model-write law, extended to a
+//      therefore one undo step - the panel's own model-write law, extended to a
 //      surface that edits a string field instead of a number one.
 //
 // The keyframe MATHS is not tested here: it is `engine/src/keyframes.ts` (goldens at
 // the repo root) and `timeline-math.ts` (tests/timeline-math.test.ts). What this file
-// owns is the glue — which is exactly the split the panel's header law describes.
+// owns is the glue - which is exactly the split the panel's header law describes.
 
 const { parseKf: parse } = await import('../../../../engine/src/keyframes.ts');
 
@@ -4500,7 +4500,7 @@ test('diamonds are absent for a static box and hidden on a bar too tight to hit 
   try {
     h.select(['a']);
     assert.equal(h.bar('a').querySelector('.tl-kf-strip'), null, 'no track, no strip');
-    // 0.5s at 40px/s is 20px, under MIN_TRIM_BAR_PX — the trim grips hide there too, and
+    // 0.5s at 40px/s is 20px, under MIN_TRIM_BAR_PX - the trim grips hide there too, and
     // for the same reason: a target you cannot land on is worse than no target. The
     // inspector list still lists every keyframe.
     const tight = h.bar('b').querySelector('.tl-kf-strip') as HTMLElement;
@@ -4547,7 +4547,7 @@ test('the latch header flips No keyframe here ⇄ Keyframe @ …, and the pose f
     assert.equal(state(), 'No keyframe here', 'parked between diamonds');
     // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (§5.3):
     // `z` is the one pose channel with a base field of its own, so off a diamond an
-    // edit there writes the BASE — §8's own rule — rather than inventing a keyframe.
+    // edit there writes the BASE - §8's own rule - rather than inventing a keyframe.
     // The other three have nothing to write and stay inert.
     assert.deepEqual(poseDisabled(), [false, true, true, true],
       'no keyframe to pose: everything but Depth is inert (they still READ, see below)');
@@ -4579,7 +4579,7 @@ test('an on-diamond pose edit rewrites exactly ONE keyframe, as a full pose, in 
     assert.equal(track.length, 2, 'no keyframe was added');
     assert.deepEqual({ ...track[0]!.v }, { x: 0 }, 'the OTHER keyframe is untouched, sparse channels and all');
     // The edited one is now a FULL pose over the box's active channel set (§8: "every
-    // diamond is a complete honest pose") — x, which the track already animates, plus
+    // diamond is a complete honest pose") - x, which the track already animates, plus
     // the channel just edited. Its x is the value it already held, not a neutral.
     assert.deepEqual({ ...track[1]!.v }, { x: 40, o: 0.5 });
     assert.equal(track[1]!.ease, 'eo', 'and the curve out of it survives the edit');
@@ -4610,7 +4610,7 @@ test('parked OFF a diamond, nothing can write the track — the base is what an 
     // park ON a diamond, start typing, and let the playhead move before the edit commits
     // (a ruler scrub `preventDefault()`s, so the field keeps focus). The tick disables the
     // field, disabling a FOCUSED input blurs it, and the browser fires the pending
-    // `change` on that blur — with the playhead now somewhere else entirely.
+    // `change` on that blur - with the playhead now somewhere else entirely.
     await seek(h, 1500);
     const late = inspAll<HTMLInputElement>('.tl-kf-pose-num')[2]!;
     assert.equal(late.disabled, false, 'on the diamond it takes the typing');
@@ -4635,7 +4635,7 @@ test('parked OFF a diamond, nothing can write the track — the base is what an 
 test('a CLOSED panel arms nothing: no playhead on screen, no redirection', async () => {
   // §8's model is "the playhead's position IS the arm". `setOpen(false)` pauses the
   // clock but keeps its time, so without an explicit gate a canvas drag on an animated
-  // box would still write a keyframe — with no latch header, no diamonds, no transport
+  // box would still write a keyframe - with no latch header, no diamonds, no transport
   // and no "+Keyframe" anywhere to explain where it came from.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
@@ -4663,8 +4663,8 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
 
     // OFF a diamond they are inert but NOT blank (§8's M2.5 revision, point 3: blanking
     // was honest and read as broken). They print what the box is actually striking at
-    // the playhead — `kfPoseAt` → the engine's own `evaluateKf`, the same arithmetic the
-    // preview and the export read — so a disabled field is a live readout rather than a
+    // the playhead - `kfPoseAt` → the engine's own `evaluateKf`, the same arithmetic the
+    // preview and the export read - so a disabled field is a live readout rather than a
     // hole. Halfway between z 0 and z 300 on the default ease is not the midpoint, which
     // is exactly why this number has to come from the engine and not from the panel.
     await seek(h, 750);
@@ -4699,7 +4699,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
 test('the "size is not keyframable" claim is GONE — w/h are channels now (§5.2 reversed)', async () => {
   // P1 reversed it (Andy, 2026-08-12 hands-on: "I can't change width and height of
   // elements and have them tween"). The wire carries `w`/`h`, a resize ON a diamond
-  // writes them, and a standing sentence — or a tooltip — saying otherwise is now a
+  // writes them, and a standing sentence - or a tooltip - saying otherwise is now a
   // lie in the one place a user goes to check. Size is still authored on the CANVAS,
   // which is why there is still no width field in here.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, ADD_KINDS, KF_CFG);
@@ -4711,7 +4711,7 @@ test('the "size is not keyframable" claim is GONE — w/h are channels now (§5.
     assert.ok(wrap, 'the pose fields are one block');
     assert.equal(wrap!.title, '', 'and the tooltip that claimed size could never tween went with it');
     assert.equal(inspAll('.tl-kf-pose .tl-kf-pose-num').length, 4, 'all four channels are inside it');
-    // The depth slider is the fifth control on that block — the §5.3 scrub band, beside
+    // The depth slider is the fifth control on that block - the §5.3 scrub band, beside
     // the number that still takes the whole field range.
     const slider = inspEl<HTMLInputElement>('.tl-kf-pose .tl-kf-slider');
     assert.ok(slider, 'Depth has a slider');
@@ -4746,7 +4746,7 @@ test('the canvas seam writes one full-pose key per selected box, in ONE array th
   } finally { h.teardown(); }
 });
 
-/** The transport's "+Keyframe" — the END of the left cluster, after the keyboard sheet. */
+/** The transport's "+Keyframe" - the END of the left cluster, after the keyboard sheet. */
 const kfBtn = (h: Harness): HTMLButtonElement => {
   const b = h.root.querySelector('.tl-tools .tl-kf-btn') as HTMLButtonElement;
   assert.ok(b, 'the transport carries a +Keyframe button');
@@ -4757,11 +4757,11 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     const b = kfBtn(h);
-    // The WHOLE cluster, in order — pinned end to end rather than by a slice, because
+    // The WHOLE cluster, in order - pinned end to end rather than by a slice, because
     // the position of this one button is the assertion. §8's M2.6 pass moved it out of
     // the additive trio (where M2.5 put it, reasoning it was the fourth thing the panel
     // can ADD) to the tail, AFTER the keyboard sheet: `… zoom− zoom+ expand ⌨ ◇`.
-    // The IDENTITY class only (`classList[1]`, the token `btn()` mints after `tl-btn`) —
+    // The IDENTITY class only (`classList[1]`, the token `btn()` mints after `tl-btn`) - 
     // a state class like `.is-active` on the snap button is not part of the ordering.
     const cluster = Array.from(h.root.querySelectorAll<HTMLElement>('.tl-tools > .tl-btn'))
       .map((x) => x.classList[1]);
@@ -4824,7 +4824,7 @@ test('+Keyframe at a diamond UPDATES it; off one it adds; both are a single comm
 test('+Keyframe on an UNTIMED box promotes it AND keys it in ONE commit', async () => {
   // §8's M2.5 revision, directive 1: "on an untimed selected object it AUTO-PROMOTES
   // onto the timeline and writes the first keyframe in the same single commit (one undo
-  // step — the existing promote() writer + writeKfPose composed)". The count is the
+  // step - the existing promote() writer + writeKfPose composed)". The count is the
   // assertion: two writers, ONE array, ONE commit, therefore one ⌘Z.
   const h = mount([clip('a', 0, 3), scenery('s')], 40, ADD_KINDS, KF_CFG);
   try {
@@ -4852,7 +4852,7 @@ test('+Keyframe on an UNTIMED box promotes it AND keys it in ONE commit', async 
 
   // ONE instant, not two reads of the clock. `promoteRows` falls back to `clock.t()` when
   // no start is given, so leaving it out made the promotion read the playhead a second
-  // time — later than the `at` the keyframe is then written at. Paused they agree, which
+  // time - later than the `at` the keyframe is then written at. Paused they agree, which
   // is why this is a source assertion and not a behavioural one: the divergence only
   // exists while the transport is PLAYING, and then the clip starts after the time its
   // own first pose is written at (a non-zero local ms, or a clamp to the clip edge) and
@@ -4890,7 +4890,7 @@ test('K is the SAME action from the keyboard — including the auto-promotion', 
   // gets the whole feature rather than the half of it that existed before the button
   // did. Which means K now opens the door too: the panel being up with something
   // selected IS the disclosure (the revision says so in as many words), and the M2 rule
-  // it replaces — "a static box is not animated by a letter" — belonged to a world where
+  // it replaces - "a static box is not animated by a letter" - belonged to a world where
   // the only other door was inside a collapsed group.
   const h = mount([{ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box, clip('b', 3, 2)], 40, ADD_KINDS, KF_CFG);
   try {
@@ -4982,7 +4982,7 @@ test('the CRUD list is the AT route: real labelled controls that each write once
     const rows = () => inspAll<HTMLElement>('.tl-kf-row');
     assert.equal(rows().length, 2);
     const first = rows()[0]!;
-    // EVERY control in the row is named with the row's own time — not just the two
+    // EVERY control in the row is named with the row's own time - not just the two
     // buttons. This list is the keyboard/screen-reader route to the diamonds (which is
     // what lets the diamonds themselves stay aria-hidden), so a four-key track that tabs
     // as "Keyframe curve" four times identifies nothing: `.tl-kf-row` carries no label of
@@ -5020,7 +5020,7 @@ test('the CRUD list is the AT route: real labelled controls that each write once
     time.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(kfOf(h, 'a'), 't0_el_x0*t900_eo_x40');
 
-    // DUPLICATE, then DELETE — one commit each.
+    // DUPLICATE, then DELETE - one commit each.
     h.notify(); await frames(3);
     rows()[1]!.querySelector<HTMLButtonElement>('.tl-kf-dup')!.click();
     assert.deepEqual(parse(kfOf(h, 'a')).map((k) => k.t), [0, 900, 1400],
@@ -5096,7 +5096,7 @@ test('K and Alt+←/→ are in PANEL_SHORTCUTS — the sheet IS the contract, in
 test('free-canvas commits the redirection at its ONE pointerup, and never for a resize', () => {
   // The panel cannot assert this from inside itself: the redirection lives at
   // free-canvas's single commit site, which is what makes a keyframed drag one undo
-  // step. What IS assertable here is the shape of the contract on both sides — the
+  // step. What IS assertable here is the structure of the contract on both sides - the
   // seam exists and is pure (tested above), and the caller reaches it exactly where
   // the model-write law says it may.
   const src = readFileSync(new URL('./free-canvas.ts', import.meta.url), 'utf8');
@@ -5110,7 +5110,7 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
   assert.ok(/rotKf\s*=\s*g\.type === 'rotate'/.test(sizeBranch),
     'ROTATE is a pose channel, and the branch says so (plans/104 §5.2)');
   // …and so is RESIZE, since P1 (§5.2 REVERSED): on a diamond it writes `w`/`h`
-  // ABSOLUTELY ('set' — a dragged handle produces the new width, not a change to it),
+  // ABSOLUTELY ('set' - a dragged handle produces the new width, not a change to it),
   // plus the origin shift an nw/n/w handle also makes, as a relative x/y delta.
   assert.ok(/sizeKf\s*=\s*g\.type === 'resize'/.test(sizeBranch),
     'RESIZE is one too, and the branch says which is which');
@@ -5129,8 +5129,8 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
 test('the KEYBOARD move is redirected exactly like the pointer one, and declines the SEEK chord only', () => {
   // The nudge is the accessible equivalent of a drag, so it must get the SAME
   // model-write semantics (plans/104 §8): on a diamond it poses, off one it moves.
-  // And it reserves Alt+←/→ — the panel's keyframe walk (§9.2: "free-canvas arrow-nudge
-  // declines Alt (the seek chord)") — so the chord means one thing in the editor.
+  // And it reserves Alt+←/→ - the panel's keyframe walk (§9.2: "free-canvas arrow-nudge
+  // declines Alt (the seek chord)") - so the chord means one thing in the editor.
   // ONLY that pair, though: Alt+↑/↓ is not a chord anyone binds, and declining it as well
   // made it a key that did nothing anywhere (the panel binds on its own root, so it never
   // hears a canvas-focused press at all).
@@ -5152,7 +5152,7 @@ test('the KEYBOARD move is redirected exactly like the pointer one, and declines
 //
 // Everything below is the PRODUCT surface of plans/104 P1. The numbers it leans on
 // are the engine's (`resolveCamera`, `projectDepth`, `KF_Z_FIELD_CLAMP`) and the
-// arithmetic is timeline-math's; what is asserted here is the glue — which control
+// arithmetic is timeline-math's; what is asserted here is the glue - which control
 // writes which field, how many commits a gesture costs, and what the UI says it is
 // doing while it does it.
 
@@ -5178,7 +5178,7 @@ const CAM_KINDS = [...ADD_KINDS, { id: 'camera', label: 'Camera', seed: { kind: 
 test('the depth slider writes the BASE off a diamond, and mints the scene camera exactly once', async () => {
   // §5.3 + §5.4. Depth is the one pose channel with a field of its own, so off a
   // diamond an edit there is §8's "edits write the base" rather than an invented
-  // keyframe — and the FIRST such edit is what auto-creates the untimed scene camera,
+  // keyframe - and the FIRST such edit is what auto-creates the untimed scene camera,
   // in the SAME array, so lifting a box is one commit and one undo step.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, CAM_KINDS, KF_CFG);
   try {
@@ -5261,7 +5261,7 @@ test('the TILT fields take the control band, not the wire clamp — because κ >
   // HIGHEST z is farthest, the sort paints it last, and the behind-camera guard never
   // rescues it because `D = P − κζ` GROWS with ζ once κ < 0. P2 first wired the Tilt X /
   // Tilt Y number fields straight to `KF_CLAMPS.rx/ry` = ±180, which is a WIRE clamp
-  // (untrusted share links have to be held to something) — so a reachable control sat on
+  // (untrusted share links have to be held to something) - so a reachable control sat on
   // the other side of the invariant. `z` is the precedent this follows: KF_Z_SLIDER stops
   // at 300 while its wire spans ±12000.
   const { KF_CLAMPS } = await import('../../../../engine/src/keyframes.ts');
@@ -5280,7 +5280,7 @@ test('the TILT fields take the control band, not the wire clamp — because κ >
     await frames(3);
     setGroup(h.root, 'camera', true);
     const nums = inspAll<HTMLInputElement>('.tl-cam-num');
-    // Pan X, Pan Y, Tilt X, Tilt Y, Dolly, … — the order the labels test pins.
+    // Pan X, Pan Y, Tilt X, Tilt Y, Dolly, … - the order the labels test pins.
     for (const i of [2, 3]) {
       assert.equal(nums[i]!.min, String(lo), `field ${i} min`);
       assert.equal(nums[i]!.max, String(hi), `field ${i} max`);
@@ -5304,7 +5304,7 @@ test('the shift-drag tilt gesture is held to the same band, composed rather than
   try {
     h.select(['cam']);
     await seek(h, 0);
-    // Three drags of +40°, which un-held would reach 120 — the measured inversion angle.
+    // Three drags of +40°, which un-held would reach 120 - the measured inversion angle.
     // Chained purely, exactly as the existing cameraWrite test does it: the writer reads
     // the pose it composes onto out of the array it is handed.
     let boxes = h.boxes;
@@ -5320,7 +5320,7 @@ test('the shift-drag tilt gesture is held to the same band, composed rather than
 
 test('cameraTiltPreview reports the ABSOLUTE tilt a shift-drag would land, clamped (A2/A4)', async () => {
   // The canvas tilt HUD reads this. A camera drag previews nothing on the stage (§8
-  // commits on release), so the number the user sees during the drag IS this call — and
+  // commits on release), so the number the user sees during the drag IS this call - and
   // it must equal what `cameraWrite` would commit: the current pose plus the delta, held
   // to the band, never a raw unheld delta.
   const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
@@ -5338,7 +5338,7 @@ test('cameraTiltPreview reports the ABSOLUTE tilt a shift-drag would land, clamp
     const tilted = h.panel.cameraWrite(h.boxes, { rx: -40 });
     assert.equal(h.panel.cameraTiltPreview(tilted, -20, 0)!.rx, -60, 'it adds to the pose already held');
 
-    // …and it is CLAMPED to the band, exactly as the write is — never a raw −200.
+    // …and it is CLAMPED to the band, exactly as the write is - never a raw −200.
     assert.equal(h.panel.cameraTiltPreview(h.boxes, -200, 200)!.rx, lo, 'clamped at the low edge');
     assert.equal(h.panel.cameraTiltPreview(h.boxes, -200, 200)!.ry, hi, 'and at the high edge');
 
@@ -5364,7 +5364,7 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
     );
     setGroup(h.root, 'camera', true);
     const labels = inspAll<HTMLElement>('.tl-cam-row .field-label').map((n) => n.textContent);
-    // P2 added TILT X / TILT Y between the pans and the dolly — the order a shot is set
+    // P2 added TILT X / TILT Y between the pans and the dolly - the order a shot is set
     // up in (where the camera is, which way it is pointing, how far away it is).
     assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Tilt X', 'Tilt Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
       'the §4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
@@ -5391,7 +5391,7 @@ test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta'
     const { rescaleKfTrack } = await import('./timeline-math.ts');
     const push = KF_CAMERA_PRESETS.find((p) => p.id === 'push-in')!;
     // The 5 s clip gives the scene a duration, so the 4 s preset is TIME-SCALED to fit it
-    // (A1#5) before it is stored — canonicalised by the engine, never the literal author
+    // (A1#5) before it is stored - canonicalised by the engine, never the literal author
     // string, and never the un-scaled authored times either.
     assert.equal(wire, serialiseKf(rescaleKfTrack(parse(push.track), 5000)),
       'stored EXPANDED, canonicalised by the ENGINE, and scaled to the 5 s scene');
@@ -5407,7 +5407,7 @@ test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta'
 
 test('a camera preset scales its timing to the scene length (A1#5)', async () => {
   // A preset is authored at a fixed length (push-in 4 s, surface-glide 5.2 s). Applied to
-  // a scene of another duration it used to keep its absolute times — overrunning a short
+  // a scene of another duration it used to keep its absolute times - overrunning a short
   // scene or parking the camera for the tail of a long one. It now stretches to fill THIS
   // scene, so the last keyframe lands on the scene end whatever the authored length was.
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
@@ -5424,7 +5424,7 @@ test('a camera preset scales its timing to the scene length (A1#5)', async () =>
     assert.equal(push[push.length - 1]!.t, 8000, 'and RESOLVES at the 8 s scene end, not the authored 4 s');
     assert.ok((push[1]!.v.z ?? 0) < (push[0]!.v.z ?? 0), 'values are untouched — the push still pushes in');
 
-    // Every preset fills the scene, whatever its authored length — surface-glide (5.2 s)
+    // Every preset fills the scene, whatever its authored length - surface-glide (5.2 s)
     // and its middle keyframe land on the same 8 s end, mid-point ratio preserved.
     click(presetBtn('Surface glide'));
     const glide = parse(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''));
@@ -5434,12 +5434,12 @@ test('a camera preset scales its timing to the scene length (A1#5)', async () =>
   } finally { closeOverlays(); h.teardown(); }
 });
 
-// This test used to assert the OPPOSITE — that Orbit was offered, `aria-disabled`, and
+// This test used to assert the OPPOSITE - that Orbit was offered, `aria-disabled`, and
 // carried the reason "Needs tilt (coming)" in both its tooltip and its accessible name.
 // P2 IS that tilt (plans/104 §6.4: `rx`/`ry` now project through a homography), so the
 // dimmed twin is gone and Orbit comes out of the same preset loop as every other move.
 // The inversion is the point of keeping the test at this name: a reason that has stopped
-// being true must not be left standing on a control, and the shape of the failure if
+// being true must not be left standing on a control, and the form of the failure if
 // somebody re-disables it is "the button that says it cannot yet, when it can".
 test('Orbit is a real move now that tilt has landed — the dimmed twin is gone', async () => {
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
@@ -5467,12 +5467,12 @@ test('the two TILT presets end at the rest pose — THE RESOLUTION RULE, enforce
   // Andy, 2026-08-12, binding on every generated animation: "elements lift off and rest
   // back down on the page; the animations showing them falling apart need to close out
   // with it all coming together." So the last keyframe of anything WE generate is the
-  // authored composition — every channel the track touches back at its default. A
+  // authored composition - every channel the track touches back at its default. A
   // deconstruction is a middle, never an ending.
   //
   // Scoped to the tilt pair because they are what P2 ships. The five P1 presets predate
   // the rule and three of them do NOT obey it (push-in ends at z −220, pan-across at
-  // x 140, rise at y −120/z −80) — measured and reported at KF_CAMERA_PRESETS rather
+  // x 140, rise at y −120/z −80) - measured and reported at KF_CAMERA_PRESETS rather
   // than changed in passing, because bringing them home would change what three shipped
   // moves MEAN.
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
@@ -5509,7 +5509,7 @@ test('a preset applied with NO camera mints the scene camera and keys it in the 
     h.select(['a']);
     await frames(3);
     assert.equal(cameraOf(h), undefined, 'precondition: no camera');
-    // Reach the writer the way the Camera group does — the group only exists on a
+    // Reach the writer the way the Camera group does - the group only exists on a
     // camera, so this is the "camera mode entered" door of §5.4's three.
     const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
     const cam = { id: 'cam', kind: 'camera', start: '', dur: '' } as Box;
@@ -5608,7 +5608,7 @@ test('the camera gesture map: the canvas hands the WHEEL to the view unless a ca
   const camBranch = end.slice(end.indexOf("if (g.type === 'campan')"), end.indexOf("if (g.type === 'camtilt')"));
   assert.ok(camBranch.includes('cameraWrite('), 'and it commits through the panel\'s own writer');
   assert.equal((camBranch.match(/\bcommit\(/g) ?? []).length, 1, 'ONE commit, on release');
-  // The TILT release obeys the same law — one gesture, one write, one undo step — and
+  // The TILT release obeys the same law - one gesture, one write, one undo step - and
   // reaches the model through the same writer rather than a second path of its own.
   const tiltBranch = end.slice(end.indexOf("if (g.type === 'camtilt')"), end.indexOf("if (g.type === 'marquee')"));
   assert.ok(tiltBranch.includes('cameraWrite('), 'the tilt commits through the panel\'s writer too');
@@ -5617,8 +5617,8 @@ test('the camera gesture map: the canvas hands the WHEEL to the view unless a ca
     'drag DOWN pitches the camera nose-down over the artwork (rx negative), which is direct manipulation');
   assert.ok(/ry: dx \* CAM_TILT_DEG_PER_PX/.test(tiltBranch), 'drag RIGHT brings the right-hand edge nearer');
   // …and the drag is accumulated in NATIVE px. `camX` is a MODEL number and the picture
-  // it displaces is on screen at the canvas zoom, so direct manipulation — the property
-  // the branch above says it is delivering — needs the client delta divided by that
+  // it displaces is on screen at the canvas zoom, so direct manipulation - the property
+  // the branch above says it is delivering - needs the client delta divided by that
   // zoom. Client px written straight into the model moved the shot half as far as the
   // hand at 50 % and twice as far at 200 %.
   const move = src.slice(src.indexOf('function applyGestureMove'));
@@ -5682,7 +5682,7 @@ test('the curve editor is DOCKED in the Keyframes popup, and a drag switches the
     assert.equal(sel.value, 'eo', 'the docked plot and the select are showing the same curve');
 
     // Drag a handle: one commit, and the select is now on a Custom option it did not
-    // have before — "they can use presets to learn" (§8's M2.7 (b)). Re-queried, because
+    // have before - "they can use presets to learn" (§8's M2.7 (b)). Re-queried, because
     // the close/open above minted a new editor.
     const live = inspEl<HTMLElement>('.tl-kf-dock .ease-ed-plot')!;
     const handle = inspEl<Element>('.tl-kf-dock .ease-ed-handle')!;
@@ -5764,7 +5764,7 @@ test('M2.6 low: the Animate chip is never capped, so its second kind cannot be e
 
 test('an untimed camera reads as "Camera" on its Always-on chip, never as "Clip"', async () => {
   // The chip IS the affordance the implicit scene camera is discovered through (§5.4),
-  // and every media probe reads '' on a box that paints nothing — so without a model
+  // and every media probe reads '' on a box that paints nothing - so without a model
   // branch it wore the fallback label of the one thing it is not.
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('a', 0, 5)], 40, CAM_KINDS, KF_CFG);
   try {
@@ -5788,7 +5788,7 @@ test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam
   // free-canvas hands the handle's resulting WIDTH, not a change to it, so the seam has
   // to take a value rather than a delta. The mode is the caller's to choose because only
   // the caller knows which reading its gesture produced: a drag is relative, a resize is
-  // not. (The commit site itself is pinned by the source test above — the panel cannot
+  // not. (The commit site itself is pinned by the source test above - the panel cannot
   // observe free-canvas's pointerup from in here.)
   const h = mount(kfScene({ ...clip('a', 0, 3), w: 400, h: 300, kf: 't0_x0*t1500_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
@@ -5799,7 +5799,7 @@ test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam
     assert.deepEqual({ ...keys[1]!.v }, { x: 40, w: 640, h: 360 },
       'the size lands as the value it IS, beside the channel the track already animates');
     assert.deepEqual({ ...keys[0]!.v }, { x: 0 }, 'and the other keyframe stays sparse');
-    // The same numbers under 'add' would be nonsense — 640px ADDED to a 400px box — which
+    // The same numbers under 'add' would be nonsense - 640px ADDED to a 400px box - which
     // is exactly why the mode is a parameter and not a constant.
     const wrong = h.panel.kfPoseWrite(h.boxes, ['a'], { w: 640, h: 360 });
     assert.equal(parse(String(wrong.find((b) => b.id === 'a')!.kf))[1]!.v.w, 640,

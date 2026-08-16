@@ -72,7 +72,7 @@ test('the create-flow scaffold starts EVERY rate empty — no numeric rate anywh
   for (const k of ['perPlate', 'perSheet', 'perArea', 'perQuantity', 'perUnit', 'perJob']) {
     assert.ok(kinds.has(k), `scaffold is missing the ${k} kind`);
   }
-  // and NOT ONE rate is a number — the whole design refuses an invented price
+  // and NOT ONE rate is a number - the whole design refuses an invented price
   assert.equal(doc.currency, '');
   assert.equal(doc.minimumCharge, '');
   for (const l of doc.lines) {

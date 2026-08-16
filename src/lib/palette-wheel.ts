@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Palette colour wheel — every brand colour plotted on an OKLCH hue/chroma disc:
+ * Palette colour wheel - every brand colour plotted on an OKLCH hue/chroma disc:
  * angle = hue (0° at top, clockwise), distance from the centre = chroma (vivid
  * colours reach the rim), dot fill = the colour itself.
  *
  * Greys are NOT on the disc. A neutral has no hue to plot by, so every one of
  * them used to pile into the hub at an arbitrary angle; instead they ride a
  * lightness RAIL beside the disc (light at the top), which also gives lightness
- * — otherwise a non-positional axis here — somewhere to be read. See
+ * - otherwise a non-positional axis here - somewhere to be read. See
  * palette-wheel-geom.ts (isNeutral / railY).
  *
  * Two modes off one geometry (oklchWheelXY / wheelXYToChromaHue / railY, all pure
  * + unit-tested):
- *  - renderPaletteWheel / wirePaletteWheel — the Dashboard's read-only instrument
+ *  - renderPaletteWheel / wirePaletteWheel - the Dashboard's read-only instrument
  *    dial (hover a dot to read it).
- *  - renderBrandWheel / wireBrandWheel — the brand editor's LIVE wheel: drag a dot
+ *  - renderBrandWheel / wireBrandWheel - the brand editor's LIVE wheel: drag a dot
  *    to recolour it (hue+chroma from where you drop it, lightness kept), click a
  *    dot to edit/delete it, click empty space to drop a new one there.
  */
@@ -135,11 +135,11 @@ export interface WheelDot { idx: number; hex: string; label: string }
 export interface BrandWheelHandlers {
   /** Live during a drag: the dot moved to this hue/chroma (lightness + alpha kept). */
   onRecolor(idx: number, oklch: { l: number; c: number; h: number; alpha?: number }): void;
-  /** The drag ended — a good moment to persist. */
+  /** The drag ended - a good moment to persist. */
   onCommit(idx: number): void;
-  /** A dot was clicked (not dragged) — open its editor. */
+  /** A dot was clicked (not dragged) - open its editor. */
   onPick(idx: number): void;
-  /** Empty space was clicked — drop a new swatch seeded at this hue/chroma. */
+  /** Empty space was clicked - drop a new swatch seeded at this hue/chroma. */
   onAdd(seed: { l: number; c: number; h: number }): void;
   /** Current hex of a dot (drags keep its lightness). */
   hexOf(idx: number): string;
@@ -181,7 +181,7 @@ export function wireBrandWheel(root: HTMLElement, h: BrandWheelHandlers): () => 
 
   // Both surfaces run the same press/drag/click machine; they differ only in what
   // a position MEANS. The disc reads hue+chroma out of a point (lightness kept);
-  // the rail reads lightness out of a height (hue+chroma kept) — a grey has no
+  // the rail reads lightness out of a height (hue+chroma kept) - a grey has no
   // hue to drag, so its one real axis is the only thing the rail moves.
   const wire = (
     surface: HTMLElement,
@@ -262,7 +262,7 @@ export function wireBrandWheel(root: HTMLElement, h: BrandWheelHandlers): () => 
 
 /** Move + recolour a single live dot in place (during a drag) without a re-render.
  *  A drag can carry a colour across the neutral threshold, so the dot may have to
- *  change SURFACE too — hop between the disc and the rail — which means re-parenting
+ *  change SURFACE too - hop between the disc and the rail - which means re-parenting
  *  it, not just repositioning it. */
 export function updateWheelDot(root: HTMLElement, idx: number, hex: string): void {
   const dot = root.querySelector<HTMLElement>(`[data-be-widx="${idx}"]`);

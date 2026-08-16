@@ -2,7 +2,7 @@
 // Canonical formatting helpers, shared across views.
 //
 // These used to be copy-pasted (in divergent forms) across gallery, folder
-// tiles, profile, device-info and tool-inputs — some capped at MB, some showed
+// tiles, profile, device-info and tool-inputs - some capped at MB, some showed
 // GB, and the zero case rendered as '', '0 KB' or '0 B' depending on the file.
 // This module is the single source of truth: GB/TB-capable byte formatting with
 // one zero-form ('0 B'), plus the shared relative-time and data-URL helpers.

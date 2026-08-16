@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Your activity" — the read-only, local-only usage summary (files rendered,
+ * "Your activity" - the read-only, local-only usage summary (files rendered,
  * favourite formats, favourite tool, "creating since"). Extracted from the
  * Profile view so the Dashboard (#/d) can show the same figures without the two
  * drifting. Data comes from metrics.ts (getMetrics); this module only renders.

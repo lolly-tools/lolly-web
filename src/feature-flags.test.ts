@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * feature-flags.ts — the PRIVATE_COLLAB_FLAG slice (plans/100 §6.3/§0).
+ * feature-flags.ts - the PRIVATE_COLLAB_FLAG slice (plans/100 §6.3/§0).
  *
  * The flag is ON by default as of 2026-08-10 (it shipped opt-in in wave 2.6), and this
  * file is the truth table for what that means, because "on by default" is three separate
@@ -22,7 +22,7 @@
  *
  * jsdom + a Map-backed localStorage + a stubbed fetch drive a real initOrg() pass
  * so governance comes from the real org/index.ts seam, not a re-implementation of
- * it — same harness shape as org/index.test.ts, kept local to this file so it
+ * it - same harness shape as org/index.test.ts, kept local to this file so it
  * doesn't collide with concurrent edits to that suite.
  *
  * Run directly:  node --test shells/web/src/feature-flags.test.ts
@@ -83,12 +83,12 @@ test('PRIVATE_COLLAB_FLAG is ON by default, and the shell honours governance for
 
 test('dormant: a user with NO stored choice reads ON, sync and profile-aware alike', async () => {
   reset();
-  await initOrg(); // dormant — 404 on the probe
+  await initOrg(); // dormant - 404 on the probe
   assert.equal(orgFlagGovernance(PRIVATE_COLLAB_FLAG.id), null);
 
   assert.equal(isFlagOnSync(PRIVATE_COLLAB_FLAG), true, 'sync mirror read, no entry ⇒ built-in default');
 
-  // flagEnabled (unlike isFlagOn) is NOT default-aware — it is the historic ON-
+  // flagEnabled (unlike isFlagOn) is NOT default-aware - it is the historic ON-
   // unless-turned-off API used only by CATEGORY_FLAGS/PRO_FLAG, and it's not the
   // read PRIVATE_COLLAB_FLAG's consumers use, so it's deliberately not asserted
   // here; isFlagOn is the default-aware read a flag like this one is read through.
@@ -147,7 +147,7 @@ test('governed default OFF: an unset user choice picks up the instance default, 
   assert.equal(isFlagOnSync(PRIVATE_COLLAB_FLAG), false, 'and hydration bakes it into the sync mirror');
 
   // The toggle is still SHOWN, so this is an instance opinion rather than a decision
-  // taken away — the distinction #/join's two-branch gate turns on.
+  // taken away - the distinction #/join's two-branch gate turns on.
   assert.equal(flagHidden(PRIVATE_COLLAB_FLAG.id), false);
   const turnedOn = { featureFlags: { [PRIVATE_COLLAB_FLAG.id]: true } } as unknown as Parameters<typeof isFlagOn>[0];
   assert.equal(isFlagOn(turnedOn, PRIVATE_COLLAB_FLAG), true, 'and the user can still choose over it');
@@ -155,15 +155,15 @@ test('governed default OFF: an unset user choice picks up the instance default, 
 
 test('governed + hidden OFF: forced default wins over the toggle AND a saved user value', async () => {
   reset();
-  // The instance stages the ceremony as fleet-wide OFF and hides the switch — exactly
+  // The instance stages the ceremony as fleet-wide OFF and hides the switch - exactly
   // the "force it off fleet-wide" lever plans/100 §6.3 calls for, and the one the
-  // default going ON makes load-bearing rather than decorative.
+  // default going ON makes essential rather than decorative.
   governed({ [PRIVATE_COLLAB_FLAG.id]: { default: false, hidden: true } });
   await initOrg();
 
   assert.equal(flagHidden(PRIVATE_COLLAB_FLAG.id), true, 'the toggle itself is suppressed');
   // A user who had it on BEFORE the instance staged this governance must still see
-  // it off — hidden governance beats any saved/mirrored value, never falls open.
+  // it off - hidden governance beats any saved/mirrored value, never falls open.
   const savedOn = { featureFlags: { [PRIVATE_COLLAB_FLAG.id]: true } } as unknown as Parameters<typeof isFlagOn>[0];
   assert.equal(isFlagOn(savedOn, PRIVATE_COLLAB_FLAG), false, 'hidden forced-off wins over a saved true');
   assert.equal(flagEnabled(savedOn, PRIVATE_COLLAB_FLAG.id), false);
@@ -202,7 +202,7 @@ test('boot order: a hidden governed OFF holds even though hydration ran before i
   reset();
   governed({ [PRIVATE_COLLAB_FLAG.id]: { default: false, hidden: true } });
 
-  // Boot step 1 — the profile is known, the control plane is not.
+  // Boot step 1 - the profile is known, the control plane is not.
   const noChoice = { featureFlags: {} } as unknown as Parameters<typeof isFlagOn>[0];
   assert.equal(orgFlagGovernance(PRIVATE_COLLAB_FLAG.id), null, 'governance is unknowable this early');
   hydrateFeatureFlags(noChoice);
@@ -210,7 +210,7 @@ test('boot order: a hidden governed OFF holds even though hydration ran before i
   assert.equal(mirrored[PRIVATE_COLLAB_FLAG.id], undefined,
     'a default-ON flag is deliberately left with NO mirror entry, so the bake cannot save us here');
 
-  // Boot step 2 — the control plane answers. Nothing re-hydrates the mirror.
+  // Boot step 2 - the control plane answers. Nothing re-hydrates the mirror.
   await initOrg();
   assert.equal(flagHidden(PRIVATE_COLLAB_FLAG.id), true, 'the instance forced it off and hid the switch');
   assert.equal(isFlagOn(noChoice, PRIVATE_COLLAB_FLAG), false, 'the profile-aware read honours that');
@@ -238,7 +238,7 @@ test('boot order: an instance default (toggle still shown) also survives the sam
   assert.equal(flagEnabledSync('neurospicy'), false, 'and the historic ON-unless-off read honours it too');
 
   // A user choice still outranks a visible (non-hidden) instance default, exactly as
-  // isFlagOn resolves it — the fix adds governance under the mirror, not over it.
+  // isFlagOn resolves it - the fix adds governance under the mirror, not over it.
   hydrateFeatureFlags({ featureFlags: { [PRIVATE_COLLAB_FLAG.id]: true } } as unknown as Parameters<typeof isFlagOn>[0]);
   assert.equal(isFlagOnSync(PRIVATE_COLLAB_FLAG), true, 'a stored true still wins over a visible default');
 });

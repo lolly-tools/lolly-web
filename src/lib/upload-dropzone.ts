@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared upload dropzone — the catalogue view's "Your uploads" drop area, extracted
+ * Shared upload dropzone - the catalogue view's "Your uploads" drop area, extracted
  * into a mountable component so the #/start Catalogue tab can offer the same ingest
  * surface. Drag files in or click to browse: a <label> over a visually-hidden file
  * input, so click-to-open is native and the input stays keyboard-focusable
@@ -10,10 +10,10 @@
  * sanitise/credential-preserve/animated-sniff); a PDF/.ai converts page(s) to SVG
  * assets via the lazily-loaded pdf-import chunk, and a PowerPoint .pptx converts
  * chosen slide(s) the same way via pptx-import. An image is offered the shared
- * trim-to-content card first (plan 97 §7.3 — see offerTrim below), which is why the
- * loop stores `await offerTrim(file)` rather than `file`. Ingest is sequential on purpose —
+ * trim-to-content card first (plan 97 §7.3 - see offerTrim below), which is why the
+ * loop stores `await offerTrim(file)` rather than `file`. Ingest is sequential on purpose - 
  * parallel ingest of a big multi-drop would spike memory (each raster decode holds a
- * full bitmap) — and the single-flight guard is module-level so a mid-ingest re-mount
+ * full bitmap) - and the single-flight guard is module-level so a mid-ingest re-mount
  * (the catalogue rebuilds its body per render) can't open a second lane. The other
  * half of that rule: a mid-ingest re-mount also STOPS the old loop from asking
  * anything (see `disposed`), because a question mounted into a container that is no
@@ -25,7 +25,7 @@ import type { PickerHost } from '../views/picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
 import { escape } from '../utils.ts';
-// Only the trim card's strings go through t() — the zone's own copy predates it and
+// Only the trim card's strings go through t() - the zone's own copy predates it and
 // its translation is a separate i18n pass, not something to half-do here.
 import { t } from '../i18n.ts';
 import '../styles/parts/dropzone.css';
@@ -39,7 +39,7 @@ export interface DropzoneOpts {
   onAdded?: (count: number) => void | Promise<void>;
 }
 
-// What the ingest path ACTUALLY accepts — keep in step with UPLOAD_ACCEPT.
+// What the ingest path ACTUALLY accepts - keep in step with UPLOAD_ACCEPT.
 const DEFAULT_HINT = 'Images (PNG, JPG, WEBP, GIF), SVG, PDF & Illustrator, PowerPoint, audio (MP3, WAV, OGG, M4A, FLAC), plus video & Lottie';
 
 // Lucide-style upload glyph (themes via currentColor; sized in dropzone.css).
@@ -50,7 +50,7 @@ let ingesting = false;
 
 /**
  * Render the dropzone into `container` and wire its ingest loop. Returns a teardown
- * that drops the listeners — call it before re-painting the surface that holds the
+ * that drops the listeners - call it before re-painting the surface that holds the
  * mount (an in-flight ingest keeps running and still delivers its onAdded).
  */
 export function mountUploadDropzone(container: HTMLElement, host: PickerHost, opts: DropzoneOpts = {}): () => void {
@@ -72,14 +72,14 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
   // Set by the teardown below. An ingest that outlives its mount must stop ASKING:
   // this closure's `container` is detached (or repainted) by then, so a card
   // appended to it is invisible and unanswerable, and the promise it hands back to
-  // the loop would never settle — permanently latching the module-level
+  // the loop would never settle - permanently latching the module-level
   // single-flight guard and killing every dropzone in the app until a reload.
   let disposed = false;
 
   /**
    * Plan 97 §7.3: every surface where a user file becomes an asset offers the same
    * trim-to-content card, so a padded logo dropped here behaves like one dropped in
-   * the Logos room. Resolves to the file to actually ingest — the trimmed bytes, the
+   * the Logos room. Resolves to the file to actually ingest - the trimmed bytes, the
    * original when the user keeps the margins, and the original untouched when the
    * file is not an image, cannot be measured, or is already tight (no card at all).
    *
@@ -89,7 +89,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
    * MUST run before storeUserUpload: that path's normaliser strips an SVG's root
    * width/height, after which a viewBox rewrite has nothing left to bite on.
    *
-   * Never rejects — a failed measurement is not a reason to fail an upload.
+   * Never rejects - a failed measurement is not a reason to fail an upload.
    */
   async function offerTrim(file: File): Promise<File | null> {
     if (disposed || !container.isConnected) return file;
@@ -128,8 +128,8 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
       });
       // A surface that repaints while the card is up (the catalogue rebuilds its body
       // per render) calls our teardown: answer with the ORIGINAL file rather than
-      // leaving the ingest loop — and, through the single-flight guard, every later
-      // drop — waiting on a promise nothing will ever settle. Not a user dismissal:
+      // leaving the ingest loop - and, through the single-flight guard, every later
+      // drop - waiting on a promise nothing will ever settle. Not a user dismissal:
       // they dropped the file, so it still lands, with the margins it arrived with.
       closeOffer = () => finish(proposal.originalFile);
     });
@@ -170,7 +170,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
     // Explode a dropped plain archive (.zip/.tar/.tar.gz) into its member files first,
     // so its contents land in the library. Non-archives pass through untouched; an
     // office/OCF package that shares the PK magic is NOT expanded (kept as-is and
-    // handled/errored by the normal path). Lazy chunk — the engine zip/tar readers
+    // handled/errored by the normal path). Lazy chunk - the engine zip/tar readers
     // load only when an archive actually arrives.
     const { expandArchiveFiles, isIgnoredUploadName } = await import('./archive-ingest.ts');
     // Drop a folder extracted from a macOS zip and its `._` AppleDouble stubs / .DS_Store
@@ -181,7 +181,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
     let stored = 0;
     for (const file of expanded) {
       try {
-        // A PDF/.ai converts page(s) to SVG assets — multi-page docs ask which pages
+        // A PDF/.ai converts page(s) to SVG assets - multi-page docs ask which pages
         // (or all) via the shared picker dialog. Lazy chunk: pdf-lib loads only when
         // a PDF actually arrives. Cancelling the dialog stores nothing for that file.
         if (isPdfUpload(file)) {
@@ -204,7 +204,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
           stored += refs.length;
           continue;
         }
-        // The trim question, then the ingest — in that order, and with the answer's
+        // The trim question, then the ingest - in that order, and with the answer's
         // file, never the one the loop started with (offerTrim's doc comment says why).
         const answered = await offerTrim(file);
         if (!answered) continue;   // backed out of the card: this file is skipped

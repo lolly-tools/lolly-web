@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-handle.ts — the Track B handle adapter (plan 100 §7, wave 3.2).
+ * org/collab-handle.ts - the Track B handle adapter (plan 100 §7, wave 3.2).
  *
  * Everything is driven through a FAKE PROVIDER: the real one's exported surface
  * (`adapter`, `connect`, `close`, `state`, `on`, `sendPresence`, `outbox`,
  * `persisted`) and nothing else, so this suite proves the ADAPTATION rather than the
- * socket — `collab-provider.test.ts` already owns the wire. No network, no DOM, no
+ * socket - `collab-provider.test.ts` already owns the wire. No network, no DOM, no
  * IndexedDB, and the presence engine runs on injected fake time.
  *
  * What is worth pinning here is only what an adapter can get wrong, and each of
  * these has a specific way of failing silently:
  *
- *  1. ROLE comes from the gateway's ack and is never re-derived — and an observer
+ *  1. ROLE comes from the gateway's ack and is never re-derived - and an observer
  *     role really does engage `collab-session`'s observer wrapper, which is the only
  *     thing that stops a local edit becoming an op.
  *  2. A peer's `from`/`seq` cross UNCHANGED. Re-stamping either would break the
- *     roster key or the newest-only rule (§11.5) — silently, and only for the peer.
+ *     roster key or the newest-only rule (§11.5) - silently, and only for the peer.
  *  3. The join-ack roster reaches the presence engine, a LIVER frame supersedes the
  *     placeholder it seeded, and the placeholder does not linger as a ghost.
  *  4. There is no host, so no participant is ever tagged one.
  *  5. `'reconnecting'` survives the status mapping instead of collapsing into
- *     `'connecting'` — the difference between "greying an avatar" and "the room is
+ *     `'connecting'` - the difference between "greying an avatar" and "the room is
  *     starting up".
  *  6. `close()` closes the provider, says `'closed'` on the way out, and leaves no
  *     subscription behind.
@@ -91,7 +91,7 @@ function fakeClock() {
 
 // ── the fake provider ─────────────────────────────────────────────────────────
 
-/** A real converging adapter, with every LOCAL crossing recorded — which is how
+/** A real converging adapter, with every LOCAL crossing recorded - which is how
  *  "an observer's edits never become ops" is observed from the outside. */
 class RecordingAdapter implements CanvasSyncAdapter {
   readonly doc = new ReferenceCanvasDoc('work');
@@ -278,7 +278,7 @@ test('role comes from the ack, live — including a mid-session downgrade', () =
   fake.setState({ role: 'writer' });
   assert.equal(handle.role, 'writer');
 
-  // Fail closed on anything that is not a stated writer — the same reading the
+  // Fail closed on anything that is not a stated writer - the same reading the
   // provider takes of an ack that declares no role at all.
   fake.setState({ role: 'nonsense' as unknown as WorkCollabState['role'] });
   assert.equal(handle.role, 'observer');
@@ -334,7 +334,7 @@ test('the join-ack roster seeds the engine, and a live frame supersedes the seed
   const w = session(fake);
 
   // The ack: one incumbent, whose device has said nothing (it is alone, so its own
-  // engine is silent — the deadlock this seeding exists to break).
+  // engine is silent - the deadlock this seeding exists to break).
   fake.setState({
     status: 'live',
     roster: [member({ id: 'conn-priya', userId: 'priya', name: 'Priya', color: '#00aa00', role: 'writer' })],
@@ -380,7 +380,7 @@ test('the seed can never mask a live frame: seq 0 out, seq 1 to retire', () => {
   assert.deepEqual(seen[0]?.state, { userId: 'ada', name: 'Ada', color: '' });
 
   fake.presence('conn-a', { from: 'DEVICE-ADA', seq: 1, state: peerState({ userId: 'ada' }) });
-  // Forward FIRST, retire second — so the two rows never both exist across a paint.
+  // Forward FIRST, retire second - so the two rows never both exist across a paint.
   assert.equal(seen[1]?.from, 'DEVICE-ADA');
   assert.equal(seen[2]?.from, 'conn-a');
   assert.equal(seen[2]?.state, null, 'the placeholder leaves cleanly');
@@ -433,7 +433,7 @@ test('nobody is the host, so nobody is tagged one', () => {
 
 test('an anonymous work peer is still never numbered against a host', () => {
   // The invitee ordinals are Track A copy (§4.5). With no host declared, `isHost` is
-  // false for everyone and the numbering falls back to plain client-id order — which
+  // false for everyone and the numbering falls back to plain client-id order - which
   // is exactly what it should do, and never "Invitee 2" beside a "Host" that is not
   // there.
   const fake = fakeProvider();
@@ -567,7 +567,7 @@ test('a clean leave discards that sender\'s bookkeeping, so a reload is admitted
   assert.deepEqual(seen.map(f => f.seq), [1, 2, 3]);
 
   // …then leaves, and comes back. The counter restarts, which is exactly what the
-  // presence engine does with its own bookkeeping on a leave — and the engine has
+  // presence engine does with its own bookkeeping on a leave - and the engine has
   // dropped the peer, so a seq of 1 is accepted rather than read as stale.
   fake.presence('conn-a', { from: 'conn-a', seq: 4, state: null });
   fake.presence('conn-a', { userId: 'ada', name: 'Ada', color: '' });

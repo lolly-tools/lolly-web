@@ -9,7 +9,7 @@
  * reader gets the real answer rather than the index's 240-char snippet; if the
  * twin is missing, the page can't be aligned (non-markdown pages), or the locale
  * has no English twin, it falls back to the snippet and always offers the
- * open-in-docs link. Answers are verbatim docs text — nothing is generated.
+ * open-in-docs link. Answers are verbatim docs text - nothing is generated.
  */
 import { currentLang } from '../../i18n.ts';
 import { tokenize } from '../search/match.ts';
@@ -24,7 +24,7 @@ export interface AskCitation { page: string; pageTitle: string; heading: string 
 
 /** The lead of an answer: the extracted (or snippet) section for the top docs hit. */
 export interface AskPrimary {
-  /** Safe HTML from render-md — the full section, or the snippet on fallback. */
+  /** Safe HTML from render-md - the full section, or the snippet on fallback. */
   html: string;
   citation: AskCitation;
   /** In-app reader deep link to the exact section (`#/docs/<slug>?h=<anchor>`). */
@@ -47,7 +47,7 @@ export interface AskAnswer {
 /** How many related sections to offer under the primary answer. */
 const RELATED_MAX = 4;
 
-// The full-text twins are English-only static files — fetched once each, cached
+// The full-text twins are English-only static files - fetched once each, cached
 // for the session (a missing twin resolves to null, never an error).
 const twinCache = new Map<string, Promise<string | null>>();
 function loadTwin(slug: string): Promise<string | null> {
@@ -59,7 +59,7 @@ function loadTwin(slug: string): Promise<string | null> {
   return p;
 }
 
-/** Test seam — drop the twin cache. */
+/** Test seam - drop the twin cache. */
 export function _resetTwinCache(): void {
   twinCache.clear();
 }

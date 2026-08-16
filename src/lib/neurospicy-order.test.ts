@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Playlist ORDER for the Neurospicy player. The picker renders whatever listLoops
- * returns, grouped by trackCategory — so this order IS the order prev/next and the
+ * returns, grouped by trackCategory - so this order IS the order prev/next and the
  * end-of-track advance walk. These tests pin that one-order contract: a regression
  * here is "next plays something other than what the list shows".
  */
@@ -88,7 +88,7 @@ test('the play-through advance skips radio, a pressed Next does not', async () =
   invalidateNeurospicyTracks();
   const loops = await listLoops(host);
   const lastLocal = loops.filter((t) => trackCategory(t) !== 'radio').at(-1)!;
-  // A pressed Next honours the visible order — radio is right there in the list.
+  // A pressed Next honours the visible order - radio is right there in the list.
   await setNeurospicyLoop(host, lastLocal.id);
   await cycleNeurospicyLoop(host, 1);
   assert.equal(trackCategory(loops.find((t) => t.id === getNeurospicy().loopId)!), 'radio');

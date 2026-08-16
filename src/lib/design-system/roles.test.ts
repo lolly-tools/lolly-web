@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Roles as an assignment layer — the doc surgery and the readouts.
+ * Roles as an assignment layer - the doc surgery and the readouts.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/roles.test.ts"
@@ -10,7 +10,7 @@
  * against the exact multi-set shape the engine emits (base + light + dark, roles
  * as `{alias}`es into the ramps) rather than a hand-rolled approximation that
  * could drift from it. The second is a hand-built single-set import carrying
- * literal colours and no `semantic` group at all — the shape a bare DTCG export
+ * literal colours and no `semantic` group at all - the shape a bare DTCG export
  * arrives in, where the group has to be created before a role can land.
  *
  * jsdom supplies the DOM for the mount half only.
@@ -34,7 +34,7 @@ type RoleId = import('./roles.ts').RoleId;
 
 type Rec = Record<string, unknown>;
 
-/** A fresh derived document — never share one across mutating tests. */
+/** A fresh derived document - never share one across mutating tests. */
 const derived = (): Rec => deriveBrandTokens({ primary: '#0c322c', name: 'Test' }) as Rec;
 
 /** A LAYERED import, in the shape `views/start.ts` installs verbatim: a
@@ -232,7 +232,7 @@ test('a `base` group with no $metadata is FLAT — the engine decides, not the n
   // group in a hand-written document, not a token SET: no $metadata, no
   // $themes, so createTokenSet reads the whole file flat. Recognising the name
   // anyway wrote the role into `base.color.semantic.primary`, returned true, and
-  // left a reference the resolver could never see — a role the room announced as
+  // left a reference the resolver could never see - a role the room announced as
   // assigned and the palette never showed.
   const doc: Rec = { base: { color: { brand: { blue: { $type: 'color', $value: '#123456' } } } } };
   assert.equal(assignRole(doc, 'primary', 'color.brand.blue'), false,
@@ -456,7 +456,7 @@ test('mountRolesStrip: picking a swatch assigns once; picking Not set clears', (
   assert.deepEqual(cleared, ['primary']);
   assert.equal(assigned.length, 1, 'clearing is not also an assignment');
 
-  // One delegated listener survives a re-render — no duplicate handlers.
+  // One delegated listener survives a re-render - no duplicate handlers.
   strip.render();
   const third = mount.querySelector<HTMLSelectElement>('[data-be-role-pick="secondary"]')!;
   third.value = 'color.brand.sand';
@@ -492,7 +492,7 @@ test('mountRolesStrip: a repaint keeps the focused picker alive and focused', ()
   assert.equal(pick.value, 'color.brand.teal', 'and the patched picker still states the assignment');
   assert.equal(mount.querySelector('[data-be-role="primary"]')!.classList.contains('is-unset'), false);
 
-  // A second arrow press has something to land on — the Windows/Linux case where
+  // A second arrow press has something to land on - the Windows/Linux case where
   // a closed <select> fires change on every key.
   pick.value = 'color.brand.sand';
   pick.dispatchEvent(new dom.window.Event('change', { bubbles: true }));

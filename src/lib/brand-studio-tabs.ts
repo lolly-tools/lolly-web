@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand studio tabs — the three studio panels that don't touch the colour
+ * Brand studio tabs - the three studio panels that don't touch the colour
  * pipeline: non-colour token editors (Tokens tab), gradient tokens (Colour
  * tab's optional extra) and catalogue uploads (Catalogue tab). Split out of
  * brand-editor.ts so the editor stays the colour/typography/logo core; each
- * mount gets the same narrow context — the live doc (a GETTER, because the
+ * mount gets the same narrow context - the live doc (a GETTER, because the
  * Colour tab reassigns the doc on re-derive/import), the persist funnel and
- * its tab's notify — and returns { render, teardown } so the editor can
+ * its tab's notify - and returns { render, teardown } so the editor can
  * repaint after a doc swap and unhook on unmount.
  *
  * Pure doc surgery lives in token-studio.ts; storage in upload-dropzone.ts /
@@ -39,12 +39,12 @@ export interface StudioTabCtx {
 export interface StudioPanelHandle { render: () => void; teardown: () => void }
 
 /**
- * The studio panel's titled head — `.be-panel-head`/`-title`/`-sub`, which alias
+ * The studio panel's titled head - `.be-panel-head`/`-title`/`-sub`, which alias
  * chips.css's `.section-header` family (see styles/parts/chips.css). Was typed
  * out as a raw template string eleven times across brand-editor.ts and this
  * module; this is the one copy.
  *
- * Both arguments are **trusted HTML, not escaped** — every call site passes a
+ * Both arguments are **trusted HTML, not escaped** - every call site passes a
  * `t()` string, and several of the subs carry deliberate inline markup
  * (`<strong>`, `<em>`, a `<a href="#/c">` link). Never pass user input here.
  * `sub` is optional; omitting it emits the head with a title alone.
@@ -54,7 +54,7 @@ export const panelHead = (title: string, sub?: string): string =>
 
 // ── Tokens panel ──────────────────────────────────────────────────────────────
 
-/** The kinds the Tokens tab offers (gradient lives on the Colour tab instead —
+/** The kinds the Tokens tab offers (gradient lives on the Colour tab instead - 
  *  it's a colour primitive, and colour work shouldn't leave that tab). */
 const TOKEN_KINDS: ReadonlyArray<{ id: StudioKind; label: string }> = [
   { id: 'spacing', label: 'Spacing' },
@@ -67,7 +67,7 @@ const TOKEN_KINDS: ReadonlyArray<{ id: StudioKind; label: string }> = [
 ];
 const KIND_LABEL = new Map(TOKEN_KINDS.map(k => [k.id, k.label]));
 
-const pathAttr = (t: StudioToken): string => escape(t.path.join('␟')); // ␟ — never in a slug
+const pathAttr = (t: StudioToken): string => escape(t.path.join('␟')); // ␟ - never in a slug
 const pathFrom = (attr: string): string[] => attr.split('␟');
 
 /** One token row's value editor, per kind. Every control carries the row's
@@ -90,7 +90,7 @@ function tokenValueEditor(tok: StudioToken): string {
       // The colour holder below carries the stored string VERBATIM. It used to be
       // flattened through colorToHex(...).slice(0, 7) for an <input type=color> that no
       // longer receives it, which dropped an authored alpha ('#00000040' → '#000000')
-      // and any non-hex space on every re-render — only shadowFromRow's preference for
+      // and any non-hex space on every re-render - only shadowFromRow's preference for
       // the stored value hid it. normShadow still gates validity on the way back in.
       const f = (k: string): string => escape(String(raw[k] ?? (k === 'color' ? '#00000040' : '0px')));
       return `<span class="be-tok-shadow-chip" style="box-shadow:${escape(formatStudioValue(tok))}" aria-hidden="true"></span>
@@ -105,7 +105,7 @@ function tokenValueEditor(tok: StudioToken): string {
 }
 
 /** Read a shadow row's five fields back into the DTCG shadow value. The colour
- *  comes from the STORED value unless the colour input itself drove the commit —
+ *  comes from the STORED value unless the colour input itself drove the commit - 
  *  `<input type=color>` only speaks #rrggbb, so echoing it back on every edit
  *  would strip an authored alpha ('#00000040') or oklch() the moment the blur
  *  is touched. */
@@ -136,11 +136,11 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const err = mount.querySelector<HTMLElement>('[data-tok-err]');
   const showErr = (m: string): void => { if (err) { err.textContent = m; err.hidden = !m; } if (m) announce(m, { assertive: true }); };
 
-  // A shadow token's colour uses our own picker (never the OS one) — mounted over a
+  // A shadow token's colour uses our own picker (never the OS one) - mounted over a
   // hidden holder input that carries the stored colour string so the delegated shadow
   // commit (which reads [data-tok-field="color"] and fires on `change`) keeps working
   // untouched. The holder is not an <input type=color>, so it seeds the picker with
-  // whatever was authored — alpha and space intact. Re-run after every render(), which
+  // whatever was authored - alpha and space intact. Re-run after every render(), which
   // replaces the list's markup.
   const wireShadowFields = (): void => {
     list.querySelectorAll<HTMLElement>('[data-shadow-cf]').forEach(span => {
@@ -150,7 +150,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
         value: holder?.value || '#000000', float: true,
         onChange: (v) => {
           if (!holder) return;
-          holder.value = v; // canonical #rrggbb / #rrggbbaa — the shadow may carry alpha now
+          holder.value = v; // canonical #rrggbb / #rrggbbaa - the shadow may carry alpha now
           holder.dispatchEvent(new Event('change', { bubbles: true }));
         },
       });
@@ -185,7 +185,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const commit = (el: HTMLInputElement): void => {
     const path = pathFrom(el.dataset.tokPath ?? '');
     const kind = el.dataset.tokInput;
-    // A cleared number field reports '' — Number('') is 0, which would persist
+    // A cleared number field reports '' - Number('') is 0, which would persist
     // a value the user never typed. Wait for real input (or a blur revert).
     if ((kind === 'rotation' || kind === 'number' || kind === 'opacity') && el.value.trim() === '') return;
     let ok = false;
@@ -250,7 +250,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
 
 // ── Gradients panel (Colour tab) ──────────────────────────────────────────────
 
-/** One palette swatch as the gradient stop picker sees it — `ref` is the
+/** One palette swatch as the gradient stop picker sees it - `ref` is the
  *  canonical `{color.…}` alias a stop stores. Built by brand-editor.ts from
  *  the same walkSwatches output the palette grid renders. */
 export interface GradientSwatch { ref: string; hex: string; label: string; group: string }
@@ -262,7 +262,7 @@ export interface GradientsCtx extends StudioTabCtx {
   paletteSwatches: () => GradientSwatch[];
   /** A `{path}` alias → resolved hex against the live doc, or null. */
   resolveRef: (ref: string) => string | null;
-  /** The committed-palette seam (BrandEditorHandle.onPalette — fires from BOTH
+  /** The committed-palette seam (BrandEditorHandle.onPalette - fires from BOTH
    *  repaintPalette and persist(); double-fires expected, so subscribers must
    *  be idempotent). Returns an unsubscribe. */
   onPalette: (cb: () => void) => () => void;
@@ -345,7 +345,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
       </div>`;
   };
 
-  // ── The ONE shared stop popover — swatch grid first, custom value folded ────
+  // ── The ONE shared stop popover - swatch grid first, custom value folded ────
   const pop = mount.querySelector<HTMLElement>('[data-grad-pop]')!;
   const popGrid = mount.querySelector<HTMLElement>('[data-grad-pop-grid]')!;
   const popCustom = mount.querySelector<HTMLDetailsElement>('[data-grad-pop-custom]')!;
@@ -378,7 +378,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     // Position under the chip, clamped inside the panel; flipped above when
     // the side pane's scrollport (or the viewport) would clip it below. The
     // popover is absolute INSIDE the panel, so the pane's own scroll carries
-    // it with its anchor — no `.be`-space drift to chase.
+    // it with its anchor - no `.be`-space drift to chase.
     const mr = mount.getBoundingClientRect(), cr = chip.getBoundingClientRect();
     pop.style.left = `${Math.max(0, Math.min(cr.left - mr.left, mr.width - (pop.offsetWidth || 248)))}px`;
     const h = pop.offsetHeight;
@@ -412,14 +412,14 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (!pop.hidden) closePop(); // the chip it anchors to is about to be rebuilt
     list.innerHTML = items.map(rowHtml).join('');
   };
-  // Default-collapsed only while the brand carries no gradients — a brand that
+  // Default-collapsed only while the brand carries no gradients - a brand that
   // has them shows them.
   if (details) details.open = grads().length > 0;
   render();
 
   const tokenAt = (attr: string): StudioToken | undefined =>
     grads().find(t => t.path.join('␟') === attr);
-  /** In-place repaint of one row's preview + chips (no re-render — keeps the
+  /** In-place repaint of one row's preview + chips (no re-render - keeps the
    *  popover and any focused control alive). */
   const repaintRow = (attr: string): void => {
     const t = tokenAt(attr);
@@ -436,7 +436,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     });
   };
   // The committed-palette seam: an in-place recolour (wheel drag, popover edit)
-  // changes what alias stops resolve to with no structural edit — repaint every
+  // changes what alias stops resolve to with no structural edit - repaint every
   // row (and an open stop popover's grid) in place.
   const repaintAll = (): void => {
     for (const t of grads()) repaintRow(t.path.join('␟'));
@@ -449,11 +449,11 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (el.dataset.gradAngle === undefined) return;
     const attr = el.dataset.gradPath ?? '';
     const t = tokenAt(attr); if (!t) return;
-    if (el.value.trim() === '') return; // cleared field — Number('') would write 0
+    if (el.value.trim() === '') return; // cleared field - Number('') would write 0
     const angle = Number(el.value);
     if (!Number.isFinite(angle)) return;
     // Angle-only edit: the stored stops ride through the write gate untouched
-    // (alias refs included — normStops keeps them verbatim).
+    // (alias refs included - normStops keeps them verbatim).
     if (!setStudioTokenValue(ctx.doc(), t.path, { stops: stopsOf(t), angle })) return;
     repaintRow(attr);
     ctx.persist();
@@ -469,13 +469,13 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (n === stops.length) { el.value = String(stops.length); return; }
     if (n > stops.length) {
       if (stops.length < 2) {
-        // Degenerate stored run (imported doc) — rebuild it evenly.
+        // Degenerate stored run (imported doc) - rebuild it evenly.
         while (stops.length < n) stops.push({ color: nextUnusedSwatch(stops)?.ref ?? '#888888', position: 1 });
         stops = stops.map((s, i) => ({ ...s, position: i / (stops.length - 1) }));
       } else {
         // Grow: append the next palette swatches nothing wears yet, as
         // aliases, spread evenly through the tail gap (between the last two
-        // stops) — a whole-run re-space would wipe positions the "+" flow
+        // stops) - a whole-run re-space would wipe positions the "+" flow
         // hand-placed at the largest gap's midpoint.
         const last = stops[stops.length - 1]!;
         const from = stops[stops.length - 2]!.position;
@@ -488,7 +488,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
         }
       }
     } else {
-      // Shrink: drop from the end, keeping the first and last stops — and
+      // Shrink: drop from the end, keeping the first and last stops - and
       // every survivor's position.
       stops = [...stops.slice(0, n - 1), stops[stops.length - 1]!];
     }
@@ -515,7 +515,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
       const stops = [...stopsOf(t)];
       if (stops.length >= GRAD_STOPS_MAX) return;
       // Seed at the midpoint of the largest gap, wearing the next unused
-      // palette swatch — as an alias, so it follows a recolour.
+      // palette swatch - as an alias, so it follows a recolour.
       let gi = 0;
       for (let i = 1; i + 1 < stops.length; i++) {
         if (stops[i + 1]!.position - stops[i]!.position > stops[gi + 1]!.position - stops[gi]!.position) gi = i;
@@ -538,15 +538,15 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
   });
   const commitPopHex = (): void => {
     const raw = popHex.value.trim();
-    if (!raw || colorToHex(raw) == null) return; // half-typed — leave the stored value alone
+    if (!raw || colorToHex(raw) == null) return; // half-typed - leave the stored value alone
     setStopColor(raw);
   };
   popHex.addEventListener('change', commitPopHex);
   popHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitPopHex(); } });
 
-  // Esc closes the stop popover FIRST and stops the event dead — registered
+  // Esc closes the stop popover FIRST and stops the event dead - registered
   // here (during mountBrandEditor, so ahead of start.ts's sheet/back handler,
-  // and after the swatch editor's own — resolution: swatch editor wins when
+  // and after the swatch editor's own - resolution: swatch editor wins when
   // both are somehow open). Outside-pointerdown (capture, the swatch editor's
   // pattern) closes it too.
   const onPopKey = (e: KeyboardEvent): void => {
@@ -590,7 +590,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
 
 // ── Catalogue panel ───────────────────────────────────────────────────────────
 
-/** Display buckets, in render order — the same coarse cut the Catalogue view
+/** Display buckets, in render order - the same coarse cut the Catalogue view
  *  makes: motion = video, Lottie and animated rasters. */
 const CAT_BUCKETS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'vector', label: 'Vector' },
@@ -624,7 +624,7 @@ export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx):
   const render = (): void => { void paint(); };
   const paint = async (): Promise<void> => {
     let refs: Array<{ id: string; type: string; meta?: Record<string, unknown> }> = [];
-    try { refs = await pickerHost.assets._listUserAssets(); } catch { /* fresh install — nothing yet */ }
+    try { refs = await pickerHost.assets._listUserAssets(); } catch { /* fresh install - nothing yet */ }
     const uploads = refs.filter(r => !INTERNAL_ID.test(r.id));
     if (!mount.isConnected) return;
     if (!uploads.length) {

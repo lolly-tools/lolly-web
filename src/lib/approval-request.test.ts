@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * approval-request.ts — the generic approval-opener seam.
+ * approval-request.ts - the generic approval-opener seam.
  *
  * Pure, DOM-free: proves the dormant default (no opener ⇒ openApprovalRequest is a
  * no-op returning false), that a registered opener receives the context, last-wins

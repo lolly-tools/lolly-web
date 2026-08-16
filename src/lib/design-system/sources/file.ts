@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **design-file source** (plan 97 §8, M2) — everything the import flow needs
+ * The **design-file source** (plan 97 §8, M2) - everything the import flow needs
  * to decide what a dropped file IS, and everything the semantic-mapping card
  * needs once that file turns out to be a token document.
  *
  * Pure and DOM-free on purpose. `views/start.ts` owns the copy, the markup and
  * the install; this module owns the sniffing, the zip shapes, the "does this doc
  * still need roles" question and the alias write. That split is what makes the
- * shapes testable under bare node — the flows they replace were 200 lines of
+ * shapes testable under bare node - the flows they replace were 200 lines of
  * branching inside one `handleImportFile` closure with no coverage at all.
  *
  * Nothing here reports user-facing text. A refusal comes back as a machine
@@ -17,17 +17,17 @@
  *
  * Four public jobs:
  *
- *  1. {@link routeDesignFile} — name/type/byte sniffing over the five shapes the
+ *  1. {@link routeDesignFile} - name/type/byte sniffing over the five shapes the
  *     picker accepts, including the zip of loose token-set files that
  *     `assembleTokenSetFiles` has always read for the CLI and the web could
  *     never open.
- *  2. {@link docNeedsMappingReview} — the gap that leaves an installed palette
+ *  2. {@link docNeedsMappingReview} - the gap that leaves an installed palette
  *     with every `--brand-*` var dark, plus the card's own model:
  *     {@link colorTokenRows} (what it can offer), {@link chooserRows} (what it
  *     shows) and {@link followRoles} (what follows the one decision it asks for).
- *  3. {@link censusFromTokensDoc} — a declaring source as a `DesignCensus`, for
+ *  3. {@link censusFromTokensDoc} - a declaring source as a `DesignCensus`, for
  *     tray candidates ONLY. Read its caveat before reaching for it.
- *  4. {@link applyMappingChoice} — the chosen roles written as ALIASES onto the
+ *  4. {@link applyMappingChoice} - the chosen roles written as ALIASES onto the
  *     doc that installs, so there is one install and not two.
  */
 
@@ -59,7 +59,7 @@ export const SVG_MAX_BYTES = 10 * 1024 * 1024;
 export const ZIP_MAX_BYTES = 64 * 1024 * 1024;
 
 /** How many `.json` members a zip of loose token sets may carry. A real export
- *  is one file per set — tens, not hundreds — and the count guard is cheaper
+ *  is one file per set - tens, not hundreds - and the count guard is cheaper
  *  than parsing an archive full of decoys. */
 export const SET_FILES_MAX_COUNT = 200;
 /** …and how many bytes of JSON they may sum to. The unzip guard's 64 MB/entry
@@ -80,7 +80,7 @@ export type DesignFileRefusal =
   | 'no-tokens';
 
 interface RouteBase {
-  /** The file name minus its extension — the honest default label for whatever
+  /** The file name minus its extension - the honest default label for whatever
    *  gets installed, and the provenance label every candidate carries. */
   label: string;
 }
@@ -94,7 +94,7 @@ interface RouteBase {
  * The pack branch carries `files` too, and TODAY'S CALLER DOES NOT USE THEM:
  * installing a pack is `editor.importPack(file)`, which re-reads the File and
  * inflates it again inside `importBrandPack`, because that is where the pack's
- * integrity map is verified. One archive, two inflates — bounded by
+ * integrity map is verified. One archive, two inflates - bounded by
  * `ZIP_MAX_BYTES` and worth removing the day `brand-transfer.ts` can be handed
  * entries it has already been given. Until then this comment is the honest
  * version of the claim that used to sit here.
@@ -115,7 +115,7 @@ const stripExt = (name: string): string => name.replace(EXT, '');
 const isSvgFile = (name: string, type?: string): boolean =>
   SVG_NAME.test(name) || type === 'image/svg+xml';
 
-/** `PK\x03\x04` — every zip this app can be handed starts with it, whatever the
+/** `PK\x03\x04` - every zip this app can be handed starts with it, whatever the
  *  extension says. A `.penpot` file is a zip, and a token export renamed by a
  *  well-meaning colleague is still a zip. */
 const hasZipMagic = (bytes: Uint8Array): boolean =>
@@ -151,7 +151,7 @@ function isNoise(path: string): boolean {
  * Drop ONE shared leading directory when every path has one and they agree on
  * it. `assembleTokenSetFiles` recognises `$metadata.json` / `$themes.json` at
  * the ROOT only, and real exports are routinely zipped inside a wrapper folder
- * — without this, every set would be named `tokens/Global` and the metadata
+ * - without this, every set would be named `tokens/Global` and the metadata
  * that orders them would be read as a set called `tokens/$metadata`.
  *
  * Only one level, and only when it is unambiguous: two top-level directories
@@ -230,7 +230,7 @@ function readManifest(files: Unzipped): { format?: string; type?: string } | nul
 /**
  * Route one dropped/picked file to the import branch that owns it.
  *
- * Sniffing order is name/type first, bytes second — the name is what the person
+ * Sniffing order is name/type first, bytes second - the name is what the person
  * chose and is right nearly always, and the byte sniff exists for the case it
  * is missing entirely (a drag from an app that reports no type, a file saved
  * without an extension). Anything that is not an SVG and not a zip is attempted
@@ -267,7 +267,7 @@ export async function routeDesignFile(
     if (manifest?.format === 'lolly-brand') return { kind: 'pack', label, files };
     if (manifest?.type === 'penpot/export-files') return { kind: 'penpot', label, files };
 
-    // Neither manifest — the plain zip of loose token-set files.
+    // Neither manifest - the plain zip of loose token-set files.
     const extraction = tokenSetFilesFromZip(files);
     return extraction.doc
       ? { kind: 'tokens', label, extraction }
@@ -290,14 +290,14 @@ export async function routeDesignFile(
 // ── Semantic mapping ─────────────────────────────────────────────────────────
 
 /** The three roles a design system needs before `--brand-*` can light up.
- *  `secondary` is genuinely optional — a one-colour system is a system. */
+ *  `secondary` is genuinely optional - a one-colour system is a system. */
 export const SEMANTIC_ROLES = ['primary', 'surface', 'text'] as const;
 
 const semanticPath = (role: string): string => `color.semantic.${role}`;
 
 /**
  * True when a document resolves colour tokens but none of
- * `color.semantic.{primary,surface,text}` — the case that installs a palette and
+ * `color.semantic.{primary,surface,text}` - the case that installs a palette and
  * leaves every `--brand-*` var at its default, which is the single most common
  * "I imported my tokens and nothing happened" report.
  *
@@ -307,7 +307,7 @@ const semanticPath = (role: string): string => `color.semantic.${role}`;
  * as a plain DTCG file. Asking each set separately would report a false gap for
  * exactly the docs that are already complete.
  *
- * A doc with no colour tokens at all is NOT a gap — there is nothing to map, and
+ * A doc with no colour tokens at all is NOT a gap - there is nothing to map, and
  * offering the card would be asking a question with no answers.
  */
 export function docNeedsMappingReview(doc: unknown): boolean {
@@ -317,7 +317,7 @@ export function docNeedsMappingReview(doc: unknown): boolean {
 }
 
 /** One colour token as the mapping card needs it: where it lives, what it
- *  paints, and how colourful it is — the chooser's rank and the surface's
+ *  paints, and how colourful it is - the chooser's rank and the surface's
  *  tie-break, in that order. */
 export interface ColorTokenRow { path: string; hex: string; chroma: number }
 
@@ -344,7 +344,7 @@ export function colorTokenRows(doc: unknown): ColorTokenRow[] {
 /**
  * The rows the chooser shows: the most colourful first (a primary is the colour
  * someone would point at), capped so the card stays one decision rather than a
- * scroll — **with the seeded path always among them, wherever it ranks**.
+ * scroll - **with the seeded path always among them, wherever it ranks**.
  *
  * The cap is a display cap, and the seed is the answer the card arrives with. A
  * near-neutral proposed primary (`proposeRolesFromTokens` falls back to
@@ -359,7 +359,7 @@ export function chooserRows(
   const top = tokens.slice(0, max);
   if (seeded && !top.some(c => c.path === seeded)) {
     const row = tokens.find(c => c.path === seeded);
-    // The least colourful of the shown rows makes room — it is the one with the
+    // The least colourful of the shown rows makes room - it is the one with the
     // weakest claim to being anybody's primary.
     if (row && top.length) top.splice(max - 1, 1, row);
     else if (row) top.push(row);
@@ -373,18 +373,18 @@ export function chooserRows(
 export interface RoleFollow { ref?: string; hex: string }
 
 /**
- * Surface and text for a chosen primary — the "and these follow from it" half of
+ * Surface and text for a chosen primary - the "and these follow from it" half of
  * the card's one decision.
  *
  * The proposer's own picks stand, with one exception that is the whole reason
  * this exists: the chooser lists EVERY colour token, so the token the proposer
- * chose as the surface is one click away from being chosen as the primary — and
+ * chose as the surface is one click away from being chosen as the primary - and
  * aliasing both roles to one token makes `--brand-primary` and `--brand-surface`
  * identical, with a text colour picked for contrast against a surface that is no
  * longer there. A collision therefore steps the surface to the next most neutral
  * token (the proposer's own no-weights rule, over a smaller pool), and text
  * follows the surface it actually gets: the proposed text token while it is
- * still a different token, and plain white or black otherwise — the same
+ * still a different token, and plain white or black otherwise - the same
  * fallback `proposeRolesFromTokens` uses, and the common case here, since the
  * card's proposal is made with no census at all.
  */
@@ -409,7 +409,7 @@ export function followRoles(
   return { surface: { ref: surfaceRef, hex: surfaceHex }, text: { ref: textRef, hex: textHex } };
 }
 
-/** Token paths — never hexes — for the roles a person picked in the card. */
+/** Token paths - never hexes - for the roles a person picked in the card. */
 export interface MappingChoice {
   /** The declared colour token that becomes `color.semantic.primary`. */
   primary: string;
@@ -446,11 +446,11 @@ export function applyMappingChoice(
 // ── The declaring source as a census ─────────────────────────────────────────
 
 /**
- * A token document as a `DesignCensus` — **for tray candidates only**.
+ * A token document as a `DesignCensus` - **for tray candidates only**.
  *
  * The caveat is the whole point of this doc comment. A census is hex-keyed by
  * construction (`censusToUsage` buckets by hex and drops everything else), so
- * routing a doc through it throws away the declared token PATHS — and paths are
+ * routing a doc through it throws away the declared token PATHS - and paths are
  * exactly what `withRoleAliases` needs to write an alias rather than a literal.
  * **Never propose roles from this.** `proposeRolesFromTokens(doc, [], null)` is
  * the token-first proposer, it keeps the paths, and it is what the mapping card
@@ -465,14 +465,14 @@ export function applyMappingChoice(
  * offers and the only one honest to report.
  *
  * `source.kind` is `'css'`, the census's bucket for *declared* values as opposed
- * to painted ones — a DTCG doc and a fetched stylesheet are the same species of
+ * to painted ones - a DTCG doc and a fetched stylesheet are the same species of
  * evidence. A dedicated `'tokens'` kind would read better and belongs in
  * `census.ts`'s union the next time it opens; it is not user-visible in the tray
  * (candidates show `provenance.label`), so it is not worth widening a shared
  * type from here.
  *
  * Gradients and a name are deliberately absent: the tray has no gradient
- * candidate type, and a document does not name itself — the file name is the
+ * candidate type, and a document does not name itself - the file name is the
  * label, not a claim about what the design system is called.
  */
 export function censusFromTokensDoc(doc: unknown, label: string): DesignCensus {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-pill — the stage cluster (plan 100 §4.6), driven from a scripted state
+ * collab-pill - the stage cluster (plan 100 §4.6), driven from a scripted state
  * stream.
  *
  * The pill is the anchor component of the whole presence surface, and almost
@@ -8,18 +8,18 @@
  * what the DOM contains. So the cases are chosen for what a regression would cost
  * SOMEONE, not for coverage:
  *
- *  1. The avatar stack shows 3 and then "+N" — the plan's number, and the thing that
+ *  1. The avatar stack shows 3 and then "+N" - the plan's number, and the thing that
  *     stops a six-person roster from pushing the zoom HUD off the stage.
  *  2. The connection dot is never colour ALONE (§4.8). `data-state` is what CSS
  *     hangs a distinct SHAPE off, and the `title` plus a live-region label carry it
- *     for anyone not reading shapes either — so the attribute, the title and the
+ *     for anyone not reading shapes either - so the attribute, the title and the
  *     text are all asserted, and so is the fact that reconnecting ≠ away.
  *  3. Nameless people fall back by ROLE, not by device id: the inviter reads as
  *     "Host", everyone else as "Invitee", numbered from the second (§4.5).
  *  4. The invite slot exists only when a caller supplies `onInvite`. A dead invite
  *     button in a session you cannot invite into is worse than none.
- *  5. Joins and leaves are announced once each, by name, and the FIRST render — the
- *     roster as found — announces nothing.
+ *  5. Joins and leaves are announced once each, by name, and the FIRST render - the
+ *     roster as found - announces nothing.
  *  6. The roster popover lists everyone with their tags, live-updates while open,
  *     and closes on Escape.
  *  7. The injected sheet keeps its two house promises: every font-size rides
@@ -59,7 +59,7 @@ const sessionState = (over: Partial<CollabSessionState> = {}): CollabSessionStat
   connection: 'live', role: 'writer', self: me, peers: [], ...over,
 });
 
-/** A scripted state stream — the component's only input. */
+/** A scripted state stream - the component's only input. */
 function source(initial: CollabSessionState) {
   let current = initial;
   const subs = new Set<(s: CollabSessionState) => void>();
@@ -468,7 +468,7 @@ test('the dot has a distinct shape per state, so colour is never carrying it alo
       `no rule paints the ${state} dot`,
     );
   }
-  // Filled disc vs hollow ring vs split disc vs barred ring — four different shapes,
+  // Filled disc vs hollow ring vs split disc vs barred ring - four different shapes,
   // each still legible with every hue removed.
   assert.match(css, /\.collab-dot\[data-state="away"\]\s*\{[^}]*linear-gradient/);
   assert.match(css, /\.collab-dot\[data-state="closed"\]::after/);

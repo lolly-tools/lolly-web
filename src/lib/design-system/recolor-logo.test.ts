@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * recolor-logo.ts — derived mono/reverse logo variants (plan 97 §7.3).
+ * recolor-logo.ts - derived mono/reverse logo variants (plan 97 §7.3).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/recolor-logo.test.ts"
@@ -73,7 +73,7 @@ test('mono returns null when the mark is already that one ink', () => {
 test('"already this one ink" is judged on the COLOUR, not on how it was written', () => {
   // The short-circuit compares the engine's normalised hex against the engine's
   // normalised hex. An uppercase, shorthand or named authorship of the same ink
-  // is the same ink, so there is still no variant to offer — otherwise the room
+  // is the same ink, so there is still no variant to offer - otherwise the room
   // offers a "Generated Mono" chip for a mark that is already exactly that.
   for (const authored of ['#0B1F3A', 'rgb(11, 31, 58)', 'rgb(11 31 58 / 100%)']) {
     const svg = `<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="${authored}"/></svg>`;

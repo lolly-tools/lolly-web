@@ -5,11 +5,11 @@
  * A gallery-style page over the FOLDERS of saved sessions (the same data the folder
  * overlay manages, surfaced as a first-class destination). Two modes:
  *
- *   ROOT (/p)            — a grid of the TOP-LEVEL folder tiles: an always-present
+ *   ROOT (/p) - a grid of the TOP-LEVEL folder tiles: an always-present
  *                          "Uncategorised" folder (every saved session not filed into a
  *                          folder), the user's folders, then a "+ New folder" + "+ New
  *                          tool" tile. Open a folder → /p/<id>.
- *   FOLDER (/p/<id>)     — that folder's SUB-FOLDERS and saved sessions as tiles, a
+ *   FOLDER (/p/<id>) - that folder's SUB-FOLDERS and saved sessions as tiles, a
  *                          breadcrumb of its ancestors, "+ New folder" (nests here) and
  *                          "+ New tool" tiles, a "Move to" rail of other folders as drop
  *                          targets, rename, and "Render folder" (export its whole subtree
@@ -47,7 +47,7 @@ import {
   buildSessionHaystack, buildFolderHaystack, matchesHaystack,
 } from '../lib/search/projects-source.ts';
 import { tokenize } from '../lib/search/match.ts';
-import { confirmDialog as baseConfirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
+import { confirmDialog as baseConfirmDialog, choiceDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
@@ -61,9 +61,12 @@ import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { serializeUrlState } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
+import type { UserTemplate } from '../lib/user-templates.ts';   // type-only (erased) - the store is lazy-imported
+import type { ProjectedUserTool } from '../lib/user-tools.ts';   // type-only (erased) - the store is lazy-imported
+import { setPendingToolSeed } from '../lib/drop-router.ts';
 import { getSessionSource } from '../lib/session-source.ts';
 // A leaf with no imports of its own (module state, no network/DOM), so this costs the
-// Projects chunk nothing and drags no control-plane code onto any path — see its header.
+// Projects chunk nothing and drags no control-plane code onto any path - see its header.
 import { rememberTeamSessionOrigin } from '../org/team-session-origin.ts';
 import { getCollabTileProvider, renderCollabBadge } from '../lib/collab-tile-state.ts';
 import type { HostV1, Profile, AssetRef } from '@lolly-tools/core/host-v1';
@@ -73,7 +76,7 @@ import type { BatchFile } from '../pro/batch.ts';
 // The web shell hands mountProjects its concrete host, whose state/assets/profile
 // expose more than the tool-facing HostV1 contract: state.sizes(), a thumbnail-carrying
 // 3-arg save(), the user-asset helpers, and profile.set(). We describe just that extra
-// surface this view reaches for and cast to it at the (few) call sites — erased at
+// surface this view reaches for and cast to it at the (few) call sites - erased at
 // runtime, no behaviour change. main.js passes the concrete WebHost (assignable to
 // HostV1), so the parameter stays typed HostV1 and this narrows locally.
 interface ProjectsHost extends HostV1 {
@@ -88,7 +91,7 @@ interface ProjectsHost extends HostV1 {
 }
 
 // Denormalised projection of a catalogue-index tool entry this view reads off
-// window.__toolIndex — a build artifact, not a domain type the engine owns.
+// window.__toolIndex - a build artifact, not a domain type the engine owns.
 interface ProjectsTool {
   id: string;
   name: string;
@@ -106,7 +109,7 @@ interface ProjectsTool {
 type Entry = Awaited<ReturnType<WebStateAPI['list']>>[number];
 
 // 'added' = creation time (createdAt, with a slot-timestamp fallback for legacy rows);
-// 'modified' = last save (updatedAt) — the old catch-all 'date', which stored prefs
+// 'modified' = last save (updatedAt) - the old catch-all 'date', which stored prefs
 // migrate to on load. 'tool' groups by the owning tool (folder views only).
 type SortBy = 'modified' | 'added' | 'name' | 'tool';
 type ViewMode = 'preview' | 'list';
@@ -119,15 +122,15 @@ interface SearchMatches { folders: Folder[]; sessions: Entry[]; total: number; c
 // thousands of sessions; building that many tiles (+ their drag/select wiring) in one
 // render is the one place this view could stall at scale, so we render the first slice
 // and tell the user to narrow. Filtering still scans everything (it's O(n) over a
-// prebuilt index) — only the DOM is bounded.
+// prebuilt index) - only the DOM is bounded.
 const SEARCH_LIMIT = 200;
 
-/** Options passed in by main.js — a metrics hook injected so /pro isn't imported
+/** Options passed in by main.js - a metrics hook injected so /pro isn't imported
  *  eagerly (see the batch export call sites below). */
 interface MountProjectsOpts {
   onBatchRendered?: (files: BatchFile[]) => void;
   /** Raw route query string (#/p?q=…). `q` enters the explicit results mode
-   *  (plans/99 §2a) — read at mount only; exitSearch leaves by replacing the
+   *  (plans/99 §2a) - read at mount only; exitSearch leaves by replacing the
    *  hash with the q-less form, which remounts (the signature carries ?q=). */
   params?: string;
 }
@@ -139,7 +142,7 @@ const UNCAT = '__uncat__';
 // navigation to the tool and dies with the tab.
 const FILE_INTO_KEY = 'lolly:fileInto';
 
-// (RETURN_KEY — the one-shot "Save returns to this page" marker — lives in
+// (RETURN_KEY - the one-shot "Save returns to this page" marker - lives in
 // lib/search/projects-source.ts now, shared with the spotlight's projects
 // provider alongside the session-open semantics; imported above.)
 
@@ -154,9 +157,9 @@ const FOLDER_PLUS_ICON = icon('folderPlus', { strokeWidth: 1.8 });
 const FILE_PLUS_ICON = icon('filePlus', { strokeWidth: 1.8 });
 const BACK_ICON = icon('chevronLeft');
 const RENDER_ICON = icon('play');
-// "history" (clock-rewind) — matches the gallery's saved-sessions button.
+// "history" (clock-rewind) - matches the gallery's saved-sessions button.
 const HISTORY_ICON = icon('history');
-// "sliders-horizontal" — the gallery's filter/view-options button, reused here for
+// "sliders-horizontal" - the gallery's filter/view-options button, reused here for
 // view mode (preview/list) + sort.
 const FILTER_ICON = icon('filterLines');
 // Context-menu glyphs (lucide house style). None of these existed in the codebase.
@@ -166,12 +169,12 @@ const SHEET_ICON = icon('grid', { strokeWidth: 1.9 });
 const MOVE_ICON = icon('move', { strokeWidth: 1.9 });
 const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
 const CHEVRON_ICON = icon('chevronRight');
-// lucide "link" — the shareable-link glyph (matches the tool view's Share button).
+// lucide "link" - the shareable-link glyph (matches the tool view's Share button).
 const SHARE_ICON = icon('share', { strokeWidth: 1.9 });
-// lucide "users" — the team-projects create tile (shown only when a control plane
+// lucide "users" - the team-projects create tile (shown only when a control plane
 // registers a session source; see lib/session-source.ts).
 const TEAM_ICON = icon('users', { strokeWidth: 1.9 });
-// (The bottom bar — nav links + search field — is the shell-level singleton in
+// (The bottom bar - nav links + search field - is the shell-level singleton in
 // components/search-bar.ts, shared with every browse view; this view just claims it.)
 
 export async function mountProjects(
@@ -181,7 +184,7 @@ export async function mountProjects(
   opts: MountProjectsOpts = {},
 ): Promise<void> {
   const store = createFolderStore(host as ProjectsHost);
-  // The soft "stacking clicks → puff of wind" arrival — only on the MAIN projects view
+  // The soft "stacking clicks → puff of wind" arrival - only on the MAIN projects view
   // (folderId null), NOT every time a folder opens. One-shot, gesture-gated, silent when
   // sound's off; cancelled on leave (see _cleanup) so it can't fire on another page.
   if (!folderId) playProjectsAah();
@@ -189,7 +192,7 @@ export async function mountProjects(
   const nameById = new Map((w.__toolIndex?.tools ?? []).map((tool): [string, string] => [tool.id, (tool as unknown as ProjectsTool).name]));
   const toolName = (id: string): string => nameById.get(id) || id || t('Saved session');
   // Full index entries (formats + intended width/height/unit) so session tiles can show
-  // the same "what you'll get" spec the gallery cards do — see sessionTile's `tool` opt.
+  // the same "what you'll get" spec the gallery cards do - see sessionTile's `tool` opt.
   const toolById = new Map((w.__toolIndex?.tools ?? []).map((t): [string, ProjectsTool] => [t.id, t as unknown as ProjectsTool]));
 
   // Live data, re-read on every reload() so a move/rename/delete reflects at once.
@@ -198,7 +201,7 @@ export async function mountProjects(
   let sizes: Record<string, number> = {};            // slot -> bytes
   // Derived indices, rebuilt once per reload() (see reindex()). `folders`/`entries` only
   // change in reload(), so these stay valid between renders and turn the per-tile lookups
-  // below from O(entries)/O(folders×items) rebuilds-per-call into O(1) map hits — the
+  // below from O(entries)/O(folders×items) rebuilds-per-call into O(1) map hits - the
   // difference between linear and quadratic work when a project holds thousands of sessions.
   let entryMap = new Map<string, Entry>();       // slot → row
   let ownerByRef = new Map<string, Folder>();    // item ref (session OR image) → the folder that holds it
@@ -206,7 +209,7 @@ export async function mountProjects(
   let uncatCache: Entry[] = [];                  // sessions filed into no folder
   // Folder IMAGE items resolved to AssetRefs (url/format/name) so their tiles + folder
   // mosaics can render. Keyed by the item ref: a user upload (`user/…`) or a catalog asset
-  // referenced by id. Resolved once per reload() — folders hold few images relative to a
+  // referenced by id. Resolved once per reload() - folders hold few images relative to a
   // whole library, and get() is a local (offline) lookup for both id shapes.
   let imageRefs = new Map<string, AssetRef>();
   let profile: Profile | null = null;
@@ -217,22 +220,22 @@ export async function mountProjects(
   let releaseSearch: (() => void) | null = null;         // the shell search-bar claim (set in boot, below)
   let featuredHandle: FeaturedRowHandle | null = null; // the Uncategorised preview ribbon (drift/coverflow/grip), if mounted
   // Multi-select: ref → 'folder' | 'session'. A closure var (NOT the DOM) because
-  // render() wipes viewEl.innerHTML — the selection is re-emitted from this Map each
+  // render() wipes viewEl.innerHTML - the selection is re-emitted from this Map each
   // render, and toggles update just the affected tile + the bulk bar in place.
   const selected = new Map<string, SelectKind>();
   let viewMode: ViewMode = 'preview';  // 'preview' (tile grid) | 'list'
-  let sortBy: SortBy = 'modified';   // display preference — see the SortBy type note
-  // The results-mode query (trimmed). Non-empty ONLY via the ?q= URL param — the
+  let sortBy: SortBy = 'modified';   // display preference - see the SortBy type note
+  // The results-mode query (trimmed). Non-empty ONLY via the ?q= URL param - the
   // spotlight's explicit "See all in Projects →" handoff (plans/99 §2a): typing in the
   // bottom bar feeds the overlay and NEVER reshapes this view, so the user's items
   // can't seem to disappear without obvious context. When set, the view swaps to a
-  // flat "results" grid searching the CURRENT scope's WHOLE subtree — every folder
-  // and saved session nested beneath it — under an explicit "N results for X · Clear"
+  // flat "results" grid searching the CURRENT scope's WHOLE subtree - every folder
+  // and saved session nested beneath it - under an explicit "N results for X · Clear"
   // header. Exited only by exitSearch() (the bar's ✕/Escape via the claim's onClear,
   // or an in-body [data-search-clear]). Matching is the shared folded token-AND
   // (lib/search/projects-source.ts), so case is kept here for display.
   let query = (new URLSearchParams(opts.params || '').get('q') || '').trim();
-  // The "sessions for these tools" filter (?tools=id,id) — where the gallery's
+  // The "sessions for these tools" filter (?tools=id,id) - where the gallery's
   // "View sessions" group action lands (root scope only). A flat results-style grid
   // of every saved session whose toolId is in the set, exited via its own status-line
   // Clear (which just navigates to the bare #/p). Distinct from `query`: no text
@@ -254,7 +257,7 @@ export async function mountProjects(
     render();
   }
   // Memoised searchMatches() result (invalidated on data reload + query change) so the two
-  // callers in a render — pruneSelection + searchBodyHtml — don't each re-scan the tree.
+  // callers in a render - pruneSelection + searchBodyHtml - don't each re-scan the tree.
   let searchCache: { q: string; scope: string | null; matches: SearchMatches } | null = null;
   try {
     if (localStorage.getItem('lolly:projectsView') === 'list') viewMode = 'list';
@@ -281,7 +284,7 @@ export async function mountProjects(
   }
 
   // Resolve every folder's IMAGE items to AssetRefs so their tiles / mosaics can paint.
-  // A ref get() may fail (a race with a delete elsewhere) — those drop out and prune
+  // A ref get() may fail (a race with a delete elsewhere) - those drop out and prune
   // reconciles the membership on the next pass.
   async function resolveImages(): Promise<void> {
     const refs = [...new Set(folders.flatMap(f => f.items.filter(i => i.type === 'image').map(i => i.ref)))];
@@ -291,7 +294,7 @@ export async function mountProjects(
   }
 
   // Rebuild the derived indices from the freshly-loaded folders/entries. One linear pass
-  // each — everything downstream then reads O(1) instead of re-deriving per call/per tile.
+  // each - everything downstream then reads O(1) instead of re-deriving per call/per tile.
   function reindex(): void {
     entryMap = new Map(entries.map(e => [e.slot, e]));
     ownerByRef = new Map();
@@ -334,7 +337,7 @@ export async function mountProjects(
     return a;
   }
   // Tile / header count = every renderable file (session or image) in a folder's WHOLE
-  // subtree — exactly what "Render folder" would output — so "N items" matches the number
+  // subtree - exactly what "Render folder" would output - so "N items" matches the number
   // of files you'd get even when they live in sub-folders. Sub-folders are containers, not
   // files, so they aren't counted themselves (a folder of two sub-folders holding 11
   // sessions reads "11 items", not "2"). Mirrors renderFolder's subtreeItems gather.
@@ -346,7 +349,7 @@ export async function mountProjects(
   const isSelected = (ref: string): boolean => selected.has(ref);
   const selectedByKind = (kind: SelectKind): string[] => [...selected].filter(([, k]) => k === kind).map(([ref]) => ref);
   // Selection is scoped to what the CURRENT view can show as a tile. Drop any selected
-  // ref that isn't currently visible — deleted, OR moved out of view via drag / a per-tile
+  // ref that isn't currently visible - deleted, OR moved out of view via drag / a per-tile
   // "Move to…" / the history overlay (none of which clear selection). This keeps the bulk
   // bar count honest and stops a bulk action (esp. Delete) from silently hitting an item
   // the user can no longer see was selected. Called at the top of every render().
@@ -354,7 +357,7 @@ export async function mountProjects(
     if (!selected.size) return;
     const visible = new Set<string>();
     if (query) {
-      // Searching swaps the grid for a flat results set spanning the subtree — the
+      // Searching swaps the grid for a flat results set spanning the subtree - the
       // selection stays valid for anything the results still show.
       const m = searchMatches();
       for (const f of m.folders) visible.add(f.id);
@@ -379,7 +382,7 @@ export async function mountProjects(
 
   const sessionTitle = (e: Entry): string => (e.label || e.filename || toolName(e.toolId) || '').toLowerCase();
   // A session's creation time for the "Date added" sort: the stored createdAt when the
-  // row has one, else the timestamp minted into the slot (`<toolId>:<Date.now()>` —
+  // row has one, else the timestamp minted into the slot (`<toolId>:<Date.now()>` - 
   // batch `__batch__:` and font-asset pseudo-slots carry none), else last-saved.
   const sessionAdded = (e: Entry): number => {
     if (e.createdAt) return +new Date(e.createdAt);
@@ -400,7 +403,7 @@ export async function mountProjects(
   // Haystacks + matching live in lib/search/projects-source.ts, shared verbatim with
   // the spotlight's projects provider so the two can't drift (plans/99 §8 M2). That
   // move also migrated matching from substring .includes onto the shared folded
-  // token-AND matcher — the plan's deliberate unification: every query word must hit
+  // token-AND matcher - the plan's deliberate unification: every query word must hit
   // (in any field) and diacritics fold, same hits here as in the overlay.
 
   // All folders + sessions in scope for the current view, BEFORE the query filter:
@@ -420,14 +423,14 @@ export async function mountProjects(
     };
   }
 
-  // The query-filtered, sorted matches for the current scope — capped for render (see
+  // The query-filtered, sorted matches for the current scope - capped for render (see
   // SEARCH_LIMIT) and memoised so a single render's two callers scan the tree once.
   function searchMatches(): SearchMatches {
     if (!query) return { folders: [], sessions: [], total: 0, capped: false };
     if (searchCache && searchCache.q === query && searchCache.scope === folderId) return searchCache.matches;
     const scope = searchScope();
     const tokens = tokenize(query);
-    // Sessions match via the prebuilt folded haystack (searchIndex) — no per-query
+    // Sessions match via the prebuilt folded haystack (searchIndex) - no per-query
     // string building. Folders match on name (there are far fewer of them). Results
     // keep the view's sort preference (date/name/tool), not match score: this is a
     // browse surface; score-ranking lives in the spotlight overlay.
@@ -443,9 +446,9 @@ export async function mountProjects(
 
   // ── render ───────────────────────────────────────────────────────────────
   function render(): void {
-    if (!mounted) return; // an async callback fired after we navigated away — don't clobber the new view
+    if (!mounted) return; // an async callback fired after we navigated away - don't clobber the new view
     // Title the view for the tab bar AND for back-nav (lib/back-nav.ts labels the
-    // previous view off document.title — this is how a tool opened from a folder,
+    // previous view off document.title - this is how a tool opened from a folder,
     // or #/start reached from one, gets a back pill wearing the folder's name).
     const titleName = folderId == null ? t('Projects')
       : folderId === UNCAT ? t('Uncategorised')
@@ -471,7 +474,7 @@ export async function mountProjects(
       count: tileItemCount(f),
       selectable: true, selected: isSelected(f.id),
     })).join('');
-    // Loose (uncategorised) saved sessions render as tiles directly on the root grid —
+    // Loose (uncategorised) saved sessions render as tiles directly on the root grid - 
     // a just-added creation shows here at once instead of vanishing into an
     // "Uncategorised" bucket. They're the SAME sessionTile a folder uses, so
     // drag-into-folder, select, rename, render, and open all work by delegation
@@ -485,7 +488,7 @@ export async function mountProjects(
     const invite = (!topFolders.length && !loose.length)
       ? `<p class="projects-empty">${t('Your saved sessions land here — save one from any tool to start a project.')}</p>`
       : '';
-    // Folders lead (the file-manager convention — containers first, so the structure
+    // Folders lead (the file-manager convention - containers first, so the structure
     // reads before the loose items), then loose creations (newest first within their
     // block), then the "new" affordances trailing.
     // A "Team projects" tile appears only when a deployment's control plane has
@@ -501,7 +504,7 @@ export async function mountProjects(
       </div>`);
   }
 
-  // The flat results grid for the ?tools= filter — every saved session belonging to
+  // The flat results grid for the ?tools= filter - every saved session belonging to
   // the named tools, under an explicit status line with its own way out. Mirrors
   // searchBodyHtml's shape (status + .projects-search-grid) so the two modes read
   // the same; tiles are the shared sessionTile, so open/select/menu/drag all work
@@ -539,7 +542,7 @@ export async function mountProjects(
     // (Uncategorised is flat, so its direct session count is already the full picture).
     const count = isUncat ? sessions.length : tileItemCount(folder!);
 
-    // Breadcrumb + parent — the back arrow climbs ONE level (to the parent folder, or
+    // Breadcrumb + parent - the back arrow climbs ONE level (to the parent folder, or
     // the root), and the trail links every ancestor. The current folder is the <h2>.
     const ancestors = isUncat ? [] : folderPath(folders, id).slice(0, -1);
     const parentId = ancestors.length ? ancestors[ancestors.length - 1]!.id : null;
@@ -550,7 +553,7 @@ export async function mountProjects(
         ${ancestors.map(a => `<span class="projects-crumb-sep" aria-hidden="true">/</span><a href="#/p/${escape(a.id)}">${escape(a.name)}</a>`).join('')}
       </nav>`;
 
-    // "Move to" rail: CONTEXTUAL drop targets only (not the whole tree dumped flat) —
+    // "Move to" rail: CONTEXTUAL drop targets only (not the whole tree dumped flat) - 
     // inside a folder it's Top level + the parent + siblings; in Uncategorised it's the
     // top-level folders. Arbitrary-depth moves use the per-tile "Move to…" drill-down.
     const railTargets = isUncat
@@ -568,9 +571,9 @@ export async function mountProjects(
 
     // Uncategorised only: a cinematic preview ribbon of the loose sessions, ABOVE the
     // "Move to" rail. Empty mount now; wire() hydrates it with the shared Featured strip
-    // (drift · Cover Flow · mobile grip) once the DOM exists — see mountUncatRibbon().
+    // (drift · Cover Flow · mobile grip) once the DOM exists - see mountUncatRibbon().
     const ribbon = isUncat && sessions.length ? `<div class="projects-featured" data-uncat-ribbon></div>` : '';
-    // Preview-strip view switcher, BELOW the ribbon — the SAME `.view-seg` segmented control
+    // Preview-strip view switcher, BELOW the ribbon - the SAME `.view-seg` segmented control
     // the catalog uses for its favourites strip (Gallery drift | Cover Flow), so the two match
     // instead of this being buried as menu items. Shares the FEATURED_VIEW_STORAGE pref.
     const stripFview = readFeaturedView();
@@ -585,7 +588,7 @@ export async function mountProjects(
     // inside the synthetic Uncategorised bucket (it isn't a real folder to nest under).
     const createFolder = isUncat ? '' : createTile('folder', FOLDER_PLUS_ICON, t('New folder'), tRaw('Group inside {title}', { title }));
     const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), isUncat ? t('New saved session') : tRaw('Add to {title}', { title }));
-    // Image items in this folder (never in Uncategorised — an image needs a folder to
+    // Image items in this folder (never in Uncategorised - an image needs a folder to
     // live in), resolved to AssetRefs so their tiles render. Kept in store order after
     // the sessions.
     const images = isUncat ? [] : (folder!.items
@@ -609,7 +612,7 @@ export async function mountProjects(
     ].join('');
 
     // While a search is active the folder's own actions (rename / render whole folder)
-    // would act on the folder, not the results, so they're dropped — the header keeps just
+    // would act on the folder, not the results, so they're dropped - the header keeps just
     // the breadcrumb, the back arrow, and the title so the user can still climb out.
     const searching = !!query;
     const header = `
@@ -640,7 +643,7 @@ export async function mountProjects(
     return shell(title, 'projects', `${ribbon}${stripSwitch}${rail}${header}${body}`, { inFolder: true });
   }
 
-  // The flat results grid for the active query — matching folders first, then sessions,
+  // The flat results grid for the active query - matching folders first, then sessions,
   // each tile trailing a clickable breadcrumb of WHERE it lives so a hit nested three
   // folders deep still reads in context. Shared by the root + folder search branches.
   function searchBodyHtml(): string {
@@ -649,7 +652,7 @@ export async function mountProjects(
     const scope = folderId == null ? t('all projects')
       : folderId === UNCAT ? t('Uncategorised')
       : `“${folders.find(f => f.id === folderId)?.name ?? t('this folder')}”`;
-    // Results mode always carries an explicit Clear in the status line — BOTH the
+    // Results mode always carries an explicit Clear in the status line - BOTH the
     // results and no-results states (plans/99 §2a: the URL-entered mode needs
     // unmistakable context AND an unmissable way out). Routed through
     // [data-search-clear] → clearSearchBar → the claim's onClear, so the bar's
@@ -686,7 +689,7 @@ export async function mountProjects(
       toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
       selectable: true, selected: isSelected(e.slot),
     });
-    const owner = ownerByRef.get(e.slot);   // O(1) — prebuilt in reindex()
+    const owner = ownerByRef.get(e.slot);   // O(1) - prebuilt in reindex()
     const chip = owner
       ? locationChip(owner.id, folderPath(folders, owner.id).map(a => a.name).join(' / '))
       : locationChip(UNCAT, t('Uncategorised'));
@@ -716,9 +719,9 @@ export async function mountProjects(
   }
 
   // Projects' own trigger buttons in the shared top bar's `right` slot: view/sort
-  // options + saved-sessions (history). The rest of the cluster — language FAB and
-  // profile pill — is the shared chrome (components/view-topbar.ts), same as Tools
-  // and Catalog. (No tool filters here — they're meaningless for projects.)
+  // options + saved-sessions (history). The rest of the cluster - language FAB and
+  // profile pill - is the shared chrome (components/view-topbar.ts), same as Tools
+  // and Catalog. (No tool filters here - they're meaningless for projects.)
   function topRightSlot(): string {
     const saved = entries.length;
     return `
@@ -727,7 +730,7 @@ export async function mountProjects(
   }
 
   function shell(heading: string, active: 'tools' | 'projects' | 'catalog', inner: string, { inFolder = false }: { inFolder?: boolean } = {}): string {
-    // projects--searching marks the URL-entered results mode (plans/99 §2a) — it can
+    // projects--searching marks the URL-entered results mode (plans/99 §2a) - it can
     // never flip mid-view from typing, since live keystrokes go to the spotlight
     // overlay and only ?q= at mount (or exitSearch) changes `query`.
     return `
@@ -748,7 +751,7 @@ export async function mountProjects(
 
   // The bottom bar is the persistent shell singleton (components/search-bar.ts).
   // Projects claims it with a scope-aware placeholder (it names the CURRENT folder
-  // so it's clear a query reaches INTO sub-folders) but NO live-filter tap — typing
+  // so it's clear a query reaches INTO sub-folders) but NO live-filter tap - typing
   // feeds the spotlight overlay (plans/99 §2a M2), and only the explicit ?q=
   // handoff puts this view into results mode.
   function searchPlaceholder(): string {
@@ -760,7 +763,7 @@ export async function mountProjects(
 
   // Exit the URL-entered results mode (plans/99 §2a). location.replace with the
   // q-less hash (no new history entry): the projects route signature carries ?q=
-  // (main.ts routeSignature), so the hash change remounts the plain grid — the
+  // (main.ts routeSignature), so the hash change remounts the plain grid - the
   // same path the browser's Back button takes out of results mode, so exit
   // behaviour can't fork. Wired as the bar claim's onClear, and reached by
   // every in-body [data-search-clear] via clearSearchBar.
@@ -775,11 +778,11 @@ export async function mountProjects(
     window.location.replace(h.slice(0, qi) + (rest ? `?${rest}` : ''));
   }
 
-  // The floating multi-selection action bar — markup + sync live in lib/bulk-bar.ts
+  // The floating multi-selection action bar - markup + sync live in lib/bulk-bar.ts
   // (shared with the catalog and gallery); this view supplies its action set. The
   // "Render selection" action leads with the primary Render styling to match the
   // header button; "Edit together" only shows for a manageable set of single-tool
-  // sessions (2–8, no folders/images/batch grids) — the multi-edit view mounts one
+  // sessions (2–8, no folders/images/batch grids) - the multi-edit view mounts one
   // live runtime per session, so the cap keeps it responsive.
   const bulkBarCfg: BulkBarConfig = {
     prefix: 'projects-bulkbar',
@@ -818,7 +821,7 @@ export async function mountProjects(
   /** The selected SESSION + IMAGE refs (any count), or null if the selection has
    *  none. The batch grid's complement to multi-edit: no 2–8 cap, heterogeneous
    *  tools welcome, non-tool items land as tool-less rows (see rowsFromRefs).
-   *  Folders are excluded — they stay containers with their own open-in-grid path. */
+   *  Folders are excluded - they stay containers with their own open-in-grid path. */
   function sheetableSelection(): string[] | null {
     const refs = [...selected].filter(([, k]) => k !== 'folder').map(([ref]) => ref);
     return refs.length ? refs : null;
@@ -832,7 +835,7 @@ export async function mountProjects(
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────
-  // The view-options (filter) popover is still this hand-rolled body-absolute one —
+  // The view-options (filter) popover is still this hand-rolled body-absolute one - 
   // only the two CONTEXT menus (below) moved onto mountBodyPopover, rec 9's remainder.
   let openPopover: HTMLElement | null = null;
   function closeMenu(): void {
@@ -841,13 +844,13 @@ export async function mountProjects(
     tileMenu.close();
   }
   function onDocDown(e: PointerEvent): void { if (openPopover && !openPopover.contains(e.target as Node)) closeMenu(); }
-  // Escape closes an open popover menu — matching the app-wide dialog convention (see confirm-dialog).
+  // Escape closes an open popover menu - matching the app-wide dialog convention (see confirm-dialog).
   function onMenuKey(e: KeyboardEvent): void { if (e.key === 'Escape' && openPopover) { e.preventDefault(); e.stopPropagation(); closeMenu(); } }
 
   // ── per-tile / bulk-selection context menu (kebab button, right-click, long-press) ──
-  // The whole mechanism — one mountBodyPopover over a mutable pointAnchor, the edge-
+  // The whole mechanism - one mountBodyPopover over a mutable pointAnchor, the edge-
   // clamped fixed positioning, right-click delegation ("inside a multi-selection →
-  // bulk menu"), and the press-and-hold touch bridge — now lives in
+  // bulk menu"), and the press-and-hold touch bridge - now lives in
   // lib/context-menu.ts (extracted from this view, shared with gallery + catalog).
   // This view supplies the menu bodies and the action dispatch; the kebab buttons
   // (recreated each render) route through tileMenu.openAt with themselves as the
@@ -866,7 +869,7 @@ export async function mountProjects(
   });
 
   // Destructive actions (delete a folder + its contents, delete a saved session) use
-  // the shared styled confirm modal — close any open tile menu first so it doesn't
+  // the shared styled confirm modal - close any open tile menu first so it doesn't
   // hang behind the dialog. closeMenu() detaches the popover that held the trigger, so
   // the native <dialog>'s focus-restore would land on <body>; capture a still-connected
   // fallback up front and refocus it once the dialog resolves. See components/confirm-dialog.js.
@@ -894,13 +897,13 @@ export async function mountProjects(
 
       // Exit the ?tools= results mode. In place, not by navigation: the projects route
       // signature keys on folderId alone (main.ts), so a hash change #/p?tools=… → #/p
-      // is deduped and would never re-mount — same reason the ?q= exit works in place.
+      // is deduped and would never re-mount - same reason the ?q= exit works in place.
       const tclr = t.closest<HTMLElement>('[data-tools-clear]');
       if (tclr) { e.preventDefault(); exitToolsFilter(); return; }
 
       // Preview-strip view switcher (the .view-seg below the Uncategorised ribbon). Live-
       // switch the strip via its handle (no full re-render) and persist the shared pref so the
-      // choice carries to the gallery hero + next mount — matching the catalog's switch.
+      // choice carries to the gallery hero + next mount - matching the catalog's switch.
       const fviewBtn = t.closest<HTMLElement>('[data-fview]');
       if (fviewBtn) {
         const mode = fviewBtn.dataset.fview as FeaturedViewMode;
@@ -921,7 +924,7 @@ export async function mountProjects(
       }
 
       // Selection toggle (must beat the open-folder / open-session primary it neighbours).
-      // Shift-click extends from the anchor instead of toggling — see lib/tile-select.ts.
+      // Shift-click extends from the anchor instead of toggling - see lib/tile-select.ts.
       const selBtn = t.closest<HTMLElement>('[data-select]');
       if (selBtn) {
         e.preventDefault(); e.stopPropagation();
@@ -968,14 +971,14 @@ export async function mountProjects(
 
       // A tap on a preview-ribbon tile resumes that session. The Featured strip's own
       // capture-phase handler has already swallowed a drag / a Cover-Flow re-centre before
-      // this bubbles, so reaching here means a clean open — route it through resumeSession
+      // this bubbles, so reaching here means a clean open - route it through resumeSession
       // (closeMenu + armReturn + batch handling) rather than the anchor's raw navigation.
       const ribbonTile = t.closest<HTMLElement>('.projects-featured .ftile');
       if (ribbonTile) { e.preventDefault(); resumeSession(ribbonTile.dataset.tool!); return; }
     });
 
     // (The search field lives in the shell's persistent bar; typing there feeds the
-    // spotlight overlay, never this view — see the claimSearchBar call in the boot
+    // spotlight overlay, never this view - see the claimSearchBar call in the boot
     // section. Only the explicit ?q= handoff enters results mode.)
 
     // View-options (filter) button → preview/list + sort popover.
@@ -1004,7 +1007,7 @@ export async function mountProjects(
     }
     root.querySelector('.history-fab')?.addEventListener('click', openHistory);
 
-    // The invariant top-bar wiring — language menu, plus the mobile profile menu (on
+    // The invariant top-bar wiring - language menu, plus the mobile profile menu (on
     // mobile the avatar opens theme + saved sessions + Settings; on desktop it stays a
     // plain link to the profile page). Same call Tools and Catalog make.
     mountViewTopbar(root, host as ProjectsHost, {
@@ -1017,12 +1020,12 @@ export async function mountProjects(
     applyCollabBadges(root);
   }
 
-  // Live-collab badge (plan 100 §4.6; lib/collab-tile-state.ts) — every session
+  // Live-collab badge (plan 100 §4.6; lib/collab-tile-state.ts) - every session
   // tile, in both the grid and the search-results list (sessionResultTile reuses
   // the same sessionTile() shape), gets consulted against the dormant-by-default
   // provider registry. No provider registered anywhere in this repo yet, so
   // renderCollabBadge is always called with an empty peer list and paints
-  // nothing — the grid stays byte-identical to before this call existed
+  // nothing - the grid stays byte-identical to before this call existed
   // (pinned by collab-tile-state.test.ts). Called once per render() (wire()'s
   // last step), matching how the rest of this view re-derives its DOM from
   // scratch on every data change rather than patching incrementally.
@@ -1035,14 +1038,14 @@ export async function mountProjects(
   }
 
   // (Right-click + long-press → context menu is wired once per mount by the shared
-  // wireTileContextMenu above — bound to the persistent viewEl, so it survives the
+  // wireTileContextMenu above - bound to the persistent viewEl, so it survives the
   // render() that replaces `.projects` and needs no per-render re-wiring here.)
 
   // ── multi-select gestures (marquee + Shift-range) ───────────────────────────
   // Both live in lib/tile-select.ts, shared verbatim with the Catalogue so the two
   // grids behave identically: drag a box through the gaps between cards to select
   // what it touches, Shift-click a dot to sweep up everything back to the anchor.
-  // Wired ONCE per mount against viewEl — render() replaces the `.projects` root,
+  // Wired ONCE per mount against viewEl - render() replaces the `.projects` root,
   // so a listener bound in wire() would be orphaned (and re-wiring per render would
   // reset the Shift-anchor mid-gesture).
   const selectableTiles = (): HTMLElement[] =>
@@ -1055,7 +1058,7 @@ export async function mountProjects(
     refOf: (t) => t.dataset.ref!,
     current: () => new Set(selected.keys()),
     // Reconcile the Map to exactly `refs` (the kind is read back off each tile), then
-    // repaint every tile in place — a full render() would drop scroll/focus mid-drag.
+    // repaint every tile in place - a full render() would drop scroll/focus mid-drag.
     setRefs: (refs) => {
       selected.clear();
       for (const t of selectableTiles()) {
@@ -1070,7 +1073,7 @@ export async function mountProjects(
       syncBulkBar();
     },
     clear: () => { dropSelection(); render(); },
-    // Never start a box on a tile, control, chip, bar, breadcrumb, etc. — only in a gap.
+    // Never start a box on a tile, control, chip, bar, breadcrumb, etc. - only in a gap.
     noStart: '.folder-tile, button, a, input, label, dialog, .projects-bulkbar, .projects-rail, .projects-crumbs, .projects-head, .gallery-topbar',
   });
 
@@ -1082,7 +1085,7 @@ export async function mountProjects(
     tileSelect.resetAnchor();
   }
 
-  // Escape drops the selection (yielding to any open menu/dialog/field first) —
+  // Escape drops the selection (yielding to any open menu/dialog/field first) - 
   // the keyboard exit the ✕ button and an empty-canvas click already provide.
   const unwireEscape = wireEscapeClearsSelection({
     active: () => mounted && selected.size > 0,
@@ -1117,7 +1120,7 @@ export async function mountProjects(
   function wireDrag(root: HTMLElement): void {
     // Session, image AND real folder tiles are draggable (not the synthetic Uncategorised,
     // not the create tiles). A folder carries 'text/lolly-folder'; a session 'text/lolly-session';
-    // an image 'text/lolly-image' — the kind lets the drop target pick store.moveItem's type.
+    // an image 'text/lolly-image' - the kind lets the drop target pick store.moveItem's type.
     root.querySelectorAll<HTMLElement>('.folder-tile[data-kind="session"], .folder-tile[data-kind="image"], .folder-tile--folder:not(.folder-tile--uncat)').forEach(tile => {
       const kind = tile.dataset.kind as SelectKind;   // 'folder' | 'session' | 'image'
       const mime = kind === 'folder' ? 'text/lolly-folder' : kind === 'image' ? 'text/lolly-image' : 'text/lolly-session';
@@ -1152,7 +1155,7 @@ export async function mountProjects(
         const draggedRef = slot || image || draggedFolder;
         if (!draggedRef) return;
         const dest = folderRef === UNCAT ? null : folderRef;
-        // Grabbing one tile of a multi-selection drags the WHOLE set — move every
+        // Grabbing one tile of a multi-selection drags the WHOLE set - move every
         // selected folder/session/image so they all follow, matching the "Move to…" bar.
         if (selected.size > 1 && selected.has(draggedRef)) {
           await applySelectionMove(dest);
@@ -1161,7 +1164,7 @@ export async function mountProjects(
         } else if (image) {
           await store.moveItem(image, dest, 'image');
         } else {
-          if (draggedFolder === folderRef) return;   // dropped on itself — no-op
+          if (draggedFolder === folderRef) return;   // dropped on itself - no-op
           await store.moveFolder(draggedFolder, dest); // store guards self/descendant cycles
         }
         await reload(); render(); announce(t('Moved'));
@@ -1170,10 +1173,10 @@ export async function mountProjects(
   }
 
   // ── per-tile menu ────────────────────────────────────────────────────────
-  // One row of the context menu, icon + label — the shared builder (lib/context-menu.ts).
+  // One row of the context menu, icon + label - the shared builder (lib/context-menu.ts).
   const menuItem = menuItemHtml;
 
-  // Content for the per-tile context menu — folder actions or session actions. `kind`/
+  // Content for the per-tile context menu - folder actions or session actions. `kind`/
   // `ref` come through the shared wireTileContextMenu's target: folder or session,
   // "Move to…" opens the drill-down picker (no more flat all-folders-at-once list).
   function tileMenuHtml(kind: string, ref: string): string {
@@ -1197,7 +1200,7 @@ export async function mountProjects(
       ].join('');
     }
     // A batch session is a multi-row group with no single tool URL, so it can't be
-    // shared as a link — offer Share only for single-tool sessions.
+    // shared as a link - offer Share only for single-tool sessions.
     const canShare = !isBatchSlot(ref);
     return [
       menuItem('open', OPEN_ICON, t('Open')),
@@ -1210,10 +1213,10 @@ export async function mountProjects(
   }
 
   // The context menu for a MULTI-selection (right-clicking a tile that's part of the
-  // current selection) — the same actions as the bulk bar, at the cursor. The "{n}
-  // selected" head is plain text, not a menuitem — nested in its own role="menu" (the
+  // current selection) - the same actions as the bulk bar, at the cursor. The "{n}
+  // selected" head is plain text, not a menuitem - nested in its own role="menu" (the
   // shared wireTileContextMenu demotes the OUTER div to a plain group for bulk menus)
-  // so it's a valid sibling instead of an invalid child of the menu — the same
+  // so it's a valid sibling instead of an invalid child of the menu - the same
   // reasoning lang-menu.ts's sort-tabs-above-the-list split documents.
   function bulkMenuHtml(): string {
     return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
@@ -1228,20 +1231,20 @@ export async function mountProjects(
 
   // Dispatch a picked context-menu row. The shared wireTileContextMenu has already
   // closed the popover; `target` is null for the bulk menu, else carries the tile's
-  // ref + element (tileEl null when the folder-view header ⋯ opened it — those
+  // ref + element (tileEl null when the folder-view header ⋯ opened it - those
   // actions fall back to the header <h2>).
   async function onMenuAction(act: string, target: { ref: string; tile: HTMLElement | null } | null): Promise<void> {
     if (!target) { handleBulk(act); return; }
     const { ref, tile: tileEl } = target;
     closeMenu();   // the viewopts popover could be up behind a kebab-opened menu
     // Rename can fire from a folder TILE (root view) or the folder-view header menu
-    // button (no enclosing tile) — fall back to the header <h2> in that case.
+    // button (no enclosing tile) - fall back to the header <h2> in that case.
     if (act === 'rename') startRename(tileEl || viewEl.querySelector<HTMLElement>('.projects-title[data-rename-folder]'), ref);
     else if (act === 'render') renderFolder(ref);
     else if (act === 'delete') deleteFolderCascade(ref);
     else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
     else if (act === 'move-folder') {
-      // A folder can't move into itself or its own subtree — block those targets.
+      // A folder can't move into itself or its own subtree - block those targets.
       const blocked = new Set([ref, ...descendantFolderIds(folders, ref)]);
       openMovePicker({
         title: t('Move folder to…'), blocked,
@@ -1290,7 +1293,7 @@ export async function mountProjects(
     announce(isUpload ? t('Image deleted') : t('Removed from folder'));
   }
 
-  // A lightbox preview for a folder image — the resolved AssetRef carries the url + name.
+  // A lightbox preview for a folder image - the resolved AssetRef carries the url + name.
   // Modal chrome + Escape-to-close come from mountModal (matching the app-wide convention).
   function openImagePreview(ref: string): void {
     const a = imageRefs.get(ref);
@@ -1320,7 +1323,7 @@ export async function mountProjects(
   // A native <dialog> that navigates the folder tree one level at a time (rather than
   // dumping every folder at once): click a folder to drill in, breadcrumb to climb, then
   // "Move to «here»" commits at the current level. `blocked` folder ids (a folder's own
-  // subtree, to prevent a cycle) are shown disabled. onPick(destId|null) — null = top level.
+  // subtree, to prevent a cycle) are shown disabled. onPick(destId|null) - null = top level.
   function openMovePicker({ title, blocked = new Set<string>(), onPick }: { title: string; blocked?: Set<string>; onPick: (dest: string | null) => void }): void {
     closeMenu();
     let cursor: string | null = null; // current folder id (null = top level)
@@ -1400,7 +1403,7 @@ export async function mountProjects(
         </div>`;
       // Resolves null however the dialog closes (Cancel, Escape, backdrop, or _cleanup
       // calling modal.close() on navigate-away) so the awaiting newFolderFromSelection()
-      // never hangs — cancelValue + onClose cover every path, mountModal is idempotent.
+      // never hangs - cancelValue + onClose cover every path, mountModal is idempotent.
       const modal = mountModal<string | null>(content, {
         className: 'modal projects-prompt',
         cancelValue: null,
@@ -1425,7 +1428,7 @@ export async function mountProjects(
     const atRoot = folderId == null;
     const opt = (on: boolean, attr: string, val: string, label: string): string =>
       `<button type="button" class="folder-menu-item${on ? ' is-on' : ''}" data-${attr}="${val}">${on ? '✓ ' : '  '}${label}</button>`;
-    // (The Uncategorised preview-strip Gallery↔Cover-Flow switch is no longer a menu item —
+    // (The Uncategorised preview-strip Gallery↔Cover-Flow switch is no longer a menu item - 
     // it's a .view-seg segmented control below the ribbon, matching the catalog.)
     const pop = document.createElement('div');
     pop.className = 'folder-menu projects-viewmenu';
@@ -1494,7 +1497,7 @@ export async function mountProjects(
       await reload(); render();
     };
     if (tile?.matches?.('[data-rename-folder]')) {
-      // Folder-view header: the title is an <h2> (not inside a button) — swap it directly.
+      // Folder-view header: the title is an <h2> (not inside a button) - swap it directly.
       const input = document.createElement('input');
       input.className = 'projects-name-input'; input.value = f.name; input.maxLength = 60;
       input.setAttribute('aria-label', t('Folder name'));
@@ -1514,13 +1517,13 @@ export async function mountProjects(
 
   // Rename a saved session in place. For a single-tool session the name IS the export
   // filename (host.state.list().filename = data.__export_filename), so the rename rewrites
-  // both __export_filename and __label — the displayed name AND every future export (a
+  // both __export_filename and __label - the displayed name AND every future export (a
   // single download, or a folder "Render" batch row via folder-rows.js) use the new name.
   function startRenameSession(tile: HTMLElement | null, slot: string): void {
     const e = entryBySlot().get(slot); if (!tile || !e) return;
     const current = e.label || e.filename || toolName(e.toolId) || '';
     // Replace the WHOLE tile (the title lives inside the <button>; an input nested there
-    // would let Space/Enter activate the button — see startCreateFolder).
+    // would let Space/Enter activate the button - see startCreateFolder).
     const cover = tile.querySelector('.tile-cover, .folder-mosaic')?.outerHTML || '';
     tile.classList.add('is-editing');
     tile.innerHTML = `${cover}<div class="tile-meta"><input class="projects-name-input" type="text" maxlength="80" aria-label="${escape(t('Session name'))}"></div>`;
@@ -1558,7 +1561,7 @@ export async function mountProjects(
   // creations / Projects / Tools dialog that fills a tool image slot) in "collect into
   // this folder" mode. Every pick ADDS to the current folder and the dialog stays open
   // for several in a row: a Library/your-images/uploaded/rendered image is filed as an
-  // image item (catalog assets by reference — no duplicate bytes), a saved creation is
+  // image item (catalog assets by reference - no duplicate bytes), a saved creation is
   // filed as an editable session, and a tool either opens its editor (files in on first
   // save) or "+ Add"s a default-settings session. Standardised in one component, so the
   // UX improves everywhere at once (replaces the old bespoke tools-only chooser).
@@ -1572,10 +1575,26 @@ export async function mountProjects(
     const target = (folderId && folderId !== UNCAT) ? folderId : null;
     const folderName = target ? (folders.find(f => f.id === target)?.name || t('this folder'))
       : folderId === UNCAT ? t('Uncategorised') : t('Projects');
-    // Projects are creations you file, not on-device transforms — offer every non-utility
+    // Projects are creations you file, not on-device transforms - offer every non-utility
     // tool (a superset of the picker's image-embeddable set, so audio/video tools show too).
     const tools = ((w.__toolIndex?.tools ?? []) as unknown as ProjectsTool[]).filter(x => x.category !== 'utility');
-    // Lazy chunk — the shared picker (DOMPurify, engine, its own CSS) stays out of the
+    // Fold in the user's own saved tools (lib/user-tools) as extra tool cards under the "Your
+    // tools" category. Their id is namespaced (usertool:<id>), so onOpenTool / onQuickAddTool
+    // below route them through their BASE tool seeded with the saved values - never the
+    // synthetic id, which no tool loader could resolve. Kept LOCAL to this picker's tool list
+    // (not merged into window.__toolIndex, which ~17 other readers consume), so nothing else
+    // has to become user-tool-aware. Best-effort: a load failure just omits them.
+    const userToolById = new Map<string, ProjectedUserTool>();
+    try {
+      const { createUserToolStore, projectUserTool } = await import('../lib/user-tools.ts');
+      const mine = await createUserToolStore(host as unknown as Parameters<typeof createUserToolStore>[0]).list();
+      for (const ut of mine) {
+        const p = projectUserTool(ut);
+        userToolById.set(p.id, p);
+        tools.push({ id: p.id, name: p.name, description: p.description, category: p.category, icon: p.icon, formats: p.formats });
+      }
+    } catch (err) { host.log?.('warn', 'projects: user tools load failed', { error: String(err) }); }
+    // Lazy chunk - the shared picker (DOMPurify, engine, its own CSS) stays out of the
     // Projects boot chunk, loaded only when the add flow actually opens (matches how the
     // bridge's host.assets.pick and this view's other heavy actions import on demand).
     const { openPicker } = await import('./picker.ts');
@@ -1585,11 +1604,11 @@ export async function mountProjects(
         folderName,
         tools,
         onAsset: async (ref) => {
-          // Images (catalog references especially) need a real folder to live in — the
+          // Images (catalog references especially) need a real folder to live in - the
           // root and the synthetic Uncategorised bucket can't hold one. Decline with a nudge.
           if (!target) return { ok: false, label: t('Open a folder to add images') };
           // A user upload (user/…) is owned bytes; a catalog id is a reference. Both are
-          // stored as the folder's image item by id — reconciliation keeps either kind.
+          // stored as the folder's image item by id - reconciliation keeps either kind.
           await store.addItem(target, { type: 'image', ref: ref.id });
           return { ok: true };
         },
@@ -1598,41 +1617,90 @@ export async function mountProjects(
           return { ok: true };
         },
         onOpenTool: (toolId) => {
+          // A user tool opens its BASE tool seeded with its saved values, via the same
+          // in-memory pending-seed the drop/PSD route uses (the mount consumes it as
+          // `seededDirect`, so no URL packing and no chooser). A real tool opens as before.
+          const ut = userToolById.get(toolId);
+          const openId = ut ? ut.userTool.baseToolId : toolId;
+          if (ut) setPendingToolSeed(openId, ut.userTool.values);
           try { sessionStorage.setItem(FILE_INTO_KEY, target ?? ''); } catch { /* private mode */ }
           armReturn();
-          window.location.hash = '#/tool/' + toolId;
+          window.location.hash = '#/tool/' + openId;
         },
         onQuickAddTool: async (toolId) => {
-          try { await addDefaultSession(toolId); return { ok: true }; }
+          try {
+            // A user tool IS a specific seed, so it quick-adds its base tool + saved values
+            // straight away (no default-or-variation step). A real tool offers that chooser.
+            const ut = userToolById.get(toolId);
+            if (ut) { await addDefaultSession(ut.userTool.baseToolId, ut.userTool.values); return { ok: true }; }
+            const choice = await chooseAddSeed(toolId);
+            if (choice.cancelled) return { ok: false, silent: true };   // chooser dismissed → no toast
+            await addDefaultSession(toolId, choice.values);
+            return { ok: true };
+          }
           catch (err) { host.log?.('warn', 'projects: quick-add failed', { tool: toolId, error: String(err) }); return { ok: false }; }
         },
       },
     });
-    // The picker closed (× / Escape / a tool that navigated away) — reflect everything
+    // The picker closed (× / Escape / a tool that navigated away) - reflect everything
     // added under it in one pass.
     if (mounted) { await reload(); render(); }
   }
 
-  // Create a saved session for `toolId` seeded with its RESOLVED defaults (createRuntime
-  // alone runs onInit + profile binding — no offscreen render) and file it into the
-  // current folder. No thumbnail: a fresh default session shows the standard placeholder
-  // cover until it's opened and saved. The caller re-renders once the picker closes.
-  async function addDefaultSession(toolId: string): Promise<void> {
+  // Create a saved session for `toolId` and file it into the current folder. With no seed it
+  // is the tool's RESOLVED defaults (createRuntime alone runs onInit + profile binding, no
+  // offscreen render); with a seed (a saved user template/variation) the runtime is born with
+  // those input values, exactly the way the template chooser seeds a fresh mount. No thumbnail:
+  // a fresh session shows the standard placeholder cover until it's opened and saved. The
+  // caller re-renders once the picker closes.
+  async function addDefaultSession(toolId: string, seedValues?: Record<string, unknown>): Promise<void> {
     const tool = await getTool(toolId);
-    const runtime = await createRuntime(tool, host, {});
+    const runtime = await createRuntime(tool, host, (seedValues ?? {}) as Parameters<typeof createRuntime>[2]);
     const values = Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+    // getModel returns only declared inputs, so carry any __-prefixed export markers the seed
+    // brought (a saved template may store them beside its input values) through separately.
+    const markers: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(seedValues ?? {})) if (k.startsWith('__')) markers[k] = v;
     const slot = `${tool.manifest.id}:${Date.now()}`;
     await (host as ProjectsHost).state.save(slot, {
       ...values,
+      ...markers,
       __toolId:        tool.manifest.id,
       __toolVersion:   tool.manifest.version,
-      __export_format: tool.manifest.render?.formats?.[0] ?? '',
+      __export_format: (markers.__export_format as string) || tool.manifest.render?.formats?.[0] || '',
     }, '');
     const target = (folderId && folderId !== UNCAT) ? folderId : null;
     if (target) await store.moveItem(slot, target, 'session');
   }
 
-  // Arm the return target so the tool's Save button lands back on this exact page —
+  // Quick-add intermediate step: when a tool has saved templates/variations, offer a tiny
+  // chooser (the tool's default settings, or one of the user's saved variations) and return
+  // the seed values to hand addDefaultSession. A tool with NONE resolves straight to the
+  // default (no extra step, exactly as before). `cancelled` is true only when the chooser was
+  // actually shown and dismissed, so the caller can stay silent instead of flashing a failure.
+  async function chooseAddSeed(toolId: string): Promise<{ cancelled: boolean; values?: Record<string, unknown> }> {
+    let mine: UserTemplate[] = [];
+    try {
+      const { createUserTemplateStore } = await import('../lib/user-templates.ts');
+      mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
+    } catch { /* best-effort - fall through to the default add */ }
+    if (!mine.length) return { cancelled: false };   // nothing saved → default, no extra step
+    closeMenu();
+    const toolName = nameById.get(toolId) || toolId;
+    const chosen = await choiceDialog({
+      title: tRaw('Add {tool}', { tool: toolName }),
+      message: t('Start from the default, or one of your saved variations.'),
+      choices: [
+        { id: '__default__', label: t('Default settings'), primary: true },
+        ...mine.map(ut => ({ id: ut.id, label: ut.name })),
+      ],
+    });
+    if (chosen === null) return { cancelled: true };            // Cancel / Escape / backdrop
+    if (chosen === '__default__') return { cancelled: false };  // resolved defaults
+    return { cancelled: false, values: mine.find(x => x.id === chosen)?.values };
+  }
+
+  // Arm the return target so the tool's Save button lands back on this exact page - 
   // root `/#/p`, the Uncategorised view, or a specific folder. navigateTo-compatible URL.
   function armReturn(): void {
     armSessionReturn('/#/p' + (folderId ? '/' + folderId : ''));
@@ -1645,8 +1713,8 @@ export async function mountProjects(
     window.location.hash = sessionOpenHref({ slot, toolId: entryBySlot().get(slot)?.toolId || '' }, batch);
   }
 
-  // The href resumeSession() ends up at (the shared sessionOpenHref — same target the
-  // spotlight's projects provider uses) — set on the preview-ribbon tiles so a
+  // The href resumeSession() ends up at (the shared sessionOpenHref - same target the
+  // spotlight's projects provider uses) - set on the preview-ribbon tiles so a
   // middle-click / no-JS open still lands right (the click handler routes clean taps
   // through resumeSession so Save returns here, but the anchor is the accessible fallback).
   const resumeHref = (e: Entry): string => sessionOpenHref(e, isBatchSlot(e.slot));
@@ -1686,7 +1754,7 @@ export async function mountProjects(
       tileMenu: true,
     });
     // A ⋯ button on every ribbon preview opens the SAME actions menu (Open · Rename · Move to
-    // folder… · Render · Delete) the grid session tiles get — the touch-friendly path to
+    // folder… · Render · Delete) the grid session tiles get - the touch-friendly path to
     // organising loose sessions that also works in Cover Flow, where drag-to-folder can't
     // (native HTML5 drag is mouse-only and fights the 3D pointer capture). Delegated on the
     // persistent mount so it survives the strip's clone / view-mode rebuilds.
@@ -1701,7 +1769,7 @@ export async function mountProjects(
       const r = btn.getBoundingClientRect();
       openMenu({ ref: slot, kind: 'session', tileEl: tile, anchorEl: btn, x: r.left, y: r.bottom + 6 });
     });
-    // Each ribbon preview is also a drag source for the "Move to" rail (desktop) — same payload
+    // Each ribbon preview is also a drag source for the "Move to" rail (desktop) - same payload
     // a grid session tile carries (wireDrag), so the shared drop targets move it with no extra
     // wiring. Delegated on the persistent mount so it survives the strip's clone rebuilds
     // on a Gallery↔Cover-Flow switch. The tile's data-tool is the session slot.
@@ -1723,7 +1791,7 @@ export async function mountProjects(
   // ── delete a folder AND everything inside it (its WHOLE subtree) ────────────
   // Unlike store.remove() (which only drops one record and lifts its contents up), this
   // permanently deletes the folder, every SUB-FOLDER beneath it, and every saved session
-  // and image they hold — including stored previews — then the folder records. Confirmed.
+  // and image they hold - including stored previews - then the folder records. Confirmed.
   async function deleteFolderCascade(id: string): Promise<void> {
     closeMenu();
     if (!id || id === UNCAT) return;
@@ -1748,7 +1816,7 @@ export async function mountProjects(
     if (!ok || !mounted) return;
     for (const it of items) {
       try {
-        // A catalog reference owns no bytes — removeSubtree drops its folder membership;
+        // A catalog reference owns no bytes - removeSubtree drops its folder membership;
         // only an uploaded image (user/…) is a real asset to delete.
         if (it.type === 'image') { if (it.ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(it.ref); }
         else await host.state.delete(it.ref);
@@ -1770,7 +1838,7 @@ export async function mountProjects(
   const authorForExport = (): Profile | null => (profile?.useDetails ? profile : null);
 
   // Every render/export path (folder, single session, selection) runs inside the shared
-  // progress toast (components/progress-toast.ts) — full-width `--bar` variant under the
+  // progress toast (components/progress-toast.ts) - full-width `--bar` variant under the
   // profile row (projects.css), tracked in `toasts` so navigate-away tears it down
   // (_cleanup). `run(mount)` does the gated /pro export; errors surface in the toast.
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
@@ -1858,7 +1926,7 @@ export async function mountProjects(
       { className: 'team-projects-dialog' },
     );
     const body = modal.el.querySelector<HTMLElement>('[data-team-body]')!;
-    // Which project's session list is on screen — the modal is two screens deep and the
+    // Which project's session list is on screen - the modal is two screens deep and the
     // session rows only carry their own id. Recorded so an opened session can name the
     // project it came from in its origin stash (org/team-session-origin.ts).
     let openProjectId: string | null = null;
@@ -1909,7 +1977,7 @@ export async function mountProjects(
       // The hash below is a faithful working copy that has otherwise forgotten where it
       // came from: the instance's id for this session is not an input and is deliberately
       // not serialised into a link. Hand it to the mount alongside the navigation instead
-      // — a one-shot stash the tool view spends on mount, and the only thing that lets the
+      // - a one-shot stash the tool view spends on mount, and the only thing that lets the
       // Share dialog's "Work collab" row key a room on the session actually being edited
       // (org/team-session-origin.ts; plans/100 §7). Armed LAST, immediately before the
       // navigation it belongs to, so a failure above leaves nothing armed.
@@ -1922,7 +1990,7 @@ export async function mountProjects(
   }
 
   // ── bulk actions over the current multi-selection ───────────────────────────
-  // Selected FOLDERS that are descendants of another selected folder are redundant —
+  // Selected FOLDERS that are descendants of another selected folder are redundant - 
   // the ancestor's subtree already covers them. Drop them so we don't double-process.
   function topLevelSelectedFolders(): string[] {
     const ids = selectedByKind('folder');
@@ -2041,12 +2109,12 @@ export async function mountProjects(
   // stale file-into / return-to markers left by an abandoned flow.
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
   // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
-  // the router REUSES for every route — leave it bound and the next mount stacks another.
+  // the router REUSES for every route - leave it bound and the next mount stacks another.
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); tileMenu.destroy(); unwireEscape(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); overlayModal?.close(); releaseSearch?.(); };
   await reload();
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;
-  // Claim the shell search bar AFTER reload() — the scope-aware placeholder needs
+  // Claim the shell search bar AFTER reload() - the scope-aware placeholder needs
   // `folders` (and the deleted-folder fallback above) resolved. NO onQuery (the M2
   // flip, plans/99 §2a): Projects is an overlay-only view, so typing feeds the
   // spotlight and this grid never reshapes under the user's hands. The claim seeds

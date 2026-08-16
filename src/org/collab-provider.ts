@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-provider — the WORK-COLLAB client (plan 100 §7, wave 3.1).
+ * org/collab-provider - the WORK-COLLAB client (plan 100 §7, wave 3.1).
  *
- * A thin WebSocket pipe speaking `CanvasOp` + presence frames to the instance's
- * collab gateway, wrapped so it satisfies `CanvasSyncAdapter` — the same stable
+ * A thin WebSocket pipe speaking `CanvasOp` and presence frames to the instance's
+ * collab gateway, wrapped so it satisfies `CanvasSyncAdapter`. This is the same stable
  * contract type the private-collab (P2P) provider satisfies, so the shell has ONE
  * collab client surface and only the transport object differs (plan 100 §7, last
- * paragraph: "No yjs in the browser — ever"). Convergence on this side is the
- * dependency-free `ReferenceCanvasDoc` from `@lolly-tools/core`; the SERVER owns the
+ * paragraph: "No yjs in the browser, ever"). Convergence on this side uses the
+ * dependency-free `ReferenceCanvasDoc` from `@lolly-tools/core`. The SERVER owns the
  * Yjs document authority.
  *
  * DORMANT BY DEFAULT, and that is the contract. Nothing in this file runs unless an
- * instance's org-config grants `collab.join` AND something opens a team session — see
+ * instance's org-config grants `collab.join` AND something opens a team session - see
  * "What the wave-1 integration must call" below. With no instance there is no
  * control plane, no org-config, no registration, and no import: `org/index.ts` reaches
  * this module through a dynamic `import()` inside its member branch, so a build with
@@ -20,7 +20,7 @@
  * ── What the wave-1 integration must call ────────────────────────────────────
  *
  * A collab is per-SESSION, but nothing at boot can yet tell that a given tool mount
- * came from a team project rather than a local slot — so this module registers a
+ * came from a team project rather than a local slot - so this module registers a
  * FACTORY, not a provider, and the last wire is left for the integration that owns
  * "this mount is a team session". That integration is:
  *
@@ -36,10 +36,10 @@
  * gates writes on ('observer' ⇒ read-only chrome); `session.state().peers` is what
  * the wave-1 presence UI paints from.
  *
- * STEP 3's `collab.on(e => … session.applyRemotePatch(e.ops))` — NEVER
- * `plumbing?.applyRemotePatch(e.ops)` directly — is not a style preference, and an
+ * STEP 3's `collab.on(e => … session.applyRemotePatch(e.ops))`, NEVER
+ * `plumbing?.applyRemotePatch(e.ops)` directly, is not a style preference. An
  * earlier revision of this header got it backwards. `session.applyRemotePatch` is
- * where `createCollabSession` runs the manifest-aware op guard (plan 100 §11.21);
+ * where `createCollabSession` runs the manifest-aware op guard (plan 100 §11.21).
  * `plumbing.applyRemotePatch` is the UNGUARDED door beneath it, and `org/collab-
  * handle.ts`'s own header says the same thing for the same wire ("Those ops are
  * untrusted input and must pass the shared op guard … BEFORE they reach the
@@ -47,16 +47,16 @@
  * alone, so if you find a THIRD one, this file's header is wrong and `collab-
  * handle.ts`'s is right.
  *
- * STEP 2's `guard` is a SEPARATE, earlier gate — this file's own, over the raw
+ * STEP 2's `guard` is a SEPARATE, earlier gate: this file's own, over the raw
  * socket frame, before `doc` (this file's `CanvasSyncAdapter`, `=== handle.adapter`
  * verbatim per `org/collab-handle.ts`'s header) can absorb a write step 3's guard
  * would have refused. See `WorkCollabOptions.guard`'s own comment for why a SECOND
  * guard is not redundant with the session's: `doc` is what `lib/collab-plumbing.ts`'s
- * `buildPatch` reads back out (`ConvergedRead`) the moment ANY later op — including
- * one step 3 admits without complaint — touches the same key, so an unguarded write
+ * `buildPatch` reads back out (`ConvergedRead`) the moment ANY later op, including
+ * one step 3 admits without complaint, touches the same key. So an unguarded write
  * here is promoted into the runtime regardless of what step 3 decided about it.
  * Omitting step 2's `guard` degrades to a floor (schema-valid, safe-integer clock,
- * no forbidden key — no value-size cap, no manifest whitelist) rather than the
+ * no forbidden key, no value-size cap, no manifest whitelist) rather than the
  * boundary, exactly as `collab/rtc-handle.ts`'s own optional `guard` does for
  * Track A; it does not remove the vulnerability step 3 alone would still leave.
  *
@@ -69,8 +69,8 @@
  * ── Reducing to `CollabSessionHandle` (lib/collab-session.ts) ────────────────
  *
  * That module is the composition every collab reduces to, and it names this file as
- * Track B's producer. The map, so the integration is mechanical rather than a
- * redesign (nothing is imported from it here — it is a sibling wave, and coupling
+ * Track B's producer. The map below keeps the integration mechanical rather than a
+ * redesign (nothing is imported from it here: it is a sibling wave, and coupling
  * the transport to it would make each churn the other):
  *
  *   adapter       → `handle.adapter`                    (identical type)
@@ -94,7 +94,7 @@
  *
  * Plan 100 §7.10 is the availability guarantee Track A structurally cannot make:
  * every client can crash at once and the room recovers from the server snapshot plus
- * everyone's outbox. The client half is here — local ops persist to IndexedDB,
+ * everyone's outbox. The client half is here: local ops persist to IndexedDB,
  * replay after `join-ack`, and the gateway dedups per client by highest accepted
  * Lamport clock (rooms.ts `applyOps`), so a replay is idempotent.
  *
@@ -104,22 +104,22 @@
  *   - `ops` is broadcast to PEERS only (`applyOps`: `if (peer.id === from.id)
  *     continue`), so a writer never sees its own ops come back;
  *   - `join-ack.serverClock` is the ROOM-WIDE maximum accepted clock, not this
- *     client's — a peer alone can carry it past everything we ever minted, so
+ *     client's. A peer alone can carry it past everything we ever minted, so
  *     retiring anything by it would drop ops the gateway never received;
  *   - the per-client `highestClock` map the gateway dedups against is not published.
  *
  * So an entry is retired by one of:
  *
- *   (a) ECHO — an inbound `ops` frame carrying `(origin.client, origin.clock)` of
+ *   (a) ECHO - an inbound `ops` frame carrying `(origin.client, origin.clock)` of
  *       ours. Exact and needs no interpretation. Inert against today's gateway (see
  *       above); kept because it costs nothing and is the rule the moment a gateway
  *       does echo.
  *
- *   (b) SECOND DELIVERY — the entry was written to a socket on an EARLIER
+ *   (b) SECOND DELIVERY - the entry was written to a socket on an EARLIER
  *       connection, and this connection's `join-ack` replay has now written it
  *       again, to a room the gateway has just re-hydrated from persistence (plus any
  *       crash recovery). A drop is exactly when a server-side loss becomes visible,
- *       and the replay is exactly what repairs it; holding the entry past a second
+ *       and the replay is exactly what repairs it. Holding the entry past a second
  *       successful delivery defends only against two consecutive losses, and costs
  *       an outbox that never drains and a `pending` count that is never zero.
  *
@@ -127,7 +127,7 @@
  * watermark. An entry never written to a socket (typed while reconnecting, or loaded
  * from a previous run) survives its first replay and drains on the next one.
  *
- * `pending` counts entries not yet written to any socket — the honest "your edits
+ * `pending` counts entries not yet written to any socket: the honest "your edits
  * have not reached anyone" number a UI can gate on. `queued` is the whole journal.
  * When the cap bites, DELIVERED entries are shed first and silently (dropping them
  * costs replay depth, not an edit); only shedding an undelivered entry is a loss,
@@ -137,15 +137,15 @@
  *
  *  - An OBSERVER never sends an ops frame and never queues one. Role comes from the
  *    gateway's `join-ack.you.role`, and an ack that declares no role at all seats us
- *    as an observer — absent is never a grant. It is checked again locally against
+ *    as an observer: absent is never a grant. It is checked again locally against
  *    `isCompatibleOpVersion` so a gateway that forgot still cannot make us write ops
  *    it will reject. Presence is a different lane and stays open to observers (plan
  *    100 §7.5).
  *  - Our own ops are never re-emitted to the runtime. An echo is used for acking and
  *    then dropped, so a local edit cannot round-trip into a second apply.
  *  - An `ops` frame never exceeds the gateway's per-message cap. Both a live gesture
- *    and a full outbox replay go out through `chunkOps`, because exceeding it is not
- *    an error frame — the gateway CLOSES the socket (`CLOSE.OPS_RATE`).
+ *    and a full outbox replay go out through `chunkOps`, because exceeding it does not produce
+ *    an error frame; the gateway CLOSES the socket instead (`CLOSE.OPS_RATE`).
  *  - A local edit is never queued after the session has ended. A typed close ends it
  *    as surely as `close()` does.
  *  - This device's Lamport clock never goes backwards across a reconnect. See
@@ -217,9 +217,9 @@ export interface WorkCollabState {
   readonly roster: readonly RosterEntry[];
   /** This device's seat as the gateway assigned it, when the `join-ack` said. */
   readonly self?: RosterEntry;
-  /** Consecutive failed connection attempts — the backoff exponent. Reset on join. */
+  /** Consecutive failed connection attempts - the backoff exponent. Reset on join. */
   readonly attempt: number;
-  /** Local ops that have never been written to a socket — the "not delivered to
+  /** Local ops that have never been written to a socket - the "not delivered to
    *  anyone yet" count. Zero on a healthy live session; it climbs while offline. */
   readonly pending: number;
   /** The whole durable journal, delivered or not (`pending` ≤ `queued`). */
@@ -235,9 +235,9 @@ export type WorkCollabEvent =
   | { readonly kind: 'state'; readonly state: WorkCollabState }
   /** Ops for the runtime: remote peers' ops, and the `join-ack` snapshot seed.
    *  Never this device's own ops. Feed straight into `attachCollabPlumbing`'s
-   *  `applyRemotePatch` — it coalesces per frame and applies atomically. */
+   *  `applyRemotePatch` - it coalesces per frame and applies atomically. */
   | { readonly kind: 'ops'; readonly from: string; readonly ops: readonly CanvasOp[] }
-  /** An inbound presence payload, forwarded verbatim — cast it to whatever the
+  /** An inbound presence payload, forwarded verbatim - cast it to whatever the
    *  presence engine expects (`PresenceFrame` in lib/collab-presence.ts). See
    *  `CollabPresencePayload` for why this lane is opaque here. */
   | { readonly kind: 'presence'; readonly from: string; readonly frame: CollabPresencePayload }
@@ -278,37 +278,37 @@ export interface WorkCollabOptions {
    * durable outbox. REQUIRED in practice on any shared device: without it two
    * people who sign into the same browser share one outbox key, and the second one
    * to open the session replays the first one's unsent ops over their OWN
-   * authenticated socket — the gateway audits those edits as the second user
+   * authenticated socket - the gateway audits those edits as the second user
    * (`user:${ctx.user.id}`), and `op.origin.client` is the shared device id, so
    * nothing downstream could tell. `org/index.ts` passes it when it registers the
    * factory.
    */
   principal?: string;
-  /** Instance base the session lives on — the other half of the outbox partition,
+  /** Instance base the session lives on - the other half of the outbox partition,
    *  so pointing the shell at a different deployment cannot resurrect a foreign
    *  room's queue. Defaults to `lib/instance.ts`'s configured base (or, when `url`
    *  is given, that endpoint's origin). */
   instanceBase?: string;
-  /** WebSocket constructor — injected by tests, defaults to the platform one. */
+  /** WebSocket constructor - injected by tests, defaults to the platform one. */
   socket?: CollabSocketCtor;
   /** Explicit endpoint, bypassing instance-base derivation (tests; and an escape
    *  hatch for a deployment that terminates the gateway elsewhere). */
   url?: string;
   /** Page URL the relative endpoint resolves against. Defaults to `location.href`. */
   href?: string;
-  /** Jitter source — injected so the backoff schedule is assertable. */
+  /** Jitter source - injected so the backoff schedule is assertable. */
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
   store?: CollabOutboxStore;
-  /** Max journal entries held; past it the oldest are shed — delivered ones first
+  /** Max journal entries held; past it the oldest are shed - delivered ones first
    *  and silently, undelivered ones with a warning (plan 100 §7.10). */
   outboxLimit?: number;
   /** Reconnect automatically after a non-terminal drop. Default true. */
   reconnect?: boolean;
   /**
    * The inbound boundary (plan 100 §11.21) for peer-authored ops BEFORE they reach
-   * `doc` — this file's own `CanvasSyncAdapter`, handed out verbatim as
+   * `doc` - this file's own `CanvasSyncAdapter`, handed out verbatim as
    * `handle.adapter` (`org/collab-handle.ts`'s header). Build it from the mounted
    * tool's declared inputs: `createOpGuard({ inputs: runtime.getModel() })`. Only
    * the caller knows them; this transport does not, and never will (a manifest
@@ -316,16 +316,16 @@ export interface WorkCollabOptions {
    *
    * Mirrors `collab/rtc-handle.ts`'s own `guard` option, and for an identical
    * reason stated there: without one, this module still refuses to write anything
-   * structurally unchecked (schema-valid, safe-integer clock, no forbidden key —
-   * see `floorFilter`), but that is a FLOOR, never a whitelist — no value-size cap,
+   * structurally unchecked (schema-valid, safe-integer clock, no forbidden key - 
+   * see `floorFilter`), but that is a FLOOR, never a whitelist - no value-size cap,
    * no check that a `param` key is even a DECLARED input. `lib/collab-plumbing.ts`'s
    * `buildPatch` reads a converged key's value out of `doc.state()` the moment ANY
-   * later op touches it (`ConvergedRead` — deliberate: two peers' MODELS must not
+   * later op touches it (`ConvergedRead` - deliberate: two peers' MODELS must not
    * diverge while their documents agree). That is what makes a second, LATER guard
    * (`createCollabSession`'s own, over `session.applyRemotePatch`) insufficient on
    * its own: if THIS write already poisoned the register, a later legitimate op on
    * the same key promotes the poison into the runtime regardless of its own guard
-   * verdict. Passing the SAME manifest-derived guard here closes that — the two
+   * verdict. Passing the SAME manifest-derived guard here closes that - the two
    * must agree, which is exactly what building both from the same
    * `runtime.getModel()` guarantees.
    */
@@ -333,13 +333,13 @@ export interface WorkCollabOptions {
 }
 
 /** Keys that are never data, whatever a manifest says. Mirrors `op-guard.ts`'s
- *  private `FORBIDDEN_KEYS` — duplicated rather than imported, the same call
+ *  private `FORBIDDEN_KEYS` - duplicated rather than imported, the same call
  *  `collab/rtc-handle.ts` makes for its own copy (their header explains why: this
  *  file and the guard's home deliberately do not depend on each other beyond the
  *  guard TYPE itself). */
 const FORBIDDEN_OP_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
 
-/** Own-key check for the guardless floor — mirrors `rtc-handle.ts`'s
+/** Own-key check for the guardless floor - mirrors `rtc-handle.ts`'s
  *  `hasForbiddenName` exactly (same three names, same op shapes). */
 function hasForbiddenOpName(op: CanvasOp): boolean {
   if (op.k === 'param') return FORBIDDEN_OP_KEYS.has(op.key);
@@ -369,7 +369,7 @@ function hasNonFiniteOpNumber(op: CanvasOp): boolean {
  * .guard`). `sanitizeOps` (collab-protocol.ts) has already proven each entry
  * satisfies `isCanvasOp`'s SHAPE gate before this runs; what is added here is the
  * safe-integer clock and forbidden-key checks that gate cannot make (it has no
- * model, and no own-property whitelist is possible without one) — exactly
+ * model, and no own-property whitelist is possible without one) - exactly
  * `collab/rtc-handle.ts`'s `checkWithoutGuard`, same floor, same reasoning.
  */
 function floorFilter(ops: readonly CanvasOp[]): CanvasOp[] {
@@ -388,7 +388,7 @@ export interface WorkCollabHandle {
   /** Register this into `lib/canvas-sync-provider.ts`. */
   readonly adapter: CanvasSyncAdapter;
   /** Open the socket (loading the persisted outbox first). Resolves once the socket
-   *  has been constructed — NOT once joined; watch the state events for that. */
+   *  has been constructed - NOT once joined; watch the state events for that. */
   connect(): Promise<void>;
   /** End the session: send `leave`, drop every socket handler, clear every timer. */
   close(): void;
@@ -397,10 +397,10 @@ export interface WorkCollabHandle {
   on(listener: (event: WorkCollabEvent) => void): () => void;
   /** Hand ONE outbound presence payload to the lane, verbatim. The caller owns
    *  cadence (lib/collab-presence.ts throttles to 50 ms and goes silent when alone
-   *  — plan 100 §4.7); this only writes it. Dropped, never queued, when not live:
+   * - plan 100 §4.7); this only writes it. Dropped, never queued, when not live:
    *  presence is ephemeral by definition. Open to observers (§7.5). */
   sendPresence(frame: CollabPresencePayload): void;
-  /** The durable journal, oldest first — every local op not yet retired, delivered
+  /** The durable journal, oldest first - every local op not yet retired, delivered
    *  or not (diagnostics + tests). `state().pending` is the undelivered subset. */
   outbox(): readonly CanvasOp[];
   /** Resolves when every queued outbox write has hit the store (tests). */
@@ -418,14 +418,14 @@ const RECONNECT_MAX_MS = 30000;
  *  inside the documented 1 s..30 s band instead of overshooting the ceiling. */
 const RECONNECT_JITTER = 0.25;
 
-/** Key prefix of one session's outbox inside the 'profile' KV store — the
+/** Key prefix of one session's outbox inside the 'profile' KV store - the
  *  small-IDB idiom lib/instance.ts and lib/collab-plumbing.ts already use (their
  *  'instance-base' / 'collab-client-id' keys are siblings of this one). A dedicated
  *  object store would be tidier, but it costs a DB version bump plus a migration for
  *  every user on the fleet, and this is a small, per-session, evictable record. */
 const OUTBOX_KEY_PREFIX = 'collab-outbox:';
 
-/** FNV-1a, 32-bit. Not a hash for secrecy — the scope tag is a PARTITION, keeping
+/** FNV-1a, 32-bit. Not a hash for secrecy - the scope tag is a PARTITION, keeping
  *  one principal's queue off another's key, and a short stable digest keeps a
  *  principal id and an instance URL out of a store other code enumerates. */
 function fnv1a(s: string): string {
@@ -440,7 +440,7 @@ function fnv1a(s: string): string {
 /**
  * The IDB key one session's outbox lives under. Scoped by (instance base,
  * principal) as well as session, because the 'profile' store is origin-wide and
- * shared across everyone who signs into this browser — see `WorkCollabOptions
+ * shared across everyone who signs into this browser - see `WorkCollabOptions
  * .principal` for the cross-user replay this prevents. Exported so a caller (and
  * the tests) can name the exact key rather than reconstruct the digest.
  */
@@ -452,13 +452,13 @@ export function collabOutboxKey(
 }
 
 /**
- * A box id no real row can carry — `lib/row-id.ts` mints base-36 ULIDs and a tool's
+ * A box id no real row can carry - `lib/row-id.ts` mints base-36 ULIDs and a tool's
  * blocks rows key off input ids, neither of which can contain a NUL. See
  * `primeClock` for what it anchors.
  */
 const CLOCK_ANCHOR_ID = '\u0000lolly:clock';
 
-/** `state().reason` when the derived endpoint is not same-origin — see
+/** `state().reason` when the derived endpoint is not same-origin - see
  *  collab-protocol.ts's header for why that can never authenticate. */
 export const CROSS_ORIGIN_REASON = 'cross-origin-instance';
 
@@ -490,7 +490,7 @@ function clamp01(v: number): number {
  * Reads/writes the 'profile' KV store. `bridge/db.ts` is imported LAZILY, exactly as
  * `initCollabClientId` does it: a static import would drag `idb` into whatever chunk
  * loads this module (and into its DOM-free unit tests, which never touch a store at
- * all — they inject their own). Every method is failure-tolerant: a durability
+ * all - they inject their own). Every method is failure-tolerant: a durability
  * problem must never cost the user their edit, so it degrades to an in-memory outbox.
  */
 function defaultOutboxStore(): CollabOutboxStore {
@@ -536,7 +536,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
 
   /** The local convergence document. Rebuilt on every `join-ack` (see seedFrom). */
   let doc = new ReferenceCanvasDoc(clientId);
-  /** Highest clock this device has ever minted or observed — the Lamport floor a
+  /** Highest clock this device has ever minted or observed - the Lamport floor a
    *  rebuilt document is primed to, so a reconnect cannot re-mint a used pair. */
   let clockCeiling = 0;
 
@@ -555,7 +555,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   let connecting: Promise<void> | null = null;
   /** The handle has been torn down by `close()`. */
   let ended = false;
-  /** The session is OVER — `close()`, or a typed close the gateway answered with.
+  /** The session is OVER - `close()`, or a typed close the gateway answered with.
    *  A terminal close must stop the journal growing just as surely as close() does,
    *  or every later edit is persisted forever with no transport that can drain it. */
   let dead = false;
@@ -567,7 +567,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   let dirty = false;
   let outboxKey: string | null = null;
 
-  // — events —
+  // - events - 
 
   function emit(event: WorkCollabEvent): void {
     for (const fn of [...listeners]) {
@@ -606,7 +606,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     emitState();
   }
 
-  // — outbox —
+  // - outbox - 
 
   /**
    * The (instance, principal, session) key this journal lives under. Resolved once,
@@ -627,7 +627,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
    * importable without `idb` (lib/instance.ts reaches bridge/db.ts, which does), and
    * so the dormant registration path in org/index.ts costs nothing on a build with
    * no control plane. An unreadable base degrades to same-origin rather than
-   * throwing — the caller has a socket to open either way.
+   * throwing - the caller has a socket to open either way.
    */
   async function resolveBase(): Promise<string> {
     if (opts.instanceBase !== undefined) return opts.instanceBase;
@@ -656,7 +656,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   /**
    * Bring the journal back inside its cap. DELIVERED entries go first and silently:
    * they reached the gateway, so dropping them costs replay depth, not an edit. Only
-   * when every entry is still undelivered is the oldest shed a real loss — that one
+   * when every entry is still undelivered is the oldest shed a real loss - that one
    * is surfaced, never silent.
    *
    * Shedding can strand an early `remove` while a later `field` op on the same row
@@ -701,7 +701,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     return true;
   }
 
-  // — sending —
+  // - sending - 
 
   function post(frame: ClientFrame): boolean {
     const s = sock;
@@ -719,7 +719,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
    * Write `entries` out as `ops` frames within the gateway's per-message caps,
    * marking each entry delivered as its frame lands, and returning exactly the ones
    * that made it onto THIS socket. Stops at the first frame that cannot be written,
-   * leaving the rest undelivered (and so still `pending`) — a partial write is a
+   * leaving the rest undelivered (and so still `pending`) - a partial write is a
    * partial write, not a silent success.
    *
    * The return value is what retirement keys on, never the sticky `sent` flag: an
@@ -748,7 +748,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     if (role === 'observer' || dead) return;
     enqueue(ops);
     if (status !== 'live') return;
-    // The new entries are the journal's tail — `enqueue` appends, and `trim` only
+    // The new entries are the journal's tail - `enqueue` appends, and `trim` only
     // ever removes, so whatever survived of this batch is the last `ops.length`.
     postEntries(outbox.slice(Math.max(0, outbox.length - ops.length)));
   }
@@ -759,7 +759,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
 
   /**
    * Admit inbound peer-authored ops through the boundary (§11.21) BEFORE they can
-   * reach `doc` — see `WorkCollabOptions.guard`'s comment for why this has to run
+   * reach `doc` - see `WorkCollabOptions.guard`'s comment for why this has to run
    * here rather than only downstream, at `session.applyRemotePatch`. `ops` has
    * already passed `sanitizeOps`'s structural gate (`isCanvasOp`, collab-
    * protocol.ts); what happens here is either the full manifest-aware check (a
@@ -786,7 +786,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     if (status === 'live') post({ t: 'presence', frame });
   }
 
-  // — join —
+  // - join - 
 
   function join(): void {
     setStatus('joining');
@@ -809,7 +809,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
    * has already used has those ops silently DISCARDED. Without this, a reconnect
    * into a room whose snapshot happens to be empty (or whose seed carries a lower
    * clock than we minted while away) restarts this device at 1, and in a quiet room
-   * — the ordinary two-person case with an idle peer — every edit after the
+   * - the ordinary two-person case with an idle peer - every edit after the
    * reconnect vanishes with no error anywhere.
    */
   function primeClock(target: ReferenceCanvasDoc, floor: number): void {
@@ -833,12 +833,12 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     }
     // The snapshot is stored server state, which is exactly what a peer's OWN
     // out-of-band write becomes once the room persists it and a later joiner's
-    // `join-ack` restates it — §11.21's boundary applies here for the same reason
+    // `join-ack` restates it - §11.21's boundary applies here for the same reason
     // it applies to a live `ops` frame, and BEFORE `doc` sees any of it (below),
     // never after. See `WorkCollabOptions.guard`.
     const seed = admitInbound(rawSeed);
     // A fresh document, so a reconnect cannot leave a stale register standing that
-    // the snapshot no longer contains (a row a peer deleted while we were away) —
+    // the snapshot no longer contains (a row a peer deleted while we were away) - 
     // primed to this device's clock ceiling so "fresh" never means "back to 1".
     doc = new ReferenceCanvasDoc(clientId);
     primeClock(doc, clockCeiling);
@@ -904,7 +904,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     emitState();
   }
 
-  // — inbound —
+  // - inbound - 
 
   function handle(frame: ServerFrame): void {
     switch (frame.t) {
@@ -912,18 +912,18 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
         onJoinAck(frame);
         return;
       case 'ops': {
-        // Admitted BEFORE anything below can touch `doc` (§11.21) — including the
+        // Admitted BEFORE anything below can touch `doc` (§11.21) - including the
         // clock absorption two lines down, which is exactly what an out-of-range
         // `origin.clock` would otherwise poison (see `WorkCollabOptions.guard`'s
         // comment and `op-guard.ts`'s `clockOutOfRange`). A rejected op never
         // reaches `theirs`, never reaches `doc.applyRemotePatch`, and is never
-        // handed on to a session that would have refused it anyway — which is the
+        // handed on to a session that would have refused it anyway - which is the
         // whole point: a session's OWN refusal, arriving after this write, would
         // have been too late to matter.
         const ops = admitInbound(sanitizeOps(frame.ops));
         if (!ops.length) return;
         for (const op of ops) observe(op.origin.clock);
-        // Our own ops coming back are an ACK, not an edit — they are applied here
+        // Our own ops coming back are an ACK, not an edit - they are applied here
         // (idempotently) and never re-emitted, so a local edit cannot round-trip.
         const mine = new Set<string>();
         const theirs: CanvasOp[] = [];
@@ -959,7 +959,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
       }
       case 'peer-leave': {
         // The gateway sends the departing CONNECTION id as `id` (rooms.ts `leave`),
-        // not a user id — matched against `RosterEntry.id` first, so a user's second
+        // not a user id - matched against `RosterEntry.id` first, so a user's second
         // device is not evicted with their first.
         const id = typeof frame.id === 'string' ? frame.id
           : typeof frame.from === 'string' ? frame.from
@@ -1003,7 +1003,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     return next;
   }
 
-  // — socket lifecycle —
+  // - socket lifecycle - 
 
   function detachSocket(s: CollabSocket | null): void {
     if (!s) return;
@@ -1018,7 +1018,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
    * hatch (a deployment that terminates the gateway elsewhere, and every test) and
    * is taken as given; a DERIVED endpoint must be same-origin, because the gateway
    * authenticates from a `SameSite=Lax` cookie a browser will not attach to a
-   * cross-site upgrade — see collab-protocol.ts's header. Refusing here turns an
+   * cross-site upgrade - see collab-protocol.ts's header. Refusing here turns an
    * undiagnosable reconnect loop into one stated reason.
    */
   async function endpoint(): Promise<string> {
@@ -1039,12 +1039,12 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   async function open(): Promise<void> {
     // `opening` closes the window `await endpoint()` opens: without it two
     // overlapping calls (a connect() racing the backoff timer) each construct a
-    // socket, and the loser is orphaned — detached by the `sock === s` guards, but
+    // socket, and the loser is orphaned - detached by the `sock === s` guards, but
     // never closed, so it stays open until GC.
     //
     // It is cleared the instant that await resumes, NOT in a `finally` around the
     // whole body: everything below the await is synchronous, so a `finally` would
-    // hold the guard for one microtask longer than the race it exists for — long
+    // hold the guard for one microtask longer than the race it exists for - long
     // enough to swallow the very next reconnect attempt.
     if (ended || sock || opening) return;
     opening = true;
@@ -1098,7 +1098,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
       if (!autoReconnect || isTerminalClose(code)) {
         // A terminal close is an answer (see isTerminalClose): stop, and say why.
         // `dead` as well as 'closed', or the adapter would keep taking local edits
-        // and persisting them to IndexedDB for a session that can never reconnect —
+        // and persisting them to IndexedDB for a session that can never reconnect - 
         // climbing to the cap and then shedding the user's oldest work.
         if (!reason) reason = `close:${code}`;
         dead = true;
@@ -1121,7 +1121,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     }, delay);
   }
 
-  // — the adapter —
+  // - the adapter - 
 
   const adapter: CanvasSyncAdapter = {
     onLocalChange(damage: Damage, rows: Map<BoxId, BoxRow>, col?: string): CanvasOp[] {
@@ -1131,7 +1131,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     },
     apply(op: CanvasOp): void {
       // The contract's single-op door is the LOCAL one (`applyRemotePatch` is
-      // explicitly the remote door) — lib/collab-plumbing.ts mints param and order
+      // explicitly the remote door) - lib/collab-plumbing.ts mints param and order
       // ops itself and delivers them here, so this must both converge and send.
       doc.apply(op);
       sendOps([op]);
@@ -1143,7 +1143,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     presence(a: Awareness): void {
       doc.presence(a);
       // Presence is ephemeral: never queued, never replayed, and open to observers
-      // (plan 100 §7.5 — the presence lane is structurally unauthorized). Cadence is
+      // (plan 100 §7.5 - the presence lane is structurally unauthorized). Cadence is
       // the caller's (lib/collab-presence.ts owns the throttle).
       sendPresence(a);
     },
@@ -1152,7 +1152,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     },
   };
 
-  // — the handle —
+  // - the handle - 
 
   return {
     sessionId,
@@ -1179,7 +1179,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
       }
       // Delivered entries have reached the gateway at least once; keeping them past
       // teardown would replay a whole finished session into the next mount for no
-      // gain. What was never written to a socket stays — that IS the user's unsaved
+      // gain. What was never written to a socket stays - that IS the user's unsaved
       // work, and it is what the next mount of this session is meant to recover.
       const keep = outbox.filter((e) => !e.sent);
       if (keep.length !== outbox.length) {
@@ -1189,7 +1189,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
       }
       status = 'closed';
       emitState();
-      // Subscribers are released last, after the final state has been delivered —
+      // Subscribers are released last, after the final state has been delivered - 
       // "close() tears down listeners and timers" is the whole point of this method.
       listeners.clear();
     },
@@ -1206,12 +1206,12 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   async function runConnect(): Promise<void> {
     if (!loaded) {
       loaded = true;
-      // A store that throws must not stop the session opening — the outbox is a
+      // A store that throws must not stop the session opening - the outbox is a
       // durability nicety, the socket is the feature.
       const stored = await store.load(await keyFor()).catch(() => null);
       if (stored?.length && !ended) {
         for (const op of stored) {
-          // `sent: false` — a stored entry was written by a previous run whose
+          // `sent: false` - a stored entry was written by a previous run whose
           // delivery nothing here witnessed, so it counts as pending and survives
           // its first replay (the header's rule (b)).
           outbox.push({ op, sent: false });
@@ -1261,7 +1261,7 @@ export function getWorkCollabFactory(): WorkCollabFactory | undefined {
 }
 
 /**
- * Await the durable per-device client id before a provider can be built — its own
+ * Await the durable per-device client id before a provider can be built - its own
  * doc says whoever registers a provider must (a mount's synchronous read otherwise
  * gets a fresh in-memory id, putting two clients on the wire from one device).
  */

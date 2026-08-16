@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Rate cards the user supplied — a JSON card their printer gave them, dropped on
+ * Rate cards the user supplied - a JSON card their printer gave them, dropped on
  * this device, parsed and validated but NEVER a source of prices.
  *
  * This is the storage rail, modelled line-for-line on `lib/color-profiles.ts`: a
  * card is a `type:'ratecard'` USER ASSET at `user/ratecards/<digest>`, so the
  * storage meter counts it, "Export my data" bundles the bytes, a backup import
  * restores them and clear-all wipes them. No parallel object store, no new bridge
- * method — the same four `_uploadUserAsset`/`_deleteUserAsset`/`_listUserAssets`/
+ * method - the same four `_uploadUserAsset`/`_deleteUserAsset`/`_listUserAssets`/
  * `_getBlob` methods every user-asset kind rides.
  *
- * The id is CONTENT-ADDRESSED — `<digest>` is the same 16-hex SHA-256 prefix the
- * ICC path mints — so re-dropping the same file overwrites rather than
+ * The id is CONTENT-ADDRESSED - `<digest>` is the same 16-hex SHA-256 prefix the
+ * ICC path mints - so re-dropping the same file overwrites rather than
  * duplicating, and a `rate=<digest>` selection (Phase 4/5) matches a locally
  * stored card by construction rather than by filename luck. Because it is the raw
  * file's own content, `parseRateCard`'s `example-card` refusal is a stable digest
  * comparison.
  *
  * Two ingest refusals (`not-a-rate-card`, `no-priced-lines`) plus the
- * `example-card` guard — the same two-refusal discipline `ingestProfile` follows
+ * `example-card` guard - the same two-refusal discipline `ingestProfile` follows
  * (`unreadable`/`no-gamut`). Nothing is stored on any refusal.
  *
- * NO ARITHMETIC AND NO MONEY here — this module stores and validates. It records
+ * NO ARITHMETIC AND NO MONEY here - this module stores and validates. It records
  * the facts a row needs (filename, digest, currency, line counts) plus the
  * issuer's own CLAIMS (name/issued/validUntil) as REPORTED SPEECH kept in
  * separate fields, so the panel can render "the file says …, Lolly has not
@@ -49,11 +49,11 @@ export interface RateCardsHost {
 }
 
 /**
- * One stored card, rendered from `meta` alone — the panel never re-parses to draw
+ * One stored card, rendered from `meta` alone - the panel never re-parses to draw
  * a row. Two layers kept deliberately apart:
  *  - FACTS Lolly knows: `digest`, `name` (the dropped filename), `addedAt`,
  *    `currency`, the line counts.
- *  - CLAIMS the file makes: `issuerName`/`issued`/`validUntil` — reported speech,
+ *  - CLAIMS the file makes: `issuerName`/`issued`/`validUntil` - reported speech,
  *    rendered separately and never merged with the facts.
  */
 export interface RateCardEntry {
@@ -65,7 +65,7 @@ export interface RateCardEntry {
   /** Set on catalog-shipped cards only: where the bytes re-read from. Its
    *  absence is what distinguishes a user-dropped card. */
   catalogUrl?: string;
-  /** The dropped filename — a FACT, for a row the user can recognise. */
+  /** The dropped filename - a FACT, for a row the user can recognise. */
   name: string;
   /** The issuer name the FILE claims. Unverified reported speech. */
   issuerName?: string;
@@ -91,7 +91,7 @@ export const isRateCardIngestFailure = (
   r: RateCardEntry | RateCardIngestFailure,
 ): r is RateCardIngestFailure => 'error' in r;
 
-/** The content digest — the same 16-hex lowercase SHA-256 prefix the ICC path mints. */
+/** The content digest - the same 16-hex lowercase SHA-256 prefix the ICC path mints. */
 async function digestOf(bytes: Uint8Array): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', bytes as unknown as BufferSource);
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
@@ -123,7 +123,7 @@ function entryFromCard(card: RateCard, name: string, bytes: number): RateCardEnt
 }
 
 /**
- * Read a dropped rate card, validate it, store it, and return its row — or one of
+ * Read a dropped rate card, validate it, store it, and return its row - or one of
  * three refusals, storing NOTHING. Re-dropping the same bytes is an idempotent
  * overwrite (same digest, same asset id), exactly like `ingestProfile`.
  */
@@ -195,7 +195,7 @@ export async function listRateCards(host: RateCardsHost): Promise<RateCardEntry[
     .sort((a, b) => b.addedAt - a.addedAt);
 }
 
-/** The slice a CATALOG rate-card listing needs — the tool-facing query/URL
+/** The slice a CATALOG rate-card listing needs - the tool-facing query/URL
  *  surface, not the user-asset store. Kept separate from RateCardsHost so each
  *  function states exactly what it touches. */
 export interface CatalogRateCardsHost {
@@ -203,17 +203,17 @@ export interface CatalogRateCardsHost {
 }
 
 /**
- * Catalog-shipped rate cards — the ORG distribution rail. A deployment (brand
+ * Catalog-shipped rate cards - the ORG distribution rail. A deployment (brand
  * pack, catalog channel, control-plane provider) ships a `type:'ratecard'`
  * catalog asset and it appears here, parsed so the entry states what the file
  * claims, with the SAME content digest a hand-dropped copy would get (so
  * money-policy's confidential/reveal semantics and the example-card refusal
- * hold identically, and holding the same card twice — dropped AND shipped —
+ * hold identically, and holding the same card twice - dropped AND shipped - 
  * reads as one identity). Best-effort per card: an unreachable or invalid
  * catalog card is skipped, never thrown, and never priced.
  *
  * The bytes stay on the ordinary catalog rail (synced + checksummed by
- * catalog/sync.ts, offline via the IDB blob cache) — this module only reads.
+ * catalog/sync.ts, offline via the IDB blob cache) - this module only reads.
  */
 export async function listCatalogRateCards(host: CatalogRateCardsHost): Promise<RateCardEntry[]> {
   const refs = await host.assets.query({ type: 'ratecard' }).catch(() => []);

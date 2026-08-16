@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-transport — the JS driver over the native command surface (collab/native-transport.ts):
+ * native-transport - the JS driver over the native command surface (collab/native-transport.ts):
  * the poll→fan loop, base64 send/recv round-trip, hex plate parsing, lane validation, the
  * connect/inbound/adopt lifecycle, and close.
  *

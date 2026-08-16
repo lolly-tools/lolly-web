@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * `.lolly` share file — headless round-trip (plans/114 Wave 2).
+ * `.lolly` share file - headless round-trip (plans/114 Wave 2).
  *
  * Builds a file for a session that references a device-local upload AND two catalog
  * assets (one licensed), then reads it back and asserts the closure rules hold:
@@ -11,7 +11,7 @@
  *   - the creator block honours the useDetails opt-in.
  *
  * Pure + DOM-free, exactly like beam-pack / data-transfer round-trip tests: a real
- * fflate zip, real Blobs, real Web Crypto integrity — no bridge, no browser.
+ * fflate zip, real Blobs, real Web Crypto integrity - no bridge, no browser.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +27,7 @@ import {
   type LollyLibraryAsset,
 } from './lolly-pack.ts';
 
-/** A tiny in-memory beam host — the same seam beam-pack's own tests use, so the
+/** A tiny in-memory beam host - the same seam beam-pack's own tests use, so the
  *  `.lolly` ingest (which drives ingestBeamItem) runs headlessly end to end. */
 function memHost() {
   const userStore = new Map<string, BeamAssetRecord>();

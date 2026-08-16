@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Per-user cover art for an audio asset — the OPT-IN override over the generated look.
+ * Per-user cover art for an audio asset - the OPT-IN override over the generated look.
  *
  * THE GENERATED DEFAULT IS THE PRODUCT. Every audio asset already gets a waveform shape
  * and a brand colour derived from its id, free, with no interaction (lib/audio-thumb.ts
@@ -12,7 +12,7 @@
  * belongs upstream, not in a bigger picker.
  *
  * ── WHAT IS STORED IS A RECIPE, NOT PIXELS ─────────────────────────────────────
- * `"<shape>"`, `"<shape>:<colourIndex>"`, `"viz:<presetId>"` or `"viz:<presetId>:<i>"` —
+ * `"<shape>"`, `"<shape>:<colourIndex>"`, `"viz:<presetId>"` or `"viz:<presetId>:<i>"` - 
  * a few bytes on the profile. That split is the whole design:
  *
  *   STRUCTURE IS FROZEN. The shape is what the user chose and nothing we do may change
@@ -20,21 +20,21 @@
  *
  *   COLOUR RE-RESOLVES. The index points into the ACTIVE brand's pool rather than at a
  *   hex, so a cover re-skins when the brand changes and keeps mixing with its
- *   environment. That is desired behaviour, not drift — the user picked a generative
+ *   environment. That is desired behaviour, not drift - the user picked a generative
  *   default, so seeing it follow the brand is the point.
  *
  * Storing a hex would freeze the paint as well and strand the cover on whichever brand
  * happened to be active; storing an image would additionally cost real bytes and stop
  * it re-rendering crisply at any size. A MilkDrop cover follows the SAME rule: the
  * preset id is the truth and any rendered pixels are a cache that can be thrown away and
- * regenerated — which is what lets a MilkDrop cover re-skin on a rebrand too, since the
+ * regenerated - which is what lets a MilkDrop cover re-skin on a rebrand too, since the
  * brand colour is baked into the shader wrapping rather than into the stored value.
  *
  * ── WHY THE PROFILE ────────────────────────────────────────────────────────────
  * A catalog asset is a PERMANENT CONTRACT and cannot be mutated, so an override has to
  * be a per-user overlay keyed by asset id. That is exactly what favourites, hides and
  * category overrides already are, so this follows lib/asset-favourites.ts rather than
- * inventing a second mechanism — same base-id keying, same load/save shape, and it
+ * inventing a second mechanism - same base-id keying, same load/save shape, and it
  * travels in the portable profile backup so a cover is not stranded on one device.
  */
 import { assetBaseId } from './asset-favourites.ts';
@@ -44,7 +44,7 @@ import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 type CoverHost = HostV1 & { profile: { set(p: Profile): Promise<unknown> } };
 
-/** The shapes a cover may name. Kept as a value so a stored string can be validated —
+/** The shapes a cover may name. Kept as a value so a stored string can be validated - 
  *  a profile is user data and can carry anything, including a shape from a future
  *  version this build has never heard of. */
 const SHAPES: readonly AudioThumbShape[] = ['bars', 'mirror', 'wave', 'ring', 'blob'];
@@ -79,7 +79,7 @@ export function parseCover(raw: unknown): AudioCover | null {
   if (typeof raw !== 'string' || !raw) return null;
 
   // A MilkDrop cover is `viz:<presetId>[:<colour>]`. Preset ids are slugs (letters,
-  // digits, dashes — see scripts/copy-viz-presets.ts idFor), so they can never contain
+  // digits, dashes - see scripts/copy-viz-presets.ts idFor), so they can never contain
   // a colon and the LAST segment is unambiguously the optional colour index.
   if (raw.startsWith('viz:')) {
     const parts = raw.split(':');
@@ -126,7 +126,7 @@ export function loadAudioCovers(profile: Profile | null | undefined): Map<string
 /**
  * Set or CLEAR one asset's cover, then persist.
  *
- * Passing null clears it — reverting to the generated default must be exactly as easy
+ * Passing null clears it - reverting to the generated default must be exactly as easy
  * as setting one, and must not be reachable only by picking something else. Best-effort
  * like the other overlays: a failed write means the choice does not survive a reload,
  * which is annoying rather than broken.
@@ -147,7 +147,7 @@ export async function saveAudioCover(
 
 /**
  * The look to draw for one asset: the user's cover where they set one, the generated
- * look everywhere else. ONE read path — an override is checked first and nothing else
+ * look everywhere else. ONE read path - an override is checked first and nothing else
  * branches on whether a cover exists.
  */
 export function resolveAudioLook(
@@ -166,7 +166,7 @@ export function resolveAudioLook(
   const ink = cover.colour !== undefined && cover.colour < pool.length
     ? { hex: pool[cover.colour]!, index: cover.colour }
     : generated;
-  // A MilkDrop cover has no DRAWN shape — the caller renders its baked image instead and
+  // A MilkDrop cover has no DRAWN shape - the caller renders its baked image instead and
   // uses `shape` only as the fallback for a tile whose bake is missing (a fresh device,
   // an evicted cache), so it must still be a real drawn shape rather than the viz id.
   const viz = vizPresetOf(cover);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The PDF/X-4 metadata pass, over an already-loaded pdf-lib document — moved out
+ * The PDF/X-4 metadata pass, over an already-loaded pdf-lib document - moved out
  * of bridge/export.ts verbatim (same precedent as export-pdf-vector.ts) and
  * deliberately DOM-free, so the produced bytes can be re-opened and asserted on
  * under plain `node --test`.
@@ -19,8 +19,8 @@
  * ## The claim gate
  *
  * Writing the metadata and CLAIMING conformance are separate decisions. The
- * metadata is nearly always worth writing — a RIP reads the output intent whether
- * or not the file is a valid X-4 — but `GTS_PDFXVersion` is an assertion about the
+ * metadata is nearly always worth writing - a RIP reads the output intent whether
+ * or not the file is a valid X-4 - but `GTS_PDFXVersion` is an assertion about the
  * whole document, and this module withholds it unless everything it can actually
  * check holds:
  *
@@ -30,11 +30,11 @@
  *     is a true statement of the press condition but it is not X-4 (referencing an
  *     external profile is the X-4p variant, which needs a DestOutputProfileRef
  *     dict we do not write), so no claim;
- *  2. no unmanaged RGB under a CMYK intent — no image XObject in plain /DeviceRGB,
+ *  2. no unmanaged RGB under a CMYK intent - no image XObject in plain /DeviceRGB,
  *     no transparency group in /DeviceRGB, and no /DeviceRGB shading (the vector
  *     form a CSS gradient takes: jsPDF writes an axial/radial ShadingPattern whose
  *     /ColorSpace is /DeviceRGB, and a shading is a bare dict, so the CMYK pass's
- *     content-stream substitution never touches it). This is not a nicety — it is
+ *     content-stream substitution never touches it). This is not a nicety - it is
  *     the standard's own colour-consistency rule, and embedding a CMYK profile does
  *     NOT cure it;
  *  3. every font the content actually SELECTS is embedded (X-4 has no exception for
@@ -43,19 +43,19 @@
  *     resources whether a glyph is set in them or not, so resource dicts would
  *     withhold the claim from every export including the conformant ones (text
  *     outlined to paths selects no font at all). pdf-lib's StandardFonts, which
- *     drawPrintMarks uses for the provenance labels, are NOT embedded — so a marked
+ *     drawPrintMarks uses for the provenance labels, are NOT embedded - so a marked
  *     Print PDF withholds the claim until those labels are drawn with a real face.
  *     Withholding is the correct interim answer;
- *  4. the document is not encrypted (X-4 forbids it) — the last word, so a
+ *  4. the document is not encrypted (X-4 forbids it) - the last word, so a
  *     perfectly embedded AES-256 export keeps its intent and drops the claim.
  *
  * What is NOT checked, and therefore never implied: content-stream colour
- * operators (`hasDeviceRgbImage` inspects image XObjects only — on the CMYK path
+ * operators (`hasDeviceRgbImage` inspects image XObjects only - on the CMYK path
  * `substitutePdfRgb` is trusted to have converted them, not verified), spot
  * alternates, overprint, halftones, annotations/actions/JS/external references (we
  * write none), the PDF header version, and ICC-internal conformance to ICC.1.
  * Above all: nothing here can check that a profile's MEASUREMENTS really describe
- * the condition its identifier names — see press-profile-embed.ts, which is why
+ * the condition its identifier names - see press-profile-embed.ts, which is why
  * identity is derived from the embedded profile rather than from a picker.
  */
 import {
@@ -100,7 +100,7 @@ export async function applyPdfX(
   const log = extra.log ?? null;
   const embed = extra.embed ?? null;
   // pdf-lib defers font/image embedding until save, so the font check below would
-  // look at a document with no font dicts in it yet — and grant a claim to a page
+  // look at a document with no font dicts in it yet - and grant a claim to a page
   // drawn with a non-embedded standard face. Materialise them first (save() calls
   // this itself; calling it twice is a no-op).
   await pdfDoc.flush?.();
@@ -116,7 +116,7 @@ export async function applyPdfX(
   const spec = outputIntentSpec(intentKind, embed, log);
   const intentSpace: 'CMYK' | 'RGB' = intentKind === 'srgb' ? 'RGB' : 'CMYK';
   let claim = Boolean(spec);
-  // An intent with no embedded profile is not PDF/X-4 — it names the condition
+  // An intent with no embedded profile is not PDF/X-4 - it names the condition
   // without carrying it. Write it (a RIP still wants it), claim nothing.
   if (spec && !spec.iccBytes) {
     claim = false;
@@ -137,7 +137,7 @@ export async function applyPdfX(
     claim = false;
     log?.('info', 'PDF/X conformance claim dropped: a font is not embedded (PDF/X-4 has no exception for the standard 14)');
   }
-  // A strong-locked export gets AES-256-encrypted after this pass — and PDF/X-4
+  // A strong-locked export gets AES-256-encrypted after this pass - and PDF/X-4
   // forbids encryption, so the file cannot honestly claim conformance. Keep the
   // CMYK / output-intent / marks metadata, but drop the GTS_PDFXVersion claim.
   if (claim && opts.strongPassword) {
@@ -157,7 +157,7 @@ export async function applyPdfX(
     documentId,
     instanceId: makeDocumentId(),
   });
-  // Withholding the claim means no GTS_PDFXVersion anywhere — Info or XMP (the
+  // Withholding the claim means no GTS_PDFXVersion anywhere - Info or XMP (the
   // packet builder always writes the property, so strip its one known line).
   if (!claim) xmp = xmp.replace(/[ \t]*<pdfxid:GTS_PDFXVersion>[^<]*<\/pdfxid:GTS_PDFXVersion>\n/, '');
   // The XMP stream stays uncompressed so non-PDF-aware scanners can find the
@@ -212,7 +212,7 @@ function outputIntentSpec(
  * Materialise the engine's OutputIntent spec (pdfx.js) into the catalog,
  * REPLACING any existing intents so an export carries exactly one. Field map:
  * S ← subtype, OutputConditionIdentifier ← identifier, OutputCondition/Info ←
- * info, RegistryName ← registry (omitted when null — a `Custom` identity names no
+ * info, RegistryName ← registry (omitted when null - a `Custom` identity names no
  * registry), DestOutputProfile ← iccBytes as a compressed stream with /N
  * components. 'srgb' always ships bytes; a CMYK condition ships them only when
  * the user's own profile was resolved for this export.
@@ -239,15 +239,15 @@ export function setPdfxOutputIntent(
 /**
  * A PDF text string that survives a round-trip, whatever an ICC file called itself.
  *
- * Two of these values come out of a user's profile — its `desc` and its filename —
+ * Two of these values come out of a user's profile - its `desc` and its filename - 
  * so they are untrusted text, and pdf-lib's PDFString deliberately does not escape
  * anything ("for simplicity, we will not bother escaping them" is in its source).
  * An unbalanced parenthesis in a description therefore terminates the literal early
  * and leaves the rest as garbage tokens inside the catalog dict, which breaks the
  * whole file, not just the intent; a backslash silently disappears; and a byte over
- * 0x7f gets truncated into a control character — a wrong value of record in a place
+ * 0x7f gets truncated into a control character - a wrong value of record in a place
  * whose entire job is to be right. So: printable ASCII goes out as a literal with
- * `\ ( )` escaped, and anything else (any German or Japanese profile name — ICC's
+ * `\ ( )` escaped, and anything else (any German or Japanese profile name - ICC's
  * `mluc` desc is UTF-16) as a hex string, which PDF defines as UTF-16BE text.
  */
 function pdfText(s: string, { PDFString, PDFHexString }: any): any {
@@ -257,7 +257,7 @@ function pdfText(s: string, { PDFString, PDFHexString }: any): any {
 }
 
 /**
- * True when any image XObject draws in plain /DeviceRGB — jsPDF embeds rasters
+ * True when any image XObject draws in plain /DeviceRGB - jsPDF embeds rasters
  * this way, and unmanaged RGB pixels under a CMYK output intent are exactly what
  * PDF/X's colour-consistency rule forbids. Indirect (ICCBased/Indexed) colour
  * spaces don't stringify to /DeviceRGB and count as managed.
@@ -275,7 +275,7 @@ export function hasDeviceRgbImage(pdfDoc: any, PDFName: any): boolean {
 }
 
 /**
- * False when a transparency group declares /DeviceRGB while the intent is CMYK —
+ * False when a transparency group declares /DeviceRGB while the intent is CMYK - 
  * the group-colour-space half of the same colour-consistency rule (a blend done
  * in RGB under a CMYK intent is not reproducible as declared). A group with no
  * /CS inherits the page and is fine.
@@ -299,14 +299,14 @@ export function groupCsOk(pdfDoc: any, PDFName: any): boolean {
 }
 
 /**
- * False when a shading paints in plain /DeviceRGB — the third face of the same
+ * False when a shading paints in plain /DeviceRGB - the third face of the same
  * colour-consistency rule, and the one the two checks above cannot see.
  *
  * A CSS gradient on the print path is exported as a TRUE VECTOR jsPDF
  * ShadingPattern (`fillPdfShading`, taken for every opaque linear/radial
  * gradient), which jsPDF writes as `<< /ShadingType 2 /ColorSpace /DeviceRGB … >>`.
- * That is a bare dict, not a stream, so renderCmykPdf's substitution loop — which
- * only rewrites `rg`/`RG` operators inside content streams — never converts it: the
+ * That is a bare dict, not a stream, so renderCmykPdf's substitution loop - which
+ * only rewrites `rg`/`RG` operators inside content streams - never converts it: the
  * better vector path is the one that escapes, since the raster fallback would have
  * been caught as a DeviceRGB image. Shadings live in a /Shading (or /Pattern)
  * resource dict as well as standing on their own, so both routes are walked.
@@ -351,11 +351,11 @@ export function shadingCsOk(pdfDoc: any, PDFName: any): boolean {
  * fourteen standard fonts in its page resources whether or not a glyph is set in
  * them (VERIFIED: 14 /Font dicts, none with a FontDescriptor, on a two-word
  * document), so judging resource dicts would withhold the claim from every export
- * Lolly makes — including the ones that genuinely are conformant because the text
+ * Lolly makes - including the ones that genuinely are conformant because the text
  * was outlined to paths. So the content streams are read, and only a font a `Tf`
  * operator selects has to be embedded.
  *
- * pdf-lib's StandardFonts — what drawPrintMarks sets the provenance labels in —
+ * pdf-lib's StandardFonts - what drawPrintMarks sets the provenance labels in - 
  * write a bare /Type1 dict with no FontDescriptor and no FontFile, so a marked
  * Print PDF answers false here. That is a real conformance defect in the file, and
  * withholding the claim is the honest interim behaviour; drawing those labels with
@@ -392,7 +392,7 @@ export function usedFontsEmbedded(pdfDoc: any, lib: any): boolean {
     const fonts = resources?.get ? ctx.lookup(resources.get(PDFName.of('Font'))) : null;
     for (const name of selectedFontNames(stream)) {
       // A Tf naming something the resource dict does not have is a broken file, not
-      // an unembedded font — the claim gate is not the place to adjudicate that.
+      // an unembedded font - the claim gate is not the place to adjudicate that.
       const entry = fonts?.get?.(PDFName.of(name));
       if (!entry) continue;
       if (!fontOk(ctx.lookup(entry))) return false;
@@ -414,14 +414,14 @@ function selectedFontNames(stream: string): Set<string> {
  * resolves names against: each page's contents, plus each form XObject (which may
  * carry resources of its own).
  *
- * Best-effort by design — an undecodable stream yields no font names, and the
+ * Best-effort by design - an undecodable stream yields no font names, and the
  * claim then rests on the streams that did decode.
  */
 function* contentStreams(pdfDoc: any, lib: any): Generator<{ stream: string; resources: any }> {
   const { PDFName, decodePDFRawStream } = lib;
   const ctx = pdfDoc.context;
   // Two shapes reach here and they decode differently: a stream PARSED out of the
-  // jsPDF bytes is a PDFRawStream (pdf-lib's own decoder handles its filter chain —
+  // jsPDF bytes is a PDFRawStream (pdf-lib's own decoder handles its filter chain - 
   // no second inflate, and synchronous, which DecompressionStream is not), while one
   // pdf-lib itself built for the print marks holds its operators unencoded until
   // save. Reading getContents() on the latter returns the compressed bytes, which is

@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * free-canvas-pen.ts — the pure half of the canvas editor's pen tool (Stage D).
+ * free-canvas-pen.ts - the pure half of the canvas editor's pen tool (Stage D).
  *
  * DOM-free and synchronous, like free-canvas-math.ts and vector-ops.ts, and for the same
  * reason: free-canvas.ts owns gestures and chrome, this owns geometry, and only geometry
- * can be unit-tested. It may import the engine — shell code is allowed to, tools are not.
+ * can be unit-tested. It may import the engine - shell code is allowed to, tools are not.
  *
  * ## Three coordinate spaces, and which functions live in which
  *
- *   - NATIVE — canvas pixels, what a pointer maps to. A path being DRAWN lives here,
+ *   - NATIVE - canvas pixels, what a pointer maps to. A path being DRAWN lives here,
  *     because it has no box yet.
- *   - BOX-LOCAL — pixels inside an unrotated box frame, `0..w` × `0..h`. This is the space
+ *   - BOX-LOCAL - pixels inside an unrotated box frame, `0..w` × `0..h`. This is the space
  *     `hooks.js` lowers in (a `viewBox` whose user units are `0..w` × `0..h`, grown by the
  *     stroke pad so an outline is not clipped), so it is the space every edit has to agree
- *     with. The frame is kept EQUAL to the curve's tight bbox — see `refitFrame`, which is
+ *     with. The frame is kept EQUAL to the curve's tight bbox - see `refitFrame`, which is
  *     the invariant selection chrome, hit-testing, align/distribute and export all read.
- *   - NORMALISED — the stored form: fractions of the frame, legally outside `[0,1]`. This
+ *   - NORMALISED - the stored form: fractions of the frame, legally outside `[0,1]`. This
  *     is what buys move/resize/rotate for free (see the plan's coordinate convention).
  *
  * `frameToLocal`/`localToFrame` cross the native↔box-local boundary through the frame's
  * rotation; `denormNodes`/`normNodes` cross box-local↔normalised. Everything else operates
  * on a DENORMALISED path (box-local px), because that is the only space in which a
- * distance in the user's pixels means the same thing on both axes — a `w≠h` frame makes
+ * distance in the user's pixels means the same thing on both axes - a `w≠h` frame makes
  * "within 8px of the curve" incoherent in normalised space.
  *
  * ## One wire format, and it quantises
@@ -32,8 +32,8 @@
  * writes one thing.
  *
  * It rounds every coordinate to SIX DECIMALS OF A FRACTION of the box frame, which is
- * deliberate — a fixed precision is what keeps a share link's bytes stable across a
- * decode/encode round trip — and it is the reason nothing here may assert exactness across
+ * deliberate - a fixed precision is what keeps a share link's bytes stable across a
+ * decode/encode round trip - and it is the reason nothing here may assert exactness across
  * a persist. On a 1000px frame six decimals is a thousandth of a pixel, so it is invisible;
  * on a stored *unit* it is 1e-6, which is coarser than a collinearity test written at 1e-9.
  * Geometry claims that must be exact (an insert that splits a cubic) are therefore made
@@ -45,7 +45,7 @@ import {
   colorToHexString, enforceContinuity, hyperbezierCubics,
   nearestOnCubic, parseColor, pathBounds, solveHyperbezier, splitCubic, toCubics,
 } from '@lolly/engine';
-// The `path` sub-field's codec, via the wrappers the rest of the overlay already uses — one
+// The `path` sub-field's codec, via the wrappers the rest of the overlay already uses - one
 // codec, one set of shell-side signatures. See the file header on what it quantises.
 import { decodeAuthoredPath as decodeAuthoredPaths, encodeAuthoredPath as encodeAuthoredPaths } from './vector-ops.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
@@ -54,14 +54,14 @@ import type { InputValue } from '../../../../engine/src/inputs.ts';
  * The kinds the switcher offers, in menu order.
  *
  * `'spiro'` (Levien's Euler-spiral spline, the one Inkscape ships) is now a real solver
- * — `spiroCubics` in the engine — so it joins the switcher, requested by users who know
+ * - `spiroCubics` in the engine - so it joins the switcher, requested by users who know
  * it from Inkscape. It is knot-only like `hyperbezier`, a different curve family, and
  * defaults its nodes to `'smooth'`. Kept LAST in the list (Andy, 2026-08-06): it is the
  * specialist option, so it sits at the bottom below the everyday kinds.
  */
 export const PEN_KINDS: SplineKind[] = ['hyperbezier', 'cubic', 'catmull-rom', 'bspline', 'line', 'spiro'];
 
-/** New paths default to this — per the plan, and because its node default is `'smooth'`,
+/** New paths default to this - per the plan, and because its node default is `'smooth'`,
  *  so plain click-click-click draws a curve rather than a polyline. */
 export const PEN_DEFAULT_KIND: SplineKind = 'hyperbezier';
 
@@ -71,7 +71,7 @@ export const PEN_DEFAULT_KIND: SplineKind = 'hyperbezier';
  *
  * The two that qualify mean different things by it and both are honest: `cubic` takes the
  * handle as the control point, `hyperbezier` takes its DIRECTION as a tangent pin and
- * discards the length (see `hbPin` — the solve owns arm length, because arm length is what
+ * discards the length (see `hbPin` - the solve owns arm length, because arm length is what
  * it spends on curvature continuity). `catmull-rom`, `bspline` and `line` ignore handles
  * entirely, so a handle drawn on one would be a control that changes nothing.
  */
@@ -88,7 +88,7 @@ export function defaultContinuity(kind: SplineKind): Continuity {
 
 // ── the box frame ─────────────────────────────────────────────────────────────
 
-/** A path box's frame as the RENDERER sees it — the same rounding `boxCss`/`pathHtmlFor`
+/** A path box's frame as the RENDERER sees it - the same rounding `boxCss`/`pathHtmlFor`
  *  apply, so an edit lands on the painted pixels rather than near them. Deliberately
  *  identical to vector-ops' `boxFrame`: the two must not disagree about where a path is. */
 export interface PenFrame { x: number; y: number; w: number; h: number; rot: number }
@@ -121,7 +121,7 @@ export function localToFrame(fr: PenFrame, x: number, y: number): { x: number; y
   return { x: fr.x + cx + dx * c - dy * s, y: fr.y + cy + dx * s + dy * c };
 }
 
-/** The exact inverse of `localToFrame` — a pointer in native px → box-local px. */
+/** The exact inverse of `localToFrame` - a pointer in native px → box-local px. */
 export function frameToLocal(fr: PenFrame, nx: number, ny: number): { x: number; y: number } {
   if (!fr.rot) return { x: nx - fr.x, y: ny - fr.y };
   const r = (-fr.rot * Math.PI) / 180;
@@ -158,12 +158,12 @@ function scaleNode(n: SplineNode, sx: number, sy: number): SplineNode {
 // ── the wire format ───────────────────────────────────────────────────────────
 
 /**
- * Every contour in the field, in order. Empty when the value is unreadable or too big — the
+ * Every contour in the field, in order. Empty when the value is unreadable or too big - the
  * caller's answer to both is the same ("there is no path here I can edit"), so the
  * distinction vector-ops keeps for a REFUSAL message is collapsed here.
  *
  * Node editing operates on ONE of them (the first): editing is defined on a single `nodes`
- * run — that is what an `AuthoredPath` is. But the caller must hold the others rather than
+ * run - that is what an `AuthoredPath` is. But the caller must hold the others rather than
  * decode them away, on two counts: the write has to re-encode every contour or editing one
  * loop of four would delete the other three, and `refitFrame` has to fit every contour or
  * editing one would clip the rest.
@@ -228,7 +228,7 @@ export function lowerAuthored(p: AuthoredPath, warm?: HyperbezierSolution | null
   }
 }
 
-/** One authored path as a single-contour `GeomPath` — the form every engine operator and
+/** One authored path as a single-contour `GeomPath` - the form every engine operator and
  *  `toSvgPathData` takes. */
 export function authoredToPath(p: AuthoredPath, warm?: HyperbezierSolution | null): { path: GeomPath; solution: HyperbezierSolution | null } {
   const low = lowerAuthored(p, warm);
@@ -244,7 +244,7 @@ export function authoredToPath(p: AuthoredPath, warm?: HyperbezierSolution | nul
  * A refitted frame and the same contours re-expressed in it (still box-local px).
  *
  * `paths` is in the NEW frame's local space, so a caller normalises it against
- * `frame.w`/`frame.h` and writes `frame.x`/`y`/`w`/`h` alongside — the two halves are one
+ * `frame.w`/`frame.h` and writes `frame.x`/`y`/`w`/`h` alongside - the two halves are one
  * answer and using one without the other moves the shape.
  */
 export interface PenRefit { frame: PenFrame; paths: AuthoredPath[] }
@@ -261,7 +261,7 @@ export interface PenRefit { frame: PenFrame; paths: AuthoredPath[] }
  * So a frame that is too small clips the curve and a frame that is too big makes every one
  * of those features address empty space.
  *
- * `pathBounds` is the TIGHT bbox — the kernel takes it from the derivative's roots — and
+ * `pathBounds` is the TIGHT bbox - the kernel takes it from the derivative's roots - and
  * that is deliberate rather than convenient: a smooth node's handle legitimately sits
  * outside the frame without the curve following it there, so fitting the CONTROL HULL
  * instead would make every curved shape's box visibly too big and would grow it every time
@@ -271,7 +271,7 @@ export interface PenRefit { frame: PenFrame; paths: AuthoredPath[] }
  *
  * A refit during a drag would make the box chase the pointer and jump under it, so callers
  * refit once, when the gesture COMMITS. Which means the live gesture must paint somewhere
- * that does not clip — free-canvas.ts draws it on the overlay's native pen layer and hides
+ * that does not clip - free-canvas.ts draws it on the overlay's native pen layer and hides
  * the box's own `<svg>` for the duration (`setPathSvgHidden`).
  *
  * ## Rotation
@@ -295,19 +295,19 @@ export interface PenRefit { frame: PenFrame; paths: AuthoredPath[] }
  * unmoved to floating point regardless of how the rounding fell, and the only residue left
  * is the wire format's six decimals of a fraction. The frame is consequently tight to
  * within half a pixel rather than exactly, and the second refit of an unchanged shape is a
- * fixed point — `round` of an already-rounded frame plus a sub-half-pixel nudge is itself.
+ * fixed point - `round` of an already-rounded frame plus a sub-half-pixel nudge is itself.
  *
  * ## A degenerate axis
  *
  * A straight horizontal line has a zero-height bbox, as do a two-coincident-node path and
  * any all-collinear one. `w`/`h` clamp up to 1 (they must: the renderer divides by them),
  * and on such an axis the curve is CENTRED in the pixel it was given rather than pinned to
- * the frame's leading edge — a hairline down the middle of its own box reads as the shape
+ * the frame's leading edge - a hairline down the middle of its own box reads as the shape
  * it is, and a 0.5px offset is invisible either way. No division by an extent ever happens,
  * so nothing here can produce a `NaN` from a degenerate axis.
  *
  * Returns null when there is no curve to fit (fewer than two nodes, an unlowerable kind, a
- * non-finite bound) — the caller's answer to that is to leave the frame alone.
+ * non-finite bound) - the caller's answer to that is to leave the frame alone.
  */
 export function refitFrame(paths: AuthoredPath[], fr: PenFrame, warm?: HyperbezierSolution | null): PenRefit | null {
   const geom: GeomPath = [];
@@ -325,7 +325,7 @@ export function refitFrame(paths: AuthoredPath[], fr: PenFrame, warm?: Hyperbezi
   const w = Math.max(1, Math.round(ew));
   const h = Math.max(1, Math.round(eh));
   // Where the bbox origin sits inside the new frame: the origin, except on an axis whose
-  // extent is under a pixel and was therefore clamped up to 1 — see the degenerate note.
+  // extent is under a pixel and was therefore clamped up to 1 - see the degenerate note.
   const ox = ew < 1 ? (w - ew) / 2 : 0;
   const oy = eh < 1 ? (h - eh) / 2 : 0;
   const bx = bb.x0 - ox, by = bb.y0 - oy;
@@ -357,8 +357,8 @@ export interface PenCommit { x: number; y: number; w: number; h: number; path: A
 /**
  * A path drawn in NATIVE px → the frame it fits in plus its nodes normalised into it.
  *
- * This is `refitFrame` against the identity frame — native px ARE box-local px for a box
- * at the origin with no rotation — which is the point: a draw and every later edit have to
+ * This is `refitFrame` against the identity frame - native px ARE box-local px for a box
+ * at the origin with no rotation - which is the point: a draw and every later edit have to
  * agree about where a path's frame is, and they do because it is one function. See it for
  * the tight-bbox invariant, the rounding, and what a degenerate axis gets.
  *
@@ -379,7 +379,7 @@ export function penCommitFromNative(drawn: AuthoredPath): PenCommit | null {
 export interface PathHit { segment: number; t: number; point: { x: number; y: number }; distance: number }
 
 /** The nearest point on a lowered path. Segment `i` runs node `i` → node `i+1`, wrapping
- *  on the last segment of a closed path — the same indexing `pairs` uses in spline.ts, so
+ *  on the last segment of a closed path - the same indexing `pairs` uses in spline.ts, so
  *  a hit can be turned straight into a node insertion. */
 export function nearestOnPath(cubics: Cubic[], x: number, y: number): PathHit | null {
   let best: PathHit | null = null;
@@ -412,7 +412,7 @@ export function handlePoint(n: SplineNode, which: 'in' | 'out'): { x: number; y:
 
 // ── editing one node ──────────────────────────────────────────────────────────
 
-/** Translate a set of nodes together, carrying their handles — handles are OFFSETS, so a
+/** Translate a set of nodes together, carrying their handles - handles are OFFSETS, so a
  *  node move is a field write and never a recomputation. `from` is the drag's STARTING
  *  nodes, so a live drag accumulates no error from applying deltas to deltas. */
 export function moveNodes(p: AuthoredPath, indices: Iterable<number>, dx: number, dy: number, from?: SplineNode[]): AuthoredPath {
@@ -438,7 +438,7 @@ function selIdx(p: AuthoredPath, indices: Iterable<number>): number[] {
  *
  * Nodes have no size, so unlike boxes there is no edge-versus-centre distinction to get
  * wrong: "align left" is exactly "give them all the selection's minimum x". Handles are
- * offsets and ride along untouched, which is the point — straightening a row of points
+ * offsets and ride along untouched, which is the point - straightening a row of points
  * must not also flatten the curves passing through them.
  *
  * The reference is the SELECTION's box, never the whole path's and never the canvas's.
@@ -453,7 +453,7 @@ export function alignNodes(p: AuthoredPath, indices: Iterable<number>, edge: Nod
  * Space the selected nodes evenly along an axis, holding the two extremes still.
  *
  * Equal SPACING rather than equal gaps, because a point has no width and the two are the
- * same thing for points — which is why this needs no AABB per item the way
+ * same thing for points - which is why this needs no AABB per item the way
  * `distributeBoxes` does. Ordering is by coordinate, NOT by index: the nodes a user rubber-
  * bands across a traced outline are rarely consecutive along the path, and distributing
  * them in path order would shuffle them past each other.
@@ -466,7 +466,7 @@ export function distributeNodes(p: AuthoredPath, indices: Iterable<number>, axis
 //
 // Align/distribute over a MIXED selection of nodes and control points. A control point
 // is a node's in/out handle; unlike `alignNodes` (which leaves handles alone), here a
-// SELECTED handle is a point in its own right — its absolute position is aligned, which
+// SELECTED handle is a point in its own right - its absolute position is aligned, which
 // means changing its OFFSET from the node. Only `cubic`/`hyperbezier` paths have handles
 // to select; the other kinds are handle-free, so this degrades to node-only there.
 
@@ -476,7 +476,7 @@ export interface PenPointRef { node: number; handle?: 'in' | 'out' }
 export const penRefKey = (r: PenPointRef): string => (r.handle ? `${r.node}:${r.handle}` : `${r.node}`);
 
 /** Absolute position of a point ref, or null (out-of-range node, or a handle a node
- *  doesn't have — handles are OPTIONAL, an absent one is "no handle", not (0,0)). */
+ *  doesn't have - handles are OPTIONAL, an absent one is "no handle", not (0,0)). */
 function refAbs(nodes: SplineNode[], r: PenPointRef): { x: number; y: number } | null {
   const n = nodes[r.node];
   if (!n) return null;
@@ -575,8 +575,8 @@ export function dragHandle(p: AuthoredPath, i: number, which: 'in' | 'out', x: n
 }
 
 /** Set a node's continuity and immediately satisfy it, so the constraint is true of the
- *  geometry and not merely declared. The OUT handle is treated as the authority — it is
- *  the one a pen drag pulls — so `in` is what moves to comply. */
+ *  geometry and not merely declared. The OUT handle is treated as the authority - it is
+ *  the one a pen drag pulls - so `in` is what moves to comply. */
 export function setNodeContinuity(p: AuthoredPath, indices: Iterable<number>, c: Continuity): AuthoredPath {
   const set = new Set(indices);
   return {
@@ -589,7 +589,7 @@ export function setNodeContinuity(p: AuthoredPath, indices: Iterable<number>, c:
  * Insert a node ON the curve at the nearest point to (x, y).
  *
  * For `'cubic'` this is EXACT: de Casteljau's split at `t` gives two cubics that together
- * are the original, so the shape does not move by a float — the new node's handles and its
+ * are the original, so the shape does not move by a float - the new node's handles and its
  * two neighbours' facing handles are read straight out of the split. For every other kind
  * the handles are derived (or solved), so all that can be done is to put a node at the
  * point: the curve then passes through it and the shape shifts by however much the
@@ -632,7 +632,7 @@ export function insertNodeOnCurve(p: AuthoredPath, x: number, y: number, warm?: 
   return { path: { ...p, nodes }, index: at + 1, point: P, distance: hit.distance };
 }
 
-/** Remove nodes. Returns null when fewer than two would be left — a one-node path is not
+/** Remove nodes. Returns null when fewer than two would be left - a one-node path is not
  *  a path, and the caller's answer to that is to delete the box, not to store a stub. */
 export function deleteNodes(p: AuthoredPath, indices: Iterable<number>): AuthoredPath | null {
   const set = new Set(indices);
@@ -653,7 +653,7 @@ export function deleteNodes(p: AuthoredPath, indices: Iterable<number>): Authore
  *   - **to `'hyperbezier'` (or any derived kind) is lossy.** Authored handles are
  *     DROPPED, not kept: `hbPin` reads a handle as a hard tangent pin, so carrying them
  *     over would pin every tangent on the path and turn the global curvature solve into a
- *     chain of independent single-segment runs — the exact opposite of what switching to
+ *     chain of independent single-segment runs - the exact opposite of what switching to
  *     hyperbezier is for. Once dropped, the lengths cannot be recovered, which is why the
  *     UI has to say so BEFORE it happens.
  *
@@ -674,7 +674,7 @@ export function convertKind(p: AuthoredPath, to: SplineKind, warm?: HyperbezierS
   return { path: { ...p, kind: to, nodes }, lossy: hadHandles };
 }
 
-/** True when switching to `to` would discard authored handles — what the UI warns on. */
+/** True when switching to `to` would discard authored handles - what the UI warns on. */
 export function kindSwitchIsLossy(p: AuthoredPath, to: SplineKind): boolean {
   return convertKind(p, to).lossy;
 }
@@ -732,7 +732,7 @@ export function closesOnClick(nodes: SplineNode[], x: number, y: number, tol: nu
 // A drawn path has to be BORN with paint. Editing one never loses it (penEditWrite
 // spreads the existing box and rewrites only the path and the frame), but the commit
 // that creates it starts from an empty object, so whatever it does not seed is simply
-// absent — and a path with no fill and no stroke renders as nothing at all. That is
+// absent - and a path with no fill and no stroke renders as nothing at all. That is
 // not a hypothetical: a tool may declare `canvas.pathField` (which is what offers the
 // pen) without declaring a `path` add-kind (which is what carries a brand's idea of
 // what a path looks like), and Sequence Studio does exactly that.
@@ -740,7 +740,7 @@ export function closesOnClick(nodes: SplineNode[], x: number, y: number, tol: nu
 // So paint is resolved per FIELD from a priority list rather than taken wholesale from
 // one seed: the paint the user last put on a path wins, then the tool's `path` seed,
 // then any other seed that has an opinion. Per-field because the two are genuinely
-// partial — lolly-start's path seed is stroke-only, SUSE's is fill-only — and a
+// partial - lolly-start's path seed is stroke-only, SUSE's is fill-only - and a
 // wholesale "first non-empty seed" would drop the half the winner does not mention.
 
 /** The paint sub-field NAMES a path box can carry: a narrow view of the canvas config. */
@@ -754,7 +754,7 @@ export interface PathPaintFields {
 type PaintBox = Record<string, InputValue | undefined>;
 
 /** Does this source actually express this paint field? `''`/null/undefined do not, and
- *  neither does a zero stroke width — both are how a seed says "no stroke", which must
+ *  neither does a zero stroke width - both are how a seed says "no stroke", which must
  *  not out-rank a later source that does have one. */
 function statesPaint(src: PaintBox, field: string | undefined, isWidth: boolean): boolean {
   if (!field) return false;
@@ -812,12 +812,12 @@ export function pathPaintIsVisible(f: PathPaintFields, paint: PaintBox): boolean
 
 /**
  * The ink a paint-less path should be stroked in, from the pen preview's own resolved
- * colour (`getComputedStyle(penLayer).color` — the brand primary, i.e. the colour the user
+ * colour (`getComputedStyle(penLayer).color` - the brand primary, i.e. the colour the user
  * literally just watched the curve being drawn in).
  *
  * Resolved to a concrete hex because a box field has to render headlessly, where a CSS
- * variable cannot. `fallback` covers the case where the colour cannot be read at all — no
- * stylesheet applied, a detached layer — which a real browser does not reach but a jsdom
+ * variable cannot. `fallback` covers the case where the colour cannot be read at all - no
+ * stylesheet applied, a detached layer - which a real browser does not reach but a jsdom
  * test does, and where a shape with no paint is still worse than a shape in the wrong one.
  */
 export function resolveDrawnInk(computedColor: string | null | undefined, fallback = '#000000'): string {

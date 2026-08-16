@@ -4,24 +4,24 @@
  * demand from a real browser: a gathering phase that never finishes because no STUN
  * server is reachable, ICE dropping to `disconnected` for four seconds and healing, a
  * guest network where both sides gather candidates and no pair ever forms. So the whole
- * suite runs against a scripted fake `RTCPeerConnection` on an injected clock — no
+ * suite runs against a scripted fake `RTCPeerConnection` on an injected clock - no
  * WebRTC, no DOM, no waiting.
  *
  * The SDP the fake hands out is built by the REAL codec (`reconstruct`) and read back
  * by the real `extract`, so the round-trips here are genuine ones: what a test asserts
  * about a minted invite is what a peer would actually decode.
  *
- * What is pinned, and why each one is load-bearing:
- *  - the three channels and their exact options (§6.2, §11.6) — presence being ordered
+ * What is pinned, and why each one is essential:
+ *  - the three channels and their exact options (§6.2, §11.6) - presence being ordered
  *    or beam sharing the ops channel are both silent, expensive regressions;
- *  - non-trickle gathering is WAITED for, and its timeout mints anyway (§6.1) — a
+ *  - non-trickle gathering is WAITED for, and its timeout mints anyway (§6.1) - a
  *    ceremony that fails because the internet is absent is the one failure this
  *    airgap-first feature may not have;
  *  - `disconnected` ≠ `failed` (§11.3), the single most expensive confusion available;
  *  - the isolation heuristic and the three diagnoses it must not be confused with
  *    (§11.1, §11.2, §11.26);
  *  - presence frames keep their sequence numbers and are passed through unreordered
- *    (§11.5) — the transport must not "help";
+ *    (§11.5) - the transport must not "help";
  *  - `close()` leaves zero listeners and zero timers;
  *  - the effects drive `ceremony.ts` end to end, both halves, over the fake stack.
  */
@@ -123,7 +123,7 @@ function hostCandidate(index: number): IceCandidate {
   return { type: 'host', protocol: 'udp', address: `192.168.1.${5 + index}`, port: 50000 + index };
 }
 
-/** RFC 5245's `ice-char` set, which is exactly 64 characters — see the codec's header. */
+/** RFC 5245's `ice-char` set, which is exactly 64 characters - see the codec's header. */
 const ICE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function iceString(length: number, salt: number): string {
@@ -134,7 +134,7 @@ function iceString(length: number, salt: number): string {
 
 /**
  * Distinct credentials AND a distinct fingerprint per salt. The fingerprint is the
- * pairing's trust root, and a re-invite must mint fresh ICE credentials — a suite that
+ * pairing's trust root, and a re-invite must mint fresh ICE credentials - a suite that
  * shared one constant across every connection could not tell a re-mint from a re-send.
  */
 function material(candidates: number, salt: number): SdpMaterial {
@@ -237,19 +237,19 @@ interface PcScript {
   /**
    * `'state'` completes gathering via `icegatheringstatechange`, `'null-candidate'` via
    * the end-of-candidates signal (both happen in the wild, and only one is enough),
-   * `'manual'` leaves it to the test — which is the timeout case.
+   * `'manual'` leaves it to the test - which is the timeout case.
    */
   gather: 'state' | 'null-candidate' | 'manual';
   candidates: number;
   /** `getStats` reports; `null` removes `getStats` entirely (§11.29). */
   stats: unknown[] | null;
-  /** Make `setRemoteDescription` reject — a local stack failure, not a bad paste. */
+  /** Make `setRemoteDescription` reject - a local stack failure, not a bad paste. */
   rejectRemote?: boolean;
   /**
    * The LAN timing, scripted: ICE transitions fired from inside `setLocalDescription`.
    *
    * This is not an exotic case. A measured pair on a wire went `sig:stable` 536ms,
-   * `ice:checking` 537ms, `ice:connected` 542ms — the whole handshake inside the five
+   * `ice:checking` 537ms, `ice:connected` 542ms - the whole handshake inside the five
    * milliseconds after the local description landed, which is well inside the `await`
    * the ceremony's `createAnswer`/`applyRemote` is still sitting in.
    */
@@ -466,7 +466,7 @@ function rig(
   return { transport, clock, rtc, messages, ceremonyEvents, opened };
 }
 
-/** Mint an invite and open every lane — the starting point for the live-session tests. */
+/** Mint an invite and open every lane - the starting point for the live-session tests. */
 async function connect(r: Rig): Promise<void> {
   const offer = await r.transport.effects.createOffer({ attempt: 0 });
   assert.equal(offer.ok, true);
@@ -647,7 +647,7 @@ test('a browser that drives only iceConnectionState still drives the ceremony', 
 /**
  * The other half of the LAN race `ceremony.test.ts` reproduces. ICE reaches `connected`
  * about five milliseconds after `setLocalDescription`, which on a real acceptor was
- * 542ms — while the ceremony was still inside `createAnswer` and its subscriber had, in
+ * 542ms - while the ceremony was still inside `createAnswer` and its subscriber had, in
  * the general case, not necessarily even been wired yet. An edge-only surface hands that
  * subscriber nothing, for ever. So the last emitted state is replayed on subscribe, and
  * `effects.iceState()` answers the same question level-triggered.
@@ -657,7 +657,7 @@ test('a subscriber that arrives after the pair is up is told, instead of waiting
   const r = rig('inviter');
   await connect(r);
 
-  // Wired only now — after every transition it needs has already happened. Both facts
+  // Wired only now - after every transition it needs has already happened. Both facts
   // are replayed, in causal order: ICE first, then the lane that makes it a session.
   const late: RtcCeremonyEvent[] = [];
   r.transport.onCeremonyEvent((event) => late.push(event));
@@ -707,7 +707,7 @@ test('a re-invite replays nothing from the pairing it replaced', async () => {
   const ops = r.rtc.pc().channel('ops');
   ops.deliver(JSON.stringify({ t: 'hello', c: '01GUEST', v: '9.0.0' }));
 
-  // A dropped connection can never be resumed, so the re-invite is a NEW pairing — and
+  // A dropped connection can never be resumed, so the re-invite is a NEW pairing - and
   // replaying the dead one's `connected` would tell a fresh ceremony it had arrived.
   const second = await r.transport.effects.createOffer({ attempt: 1 });
   assert.equal(second.ok, true);
@@ -847,7 +847,7 @@ test('candidates on both sides and no pair ever formed reads as isolation', asyn
   assert.equal(state.remoteCandidates, 2);
   assert.equal(state.candidatePairSeen, false);
   // This is the difference between "your invite didn't work" and "this network blocks
-  // device-to-device traffic — try a hotspot" (§11.2, §11.26).
+  // device-to-device traffic - try a hotspot" (§11.2, §11.26).
   assert.equal(state.diagnosis, 'isolation-suspected');
   assert.equal(state.isolationSuspected, true);
 });
@@ -862,7 +862,7 @@ test('a pair seen in getStats is a handshake failure, not isolation', async () =
   await settle();
   const state = r.transport.state();
   assert.equal(state.candidatePairSeen, true);
-  // They saw each other and DTLS still failed — a different story that must not borrow
+  // They saw each other and DTLS still failed - a different story that must not borrow
   // the network copy.
   assert.equal(state.diagnosis, 'handshake-failed');
   assert.equal(state.isolationSuspected, false);
@@ -931,7 +931,7 @@ test('inbound presence frames arrive unreordered, with their sequence intact', a
   await connect(r);
   const channel = r.rtc.pc().channel('presence');
   // `maxRetransmits: 0` means late and out-of-order frames are the normal case. The
-  // transport passes them through untouched — newest-only is the roster's rule (§11.5),
+  // transport passes them through untouched - newest-only is the roster's rule (§11.5),
   // and a transport that buffered to "fix" the order would add exactly the latency the
   // lossy lane exists to avoid.
   channel.deliver(JSON.stringify({ from: '01GUEST', seq: 9, state: presenceState('01GUEST') }));
@@ -1114,7 +1114,7 @@ test('a re-invite mints on a fresh connection and abandons the old one', async (
   const second = r.rtc.pc();
   assert.notEqual(first, second);
   // A dropped WebRTC connection can never be resumed and its ICE credentials are
-  // spent — reusing the object would mint an offer the peer has already failed on.
+  // spent - reusing the object would mint an offer the peer has already failed on.
   assert.equal(first.closed, true);
   assert.equal(first.listeners.length, 0);
 });
@@ -1156,7 +1156,7 @@ test('the plate material is both fingerprints, or nothing at all', async () => {
   assert.equal(applied.ok, true);
   const pair = r.transport.effects.plateMaterial();
   assert.ok(pair, 'both descriptions are applied; the plate material must be there');
-  // Ours is what our own blob PUT ON THE WIRE, theirs is what their blob declared —
+  // Ours is what our own blob PUT ON THE WIRE, theirs is what their blob declared - 
   // the two the DTLS handshake validates certificates against, and nothing else.
   assert.deepEqual([...pair.local], [...material(2, 0).fingerprint.bytes]);
   assert.deepEqual([...pair.remote], [...material(2, 1).fingerprint.bytes]);
@@ -1335,7 +1335,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   inviter.onCeremonyEvent((event) => hostCeremony.send(event));
   acceptor.onCeremonyEvent((event) => guestCeremony.send(event));
 
-  // Leg 1 — the inviter mints and the human carries the blob.
+  // Leg 1 - the inviter mints and the human carries the blob.
   hostCeremony.send({ type: 'invite' });
   await settle();
   assert.equal(hostCeremony.state.phase, 'awaiting-answer');
@@ -1350,7 +1350,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   assert.equal(decoded.ok, true);
   if (!decoded.ok) return;
 
-  // Leg 2 — the acceptor probes its catalog BEFORE answering, then replies.
+  // Leg 2 - the acceptor probes its catalog BEFORE answering, then replies.
   guestCeremony.send({ type: 'accept', invite: decoded.value.invite });
   await settle();
   assert.equal(guestCeremony.state.phase, 'awaiting-connection');
@@ -1363,7 +1363,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   await settle();
   assert.equal(hostCeremony.state.phase, 'connecting');
 
-  // ICE comes up on both stacks — and neither ceremony calls that a session. A candidate
+  // ICE comes up on both stacks - and neither ceremony calls that a session. A candidate
   // pair answering a binding request is not three open data channels (§6.2).
   inviterRtc.pc().setConnection('connected');
   acceptorRtc.pc().setIce('connected');
@@ -1409,7 +1409,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   assert.equal(frame?.seq, 1);
 
   // A drop on the inviter's stack: transient, then fatal, and only the second one
-  // re-arms an invite (§6.2a — the inviter owns the session).
+  // re-arms an invite (§6.2a - the inviter owns the session).
   inviterRtc.pc().setConnection('disconnected');
   assert.equal(hostCeremony.state.reconnecting, true);
   assert.equal(hostCeremony.state.phase, 'connected');
@@ -1434,7 +1434,7 @@ test('the LAN race, end to end: ICE completes inside the mint and the answer is 
   // Both drills, in one suite.
   //
   // The first: on a wire the entire ICE handshake happens inside `setLocalDescription`,
-  // so every edge lands while the ceremony is in a phase with no ICE exit — the acceptor
+  // so every edge lands while the ceremony is in a phase with no ICE exit - the acceptor
   // in `creating-answer`, the inviter in `applying-answer`. Both sat there until a
   // watchdog, with open channels.
   //
@@ -1509,7 +1509,7 @@ test('the LAN race, end to end: ICE completes inside the mint and the answer is 
   await settle();
   assert.equal(hostCeremony.state.phase, 'connecting');
 
-  // The channels open — the acceptor's over `ondatachannel`, as they do in the wild —
+  // The channels open - the acceptor's over `ondatachannel`, as they do in the wild - 
   // and only now is either side connected.
   acceptorRtc.pc().deliverChannels();
   acceptorRtc.pc().openAll();
@@ -1533,7 +1533,7 @@ test('the LAN race, end to end: ICE completes inside the mint and the answer is 
 test('the replay alone rescues a ceremony wired up after its transport connected', async () => {
   // The other half of the guard, isolated: these effects deliberately have NO level
   // read, so the only thing that can move this machine is the replay on subscribe. It is
-  // the shape a dialog restart or the `#/join-reply` handoff produces — a machine whose
+  // the shape a dialog restart or the `#/join-reply` handoff produces - a machine whose
   // transport was already connected before it had a listener to hear about it.
   const clock = new TestClock();
   const rtc = harness(9);
@@ -1559,7 +1559,7 @@ test('the replay alone rescues a ceremony wired up after its transport connected
   await settle();
   assert.equal(machine.state.phase, 'connecting');
 
-  // ICE comes up AND the lanes open with nobody listening — every edge is spent on an
+  // ICE comes up AND the lanes open with nobody listening - every edge is spent on an
   // empty room, which is what a handoff between two dialogs actually looks like.
   rtc.pc().setConnection('connected');
   rtc.pc().openAll();
@@ -1577,7 +1577,7 @@ test('the replay alone rescues a ceremony wired up after its transport connected
 
 test('an inbound channel that arrives already open is announced once, not twice', async () => {
   // The real ordering, from the private-collab browser drill: the acceptor's channels
-  // come out of `ondatachannel` with `readyState === 'open'` already — and Chrome then
+  // come out of `ondatachannel` with `readyState === 'open'` already - and Chrome then
   // dispatches `open` to the listener `bindChannel` bound moments earlier ANYWAY. Both
   // of the binder's paths run, so anything in the announcement that is not idempotent
   // happens twice. It showed on the wire as two identical ops hellos 2ms apart, and the
@@ -1597,7 +1597,7 @@ test('an inbound channel that arrives already open is announced once, not twice'
 
   const hellos = channel.frames().filter((frame) => frame.t === 'hello');
   assert.equal(hellos.length, 1, 'the lane must carry exactly one hello');
-  // The lane is open, announced, and the ceremony completed — the second call is
+  // The lane is open, announced, and the ceremony completed - the second call is
   // dropped whole, not half-applied.
   assert.equal(r.transport.state().connection, 'live');
   assert.deepEqual(r.opened, ['ops']);

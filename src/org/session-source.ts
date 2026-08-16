@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The control-plane's SessionSource — a thin adapter over the instance's
+ * The control-plane's SessionSource - a thin adapter over the instance's
  * projects/sessions API, registered into the generic lib/session-source.ts seam
  * by org/index.ts when a control plane is present. Pure data: fetch + shape, no
  * engine, no DOM. Everything goes through instanceFetch/instancePath, so a remote
@@ -24,7 +24,7 @@ async function getJson<T>(path: string): Promise<T | null> {
   }
 }
 
-/** The server shape of one full session (plans/08 §6b). */
+/** The server structure of one full session (plans/08 §6b). */
 interface SessionBody {
   toolId?: string;
   toolVersion?: string;
@@ -35,13 +35,13 @@ interface SessionBody {
 /**
  * One session fetch that KEEPS the HTTP status.
  *
- * The `SessionSource` seam deliberately collapses every failure to `null` — the
+ * The `SessionSource` seam deliberately collapses every failure to `null` - the
  * Projects view only ever says "that session could not be opened", so a status
  * would be a field nobody reads. A collab invite is the one caller that must tell
  * three failures apart, because the honest sentence differs each time: the session
  * was deleted (410), the caller's access was revoked (403), or it never existed /
  * the instance is unreachable. So the status-carrying fetch is the primitive and
- * `createInstanceSessionSource`'s `fetchSession` is the lossy view of it — one
+ * `createInstanceSessionSource`'s `fetchSession` is the lossy view of it - one
  * request path, not two, so a change to the endpoint cannot fix one and miss the
  * other.
  *
@@ -67,7 +67,7 @@ export async function fetchTeamSession(sessionId: string): Promise<TeamSessionFe
   } catch {
     return { ok: false, status: 0 };
   }
-  // A 200 whose body is not a usable session is not a session — treat it as no
+  // A 200 whose body is not a usable session is not a session - treat it as no
   // answer rather than inventing one, exactly as getJson does.
   if (!body?.toolId || !body.inputs) return { ok: false, status: 0 };
   return { ok: true, data: { toolId: body.toolId, toolVersion: body.toolVersion, inputs: body.inputs, meta: body.meta } };

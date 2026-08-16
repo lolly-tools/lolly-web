@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/bulk-bar.ts — the shared selection bar's markup + sync contract. Projects,
+ * lib/bulk-bar.ts - the shared selection bar's markup + sync contract. Projects,
  * the catalog and the gallery all render through bulkBarHtml/syncBulkBar now, so
  * this suite is what keeps the three bars' behaviour identical (the same role
  * tile-select.test.ts plays for the gestures).

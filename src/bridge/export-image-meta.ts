@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * DOM-free image-metadata byte-stampers, extracted verbatim from bridge/export.ts
- * (stage 1 of the export.ts split — same precedent as export-css.ts). Pure
+ * (stage 1 of the export.ts split - same precedent as export-css.ts). Pure
  * bytes-in/bytes-out helpers that splice DPI, provenance metadata and ICC colour
  * profiles into PNG / JPEG / SVG / GIF output, plus the zlib inflate/deflate
  * wrappers the PNG iCCP path (and the CMYK PDF content-stream rewrite in
@@ -14,7 +14,7 @@ import type { ExportOpts } from './export.ts';
 
 // ── PNG physical-resolution metadata ────────────────────────────────────────
 //
-// dom-to-image PNGs carry no DPI, so they're assumed 96 — a 2480px-wide A4
+// dom-to-image PNGs carry no DPI, so they're assumed 96 - a 2480px-wide A4
 // raster would print ~26 inches wide. insertPngPhys (below) injects a pHYs chunk
 // recording the real DPI so print/layout software places the image at its
 // intended physical size. All the byte-level stampers here take and return a
@@ -47,7 +47,7 @@ export const readU32 = (b: Uint8Array, o: number): number => ((b[o]! << 24) | (b
 export function writeU32(b: Uint8Array, o: number, v: number): void { b[o] = (v >>> 24) & 255; b[o + 1] = (v >>> 16) & 255; b[o + 2] = (v >>> 8) & 255; b[o + 3] = v & 255; }
 
 // CRC-32 comes from the engine barrel (zip-crypto's table-driven implementation:
-// reflected poly 0xEDB88320, init/xorout 0xFFFFFFFF — verified bit-identical to
+// reflected poly 0xEDB88320, init/xorout 0xFFFFFFFF - verified bit-identical to
 // the local table this module carried before the stage-1 split).
 
 export function pngChunk(type: string, data: Uint8Array): Uint8Array {
@@ -79,10 +79,10 @@ export function insertPngPhys(png: Uint8Array, dpi: number): Uint8Array | null {
 }
 
 // Overwrite an AVIF's `colr`/`nclx` box (ISOBMFF colour-information) so it signals
-// Rec.2100 HDR — AVIF signals natively via nclx, no ICC needed. Canvas AVIF
+// Rec.2100 HDR - AVIF signals natively via nclx, no ICC needed. Canvas AVIF
 // encoders write a colr box (usually sRGB). We rewrite ONLY the two HDR-defining
-// fields — colour_primaries (u16 → 9, BT.2020) and transfer_characteristics
-// (u16 → 16, PQ) — and DELIBERATELY preserve matrix_coefficients + the
+// fields - colour_primaries (u16 → 9, BT.2020) and transfer_characteristics
+// (u16 → 16, PQ) - and DELIBERATELY preserve matrix_coefficients + the
 // full_range flag: those describe how the AV1 bitstream's YCbCr maps back to RGB
 // (the encoder's choice); changing them would make the decoder misread the pixels.
 // The decoded RGB code values are our PQ pixels, now interpreted as BT.2020/PQ.
@@ -108,7 +108,7 @@ export function setAvifCicp(
   return bytes; // no colr/nclx (not an AVIF, or a fallback PNG) → leave unchanged
 }
 
-// Splice a cICP chunk (PNG 3rd ed.) after IHDR — the coding-independent code
+// Splice a cICP chunk (PNG 3rd ed.) after IHDR - the coding-independent code
 // points that flag an HDR PNG (colour primaries, transfer, matrix=0, full-range).
 // Colour-managed decoders key off this to render Rec.2100-PQ pixels as HDR.
 export function insertPngCicp(
@@ -132,7 +132,7 @@ export function insertPngCicp(
 // here onto each format's native mechanism: PNG iTXt, JPEG EXIF (IFD0), PDF info
 // dict (in renderPdf/renderCmykPdf), SVG <metadata>+<title>/<desc>, GIF comment,
 // and the video containers via the engine's video-meta.js (MP4 udta/ilst,
-// Matroska Tags — see withVideoMeta beside renderVideo).
+// Matroska Tags - see withVideoMeta beside renderVideo).
 // All best-effort: anything unexpected returns the input untouched.
 
 const xmlEsc = (s: unknown): string => String(s ?? '')
@@ -164,7 +164,7 @@ export function insertPngMeta(png: Uint8Array, meta: ExportMeta | null | undefin
       ['Software', meta.software], ['Author', meta.author],
       ['Source', meta.source], ['Description', meta.description], ['Comment', meta.contact],
       // 'Copyright' is a PNG-registered text keyword; 'License' is conventional.
-      // User-asserted (bindToMeta) — empty on ordinary exports, filtered out below.
+      // User-asserted (bindToMeta) - empty on ordinary exports, filtered out below.
       ['Copyright', meta.copyright || ''], ['License', meta.license || ''],
     ] as [string, string][]).filter(([, v]) => v);
     if (!pairs.length) return png;
@@ -225,7 +225,7 @@ export function insertJpegExif(b: Uint8Array, meta: ExportMeta | null | undefine
       { tag: 0x010E, value: desc },          // ImageDescription
       { tag: 0x0131, value: meta.software }, // Software
       { tag: 0x013B, value: meta.author },   // Artist
-      { tag: 0x8298, value: rights },        // Copyright (© notice + licence) — tag order ascending
+      { tag: 0x8298, value: rights },        // Copyright (© notice + licence) - tag order ascending
     ].filter(f => f.value));
     if (!tiff) return b;
     const id = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
@@ -251,7 +251,7 @@ export function insertJpegExif(b: Uint8Array, meta: ExportMeta | null | undefine
 
 // ── ICC colour profile embedding ─────────────────────────────────────────────
 //
-// Tags raster output with the colour space its pixels were rendered in (sRGB —
+// Tags raster output with the colour space its pixels were rendered in (sRGB - 
 // what the browser canvas produces), so colour-managed software reproduces them
 // faithfully instead of guessing. Profile bytes come from the engine (the single
 // source of truth); the shell only splices them into each format's native slot:
@@ -263,7 +263,7 @@ export function iccWanted(opts: ExportOpts): boolean {
 }
 
 // PNG: an iCCP chunk (profile name + compression method 0 + zlib-deflated
-// profile) spliced in right after IHDR, before IDAT — where the spec requires it.
+// profile) spliced in right after IHDR, before IDAT - where the spec requires it.
 export async function insertPngIcc(png: Uint8Array, iccBytes: Uint8Array, profileName = 'sRGB'): Promise<Uint8Array> {
   try {
     const SIG = [137, 80, 78, 71, 13, 10, 26, 10];

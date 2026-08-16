@@ -5,7 +5,7 @@
  * Renders only the rows inside the scroll viewport (+ a small overscan), recycling
  * DOM as you scroll, so a 100k-row spreadsheet stays responsive on a fixed DOM
  * budget. Real DOM (not canvas), so it themes, is keyboard-accessible, and exports
- * through the normal SVG walker. In/out is `TableValue` ({columns, rows}) — a drop-in
+ * through the normal SVG walker. In/out is `TableValue` ({columns, rows}) - a drop-in
  * for the `table` input control, `/pro` grids, and the `#/data` viewer.
  *
  * The windowing math (`visibleRange`) is pure and unit-tested; the mount function is
@@ -42,7 +42,7 @@ export interface DataGridOptions {
   /** Debounced-commit callback with the whole updated table. */
   onChange?: (next: TableValue) => void;
   /** Column indices that are read-only even when the grid is editable (e.g. a
-   *  formula column shown as its computed value — the honest-limits marker). */
+   *  formula column shown as its computed value - the honest-limits marker). */
   readOnlyCols?: number[];
   /** Fixed row height in px (default 28). */
   rowHeight?: number;
@@ -77,7 +77,7 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
   const overscan = opts.overscan ?? 4;
   const editable = opts.editable !== false;
   const readOnly = new Set(opts.readOnlyCols ?? []);
-  // Trailing row-delete gutter — only when editable. Kept as a real column of the
+  // Trailing row-delete gutter - only when editable. Kept as a real column of the
   // flex row (not an overlay) so it stays aligned under virtualization and is
   // always reachable, matching the plain <table>'s per-row × the grid replaces.
   const actionW = editable ? 30 : 0;
@@ -156,7 +156,7 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
     editor.remove(); editor = null;
     // Keep focus in the grid when the editor simply vanished (Enter, scroll, or
     // programmatic removal) so the sidebar defers its rebuild (inputs-sync
-    // isEditingGrid) — but never STEAL it back if the user clicked a real element
+    // isEditingGrid) - but never STEAL it back if the user clicked a real element
     // elsewhere (blur-to-outside), where a rebuild is the right thing.
     const ae = document.activeElement;
     if (!ae || ae === document.body) viewport.focus();

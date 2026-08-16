@@ -5,7 +5,7 @@
  *
  * WebCodecs doesn't exist in node, so the session is driven through its injection
  * seam: stub VideoEncoder / AudioEncoder / VideoFrame / AudioData classes plus a
- * stub muxer factory. That covers everything except the actual codec — frame
+ * stub muxer factory. That covers everything except the actual codec - frame
  * timing, keyframe cadence, backpressure, VideoFrame lifetime, flush ordering,
  * abort teardown and post-finalize rejection are all exercised here rather than
  * only in a browser.
@@ -21,7 +21,7 @@ import { videoFrameSchedule } from './video-mime.ts';
 
 interface FrameLog { src: unknown; timestamp: number; duration: number; closes: number }
 
-/** Every VideoFrame the session constructs, in order — so a leak or a double
+/** Every VideoFrame the session constructs, in order - so a leak or a double
  *  close is directly assertable. */
 let frameLog: FrameLog[] = [];
 
@@ -328,12 +328,12 @@ test('createStreamingMux: addAudio without a declared audio track rejects; empty
 
 // ── Buffered path (encodeMuxWebCodecs) ────────────────────────────────────────
 // No injection seam here: the function reads the WebCodecs GLOBALS and builds the
-// REAL muxer (mp4-muxer / webm-muxer — pure JS, importable in node). So the stub
+// REAL muxer (mp4-muxer / webm-muxer - pure JS, importable in node). So the stub
 // encoders are installed on globalThis for the duration of a run, and they emit
-// chunks shaped like EncodedVideo/AudioChunk THROUGH real muxing — the returned
+// chunks shaped like EncodedVideo/AudioChunk THROUGH real muxing - the returned
 // bytes are a genuine container, assertable by structural marker.
 
-/** Both muxers gate on `chunk instanceof EncodedVideoChunk` — a free global they
+/** Both muxers gate on `chunk instanceof EncodedVideoChunk` - a free global they
  *  resolve at call time, so installing this class satisfies them. */
 class FakeVideoChunk {
   type: string; timestamp: number; duration: number; bytes: Uint8Array;
@@ -346,7 +346,7 @@ class FakeVideoChunk {
 class FakeAudioChunk extends FakeVideoChunk {}
 
 /** Deterministic payload so the muxed bytes are content-addressable (and
- *  perturbable — the negative control flips it). */
+ *  perturbable - the negative control flips it). */
 let videoPayload = 0x5c;
 
 class EmittingVideoEncoder extends StubEncoder {
@@ -448,7 +448,7 @@ test('encodeMuxWebCodecs: mp4 pick pins avc config and returns real video/mp4 by
   assert.equal(cfg.codec, 'avc1.42001f');
   assert.deepEqual(cfg.avc, { format: 'avc' });
   const bytes = new Uint8Array(a.buffer);
-  // Non-vacuity: a real container, not an empty buffer — sized, structurally
+  // Non-vacuity: a real container, not an empty buffer - sized, structurally
   // marked, and carrying the stub chunk payload in its mdat.
   assert.ok(bytes.length > 200, `mp4 output too small (${bytes.length} bytes)`);
   assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'ftyp box marker');

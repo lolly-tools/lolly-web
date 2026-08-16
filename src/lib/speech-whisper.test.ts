@@ -2,7 +2,7 @@
 /**
  * Unit tests for the pure half of Whisper transcription
  * (lib/speech-whisper.ts): chunk planning, timestamp repair, stitching. No
- * transformers.js, no wasm — synthetic PCM and hand-built word arrays, so the
+ * transformers.js, no wasm - synthetic PCM and hand-built word arrays, so the
  * maths the worker leans on is pinned in Node. The model I/O itself is
  * exercised by the round-trip smoke (synthesize with Kokoro, transcribe with
  * Whisper), not here.
@@ -19,7 +19,7 @@ import {
 import type { RawWord } from './speech-whisper.ts';
 
 // A low "sample rate" keeps the synthetic clips tiny; every function under
-// test takes the rate as data, so nothing about 16 kHz is load-bearing here.
+// test takes the rate as data, so nothing about 16 kHz matters here.
 const SR = 1000;
 
 /** Noise everywhere except zeroed [start, end) second spans. */
@@ -110,7 +110,7 @@ describe('cleanWordTimings', () => {
       { text: 'c', start: 1.0, end: null },
     ];
     const out = cleanWordTimings(raw, 1.5);
-    // a's end fills from the next FINITE start — b has none, so c's 1.0; b's
+    // a's end fills from the next FINITE start - b has none, so c's 1.0; b's
     // start fills from a's (filled) end and its early 0.8 end clamps up to it.
     assert.deepEqual(out, [
       { text: 'a', start: 0, end: 1.0 },

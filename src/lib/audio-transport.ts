@@ -3,7 +3,7 @@
  * A themed transport for a plain `<audio>` element.
  *
  * WHY NOT `<audio controls>`. The native control strip cannot be themed in any browser
- * that matters — it ignores the brand entirely, ships its own grey chrome, and changes
+ * that matters - it ignores the brand entirely, ships its own grey chrome, and changes
  * shape between platforms. Inside a modal that is otherwise fully branded it reads as a
  * piece of another application, which is exactly what it looked like.
  *
@@ -20,14 +20,14 @@
  * DURATION IS OFTEN UNKNOWN AT FIRST, and for some sources never: a zzfxm song is still
  * rendering to a blob when the modal opens, a stream has no length, and a file served
  * without range support reports `Infinity`. So the scrubber refuses interaction until a
- * finite duration arrives, rather than offering a control that silently does nothing —
+ * finite duration arrives, rather than offering a control that silently does nothing - 
  * but the ELAPSED clock keeps running throughout, because that number is always real and
  * is the one a listener is actually reading.
  */
 import { icon } from './icons.ts';
 import { escape } from '../utils.ts';
 
-// The registry already had all four — see lib/icons.ts. Rendering through `icon()` rather
+// The registry already had all four - see lib/icons.ts. Rendering through `icon()` rather
 // than inlining SVG is what keeps one glyph one definition across every player.
 const PLAY = icon('play', { size: 18, filled: true });
 const PAUSE = icon('pause', { size: 18, filled: true });
@@ -56,7 +56,7 @@ const FALLBACK: AudioTransportLabels = {
 };
 
 /**
- * The markup. Self-contained and inert until wired — safe to drop into a template string.
+ * The markup. Self-contained and inert until wired - safe to drop into a template string.
  * Styling lives with the surface that uses it (see `.cat-tp-*` in styles/parts/catalog.css)
  * so this module stays free of any one view's layout.
  */
@@ -124,7 +124,7 @@ export function wireAudioTransport(
     fill.style.width = `${pct}%`;
     seek.setAttribute('aria-valuenow', String(Math.round(pct)));
     seek.setAttribute('aria-disabled', String(!seekable()));
-    // ELAPSED IS ALWAYS KNOWN, even when the length is not — a source served without
+    // ELAPSED IS ALWAYS KNOWN, even when the length is not - a source served without
     // range support reports `Infinity` for duration, and blanking the whole readout for
     // it loses the one number the listener actually wants. Show `0:12` and add `/ 1:30`
     // only once there is a real length; seeking stays disabled either way.
@@ -186,7 +186,7 @@ export function wireAudioTransport(
 
   const onPlayBtn = (): void => {
     // A rejected play() is ordinary (autoplay policy, an unplayable source) and must not
-    // throw into the click handler — repaint so the button reflects reality either way.
+    // throw into the click handler - repaint so the button reflects reality either way.
     if (audioEl.paused || audioEl.ended) void audioEl.play().then(paint, paint);
     else { audioEl.pause(); paint(); }
   };
@@ -195,7 +195,7 @@ export function wireAudioTransport(
     if (!vol) return;
     const v = Number(vol.value);
     audioEl.volume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
-    // Moving the slider off zero is an unmute — otherwise the audio stays silent while
+    // Moving the slider off zero is an unmute - otherwise the audio stays silent while
     // the control claims otherwise.
     audioEl.muted = audioEl.volume === 0;
     paint();

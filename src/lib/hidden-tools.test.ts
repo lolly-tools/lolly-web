@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/hidden-tools.ts — the per-user "hide this tool" overlay store. Mirrors
+ * lib/hidden-tools.ts - the per-user "hide this tool" overlay store. Mirrors
  * lib/favourites.ts: profile-backed, tolerant of junk, best-effort persistence.
  */
 import { test } from 'node:test';

@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * mountModal — the shared native-`<dialog>` lifecycle every app dialog needs:
+ * mountModal - the shared native-`<dialog>` lifecycle every app dialog needs:
  * body mount, `showModal()`, Escape via the `cancel` event, backdrop-hit-test
  * dismissal, initial focus, and teardown. Extracted from confirm-dialog.ts,
  * whose four dialog kinds (confirm/choice/notice/prompt) were the closest
- * thing to a shared modal component already — that behaviour is the spec
+ * thing to a shared modal component already - that behaviour is the spec
  * this primitive codifies for every other dialog to build on.
  *
  * `content` is opaque HTML; the caller wires its own listeners onto the
- * returned `.el` (data-act buttons, inputs, …) — this primitive only owns
+ * returned `.el` (data-act buttons, inputs, …) - this primitive only owns
  * the shell around it: create, mount, open, dismiss, close.
  *
  * Focus containment is native: `showModal()` traps Tab inside the dialog and
  * `close()` restores focus to whatever was focused beforehand (the HTML
- * dialog-closing steps) — so there's no need for lib/focus-trap.ts here,
+ * dialog-closing steps) - so there's no need for lib/focus-trap.ts here,
  * which exists for `role="dialog"` DIV overlays the browser doesn't trap for
  * free. `close()` always calls the native `.close()` before removing the
  * node so that restore step actually runs.
  */
 
 export interface ModalHandle<T> {
-  /** The mounted `<dialog>` element — wire content-specific listeners onto it. */
+  /** The mounted `<dialog>` element - wire content-specific listeners onto it. */
   el: HTMLDialogElement;
   /** Close (if not already closed/removed) and resolve `onClose` with `result`. Idempotent. */
   close(result?: T): void;
@@ -36,7 +36,7 @@ export interface ModalOptions<T> {
   /** Value to resolve with on Escape or a backdrop click. Fixed value, or computed
    *  from the dialog element at dismiss time. */
   cancelValue?: T | ((el: HTMLDialogElement) => T);
-  /** Fired exactly once, after the dialog is closed + removed — however it closed
+  /** Fired exactly once, after the dialog is closed + removed - however it closed
    *  (Escape, backdrop, or a caller-driven `close(result)`). */
   onClose?: (result: T | undefined) => void;
 }
@@ -65,10 +65,10 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
     // Click outside the content box (on the ::backdrop) dismisses. A <dialog>'s own
     // click target is the dialog element itself whether the hit lands on its padding
     // or the backdrop, so a plain bounding-rect test is what actually distinguishes
-    // them — works regardless of whether the content wraps itself in an inner div.
+    // them - works regardless of whether the content wraps itself in an inner div.
     // Only rect-test clicks that target the dialog itself: keyboard activation
     // (Enter/Space) of an inner button fires a UA-synthetic click at clientX/Y =
-    // 0,0 — outside any centered card — which the bare rect test would misread as
+    // 0,0 - outside any centered card - which the bare rect test would misread as
     // a backdrop hit and dismiss as Cancel before the caller's data-act listener
     // (registered after this one) ever sees it. A true backdrop or padding click
     // always targets the <dialog> element, never an inner node.

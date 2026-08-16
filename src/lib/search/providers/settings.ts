@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight SETTINGS provider (plans/99 §2b) — settings findability is
+ * The spotlight SETTINGS provider (plans/99 §2b) - settings findability is
  * first-class (Andy's mid-build directive): "contrast", "dark mode", "jelly",
  * "storage" or "focus music" typed in the bottom bar anywhere in the app must
  * surface the right settings destination.
  *
  * Federates FOUR static sources, all in-memory and instant (no host slice):
- *  1. Profile sections — views/profile.ts NAV_SECTIONS, the same array that
+ *  1. Profile sections - views/profile.ts NAV_SECTIONS, the same array that
  *     renders the settings rail. Hits deep-link #/profile?focus=<id>, which the
  *     profile view honours for every section (not just the collapsibles).
- *  2. Individual feature flags — feature-flags.ts consts, so "jelly" or "batch"
+ *  2. Individual feature flags - feature-flags.ts consts, so "jelly" or "batch"
  *     lands on the Feature flags drawer with the flag named in the hit title.
  *     Flags a control plane hides are skipped, mirroring the profile's flagRow.
- *  3. The four accessibility prefs — the Accessibility card's rows, with
+ *  3. The four accessibility prefs - the Accessibility card's rows, with
  *     generous keywords ("animation", "text size", "calm"), all deep-linking
  *     #/profile?focus=a11y-section.
- *  4. Dashboard destinations — views/dashboard-registry.ts, the same registry
+ *  4. Dashboard destinations - views/dashboard-registry.ts, the same registry
  *     dashboard.ts renders its data-flag sections from, so "palette" or
  *     "typography" lands on the right dashboard section via its own deep link.
  *
@@ -40,7 +40,7 @@ import type { FeatureFlag } from '../../../feature-flags.ts';
 // order), joined with the gallery category flags below.
 const STANDALONE_FLAGS: readonly FeatureFlag[] = [NEUROSPICY_FLAG, JELLY_FLAG, PRO_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG];
 
-// The Accessibility card's four prefs (views/profile.ts A11Y_ROWS — the labels
+// The Accessibility card's four prefs (views/profile.ts A11Y_ROWS - the labels
 // are a copy, pinned against that source by settings.test.ts so a reword there
 // fails here). Keywords are deliberately generous: these are the settings people
 // search for in distress, with whatever word is in their head.
@@ -73,7 +73,7 @@ function fieldsOf(titles: readonly string[], keywords: readonly string[]): Searc
 function buildItems(): SettingsItem[] {
   const items: SettingsItem[] = [];
 
-  // 1. Profile sections — reuse each rail entry's own icon.
+  // 1. Profile sections - reuse each rail entry's own icon.
   for (const s of NAV_SECTIONS) {
     items.push({
       icon: icon(s.icon, { size: 16 }),
@@ -84,7 +84,7 @@ function buildItems(): SettingsItem[] {
     });
   }
 
-  // 2. Feature flags — every visible toggle, named individually, all landing on
+  // 2. Feature flags - every visible toggle, named individually, all landing on
   // the (auto-opened) Feature flags drawer.
   for (const f of [...CATEGORY_FLAGS, ...STANDALONE_FLAGS]) {
     if (flagHidden(f.id)) continue;
@@ -108,7 +108,7 @@ function buildItems(): SettingsItem[] {
     });
   }
 
-  // 4. Dashboard destinations — the registry's own deep-link form (dashHref:
+  // 4. Dashboard destinations - the registry's own deep-link form (dashHref:
   // sections by first flag keyword, tabs by ?tab=), so hits and applyDeepLink
   // cannot diverge.
   for (const d of DASH_SECTIONS) {

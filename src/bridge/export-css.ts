@@ -7,7 +7,7 @@
  *
  * The two colour entry points are thin adapters over the engine's CSS Color 4
  * parser. They USED to be a `rgba?(int,int,int)` regex commented "always
- * rgb/rgba from getComputedStyle" — false since browsers began serialising
+ * rgb/rgba from getComputedStyle" - false since browsers began serialising
  * non-legacy colours in their own space, which silently dropped the paint of
  * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/60-color-spaces.md §4).
  */
@@ -17,7 +17,7 @@ import type { CornerRadii, CornerPair } from "../../../../engine/src/css-box.ts"
 type Rgb = [number, number, number];
 type Rgba = [number, number, number, number];
 
-// Round to 2dp — keeps emitted path transforms compact (toPath already rounds d).
+// Round to 2dp - keeps emitted path transforms compact (toPath already rounds d).
 export function n2(v: number): number { return Math.round(v * 100) / 100; }
 
 // Like parseCssColor but preserves the alpha channel as a 4th element [r,g,b,a].
@@ -46,11 +46,11 @@ export function parseCssLen(val: string | null | undefined, refPx: number): numb
 
 // Resolve a computed style's four border-radius corners for a w×h box into the
 // CSS §5.5 corner-overlap-clamped geometry, via the engine (the single source of
-// truth shared by the SVG and PDF walkers — see engine/src/css-box.js).
+// truth shared by the SVG and PDF walkers - see engine/src/css-box.js).
 //
 // Returns { radii, uniform }: `radii` is the four clamped [h,v] corners; `uniform`
 // is a single [rx,ry] pair when all four corners are equal (the common pill /
-// ellipse / circle / rounded-rect case — emit a fast <rect rx ry> / jsPDF
+// ellipse / circle / rounded-rect case - emit a fast <rect rx ry> / jsPDF
 // roundedRect) or null when they differ (emit a four-corner path so e.g. a
 // top-only-rounded card keeps its square bottom corners instead of rounding all
 // four). The uniform path is byte-identical to before, preserving the pill fix.

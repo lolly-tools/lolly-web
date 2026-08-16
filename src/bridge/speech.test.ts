@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Bridge-side tests for host.speech that run in plain Node — no Worker, no
+ * Bridge-side tests for host.speech that run in plain Node - no Worker, no
  * DOM. Only the pure seams: the hard input bound must reject BEFORE anything
  * touches the worker (which is also what makes it testable here: if the check
  * ran after ensureWorker(), this environment would throw on the missing
@@ -23,7 +23,7 @@ describe('synthesize input bound', () => {
 
   test('text exactly at the limit passes the bound (and fails later, on the missing Worker)', async () => {
     const api = createSpeechAPI();
-    // ensureWorker throws synchronously in Node (no Worker constructor) —
+    // ensureWorker throws synchronously in Node (no Worker constructor) - 
     // which is itself the proof the length check ran and passed first.
     let err: unknown;
     try { await api.synthesize('a'.repeat(MAX_INPUT_CHARS)); } catch (e) { err = e; }

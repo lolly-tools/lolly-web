@@ -5,7 +5,7 @@
  * What Node can prove about a blur is everything except the pixels an engine paints:
  * the parse of the authored filter, the spill geometry a scratch is sized from, the
  * mip ladder's choice of level and residual sigma, the box-blur kernel itself (pure
- * arithmetic over an array — no canvas involved), and the ORDER of the passes each
+ * arithmetic over an array - no canvas involved), and the ORDER of the passes each
  * lane issues. The pixels are `tests/canvas-blur-lanes.browser.test.ts`, which is also
  * where the filter-vs-mip tolerance is measured and stated.
  *
@@ -121,7 +121,7 @@ test('parseDropShadows: lengths, colour, and a colour that contains its own comm
   const [a] = parseDropShadows('drop-shadow(0px 2px 10px #00000055)');
   assert.deepEqual(a, { dx: 0, dy: 2, blur: 10, color: '#00000055' });
   const [b] = parseDropShadows('drop-shadow(-4px 6px 12px rgba(0, 0, 0, 0.5))');
-  // The colour keeps its own spacing — the tokeniser only splits at paren depth 0, so
+  // The colour keeps its own spacing - the tokeniser only splits at paren depth 0, so
   // a functional colour survives as ONE token instead of becoming four.
   assert.deepEqual(b, { dx: -4, dy: 6, blur: 12, color: 'rgba(0, 0, 0, 0.5)' });
 });
@@ -201,11 +201,11 @@ test('scratchPadCap bounds a spill that the plate budget never sees', () => {
   // `spillPad` is 3σ with σ up to KF_MAX_BLUR × S: a 640×360 box at S = 2 with a 300 px
   // blur asks for a 4880×4320 scratch (~84 MB) that the per-plate long-side cap does
   // not price. `takeStage` answering null means the layer is drawn UNFILTERED, which is
-  // worse than a spill clipped a long way out — so the pad is what gives.
+  // worse than a spill clipped a long way out - so the pad is what gives.
   assert.equal(scratchPadCap(100, 100, 1000, 0), 450, 'the room left on the longer axis');
   assert.equal(scratchPadCap(4000, 100, 1000, 0), 0, 'a box already over the cap gets none');
   // The AREA rule is the binding one: 640×360 at S=2 is a 1280×720 scratch, and 3σ of a
-  // 300px blur at S=2 would take it to 4880×4320 — 21 Mpx, past what Safari will hand
+  // 300px blur at S=2 would take it to 4880×4320 - 21 Mpx, past what Safari will hand
   // out, with three or four of them alive at once inside `renderFx`.
   const capped = scratchPadCap(1280, 720);
   assert.ok(capped < spillPad(300 * 2), `a 300px blur at S=2 is over the cap (${capped})`);
@@ -254,7 +254,7 @@ test('blurLadder: below the visible threshold there is no lane to take', () => {
   assert.equal(blurLadder(4, 0, 512), null);
   // …and neither is there one for a sigma BELOW the quantiser's own crossover: the
   // ladder cannot shrink there (any level would over-blur) and the nearer of the two
-  // answers three integer boxes can give is the identity. Null says so — where it used
+  // answers three integer boxes can give is the identity. Null says so - where it used
   // to allocate a full-size scratch and copy the source into it to change nothing.
   assert.equal(blurLadder(BOX_MIN_SIGMA / 2 - 0.01, 512, 512), null);
   // ABOVE the crossover the band is expressed, not stranded (plans/104 P1 obligation
@@ -267,7 +267,7 @@ test('blurLadder: below the visible threshold there is no lane to take', () => {
 
 test('the degenerate band delivers the NEAREST expressible blur, never a stranded residual', () => {
   // THE MEASURED CASE (plans/104 §9.2 M1 browser verify): a 3840×2160 layer at sigma 3
-  // takes shrink 4, which leaves a residual of 0.559 — and 0.559 landed in the band
+  // takes shrink 4, which leaves a residual of 0.559 - and 0.559 landed in the band
   // where the Wells construction collapses to all-width-1 boxes. `[]` there meant the
   // two resamples WERE the whole blur, delivered at 0.72×/0.82× of the request.
   const L = blurLadder(3, 3840, 2160);
@@ -277,7 +277,7 @@ test('the degenerate band delivers the NEAREST expressible blur, never a strande
   assert.deepEqual(L.sizes, [1, 1, 3], 'the residual is expressed, not dropped');
 
   // The crossover is the MIDPOINT IN SIGMA between 0 and the smallest expressible box
-  // blur — the metric that matters, because the quantiser's step here is enormous
+  // blur - the metric that matters, because the quantiser's step here is enormous
   // relative to the values in the band and variance-matching would keep choosing zero.
   assert.deepEqual(boxSizesForGauss(BOX_MIN_SIGMA / 2 + 1e-6), [1, 1, 3]);
   assert.deepEqual(boxSizesForGauss(BOX_MIN_SIGMA / 2 - 1e-6), []);
@@ -313,7 +313,7 @@ test('the degenerate band delivers the NEAREST expressible blur, never a strande
   }
 
   // The far edge: 0.577 is where the construction used to jump from "nothing" to [1,1,3]
-  // in one step. With nothing carried, that jump has moved down to 0.408 — it has not
+  // in one step. With nothing carried, that jump has moved down to 0.408 - it has not
   // disappeared, and it cannot: 0.8165 is the smallest blur three integer boxes can say.
   assert.deepEqual(boxSizesForGauss(0.58), [1, 1, 3]);
   assert.deepEqual(boxSizesForGauss(0.56), [1, 1, 3]);
@@ -339,13 +339,13 @@ test('blurLadder: a big surface drops an extra level rather than blur 2 Mpx in J
 
 test('blurLadder: the AREA rule is not defeated by a SMALL sigma on a huge scratch', () => {
   // THE DEFECT. The cap was 1.8·sigma, a margin below the real bound, and for sigma 1
-  // that rounded down to `floor(log2(1.8)) = 0` — the area rule could not fire at all,
+  // that rounded down to `floor(log2(1.8)) = 0` - the area rule could not fire at all,
   // so a 4K layer ran the three-pass box blur at FULL resolution: 8 M mip px against a
   // 1 M budget, plus two `Float32Array(w·h·4)` (~265 MB of transient) per layer per
   // frame, on the lane that IS the Safari mainline.
   //
   // The real bound is where the residual stops being real: shrink ≤ sigma/0.5. AT it
-  // the residual is exactly 0 — the two resamples ARE the blur and the box pass is
+  // the residual is exactly 0 - the two resamples ARE the blur and the box pass is
   // skipped entirely, which is the cheap answer as well as the correct one.
   const L = blurLadder(1, 3840, 2160);
   assert.ok(L);
@@ -385,7 +385,7 @@ test('boxBlurRgba: a lone opaque pixel spreads, conserves its energy, and stays 
   // Energy is conserved by the kernel (edge clamping duplicates, it never drops), and
   // then 8-bit quantisation eats the tails: spreading 255 over ~300 px leaves dozens of
   // them below half a level, and those round to nothing. A few percent short is the
-  // arithmetic being honest, not a leak — what would be a bug is a factor.
+  // arithmetic being honest, not a leak - what would be a bug is a factor.
   let alpha = 0;
   for (let i = 3; i < data.length; i += 4) alpha += data[i] as number;
   assert.ok(alpha > 220 && alpha < 266, `alpha is conserved to within quantisation (got ${alpha})`);

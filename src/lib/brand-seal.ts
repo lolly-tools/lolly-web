@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The locked-brand seal — shown on the Dashboard when the running catalogue's
+ * The locked-brand seal - shown on the Dashboard when the running catalogue's
  * brand is authoritative (host.tokens.isLocked(); see bridge/tokens.ts). A brand
  * you cannot edit deserves to look struck rather than greyed out, so this is a
  * turned-metal disc with a padlock over it.
@@ -13,7 +13,7 @@
  * It is struck in the BRAND's own inks, not chrome: --seal-dark / --seal-light
  * are the darkest and lightest colours in the live palette and --seal-base is
  * its most saturated mid-tone, so a SUSE build turns out slate-and-jungle and a
- * red brand turns out red. sealColors() picks them (pure — unit-tested).
+ * red brand turns out red. sealColors() picks them (pure - unit-tested).
  */
 
 import './brand-seal.css';
@@ -21,22 +21,22 @@ import { hexToOklch } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 
 export interface SealColors {
-  /** The metal's body — the brand's most saturated mid-tone. */
+  /** The metal's body - the brand's most saturated mid-tone. */
   base: string;
-  /** The dark rake — the palette's darkest ink. */
+  /** The dark rake - the palette's darkest ink. */
   dark: string;
-  /** The light rake (and the padlock) — the palette's lightest ink. */
+  /** The light rake (and the padlock) - the palette's lightest ink. */
   light: string;
 }
 
-/** The seal's fallback inks when the palette is empty or unreadable — a neutral
+/** The seal's fallback inks when the palette is empty or unreadable - a neutral
  *  steel, so the disc still reads as metal rather than a flat blank. */
 const SEAL_FALLBACK: SealColors = { base: '#6b7785', dark: '#1b2027', light: '#eef1f4' };
 
 /**
  * Pick the three inks the seal is struck in from a brand's palette.
  *
- * - light / dark: the extremes of the lightness axis — the sheen's two rakes.
+ * - light / dark: the extremes of the lightness axis - the sheen's two rakes.
  * - base: the most CHROMATIC colour in the mid-lightness band, which is what
  *   makes the metal read as the brand's rather than as generic steel. Chroma is
  *   the right axis here: a brand's identity colour is its most saturated one,
@@ -88,7 +88,7 @@ export function renderBrandSeal(c: SealColors, size = 116): string {
   const uid = `seal${++seq}`;
   const dk = `${uid}-dk`, lt = `${uid}-lt`, blur = `${uid}-blur`, core = `${uid}-core`;
   // These land in a CSS context (a style attribute), where escaping alone would
-  // not neutralise `;`/`url(` — and a palette hex can originate in a user-imported
+  // not neutralise `;`/`url(` - and a palette hex can originate in a user-imported
   // tokens doc. Only a bare hex passes; anything else takes the fallback ink.
   const ink = (v: string, fb: string): string => (/^#[0-9a-f]{3,8}$/i.test(v.trim()) ? v.trim() : fb);
   const style = [

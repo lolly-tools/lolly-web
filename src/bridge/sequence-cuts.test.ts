@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-cuts tests — the contact sheet's DECISION surface (phase 2.5, §4.6).
+ * sequence-cuts tests - the contact sheet's DECISION surface (phase 2.5, §4.6).
  *
  * WHAT THIS TIER CAN PROVE, and does:
- *   • midpoint sampling — `t_i = totalMs * (i + 0.5) / n`, strictly inside the
+ *   • midpoint sampling - `t_i = totalMs * (i + 0.5) / n`, strictly inside the
  *     sequence, never an endpoint (the whole point of the sampling rule);
  *   • N clamping at the BRIDGE, over hostile input, not just the engine's URL parse;
  *   • member naming + zero padding, i.e. that a downloaded sheet sorts into
@@ -11,11 +11,11 @@
  *   • the dispatch decision (`wantsCuts`): still-format ∧ sequence ∧ N > 1;
  *   • that the loop really moves the DOM playhead between renders, renders exactly
  *     N times, strips `cuts` from the member opts so a member cannot recurse, and
- *     RESTORES the artboard in a `finally` — including when a render throws;
+ *     RESTORES the artboard in a `finally` - including when a render throws;
  *   • that pdf takes the ONE-document-N-pages route and raster/svg the zip route.
  *
  * WHAT IT CANNOT, stated plainly rather than mocked into a false green: no pixel in
- * this file is real. jsdom has no layout, no rasteriser, no jsPDF canvas — so
+ * this file is real. jsdom has no layout, no rasteriser, no jsPDF canvas - so
  * "cut 4 actually SHOWS the boxes that are live at 4.5s" is a browser assertion and
  * lives in `tests/sequence-render.browser.test.ts` (case 10), gated on a real
  * Chromium exactly like the rest of that suite. The renderers here are injected
@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!DOCTYPE html><body></body>');
-// Node's own Blob is left in place — jsdom's has no `arrayBuffer()`, and the
+// Node's own Blob is left in place - jsdom's has no `arrayBuffer()`, and the
 // module reads member bytes through it.
 for (const k of ['window', 'document', 'HTMLElement', 'Element', 'Node']) {
   (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k];
@@ -99,7 +99,7 @@ function deps(root: HTMLElement, opts: { failOn?: number } = {}) {
 
 test('cutTimestamps samples MIDPOINTS, never the endpoints', () => {
   assert.deepEqual(cutTimestamps(3000, 6), [250, 750, 1250, 1750, 2250, 2750]);
-  // A single cut is the middle of the sequence, not t=0 — the pure helper answers
+  // A single cut is the middle of the sequence, not t=0 - the pure helper answers
   // "where would cut 1 of 1 be"; the exporter never calls it for the cuts=1 path,
   // which stays the untouched playhead render.
   assert.deepEqual(cutTimestamps(1000, 1), [500]);
@@ -110,7 +110,7 @@ test('cutTimestamps samples MIDPOINTS, never the endpoints', () => {
   for (let i = 0; i < t.length; i++) {
     assert.equal((t[i] as number) + (t[t.length - 1 - i] as number), 4000);
   }
-  // Endpoint sampling would have produced 0 and totalMs — the blank-card frames.
+  // Endpoint sampling would have produced 0 and totalMs - the blank-card frames.
   assert.ok(!t.includes(0) && !t.includes(4000));
 });
 

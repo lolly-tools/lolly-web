@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The user's own CMYK profile, resolved into the bytes a PDF/X-4 output intent
- * embeds — and into the identity that intent may honestly declare.
+ * embeds - and into the identity that intent may honestly declare.
  *
  * ## Why this module exists
  *
  * PDF/X-4 requires the destination profile to be EMBEDDED. No CMYK ICC ships in
- * this repo, so for years a Print PDF's intent was a registry NAME — a true and
+ * this repo, so for years a Print PDF's intent was a registry NAME - a true and
  * useful statement of the press condition, but not X-4. `lib/color-profiles.ts`
  * changed the ingredients: a profile the user loaded is on the device, content
  * addressed, and parseable. This is the join between that library and the export
@@ -16,15 +16,15 @@
  * ## The identity trap, and how it is made impossible
  *
  * The tempting shortcut is to embed a loaded profile under whichever condition the
- * export panel happens to name — "you picked FOGRA39, here are your FOGRA39-ish
+ * export panel happens to name - "you picked FOGRA39, here are your FOGRA39-ish
  * bytes". That produces the confidently-wrong file. Our own source list has the
  * counter-example: `SWOP2006_Coated3v2.icc` has "SWOP" in its `desc`, so a
  * desc-match pairs it with the `swop` condition, whose intent identifier is
- * `CGATS TR 001` — while that file is built from TR003. Different numbers, same
+ * `CGATS TR 001` - while that file is built from TR003. Different numbers, same
  * word.
  *
  * So identity is DERIVED from the profile, never from the picker:
- *  - the four registry rows (`fogra39` …) keep their exact previous meaning —
+ *  - the four registry rows (`fogra39` …) keep their exact previous meaning - 
  *    name only, no embedded profile, no behaviour change;
  *  - choosing an `own:<digest>` row embeds THAT profile, and the OutputIntent's
  *    identity is read off it. Paired (below) → the registry name; unpaired →
@@ -38,23 +38,23 @@
  * 1. **Provenance.** A profile Lolly itself fetched from the ICC registry for
  *    condition X is paired to X by construction (`meta.origin`, recorded at
  *    ingest). Note the registry's SWOP profile states `CGATS TR003`, so
- *    `sourceIsExact()` is false for it and it pairs to NOTHING — the Custom
+ *    `sourceIsExact()` is false for it and it pairs to NOTHING - the Custom
  *    branch. That is the right answer, not a gap. Provenance is testimony about
  *    where bytes came from, so it does not outrank the bytes: when the file's own
  *    `targ` names a DIFFERENT known condition, the two contradict each other and
- *    neither is declared (`Custom`). Only a contradiction demotes — a profile whose
+ *    neither is declared (`Custom`). Only a contradiction demotes - a profile whose
  *    `targ` names nothing we recognise (`Coated_Fogra39L…` is built on FOGRA39L
  *    data and spells it its own way) keeps its provenance pairing.
  * 2. **`targ`.** The profile's own `FILE_DESCRIPTOR` (`iccCharacterization`)
  *    equal, after normalisation, to the condition's characterization name.
- *    Testimony from inside the file — present on ECI/Fogra-lineage profiles a
+ *    Testimony from inside the file - present on ECI/Fogra-lineage profiles a
  *    print shop already has.
  * 3. Numeric agreement against published aim values would be real evidence. No
  *    aim data ships, so it is UNAVAILABLE and not approximated.
  * 4. A `desc` substring is NOT evidence. `matchesCondition` stays what it is: a
  *    UI affordance for labelling a row.
  *
- * Tier 1 or 2 pairs; anything else is `Custom`. Not a refusal — the user still
+ * Tier 1 or 2 pairs; anything else is `Custom`. Not a refusal - the user still
  * gets an embedded, conformant X-4 file. It just declares the profile's own name
  * instead of a registry name nothing on this device can substantiate.
  *
@@ -92,7 +92,7 @@ export interface EmbedResolution {
   identifier: string;
   /** RegistryName, or null (Custom names no registry). */
   registry: string | null;
-  /** OutputCondition / Info — human-readable. */
+  /** OutputCondition / Info - human-readable. */
   info: string;
   /** The condition id this profile PROVED, or null. */
   pairedCondition: string | null;
@@ -109,7 +109,7 @@ const normalise = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, 
 /**
  * One profile's bytes AND its parse, kept between calls.
  *
- * A 50-row batch embeds the same 8 MB profile 50 times (separate files — there is
+ * A 50-row batch embeds the same 8 MB profile 50 times (separate files - there is
  * no shared object to point at), so the read and the parse are both cached: parsing
  * the 8.6 MB registry FOGRA39 measures ~200 ms, which is comparable to rendering
  * the page it is being embedded into. Single entry on purpose: never hold two press
@@ -153,7 +153,7 @@ function pairByOrigin(origin: ProfileOrigin | undefined): PressCondition | null 
 /**
  * Do a profile's stored provenance and its own `targ` name DIFFERENT conditions?
  *
- * Cheap corroboration of the strongest evidence tier against the file itself — if
+ * Cheap corroboration of the strongest evidence tier against the file itself - if
  * the registry ever re-points a filename, or a `SOURCES` row is edited wrongly, the
  * bytes still say what they characterize. Only a resolved disagreement counts:
  * `iccCharacterization` returning nothing, or something no condition claims, is not
@@ -178,7 +178,7 @@ function pairByTarg(bytes: Uint8Array): { condition: PressCondition; charData: s
 /**
  * Resolve `colorProfile` into embeddable bytes plus the identity they justify.
  *
- * Returns null for every miss — not on this device, will not parse, ineligible
+ * Returns null for every miss - not on this device, will not parse, ineligible
  * for a PDF/X intent, or the bare `own` form with no single obvious answer. Never
  * throws and never blocks an export: the caller writes no intent and no
  * conformance claim, which is strictly more honest than falling back to a
@@ -196,7 +196,7 @@ export async function resolveEmbeddedProfile(
   if (wanted) {
     entry = await getProfile(host, wanted).catch(() => null);
   } else {
-    // Bare `own` (the URL spelling — a digest is device-local and must not travel).
+    // Bare `own` (the URL spelling - a digest is device-local and must not travel).
     // Exactly one eligible profile is unambiguous; zero or several is not, and
     // guessing which one an author meant would let storage order decide a value of
     // record. See the caller: no intent, no claim.
@@ -240,7 +240,7 @@ export async function resolveEmbeddedProfile(
 }
 
 /**
- * The stored profiles a PDF/X intent in `intentSpace` could embed — the rows the
+ * The stored profiles a PDF/X intent in `intentSpace` could embed - the rows the
  * export panel offers, and the resolution set for the bare `own` form.
  *
  * Judged from the row's stored meta (no parse, no byte read): the meta is written
@@ -274,7 +274,7 @@ export function urlProfileValue(value: string | undefined | null): string {
   return isOwnProfile(value) ? OWN_PREFIX : String(value ?? '');
 }
 
-/** `Embed PSO Coated v3 (≈1.7 MB)` — arithmetic, so the figure cannot rot. */
+/** `Embed PSO Coated v3 (≈1.7 MB)` - arithmetic, so the figure cannot rot. */
 export function embedRowLabel(entry: ProfileEntry): string {
   const mb = entry.bytes / (1024 * 1024);
   const size = mb >= 0.1 ? `≈${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(entry.bytes / 1024))} kB`;

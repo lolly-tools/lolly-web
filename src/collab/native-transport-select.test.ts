@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * native-transport-select (collab/native-transport-select.ts): the full decision table
- * for choosing rtc / native / none (plans/110 §4). Pure — no I/O, no crypto.
+ * for choosing rtc / native / none (plans/110 §4). Pure - no I/O, no crypto.
  *
  * Run directly:  node --test shells/web/src/collab/native-transport-select.test.ts
  */
@@ -40,7 +40,7 @@ test('local preference never overrides a received invite kind', () => {
 test('web can only ever mint rtc, or none when WebRTC is absent', () => {
   assert.equal(pick({ localPlatform: 'web', webrtcAvailable: true, pref: 'auto' }), 'rtc');
   assert.equal(pick({ localPlatform: 'web', webrtcAvailable: false, pref: 'auto' }), 'none');
-  // A web shell can never satisfy a LAN preference — there is no native transport.
+  // A web shell can never satisfy a LAN preference - there is no native transport.
   assert.equal(pick({ localPlatform: 'web', webrtcAvailable: false, pref: 'prefer-lan' }), 'none');
 });
 

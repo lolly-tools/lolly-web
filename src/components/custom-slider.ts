@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shell's slider — `.custom-slider` (styles in parts/fields.css, beside the
+ * The shell's slider - `.custom-slider` (styles in parts/fields.css, beside the
  * `.field-range` recipe it grew up next to).
  *
  * It started as the tool sidebar's control and lived inside tool-inputs.ts, wired
  * straight into a tool Runtime. Everywhere else in the app got a native
- * `<input type="range">` dressed up in CSS to look like it — two objects that had
+ * `<input type="range">` dressed up in CSS to look like it - two objects that had
  * to be kept looking alike by hand, and only one of them had the jelly egg-trail.
  * So the behaviour lives here now, driven by callbacks rather than a Runtime:
  *
- *   · `customSliderHtml()` + `mountCustomSlider()` — the tool sidebar's path,
+ *   · `customSliderHtml()` + `mountCustomSlider()` - the tool sidebar's path,
  *     and anything else building its own markup.
- *   · `upgradeRangeInput()` — the chrome's path. A `.field-range` input is left in
+ *   · `upgradeRangeInput()` - the chrome's path. A `.field-range` input is left in
  *     the DOM as the value + event carrier and a real slider is mounted beside it,
  *     so the ~20 surfaces holding a reference to that input (reading `.value`,
  *     listening for 'input'/'change', persisting on 'change') keep working
@@ -42,7 +42,7 @@ export interface CustomSliderSpec {
 }
 
 export interface CustomSliderHooks {
-  /** Every value change — one per detent crossed while dragging. */
+  /** Every value change - one per detent crossed while dragging. */
   onInput?: (v: number) => void;
   /** A settled value: pointer release, or a keyboard step. */
   onCommit?: (v: number) => void;
@@ -78,7 +78,7 @@ export function customSliderHtml(spec: CustomSliderSpec): string {
   </div>`;
 }
 
-/** A mounted slider's handle — for pushing a value in from outside. */
+/** A mounted slider's handle - for pushing a value in from outside. */
 export interface MountedSlider {
   /** Move the slider to `v` (snapped + clamped) without firing any hook. */
   setValue: (v: number) => void;
@@ -101,17 +101,17 @@ export function mountCustomSlider(el: HTMLElement, hooks: CustomSliderHooks = {}
   let lastSnapped = parseFloat(el.getAttribute('aria-valuenow') ?? '') || min;
 
   // ── Jelly egg-trail (flag-gated, purely visual) ──────────────────────────
-  // The thumb chases the value with a soft, VISIBLE elastic lag — the same feel
+  // The thumb chases the value with a soft, VISIBLE elastic lag - the same feel
   // as the segmented nav tabs. A spring drags a "visual" position behind the
   // (always-accurate) fill end; the gap between them stretches the thumb into an
   // egg whose rounded end leads and whose pinched tail trails, and it lingers a
-  // beat as the spring reels in after you stop — so you see it at normal drag
+  // beat as the spring reels in after you stop - so you see it at normal drag
   // speed, not just fast flicks. This is POSITION-lag driven, not velocity: the
   // old velocity version only showed on quick wiggles and read as a symmetric
   // oval. The fill width, value and ARIA are never touched. Off (old CSS
   // grab-swell) when the flag is off or reduced motion is requested.
   const jelly = jellyEnabled() && !prefersReducedMotion();
-  // Tunables — eyeballed against the nav tabs. STIFF/DAMP = the chase spring
+  // Tunables - eyeballed against the nav tabs. STIFF/DAMP = the chase spring
   // (softer than the tabs' 260/32 so the lag reads bigger); MAX_LEN caps the
   // tail length px; GRAB/RATE = the round head's press-swell spring; TAIL_BASE
   // = how wide the tail's base is vs the head diameter.
@@ -134,7 +134,7 @@ export function mountCustomSlider(el: HTMLElement, hooks: CustomSliderHooks = {}
   }
 
   // Accurate thumb centre in track pixels, read from the live left% the drag
-  // handler already set — the spring chases this true position.
+  // handler already set - the spring chases this true position.
   function jThumbPx(): number {
     return (parseFloat(thumb.style.left) || 0) / 100 * track.clientWidth;
   }
@@ -208,7 +208,7 @@ export function mountCustomSlider(el: HTMLElement, hooks: CustomSliderHooks = {}
 
     function fromPointer(e: PointerEvent): void {
       const rect  = track.getBoundingClientRect();
-      if (!rect.width) return;                      // no track to map onto — don't turn the value into NaN
+      if (!rect.width) return;                      // no track to map onto - don't turn the value into NaN
       const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
       const raw   = min + ratio * (max - min);
       setThumb(raw);
@@ -309,7 +309,7 @@ export function upgradeRangeInput(input: HTMLInputElement): void {
   const el = host.firstElementChild as HTMLElement;
   input.after(el);
   // The input keeps the value and the events; it just stops being the control.
-  // Out of the a11y tree too — the slider beside it carries the same label, and
+  // Out of the a11y tree too - the slider beside it carries the same label, and
   // both being announced would double up every slider in the chrome.
   input.classList.add('is-upgraded');
   input.tabIndex = -1;
@@ -328,7 +328,7 @@ export function upgradeRangeInput(input: HTMLInputElement): void {
   const slider = mountCustomSlider(el, {
     onInput: (v) => relay(v, 'input'),
     // A commit after a drag has already sent its 'input'; a keyboard step hasn't
-    // (it commits straight away), and a native range fires both — so send the
+    // (it commits straight away), and a native range fires both - so send the
     // missing one rather than a duplicate.
     onCommit: (v) => {
       if (parseFloat(input.value) !== v) relay(v, 'input');
@@ -338,7 +338,7 @@ export function upgradeRangeInput(input: HTMLInputElement): void {
     // its markup on 'input' (the tool sidebar, on a block field) would replace the
     // element the pointer is captured on and the drag would die on its first step.
     // Those surfaces held off by watching pointerdown/up on the input itself,
-    // which no longer sees the gesture — so it is relayed as this event pair.
+    // which no longer sees the gesture - so it is relayed as this event pair.
     onDragStart: () => input.dispatchEvent(new CustomEvent(SLIDER_DRAG_EVENT, { bubbles: true, detail: { dragging: true } })),
     onDragEnd: () => input.dispatchEvent(new CustomEvent(SLIDER_DRAG_EVENT, { bubbles: true, detail: { dragging: false } })),
   });
@@ -346,7 +346,7 @@ export function upgradeRangeInput(input: HTMLInputElement): void {
   // input → slider. Surfaces set `input.value` directly to push state back into a
   // slider (the brand editor's radius, the type demo's weight axis, a player
   // reopening at the stored volume) and mostly fire no event with it, so there is
-  // nothing to listen for — the property itself is the hook.
+  // nothing to listen for - the property itself is the hook.
   if (NATIVE_VALUE?.get && NATIVE_VALUE.set) {
     const { get, set } = NATIVE_VALUE;
     Object.defineProperty(input, 'value', {
@@ -371,7 +371,7 @@ let watching = false;
 
 /**
  * Sweep the document once, then upgrade sliders as they mount. Views here render
- * by writing innerHTML, so there is no single place to hook — but a mutation
+ * by writing innerHTML, so there is no single place to hook - but a mutation
  * callback runs before the next paint, so a slider is never seen as a native one
  * first. Only addedNodes are scanned, so the work is bounded by what actually
  * mounted rather than by the size of the page.

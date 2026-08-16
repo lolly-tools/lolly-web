@@ -3,7 +3,7 @@
  * Make untrusted SVG markup safe to INLINE live into the app DOM.
  *
  * Inlining a raw `<svg>` (unlike an `<img src=…svg>`, which is an opaque, script-
- * inert document) executes anything it carries — `<script>`, `on*` handlers,
+ * inert document) executes anything it carries - `<script>`, `on*` handlers,
  * `javascript:` refs, `<foreignObject>` HTML. That is the price of making an SVG
  * animation live + seekable (see anim-svg-mount / dom-frame). So every SVG that
  * did not originate in our own catalog goes through here first.
@@ -11,7 +11,7 @@
  * This is the SAME treatment an upload already gets at ingest (picker.ts) and in
  * beam-pack import: DOMPurify's SVG profile, serialised from the sanitised DOM
  * NODE with XMLSerializer (NOT DOMPurify's HTML string output, which turns a
- * literal U+00A0 into `&nbsp;` — undefined in XML, blanks the file on strict
+ * literal U+00A0 into `&nbsp;` - undefined in XML, blanks the file on strict
  * re-parse). Verified to PRESERVE animation: `<style>`, `@keyframes`, the
  * `animation` property, `color-mix()`, `var()`, `transform-box`, `hue-rotate`
  * and `mix-blend-mode` all survive, so a sanitised SVG still animates.
@@ -38,7 +38,7 @@ export class SvgSanitizeError extends Error {
 /**
  * Sanitise SVG markup and return a self-contained `<svg>…</svg>` string safe to
  * inline. Throws {@link SvgSanitizeError} when there is no DOM to sanitise with,
- * or when nothing drawable (an `<svg>` root) survives — an "SVG" that does not
+ * or when nothing drawable (an `<svg>` root) survives - an "SVG" that does not
  * survive as one was not one, and inlining the original would be the hole this
  * closes.
  */

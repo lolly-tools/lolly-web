@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Hook Worker (M2, plans/86-worker-isolation-hooks.md §13.1) — the DOM-free
+ * Hook Worker (M2, plans/86-worker-isolation-hooks.md §13.1) - the DOM-free
  * executor that runs a tool's hooks.js OFF the main thread.
  *
  * A hook is compiled here with `new Function('host', src)` exactly as the
  * in-realm path does, but the `host` it receives is a PROXY:
- *   - Bucket A (color, geom, tokens, log) is CO-LOCATED — built right here from
+ *   - Bucket A (color, geom, tokens, log) is CO-LOCATED - built right here from
  *     the pure engine modules + a snapshot of the brand token doc, so a hook's
  *     `host.color.distinct(...)` / `host.tokens.resolve(...)` never leaves the
- *     worker (the whole point — sync APIs cost ~0 across the boundary).
+ *     worker (the whole point - sync APIs cost ~0 across the boundary).
  *   - Bucket B (assets, profile, state, export, net, …) is PROXIED: each call
  *     posts a `host-call` to the main thread and awaits the reply, so the hook's
- *     `await host.assets.get(id)` is unchanged — an awaited RPC is an awaited RPC.
+ *     `await host.assets.get(id)` is unchanged - an awaited RPC is an awaited RPC.
  *   - Bucket C (media/recorder/audio/viz.isAvailable, …) is SEEDED with the value
  *     the main thread computed, because those read globals a worker lacks.
  *
@@ -29,7 +29,7 @@ import type { HostV1, TokenSet } from '@lolly-tools/core/host-v1';
 // Every message carries `runId` (one per mounted tool); a shared singleton worker
 // holds many mounts. `callId`/`hostCallId` correlate the two RPC directions.
 
-/** The introspected shape of the main-thread host: which methods actually exist,
+/** The introspected structure of the main-thread host: which methods actually exist,
  *  so an ABSENT optional method stays absent on the proxy (a hook's
  *  `host.pdf?.redact` feature-detection keeps working). */
 export interface HostShape { [ns: string]: string[] }
@@ -63,7 +63,7 @@ export interface HookHostCallMsg { t: 'host-call'; runId: number; hostCallId: nu
 export interface HookLogMsg { t: 'log'; runId: number; entries: { level: string; msg: string; ctx?: unknown }[] }
 export type HookWorkerOut = HookInitDoneMsg | HookInvokeDoneMsg | HookHostCallMsg | HookLogMsg;
 
-/** A transport the core posts through — the real worker `postMessage`, or a stub in a test. */
+/** A transport the core posts through - the real worker `postMessage`, or a stub in a test. */
 export interface HookWorkerPort { post(msg: HookWorkerOut, transfer?: Transferable[]): void }
 
 // ── Bucket policy ─────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ function makeColocatedApis() {
 
 /**
  * The worker's message handler + host-proxy construction, with the transport
- * injected. Returns `{ handle }` — feed it every inbound message.
+ * injected. Returns `{ handle }` - feed it every inbound message.
  */
 export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?: () => number } = {}) {
   const runs = new Map<number, Run>();
@@ -124,7 +124,7 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
     }, 250);
   }
 
-  /** Build the co-located tokens surface from the snapshotted doc — a local
+  /** Build the co-located tokens surface from the snapshotted doc - a local
    *  per-theme TokenSet cache; the async signatures just wrap the sync result. */
   function makeTokens(doc: unknown, excluded: string[]): NonNullable<HostV1['tokens']> {
     const byTheme = new Map<string, TokenSet>();
@@ -175,7 +175,7 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
         const full = `${ns}.${method}`;
         if (OMIT_METHODS.has(full)) continue;
         if (ns === 'raster' && method === 'canRaster') {
-          // C5: recompute locally — realm-portable by design (the M1 point).
+          // C5: recompute locally - realm-portable by design (the M1 point).
           nsObj[method] = () =>
             typeof createImageBitmap === 'function' &&
             (typeof OffscreenCanvas === 'function' ||
@@ -211,7 +211,7 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
     });
   }
 
-  /** Compile hooks.js in this realm — same factory shape as engine getHookFactory. */
+  /** Compile hooks.js in this realm - same factory shape as engine getHookFactory. */
   function compile(host: HostV1, source: string): Partial<Record<WorkerHookName, (ctx: unknown) => unknown>> {
     const factory = new Function(
       'host',
@@ -239,7 +239,7 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
         declared = WORKER_HOOK_NAMES.filter(n => run.mod[n] != null);
       } catch (e) {
         // A hooks.js that throws AT COMPILE TIME can't run here. Report it so the
-        // main client REJECTS the mount and falls back to the in-realm executor —
+        // main client REJECTS the mount and falls back to the in-realm executor - 
         // matching in-realm loudness (a syntax error there fails createRuntime),
         // not a silent all-null-hooks mount. Drop the dead run so it can't leak.
         compileError = (e as Error).message;
@@ -255,7 +255,7 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
         port.post({ t: 'invoke-done', runId: msg.runId, callId: msg.callId, ok: false, error: `no hook '${msg.name}'` });
         return;
       }
-      // Re-attach the worker's host proxy — ctx crossed the wire WITHOUT it.
+      // Re-attach the worker's host proxy - ctx crossed the wire WITHOUT it.
       const ctx = { ...msg.ctx, host: run.host };
       Promise.resolve()
         .then(() => fn(ctx))

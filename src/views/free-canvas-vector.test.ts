@@ -2,7 +2,7 @@
 /**
  * The canvas editor's VECTOR-OPERATIONS context menu (Stage E wiring).
  *
- * vector-ops.test.ts covers the geometry; this covers the overlay's half of the deal —
+ * vector-ops.test.ts covers the geometry; this covers the overlay's half of the deal - 
  * which entries exist, what gates them, that a result is committed as exactly ONE model
  * write, that a refusal is visible and leaves the model byte-for-byte unchanged, and that
  * a two-finger tap reaches the menu on a touch device.
@@ -44,7 +44,7 @@ const rect = (left: number, top: number, width: number, height: number): DOMRect
 
 /** A pointer-family event carrying the fields the overlay reads. jsdom has no
  *  PointerEvent, and a MouseEvent dispatched under a `pointer*` type triggers the same
- *  listeners — it just needs pointerId / pointerType / timeStamp defined on it. */
+ *  listeners - it just needs pointerId / pointerType / timeStamp defined on it. */
 function pointerEvent(
   type: string,
   o: { x: number; y: number; id?: number; pointerType?: string; time?: number },
@@ -59,7 +59,7 @@ function pointerEvent(
 // ── fixture ───────────────────────────────────────────────────────────────────
 
 /** The Design `canvas` block as SHIPPED: it declares `pathField` and nothing else
- *  about vectors, leaving `stroke` / `strokeW` / `fillRule` to the overlay's defaults — so
+ *  about vectors, leaving `stroke` / `strokeW` / `fillRule` to the overlay's defaults - so
  *  these tests exercise that resolution rather than a hand-declared superset.
  *  `vectorFields: false` drops `pathField`, i.e. a manifest that predates Stage C. */
 function canvasCfg(vectorFields = true): Record<string, unknown> {
@@ -92,7 +92,7 @@ function mount(initial: Box[], opts: { vectorFields?: boolean } = {}): Fixture {
   dom.window.document.body.appendChild(viewEl);
   canvasEl.style.width = NATIVE + 'px';
   canvasEl.style.height = NATIVE + 'px';
-  // 1 screen px per native px, origin at the client origin — so a test's client
+  // 1 screen px per native px, origin at the client origin - so a test's client
   // coordinates ARE canvas coordinates and the hit-testing reads naturally.
   stageEl.getBoundingClientRect = () => rect(0, 0, NATIVE, NATIVE);
   canvasEl.getBoundingClientRect = () => rect(0, 0, NATIVE, NATIVE);
@@ -178,7 +178,7 @@ function select(f: Fixture, pts: Array<[number, number]>): void {
 const area = (p: GeomPath): number => Math.abs(p.reduce((a, c) => a + contourArea(c), 0));
 
 /**
- * The OPERATION's own geometry is exact — straight edges only, so the area is right up to
+ * The OPERATION's own geometry is exact - straight edges only, so the area is right up to
  * double rounding, and a relative tolerance this tight would catch any wrong region.
  *
  * Assert against the path the op RETURNED, not one read back out of a box.
@@ -193,7 +193,7 @@ function assertExactArea(p: GeomPath | null, expected: number, what: string): vo
  * The same region after a round trip through the `path` sub-field, which is NOT exact.
  *
  * The wire format (engine/src/geom/authored-url.ts) fixes every coordinate at six decimals
- * of a FRACTION of the box frame — deliberately, so a share link's bytes do not churn when
+ * of a FRACTION of the box frame - deliberately, so a share link's bytes do not churn when
  * it is opened and re-shared. Six decimals of a 150-unit frame is 1.5e-4 of a unit per
  * coordinate, and an area is quadratic in those, so ~1e-6 relative is the floor here. The
  * two helpers stay separate because the difference between "the boolean is exact" and
@@ -294,7 +294,7 @@ test('Union on two overlapping boxes: one commit, one path box, the area worked 
   // Twice over, because the two claims are different. The OPERATION is exact: run it
   // directly and its own returned geometry hits the area on the nose. What the editor
   // persists is that geometry through the wire format, which fixes six decimals of a
-  // fraction of the frame — so the box read back is right to ~1e-6 relative and no further.
+  // fraction of the frame - so the box read back is right to ~1e-6 relative and no further.
   const direct = booleanBoxes(OVERLAP(), 'union', { cfg: canvasCfg() as never });
   assert.ok(direct.ok);
   assertExactArea(direct.ok ? direct.path : null, 17500, 'the union itself');
@@ -310,7 +310,7 @@ test('the selection after a successful op is the new box', () => {
   click(gridItem(rightClick(f, 60, 60), 'Union'));
   const id = String(f.boxes()[0]!.id);
   // A right-click on empty canvas leaves the selection alone, so the menu's state reports
-  // it: one selected box, which is a pen path — hence Simplify is live and Union is not.
+  // it: one selected box, which is a pen path - hence Simplify is live and Union is not.
   const m = rightClick(f, 900, 900);
   assert.equal(rowItem(m, 'Simplify').disabled, false, 'the new path box is selected');
   assert.equal(gridItem(m, 'Union').disabled, true, 'and it is the ONLY selection');
@@ -391,7 +391,7 @@ test('a boolean over text boxes refuses with the no-outline reason', () => {
     rectBox({ id: 'a', x: 300, y: 300, w: 100, h: 100 }),
   ]);
   // Force the op past its own gate by selecting the text box alone, then asking for an
-  // offset — the entry is disabled in the UI, so drive the failure through the op the menu
+  // offset - the entry is disabled in the UI, so drive the failure through the op the menu
   // WOULD run and assert the surfacing rather than the disabled attribute.
   select(f, [[20, 20]]);
   const m = rightClick(f, 20, 20);

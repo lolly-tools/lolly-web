@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-zzfxm.test.ts — the procedural (`zzfxm:`) audio source.
+ * sequence-zzfxm.test.ts - the procedural (`zzfxm:`) audio source.
  *
  * WHAT THIS PROVES, AND WHY IT IS A SEPARATE FILE FROM sequence-providers.test.ts.
- * Everything here is about ONE property — that a seed and a length determine the
+ * Everything here is about ONE property - that a seed and a length determine the
  * bytes, totally, forever. That is a different kind of claim from the decoder
  * plumbing its sibling covers, and it is the claim a shared link depends on: the
  * recipient of a `?boxes=…zzfxm:20260726…` url must hear the tune the author
@@ -11,7 +11,7 @@
  *
  * The song is rendered with the ENGINE's real `renderZzfxm` (injected in place of
  * the shipped Worker, which Node has no use for), so these are real samples from
- * the real synth — not a mock standing in for one.
+ * the real synth - not a mock standing in for one.
  *
  * NOT PROVEN HERE: that the mix places the bed correctly (sequence-render's job,
  * covered there), and that the panel draws a waveform for it (browser tier).
@@ -52,7 +52,7 @@ function realRenderer(): {
   };
 }
 
-/** Peak absolute sample. A loop, not `Math.max(...arr)` — these arrays are 6-figure long. */
+/** Peak absolute sample. A loop, not `Math.max(...arr)` - these arrays are 6-figure long. */
 function peakOf(ch: Float32Array): number {
   let peak = 0;
   for (let i = 0; i < ch.length; i++) { const v = Math.abs(ch[i] as number); if (v > peak) peak = v; }
@@ -67,7 +67,7 @@ function deps(render: (s: ZzfxSong) => Promise<RenderedPcm>): ClipAudioOpts {
 
 function digest(channels: Float32Array[]): string {
   // FNV-1a over the raw sample bits. Cheap, and sensitive to a single flipped
-  // bit — "byte-identical" has to mean bytes, not "sounds about the same".
+  // bit - "byte-identical" has to mean bytes, not "sounds about the same".
   let h = 0x811c9dc5;
   for (const ch of channels) {
     const bytes = new Uint8Array(ch.buffer, ch.byteOffset, ch.byteLength);
@@ -94,7 +94,7 @@ test('parseZzfxmRef: accepts a recognised style', () => {
 
 test('parseZzfxmRef: an unrecognised style degrades to the seed\'s own, it does not fail the bed', () => {
   assert.deepEqual(parseZzfxmRef('zzfxm:7:jazzhands'), { seed: 7, rawStyle: 'jazzhands' });
-  // Style matching is exact — a case slip is a typo, not an alias.
+  // Style matching is exact - a case slip is a typo, not an alias.
   assert.deepEqual(parseZzfxmRef('zzfxm:7:LoFi'), { seed: 7, rawStyle: 'LoFi' });
 });
 
@@ -105,7 +105,7 @@ test('parseZzfxmRef: an empty style segment is the same as no style', () => {
 test('parseZzfxmRef: rejects everything that is not the grammar', () => {
   for (const bad of [
     'zzfxm:', 'zzfxm:abc', 'zzfxm:-1', 'zzfxm:1.5', 'zzfxm:0x10', 'zzfxm: 7', 'zzfxm:7 ',
-    'zzfxm:12345678901',            // 11 digits — past uint32's decimal width
+    'zzfxm:12345678901',            // 11 digits - past uint32's decimal width
     'zzfxm:7:lofi:extra',           // a third segment is not in the grammar
     'blob:https://x/y', 'https://x/a.mp3', 'data:audio/wav;base64,AA', 'ZZFXM:7', '',
   ]) {
@@ -148,7 +148,7 @@ test('generatedSongSpec: a named style overrides only the archetype', () => {
   const styled = generatedSongSpec(4242, 30, 'jungle');
   assert.equal(styled.archetype, 'jungle');
   // The rng stream is consumed in the same order either way, so the progression
-  // and the pan are untouched — only the tempo moves, because it is drawn from
+  // and the pan are untouched - only the tempo moves, because it is drawn from
   // the (now different) archetype's window with the same random draw.
   assert.deepEqual(styled.roots, bare.roots);
   assert.equal(styled.pan, bare.pan);
@@ -283,7 +283,7 @@ test('the window is trimmed and sized exactly like a decoded clip', async () => 
   const { channels, sampleRate } = await clip.pcm(1.5, 4, rate);
   assert.equal(sampleRate, rate);
   assert.equal((channels[0] as Float32Array).length, Math.round(2.5 * rate));
-  // The same window read out of the same song twice is the same samples — the
+  // The same window read out of the same song twice is the same samples - the
   // read is a pure slice of a cached render, not a fresh composition.
   const again = await clip.pcm(1.5, 4, rate);
   assert.equal(digest(channels), digest(again.channels));
@@ -322,7 +322,7 @@ test('an explicit targetSec wins over the window end, and lengthens the arrangem
   await bare.pcm(0, 3, 48_000);   // window end 3s → clamped up to the 8s floor
 
   // Both composed the same seed, so the arrangement OPENS the same way (which is
-  // why comparing the first three seconds of PCM would prove nothing) — what
+  // why comparing the first three seconds of PCM would prove nothing) - what
   // differs is how long it runs. That is the "a bed re-composes when the
   // sequence changes length" rule, observed where it is actually visible.
   assert.equal(long.calls(), 1);
@@ -379,7 +379,7 @@ test('a zzfxm ref survives the blocks-row asset-ref form and URL encoding unharm
 test('the assets bridge RESOLVES a zzfxm ref to itself, so the bed reaches the mix', async () => {
   // THE BUG THIS EXISTS FOR. The manifest assertion below is tautological on its
   // own: it re-reads a string and hands it to the parser. What actually broke was
-  // one step earlier — the engine's `resolveOne` calls `host.assets.get(id)`, the
+  // one step earlier - the engine's `resolveOne` calls `host.assets.get(id)`, the
   // bridge threw "Asset not in catalog", the catch nulled the field BEFORE hooks
   // ran, `hooks.js` emitted no `data-audio-src` marker at all, and the mix never
   // saw the bed. A working default became a silent one with nothing logged as an
@@ -402,7 +402,7 @@ test('the assets bridge RESOLVES a zzfxm ref to itself, so the bed reaches the m
 
   // A style-bearing ref, and a canonicalising one.
   assert.equal((await api.get('zzfxm:7:lofi')).url, 'zzfxm:7:lofi');
-  // A malformed ref is an ERROR, not a silently-dropped field — the one thing
+  // A malformed ref is an ERROR, not a silently-dropped field - the one thing
   // worse than a broken bed is a broken bed nobody is told about.
   await assert.rejects(() => api.get('zzfxm:not-a-seed'), /Malformed procedural audio ref/);
 });
@@ -428,7 +428,7 @@ test('the Design video template ships a procedural bed, not a catalog loop', () 
   // Pinned: changing the shipped seed changes the tune every existing share link
   // of the untouched template renders. It is a contract, not a preference.
   assert.equal(bed.image?.id, 'zzfxm:20260807');
-  // Offline by construction — no fetch, no brand pack, no licence surface.
+  // Offline by construction - no fetch, no brand pack, no licence surface.
   const song = composeSong(generatedSongSpec(ref.seed, 8));
   assert.ok(song.sequence.length > 0 && song.patterns.length > 0);
 });

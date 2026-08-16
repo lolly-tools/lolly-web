@@ -2,9 +2,9 @@
 /**
  * Structural invariants for the 26 translated UI catalogs (src/locales/<lang>.json).
  *
- * Nothing checked these before. The catalogs are produced two ways — the machine
+ * Nothing checked these before. The catalogs are produced two ways - the machine
  * pipeline (scripts/translate.ts) and hand/agent waves writing through
- * scripts/i18n/overrides/ — and BOTH can silently break a string in ways that only
+ * scripts/i18n/overrides/ - and BOTH can silently break a string in ways that only
  * show up as a bug report from someone who doesn't read English:
  *
  *   - a dropped `{name}` placeholder renders "Welcome back, " with a blank where a
@@ -16,7 +16,7 @@
  *     it, and looks like nothing at all in a diff of any single file
  *
  * A catalog is keyed BY its English source string, so the English side of every
- * comparison is right there in the key — no separate source of truth to drift from.
+ * comparison is right there in the key - no separate source of truth to drift from.
  *
  * Deliberately NOT checked: whether the translation is any good. That is a human
  * judgement and this file makes no attempt at it.
@@ -30,10 +30,10 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LOCALES_DIR = join(HERE, 'locales');
 const GLOSSARY = join(HERE, '..', '..', '..', 'scripts', 'i18n', 'glossary.json');
-/** The hand-listed half of the spa corpus — every key extractSpaKeys cannot scan for. */
+/** The hand-listed half of the spa corpus - every key extractSpaKeys cannot scan for. */
 const EXTRA_KEYS = join(HERE, '..', '..', '..', 'scripts', 'i18n', 'extra-keys.spa.json');
 
-/** `{name}` / `{count}` — the interpolation form i18n.ts's t() understands. */
+/** `{name}` / `{count}` - the interpolation form i18n.ts's t() understands. */
 const PLACEHOLDER = /\{[a-zA-Z][\w.-]*\}/g;
 
 const catalogs = readdirSync(LOCALES_DIR)
@@ -95,12 +95,12 @@ test('glossary neverTranslate terms survive translation', () => {
 
 test('every catalog carries exactly the same key set', () => {
   // The catalogs are generated per language from ONE corpus, so their key sets are the
-  // same set by construction — writeCatalogFromCache walks the corpus keys and writes a
+  // same set by construction - writeCatalogFromCache walks the corpus keys and writes a
   // value for every one of them, falling back to English. A locale short of a key
   // therefore did not fail to translate it: it was never regenerated, and the string is
   // MISSING rather than untranslated.
   //
-  // That is invisible at runtime — t() falls back to the English source either way — and
+  // That is invisible at runtime - t() falls back to the English source either way - and
   // it is exactly how six locales (bg, no, pl, tr, uk, zh-hant) ended up with none of a
   // wave's eight new Share-dialog and Feature-flags strings while the other twenty had
   // all eight. The echo check below cannot see it (a missing key is not an echo), and the
@@ -132,7 +132,7 @@ test('every catalog carries exactly the same key set', () => {
 test('every hand-listed spa key reached every catalog', () => {
   // The blind spot in the test above, which compares the catalogs only with EACH OTHER.
   // Twenty-six files that are all short the same key agree perfectly, so a string that
-  // never reached ANY of them is invisible there — and that is not hypothetical: the
+  // never reached ANY of them is invisible there - and that is not hypothetical: the
   // session-tile badge's `Collaborator` and `{name} (away)` were listed in
   // extra-keys.spa.json and present in nought of twenty-six, rendering English in every
   // language with every gate green.
@@ -140,7 +140,7 @@ test('every hand-listed spa key reached every catalog', () => {
   // extra-keys.spa.json is the half of the corpus a scan cannot rebuild: extractSpaKeys
   // finds literal `t('…')` call sites by regex, so anything dynamically keyed exists in
   // that file or nowhere. Checking it against the catalogs is therefore checking the one
-  // input whose loss is silent. The scanned half needs no equivalent — a key extracted
+  // input whose loss is silent. The scanned half needs no equivalent - a key extracted
   // from source that is missing from a catalog is a stale catalog, which is what the
   // union comparison above already reports.
   const extra = JSON.parse(readFileSync(EXTRA_KEYS, 'utf8')) as string[];
@@ -166,9 +166,9 @@ test('every hand-listed spa key reached every catalog', () => {
 
 /**
  * How much of a catalog is still its own English source, over the values a translator
- * was meant to change. Shared by both echo guards below — same helper, same name and
+ * was meant to change. Shared by both echo guards below - same helper, same name and
  * same shape as collab-i18n.test.ts's, so the boot corpus and the lazy namespace are
- * measured identically — and exercised on synthetic catalogs by `the echo guards fail
+ * measured identically - and exercised on synthetic catalogs by `the echo guards fail
  * a wholly-English catalog`, which is the only way a check reading 26 known-good files
  * can show it would still fail on a bad one.
  */
@@ -186,8 +186,8 @@ const SUBSTANTIAL = (en: string): boolean => en.length >= 25 && /\s/.test(en);
 test('no translation is left as an untranslated English echo of a long string', () => {
   // A catalog entry equal to its own key is the pipeline's English-fallback marker:
   // writeCatalogFromCache writes the key itself for anything with neither a cache entry
-  // nor an override ("never ship broken output"). Short strings legitimately match —
-  // "OK", "PDF", a product name — so only flag substantial ones, and only when a
+  // nor an override ("never ship broken output"). Short strings legitimately match - 
+  // "OK", "PDF", a product name - so only flag substantial ones, and only when a
   // locale has a LOT of them, which is the signature of a half-finished wave rather
   // than a handful of genuine passthroughs.
   const problems: string[] = [];
@@ -202,10 +202,10 @@ test('no translation is left as an untranslated English echo of a long string', 
 });
 
 /**
- * Sources a real translation may leave byte-identical, each with its reason — see the
+ * Sources a real translation may leave byte-identical, each with its reason - see the
  * matching list in collab-i18n.test.ts, which this one mirrors for the boot corpus.
  * Deliberately short: the check below is a floor, not a quality bar, so it does not need
- * every legitimate passthrough named — only enough that the ratio means something.
+ * every legitimate passthrough named - only enough that the ratio means something.
  */
 const IDENTICAL_OK: ReadonlySet<string> = new Set([
   'OK', 'PDF', 'SVG', 'PNG', 'DPI', 'GPU', 'QR', 'Lolly', 'Pro', 'beta',
@@ -218,7 +218,7 @@ test('no catalog is an English echo end to end', () => {
   // The backstop the check above cannot be. That one samples only strings of 25+
   // characters and only fires past fifty of them, which is the right shape for catching
   // a half-finished wave and the wrong shape for catching a catalog that was never
-  // translated at all — a file of short labels can be 100% English and never present
+  // translated at all - a file of short labels can be 100% English and never present
   // fifty samples. No sample floor here, and the allowlist is what a legitimately
   // short catalog uses to stay green.
   //

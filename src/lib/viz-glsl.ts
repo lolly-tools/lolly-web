@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * GLSL for the visualizer's presets — the part that closes the aesthetic gap.
+ * GLSL for the visualizer's presets - the part that closes the aesthetic gap.
  *
  * WHY THIS EXISTS. The first pass at these presets used only butterchurn's built-in
  * shader path (`warp: ''`, `comp: ''`) and steered everything through `baseVals` and
@@ -10,28 +10,28 @@
  * depth, texture and glow come from. No amount of `baseVals` tuning reaches it.
  *
  * WHAT BUTTERCHURN ACTUALLY WANTS. Despite MilkDrop's shaders being authored in an
- * HLSL dialect, butterchurn does NOT translate at load time — the community packs were
+ * HLSL dialect, butterchurn does NOT translate at load time - the community packs were
  * converted offline. `shaderUtils.getShaderParts` merely splits the source on
  * `shader_body { … }` and rewrites `texture2D`/`texture3D` to `texture`. Everything
  * else is inlined verbatim into a `#version 300 es` fragment shader. So a preset
- * shader is **plain GLSL ES 3.00**, and we can write it directly — no HLSL emulation,
+ * shader is **plain GLSL ES 3.00**, and we can write it directly - no HLSL emulation,
  * no conversion step, and it type-checks as a normal template string.
  *
  * WHAT'S IN SCOPE for a shader body:
- *   out    `ret` (vec3) — the composite writes `vec4(ret, vColor.a)`
+ *   out    `ret` (vec3) - the composite writes `vec4(ret, vColor.a)`
  *   coords `uv`, `uv_orig`, `rad`, `ang` (the warp shader gets rad/ang off `uv_orig`)
  *   images `sampler_main`, `sampler_blur1..3`, `sampler_noise_lq|_lq_lite|_mq|_hq`,
  *          `sampler_noisevol_lq|_hq` (3D)
  *   audio  `bass`, `mid`, `treb`, `vol` and their `_att` (time-smoothed) forms
  *   time   `time`, `frame`, `fps`
- *   ours   `q1`..`q32` — set by the preset's own `frame_eqs`, so audio/time logic stays
+ *   ours   `q1`..`q32` - set by the preset's own `frame_eqs`, so audio/time logic stays
  *          in typed, testable TypeScript and the shader just consumes numbers
  *   sizes  `texsize` (xy = pixels, zw = 1/pixels), `aspect`, `resolution`
  *   comp only: `lum(vec3)`, `gammaAdj`, `echo_*`, `fShader`, `hue_shader`
  *   warp only: `decay`
  *
  * TWO TRAPS worth stating once:
- *  1. Referencing `sampler_blurN` is what MAKES blur exist —
+ *  1. Referencing `sampler_blurN` is what MAKES blur exist - 
  *     `Renderer.getHighestBlur` greps the shader source for it and allocates that many
  *     blur passes. Free bloom, but only if you mention the sampler by name.
  *  2. The built-in warp body is `ret = texture(sampler_main, uv).rgb * decay;`. A
@@ -51,7 +51,7 @@ function vec3(c: VizRgb): string {
   return `vec3(${c.map((v) => v.toFixed(4)).join(', ')})`;
 }
 
-/** A GLSL float literal that always carries a decimal point — `1` is an int in GLSL
+/** A GLSL float literal that always carries a decimal point - `1` is an int in GLSL
  *  and will fail to compile where a float is expected. */
 export function f(n: number): string {
   return Number.isFinite(n) ? n.toFixed(4) : '0.0';
@@ -67,7 +67,7 @@ export function f(n: number): string {
  * segment clamps to 0 and is a no-op, so only one blend is ever partial.
  *
  * `lolLum` is ours because the composite shader defines `lum()` but the WARP shader
- * does not — one name that works in both avoids a redeclaration error in one and a
+ * does not - one name that works in both avoids a redeclaration error in one and a
  * missing symbol in the other.
  */
 export function brandGlslHeader(p: VizPalette, opts: { blur?: 0 | 1 | 2 | 3 } = {}): string {
@@ -104,7 +104,7 @@ const vec3 BRAND_DEEP    = ${vec3(p.deep)};
 const vec3 BRAND_HERO    = ${vec3(p.hero)};
 const vec3 BRAND_TIP     = ${vec3(p.tip)};
 // A colour from a DIFFERENT part of the brand's wheel (SUSE: persimmon against jungle).
-// Used as rim light / linework / accent — never interpolated into the ramp, because
+// Used as rim light / linework / accent - never interpolated into the ramp, because
 // interpolating between distant hues is what makes off-brand mud.
 const vec3 BRAND_CONTRAST = ${vec3(p.contrast)};
 
@@ -120,7 +120,7 @@ ${mixes}
   return c;
 }
 
-// Map an intensity to the brand ramp WITHOUT wrapping — 0 is the dark end and 1 the
+// Map an intensity to the brand ramp WITHOUT wrapping - 0 is the dark end and 1 the
 // light end. This is what keeps the picture on-brand no matter what the feedback loop
 // mixed: colour is re-derived from brightness every frame rather than accumulated.
 vec3 brandTone(float e) {
@@ -137,7 +137,7 @@ float lolNoise(vec2 p) { return texture(sampler_noise_lq, p).r; }
  * The obvious \`uv * texsize.xy\` is wrong and silently produces no grain at all:
  * texsize is the FRAMEBUFFER size, sampler_noise_lq is only 256x256, and butterchurn
  * binds it with generateMipmap + LINEAR_MIPMAP_LINEAR. Stepping ~100 texels per pixel
- * sends the sampler to the smallest mip, which is the texture's flat average — the term
+ * sends the sampler to the smallest mip, which is the texture's flat average - the term
  * survives compilation, costs a fetch, and contributes a constant.
  * texsize_noise_lq.zw is 1/noiseSize, so this converts pixels to texels properly.
  */
@@ -167,7 +167,7 @@ float lolEdge(vec2 at, float spread) {
   return abs(r - l) + abs(d - u);
 }
 
-// Signed directional difference — relief/emboss rather than an unsigned outline.
+// Signed directional difference - relief/emboss rather than an unsigned outline.
 float lolRelief(vec2 at, vec2 dir, float spread) {
   vec2 t = LOL_TEXEL * spread * dir;
   return lolLum(texture(sampler_main, at + t).rgb) - lolLum(texture(sampler_main, at - t).rgb);
@@ -193,19 +193,19 @@ function compose(header: string, body: string): string {
 
 export interface CompOptions {
   /** Flip the intensity before the brand mapping, so bright regions take the ramp's DARK
-   *  end. Not a colour inversion — the output stays on the brand ramp, it just reads the
+   *  end. Not a colour inversion - the output stays on the brand ramp, it just reads the
    *  ramp backwards, which turns a glowing field into an inked one. */
   invert?: boolean;
   /** MilkDrop's solarize curve, `e * (1 - e) * 4`: midtones peak and BOTH ends fall to
    *  black, so the image resolves into bands. The built-in composite offers this via a
-   *  baseVals flag, which our own composite replaces — so we implement it here. */
+   *  baseVals flag, which our own composite replaces - so we implement it here. */
   solarize?: boolean;
   /** How much bloom the blur taps contribute. 0 disables them (and the blur passes). */
   glow?: number;
   /** Contrast curve on the intensity before the brand mapping. >1 darkens midtones,
    *  which is what stops the field reading as a grey haze. */
   contrast?: number;
-  /** Film-grain strength. Small values only — this is texture, not noise. */
+  /** Film-grain strength. Small values only - this is texture, not noise. */
   grain?: number;
   /** Edge darkening, 0–1. Keeps a full-bleed field from feeling flat. */
   vignette?: number;
@@ -219,7 +219,7 @@ export interface CompOptions {
  *
  * Re-deriving colour from luminance every frame is the important part. It means the
  * feedback loop can smear and mix as much as it likes and the output still lands on
- * the brand's ramp — brand alignment becomes structural rather than something the
+ * the brand's ramp - brand alignment becomes structural rather than something the
  * per-frame equations have to keep getting right.
  */
 export function compBrandTone(p: VizPalette, opts: CompOptions = {}): string {
@@ -311,7 +311,7 @@ export interface WarpOptions {
  * makes the feedback loop churn with organic detail instead of merely zooming. This
  * is the single biggest contributor to the "real MilkDrop" texture.
  *
- * MUST multiply by `decay` — a custom warp shader replaces butterchurn's built-in
+ * MUST multiply by `decay` - a custom warp shader replaces butterchurn's built-in
  * `ret = texture(sampler_main, uv).rgb * decay;`, so omitting it means trails never
  * fade and the field blows out to white almost immediately.
  *
@@ -338,7 +338,7 @@ export function warpBrandRadial(p: VizPalette, opts: WarpOptions = {}): string {
   const { strength = 0.008, scale = 3.0 } = opts;
   return compose(brandGlslHeader(p, { blur: 0 }), `  vec2 dir = normalize(uv - 0.5 + vec2(1e-5));
   float turb = lolNoise(vec2(ang * ${f(scale)}, rad * ${f(scale)} - time * 0.15)) - 0.5;
-  // Displace along the radius, harder further out — the depth cue.
+  // Displace along the radius, harder further out - the depth cue.
   vec2 d = dir * (turb * ${f(strength)} * (1.0 + q3)) * (0.4 + rad * 1.8);
   ret = texture(sampler_main, uv + d).rgb * decay;`);
 }
@@ -361,7 +361,7 @@ export function warpBrandVolume(p: VizPalette, opts: WarpOptions = {}): string {
  * Tiling warp: samples through the WRAPPED sampler, so content leaving one edge reappears
  * at the opposite one and the field reads as an endless pattern rather than a framed
  * image. (`sampler_fw_main` is the same texture as `sampler_main` bound with
- * REPEAT instead of the default — MilkDrop's F/P × W/C sampler set.)
+ * REPEAT instead of the default - MilkDrop's F/P × W/C sampler set.)
  */
 export function warpBrandTile(p: VizPalette, opts: WarpOptions = {}): string {
   const { strength = 0.004, scale = 2.0, swirl = 0.8 } = opts;
@@ -372,7 +372,7 @@ export function warpBrandTile(p: VizPalette, opts: WarpOptions = {}): string {
   ret = texture(sampler_fw_main, uv + d).rgb * decay;`);
 }
 
-/** The plain warp — identical to butterchurn's built-in, but routed through our
+/** The plain warp - identical to butterchurn's built-in, but routed through our
  *  header so a preset can switch to a custom warp without restructuring. */
 export function warpPlain(p: VizPalette): string {
   return compose(brandGlslHeader(p, { blur: 0 }), '  ret = texture(sampler_main, uv).rgb * decay;');
@@ -385,7 +385,7 @@ export function warpPlain(p: VizPalette): string {
 
 /**
  * Edge/linework: neighbour taps give a Sobel-ish outline, drawn in the CONTRAST colour
- * over a dimmed brand field. Crisp and graphic — the opposite end of the range from the
+ * over a dimmed brand field. Crisp and graphic - the opposite end of the range from the
  * soft bloom presets, and the idiom ~56% of the community shaders use.
  */
 export function compBrandEdge(p: VizPalette, opts: CompOptions & { spread?: number; ink?: number } = {}): string {
@@ -402,7 +402,7 @@ export function compBrandEdge(p: VizPalette, opts: CompOptions & { spread?: numb
   e = pow(clamp(e * (1.0 + q1), 0.0, 1.0), ${f(contrast)});
 ${curve}
   ret = brandTone(e);
-  // Linework in the opposite hue — this is what makes the preset read as drawn.
+  // Linework in the opposite hue - this is what makes the preset read as drawn.
   ret += BRAND_CONTRAST * clamp(edge, 0.0, 1.2);`);
 }
 
@@ -469,8 +469,8 @@ export function compBrandClouds(p: VizPalette, opts: CompOptions & { scale?: num
 
 /**
  * Mosaic: quantise the coordinates and sample through the POINT (nearest) sampler, so the
- * field resolves into hard cells. Uses MilkDrop's `sampler_pc_main` — same texture as
- * `sampler_main`, bound with NEAREST + CLAMP — which is what keeps the cells crisp
+ * field resolves into hard cells. Uses MilkDrop's `sampler_pc_main` - same texture as
+ * `sampler_main`, bound with NEAREST + CLAMP - which is what keeps the cells crisp
  * instead of interpolating them back into a blur.
  */
 export function compBrandMosaic(p: VizPalette, opts: CompOptions & { cells?: number } = {}): string {
@@ -495,7 +495,7 @@ export function compBrandMosaic(p: VizPalette, opts: CompOptions & { cells?: num
  * Bump-mapped lighting: build a surface normal from the luminance gradient and light it
  * with a moving vector, so the field reads as a physical, three-dimensional surface
  * rather than as a glow. This is the technique behind MilkDrop's metallic/foil presets,
- * and it is a step beyond `compBrandRelief` — that takes one signed difference along a
+ * and it is a step beyond `compBrandRelief` - that takes one signed difference along a
  * direction, whereas this reconstructs a real normal and does Lambertian plus specular.
  *
  * `q4` rotates the light (shared with compBrandRelief), `q7` tilts its elevation.
@@ -534,10 +534,10 @@ ${curve}
 // ── Painterly / watercolour ──────────────────────────────────────────────────
 // Technique studied from the community's painterly presets (the Aderrasi "Wanderer in
 // Curved Space" lineage). Four things make wet paint rather than a blur:
-//   1. flow ALONG the gradient of a BLURRED copy — pigment migrating downhill;
-//   2. flow along that gradient's PERPENDICULAR — the curl that makes paint swirl in
+//   1. flow ALONG the gradient of a BLURRED copy - pigment migrating downhill;
+//   2. flow along that gradient's PERPENDICULAR - the curl that makes paint swirl in
 //      water instead of merely bleeding outward;
-//   3. an unsharp mask against a LARGER blur — edges gain a dark rim, which is the
+//   3. an unsharp mask against a LARGER blur - edges gain a dark rim, which is the
 //      pooling that reads unmistakably as watercolour;
 //   4. a tiny constant lift, so the wash keeps breathing instead of draining to black.
 // Written in our own terms and brand-toned; the idea is theirs, the expression is ours.
@@ -547,7 +547,7 @@ export interface WatercolourOptions {
   bleed?: number;
   /** How much of the flow is rotational rather than downhill. */
   curl?: number;
-  /** Unsharp strength — the dark rim that pools at edges. */
+  /** Unsharp strength - the dark rim that pools at edges. */
   pool?: number;
   /** Constant lift that keeps the wash alive. Very small. */
   lift?: number;
@@ -577,7 +577,7 @@ export function warpBrandWatercolour(p: VizPalette, opts: WatercolourOptions = {
  * The watercolour COMPOSITE: a blur-dominant wash with a soft paper grain, edge pooling
  * kept visible, then mapped onto the brand ramp and pulled slightly toward a muted paper
  * tone. That last step stands in for the community presets' per-channel luminance mixing
- * — the same muting effect, expressed against the brand's ramp rather than raw RGB, so it
+ * - the same muting effect, expressed against the brand's ramp rather than raw RGB, so it
  * cannot drift off-brand.
  */
 export function compBrandWatercolour(p: VizPalette, opts: CompOptions & { wash?: number; paper?: number } = {}): string {
@@ -607,7 +607,7 @@ export function compBrandWatercolour(p: VizPalette, opts: CompOptions & { wash?:
  * palette the way light splits through glass.
  *
  * This is the one composite that reads the ramp at more than one position per pixel, which
- * is why it looks unlike anything else in the set — and because all three positions are on
+ * is why it looks unlike anything else in the set - and because all three positions are on
  * the brand's own ramp, the fringing stays on-brand instead of going rainbow.
  *
  * `q8` drives the split width from the preset's equations.
@@ -631,7 +631,7 @@ ${glow > 0 ? `  float g = lolBlur1(uv) * ${f(glow)};
   e *= 1.0 - ${f(vignette)} * smoothstep(0.25, 0.85, rad);
   e = pow(clamp(e * (1.0 + q1), 0.0, 1.0), ${f(contrast)});
 ${curve}
-  // Each tap reads the ramp at its own offset — the fringe, kept inside the palette.
+  // Each tap reads the ramp at its own offset - the fringe, kept inside the palette.
   vec3 lo = brandTone(clamp(a - 0.06, 0.0, 1.0));
   vec3 hi = brandTone(clamp(c + 0.06, 0.0, 1.0));
   ret = brandTone(e) * 0.55 + lo * 0.22 + hi * 0.23;

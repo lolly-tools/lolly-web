@@ -6,7 +6,7 @@
  * `<filter>` is in svg-ir's SKIP set and the `filter` attribute was simply ignored, so
  * every shadow disappeared from those exports. That matters most OUTSIDE this repo:
  * the Penpot export plugin's entire input is Penpot's own SVG, and Penpot writes
- * shadows exactly this way — so a shadowed Penpot board exported to EPS came out with
+ * shadows exactly this way - so a shadowed Penpot board exported to EPS came out with
  * flat, floating shapes.
  *
  * ## The two things worth pinning
@@ -18,7 +18,7 @@
  * and nothing else.
  *
  * **What is declined.** A filter that is not a drop shadow must produce NOTHING rather
- * than a plausible-looking shadow — a blur-only filter, a colour matrix, a turbulence.
+ * than a plausible-looking shadow - a blur-only filter, a colour matrix, a turbulence.
  * Emitting a shadow for those would be a confident wrong answer in a file the user
  * takes to a printer.
  */

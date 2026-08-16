@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Unit coverage for the usage-derived brand proposal (brand-propose.ts) on
- * SYNTHETIC PenpotUsage fixtures — the role heuristic, the load-bearing
+ * SYNTHETIC PenpotUsage fixtures - the role heuristic, the essential
  * surface-shade exclusion, scheme classification, the text contrast pick, the
  * font role/source split, and doc composition. The real-file replay of the
  * same pipeline lives in the gated tests/penpot-keynote-replay.test.ts.
@@ -75,7 +75,7 @@ test('proposeBrandRoles: the surface-shade exclusion is decisive for secondary',
   assert.equal(excluded.secondary, '#14CECA');
   assert.ok(!excluded.extras.includes('#312470'), 'the shade never reaches the pool');
 
-  // Control: the SAME weights without the co-occurrence — the shade's higher
+  // Control: the SAME weights without the co-occurrence - the shade's higher
   // score wins, proving the exclusion (not the scores) made the call above.
   const kept = proposeBrandRoles(usage({
     colors: QUARTET,
@@ -221,7 +221,7 @@ test('proposeRolesFromTokens: the applied census ranks the roles and refs name t
 
 test('proposeRolesFromTokens: the census beats raw paint frequency when they disagree', () => {
   // The file paints the page colour most, but the designer applied the ink
-  // token to the most fills — the declared intent wins.
+  // token to the most fills - the declared intent wins.
   const paint = usage({ colors: [color('#F9FAFF', { fills: 900 }), color('#151035', { fills: 4 })] });
   const roles = proposeRolesFromTokens(DECLARED, applied([
     { name: 'color.ink', fills: 40 },

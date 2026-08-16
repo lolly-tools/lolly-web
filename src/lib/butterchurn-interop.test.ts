@@ -4,11 +4,11 @@
  *
  * The package is a webpack UMD bundle whose `module.exports` is already
  * `{ default: { createVisualizer } }`. How many `default` hops sit on top of that
- * then depends on the toolchain's ES-module interop — Node's `require` presents one,
+ * then depends on the toolchain's ES-module interop - Node's `require` presents one,
  * Vite's esbuild pre-bundle presents two. Hard-coding a depth works in one
  * environment and throws `mod.createVisualizer is not a function` in the other, and
  * since the visualizer is lazily imported the failure only appears when a user opens
- * it. So the resolver walks, and this test covers every shape it might be handed —
+ * it. So the resolver walks, and this test covers every shape it might be handed - 
  * including the REAL installed package, so an upgrade that changes the wrapping is
  * caught here rather than in the browser.
  */

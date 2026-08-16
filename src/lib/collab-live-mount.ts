@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-live-mount — the registrant for `lib/collab-mount.ts`: a connected session
+ * collab-live-mount - the registrant for `lib/collab-mount.ts`: a connected session
  * becomes a MOUNTED tool, on both sides of the ceremony (plan 100 §5, §6.2a, §11.17,
  * §12 Q3; wave 2.5).
  *
@@ -18,7 +18,7 @@
  * ── The two roles, and why they are the same code ──────────────────────────────
  *
  * The acceptor is NOT in the tool yet: they arrived on `#/join` from a link, cold. The
- * inviter IS — they started the ceremony from the Share dialog of the tool they are
+ * inviter IS - they started the ceremony from the Share dialog of the tool they are
  * working in. So one navigates and one re-mounts, and both then run the identical mount:
  * a one-shot session factory is armed, the route is (re)entered, and `views/tool.ts`'s
  * existing acquisition picks the handle up at mount time. Nothing else in the shell
@@ -38,17 +38,17 @@
  *
  *   1. It is the one serialisation that exists for every input type. `buildShareParams`
  *      (views/tool.ts) walks `runtime.getModel()` and encodes assets by id, blocks in
- *      their compact form, vectors as flat `id.field` params — and it is ALREADY handed
+ *      their compact form, vectors as flat `id.field` params - and it is ALREADY handed
  *      to this feature: `CollabLaunchContext.baseParts` is its output, captured when the
  *      Share dialog (and so the ceremony) opened. That is the "serialise the current
  *      runtime model at ceremony start" step, and it needed no new code.
  *   2. It is the one that lands as `initialValues`. `views/tool.ts` parses the route's
  *      params with `parseUrlState(params, manifest)` BEFORE `createRuntime`, so the
- *      runtime is BORN with the state — hooks and the first render see it once. A patch
+ *      runtime is BORN with the state - hooks and the first render see it once. A patch
  *      applied after mount would render twice and run `onInit` against the wrong model.
  *   3. It is typed by the MANIFEST. A raw `Record<string, unknown>` handed across the
  *      wire would arrive as strings; `parseUrlState` coerces each param against its
- *      declared input type and drops what the tool does not declare — which is also the
+ *      declared input type and drops what the tool does not declare - which is also the
  *      §6.3 rule for a peer's payload ("values then flow through the same input-model
  *      validation URL mode already applies"). The seed is untrusted input, and this is
  *      the boundary we already trust for it.
@@ -67,24 +67,24 @@
  *
  * Both halves of that route are LOSSY, by design and for good reasons. `buildShareParams`
  * skips `user/` asset ids, drops a blocks input over 8000 chars, and drops ANY value
- * whose string form runs past 150 — a link has to stay a link. `syncUrl` writes only the
+ * whose string form runs past 150 - a link has to stay a link. `syncUrl` writes only the
  * params the user has actually edited, skips `file` inputs outright (a picked file's bytes
  * are in memory; there is no URL for them), skips provenance-less baked refs, and rebuilds
  * a fresh `URLSearchParams` that never re-adds `slot`. So an uploaded logo, a picked file,
  * a 300-character paragraph and the resumed session id are exactly the values NEITHER
- * encoder writes — and the forced remount rebuilds the runtime from the route, so before
+ * encoder writes - and the forced remount rebuilds the runtime from the route, so before
  * this they were simply gone, with no warning and no undo (the remount resets the history
  * stack too).
  *
  * The fix is not a better encoder. It is not to encode at all: the inviter is on the SAME
  * DEVICE, so the live model can be carried across the remount BY REFERENCE. `views/tool.ts`
- * hands it over in its `_cleanup` — {@link carryMountState}, one call it makes only when
+ * hands it over in its `_cleanup` - {@link carryMountState}, one call it makes only when
  * {@link willRemountForCollab} says a remount for this tool is armed and is this device's
- * own — and the very next mount spends it through {@link takeCarriedMountState}, on top of
+ * own - and the very next mount spends it through {@link takeCarriedMountState}, on top of
  * the route's values. Nothing is serialised, so nothing is lossy: a `FileRef`, a `user/`
  * asset id and a 40 KB paragraph all survive because they are the same objects.
  *
- * Two consequences worth stating. The seed merge stays exactly as it was — it is still
+ * Two consequences worth stating. The seed merge stays exactly as it was - it is still
  * what the ACCEPTOR is born with, and it is still the inviter's fallback if the carry ever
  * misses. And the carry is scoped as narrowly as it can be: one tool id, one shot, only
  * while a non-ephemeral plan is armed, dropped whenever the plan is.
@@ -101,7 +101,7 @@
  *
  * ONE GAP IS KNOWN AND IS NOT CLOSED BY THAT SWAP. Filing a session into a folder
  * (`views/tool-actions.ts`) persists through `createFolderStore(host)`, which writes via
- * `host.profile.set` (`src/folders.ts`), not `host.state` — so an acceptor who FILES
+ * `host.profile.set` (`src/folders.ts`), not `host.state` - so an acceptor who FILES
  * their copy still writes a folder record to their own device. The session data itself
  * stays in memory; what leaks is a row pointing at a slot that does not exist. Closing it
  * means the same interception on `host.profile`, which is a wider blast radius (the
@@ -114,7 +114,7 @@ import { registerCollabSessionSource } from './collab-session-source.ts';
 import type { CollabConnection, CollabSeed } from './collab-mount.ts';
 import type { CollabSessionHandle } from './collab-session.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
-// TYPE-ONLY, all four, and that is load-bearing rather than tidy: this module is on the
+// TYPE-ONLY, all four, and that matters rather than being just tidy: this module is on the
 // boot path (main.ts imports it for `installLiveCollabMount`'s side effect), and the
 // beam stack under `collab/beam-ui.ts` reaches the protocol, the pack, the IndexedDB
 // sink and the toast's stylesheet. A `import type` is erased, so the whole feature stays
@@ -135,7 +135,7 @@ import type { CollabPillAction } from '../components/collab-pill.ts';
 export const MAX_SEED_CHARS = 32_000;
 
 /** Keys no seed may carry, whatever a peer says. The same refusal `sdp-codec.ts` makes
- *  for tool ids and `op-guard.ts` makes for op payloads — a param named `__proto__` is
+ *  for tool ids and `op-guard.ts` makes for op payloads - a param named `__proto__` is
  *  never a tool input and is always someone probing. */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -144,7 +144,7 @@ const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  *
  * Deliberately NOT manifest-aware: coercion is `parseUrlState`'s job at mount time, and
  * duplicating it here would be a second, drifting copy of the input-model rules. This is
- * the transport-shaped half — decode, bound, and refuse the keys that are never inputs.
+ * the transport-shaped half - decode, bound, and refuse the keys that are never inputs.
  */
 export function seedFromQuery(query: string | null | undefined): CollabSeed | undefined {
   if (typeof query !== 'string') return undefined;
@@ -166,7 +166,7 @@ export function seedFromQuery(query: string | null | undefined): CollabSeed | un
  * The Share dialog's own serialisation of the live model as a seed.
  *
  * `baseParts` are pre-encoded `key=value` strings, so they are read through the same
- * `URLSearchParams` that will read them back — a round trip through one decoder cannot
+ * `URLSearchParams` that will read them back - a round trip through one decoder cannot
  * disagree with itself, whereas hand-splitting on `=` would decode differently from the
  * parser the value is eventually handed to.
  */
@@ -191,8 +191,8 @@ export function seedToQuery(seed: CollabSeed | undefined): string {
  *
  * The QUERY wins on a collision, and that ordering is the whole point for the inviter's
  * remount. `syncUrl` writes only the params the user has actually changed (`dirtyParams`)
- * — it is the fresher record of edits, including any made after the ceremony dialog
- * opened — while the seed carries the whole model, including the values that arrived
+ * - it is the fresher record of edits, including any made after the ceremony dialog
+ * opened - while the seed carries the whole model, including the values that arrived
  * from a resumed slot, a template or a default and were never dirty. Seed first, bar on
  * top: nothing the user typed is reverted, and nothing the bar never wrote is lost.
  */
@@ -212,7 +212,7 @@ interface MountPlan {
   readonly toolId: string;
   readonly handle: CollabSessionHandle;
   readonly ephemeral: boolean;
-  /** Hang the session up — used when a plan is replaced or refused, never after it has
+  /** Hang the session up - used when a plan is replaced or refused, never after it has
    *  been handed to a mount (which owns it from then on). */
   readonly close: () => void;
   /**
@@ -242,7 +242,7 @@ interface MountPlan {
   ui: CollabBeamUi | null;
 }
 
-/** The plan awaiting its mount. At most one — a second collab replaces the first. */
+/** The plan awaiting its mount. At most one - a second collab replaces the first. */
 let pending: MountPlan | null = null;
 /** The plan a mount actually took, kept for "Save a copy" and for diagnostics. */
 let adopted: MountPlan | null = null;
@@ -250,7 +250,7 @@ let adopted: MountPlan | null = null;
 let unregisterSource: (() => void) | null = null;
 
 /**
- * What the inviter's outgoing mount handed across its own forced remount — the live
+ * What the inviter's outgoing mount handed across its own forced remount - the live
  * model BY REFERENCE, plus the slot it was resumed from. See the header's second
  * section for why the route cannot carry either.
  *
@@ -270,7 +270,7 @@ let carried: CarriedMountState | null = null;
 
 /** Disarm `plan`: drop the registry, the watch and (unless a mount already took it) the
  *  connection itself. Idempotent, and a no-op for a plan that is no longer the pending
- *  one — the newer plan owns the registry from the moment it was armed. */
+ *  one - the newer plan owns the registry from the moment it was armed. */
 function disarm(plan: MountPlan): void {
   if (pending === plan) {
     pending = null;
@@ -281,7 +281,7 @@ function disarm(plan: MountPlan): void {
   // after `navigate` has already run (the outgoing view hands it over in `_cleanup`,
   // synchronously inside that navigate), so a pair that dies in the window between the
   // remount starting and the new mount reading it would take the user's live model with
-  // it — the exact data loss this whole hand-off exists to prevent. It is one record,
+  // it - the exact data loss this whole hand-off exists to prevent. It is one record,
   // spent on the next mount of that tool and replaced by the next ceremony.
   plan.watch?.();
   plan.watch = null;
@@ -291,8 +291,8 @@ function disarm(plan: MountPlan): void {
   try { plan.ui?.close(); } catch { /* an already-closed session is fine */ }
   plan.ui = null;
   // The transport under a 'closed' handle is already down, but `CollabConnection.close`
-  // is deliberately MORE than `handle.close()` — Track A's ceremony effects and peer
-  // connection, Track B's provider — and this is the only reference to it that exists
+  // is deliberately MORE than `handle.close()` - Track A's ceremony effects and peer
+  // connection, Track B's provider - and this is the only reference to it that exists
   // once the ceremony is gone. Not called for a spent plan: from the hand-off on, the
   // mount owns hanging up.
   if (!plan.handleSpent) { try { plan.close(); } catch { /* already gone is fine */ } }
@@ -300,23 +300,23 @@ function disarm(plan: MountPlan): void {
 
 /**
  * Arm the one-shot factory `views/tool.ts` will consult at mount time. Returns whether
- * the plan is STILL armed when it returns — see the re-entrancy note below.
+ * the plan is STILL armed when it returns - see the re-entrancy note below.
  *
  * ONE-SHOT is the invariant, and it is enforced here rather than trusted: the factory
  * answers for exactly the tool the plan names, exactly once, and unregisters itself as
- * it answers. Two mounts of the same tool cannot both adopt the same transport — the
- * second is an ordinary single-player mount — and a mount of a DIFFERENT tool never
+ * it answers. Two mounts of the same tool cannot both adopt the same transport - the
+ * second is an ordinary single-player mount - and a mount of a DIFFERENT tool never
  * sees it at all (§6.2a pins a private collab to the session it was started from; a
  * user in a collab still opens other tools single-player).
  *
  * ── THE WATCH IS RE-ENTRANT, AND BOTH REAL HANDLES MAKE IT SO ─────────────────
  *
  * `handle.events.subscribe(fn)` REPLAYS the current state synchronously, inside the
- * `subscribe()` call, on both shipping transports — `collab/rtc-handle.ts`'s emitter
+ * `subscribe()` call, on both shipping transports - `collab/rtc-handle.ts`'s emitter
  * (`fn(current())` before it returns) and `org/collab-handle.ts`'s events lane ("the
- * current state, immediately"). So for a handle that is ALREADY closed at arm time —
+ * current state, immediately"). So for a handle that is ALREADY closed at arm time - 
  * Track A's acceptor waits up to `SEED_WAIT_MS` for the hello before it gets here, which
- * is ample time for the peer to hang up — the callback runs BEFORE the assignment that
+ * is ample time for the peer to hang up - the callback runs BEFORE the assignment that
  * was supposed to give it its own unsubscribe.
  *
  * That is why the order below is: register the source, subscribe, and only then decide.
@@ -325,14 +325,14 @@ function disarm(plan: MountPlan): void {
  * disarms a COMPLETE plan instead of tearing down the previous registration and then
  * installing a fresh one for a plan that is already dead. Without both, the observed
  * result was: no pending plan, a permanently-registered session source (every later
- * single-player mount then allocates a context for an inert factory — the §11.14
+ * single-player mount then allocates a context for an inert factory - the §11.14
  * solo-cost rule), a leaked subscription, a connection nobody closed, and a user
  * navigated into a tool that is not a collab.
  */
 function armPlan(plan: MountPlan): boolean {
   const previous = pending;
   pending = plan;
-  // A new ceremony invalidates any model carried for the old one — that is the bound on
+  // A new ceremony invalidates any model carried for the old one - that is the bound on
   // `carried`'s lifetime, and the reason `disarm` does not need to be (see its note).
   carried = null;
   if (previous && !previous.handleSpent) {
@@ -352,7 +352,7 @@ function armPlan(plan: MountPlan): boolean {
     armed.handleSpent = true;
     pending = null;
     adopted = armed;
-    // The session belongs to the mount now — including the right to notice it close.
+    // The session belongs to the mount now - including the right to notice it close.
     armed.watch?.();
     armed.watch = null;
     // Back to dormant: `acquireCollabSession` allocates nothing again, and no later
@@ -369,7 +369,7 @@ function armPlan(plan: MountPlan): boolean {
   const off = plan.handle.events.subscribe((state) => {
     if (state !== 'closed' || plan.handleSpent) return;
     if (plan.watch) disarm(plan);
-    // Inside `subscribe` — there is no unsubscribe to call yet. Say so, and let the
+    // Inside `subscribe` - there is no unsubscribe to call yet. Say so, and let the
     // caller finish the teardown the moment it has one.
     else closedSynchronously = true;
   });
@@ -395,7 +395,7 @@ export interface LiveMountEnvironment {
   makeEphemeralState(): Promise<WebStateAPI>;
 }
 
-/** Tool ids are `[a-z0-9-]`, so this is regex-safe — the same reads `lib/drop-router.ts`
+/** Tool ids are `[a-z0-9-]`, so this is regex-safe - the same reads `lib/drop-router.ts`
  *  makes, kept identical on purpose: two routers disagreeing about "am I already there"
  *  is a double mount in one direction and a silently-ignored stash in the other. */
 function browserEnvironment(): LiveMountEnvironment {
@@ -415,7 +415,7 @@ function browserEnvironment(): LiveMountEnvironment {
       if (typeof window === 'undefined') return;
       if (window.location.hash !== hash) window.location.hash = hash;
       // The tool route's dedup signature strips params, so a same-tool re-entry is a
-      // no-op without this — and it is dispatched SYNCHRONOUSLY, before the async
+      // no-op without this - and it is dispatched SYNCHRONOUSLY, before the async
       // `hashchange`, so the forced navigate reads the hash we just wrote and the
       // hashchange that follows dedupes against the mount it caused.
       if (force) window.dispatchEvent(new Event('lolly:remount'));
@@ -429,7 +429,7 @@ function browserEnvironment(): LiveMountEnvironment {
 
 let environment: LiveMountEnvironment | null = null;
 
-/** Replace the DOM seam. TEST-ONLY — production never calls this. */
+/** Replace the DOM seam. TEST-ONLY - production never calls this. */
 export function _setLiveMountEnvironmentForTests(next: LiveMountEnvironment | null): void {
   environment = next;
 }
@@ -444,7 +444,7 @@ function env(): LiveMountEnvironment {
  * Turn a live connection into a mounted, co-editing tool.
  *
  * Async because two things it needs are lazy: the acceptor's seed arrives after the
- * hand-off (`CollabConnection.seedLater` — see `collab/rtc-connection.ts`), and the
+ * hand-off (`CollabConnection.seedLater` - see `collab/rtc-connection.ts`), and the
  * memory state bridge is one dynamic import. Neither is on any single-player path.
  *
  * Failure is always the same shape: the connection is CLOSED. A pair we cannot mount is
@@ -454,7 +454,7 @@ export async function mountLiveCollab(conn: CollabConnection): Promise<void> {
   const toolId = conn.toolId;
   if (!toolId) {
     // §6.1: a private collab requires the tool present on both devices, and the invite
-    // names it. No tool id means a malformed invite got past the ceremony — there is no
+    // names it. No tool id means a malformed invite got past the ceremony - there is no
     // route to send anyone to.
     try { conn.close(); } catch { /* nothing left to close is fine */ }
     return;
@@ -485,14 +485,14 @@ export async function mountLiveCollab(conn: CollabConnection): Promise<void> {
 
     // A pair that died while we waited for that seed is disarmed (and hung up) by
     // `armPlan` itself. Navigating anyway would be the worst of both: an acceptor sent
-    // to a tool that is not a collab, and — far worse — an INVITER force-remounted out
+    // to a tool that is not a collab, and - far worse - an INVITER force-remounted out
     // of their live model for a session that no longer exists.
     if (!armPlan(plan)) return;
 
     const already = env().onToolRoute(toolId);
     // The inviter is IN the tool: its live model is the seed, merged under whatever the
     // address bar has (see `mergeSeedQuery`). The acceptor is arriving cold, so the seed
-    // IS the whole route — merging in `#/join?inv=…`'s params would carry the invite
+    // IS the whole route - merging in `#/join?inv=…`'s params would carry the invite
     // token into the tool as if it were an input.
     const query = already ? mergeSeedQuery(seed, env().currentQuery()) : seedToQuery(seed);
     env().navigate(`#/tool/${toolId}${query ? `?${query}` : ''}`, already);
@@ -504,7 +504,7 @@ export async function mountLiveCollab(conn: CollabConnection): Promise<void> {
 
 /**
  * Register {@link mountLiveCollab} and adopt whatever the ceremony parked while this
- * module was still being imported — `collab-mount.ts`'s documented stitch, verbatim.
+ * module was still being imported - `collab-mount.ts`'s documented stitch, verbatim.
  *
  * Idempotent-ish by the registry's own last-wins rule; returns the unregister so a test
  * can put the shell back to dormant.
@@ -527,14 +527,14 @@ export function installLiveCollabMount(): () => void {
  * this collab and must not silently lose its saves to a memory store.
  *
  * THE CALL SITE is `views/tool.ts`, in the same place it already clones the host for a
- * manifest's `network.allowlist` —
+ * manifest's `network.allowlist` - 
  *
  * ```ts
  * const ephemeralState = takeEphemeralState(toolId);
  * if (ephemeralState) host = { ...host, state: ephemeralState };
  * ```
  *
- * — which must sit BEFORE the `slot` load and `createRuntime`, so every save path in the
+ * - which must sit BEFORE the `slot` load and `createRuntime`, so every save path in the
  * view and in the tool's own actions is looking at the same object. Cloning (rather than
  * mutating the boot host) is what keeps the swap scoped to this mount: bridge methods
  * are closures, not `this`-bound. See the header for the one path this does NOT cover
@@ -559,7 +559,7 @@ export function takeEphemeralState(toolId: string): WebStateAPI | null {
  *
  * `ephemeral` is what makes it "this device's own": an ACCEPTOR who happens to already
  * be in the same tool also remounts, and their local model is precisely what must NOT
- * survive that — their copy is seeded by the peer (§6.2a) and then converged, so
+ * survive that - their copy is seeded by the peer (§6.2a) and then converged, so
  * carrying their stale pre-join values in would be a silent, unattributable edit to
  * somebody else's document.
  */
@@ -571,7 +571,7 @@ export function willRemountForCollab(toolId: string): boolean {
  * Hand the outgoing mount's live model (and its slot) to the remount about to replace it.
  *
  * BY REFERENCE and one level shallow: the values are the runtime's own objects, which is
- * the entire point — a `FileRef`'s bytes, a `user/` asset id and an over-long paragraph
+ * the point - a `FileRef`'s bytes, a `user/` asset id and an over-long paragraph
  * survive because nothing is encoded. The record itself is copied so a later mutation of
  * the caller's map cannot rewrite what the next mount will read.
  *
@@ -587,7 +587,7 @@ export function carryMountState(toolId: string, slot: string | null, values: Rec
  * ONE-SHOT: what the remount must restore, or `null` for every mount that is not one.
  *
  * Spent on read, exactly like {@link takeEphemeralState} beside it and for the same
- * reason — a second mount of the same tool is a different session, and silently
+ * reason - a second mount of the same tool is a different session, and silently
  * re-seeding it from a collab that has moved on is worse than starting clean.
  */
 export function takeCarriedMountState(toolId: string): CarriedMountState | null {
@@ -602,17 +602,17 @@ export function takeCarriedMountState(toolId: string): CarriedMountState | null 
  * as a disclosed fork.
  *
  * The acceptor's saves land in the memory bridge above, so a copy is a straight read
- * from it into the real one — `lib/ephemeral-state.ts` is the REAL `createStateAPI` over
+ * from it into the real one - `lib/ephemeral-state.ts` is the REAL `createStateAPI` over
  * a memory driver precisely so this is a copy and not a re-implementation of a save.
  *
  * The caller runs the tool's ordinary Save first (which writes into the memory bridge,
- * because that is what the mount handed the runtime), then calls this — the source is
+ * because that is what the mount handed the runtime), then calls this - the source is
  * found on its own, because the plan keeps holding the bridge after handing it to the
  * mount. Returns the slot written, or `null` when the ephemeral session holds nothing to
  * copy (which is "you have not saved anything yet", not an empty session in Projects).
  *
- * NOT wired to a control yet. The blocker it used to name is gone — `collab-pill.ts` now
- * takes an `actions` list, and {@link attachCollabBeam} below is its first user — so
+ * NOT wired to a control yet. The blocker it used to name is gone - `collab-pill.ts` now
+ * takes an `actions` list, and {@link attachCollabBeam} below is its first user - so
  * "Save a copy" is one more {@link CollabPillAction} kind plus its two strings, and is
  * left to the wave that owns the §6.2a copy rather than smuggled in beside the beam.
  */
@@ -682,7 +682,7 @@ export interface CollabBeamAttachment {
    * Pill controls for this collab, ready for `mountCollabPill`'s `actions` slot.
    *
    * Never empty when this object exists, and the object only exists for a pair whose
-   * transport published a bulk lane — so "is there a send button" and "is there a beam"
+   * transport published a bulk lane - so "is there a send button" and "is there a beam"
    * are the same question, answered once.
    */
   readonly actions: readonly CollabPillAction[];
@@ -691,17 +691,17 @@ export interface CollabBeamAttachment {
 }
 
 export interface CollabBeamAttachOptions {
-  /** The tool this mount is for — the same id the plan was armed with. */
+  /** The tool this mount is for - the same id the plan was armed with. */
   readonly toolId: string;
   /**
-   * The bridge slice a RECEIVED beam is landed into — the real library, always.
+   * The bridge slice a RECEIVED beam is landed into - the real library, always.
    *
    * §6.4 is explicit that received items "land attributed ('From Priya') in the
    * receiver's library, storage meter updated honestly", and that holds for an acceptor
    * too: §11.17's ephemerality covers their borrowed copy of the INVITER's document, not
    * a separate pack they were asked about by name and said yes to. Handing the memory
    * clone in here landed the session in a store that dies with the mount while its assets
-   * went to the real one through `host.assets` — half a pack kept, and a toast reporting
+   * went to the real one through `host.assets` - half a pack kept, and a toast reporting
    * both.
    */
   readonly host?: BeamPackHost | null;
@@ -711,7 +711,7 @@ export interface CollabBeamAttachOptions {
    *
    * For an ACCEPTOR this is the memory-backed clone (`views/tool.ts` swaps `host.state`
    * before `createRuntime`, §11.17), so their working copy packs and sends through the
-   * identical call as a saved one — without a slot on their device ever existing.
+   * identical call as a saved one - without a slot on their device ever existing.
    */
   readonly packHost?: BeamPackHost | null;
   /** What "this session, right now" is. Read at press time, never cached. */
@@ -726,7 +726,7 @@ export interface CollabBeamAttachOptions {
  * THE CALL SITE is `views/tool-collab.ts`, beside the pill it hands the actions to, and
  * it is there rather than at the ceremony because a beam needs three things only a
  * mounted tool holds: the host bridge it packs from, the live model it sends, and a page
- * to hang the toast on. `null` covers three honest cases, none of which is an error — a
+ * to hang the toast on. `null` covers three honest cases, none of which is an error - a
  * work collab (Track B publishes no lane), a mount that is not this collab's, and a beam
  * stack that failed to load.
  *
@@ -742,7 +742,7 @@ export async function attachCollabBeam(opts: CollabBeamAttachOptions): Promise<C
   const link = plan?.beam ?? null;
   if (!plan || !link) return null;
 
-  // A second attach for the same plan replaces the first — a remount must not leave a
+  // A second attach for the same plan replaces the first - a remount must not leave a
   // toast subscribed to a lane through a session nobody holds.
   try { plan.ui?.close(); } catch { /* already gone is fine */ }
   plan.ui = null;

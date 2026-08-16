@@ -1,98 +1,97 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-providers.ts — frame + audio sources for the sequence compositor
+ * sequence-providers.ts - frame + audio sources for the sequence compositor
  * (Fable timeline, phase 3 §2.2).
  *
- * The compositor must ask one question per clip per output frame — "paint the
- * pixels of THIS source at THIS source time into THIS rectangle" — and one
- * question per clip per export — "hand me the PCM for this span". Everything
- * behind those two questions (a WebCodecs decode pipeline, a hidden <video>
- * being seeked, a container demuxer) lives in this file and nowhere else.
+ * The compositor asks one question per clip per output frame: paint the pixels
+ * of THIS source at THIS source time into THIS rectangle. It asks one question
+ * per clip per export: hand me the PCM for this span. Everything behind those
+ * two questions (a WebCodecs decode pipeline, a hidden <video> being seeked, a
+ * container demuxer) lives in this file and nowhere else.
  *
  * WHY THE INTERFACES ARE SHAPED LIKE THIS
  *
  * `FrameProvider` is DRAW-AND-RELEASE, not "give me an image source". The spike
- * (plans/54-fable-timeline-phase-3.md §0.0 rule 3) established that mediabunny's
- * `VideoSample` *is* the draw wrapper: `sample.draw(ctx, dx, dy, dw, dh)` applies
- * the container's rotation metadata into the destination rect for us, while
- * `toCanvasImageSource()` may be auto-closed in the next microtask and
+ * (plans/54-fable-timeline-phase-3.md §0.0 rule 3) found that mediabunny's
+ * `VideoSample` is already the draw wrapper: `sample.draw(ctx, dx, dy, dw, dh)`
+ * applies the container's rotation metadata into the destination rect for us.
+ * `toCanvasImageSource()` may auto-close in the next microtask, and
  * `toVideoFrame()` mints a second object with its own lifetime. Handing a
- * `CanvasImageSource` to the caller would therefore be handing out a resource
- * whose close discipline the caller cannot get right. So the provider owns the
- * sample from decode to close, and the caller only ever supplies a context and a
- * rect.
+ * `CanvasImageSource` to the caller would hand out a resource the caller cannot
+ * close correctly. So the provider owns the sample from decode to close, and the
+ * caller only ever supplies a context and a rect.
  *
- * `ClipAudio.pcm()` returns PCM that is ALREADY TRIMMED to the exact sample
- * offsets. `AudioBufferSink.buffers(a, b)` respects its range only to packet
- * granularity (AAC = 1024 frames = 21.33 ms): it includes the packet straddling
- * `a` and the one straddling `b` (spike rule 6). A caller that just concatenated
- * what the sink yields would give every clip up to 21 ms of its neighbour's
- * audio, which is audible as a click at every cut. The trim is done here, once,
- * in a pure function, so it is unit-testable without a decoder.
+ * `ClipAudio.pcm()` returns PCM already trimmed to the exact sample offsets.
+ * `AudioBufferSink.buffers(a, b)` respects its range only to packet granularity
+ * (AAC = 1024 frames = 21.33 ms): it includes the packet straddling `a` and the
+ * one straddling `b` (spike rule 6). A caller that just concatenated what the
+ * sink yields would give every clip up to 21 ms of its neighbour's audio, heard
+ * as a click at every cut. The trim happens here, once, in a pure function, so
+ * it is unit-testable without a decoder.
  *
  * RESOURCE DISCIPLINE
  *
- * At most `MAX_IN_FLIGHT` (2) decoded samples are held at any instant and every
- * one is closed in the same tick as its draw. mediabunny already self-caps its
- * decode queue at 8, and the spike could NOT reproduce a hardware-decoder stall
- * at any N — so this cap is a MEMORY policy, not a decoder-count limit, and it
- * is honest about that: the JS heap moved 1.6 MB while ~2.8 GB of frame data was
- * nominally held, which means no JS instrument can see the real ceiling. The
- * in-flight count is exposed through `stats()` precisely because it is the only
- * observable the tests have.
+ * At most `MAX_IN_FLIGHT` (2) decoded samples are held at any instant, and each
+ * one closes in the same tick as its draw. mediabunny already caps its own
+ * decode queue at 8, and the spike could not reproduce a hardware-decoder stall
+ * at any N. So this cap is a MEMORY policy, not a decoder-count limit: the JS
+ * heap moved 1.6 MB while roughly 2.8 GB of frame data was nominally held, so no
+ * JS instrument can see the real ceiling. `stats()` exposes the in-flight count
+ * because it is the only observable the tests have.
  *
- * NEVER HANGS. Every await in this file is inside `withTimeout`, because a
- * stalled decoder is indistinguishable from a slow one and an export that hangs
- * is worse than an export that fails. Every failure is normalised through the
- * one `toCodedError` in ./sequence-plan.ts (spike rule 8: failures arrive as
- * mediabunny typed errors, raw WebCodecs `DOMException`s, and plain `Error`s).
+ * NEVER HANGS. Every await in this file runs inside `withTimeout`, because a
+ * stalled decoder looks the same as a slow one, and a hung export is worse than
+ * a failed one. Every failure is normalised through the one `toCodedError` in
+ * ./sequence-plan.ts (spike rule 8: failures arrive as mediabunny typed errors,
+ * raw WebCodecs `DOMException`s, and plain `Error`s).
  *
- * TRUNCATION IS SILENT (spike rule 7): a half-written container decodes a clean,
- * short iteration with no error at all. This module cannot decide what to do
- * about that — the renderer owns the fail-closed policy — so it exposes the
- * evidence instead: `stats().decoded`, `stats().missed` and
+ * TRUNCATION IS SILENT (spike rule 7): a half-written container decodes a
+ * clean, short iteration with no error at all. This module cannot decide what
+ * to do about that - the renderer owns the fail-closed policy - so it exposes
+ * the evidence instead: `stats().decoded`, `stats().missed` and
  * `stats().lastSourceSec` against `durationSec()`.
  *
- * BUNDLE SIZE. mediabunny is `import()`ed lazily and only the container
- * singletons we actually accept are pulled in — never `ALL_FORMATS`. The video
+ * BUNDLE SIZE. mediabunny is `import()`ed lazily, and only the container
+ * singletons we actually accept are pulled in, never `ALL_FORMATS`. The video
  * and audio paths register DIFFERENT sets (see VIDEO_CONTAINERS /
  * AUDIO_CONTAINERS): registering only the video four here is what silently
  * broke every catalog music bed, because Lolly's audio ships as Ogg/Opus and
- * MP3. A static import would cost the preload entry
- * +352 kB (+89 kB gzip) versus +0.14 kB lazy. `sequence-providers.test.ts` has a
- * source guard that fails the build if either rule is ever broken by an
- * innocent-looking editor auto-import.
+ * MP3. A static import would cost the preload entry +352 kB (+89 kB gzip)
+ * versus +0.14 kB lazy. `sequence-providers.test.ts` has a source guard that
+ * fails the build if either rule is broken by an innocent-looking editor
+ * auto-import.
  *
  * NOT EVERY SOURCE IS A FILE. An audio box may carry a `zzfxm:<seed>[:<style>]`
- * ref instead of an asset url — a *procedural* track, synthesised here from the
+ * ref instead of an asset url: a procedural track, synthesised here from the
  * engine's seeded composer. It arrives through the same `createClipAudio` and
- * satisfies the same `ClipAudio`, so the mix cannot tell the difference; see the
+ * satisfies the same `ClipAudio`, so the mix cannot tell the difference. See the
  * "procedural audio" section at the foot of this file for the grammar and for
- * why it reports a duration of 0. A TRACKER MODULE (.mod/.xm/.it/.s3m/.stm/.mtm) is
- * the same shape of thing from the other direction — a real file, but a score rather
- * than an encoded stream, which no demuxer can read — and it arrives through the same
- * door: see the "tracker modules" section, also at the foot of this file.
+ * why it reports a duration of 0. A TRACKER MODULE (.mod/.xm/.it/.s3m/.stm/.mtm)
+ * is the same kind of thing from the other direction: a real file, but a score
+ * rather than an encoded stream, which no demuxer can read. It arrives through
+ * the same door: see the "tracker modules" section, also at the foot of this
+ * file.
  *
  * BROWSER-ONLY, AND WHAT ISN'T. The decode/draw path needs WebCodecs and a real
  * canvas context, so it can only be proven in the Playwright tier. Everything
- * that decides *what* to do — the provider pick ladder, the primed-grid matcher,
+ * that decides what to do - the provider pick ladder, the primed-grid matcher,
  * the PCM window trim/resample, the in-flight accounting, error normalisation,
- * dispose idempotency — is injectable and covered headlessly.
+ * dispose idempotency - is injectable and covered headlessly.
  */
 
 import {
   createSeekQueue, METADATA_TIMEOUT_MS, readBounded, withinDecodeBudget,
   MAX_AUDIO_DECODE_BYTES, type SeekQueue,
 } from '../lib/clip-thumbs.ts';
-// The element-seek fallback must behave EXACTLY like the phase-2 preview seeker,
-// or a clip would export frames the editor never showed. Rather than restate the
-// rules (serialise per element, confirm with requestVideoFrameCallback's
-// mediaTime, one quarter-frame nudge when the decoder lands short, hard timeout),
-// this imports the shipped implementation and its tuning constants from the
-// clock. Nothing there is modified — this is a read-only reuse.
-// The tracker-module recogniser comes from the same place for the same reason: the
-// preview and this mix must never disagree about which box libopenmpt owns, so there
-// is one definition of "is this a module" and both import it.
+// The element-seek fallback must behave exactly like the phase-2 preview seeker,
+// or a clip would export frames the editor never showed. Instead of restating
+// the rules (serialise per element, confirm with requestVideoFrameCallback's
+// mediaTime, one quarter-frame nudge when the decoder lands short, hard
+// timeout), this imports the shipped implementation and its tuning constants
+// from the clock. Nothing there is modified: this is a read-only reuse.
+// The tracker-module recogniser comes from the same place for the same reason:
+// the preview and this mix must never disagree about which box libopenmpt owns,
+// so there is one definition of "is this a module" and both import it.
 import {
   waitSeekConfirmed,
   SEEK_TOLERANCE_S,
@@ -102,19 +101,19 @@ import {
   sniffTrackerModule,
   urlExtension,
 } from '../views/sequence-clock.ts';
-// The error vocabulary is the plan module's, not a second one invented here: the
-// renderer switches on `SeqErrorCode`, and a provider that minted its own codes
-// would be invisible to it. `toCodedError` is the single normaliser for the three
-// flavours of throw (mediabunny typed / WebCodecs DOMException / plain Error).
+// The error vocabulary is the plan module's, not a second one invented here.
+// The renderer switches on `SeqErrorCode`, and a provider that minted its own
+// codes would be invisible to it. `toCodedError` is the single normaliser for
+// the three kinds of throw (mediabunny typed, WebCodecs DOMException, plain Error).
 import { sequenceError, toCodedError, SequenceError, type SeqErrorCode } from './sequence-plan.ts';
 // The `zzfxm:` id format. Alone in its own module so bridge/assets.ts can
 // recognise one without pulling this file (and its lazy mediabunny import site)
-// into the first-paint graph — see engine/src/zzfxm-ref.ts's header.
+// into the first-paint graph - see engine/src/zzfxm-ref.ts's header.
 import { ZZFXM_SCHEME, parseZzfxmRef, type ZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
-// The procedural (`zzfxm:`) audio source composes with the ENGINE's composer —
-// there is exactly one ZzFXM composer in this codebase and this is not a second
-// one. Pure, DOM-free and seeded, so it is safe to import eagerly; the *renderer*
-// (a Worker) is the heavy half and stays lazy, below.
+// The procedural (`zzfxm:`) audio source composes with the ENGINE's composer.
+// There is exactly one ZzFXM composer in this codebase, not a second one. It is
+// pure, DOM-free and seeded, so it is safe to import eagerly. The renderer (a
+// Worker) is the heavy half and stays lazy, below.
 import {
   composeSong,
   generatedSongSpec,
@@ -124,7 +123,7 @@ import type { RenderedPcm, ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 // ── tunables ────────────────────────────────────────────────────────────────
 
 /**
- * Decoded samples held at once. A MEMORY policy (see the header) — 16 concurrent
+ * Decoded samples held at once. A MEMORY policy (see the header) - 16 concurrent
  * decoders ran fine in the spike, so this is not about decoder count.
  */
 export const MAX_IN_FLIGHT = 2;
@@ -176,10 +175,10 @@ export interface ProviderStats {
   /**
    * `drawAt` calls, answered or not.
    *
-   * `decoded` counts DRAWS and the compositor legitimately skips them (a fully
-   * transparent box, a zero-size box, the first frame of a fade), so it is not a
-   * measure of what was asked for. The truncation guard reconciles answers against
-   * REQUESTS, which is what this is here for.
+   * `decoded` counts draws, and the compositor legitimately skips some (a fully
+   * transparent box, a zero-size box, the first frame of a fade). So `decoded`
+   * is not a measure of what was asked for. The truncation guard reconciles
+   * answers against REQUESTS, which is what this field is for.
    */
   requests: number;
   /** Source time of the first request, seconds. -1 before the first. */
@@ -189,28 +188,29 @@ export interface ProviderStats {
   /**
    * Requests that fell at or past the length the source CLAIMS to have.
    *
-   * A clip may legitimately be trimmed longer than its media (the timeline clamps
-   * `dur` to MAX_TIME_S, never to the file), and those frames can never be answered.
-   * Counted separately so "the file stopped answering" stays distinguishable from
-   * "we asked past the end on purpose".
+   * A clip may legitimately be trimmed longer than its media (the timeline
+   * clamps `dur` to MAX_TIME_S, never to the file), and those frames can never
+   * be answered. Counted separately so "the file stopped answering" stays
+   * distinguishable from "we asked past the end on purpose".
    */
   unreachable: number;
   /**
-   * The length the container CLAIMS, seconds — `max(computeDuration, metadata)`.
+   * The length the container CLAIMS, seconds - `max(computeDuration, metadata)`.
    *
-   * This is the one signal that separates the two situations that look identical
+   * This is the one signal that separates two situations that look identical
    * from inside a decode: a clip trimmed past the end of an INTACT file (both
-   * numbers agree, so the requests past the end are legitimately unanswerable) and a
-   * TRUNCATED file (the header still claims the original length while the packets
-   * stop early, so the same requests are evidence of a bad file). `computeDuration`
-   * alone cannot tell them apart — it walks real packets, so on a truncated file it
-   * reports the truncated length and the shortfall vanishes. 0 when unknown.
+   * numbers agree, so requests past the end are legitimately unanswerable), and
+   * a TRUNCATED file (the header still claims the original length while the
+   * packets stop early, so the same requests are evidence of a bad file).
+   * `computeDuration` alone cannot tell them apart - it walks real packets, so
+   * on a truncated file it reports the truncated length and the shortfall
+   * vanishes. 0 when unknown.
    */
   claimedDurationSec: number;
   /**
-   * The source's own frame interval, seconds — the largest sample duration seen.
-   * 0 when the source does not report one. The truncation tolerance needs it: a
-   * decoded frame's PTS lags the requested time by up to one source frame.
+   * The source's own frame interval, seconds - the largest sample duration
+   * seen. 0 when the source does not report one. The truncation tolerance needs
+   * it: a decoded frame's PTS can lag the requested time by up to one source frame.
    */
   sourceFrameSec: number;
   /** Source timestamp of the last frame drawn, seconds. -1 before the first. */
@@ -222,9 +222,10 @@ export interface ProviderStats {
 /**
  * One clip's pixels, addressable by source time.
  *
- * DRAW-AND-RELEASE: `drawAt` paints and disposes the underlying sample before it
- * resolves. No VideoSample, VideoFrame or CanvasImageSource ever crosses this
- * boundary — see the header for why that is a correctness rule, not a style one.
+ * DRAW-AND-RELEASE: `drawAt` paints and disposes the underlying sample before
+ * it resolves. No VideoSample, VideoFrame or CanvasImageSource ever crosses
+ * this boundary - see the header for why that is a correctness rule, not a
+ * style choice.
  */
 export interface FrameProvider {
   /** Native display width of the source, px. */
@@ -233,7 +234,7 @@ export interface FrameProvider {
   readonly h: number;
   /**
    * Draw the frame at `sourceSec` into `dest`. Resolves `false` when the source
-   * has no frame there (past the end, or a gap) — that is not an error, and the
+   * has no frame there (past the end, or a gap) - that is not an error, and the
    * compositor is expected to leave whatever it already painted.
    */
   drawAt(
@@ -244,9 +245,9 @@ export interface FrameProvider {
   /**
    * Hand over the sorted source times this export will ask for, up front. That
    * lets the mediabunny provider use `samplesAtTimestamps`, which decodes each
-   * packet at most once for a monotonic list — the difference between a
+   * packet at most once for a monotonic list. That is the difference between a
    * sequential export and one random access per frame. Out-of-order requests
-   * still work; they simply leave the fast path (see `stats().randomAccess`).
+   * still work; they just leave the fast path (see `stats().randomAccess`).
    */
   prime?(timestamps: number[]): void;
   /** Source duration in seconds, from a real packet walk. 0 when unknown. */
@@ -259,7 +260,7 @@ export interface FrameProvider {
 export interface ClipAudio {
   /**
    * PCM for `[fromSec, toSec)`, resampled to `sampleRate` and trimmed to the
-   * exact sample offsets — the sink's packet-granular range is corrected here
+   * exact sample offsets - the sink's packet-granular range is corrected here
    * (spike rule 6). Channels are the source's; an empty array means silence.
    */
   pcm(fromSec: number, toSec: number, sampleRate: number): Promise<{ channels: Float32Array[]; sampleRate: number }>;
@@ -276,11 +277,11 @@ export interface InstrumentedProvider extends FrameProvider {
 
 // ── mediabunny, structurally typed ──────────────────────────────────────────
 //
-// Deliberately NOT `import type { Input } from 'mediabunny'`: describing only
-// the handful of members we touch keeps the fake a test can write down to a few
-// lines, and makes it obvious at a glance how small the real surface area is. It
-// also means a mediabunny major that changes something we don't use cannot break
-// this file's types.
+// Deliberately not `import type { Input } from 'mediabunny'`. Describing only
+// the handful of members we touch keeps the test fake a few lines long and
+// makes the real surface area obvious at a glance. It also means a mediabunny
+// major version that changes something we don't use cannot break this file's
+// types.
 
 interface MbSample {
   readonly timestamp: number;
@@ -347,7 +348,7 @@ export interface MediabunnyModule {
   QTFF: unknown;
   WEBM: unknown;
   MATROSKA: unknown;
-  // Audio-only containers — see AUDIO_CONTAINERS.
+  // Audio-only containers - see AUDIO_CONTAINERS.
   OGG: unknown;
   MP3: unknown;
   WAVE: unknown;
@@ -358,35 +359,36 @@ export interface MediabunnyModule {
 /**
  * Which containers each decode path registers.
  *
- * These are DIFFERENT SETS on purpose, and getting it wrong is not a size
- * regression — it is silence. A clip's own soundtrack lives inside a video
- * container, so the audio path needs the video four PLUS the audio-only ones;
- * the video path genuinely never needs an .ogg.
+ * These are DIFFERENT SETS on purpose. Getting it wrong is not a size
+ * regression, it is silence. A clip's own soundtrack lives inside a video
+ * container, so the audio path needs the video four plus the audio-only ones.
+ * The video path never needs an .ogg.
  *
- * The audio list is derived from what the product actually ships and accepts,
- * not from taste:
- *   - catalog audio assets are `mp3` and `opus` (Ogg) — brands/asts index.json
+ * The audio list comes from what the product actually ships and accepts, not
+ * from taste:
+ *   - catalog audio assets are `mp3` and `opus` (Ogg) - brands/asts index.json
  *   - picker.ts UPLOAD_ACCEPT takes .mp3 .wav .ogg .oga .opus .m4a .aac .flac
  * (.m4a is an MP4 container, already covered. Tracker/MIDI uploads never reach
- * mediabunny — they render through the zzfxm/mod path.)
+ * mediabunny; they render through the zzfxm/mod path.)
  *
- * Cost, measured with esbuild --bundle --minify | gzip -9, not estimated:
- * the video four are 60.5 kB gzip; adding OGG/MP3/WAVE takes it to 72.7 kB and
- * ADTS/FLAC to 75.3 kB. All of it lands in the lazily-imported chunk that only a
- * motion export pulls, so first paint is untouched — which is the rule that
- * actually matters. ALL_FORMATS would still be wrong: it adds TS/HLS on top for
- * containers nothing in Lolly can produce or accept.
+ * Cost, measured with esbuild --bundle --minify | gzip -9, not estimated: the
+ * video four are 60.5 kB gzip; adding OGG/MP3/WAVE takes it to 72.7 kB, and
+ * ADTS/FLAC to 75.3 kB. All of it lands in the lazily-imported chunk that only
+ * a motion export pulls, so first paint stays untouched, which is the rule
+ * that actually matters. ALL_FORMATS would still be wrong: it adds TS/HLS on
+ * top for containers nothing in Lolly can produce or accept.
  */
 const VIDEO_CONTAINERS = (m: MediabunnyModule): unknown[] => [m.MP4, m.QTFF, m.WEBM, m.MATROSKA];
 const AUDIO_CONTAINERS = (m: MediabunnyModule): unknown[] =>
   [m.MP4, m.QTFF, m.WEBM, m.MATROSKA, m.OGG, m.MP3, m.WAVE, m.ADTS, m.FLAC];
 
 /**
- * The ONE place mediabunny is loaded.
+ * The one place mediabunny is loaded.
  *
- * Named members only, and only the four format singletons — see the header. The
- * `as unknown as` is the seam between the real (much larger) declarations and
- * the structural subset above; it is a narrowing, so nothing unsafe crosses it.
+ * Named members only, and only the four format singletons - see the header.
+ * The `as unknown as` is the seam between the real (much larger) declarations
+ * and the structural subset above. It is a narrowing, so nothing unsafe crosses
+ * it.
  */
 async function loadMediabunny(): Promise<MediabunnyModule> {
   // Literal specifier on purpose: a variable here would defeat Vite's chunking
@@ -416,11 +418,11 @@ async function loadMediabunny(): Promise<MediabunnyModule> {
  * Every throw in this file goes through here.
  *
  * `toCodedError` classifies by name and wording, which is right for a foreign
- * error but weaker than what the call site already knows — so when it can only
- * say "SEQ_DECODE_FAILED" and the caller has a specific reason (an unreadable
- * container, a refused codec), the caller's `fallback` wins. An error that is
- * already one of ours passes through untouched, so a code cannot be re-derived
- * (and downgraded) on its way up through two layers.
+ * error but weaker than what the call site already knows. So when it can only
+ * say "SEQ_DECODE_FAILED" and the caller has a more specific reason (an
+ * unreadable container, a refused codec), the caller's `fallback` wins. An
+ * error that is already one of ours passes through untouched, so a code cannot
+ * be re-derived (and downgraded) on its way up through two layers.
  */
 function coded(err: unknown, fallback: SeqErrorCode): SequenceError {
   if (err instanceof SequenceError) return err;
@@ -432,9 +434,9 @@ function coded(err: unknown, fallback: SeqErrorCode): SequenceError {
 }
 
 /**
- * Await with a deadline. Not a cancellation — a `VideoDecoder` that has gone
- * quiet cannot be un-stuck — but it converts a hang into a coded failure the
- * renderer's watchdog can report, which is the whole difference between a stuck
+ * Await with a deadline. Not a cancellation - a `VideoDecoder` that has gone
+ * quiet cannot be un-stuck - but it converts a hang into a coded failure the
+ * renderer's watchdog can report. That is the whole difference between a stuck
  * export and a failed one.
  */
 export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -462,9 +464,9 @@ type CodecGlobal = typeof globalThis & {
 /**
  * Can this browser decode through WebCodecs at all?
  *
- * Async by contract even though today's answer is synchronous: a future probe
+ * Async by contract even though today's answer is synchronous. A future probe
  * (`VideoDecoder.isConfigSupported`) is per-codec and genuinely async, and
- * callers written against a sync answer would all have to change.
+ * callers written against a sync answer would all need to change.
  */
 export function providerCapability(): Promise<{ webcodecs: boolean }> {
   const g = globalThis as CodecGlobal;
@@ -492,12 +494,12 @@ export interface PullPlan {
  * Decide how to service a request for `t` against a primed timestamp grid.
  *
  * A fixed-fps export walks the grid in order, so the common case is `advance 1`.
- * Two things break that and both must be handled without wedging the generator:
- * a caller that skips frames (a clip that is only visible every other frame
+ * Two things break that, and both must be handled without wedging the
+ * generator. A caller that skips frames (a clip visible only every other frame
  * because of a crossfade) walks FORWARD, which the generator can absorb by
- * pulling and discarding; a caller that goes BACKWARDS (scrub, or a second pass)
- * cannot, because an async generator has no rewind — that request falls to
- * random access.
+ * pulling and discarding. A caller that goes BACKWARDS (scrub, or a second
+ * pass) cannot, because an async generator has no rewind, so that request falls
+ * back to random access.
  *
  * `window` bounds the forward scan so a wildly out-of-range request degrades to
  * one `getSample` instead of draining the whole grid.
@@ -527,10 +529,10 @@ export interface PcmChunk {
 
 /**
  * Linear resample of one channel. Deliberately linear, not windowed-sinc: this
- * only ever runs when a clip's own rate differs from the mix rate (48 kHz), the
+ * only runs when a clip's own rate differs from the mix rate (48 kHz), the
  * output is a background layer under a video, and a polyphase resampler here
  * would be a large, untested chunk of DSP for an inaudible difference. If a
- * future mix needs better, `OfflineAudioContext` resampling is the drop-in.
+ * future mix needs better quality, `OfflineAudioContext` resampling is the drop-in.
  */
 export function resampleLinear(src: Float32Array, srcRate: number, dstRate: number, dstLength: number): Float32Array {
   const out = new Float32Array(dstLength);
@@ -556,15 +558,15 @@ export function resampleLinear(src: Float32Array, srcRate: number, dstRate: numb
  *
  * THIS IS THE TRIM (spike rule 6). `AudioBufferSink.buffers(a, b)` yields the
  * packet that straddles `a` and the packet that straddles `b`, so a naive
- * concatenation starts up to one packet (21.33 ms for AAC) EARLY and ends that
+ * concatenation starts up to one packet (21.33 ms for AAC) early and ends that
  * much late. Every clip would then bleed its neighbour's audio across the cut.
- * Here each chunk is placed at its true offset — `(chunk.timestamp - fromSec)`
- * in output samples — and anything landing outside the window is simply not
- * written, which trims both ends by construction and also fills gaps with
- * silence rather than sliding later audio earlier.
+ * Here each chunk is placed at its true offset - `(chunk.timestamp - fromSec)`
+ * in output samples - and anything landing outside the window is simply not
+ * written. That trims both ends by construction and fills gaps with silence
+ * instead of sliding later audio earlier.
  *
  * Pure and AudioBuffer-free on purpose: this is the part of the audio path that
- * can be proven headlessly, and it is the part most likely to be subtly wrong.
+ * can be proven headlessly, and the part most likely to be subtly wrong.
  */
 export function assemblePcmWindow(
   chunks: PcmChunk[],
@@ -612,9 +614,9 @@ export function assemblePcmWindow(
 // ── in-flight accounting ────────────────────────────────────────────────────
 
 /**
- * The sample ledger. Every acquire/release goes through it so `stats()` is not a
- * best-effort estimate but the actual count, and so an accounting bug trips a
- * coded error in a test rather than an OOM in a user's 30-second export.
+ * The sample ledger. Every acquire/release goes through it, so `stats()` gives
+ * the actual count, not a best-effort estimate. An accounting bug trips a coded
+ * error in a test instead of an OOM in a user's 30-second export.
  */
 function createLedger(kind: 'mediabunny' | 'element') {
   const s: ProviderStats = {
@@ -690,10 +692,10 @@ const srcUrl = (src: Blob | string): { url: string; revoke: boolean } => {
 };
 
 /**
- * Open a clip and return the best provider FOR THAT CLIP.
+ * Open a clip and return the best provider for THAT clip.
  *
  * Per-clip, not per-session (§2.2): a composition can mix an H.264 clip the
- * hardware decoder eats and a HEVC one it refuses, and one refusal must not
+ * hardware decoder handles and a HEVC one it refuses. One refusal must not
  * demote the whole export to element seeking. The ladder is:
  *
  *   no WebCodecs → element
@@ -701,9 +703,9 @@ const srcUrl = (src: Blob | string): { url: string; revoke: boolean } => {
  *   anything else (unsupported container, no video track, a decoder that says
  *   no, a throw) → element, with the coded reason logged
  *
- * The element provider is genuinely last: if IT fails too, the coded error is
- * thrown, because at that point there is no way to paint the clip and silently
- * producing an export with a black hole in it is worse than failing.
+ * The element provider is genuinely last. If it fails too, the coded error is
+ * thrown, because at that point there is no way to paint the clip, and a
+ * silent export with a black hole in it is worse than a failure.
  */
 export async function createVideoProvider(src: Blob | string, opts: ProviderOpts = {}): Promise<InstrumentedProvider> {
   const deps = opts.deps ?? {};
@@ -737,7 +739,7 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
   const mb = await (deps.loadMediabunny ?? loadMediabunny)();
 
   const source = typeof src === 'string' ? new mb.UrlSource(src) : new mb.BlobSource(src);
-  // Explicit singletons only — see the header, and the source guard in the tests.
+  // Explicit singletons only - see the header, and the source guard in the tests.
   const input = new mb.Input({ formats: VIDEO_CONTAINERS(mb), source });
 
   let track: MbVideoTrack | null = null;
@@ -751,7 +753,7 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
     input.dispose();
     throw coded(new Error('no video track'), 'SEQ_UNSUPPORTED_MEDIA');
   }
-  // ALWAYS gate on canDecode: without it the sink throws a plain `Error` later,
+  // Always gate on canDecode: without it the sink throws a plain `Error` later,
   // mid-export, instead of here where the fallback is still available.
   let decodable = false;
   try {
@@ -769,9 +771,9 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
     [w, h, duration] = await Promise.all([
       track.getDisplayWidth(),
       track.getDisplayHeight(),
-      // NEVER getDurationFromMetadata(): a fragmented MP4 out of MediaRecorder
+      // Never getDurationFromMetadata(): a fragmented MP4 out of MediaRecorder
       // reports 0.100 s for a 3.010 s file (spike rule 1). computeDuration costs
-      // 0.2 ms and is the real answer.
+      // 0.2 ms and gives the real answer.
       input.computeDuration(),
     ]);
   } catch (err) {
@@ -779,10 +781,10 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
     throw coded(err, 'SEQ_UNSUPPORTED_MEDIA');
   }
 
-  // What the file CLAIMS, alongside what it can actually deliver. Never as THE
-  // duration (spike rule 1: a fragmented MP4 out of MediaRecorder reports 0.100 s
-  // for a 3.010 s file) — only as the cross-check that makes a truncated container
-  // distinguishable from a clip trimmed past the end of an intact one.
+  // What the file CLAIMS, alongside what it can actually deliver. Never used as
+  // THE duration (spike rule 1: a fragmented MP4 out of MediaRecorder reports
+  // 0.100 s for a 3.010 s file). It is only the cross-check that separates a
+  // truncated container from a clip trimmed past the end of an intact one.
   let claimed = duration;
   try {
     const meta = await input.getDurationFromMetadata?.();
@@ -802,8 +804,8 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
    * Let the primed generator go.
    *
    * `abandoned` distinguishes the two reasons, because they mean opposite things
-   * to whoever reads `stats().randomAccess`: reaching the end of the grid is the
-   * fast path SUCCEEDING, while a stall or a re-prime is it being given up on.
+   * to whoever reads `stats().randomAccess`: reaching the end of the grid means
+   * the fast path SUCCEEDED, while a stall or a re-prime means it was abandoned.
    */
   const dropGenerator = (abandoned = true): void => {
     const g = gen;
@@ -841,7 +843,7 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
       const list = timestamps.filter((t) => Number.isFinite(t)).map((t) => Math.max(0, t));
       // A grid that is not sorted would defeat the whole point of
       // samplesAtTimestamps (one decode per packet), so it is refused rather
-      // than silently sorted — a caller handing an unsorted grid has a bug the
+      // than silently sorted. A caller handing an unsorted grid has a bug the
       // renderer needs to see, and random access still produces correct pixels.
       for (let i = 1; i < list.length; i++) {
         if ((list[i] as number) < (list[i - 1] as number)) return;
@@ -864,8 +866,8 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
         try {
           for (let i = 0; i < plan.advance; i++) {
             const next = await pull();
-            // Frames the caller skipped over: close IMMEDIATELY, never batched —
-            // holding them to the end of the loop is exactly how a two-sample
+            // Frames the caller skipped over: close IMMEDIATELY, never batched.
+            // Holding them to the end of the loop is exactly how a two-sample
             // cap becomes a hundred.
             if (sample) closeSample(sample);
             sample = next;
@@ -877,10 +879,10 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
         } catch (err) {
           if (sample) closeSample(sample);
           sample = null;
-          // A timeout leaves the generator in an unknown state — abandon the
+          // A timeout leaves the generator in an unknown state: abandon the
           // fast path for the rest of this clip and retry the frame through
-          // random access. A real decode error, though, is the file's answer for
-          // this frame and retrying would just get it twice.
+          // random access. A real decode error is the file's answer for this
+          // frame, though, and retrying would just get it twice.
           dropGenerator();
           if (!isSeqTimeout(err)) throw coded(err, 'SEQ_DECODE_FAILED');
         }
@@ -900,8 +902,9 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
         sample.draw(ctx, dest.dx, dest.dy, dest.dw, dest.dh);
         ledger.raw.decoded++;
         ledger.raw.lastSourceSec = sample.timestamp;
-        // The source's own frame interval, straight off the sample — the truncation
-        // tolerance has to absorb one of these (a PTS lags its request by up to that).
+        // The source's own frame interval, straight off the sample. The
+        // truncation tolerance has to absorb one of these (a PTS can lag its
+        // request by up to this much).
         if (Number.isFinite(sample.duration) && sample.duration > 0) {
           ledger.raw.sourceFrameSec = Math.max(ledger.raw.sourceFrameSec, sample.duration);
         }
@@ -963,24 +966,24 @@ function waitMetadata(v: HTMLVideoElement, timeoutMs: number): Promise<boolean> 
 /**
  * The fallback: a hidden <video>, seeked one frame at a time.
  *
- * Semantics are the phase-2 clock's, not a re-derivation — `createSeekQueue`
+ * Semantics come from the phase-2 clock, not a re-derivation. `createSeekQueue`
  * (never two seeks in flight on one element, the Safari rule) and
  * `waitSeekConfirmed` (rVFC `mediaTime` is the frame actually presented;
- * `currentTime` is merely what we asked for) are imported, and the single
+ * `currentTime` is only what we asked for) are imported, and the single
  * quarter-frame nudge on a short landing uses the clock's own tolerance
- * constants. ONE nudge: a decoder that cannot hit a time will not hit it on the
- * third try either, and a retry loop on a long-GOP file is a hang.
+ * constants. Only ONE nudge: a decoder that cannot hit a time will not hit it
+ * on the third try either, and a retry loop on a long-GOP file is a hang.
  *
  * Slower than decode by an order of magnitude, and only as accurate as the
- * engine's seeking — which is why it is the fallback and not the default.
+ * engine's seeking, which is why it is the fallback and not the default.
  */
 export async function createElementProvider(url: string, opts: ProviderOpts = {}): Promise<InstrumentedProvider> {
   if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
     // Tagged `offload`: this is the LAST rung of the provider ladder, and it is
     // missing only because we are in a worker. A clip mediabunny declined (an
     // exotic container, a codec with no hardware decoder) is perfectly decodable
-    // by a <video> on the main thread, so this must NOT reach the user as an
-    // "unsupported media" verdict — it must send the render back in-thread, where
+    // by a <video> on the main thread. So this must not reach the user as an
+    // "unsupported media" verdict; it must send the render back in-thread, where
     // this provider exists. See `SeqWorkerFail.offload` in sequence-render.worker.ts.
     const err = coded(new Error('no DOM for the element-seek provider'), 'SEQ_UNSUPPORTED_MEDIA');
     (err as unknown as Record<string, unknown>).offload = true;
@@ -1031,8 +1034,9 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
   const w = v.videoWidth || 0;
   const h = v.videoHeight || 0;
   // An element reports the length the CONTAINER states, which is exactly the
-  // "claimed" number the truncation guard wants (a truncated file still states its
-  // original length in its header). There is no second, packet-walked number here.
+  // "claimed" number the truncation guard wants (a truncated file still states
+  // its original length in its header). There is no second, packet-walked
+  // number here.
   ledger.raw.claimedDurationSec = duration;
 
   return {
@@ -1055,7 +1059,7 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
       try {
         landed = await withTimeout(q.seek(target, { supersede: false }), timeout, 'seek');
         if (landed != null && Math.abs(landed - target) > SEEK_TOLERANCE_S) {
-          // One nudge, a quarter-frame past the target — decoders routinely land
+          // One nudge, a quarter-frame past the target: decoders routinely land
           // on the preceding keyframe.
           landed = await withTimeout(q.seek(target + SEEK_NUDGE_S), timeout, 'seek (nudge)');
         }
@@ -1072,7 +1076,7 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
         ledger.raw.decoded++;
         ledger.raw.lastSourceSec = landed ?? target;
         // An element seek has no sample duration to report, but it DOES accept
-        // landing up to SEEK_TOLERANCE_S short of the target — so that is this
+        // landing up to SEEK_TOLERANCE_S short of the target. That is this
         // provider's PTS lag, and the truncation tolerance must absorb it.
         ledger.raw.sourceFrameSec = SEEK_TOLERANCE_S;
         return true;
@@ -1131,11 +1135,11 @@ export interface ClipAudioOpts {
  * A clip's audio track, or null when there isn't one.
  *
  * `null` is the ordinary answer, not a failure: most boxes are silent, and the
- * mix must not care. It is also the answer when the platform has no `AudioDecoder`
- * or the track's codec is refused — there is no element-based fallback for PCM
- * (an <audio> element cannot hand you sample data offline), so the renderer's
- * choice is a silent clip or a failed export, and a silent clip is the one that
- * still produces a usable file.
+ * mix must not care. It is also the answer when the platform has no
+ * `AudioDecoder` or the track's codec is refused. There is no element-based
+ * fallback for PCM (an <audio> element cannot hand you sample data offline), so
+ * the renderer's choice is a silent clip or a failed export. A silent clip is
+ * the one that still produces a usable file.
  */
 export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = {}): Promise<ClipAudio | null> {
   const deps = opts.deps ?? {};
@@ -1143,8 +1147,8 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
   const timeout = opts.timeoutMs ?? OPEN_TIMEOUT_MS;
 
   // A procedural track is decided BEFORE the WebCodecs gate: it is synthesised
-  // sample by sample in plain JS, so it is the one audio source that still works
-  // on a platform with no AudioDecoder at all.
+  // sample by sample in plain JS, so it is the one audio source that still
+  // works on a platform with no AudioDecoder at all.
   if (typeof src === 'string') {
     const ref = parseZzfxmRef(src);
     if (ref) return openZzfxmAudio(ref, opts);
@@ -1152,10 +1156,11 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
       log('warn', `sequence audio: "${src}" is not a valid ${ZZFXM_SCHEME} ref — clip will be silent`);
       return null;
     }
-    // A source that NAMES itself a tracker module never goes near the demuxer: no
-    // container reads one, and libopenmpt does not need WebCodecs to render it. A
-    // failure here is final — the file said what it was and could not be honoured —
-    // so it warns rather than falling through to a demux attempt that cannot work.
+    // A source that NAMES itself a tracker module never goes near the demuxer:
+    // no container reads one, and libopenmpt does not need WebCodecs to render
+    // it. A failure here is final - the file said what it was and could not be
+    // honoured - so it warns instead of falling through to a demux attempt that
+    // cannot work.
     if (isModuleUrl(src)) {
       const clip = await openModuleAudio(src, opts, 'declared');
       if (!clip) {
@@ -1169,23 +1174,25 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
   if (hasWc) {
     try {
       const clip = await withTimeout(openClipAudio(src, opts), timeout, 'open (audio)');
-      // A clean null means the container OPENED and simply has no decodable audio
-      // track — the ordinary answer for a silent video, and definitely not a module.
+      // A clean null means the container OPENED and simply has no decodable
+      // audio track: the ordinary answer for a silent video, and definitely not
+      // a module.
       if (clip) return clip;
       return null;
     } catch (err) {
       const e = err as Error & { code?: string };
-      // Nothing could open it. Before calling it silence, ask the last question the
-      // ladder has: an uploaded module arrives as a `blob:` url with no extension and
-      // a guessed MIME type, so the BYTES are the only thing that can identify it.
+      // Nothing could open it. Before calling it silence, ask the last question
+      // the ladder has: an uploaded module arrives as a `blob:` url with no
+      // extension and a guessed MIME type, so the BYTES are the only thing that
+      // can identify it.
       const mod = await openModuleAudio(src, opts, 'sniffed');
       if (mod) return mod;
       log('warn', `sequence audio: ${e.code ?? 'error'}: ${e.message} — clip will be silent`);
       return null;
     }
   }
-  // No WebCodecs at all: a module still plays (it is rendered in plain WASM), so the
-  // sniff is the whole ladder here rather than its last rung.
+  // No WebCodecs at all: a module still plays (it is rendered in plain WASM),
+  // so the sniff is the whole ladder here, not just its last rung.
   return await openModuleAudio(src, opts, 'sniffed');
 }
 
@@ -1262,40 +1269,43 @@ async function openClipAudio(src: Blob | string, opts: ClipAudioOpts): Promise<C
 
 // ── tracker modules: .mod/.xm/.it/.s3m/.stm/.mtm ────────────────────────────
 //
-// A tracker module is a SCORE — patterns of notes plus the instrument samples they
-// play — so there is no encoded audio stream in the file and no demuxer in existence
-// reads one. mediabunny therefore returns nothing for it, which is exactly how an
-// audio box holding a module came out silent with the export log saying only that the
-// container was unreadable. libopenmpt (lib/mod-render.ts, a vendored WASM worker) is
-// the one thing here that can render one, and it is ALREADY the path the export bar's
-// music bed uses for a 'mod'-format track (views/tool-actions.ts) — so this is a
-// wiring job, not a new capability.
+// A tracker module is a SCORE: patterns of notes plus the instrument samples
+// they play. There is no encoded audio stream in the file, and no demuxer
+// reads one. mediabunny returns nothing for it, which is exactly how an audio
+// box holding a module came out silent, with the export log saying only that
+// the container was unreadable. libopenmpt (lib/mod-render.ts, a vendored WASM
+// worker) is the one thing here that can render one, and it is already the
+// path the export bar's music bed uses for a 'mod'-format track
+// (views/tool-actions.ts). So this is a wiring job, not a new capability.
 //
-// WHAT IT IS NOT: a second decode pipeline. The rendered PCM goes through the same
-// `assemblePcmWindow` a decoded file and a zzfxm song go through, so the trim, the
-// resample to the mix rate and the window semantics are literally the same code.
+// WHAT IT IS NOT: a second decode pipeline. The rendered PCM goes through the
+// same `assemblePcmWindow` a decoded file and a zzfxm song go through, so the
+// trim, the resample to the mix rate and the window semantics are literally
+// the same code.
 //
-// HOW ONE IS RECOGNISED: `isModuleUrl` / `sniffTrackerModule`, imported from the clock
-// so the preview cannot disagree — see that file's "tracker modules" section for why
-// the extension alone is not enough (an upload is a `blob:` url) and why the AssetRef
-// `format` field, which WOULD be the honest signal, does not survive as far as here.
+// HOW ONE IS RECOGNISED: `isModuleUrl` / `sniffTrackerModule`, imported from
+// the clock so the preview cannot disagree. See that file's "tracker modules"
+// section for why the extension alone is not enough (an upload is a `blob:`
+// url), and why the AssetRef `format` field, which would be the honest signal,
+// does not survive as far as here.
 //
-// WHY `renderMod` AND NOT `modUrlToWavBlobUrl`: the WAV round trip exists for the
-// URL-driven muxer, which can only be handed a url. Here the caller wants samples, and
-// `renderMod` already returns exactly the `{left, right, sampleRate}` the zzfxm path
-// returns — so taking the WAV detour would mean encoding a RIFF header, minting a blob
-// url, re-fetching it and demuxing it back to the same floats. (WAVE is registered in
-// AUDIO_CONTAINERS, so that route would work; it is simply two conversions and a
-// revoke-or-leak worse than not doing it.)
+// WHY `renderMod` AND NOT `modUrlToWavBlobUrl`: the WAV round trip exists for
+// the URL-driven muxer, which can only be handed a url. Here the caller wants
+// samples, and `renderMod` already returns exactly the `{left, right,
+// sampleRate}` the zzfxm path returns. Taking the WAV detour would mean
+// encoding a RIFF header, minting a blob url, re-fetching it and demuxing it
+// back to the same floats. (WAVE is registered in AUDIO_CONTAINERS, so that
+// route would work; it is simply two conversions and a revoke-or-leak worse
+// than not doing it.)
 
 /**
  * Ceiling on ONE module's rendered PCM, bytes.
  *
- * The real bound is upstream: lib/mod-worker.ts stops at `MAX_SECONDS` (480 s), which
- * at 48 kHz stereo f32 is ~184 MB. This is the assertion that it did — a module
- * declares its own length and a malformed one can claim to loop forever, so if that
- * cap is ever raised or bypassed this fails loudly with a warning instead of quietly
- * allocating whatever the file asked for.
+ * The real bound is upstream: lib/mod-worker.ts stops at `MAX_SECONDS` (480 s),
+ * which at 48 kHz stereo f32 is about 184 MB. This is the assertion that it
+ * did. A module declares its own length, and a malformed one can claim to loop
+ * forever, so if that cap is ever raised or bypassed, this fails loudly with a
+ * warning instead of quietly allocating whatever the file asked for.
  */
 export const MAX_MODULE_PCM_BYTES = 200 * 1024 * 1024;
 
@@ -1304,7 +1314,7 @@ export const MAX_MODULE_PCM_BYTES = 200 * 1024 * 1024;
 const NON_MODULE_EXT = /^(?:mp4|m4v|mov|webm|mkv|mp3|ogg|oga|opus|m4a|aac|flac|wav|wave|aif|aiff|gif|png|jpg|jpeg|svg|json)$/;
 
 /** The shipped renderer, lazily imported so libopenmpt's WASM stays out of the eager
- *  graph — the same rule mediabunny follows above, and for a rarer format. */
+ *  graph - the same rule mediabunny follows above, and for a rarer format. */
 async function defaultRenderModule(bytes: Uint8Array, sampleRate: number): Promise<RenderedPcm> {
   const mod = await import('../lib/mod-render.ts');
   return mod.renderMod(bytes, sampleRate);
@@ -1313,10 +1323,11 @@ async function defaultRenderModule(bytes: Uint8Array, sampleRate: number): Promi
 /**
  * A source's bytes, bounded by the SHARED audio-decode ceiling.
  *
- * `MAX_AUDIO_DECODE_BYTES` is the same 6 MiB the waveform reader and the preview
- * decoder use, so "too big to draw", "too big to hear" and "too big to export" agree.
- * It is generous for a module — a big .it with its samples is a couple of MB — and it
- * is what stops a speculative sniff on a 500 MB video from buffering the file.
+ * `MAX_AUDIO_DECODE_BYTES` is the same 6 MiB the waveform reader and the
+ * preview decoder use, so "too big to draw", "too big to hear" and "too big to
+ * export" agree. It is generous for a module (a big .it with its samples is a
+ * couple of MB), and it is what stops a speculative sniff on a 500 MB video
+ * from buffering the whole file.
  */
 async function fetchModuleBytes(src: Blob | string, opts: ClipAudioOpts): Promise<Uint8Array | null> {
   const custom = opts.deps?.fetchBytes;
@@ -1335,17 +1346,18 @@ async function fetchModuleBytes(src: Blob | string, opts: ClipAudioOpts): Promis
 }
 
 /**
- * Open a tracker module as clip audio, or null when this source is not one (or cannot
- * be read at all).
+ * Open a tracker module as clip audio, or null when this source is not one (or
+ * cannot be read at all).
  *
- * `mode` is the difference between the two call sites: 'declared' means the url named
- * itself a module and the bytes are fetched on that word alone, while 'sniffed' is the
- * speculative last rung — the bytes have to identify themselves, and anything that
- * does not is handed straight back so the caller can report its own failure.
+ * `mode` is the difference between the two call sites: 'declared' means the
+ * url named itself a module and the bytes are fetched on that word alone.
+ * 'sniffed' is the speculative last rung: the bytes have to identify
+ * themselves, and anything that does not is handed straight back so the
+ * caller can report its own failure.
  *
- * Never throws: every failure is a null, and the caller owns the warning, because only
- * the caller knows whether a silent source is a surprise (an audio box) or the
- * ordinary case (a video with no soundtrack).
+ * Never throws: every failure is a null, and the caller owns the warning,
+ * because only the caller knows whether a silent source is a surprise (an
+ * audio box) or the ordinary case (a video with no soundtrack).
  */
 async function openModuleAudio(
   src: Blob | string, opts: ClipAudioOpts, mode: 'declared' | 'sniffed',
@@ -1366,18 +1378,20 @@ async function openModuleAudio(
 /**
  * A `ClipAudio` backed by libopenmpt.
  *
- * DEFERRED like the procedural one, and for the same reason: the first `pcm()` call is
- * the first moment anything knows the mix rate, and rendering natively at that rate is
- * one resample better than rendering at 48 kHz and converting. The render happens ONCE
- * — the worker takes ownership of the byte buffer (it is transferred), so there is
- * nothing to render a second time, and a failed render is remembered as a failure
- * rather than retried against bytes that are already gone.
+ * DEFERRED like the procedural one, and for the same reason: the first
+ * `pcm()` call is the first moment anything knows the mix rate, and rendering
+ * natively at that rate is one resample better than rendering at 48 kHz and
+ * converting. The render happens ONCE. The worker takes ownership of the byte
+ * buffer (it is transferred), so there is nothing to render a second time, and
+ * a failed render is remembered as a failure instead of retried against bytes
+ * that are already gone.
  *
- * `durationSec()` is 0 until the render lands, which is the same "no intrinsic length
- * to declare yet" the procedural clip reports, and the mix already spells that case:
- * the box is asked for exactly the window it occupies and the assembler zero-fills any
- * tail past the end of the song. A module does NOT loop to fill its box — neither does
- * an mp3, and the preview's AudioBufferSourceNode stops at the same place.
+ * `durationSec()` is 0 until the render lands, the same "no intrinsic length
+ * to declare yet" the procedural clip reports. The mix already handles that
+ * case: the box is asked for exactly the window it occupies, and the
+ * assembler zero-fills any tail past the end of the song. A module does NOT
+ * loop to fill its box, and neither does an mp3; the preview's
+ * AudioBufferSourceNode stops at the same place.
  */
 function moduleClip(bytes: Uint8Array, opts: ClipAudioOpts): ClipAudio {
   const log = opts.log ?? ((): void => {});
@@ -1411,7 +1425,7 @@ function moduleClip(bytes: Uint8Array, opts: ClipAudioOpts): ClipAudio {
       if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
       const frames = pcm.left.length;
       if (frames * 2 * 4 > MAX_MODULE_PCM_BYTES) {
-        // Loud, and silent for this box only — the rest of the mix still renders.
+        // Loud, and silent for this box only - the rest of the mix still renders.
         log('warn', `sequence audio: a tracker module rendered ${Math.round(frames / Math.max(1, pcm.sampleRate))}s of PCM, past the ${Math.round(MAX_MODULE_PCM_BYTES / (1024 * 1024))} MB ceiling — clip will be silent`);
         return { channels: [], sampleRate };
       }
@@ -1438,53 +1452,53 @@ function moduleClip(bytes: Uint8Array, opts: ClipAudioOpts): ClipAudio {
 // A sequence needs a music bed that is OFFLINE, REPRODUCIBLE and LICENCE-FREE.
 // A catalog loop is none of those three: it is an on-demand fetch, it only
 // exists in a brand pack that shipped it, and it carries whatever licence the
-// track came with. So a box may instead carry a *procedural* asset ref — an id,
-// not a file — and this module synthesises the audio from it.
+// track came with. So a box may instead carry a procedural asset ref, an id
+// rather than a file, and this module synthesises the audio from it.
 //
 // THE GRAMMAR (the whole contract, deliberately tiny):
 //
 //     zzfxm:<seed>            e.g. zzfxm:20260726
 //     zzfxm:<seed>:<style>    e.g. zzfxm:20260726:lofi
 //
-//   • `<seed>` is 1–10 DECIMAL DIGITS, read as a uint32. No sign, no `0x`, no
-//     decimal point, no whitespace — anything else is not a procedural ref at
+//   • `<seed>` is 1-10 DECIMAL DIGITS, read as a uint32. No sign, no `0x`, no
+//     decimal point, no whitespace. Anything else is not a procedural ref at
 //     all, so it can never be confused with a `blob:`/`data:`/`https:` url.
 //   • `<style>` is optional and, when present, one of the engine's archetype
-//     names. An unrecognised style is IGNORED (the seed picks the archetype, as
-//     if the style had been omitted) rather than failing the bed: a typo in a
-//     shared link should still play music. It is still deterministic — the same
-//     unrecognised style always yields the same song.
+//     names. An unrecognised style is IGNORED (the seed picks the archetype,
+//     as if the style had been omitted) instead of failing the bed: a typo in
+//     a shared link should still play music. It is still deterministic; the
+//     same unrecognised style always yields the same song.
 //   • Nothing else is encoded. In particular NOT the length: the same ref is a
 //     20-second bed under a 20-second sequence and a 90-second bed under a
 //     90-second one, which is what makes the ref survive editing.
 //
-// WHY `durationSec()` RETURNS 0. A synthesised source has no intrinsic length —
-// it is composed to fit. The mix in sequence-render.ts already spells that case:
-// `srcDur > 0 ? min(from + durMs, srcDur) : from + durMs`, i.e. a source that
-// declines to state a duration is asked for exactly the window the box occupies.
-// That is precisely the semantics wanted here, so the procedural clip reports 0
-// and the mix needs no change whatsoever.
+// WHY `durationSec()` RETURNS 0. A synthesised source has no intrinsic length;
+// it is composed to fit. The mix in sequence-render.ts already handles that
+// case: `srcDur > 0 ? min(from + durMs, srcDur) : from + durMs`, i.e. a source
+// that declines to state a duration is asked for exactly the window the box
+// occupies. That is exactly the semantics wanted here, so the procedural clip
+// reports 0 and the mix needs no change at all.
 //
-// DETERMINISM IS THE POINT, AND HERE IS EXACTLY HOW FAR IT GOES. Every value in
-// the SPEC comes from `mulberry32(seed)` (integer-only) or from the target length;
-// there is no `Math.random`, no `Date`, no `performance.now`, no locale, no
-// Map/Set iteration order and no platform read anywhere on that path. So the
-// composed song — the notes, the tempo, the instruments, the arrangement — is
-// identical everywhere, always.
+// DETERMINISM IS THE POINT, AND HERE IS EXACTLY HOW FAR IT GOES. Every value
+// in the SPEC comes from `mulberry32(seed)` (integer-only) or from the target
+// length. There is no `Math.random`, no `Date`, no `performance.now`, no
+// locale, no Map/Set iteration order and no platform read anywhere on that
+// path. So the composed song (the notes, the tempo, the instruments, the
+// arrangement) is identical everywhere, always.
 //
-// The RENDER is one step weaker, and the difference is worth stating rather than
-// overclaiming: `zzfxG`'s sample loop uses `Math.sin`/`Math.cos`/`Math.tan` and
-// `**`, whose results ECMA-262 permits an implementation to approximate. V8, JSC
-// and SpiderMonkey are not guaranteed bit-identical for those. So the honest
-// claim is: byte-identical PCM for the same ref + target length on a GIVEN engine
-// (which is what the "export twice, get the same bed" promise actually needs),
-// and a perceptually identical song everywhere else. The target length is
-// quantised (below) so that a totalMs wobbling by a millisecond between two
-// renders cannot recompose the song.
+// The RENDER is one step weaker, and the difference is worth stating rather
+// than overclaiming: `zzfxG`'s sample loop uses `Math.sin`/`Math.cos`/`Math.tan`
+// and `**`, whose results ECMA-262 permits an implementation to approximate.
+// V8, JSC and SpiderMonkey are not guaranteed bit-identical for those. So the
+// honest claim is: byte-identical PCM for the same ref plus target length on a
+// GIVEN engine (which is what the "export twice, get the same bed" promise
+// actually needs), and a perceptually identical song everywhere else. The
+// target length is quantised (below) so a totalMs wobbling by a millisecond
+// between two renders cannot recompose the song.
 
-// The id format itself lives in engine/src/zzfxm-ref.ts — see that file's header for why
-// it is alone in a module. Re-exported here so this remains the ONE import site
-// for "the procedural bed", exactly as it was before the split.
+// The id format itself lives in engine/src/zzfxm-ref.ts - see that file's
+// header for why it is alone in a module. Re-exported here so this stays the
+// ONE import site for "the procedural bed", exactly as it was before the split.
 export { ZZFXM_SCHEME, parseZzfxmRef, formatZzfxmRef, isZzfxmRef, type ZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
 
 /** Shortest song the composer is ever asked for. Matches the export bar's floor. */
@@ -1495,7 +1509,7 @@ export const ZZFXM_MAX_TARGET_SEC = 600;
  * Target lengths are rounded UP to this grid before composing.
  *
  * Two renders of the same project must produce the same tune, and the length
- * they ask for is derived from a stage's `totalMs` — which is a sum of authored
+ * they ask for is derived from a stage's `totalMs` - which is a sum of authored
  * numbers and can differ in its last float bit between a preview and an export.
  * Quantising makes the composer's input stable against that jitter, and rounding
  * up (never down) guarantees the song still covers the window it was asked for.
@@ -1503,11 +1517,11 @@ export const ZZFXM_MAX_TARGET_SEC = 600;
 export const ZZFXM_TARGET_QUANTUM_SEC = 0.5;
 
 /**
- * Slack subtracted before rounding up, so a length that IS on the grid stays on
- * it when it arrives a float-bit long. Without this, `ceil` would send 20.000000001s
- * to 20.5 and 20s to 20 — the exact boundary jitter the grid exists to absorb.
- * The cost is that the song may fall up to a microsecond short of the window,
- * which is under a twentieth of one sample at 48 kHz.
+ * Slack subtracted before rounding up, so a length that IS on the grid stays
+ * on it when it arrives a float-bit long. Without this, `ceil` would send
+ * 20.000000001s to 20.5 and 20s to 20, the exact boundary jitter the grid
+ * exists to absorb. The cost is that the song may fall up to a microsecond
+ * short of the window, under a twentieth of one sample at 48 kHz.
  */
 const TARGET_EPS_SEC = 1e-6;
 
@@ -1521,9 +1535,10 @@ export function zzfxmTargetSec(wantedSec: number): number {
   return Math.round(clamped * 2) / 2;
 }
 
-// The seed → spec draw lives in the engine (its order is a frozen contract, and a
-// `zzfxm:<seed>` ref must name the same song in every shell). Re-exported so this
-// stays the ONE import site for "the procedural bed", as it was before the hoist.
+// The seed to spec draw lives in the engine (its order is a frozen contract,
+// and a `zzfxm:<seed>` ref must name the same song in every shell). Re-exported
+// so this stays the ONE import site for "the procedural bed", as it was before
+// the hoist.
 export { generatedSongSpec };
 
 /** The shipped renderer, imported lazily so the Worker chunk is not in this module's eager graph. */
@@ -1536,10 +1551,10 @@ async function defaultRenderSong(song: ZzfxSong): Promise<RenderedPcm> {
  * A `ClipAudio` backed by the composer instead of a demuxer.
  *
  * Composition is DEFERRED to the first `pcm()` call, because that call is the
- * first moment anything knows how long the song has to be. The result is cached
- * per target length, so the ordinary one-window-per-clip case renders once and a
- * caller that asks for several windows of the same bed gets one coherent song
- * rather than several unrelated ones.
+ * first moment anything knows how long the song has to be. The result is
+ * cached per target length, so the ordinary one-window-per-clip case renders
+ * once, and a caller that asks for several windows of the same bed gets one
+ * coherent song instead of several unrelated ones.
  */
 function openZzfxmAudio(ref: ZzfxmRef, opts: ClipAudioOpts): ClipAudio {
   const log = opts.log ?? ((): void => {});
@@ -1554,16 +1569,16 @@ function openZzfxmAudio(ref: ZzfxmRef, opts: ClipAudioOpts): ClipAudio {
   }
 
   return {
-    // 0 = "no intrinsic duration". See the section header: the mix reads this as
-    // "give the box exactly the window it asked for", which is the truth here.
+    // 0 = "no intrinsic duration". See the section header: the mix reads this
+    // as "give the box exactly the window it asked for", which is true here.
     durationSec: () => 0,
 
     async pcm(fromSec, toSec, sampleRate) {
       if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
       const from = Math.max(0, Number.isFinite(fromSec) ? fromSec : 0);
       const to = Math.max(from, Number.isFinite(toSec) ? toSec : from);
-      // The song's timeline starts at 0 and the window is read out of it, so the
-      // length it must cover is the window's END, not its span.
+      // The song's timeline starts at 0 and the window is read out of it, so
+      // the length it must cover is the window's END, not its span.
       const target = zzfxmTargetSec(opts.targetSec ?? to);
       if (cacheKey !== target) {
         cacheKey = target;
@@ -1579,7 +1594,7 @@ function openZzfxmAudio(ref: ZzfxmRef, opts: ClipAudioOpts): ClipAudio {
       }
       if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
       // One chunk at timestamp 0, through the SAME pure assembler a decoded file
-      // uses — so the trim and the resample to the mix rate are literally the
+      // uses - so the trim and the resample to the mix rate are literally the
       // same code, and a procedural clip cannot drift from a recorded one.
       return assemblePcmWindow(
         [{ channels: [pcm.left, pcm.right], sampleRate: pcm.sampleRate, timestamp: 0 }],

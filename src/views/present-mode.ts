@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// present-mode.ts — the presentation-mode conductor (plan 112, M1).
+// present-mode.ts - the presentation-mode conductor (plan 112, M1).
 //
 // Turns a design frame document into a fullscreen, click-advanced DECK. The
 // deck MODEL and every index/direction/state-class decision live in the pure, DOM-free
@@ -12,9 +12,9 @@
 // safer shape: (1) the design canvas sits under the free-canvas CAMERA transform,
 // so a `position:fixed` page presented in place resolves against that transformed
 // ancestor, not the viewport (the containing-block trap this codebase already fights in
-// float panels). (2) Restore fidelity is the plan's #1 risk — a leaked transform means a
+// float panels). (2) Restore fidelity is the plan's #1 risk - a leaked transform means a
 // wrong export later. Cloning the pages into a body-level stage means the ORIGINAL
-// canvas DOM is never touched, so restore is not a discipline to get right — it is
+// canvas DOM is never touched, so restore is not a discipline to get right - it is
 // automatic (remove the stage; the editor underneath is byte-identical). Media/interactive
 // continuity is preserved the same way the timeline preserves it: video-mount keys resume
 // off `data-video-key`, which survives the clone. M2 layers real media conduct on top.
@@ -50,7 +50,7 @@ export interface OpenPresentOptions {
   source: HTMLElement;
   /** The `?s=` address to open on (position, frame id, or `h.f`); null → the first slide. */
   initial?: string | null;
-  /** `?loop` — wrap at the ends (signage). */
+  /** `?loop` - wrap at the ends (signage). */
   loop?: boolean;
   /** Deck-level slide transition (M5). `morph` FLIPs matching boxes between slides; the
    *  default `slide`/`fade` use the CSS state-class transition. */
@@ -84,7 +84,7 @@ function px(el: HTMLElement, prop: 'left' | 'top' | 'width' | 'height'): number 
 }
 
 /** Read the rendered frame pages into the pure model's FrameSpec shape. Order is DOM
- *  order — the hook already emits pages sorted (order asc, tie x asc), so document order
+ *  order - the hook already emits pages sorted (order asc, tie x asc), so document order
  *  IS presentation order; geometry comes off the inline pageStyle the hook wrote. */
 function readFrames(source: HTMLElement): { specs: FrameSpec[]; pages: HTMLElement[] } {
   const pages = [...source.querySelectorAll<HTMLElement>('.lolly-frame-page')];
@@ -112,7 +112,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   for (const s of document.querySelectorAll('.pr-stage')) s.remove();
 
   const { specs, pages } = readFrames(source);
-  if (specs.length === 0) return null; // nothing to present — caller nudges "add frames"
+  if (specs.length === 0) return null; // nothing to present - caller nudges "add frames"
 
   const deck: Deck = buildDeck(specs);
   const reduced = prefersReducedMotion();
@@ -128,7 +128,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   if (reduced) stage.classList.add('pr-reduced');
 
   const framesEl = document.createElement('div');
-  // `pr-scope` is the shared style-scope class the re-scoped tool CSS targets — carried by
+  // `pr-scope` is the shared style-scope class the re-scoped tool CSS targets - carried by
   // the deck AND by slide-preview containers (speaker view), so a preview gets styled too.
   framesEl.className = 'pr-frames pr-scope';
   stage.appendChild(framesEl);
@@ -145,11 +145,11 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     clone.style.removeProperty('left');
     clone.style.removeProperty('top');
     clone.style.removeProperty('margin');
-    // Mark build boxes (M3): a `data-build` child is a fragment revealed on advance —
+    // Mark build boxes (M3): a `data-build` child is a fragment revealed on advance - 
     // it starts hidden (present.css) and gets `pr-shown` when its step is reached.
     for (const bx of clone.querySelectorAll<HTMLElement>('[data-build]')) bx.classList.add('pr-build');
     // The clone keeps its authored width/height (child boxes are in frame-local coords),
-    // so a single scale fits the whole page — letterboxed to its own aspect.
+    // so a single scale fits the whole page - letterboxed to its own aspect.
     clone.dataset.prIndex = String(i);
     framesEl.appendChild(clone);
     cloneByIndex[i] = clone;
@@ -176,7 +176,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   hud.append(btnPrev, counter, btnNext, ...(btnPause ? [btnPause] : []), btnSpeaker, btnOverview, btnExit);
   stage.appendChild(hud);
 
-  // Kiosk dwell progress — a thin bar that fills over the active frame's dur, then advances.
+  // Kiosk dwell progress - a thin bar that fills over the active frame's dur, then advances.
   const progress = el('div', 'pr-progress');
   const progressFill = el('div', 'pr-progress-fill');
   progress.appendChild(progressFill);
@@ -185,7 +185,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   container.appendChild(stage);
   // The tool's styles.css is scoped `#tool-canvas .lolly-box{…}`; clones live in a
   // body-level stage, so copy those box-layout rules re-scoped to `.pr-frames`. Faithful
-  // to whatever the tool defines (no drift), and structural only — text/colour ride inline.
+  // to whatever the tool defines (no drift), and structural only - text/colour ride inline.
   injectToolBoxStyles(stage);
 
   // ---- State -------------------------------------------------------------------------
@@ -194,7 +194,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   let build = 0;           // current build threshold of the active frame (0 = none revealed); set below
   let overview = false;
   let closed = false;
-  let blackout = false;    // `b` — a black hold that pauses media + auto-advance
+  let blackout = false;    // `b` - a black hold that pauses media + auto-advance
   let autoPaused = false;  // kiosk auto-advance paused by the user (stoppable-on-input)
   let appliedState: string[] = []; // frame `state` tokens currently on the stage root (M4)
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -226,7 +226,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   const deckHasBuilds = cloneByIndex.some((c) => c.querySelector('[data-build]'));
 
   // ---- Builds (M3): fragment reveals within a slide ----------------------------------
-  // Distinct build values on a frame, ascending (equal values reveal together — reveal's
+  // Distinct build values on a frame, ascending (equal values reveal together - reveal's
   // data-fragment-index). A box with no build is always visible; `build` (the threshold)
   // reveals every box whose value ≤ it.
   function buildStepsOf(index: number): number[] {
@@ -255,7 +255,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
       bx.classList.remove('pr-current');
       if (shown) maxShown = Math.max(maxShown, v);
     }
-    // The most-recently-revealed step is `current` (CSS can emphasise it — reveal's shape).
+    // The most-recently-revealed step is `current` (CSS can emphasise it - reveal's shape).
     if (maxShown > 0) for (const bx of boxes) {
       if ((Number(bx.getAttribute('data-build')) || 0) === maxShown) bx.classList.add('pr-current');
     }
@@ -277,7 +277,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   }
 
   // Overview = the authored arrangement (the deck map) scaled to fit the union bbox into
-  // the viewport. Columns read as columns — no commercial player has an audience overview.
+  // the viewport. Columns read as columns - no commercial player has an audience overview.
   function unionBox() {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const s of specs) {
@@ -348,9 +348,9 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
 
   // ---- Media conduct (M2) ------------------------------------------------------------
   // Play the ACTIVE slide's video, pause every other. pause() preserves currentTime, so
-  // returning to a slide RESUMES rather than restarts (Andy's decision 7) — no extra state.
+  // returning to a slide RESUMES rather than restarts (Andy's decision 7) - no extra state.
   // Audio stays muted: mute:false unmuting is deferred (the field defaults to audible, so
-  // honouring it literally would blare a whole deck at once — it needs a clearer signal).
+  // honouring it literally would blare a whole deck at once - it needs a clearer signal).
   function conductMedia(): void {
     for (let i = 0; i < cloneByIndex.length; i++) {
       const isActive = i === active && !blackout && !overview;
@@ -358,14 +358,14 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
         if (isActive) {
           // Unmute ONLY a box that explicitly opted into present audio (data-present-audio);
           // entering the presenter is a user gesture, so the unmute is allowed. Everything
-          // else stays muted — the deck never blares (plan §8, Andy's opt-in decision).
+          // else stays muted - the deck never blares (plan §8, Andy's opt-in decision).
           v.muted = v.getAttribute('data-present-audio') !== '1';
           const p = v.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {});
         } else {
           try { v.muted = true; v.pause(); } catch { /* jsdom / not-ready — never throw */ }
         }
       }
-      // Lottie: play the active slide's players, pause the rest (mounted below, async — a
+      // Lottie: play the active slide's players, pause the rest (mounted below, async - a
       // marker with no player yet is simply skipped and picked up on the next conduct).
       for (const marker of cloneByIndex[i]!.querySelectorAll('[data-lottie-src]')) {
         const player = lottiePlayerFor(marker);
@@ -376,7 +376,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   }
 
   // ---- Kiosk auto-advance (M2): dwell on a frame's dur, then advance; stoppable, with a
-  // visible progress bar (reveal's autoSlideStoppable — the polish commercial kiosks lack).
+  // visible progress bar (reveal's autoSlideStoppable - the polish commercial kiosks lack).
   function clearAdvance(): void {
     if (advTimer) { clearTimeout(advTimer); advTimer = null; }
     progress.classList.remove('pr-progress-on');
@@ -453,7 +453,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   function morphTo(toIndex: number, dir: NavDir, buildTarget: number): void {
     const fromClone = cloneByIndex[active];
     const pairs = fromClone ? matchMorphBoxes(boxDescriptors(active), boxDescriptors(toIndex)) : [];
-    // FIRST — measure the leaving boxes' on-screen rects (that slide is still active).
+    // FIRST - measure the leaving boxes' on-screen rects (that slide is still active).
     const fromRects = new Map<string, DOMRect>();
     if (fromClone) for (const p of pairs) {
       const el = boxEl(fromClone, p.fromId);
@@ -465,7 +465,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     active = clampIndex(deck, toIndex);
     build = Math.max(0, Math.min(buildTarget, maxBuildOf(active)));
     render(dir);
-    // LAST + INVERT + PLAY — animate each entering box from where its partner was.
+    // LAST + INVERT + PLAY - animate each entering box from where its partner was.
     const toClone = cloneByIndex[active];
     const pageScale = toClone ? (Number(toClone.style.getPropertyValue('--pr-scale')) || 1) : 1;
     const dur = reduced ? 1 : 520;
@@ -493,15 +493,15 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   // ---- Speaker view (M5) -------------------------------------------------------------
   // A presenter-only panel: a large preview of the CURRENT slide, a small preview of what's
   // NEXT, the active frame's speaker `notes`, an elapsed timer, and its own prev/next. It's
-  // the slide-preview primitive (`makeSlidePreview`) put to work — a static, scaled re-clone
+  // the slide-preview primitive (`makeSlidePreview`) put to work - a static, scaled re-clone
   // of a frame that reuses the same `.pr-scope` box styling the deck does.
   //
   // DUAL-SCREEN by default: `S` opens the panel in a SECOND WINDOW (`window.open`), so the
   // deck stays on the projector while the presenter reads notes on their laptop. Same-origin,
-  // so no postMessage — we hold the window handle and drive its DOM directly; `render()` calls
+  // so no postMessage - we hold the window handle and drive its DOM directly; `render()` calls
   // `renderSpeaker()` and it repaints whichever document the panel lives in. If the popup is
   // blocked (or jsdom, which has no `window.open`), it falls back to an IN-PAGE overlay that
-  // covers the deck — a rehearsal/notes aid on a single screen.
+  // covers the deck - a rehearsal/notes aid on a single screen.
 
   /** A static, non-playing re-clone of frame `index`, scaled to FIT a `boxW`×`boxH` slot
    *  (letterboxed to the frame's own aspect), built in `doc` (the deck's window or the popup). */
@@ -517,11 +517,11 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     const src = cloneByIndex[i];
     if (src) {
       // importNode adopts the clone into `doc` (cross-window for the popup; a plain deep clone
-      // in the deck's own document) — so a preview works in either window unchanged.
+      // in the deck's own document) - so a preview works in either window unchanged.
       const clone = doc.importNode(src, true) as HTMLElement;
       clone.removeAttribute('hidden');
       clone.removeAttribute('id');
-      // Drop the deck state/placement classes — a preview is a still, top-left, scaled page;
+      // Drop the deck state/placement classes - a preview is a still, top-left, scaled page;
       // the build classes (pr-build/pr-shown) are KEPT so a fragment slide reads as authored.
       clone.classList.remove('pr-page', 'pr-active', 'pr-past', 'pr-future', 'pr-prev', 'pr-next', 'pr-stack');
       clone.style.position = 'absolute';
@@ -623,15 +623,15 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     if (theme) d.documentElement.setAttribute('data-theme', theme);
     d.head.replaceChildren();
     d.body.replaceChildren();
-    d.title = t('Speaker view'); // AFTER clearing head — the setter re-creates the <title> element
-    // Copy the app's own <style>/<link> — skip anything inside the stage (the box CSS we add
+    d.title = t('Speaker view'); // AFTER clearing head - the setter re-creates the <title> element
+    // Copy the app's own <style>/<link> - skip anything inside the stage (the box CSS we add
     // fresh below, re-scoped) so we don't double it. This brings present.css `.pr-speaker*`.
     for (const node of Array.from(document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style'))) {
       if (node.closest('.pr-stage')) continue;
       if (node.tagName === 'LINK') {
         const l = d.createElement('link');
         l.rel = 'stylesheet';
-        l.href = (node as HTMLLinkElement).href; // resolved absolute URL — safe against about:blank base
+        l.href = (node as HTMLLinkElement).href; // resolved absolute URL - safe against about:blank base
         d.head.appendChild(l);
       } else {
         const s = d.createElement('style');
@@ -821,7 +821,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     }
   }
 
-  // Overview: clicking a frame dives into it.
+  // Overview: clicking a frame opens it.
   function onFramesClick(e: MouseEvent): void {
     if (!overview) return;
     const page = (e.target as HTMLElement).closest<HTMLElement>('.pr-page');
@@ -875,7 +875,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     closeSpeaker(); // stops the timer AND closes the second window / removes the overlay
     htmlEl.style.overflow = prevOverflow;
     if (ownedFullscreen.v && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    destroyLottiePlayers(stage); // reap OUR players only — lottie-web's global rAF ticks detached trees otherwise
+    destroyLottiePlayers(stage); // reap OUR players only - lottie-web's global rAF ticks detached trees otherwise
     stage.remove(); // clones (and their media) die with it; originals are untouched
     onClose?.();
   }
@@ -890,7 +890,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
 
 /** Gather the tool canvas's `.lolly-box*` layout rules (scoped `#tool-canvas .lolly-box…`)
  *  re-scoped to `.pr-scope` (carried by the deck AND every slide preview), so cloned boxes
- *  position correctly outside the canvas. Structural rules only — the frame/page rules are
+ *  position correctly outside the canvas. Structural rules only - the frame/page rules are
  *  excluded because present.css owns page placement; text and colour are inline on the boxes.
  *  Same-origin sheets only; cross-origin `cssRules` access throws and is skipped. Returned as a
  *  string so it can be injected into the stage AND into the speaker popup's document. */
@@ -898,16 +898,16 @@ function collectToolBoxCss(): string {
   let css = '';
   for (const sheet of Array.from(document.styleSheets)) {
     let rules: CSSRuleList | null = null;
-    try { rules = sheet.cssRules; } catch { continue; } // cross-origin — skip
+    try { rules = sheet.cssRules; } catch { continue; } // cross-origin - skip
     if (!rules) continue;
     for (const rule of Array.from(rules)) {
-      // @keyframes the shell scoped for the tool's customCss (M4) — copy verbatim; the
+      // @keyframes the shell scoped for the tool's customCss (M4) - copy verbatim; the
       // names are already scoped and the animation-name references below match them.
       if (rule instanceof CSSKeyframesRule) { css += rule.cssText + '\n'; continue; }
       if (!(rule instanceof CSSStyleRule)) continue;
       const sel = rule.selectorText;
       if (!sel || !sel.includes('#tool-canvas')) continue;
-      // Skip the frame/page positioning rules — present.css owns page placement, and an
+      // Skip the frame/page positioning rules - present.css owns page placement, and an
       // unlayered injected copy would out-rank it (position:relative would break centring).
       if (/\.lolly-frames|\.lolly-frame-page/.test(sel)) continue;
       // Everything else: the tool's .lolly-box layout AND the doc-level customCss (both

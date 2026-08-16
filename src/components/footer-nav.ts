@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// footer-nav.ts — the bottom nav bar's MARKUP: [Pro?] [Dashboard]  <search>  [Verify]
+// footer-nav.ts - the bottom nav bar's MARKUP: [Pro?] [Dashboard]  <search>  [Verify]
 // [What?]. Since plans/99 M1 the live bar is a shell-level singleton rendered and
 // wired ONCE by components/search-bar.ts (views claim its field instead of building
 // their own footer); the only other consumer is the component library's in-flow
@@ -10,7 +10,7 @@ import { icon } from '../lib/icons.ts';
 import { jellyActive } from '../lib/jelly.ts';
 
 /** The nav-bar glyphs (Lucide house style), shared so all three footers match.
- *  Path data lives in lib/icons.ts — .shield is 'shieldCheck' there, deduped
+ *  Path data lives in lib/icons.ts - .shield is 'shieldCheck' there, deduped
  *  against profile.ts's identical VERIFY_SHIELD (component-audit rec 5). */
 export const NAV_ICONS = {
   search: icon('search'),
@@ -21,17 +21,17 @@ export const NAV_ICONS = {
 } as const;
 
 /** The standard `.gallery-search` field + its ✕ clear button (Tools gallery + Catalogue
- *  use it verbatim, component-audit rec 11 — previously the gallery minted its own
+ *  use it verbatim, component-audit rec 11 - previously the gallery minted its own
  *  `.gallery-search-clear` with inline JS styles while the catalog borrowed projects'
  *  `.projects-search-clear`). `type="text"` (not "search") so the browser's own native
  *  cancel button doesn't double up with ours. The ✕ starts `hidden` unless `value` is
- *  already non-empty (a restored query) — each view toggles the `hidden` attribute as
+ *  already non-empty (a restored query) - each view toggles the `hidden` attribute as
  *  the field's content changes. */
 export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string; kbdHint?: { label: string; title: string } }): string {
   const cls = opts.className ?? 'gallery-search';
   const value = opts.value ?? '';
   // The spotlight chord hint (plans/99 §2f): a decorative <kbd> chip right-aligned
-  // inside the box. aria-hidden — it duplicates nothing (the chord is a shortcut,
+  // inside the box. aria-hidden - it duplicates nothing (the chord is a shortcut,
   // not the only path) and screen-reader users get the combobox semantics instead.
   // Starts hidden when the field already has text (the ✕ takes that corner);
   // search-bar's syncClear toggles it as the content changes, and gallery.css
@@ -43,10 +43,10 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
   // keeps working untouched: they query by the same class, `.value` is a live
   // getter/setter on the host, and the inner field's `input`/keydown events are
   // composed so host-bound listeners fire as before. The icon + ✕ still overlay
-  // the field (they need z-index above the jelly canvas — footer-nav.css).
+  // the field (they need z-index above the jelly canvas - footer-nav.css).
   const field = jellyActive()
-    // The inline padding-inline var is load-bearing: it insets the shadow
-    // field's text clear of the overlaid magnifier/✕. It must be INLINE — the
+    // The inline padding-inline var is required: it insets the shadow
+    // field's text clear of the overlaid magnifier/✕. It must be INLINE - the
     // lib/jelly.ts bridge sheet is unlayered and sets a chrome-wide
     // --jelly-input-padding-inline, and unlayered rules beat any @layer views
     // stylesheet rule regardless of specificity; only an inline style outranks it.
@@ -68,7 +68,7 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
 export interface FooterNavOpts {
   /** Pro link only shows when Batch mode is enabled (flagEnabled(profile, PRO_FLAG.id)). */
   proEnabled: boolean;
-  /** The middle search field — gallerySearchBox(...). */
+  /** The middle search field - gallerySearchBox(...). */
   searchHtml: string;
 }
 
@@ -89,19 +89,19 @@ function ensureNavHandler(): void {
   });
 }
 
-/** One footer nav item — the plain `.btn` link, or its soft-body <jelly-button>
+/** One footer nav item - the plain `.btn` link, or its soft-body <jelly-button>
  *  stand-in (data-href → the click handler above) when the jelly flag is on. */
 function navItem(o: { href: string; nativeClass: string; variant?: string; style?: string; sfx?: string; aria: string; inner: string }): string {
   const sfxAttr = o.sfx ? ` data-sfx="${o.sfx}"` : '';
   if (jellyActive()) {
-    // Only the layout class `gallery-nav-jelly` rides on the host — NOT `.btn` /
+    // Only the layout class `gallery-nav-jelly` rides on the host - NOT `.btn` /
     // `.gallery-nav-link` (their `.gallery-footer > .btn` display/flex rules would
     // fight the jelly host box). `size="sm"` gives compact padding; the visible
     // .gallery-nav-label span keeps its class so the mobile label-hide still works.
-    // nosemgrep: lolly-href-escape-is-not-scheme-validation — footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsHref('index') → '/info/…')
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsHref('index') → '/info/…')
     return `<jelly-button class="gallery-nav-jelly" size="sm"${o.variant ? ` variant="${o.variant}"` : ''}${o.style ?? ''} data-href="${escape(o.href)}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</jelly-button>`;
   }
-  // nosemgrep: lolly-href-escape-is-not-scheme-validation — same four literal footerNav() routes as the jelly branch above
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation - same four literal footerNav() routes as the jelly branch above
   return `<a href="${escape(o.href)}" class="${o.nativeClass}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</a>`;
 }
 

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * views/cost-panel.ts — the export panel's "Cost, worked out from your rate card".
+ * views/cost-panel.ts - the export panel's "Cost, worked out from your rate card".
  *
  * Run directly:  node --test shells/web/src/views/cost-panel.test.ts
  *
- * The pure half is tested — the working → view mapping, where every honesty rule
- * lives. The load-bearing one is the DEGRADE: a mount reached via a link may never
+ * The pure half is tested - the working → view mapping, where every honesty rule
+ * lives. The essential one is the DEGRADE: a mount reached via a link may never
  * render a money figure, even when a full working is in hand, until an explicit
  * per-device reveal. `cannot render money from a link` proves that the figure is
  * structurally unreachable from a link-provenance context, not merely hidden by CSS.
@@ -58,7 +58,7 @@ const ctx = (over: Partial<CostPanelContext> = {}): CostPanelContext => ({
   validUntil: '2026-12-31', ...over,
 });
 
-/** Any currency figure — a symbol, an ISO code, or a `NN.NN` amount. If this matches
+/** Any currency figure - a symbol, an ISO code, or a `NN.NN` amount. If this matches
  *  a suppressed/no-card body, money leaked. (A bare date year is not a figure.) */
 const CURRENCY = /[€$£¥]|EUR|\d+[.,]\d{2}/;
 
@@ -79,8 +79,8 @@ test('rule 1: no card on this device hides the panel (no in-app card loading yet
 // ─── the degrade: a link cannot render money ───────────────────────────────────
 
 test('cannot render money from a link: link provenance suppresses the figure', () => {
-  // A full working, complete coverage, a real total — everything needed to show
-  // money — but the mount was reached via a link and not revealed on this device.
+  // A full working, complete coverage, a real total - everything needed to show
+  // money - but the mount was reached via a link and not revealed on this device.
   const v = costView(working(), ctx({ money: money({ selectionFromUrl: true, revealedThisSession: false }) }));
   assert.equal(v.mode, 'suppressed', 'a link-reached mount degrades to counts');
   assert.equal(v.total, undefined, 'no total object exists on the suppressed view');
@@ -117,7 +117,7 @@ test('expired rates suppress money and show the expiry reason; no figure', () =>
 test('opting in to expired rates shows the working, stamped with the expiry date (§5)', () => {
   const v = costView(working({ expired: true }), ctx({ money: money({ expired: true, useExpiredAnyway: true }) }));
   assert.equal(v.mode, 'working');
-  // The figure must carry the expiry caveat WITH it — a lapsed total never reads as current.
+  // The figure must carry the expiry caveat WITH it - a lapsed total never reads as current.
   assert.ok(v.expiredNote, 'the opted-in figure is stamped as computed from lapsed rates');
   assert.match(v.expiredNote!, /expired/i);
   assert.match(costBodyHtml(v), /expired/i, 'the stamp is rendered beside the total');

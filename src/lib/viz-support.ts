@@ -15,7 +15,7 @@ let cached: boolean | null = null;
 let cachedLax: boolean | null = null;
 
 /**
- * Is a MilkDrop visualizer possible here? butterchurn 2.x is WebGL2-or-nothing —
+ * Is a MilkDrop visualizer possible here? butterchurn 2.x is WebGL2-or-nothing - 
  * a single `getContext('webgl2')` with no WebGL1 fallback path.
  *
  * `failIfMajorPerformanceCaveat` additionally rules out software rasterisers, where
@@ -26,7 +26,7 @@ let cachedLax: boolean | null = null;
 export function vizSupported(): boolean {
   // A ?neuro demo capture runs on headless SwiftShader, which fails the strict
   // failIfMajorPerformanceCaveat probe by definition (it IS a software rasteriser)
-  // — so the demo takes the lax answer instead. neuro-demo.ts is import-free at
+  // - so the demo takes the lax answer instead. neuro-demo.ts is import-free at
   // module level, so this module's "no imports" cheapness holds.
   if (neuroDemoActive()) return vizPossible();
   return strictProbe();
@@ -50,8 +50,8 @@ function strictProbe(): boolean {
  * `vizSupported` deliberately refuses a software rasteriser, because the DOCK renders
  * its visualizer ambiently and a crawling full-screen mesh reads as a broken feature.
  * That is the wrong test for a surface the user has explicitly asked for: on a machine
- * where the strict probe fails — a laptop on integrated graphics, a browser with partial
- * hardware acceleration — the strict answer turns a deliberate tap into nothing
+ * where the strict probe fails - a laptop on integrated graphics, a browser with partial
+ * hardware acceleration - the strict answer turns a deliberate tap into nothing
  * happening at all, which is worse than a slow visualiser.
  *
  * So: strict where it is ambient, lax where it was asked for.

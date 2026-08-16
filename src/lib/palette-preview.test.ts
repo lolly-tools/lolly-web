@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * palette-preview.ts — the three illustrative brand-palette mockups.
+ * palette-preview.ts - the three illustrative brand-palette mockups.
  * Focus: shape (3 self-contained SVGs), that real palette colours land in the
  * markup, that hostile colour strings are sanitised out (these SVGs are injected
  * via innerHTML), and that empty / single-colour palettes never throw.

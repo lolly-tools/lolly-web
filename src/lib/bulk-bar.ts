@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared bulk-action bar — the floating bottom-centre pill that appears over a
+ * Shared bulk-action bar - the floating bottom-centre pill that appears over a
  * multi-selection (count + actions + ✕ clear), extracted from the two structurally
  * identical copies projects.ts and catalog.ts grew.
  *
@@ -11,12 +11,12 @@
  *    whose delegated click handler already exists) and its action implementations;
  *  - its CSS skin + bottom offset. Class names are generated off `prefix`
  *    (`{prefix}`, `{prefix}-count`, `{prefix}-actions`, `{prefix}-clear`), so the
- *    existing `.projects-bulkbar` / `.cat-bulkbar` sheets apply unchanged — the
+ *    existing `.projects-bulkbar` / `.cat-bulkbar` sheets apply unchanged - the
  *    two bars deliberately differ (card vs popover surface, footer clearance), and
  *    that stays a per-view decision.
  *
  * Dynamic actions: `label`/`title`/`hidden`/`disabled` may be functions, re-read on
- * every `sync()` — that's how a smart toggle ("Favourite" ↔ "Unfavourite") or a
+ * every `sync()` - that's how a smart toggle ("Favourite" ↔ "Unfavourite") or a
  * context-dependent action ("Edit together" only for 2–8 sessions) stays honest
  * without a re-render.
  */
@@ -27,7 +27,7 @@ import { escape } from '../utils.ts';
 export interface BulkBarAction {
   /** The `data-bulk` value the view's delegated click handler dispatches on. */
   id: string;
-  /** Inline SVG (lib/icons.ts) — optional. */
+  /** Inline SVG (lib/icons.ts) - optional. */
   icon?: string;
   label: string | (() => string);
   title?: string | (() => string);
@@ -38,7 +38,7 @@ export interface BulkBarAction {
 }
 
 export interface BulkBarConfig {
-  /** Class prefix — 'projects-bulkbar' | 'cat-bulkbar' | 'gallery-bulkbar'. */
+  /** Class prefix - 'projects-bulkbar' | 'cat-bulkbar' | 'gallery-bulkbar'. */
   prefix: string;
   /** The view root that gets `.has-selection` while the bar shows (reserves bottom
    *  room so the fixed bar never buries the last tile row). */
@@ -49,7 +49,7 @@ export interface BulkBarConfig {
 
 const readText = (v: string | (() => string) | undefined): string => (typeof v === 'function' ? v() : v ?? '');
 
-/** The bar's markup — render once per view render, hidden; sync() reveals it. */
+/** The bar's markup - render once per view render, hidden; sync() reveals it. */
 export function bulkBarHtml(cfg: BulkBarConfig): string {
   const buttons = cfg.actions.map(a => {
     const title = readText(a.title);
@@ -91,7 +91,7 @@ export function syncBulkBar(host: HTMLElement, cfg: BulkBarConfig): void {
 /** Put the bar into (or out of) a busy state for a long-running bulk action: the
  *  count line becomes the progress label ("Pinning 3 of 7…"), every control
  *  disables, and sync() leaves the bar alone until the run ends. Pass null to
- *  restore — the caller should sync() right after. */
+ *  restore - the caller should sync() right after. */
 export function setBulkBarBusy(host: HTMLElement, cfg: BulkBarConfig, label: string | null): void {
   const bar = host.querySelector<HTMLElement>(`.${cfg.prefix}`);
   if (!bar) return;
@@ -107,19 +107,19 @@ export function setBulkBarBusy(host: HTMLElement, cfg: BulkBarConfig, label: str
 }
 
 /**
- * Escape clears the selection — the keyboard exit every selection surface was
+ * Escape clears the selection - the keyboard exit every selection surface was
  * missing (Escape previously only cancelled a live marquee). Bound on document so
  * it works wherever focus sits, with two yields:
  *  - any open overlay owns Escape first: native dialogs; body-mounted popover
  *    menus, which exist in the DOM only while open (.folder-menu covers every
  *    context/view-options menu including the hand-rolled projects one that
  *    carries no role; role="menu"/"listbox" covers lang/profile menus); and the
- *    in-place filter popovers, which toggle [hidden] instead — hence the
+ *    in-place filter popovers, which toggle [hidden] instead - hence the
  *    :not([hidden]) check (both the gallery's and the catalog's carry
  *    .filter-popover);
  *  - a focused text field keeps its own Escape (clearing a search box must not
  *    also drop the selection).
- * Returns the unbind — register it in the view's `_cleanup`.
+ * Returns the unbind - register it in the view's `_cleanup`.
  */
 export function wireEscapeClearsSelection(opts: { active: () => boolean; clear: () => void }): () => void {
   const onKey = (e: KeyboardEvent): void => {

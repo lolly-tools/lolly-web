@@ -3,16 +3,16 @@
  * Stage-locating math for the live-capture export path (live-capture.ts).
  *
  * When the browser can't crop a display capture to the tool canvas itself
- * (no CropTarget — Safari/Firefox, or the user shared a window/monitor), the
+ * (no CropTarget - Safari/Firefox, or the user shared a window/monitor), the
  * shell flashes the stage solid magenta then solid green and finds that
  * rectangle in the incoming frames. Two colours, confirmed at the same spot,
  * so a magenta wallpaper or a green terminal can't fake a stage on its own.
  *
- * DOM-free by design — same split as video-mime.ts: the pixel math lives here
+ * DOM-free by design - same split as video-mime.ts: the pixel math lives here
  * so the repo-root suite can assert it on synthetic frames; the <video> /
  * canvas sampling stays in live-capture.ts and needs a real browser.
  *
- * All coordinates are pixel positions in the frame handed to feed() — the
+ * All coordinates are pixel positions in the frame handed to feed() - the
  * caller samples the capture into a small canvas and scales the result back
  * up to video coordinates with scaleRect().
  */
@@ -28,7 +28,7 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 
 // Calibration colours: full-saturation magenta and green sit at opposite ends of
 // both chroma axes, so they survive 4:2:0 subsampling and encoder smoothing better
-// than any other pair. Thresholds are deliberately loose — a captured #f0f lands
+// than any other pair. Thresholds are deliberately loose - a captured #f0f lands
 // well inside them even after colour management drift, while UI chrome (muted
 // brand colours, greys) stays well outside.
 export function isMagenta(r: number, g: number, b: number): boolean {
@@ -75,7 +75,7 @@ export function findSolidRect(
   return { x: minX, y: minY, w, h };
 }
 
-/** Intersection-over-union — how well two candidate boxes agree. */
+/** Intersection-over-union - how well two candidate boxes agree. */
 export function rectIoU(a: Rect, b: Rect): number {
   const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
   const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
@@ -107,7 +107,7 @@ export interface StageLocator {
 /**
  * Two-phase locator: remember where the magenta flash was, then require the
  * green flash to land on (IoU ≥ 0.8 with) the same box. The result is the
- * intersection of the two reads — the pixels BOTH flashes claimed, so a stray
+ * intersection of the two reads - the pixels BOTH flashes claimed, so a stray
  * match in either colour can only shrink the crop by its overlap, never grow it.
  * A green box somewhere else entirely just re-arms the wait; a later magenta
  * sighting updates the stored box (the overlay may still be fading in when the
@@ -135,7 +135,7 @@ export function createStageLocator(): StageLocator {
 
 /**
  * Scale a rect from sample coordinates up to video coordinates. Position
- * floors and size ceils so the crop never falls short of the detected box —
+ * floors and size ceils so the crop never falls short of the detected box - 
  * a sub-pixel overshoot grabs at most a sliver of surround, while an
  * undershoot would shave the stage edge.
  */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Shared "ask before render, optionally lock the download" prompt for every
- * batch/zip export flow — the Pro grid, a folder download, and a multi-selection
+ * batch/zip export flow - the Pro grid, a folder download, and a multi-selection
  * download. Cancelling aborts. A blank password means no lock.
  *
  * When a password is set it does BOTH, with one password (defense in depth):
@@ -42,7 +42,7 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
     // this file used to retype. The select deliberately does NOT carry
     // `.pdfpass-tier`: that rule lives in the LAZY, `views`-layer tool-chrome.css
     // (the export panel's own tier control), so it would win over the primitive
-    // only in sessions that happened to load the tool view — and its `background:`
+    // only in sessions that happened to load the tool view - and its `background:`
     // shorthand would erase the primitive's chevron on an `appearance:none` box.
     // The class was styling-only here; `.export-lock-tier` is the JS hook.
     const content = `

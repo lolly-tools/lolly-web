@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * op-guard tests — plan 100 §6.3 / §11.21, wave 2.4.
+ * op-guard tests - plan 100 §6.3 / §11.21, wave 2.4.
  * Run directly:  node --test shells/web/src/collab/op-guard.test.ts
  *
  * What is actually being proved here, in rising order of what it would cost to lose:
@@ -8,14 +8,14 @@
  *  1. THE SCHEMA IS NOT ENOUGH, and the test says so with the schema itself. Every
  *     hostile payload in "ajv-blind" is asserted to be VALID against the canonical
  *     `validateCanvasOp` before the guard is asked about it. If a future schema
- *     tightens one of them, that assertion fails and this file — not a production
- *     incident — is where the news arrives. These are not hypotheticals: NaN and
+ *     tightens one of them, that assertion fails and this file - not a production
+ *     incident - is where the news arrives. These are not hypotheticals: NaN and
  *     Infinity geometry, an Infinity Lamport clock that would win every LWW merge
  *     forever, and an own `__proto__` key inside an `add` row all pass ajv today.
  *  2. THE WHITELIST IS A NARROWING, NEVER A PERMISSION. A manifest that declares an
  *     input literally called `__proto__` still cannot make one addressable.
  *  3. THE CAPS TRIP EXACTLY WHERE THEY SAY. Every size/length/depth/rate boundary is
- *     asserted at N (accepted) and N+1 (refused), not "somewhere around N" — a cap
+ *     asserted at N (accepted) and N+1 (refused), not "somewhere around N" - a cap
  *     nobody has measured is a cap nobody can tune.
  *  4. VALID TRAFFIC IS UNTOUCHED. v1.0 and v1.1 batches come out as the SAME OBJECTS
  *     that went in (identity, not deep-equality): the guard is a gate, not a codec,
@@ -138,7 +138,7 @@ test('a partially bad batch drops only the bad ops (never the batch, never a thr
   assert.equal(r.ok.length, 1);
   assert.equal(r.ok[0], good);
   assert.deepEqual(reasons(r), ['unknown-input', 'unknown-field']);
-  // §11.11's survivable skew — none of it means "disconnect".
+  // §11.11's survivable skew - none of it means "disconnect".
   for (const rej of r.rejected) assert.equal(ABUSE_REASONS.has(rej.reason), false);
 });
 
@@ -149,7 +149,7 @@ test('the canonical schema refuses malformed ops', () => {
   assert.equal(reasonFor({ k: 'nope', origin: origin() }, g), 'schema');
   assert.equal(reasonFor({ k: 'field', id: 'B1', field: 'text', value: 'x' }, g), 'schema');
   assert.equal(reasonFor({ k: 'add', id: 'B1', row: {}, origin: origin() }, g), 'schema');
-  // `param` is collection-blind by contract — a `col` on one is not a v1.1 op.
+  // `param` is collection-blind by contract - a `col` on one is not a v1.1 op.
   assert.equal(reasonFor({ k: 'param', key: 'title', col: 'boxes', value: 1, origin: origin() }, g), 'schema');
   // Geometry field names are closed at x/y/w/h/rot.
   assert.equal(reasonFor({ k: 'geom', id: 'B1', fields: { left: 1 }, origin: origin() }, g), 'schema');
@@ -176,11 +176,11 @@ test('ajv-blind payloads: valid against the canonical schema, refused by the gua
   const cases: [string, unknown, OpRejectReason][] = [
     ['NaN geometry', { k: 'geom', id: 'B1', fields: { x: Number.NaN }, origin: origin() }, 'not-finite'],
     ['Infinity geometry', { k: 'geom', id: 'B1', fields: { x: Number.POSITIVE_INFINITY }, origin: origin() }, 'not-finite'],
-    // `type: "integer"` is `!(data % 1)`, and `Infinity % 1` is NaN — so an origin
+    // `type: "integer"` is `!(data % 1)`, and `Infinity % 1` is NaN - so an origin
     // that beats every future write forever is schema-clean.
     ['Infinity clock', { k: 'geom', id: 'B1', fields: { x: 1 }, origin: { client: 'a', clock: Number.POSITIVE_INFINITY } }, 'not-finite'],
     ['NaN param value', { k: 'param', key: 'count', value: Number.NaN, origin: origin() }, 'not-finite'],
-    // `row`'s additionalProperties is the scalar $ref, so ANY key is legal there —
+    // `row`'s additionalProperties is the scalar $ref, so ANY key is legal there - 
     // and JSON.parse makes `__proto__` an OWN property, which the rebuild would
     // assign straight onto an object literal.
     ['own __proto__ in an add row', JSON.parse('{"k":"add","id":"B1","row":{"__proto__":null},"orderKey":"i","origin":{"client":"a","clock":1}}'), 'forbidden-key'],
@@ -200,7 +200,7 @@ test('a finite but astronomical clock is refused, not just an infinite one', () 
   // `not-finite` covers Infinity. It does NOT cover 1e308, which is finite, is an
   // integer to ajv (`1e308 % 1 === 0`), and has the identical effect the module
   // header describes: an origin that wins every future LWW merge for the life of
-  // the document. Worse — collab-plumbing's `observeClock` adopts the inbound
+  // the document. Worse - collab-plumbing's `observeClock` adopts the inbound
   // clock and `nextClock()` is `++clock`, and `++1e308 === 1e308`, so every LOCAL
   // op afterwards carries the same value, every write ties, and the tiebreak falls
   // to client id: a peer whose id sorts higher can permanently stop the local user
@@ -212,7 +212,7 @@ test('a finite but astronomical clock is refused, not just an infinite one', () 
   }
   // A fractional clock is the one case ajv's `!(data % 1)` DOES catch.
   assert.equal(reasonFor({ k: 'geom', id: 'B1', fields: { x: 1 }, origin: { client: 'a', clock: 1.5 } }, g), 'schema');
-  // The band that still counts is the safe-integer one — `++` stops incrementing
+  // The band that still counts is the safe-integer one - `++` stops incrementing
   // above it, so that IS the range in which a Lamport counter is a counter.
   assert.equal(reasonFor({ k: 'geom', id: 'B1', fields: { x: 1 }, origin: { client: 'a', clock: Number.MAX_SAFE_INTEGER } }, g), null);
   assert.equal(reasonFor({ k: 'param', key: 'title', value: 'x', origin: { client: 'a', clock: 0 } }, g), null);
@@ -223,7 +223,7 @@ test('a finite but astronomical clock is refused, not just an infinite one', () 
 test('every peer-derived rejection detail is bounded, because the contract says it is loggable', () => {
   // `OpRejection.detail` is documented as capped and safe to log. Three sites put
   // the peer's raw string in it, and nothing upstream bounds a NAME: the per-value
-  // cap runs on values, and the ops walk carries no string ceiling at all — so one
+  // cap runs on values, and the ops walk carries no string ceiling at all - so one
   // message could retain (and hand the logger) opsPerMessage × megabytes.
   const g = guard();
   const huge = 'x'.repeat(200_000);
@@ -239,7 +239,7 @@ test('every peer-derived rejection detail is bounded, because the contract says 
     const detail = r.rejected[0]?.detail ?? '';
     assert.ok(detail.length < 400, `${label} detail is ${detail.length} chars`);
   }
-  // A short name is still reported verbatim — the cap must not cost diagnosability.
+  // A short name is still reported verbatim - the cap must not cost diagnosability.
   const short = g.checkOps([{ k: 'param', key: 'not-declared', value: 1, origin: origin() }]);
   assert.equal(short.rejected[0]?.detail, 'not-declared');
 });
@@ -258,13 +258,13 @@ test('an abuse breach clears the whole message, not just the op that tripped it'
     assert.equal(r.ok.length, 0, 'nothing from an abusive message is applied');
     assert.ok(r.rejected.some((x) => ABUSE_REASONS.has(x.reason)), 'and the caller is told to disconnect');
   }
-  // An ordinary skew rejection still drops only its own op (§11.11 — unchanged).
+  // An ordinary skew rejection still drops only its own op (§11.11 - unchanged).
   const skew = g.checkOps([good, { k: 'param', key: 'nope', value: 'x', origin: origin(2) }]);
   assert.equal(skew.ok.length, 1);
 });
 
 test('a manifest cannot buy an input the right to be a prototype key', () => {
-  // Even declared — by a hostile catalog entry, or a genuine mistake — these names
+  // Even declared - by a hostile catalog entry, or a genuine mistake - these names
   // are never addressable. The whitelist narrows; it never permits.
   const g = guard([
     { id: '__proto__', type: 'text' },
@@ -359,7 +359,7 @@ test('the size cap is measured in UTF-8 bytes, not code units', () => {
   const g = guard();
   const cap = DEFAULT_OP_GUARD_CAPS.stringBytes;   // 65536
   // '€' is one UTF-16 unit and three UTF-8 bytes: 21845 of them is 65535 bytes
-  // (accepted) and 21846 is 65538 (refused) — a code-unit count would take both.
+  // (accepted) and 21846 is 65538 (refused) - a code-unit count would take both.
   const under = '€'.repeat(21845);
   const over = '€'.repeat(21846);
   assert.equal(under.length * 3, cap - 1);
@@ -383,7 +383,7 @@ test('JSON depth trips exactly at the boundary', () => {
     for (let i = 0; i < depth; i++) v = [v];
     return v;
   };
-  // At the cap the walk lets it through — and it then dies on the schema, which is
+  // At the cap the walk lets it through - and it then dies on the schema, which is
   // how the test knows the depth check was not what refused it.
   assert.equal(reasonFor(nest(DEFAULT_OP_GUARD_CAPS.maxDepth), g), 'schema');
   assert.equal(reasonFor(nest(DEFAULT_OP_GUARD_CAPS.maxDepth + 1), g), 'too-deep');
@@ -403,7 +403,7 @@ test('the visit budget counts primitives, not just containers', () => {
   const g = guard(INPUTS, { maxNodes: 3 });
   assert.equal(reasonFor({ a: { b: {} } }, g), 'schema');           // 3 values exactly
   assert.equal(reasonFor({ a: { b: { c: {} } } }, g), 'too-many-nodes');
-  // Two containers and three scalars is five values — wide, shallow, and refused.
+  // Two containers and three scalars is five values - wide, shallow, and refused.
   assert.equal(reasonFor({ a: [1, 2, 3] }, g), 'too-many-nodes');
 });
 
@@ -432,7 +432,7 @@ test('the abuse set is exactly the structural breaches, not the value ones', () 
   // a structural breach means the peer is not playing the protocol.
   // `clock-out-of-range` sits here rather than with the value refusals: a Lamport
   // clock is minted by `++` from zero, so nothing running this protocol in good
-  // faith can produce one outside the safe-integer band — same test as the other
+  // faith can produce one outside the safe-integer band - same test as the other
   // six ("could an honest build emit this?"), same answer.
   assert.deepEqual([...ABUSE_REASONS].sort(), [
     'array-too-long', 'batch-too-large', 'clock-out-of-range', 'forbidden-key', 'rate-limited',
@@ -482,8 +482,8 @@ test('a clock that steps backwards opens a fresh window rather than locking the 
 
 test('an unusable timestamp cannot permanently condemn a peer', () => {
   // `nowMs` is injected, so a caller bug can hand this a NaN. Recorded, it would
-  // open a window that can never close — `NaN - start >= RATE_WINDOW_MS` is false
-  // and `nowMs < start` is false for every later value — so the counter would
+  // open a window that can never close - `NaN - start >= RATE_WINDOW_MS` is false
+  // and `nowMs < start` is false for every later value - so the counter would
   // accumulate forever and the lane would return false permanently. That is the
   // "disconnect this peer" answer, given for good, for a LOCAL fault: exactly the
   // permanent false accusation the backwards-clock branch exists to prevent.
@@ -500,7 +500,7 @@ test('an unusable timestamp cannot permanently condemn a peer', () => {
 test('the module reads no wall clock', () => {
   // §11.7: nothing in the convergence path may depend on wall time, and the rate
   // window is deterministic only because `nowMs` is injected.
-  // Comments stripped first — the module's own header NAMES what it must not call,
+  // Comments stripped first - the module's own header NAMES what it must not call,
   // and a scan that cannot tell prose from code would fail on the documentation.
   const src = readFileSync(join(HERE, 'op-guard.ts'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -567,7 +567,7 @@ test('the cursor is normalized unit space, and finite', () => {
 test('presence colour cannot escape the CSS value it is painted into', () => {
   const g = guard();
   const reason = (color: string) => g.checkPresence(presence({ color })).rejected[0]?.reason;
-  // The colour engine's own output must keep working — parens and spaces are fine.
+  // The colour engine's own output must keep working - parens and spaces are fine.
   assert.equal(reason('oklch(0.72 0.14 250)'), undefined);
   assert.equal(reason('#a1b2c3'), undefined);
   assert.equal(reason('red;background:url(x)'), 'unsafe-string');
@@ -577,7 +577,7 @@ test('presence colour cannot escape the CSS value it is painted into', () => {
 
   // Two that the character ban alone let through, and neither is cosmetic. A bare
   // `url()` is a NETWORK FETCH from the viewer's browser to an address a paired
-  // peer chose — the deployed CSP would refuse it, but this module claims to BE
+  // peer chose - the deployed CSP would refuse it, but this module claims to BE
   // the defence in depth, and a Tauri shell or self-hosted instance may not carry
   // that header. An unterminated `/*` swallows the rest of the declaration it is
   // interpolated into.
@@ -676,7 +676,7 @@ test('optional presence fields are type-checked when present', () => {
 
 test('the param lane accepts exactly the input types collab-plumbing projects', () => {
   // collab-plumbing's SCALAR_INPUT_TYPES is module-private, so the guard's copy is
-  // compared against the SOURCE list rather than an import — two hand-kept copies of
+  // compared against the SOURCE list rather than an import - two hand-kept copies of
   // a whitelist is precisely how one quietly grows an entry the other has not.
   const src = readFileSync(join(SRC, 'lib', 'collab-plumbing.ts'), 'utf8');
   const block = /const SCALAR_INPUT_TYPES\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(src);

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
-// host.keyframes (v1.124) — the web shell's implementation of KeyframesAPI. Evaluate a `kf`
+// host.keyframes (v1.124) - the web shell's implementation of KeyframesAPI. Evaluate a `kf`
 // track (the engine's canonical wire) into concrete pose samples for a tool TEMPLATE, which
 // cannot import the engine. See packages/core/src/host-v1.ts for the contract. Lazy-loaded
 // via the bridge/index.ts facade.
 //
 // The whole point is that parse + interpolation + easing stay in the engine (`parseKf` +
-// `evaluateKf`), so a template's motion matches the Design tool's exactly — the caller only
+// `evaluateKf`), so a template's motion matches the Design tool's exactly - the caller only
 // maps the returned channels onto its own scene.
 
 import { parseKf, evaluateKf } from '../../../../engine/src/keyframes.ts';

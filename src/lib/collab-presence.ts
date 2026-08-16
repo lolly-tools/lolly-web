@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-presence — the roster and the wire cadence for live presence
+ * collab-presence - the roster and the wire cadence for live presence
  * (plan 100 §4.5–§4.8, §11.4, §11.5; wave 1.1).
  *
  * TRANSPORT-BLIND BY CONSTRUCTION. This module holds who is here, what they are
@@ -8,15 +8,15 @@
  * DOM and no globals: frames arrive through `receive()` and leave through the
  * injected `send()`, so the same engine drives a WebRTC pair (Track A), a ws room
  * (Track B) and the loopback test harness (§10) without knowing which it is. The
- * clock and the timers are injected too — tests run it on fake time, and the
+ * clock and the timers are injected too - tests run it on fake time, and the
  * heartbeat can move into a Worker later (§11.4) by handing it a different
  * `setTimer`, not by rewriting this.
  *
  * The numbers are the plan's, pinned once here (§4.7):
  *
- *   • **50 ms send throttle** while peers are present — leading edge plus a trailing
+ *   • **50 ms send throttle** while peers are present - leading edge plus a trailing
  *     flush, so the last state of a burst always lands.
- *   • **ZERO traffic when alone.** Not "cheap when alone" — nothing sent, and no
+ *   • **ZERO traffic when alone.** Not "cheap when alone" - nothing sent, and no
  *     timer even scheduled (tldraw's occupancy scaling, radicalised: nothing to say,
  *     nobody to hear). Presence starts costing the moment a first peer appears, and
  *     that arrival flushes our own state so the newcomer sees us immediately.
@@ -26,14 +26,14 @@
  *
  * TWO SNAGS ARE DESIGNED IN, not left to the transport:
  *
- *  - **§11.5 — unordered frames arrive stale.** The presence lane is deliberately
+ *  - **§11.5 - unordered frames arrive stale.** The presence lane is deliberately
  *    lossy (`maxRetransmits: 0`), so a cursor frame can overtake a newer one. Every
  *    frame carries a per-sender sequence number and the roster applies newest-only:
  *    a frame whose `seq` is not strictly greater than the one we hold for that
- *    sender is dropped, not merged. Presence is a whole-value register — there is
+ *    sender is dropped, not merged. Presence is a whole-value register - there is
  *    no field-level merge to fall back on, which is exactly why the ordering has to
  *    be resolved here.
- *  - **§11.4 — a background tab is not a dead tab.** Chrome throttles background
+ *  - **§11.4 - a background tab is not a dead tab.** Chrome throttles background
  *    timers to ~1/min, so a helper reading their email would look evicted at TTL
  *    while the connection is perfectly healthy. So a peer flagged `away` is EXEMPT
  *    from eviction: the TTL is for silent crashes only, and a closed channel or a
@@ -47,7 +47,7 @@
  * locking a real rejoin out for 30 s. (A per-session epoch alongside `seq` would
  * settle both; it is not in the v1.1 frame shape, so it is not invented here.)
  *
- * A reload with NO leave — the tab that crashed, the phone that slept — is bounded
+ * A reload with NO leave - the tab that crashed, the phone that slept - is bounded
  * by the same 30 s: a frame whose `seq` is not newer is accepted anyway once the
  * sender has been silent for a whole TTL. Eviction alone cannot carry that, because
  * the away exemption above means an away peer is never evicted, and its stale
@@ -59,12 +59,12 @@
  * can re-derive it after an eviction reshuffles the map.
  *
  * No wall clock: the default clock is `performance.now()` where it exists. Presence
- * never converges (it is not the op path — §11.7), but a device whose system clock
+ * never converges (it is not the op path - §11.7), but a device whose system clock
  * jumps must not evict a peer that is sitting right there, which a monotonic clock
  * gets for free.
  */
 
-// Canonical presence payload — the contract's v1.1 `Presence` (plan 100 §3).
+// Canonical presence payload - the contract's v1.1 `Presence` (plan 100 §3).
 import type { Presence } from '@lolly-tools/core/canvas-op-v1';
 
 /**
@@ -81,7 +81,7 @@ export type PresenceState =
 
 /** One presence frame as it crosses the wire. */
 export interface PresenceFrame {
-  /** The SENDING client's id (the per-device ULID of plan 100 §5) — the roster key.
+  /** The SENDING client's id (the per-device ULID of plan 100 §5) - the roster key.
    *  Distinct from `state.userId`, which is the identity a human sees; in a private
    *  collab they are usually the same value, and nothing here assumes it. */
   readonly from: string;
@@ -94,7 +94,7 @@ export interface PresenceFrame {
   readonly away?: boolean;
 }
 
-/** A roster entry — one peer as this client currently understands them. */
+/** A roster entry - one peer as this client currently understands them. */
 export interface PresencePeer {
   /** The peer's client id (the frame's `from`). */
   readonly id: string;
@@ -102,10 +102,10 @@ export interface PresencePeer {
   /** The sequence number of the newest frame applied for this peer. */
   readonly seq: number;
   readonly away: boolean;
-  /** Engine-clock ms of the first frame that created this entry — the join order
+  /** Engine-clock ms of the first frame that created this entry - the join order
    *  the collaborator-colour assignment keys off (§4.4). */
   readonly firstSeen: number;
-  /** Engine-clock ms of the newest applied frame — what the TTL measures. */
+  /** Engine-clock ms of the newest applied frame - what the TTL measures. */
   readonly lastSeen: number;
 }
 
@@ -119,7 +119,7 @@ export const PRESENCE_TTL_MS = 30_000;
 export const PRESENCE_SWEEP_MS = 3_000;
 
 export interface PresenceEngineOptions {
-  /** This device's collab client id — stamped on every outbound frame, and the
+  /** This device's collab client id - stamped on every outbound frame, and the
    *  entry a joiner's handshake snapshot must not echo back (§4.7). */
   clientId: string;
   /** Hand one frame to the transport. Called at most once per `PRESENCE_THROTTLE_MS`
@@ -140,7 +140,7 @@ export interface PresenceEngine {
    *  alone. */
   setLocal(state: PresenceState): void;
   /** Merge a few fields into the local state (a focus change, a cursor sample).
-   *  A no-op before the first `setLocal` — there is nothing to merge into. */
+   *  A no-op before the first `setLocal` - there is nothing to merge into. */
   updateLocal(patch: Partial<PresenceState>): void;
   /** Flag this client's tab hidden/visible (`visibilitychange`, §11.4). Sends when
    *  the flag actually changes so peers can grey the avatar. */
@@ -148,12 +148,12 @@ export interface PresenceEngine {
   /** Apply one inbound frame. Returns false when it was dropped as stale/out-of-
    *  order (§11.5), self-addressed, or a leave for a peer we never had. */
   receive(frame: PresenceFrame): boolean;
-  /** Drop a peer outright — the transport's call on channel close or ICE `failed`
+  /** Drop a peer outright - the transport's call on channel close or ICE `failed`
    *  (§11.3, §11.4). Not the TTL's job. */
   remove(clientId: string): void;
   /** DISCOVERY escape hatch: emit the local state once, NOW, even while the roster
    *  is empty. The occupancy rule ("no traffic while alone") exists so an idle solo
-   *  session costs nothing — but in a serverless pair BOTH sides start alone with no
+   *  session costs nothing - but in a serverless pair BOTH sides start alone with no
    *  join-ack to seed them, so "alone" is indistinguishable from "undiscovered" and
    *  someone must speak first (plan 100 drill finding, 2026-08-10). The composition
    *  layer calls this while its transport is LIVE and the roster is empty (the
@@ -165,8 +165,8 @@ export interface PresenceEngine {
   roster(): PresencePeer[];
   /** This client's presence, or null before the first `setLocal`. */
   self(): PresenceState | null;
-  /** The join handshake payload (§4.7): everything we know — our own state and
-   *  every peer — MINUS the joiner's own entry, which echoing back is tldraw's
+  /** The join handshake payload (§4.7): everything we know - our own state and
+   *  every peer - MINUS the joiner's own entry, which echoing back is tldraw's
    *  orphan bug. Each frame carries its origin's newest `seq`, so the receiver's
    *  newest-only rule makes the snapshot idempotent against live frames. */
   snapshot(joinerId?: string): PresenceFrame[];
@@ -178,7 +178,7 @@ export interface PresenceEngine {
   destroy(): void;
 }
 
-/** Mutable twin of `PresencePeer` — copied out, never handed to a caller. */
+/** Mutable twin of `PresencePeer` - copied out, never handed to a caller. */
 interface PeerRecord {
   id: string;
   state: PresenceState;
@@ -225,7 +225,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
    *  The reschedule is in a `finally` because a tick that throws must not be the END
    *  of the chain: the sweep dispatches subscribers and the heartbeat calls into the
    *  transport, so one throwing consumer would otherwise silently disable TTL
-   *  eviction for the life of the engine — and `syncLifecycle`'s `||=` can never
+   *  eviction for the life of the engine - and `syncLifecycle`'s `||=` can never
    *  re-arm a canceller that is still non-null. The throw still reaches the host and
    *  is reported; it just no longer takes presence down with it. */
   function repeat(ms: number, fn: () => void): () => void {
@@ -254,7 +254,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
       // The trailing flush belongs to the roster too. Every path that can empty the
       // roster comes through here (a `remove()`, a `null` leave frame, an eviction),
       // and an armed trailing timer that outlived the last peer would fire a frame
-      // into an empty room — traffic while alone, which is the one thing this engine
+      // into an empty room - traffic while alone, which is the one thing this engine
       // promises never to produce.
       if (trailing !== null) { clearTimer(trailing); trailing = null; }
       stopHeartbeat?.();
@@ -277,13 +277,13 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
       send?.({ from: clientId, seq, state, away });
     } catch {
       // The lane is lossy by construction (`maxRetransmits: 0`), so a frame the
-      // transport refused — a channel that closed between the arm and the flush — is
+      // transport refused - a channel that closed between the arm and the flush - is
       // exactly the case the next heartbeat covers. Swallowing it here keeps a
       // closed channel from killing the heartbeat that would otherwise notice.
     }
   }
 
-  /** Leading edge + trailing flush, at most one frame per window — and nothing at
+  /** Leading edge + trailing flush, at most one frame per window - and nothing at
    *  all while alone, which is the whole of the occupancy rule on the send side. */
   function scheduleSend(): void {
     if (destroyed || !local || peers.size === 0) return;
@@ -318,7 +318,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
 
   /** Copied twice over: the record so a caller cannot re-seat a peer, and the state
    *  so a caller cannot write through to the store (and to every later subscriber).
-   *  One level is enough — `Presence`'s nested `cursor`/`viewport`/`selection` are
+   *  One level is enough - `Presence`'s nested `cursor`/`viewport`/`selection` are
    *  `readonly` in the contract, so reaching them needs a cast. */
   function roster(): PresencePeer[] {
     return [...peers.values()].map((p) => ({ ...p, state: { ...p.state } }));
@@ -348,7 +348,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
     // read as a RESTART rather than as reordering. `lastSeen` only moves on an
     // accepted frame, so a device that reloads and starts counting at 1 again can
     // never climb back over the seq we hold: eviction is the only thing that clears
-    // the bookkeeping, and an away peer is exempt from eviction (§11.4) — which would
+    // the bookkeeping, and an away peer is exempt from eviction (§11.4) - which would
     // make the lockout permanent for exactly the peer most likely to reload. The
     // header states the trade as "locking a real rejoin out for 30 s"; this is what
     // makes 30 s the actual bound, without evicting anyone to get it. Reordering on
@@ -374,7 +374,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
       lastSeen: t,
     });
     if (wasEmpty) {
-      // First company: start the lifecycle, and announce ourselves — a client that
+      // First company: start the lifecycle, and announce ourselves - a client that
       // has been dutifully silent is otherwise invisible to the peer that just
       // arrived (§4.7).
       syncLifecycle();
@@ -406,8 +406,8 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
     announce(): void {
       if (destroyed || !local) return;
       // The one deliberate exception to the occupancy rule (see the interface doc):
-      // emit through the SAME throttle/seq path as every other frame — bypassing the
-      // roster gate, not the rate gate — so the peer's newest-only rule stays
+      // emit through the SAME throttle/seq path as every other frame - bypassing the
+      // roster gate, not the rate gate - so the peer's newest-only rule stays
       // coherent when the engine's ordinary sends begin.
       if (trailing !== null) return;
       const since = now() - lastSentAt;
@@ -448,7 +448,7 @@ export function createPresenceEngine(opts: PresenceEngineOptions): PresenceEngin
 
     destroy(): void {
       if (destroyed) return;
-      // The clean-disconnect frame (§4.7) — only when there is someone to tell, and
+      // The clean-disconnect frame (§4.7) - only when there is someone to tell, and
       // never through the throttle: it is the last thing we say.
       if (peers.size > 0) emit(null);
       destroyed = true;

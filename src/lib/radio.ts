@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Free net-radio stations for the Neurospicy player — an OPT-IN source that needs
+ * Free net-radio stations for the Neurospicy player - an OPT-IN source that needs
  * the internet (Lolly is otherwise offline-first). A handful of curated SomaFM
  * ambient/focus channels. Streams play through an <audio> element (see neurospicy.ts)
  * rather than the decoded-buffer path, but they are tapped INTO the Web Audio graph:
@@ -12,11 +12,11 @@
  * (CORS is open on api.somafm.com), so we never ship a stale hard-coded server.
  *
  * DEV GOTCHA (verified 2026-07-28, curl against ice2/ice6.somafm.com): the icecast servers
- * answer 403 to any request whose `Referer` contains `localhost` — so radio does not play at
+ * answer 403 to any request whose `Referer` contains `localhost` - so radio does not play at
  * all on `http://localhost:5173`, tap or no tap. `http://127.0.0.1:5173` is fine, as is
  * production. It's an anti-hotlink rule on their side, nothing to fix here; use the IP form
  * when testing radio locally. (They also 403 a `HeadlessChrome` user-agent.)
- * Please keep the SomaFM attribution + support link in the UI — they're free and
+ * Please keep the SomaFM attribution + support link in the UI - they're free and
  * listener-supported.
  */
 export interface RadioStation {
@@ -31,7 +31,7 @@ export interface RadioStation {
 
 export const SOMAFM_HOME = 'https://somafm.com';
 
-/** Curated Neurospicy-lane channels — mostly ambient/downtempo, plus a few lounge/beats picks. */
+/** Curated Neurospicy-lane channels - mostly ambient/downtempo, plus a few lounge/beats picks. */
 export const RADIO_STATIONS: RadioStation[] = [
   { id: 'radio/somafm/groovesalad',  name: 'Groove Salad',       pls: 'https://api.somafm.com/groovesalad130.pls',  desc: 'ambient / downtempo' },
   { id: 'radio/somafm/dronezone',    name: 'Drone Zone',         pls: 'https://api.somafm.com/dronezone130.pls',    desc: 'atmospheric ambient' },

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Sound toggle — the interface-sound (sfx) on/off control, in the two presentations the
+ * Sound toggle - the interface-sound (sfx) on/off control, in the two presentations the
  * theme control uses so it can sit wherever settings live:
  *
  *   createSoundToggle(host)          → an icon-only button for the canvas zoom HUD
@@ -20,17 +20,17 @@ import { applyAtmosphere } from '../lib/atmosphere.ts';
 import { isNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
 // The dock itself (and, through it, components/music-player.ts) is dynamic-imported:
 // every use below is inside a click handler or a post-render sync, and the module
-// would otherwise sit on the boot path for every visitor — including the majority
+// would otherwise sit on the boot path for every visitor - including the majority
 // who have never turned Neurospicy on. `isNeuroDockCollapsed` is the one read that
 // happens synchronously while building markup, so it lives in its own leaf module.
 const neuroDock = () => import('./neuro-dock.ts');
 import { flagEnabledSync } from '../feature-flags.ts';
 
-/** Phone-width viewport — the collapsed dock is hidden here and reopened from this menu. */
+/** Phone-width viewport - the collapsed dock is hidden here and reopened from this menu. */
 const isMobileViewport = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 520px)').matches;
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
-/** The slice of the host this control needs — the profile record it spreads + persists. */
+/** The slice of the host this control needs - the profile record it spreads + persists. */
 interface SoundToggleHost {
   profile: {
     get(): Promise<object>;
@@ -40,8 +40,8 @@ interface SoundToggleHost {
 /** The switch surface also drives Neurospicy Mode, which needs host.assets (loop list + bytes). */
 type NeuroHost = SoundToggleHost & Pick<HostV1, 'assets'>;
 
-// A heartbeat/waveform — the "beat" behind Neurospicy Mode's focus loop. Path data
-// lives in lib/icons.ts as 'neuroBeat' — deduped against neuro-dock.ts's identical NOTE glyph.
+// A heartbeat/waveform - the "beat" behind Neurospicy Mode's focus loop. Path data
+// lives in lib/icons.ts as 'neuroBeat' - deduped against neuro-dock.ts's identical NOTE glyph.
 const NEURO_ICON = icon('neuroBeat', { size: 22 });
 const ICON_ON = icon('volumeOn', { size: 16 });
 const ICON_OFF = icon('volumeOff', { size: 16 });
@@ -143,7 +143,7 @@ function ensureSoundSwitchStyles(): void {
 }
 
 /**
- * The unified "Sound:" switch — a speaker indicator + label + sliding on/off toggle. Returned
+ * The unified "Sound:" switch - a speaker indicator + label + sliding on/off toggle. Returned
  * as HTML; wire with wireSoundSwitch once it's in the DOM. Self-styling (injects its CSS on
  * first build), so it drops into any settings surface unchanged.
  */
@@ -159,14 +159,14 @@ export function soundSwitchHtml(): string {
     </div>${flagEnabledSync('neurospicy') ? neurospicyHtml() : ''}`;
 }
 
-// Neurospicy Mode — a background focus BEAT that loops while you use the app: a switch (like
+// Neurospicy Mode - a background focus BEAT that loops while you use the app: a switch (like
 // Sound), then a loop picker + volume. Rendered alongside soundSwitchHtml so it appears
 // everywhere the sound on/off toggle does. The <select> is filled from the catalog in
 // wireNeurospicy (async), so this stays a synchronous HTML string.
 function neurospicyHtml(): string {
   const ns = getNeurospicy();
   const muted = isSfxMuted();
-  const on = ns.enabled && !muted;   // shows OFF (and dimmed) while sound is muted — see .is-muted
+  const on = ns.enabled && !muted;   // shows OFF (and dimmed) while sound is muted - see .is-muted
   return `<div class="neurospicy${muted ? ' is-muted' : ''}" data-neurospicy-root>
       <div class="sound-switch" data-on="${on}">
         <span class="sound-switch-icon">${NEURO_ICON}</span>
@@ -227,7 +227,7 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
   const swWrap = sw?.closest<HTMLElement>('.sound-switch');
   paintNeurospicy(root);   // sync the initial dimmed/off look to the current mute state
   // If the mode is already on, the dock should already be showing. Skipped entirely
-  // when it is off — syncNeuroDock's else-branch is hideNeuroDock(), a no-op for a
+  // when it is off - syncNeuroDock's else-branch is hideNeuroDock(), a no-op for a
   // dock that was never built, so not importing is exactly equivalent.
   if (getNeurospicy().enabled) void neuroDock().then(m => m.syncNeuroDock(host));
   // Repaint whenever the shared enabled state changes elsewhere (e.g. the dock's close
@@ -238,15 +238,15 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
     paintNeurospicy(root);
   };
   document.addEventListener('lolly:neuro-enabled', onEnabledChange);
-  // Mobile "Show player" — reopen the dock that was collapsed (hidden on phones).
+  // Mobile "Show player" - reopen the dock that was collapsed (hidden on phones).
   wrap.querySelector<HTMLButtonElement>('[data-neuro-show]')?.addEventListener('click', (e) => {
     e.stopPropagation();
     void neuroDock().then(m => m.reopenNeuroDock(host));
-    (e.currentTarget as HTMLElement).remove(); // dock is visible now — drop the button
+    (e.currentTarget as HTMLElement).remove(); // dock is visible now - drop the button
   });
   sw?.addEventListener('click', async (e) => {
     e.stopPropagation();
-    if (isSfxMuted()) return;   // sound is the master switch — turn it on first (also .is-muted blocks this)
+    if (isSfxMuted()) return;   // sound is the master switch - turn it on first (also .is-muted blocks this)
     const on = !getNeurospicy().enabled;
     sw.setAttribute('aria-checked', String(on));
     swWrap?.setAttribute('data-on', String(on));
@@ -270,11 +270,11 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
 
 /**
  * Back-compat aliases: the view-option popovers (gallery / catalogue / Projects) call these to
- * drop a sound control into their settings popover. They now render the unified switch above —
+ * drop a sound control into their settings popover. They now render the unified switch above - 
  * so every labelled sound control in the app is the same speaker + "Sound:" + sliding toggle.
  */
 export function soundSegmentHtml(_headClass?: string): string {
-  return soundSwitchHtml();  // _headClass ignored — the switch is self-contained (kept for call-site compat)
+  return soundSwitchHtml();  // _headClass ignored - the switch is self-contained (kept for call-site compat)
 }
 export function wireSoundSegment(root: ParentNode, host: NeuroHost): void {
   wireSoundSwitch(root, host);

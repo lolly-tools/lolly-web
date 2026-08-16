@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * trim-offer.ts — the reusable "trim to content" offer (plan 97 §7.3, gap 4).
+ * trim-offer.ts - the reusable "trim to content" offer (plan 97 §7.3, gap 4).
  *
  * One offer, four surfaces: the Logos room, the shared upload dropzone, the
  * asset picker's upload flow, and the catalogue details panel. A padded logo
@@ -15,11 +15,11 @@
  * file it started with.
  *
  * TWO HALVES.
- *   PURE — the routing decision (`trimKindOf`), the artboard read
+ *   PURE - the routing decision (`trimKindOf`), the artboard read
  *   (`svgArtboardBox`), the pad maths (`padTrimBox`) and the "is this worth
  *   asking about" gate (`trimSavings`/`isMeaningfulTrim`). No DOM, unit-tested
  *   in trim-offer.test.ts.
- *   BROWSER — `prepareTrim` (decode + crop + re-encode) and `mountTrimOffer`
+ *   BROWSER - `prepareTrim` (decode + crop + re-encode) and `mountTrimOffer`
  *   (the card). Both need canvas/Image and are deliberately browser-only.
  *
  * PAD SEMANTICS. The stepper adds breathing room back around the artwork and is
@@ -27,7 +27,7 @@
  * past the box it arrived in (and a raster crop can never ask for pixels the
  * bitmap does not have). Padding never eats into the content box either: a mark
  * that overflows its own viewBox keeps every unit of overflow. Each change
- * re-derives from the ORIGINAL bytes — pads do not compound.
+ * re-derives from the ORIGINAL bytes - pads do not compound.
  *
  * PERMANENCE. Trimming is permanent for the stored asset (plan 97 §14.4): the
  * original margins are not kept, and the card says so rather than letting the
@@ -114,7 +114,7 @@ function magicKind(head: Uint8Array): TrimKind | null {
   // Text formats: skip a UTF-8 BOM and leading whitespace before judging.
   const text = s.replace(/^ï»¿/, '').replace(/^\s+/, '');
   if (/^<svg[\s>]/i.test(text) || /^<!doctype\s+svg/i.test(text)) return 'svg';
-  // An XML prolog alone proves nothing — it fronts every XML dialect — so it
+  // An XML prolog alone proves nothing - it fronts every XML dialect - so it
   // only counts when the root tag is already inside the same window.
   if (/^<\?xml/i.test(text) && /<svg[\s>]/i.test(text)) return 'svg';
   return null;
@@ -149,7 +149,7 @@ function attrNum(tag: string, attr: string): number | null {
 }
 
 /**
- * The artboard as authored — the box the trim is measured against. Same rule as
+ * The artboard as authored - the box the trim is measured against. Same rule as
  * trim-bounds' own root read (viewBox, else width/height as `0 0 w h`, else
  * nothing), restated here because that one is private to the bounds module and
  * this module must not reach into it.
@@ -177,7 +177,7 @@ export function svgArtboardBox(svgText: string): Box | null {
 /**
  * The content box grown by `pad` on every side, clamped OUTWARD to the artboard
  * and INWARD to the content: padding may not push past the box the file arrived
- * in, and may not clip artwork that overflows that box. Per side, not uniform —
+ * in, and may not clip artwork that overflows that box. Per side, not uniform - 
  * a wordmark that fills its artboard's width but not its height must still be
  * able to keep vertical breathing room.
  */
@@ -216,7 +216,7 @@ export function isMeaningfulTrim(artboard: Box, trimmed: Box): boolean {
 // ── Browser half: preparing a proposal ───────────────────────────────────────
 
 /** Alpha at or below this is invisible dither (0.8% opacity) and must not hold
- *  the content box open — a single stray anti-aliased pixel would defeat the
+ *  the content box open - a single stray anti-aliased pixel would defeat the
  *  whole trim. */
 const ALPHA_MIN = 2;
 
@@ -295,7 +295,7 @@ async function decodeRaster(file: File): Promise<DecodedRaster | null> {
     bitmap.close?.();
     return { canvas, data: ctx.getImageData(0, 0, width, height).data, width, height };
   } catch {
-    return null; // undecodable in this engine — no offer, the upload just proceeds
+    return null; // undecodable in this engine - no offer, the upload just proceeds
   }
 }
 
@@ -389,7 +389,7 @@ export interface TrimOfferOpts {
   /**
    * The dismissal: Escape, or the card's own ✕. No file was chosen. A surface
    * that is INGESTING must write nothing and leave the user where they were; a
-   * surface re-offering a stored asset simply closes the card. Required — see
+   * surface re-offering a stored asset simply closes the card. Required - see
    * the module header for why there is no default.
    */
   onCancel: () => void;

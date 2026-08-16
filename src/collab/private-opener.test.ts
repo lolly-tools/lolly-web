@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * private-opener — the `'private'` slot of `lib/collab-launch.ts` (plan 100 §0, §6.1).
+ * private-opener - the `'private'` slot of `lib/collab-launch.ts` (plan 100 §0, §6.1).
  *
  * Three properties, and each of them has already been a bug in some codebase:
  *
@@ -45,7 +45,7 @@ const { _clearCollabMountForTests, parkedCount, registerCollabMount, takeParked 
   await import('../lib/collab-mount.ts');
 type CollabConnection = import('../lib/collab-mount.ts').CollabConnection;
 
-// The import IS the registration — that side effect is the thing under test below.
+// The import IS the registration - that side effect is the thing under test below.
 const { openPrivateCollab } = await import('./private-opener.ts');
 
 const { openCollabCeremony } = await import('../components/collab-ceremony.ts');
@@ -132,7 +132,7 @@ beforeEach(() => {
   _clearCollabMountForTests();
   // Explicitly OFF, and every test that wants the other state writes `true` itself: the
   // flag has been ON by default since 2026-08-10, so no test here may lean on a default
-  // in either direction — the point of this file is that the opener reads the flag on
+  // in either direction - the point of this file is that the opener reads the flag on
   // every press rather than capturing it at registration.
   setFlagMirror(PRIVATE_COLLAB_FLAG.id, false);
   dom.window.document.body.replaceChildren();
@@ -147,7 +147,7 @@ test("importing the module registers the 'private' slot — that IS the wiring",
 
 test('the registered opener is inert while the flag is off, and never throws at the Share row', async () => {
   setFlagMirror(PRIVATE_COLLAB_FLAG.id, false);
-  // openCollabLaunch reports that an opener exists — the row is allowed to render — and
+  // openCollabLaunch reports that an opener exists - the row is allowed to render - and
   // the refusal happens inside, where the live flag is.
   assert.equal(openCollabLaunch('private', { toolId: 'qr-code', baseParts: [] }), true);
   await settle();
@@ -208,7 +208,7 @@ test('a connected pair reaches the mount registry, tagged as the inviter side (�
       fire = opts.onConnected;
       return trackedOpen({ ...opts, onConnected: undefined });
     },
-    // No `effects` — so the real composition runs and reports the transport it built.
+    // No `effects` - so the real composition runs and reports the transport it built.
     // A jsdom process has no RTCPeerConnection, which the transport treats as a typed
     // refusal rather than a throw; what matters here is that the object arrives.
     onTransport: (transport) => { built.push(transport); },
@@ -216,7 +216,7 @@ test('a connected pair reaches the mount registry, tagged as the inviter side (�
     scan: null,
   });
   assert.ok(fire, 'the dialog was given an onConnected to fire');
-  // The transport is built when the ceremony starts, not when the dialog opens — so
+  // The transport is built when the ceremony starts, not when the dialog opens - so
   // start one, exactly as pressing "Create the invite" does.
   dialog!.el.querySelector<HTMLElement>('[data-act="create-invite"]')!.click();
   await settle();

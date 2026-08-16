@@ -2,14 +2,14 @@
 /**
  * Disambiguate a PK-zip upload before anything explodes it.
  *
- * engine `sniffContainer` returns a GENERIC 'zip' for every PK package — an OOXML
+ * engine `sniffContainer` returns a GENERIC 'zip' for every PK package - an OOXML
  * document (.pptx/.xlsx/.docx), an OCF package (.epub/.odt), a dotLottie (.lottie),
  * a Penpot/Figma design bundle, AND a plain archive all share the same local-header
  * magic. So a "drop a .zip → explode it into member assets" path MUST first ask
- * "what kind of zip is this?" — or it would shred a PowerPoint into raw XML parts.
+ * "what kind of zip is this?" - or it would shred a PowerPoint into raw XML parts.
  *
  * The ladder, most-specific first:
- *   1. a sync name/MIME rung (`classifyZipName`) — the common case, no bytes read;
+ *   1. a sync name/MIME rung (`classifyZipName`) - the common case, no bytes read;
  *      it reproduces `isPptxUpload`'s contract and extends it to the sibling formats.
  *   2. a byte-peek (`classifyZipBytes`) for a blank-MIME / wrong-extension file:
  *      an OCF `mimetype` first entry, then `[Content_Types].xml` OOXML part names,
@@ -41,7 +41,7 @@ const CONTAINER_MIME: Record<string, Exclude<ZipKind, 'archive'>> = {
 };
 
 /**
- * Name/MIME classification — sync, no bytes. Mirrors `isPptxUpload` and extends it
+ * Name/MIME classification - sync, no bytes. Mirrors `isPptxUpload` and extends it
  * to the sibling office/OCF/lottie formats. Returns null when neither the extension
  * nor the MIME identifies a known container (so the caller falls through to the
  * byte-peek, which can still catch a blank-MIME file). Never returns 'archive':
@@ -62,7 +62,7 @@ export function classifyZipName(file: { name: string; type: string }): Exclude<Z
 const dec = new TextDecoder();
 
 /**
- * Byte-level classification — the authoritative disambiguation. Returns null when
+ * Byte-level classification - the authoritative disambiguation. Returns null when
  * the bytes are not a readable zip at all; otherwise the specific kind, or 'archive'
  * for a plain multi-file zip that carries none of the OOXML/OCF/lottie markers.
  */
@@ -72,7 +72,7 @@ export function classifyZipBytes(bytes: Uint8Array): ZipKind | null {
   try {
     entries = readZip(bytes);
   } catch {
-    return null; // a malformed / unsupported (ZIP64, encrypted) zip — not safe to explode
+    return null; // a malformed / unsupported (ZIP64, encrypted) zip - not safe to explode
   }
   const byName = new Map(entries.map((e) => [e.name, e.bytes]));
 
@@ -88,7 +88,7 @@ export function classifyZipBytes(bytes: Uint8Array): ZipKind | null {
     if (byName.has('ppt/presentation.xml')) return 'pptx';
     if (byName.has('xl/workbook.xml')) return 'xlsx';
     if (byName.has('word/document.xml')) return 'docx';
-    return null; // an unknown OOXML family — do NOT explode it as a plain archive
+    return null; // an unknown OOXML family - do NOT explode it as a plain archive
   }
 
   // dotLottie: a manifest.json beside an animations/ directory.
@@ -101,7 +101,7 @@ export function classifyZipBytes(bytes: Uint8Array): ZipKind | null {
 
 /**
  * Full classification: the sync name/MIME rung first, then the byte-peek. `bytes`
- * is optional — pass it when the caller already has the file's bytes to avoid a
+ * is optional - pass it when the caller already has the file's bytes to avoid a
  * re-read; otherwise the file is read only when the name rung is inconclusive.
  */
 export async function classifyZipContainer(file: File, bytes?: Uint8Array): Promise<ZipKind | null> {

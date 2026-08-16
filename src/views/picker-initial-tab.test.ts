@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The asset picker's INITIAL TAB — `PickerOpts.initialTab`.
+ * The asset picker's INITIAL TAB - `PickerOpts.initialTab`.
  *
  * The picker already opened on a non-Library pane in exactly one hard-coded case (collect
  * mode → Tools). `initialTab` turns that into something a caller can ask for per add-kind,
@@ -8,8 +8,8 @@
  * type-filtered library. The three claims worth locking down are the ones a hard-coded
  * default never had to make:
  *   - the requested pane is the one actually SHOWING (not merely the tab that looks
- *     selected — the markup bakes Library in, so a missed switch is invisible in ARIA);
- *   - it is a DEFAULT, not a lock — the strip still works afterwards;
+ *     selected - the markup bakes Library in, so a missed switch is invisible in ARIA);
+ *   - it is a DEFAULT, not a lock - the strip still works afterwards;
  *   - a tab this pick doesn't offer degrades to Library instead of opening an empty pane.
  *
  * Everything runs against the real `openPicker` in jsdom with a real (in-memory) host, so
@@ -143,7 +143,7 @@ test('initialTab: tools opens ON the Tools pane, not just with the tab selected'
   const p = await open({ allowUpload: true, initialTab: 'tools' });
   assert.equal(p.visiblePane(), 'tools', 'the Tools pane is the visible one');
   assert.equal(p.selectedTab(), 'tools');
-  // The pane really rendered its grid — a switch that only flipped `hidden` would
+  // The pane really rendered its grid - a switch that only flipped `hidden` would
   // leave the tool cards absent.
   const cards = p.panel.querySelectorAll('.asset-picker-toolgrid [data-tool-id]');
   assert.equal(cards.length, TOOLS.length, 'every embeddable tool has a card');

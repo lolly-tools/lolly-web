@@ -11,7 +11,7 @@
  *     "Entity 'nbsp' not defined" and the SVG stores blank.
  *  2. Switching DOMPurify's parser to `application/xhtml+xml` avoids the entity but its
  *     strict XML parse silently DROPS content from some real SVGs (a clip-path-heavy
- *     atlas rendered blank) — a worse, harder-to-see regression.
+ *     atlas rendered blank) - a worse, harder-to-see regression.
  *
  * The fix is to sanitise to a DOM node (RETURN_DOM) and serialise with XMLSerializer:
  * U+00A0 stays a literal character (well-formed XML) AND nothing is dropped. This test
@@ -64,7 +64,7 @@ test('RETURN_DOM + XMLSerializer is well-formed XML AND preserves all geometry (
 
 test('sanitizeSvgFile uses RETURN_DOM + XMLSerializer, not the content-dropping xhtml parser', () => {
   const src = readFileSync(resolve(HERE, 'picker.ts'), 'utf8');
-  // Match the whole sanitize(...) call up to the statement's semicolon — `[^;]` spans
+  // Match the whole sanitize(...) call up to the statement's semicolon - `[^;]` spans
   // the nested config braces safely (no semicolon inside the call).
   const call = /DOMPurify\.sanitize\(text,[^;]*RETURN_DOM: true[^;]*\)/.exec(src);
   assert.ok(call, 'sanitizeSvgFile must sanitise to a DOM node (RETURN_DOM: true)');

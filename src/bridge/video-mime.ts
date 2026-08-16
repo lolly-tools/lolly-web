@@ -3,12 +3,12 @@
  * MediaRecorder mimetype candidates for the video export path (export.js).
  *
  * Kept DOM-free (no MediaRecorder probing here) so the ordering logic is
- * unit-testable in node — same split as views/export-size.js. export.js owns
+ * unit-testable in node - same split as views/export-size.js. export.js owns
  * the isTypeSupported() probe; this module owns which strings to try, in
  * which order.
  *
  * Audio: when a music bed is being muxed in, the mimetype must name (or at
- * least permit) an audio codec — some browsers throw NotSupportedError when
+ * least permit) an audio codec - some browsers throw NotSupportedError when
  * the stream carries an audio track but the mimeType pins video-only codecs.
  * So the audio candidates are audio-codec forms first, then the bare
  * containers (which let the recorder pick its default audio codec), and
@@ -40,12 +40,12 @@ export function videoMimeCandidates(preferred: string, { audio = false }: { audi
 
 // ── Encode bitrate ────────────────────────────────────────────────────────────
 // Left to its defaults, MediaRecorder encodes at a flat browser default (~2.5 Mbps
-// in Chromium) regardless of resolution — soft/blocky at 1080p+, and wasteful for a
+// in Chromium) regardless of resolution - soft/blocky at 1080p+, and wasteful for a
 // tiny clip. Scale the target with pixels × fps, clamped to 1–24 Mbps so a huge
 // canvas can't request a runaway rate.
-//   bitsPerPixel 0.1  (default) — offline tool renders: flat fills, text, few
+//   bitsPerPixel 0.1  (default) - offline tool renders: flat fills, text, few
 //                                 gradients, frame-perfect delivery
-//   bitsPerPixel 0.15           — live capture (screen/camera): real motion, one
+//   bitsPerPixel 0.15 - live capture (screen/camera): real motion, one
 //                                 take, no chance to re-render
 export const LIVE_BITS_PER_PIXEL = 0.15;
 export function videoBitrate(width: number, height: number, fps: number, bitsPerPixel = 0.1): number {
@@ -53,10 +53,10 @@ export function videoBitrate(width: number, height: number, fps: number, bitsPer
   return Math.max(1_000_000, Math.min(raw, 24_000_000));
 }
 
-// ── WebCodecs encode scheduling (pure — DOM-free, unit-tested) ────────────────
+// ── WebCodecs encode scheduling (pure - DOM-free, unit-tested) ────────────────
 // The per-frame timing + keyframe cadence for the WebCodecs video encode, and the audio
 // PCM chunk boundaries, split out of the encode loop (export.ts encodeVideoWithWebCodecs)
-// so the timestamp / keyframe / chunking math is verifiable without a real VideoEncoder —
+// so the timestamp / keyframe / chunking math is verifiable without a real VideoEncoder - 
 // and so a Worker-side encoder can reuse the exact same schedule. Same numbers as before.
 
 /** One frame's encode timing: microsecond timestamp + duration, and whether it's a keyframe. */
@@ -101,7 +101,7 @@ export function audioChunkSchedule(totalFrames: number, sampleRate: number, chun
 // it degrades in a fixed order: raise the ceiling for audio-driven clips (a
 // truncated narration is a worse failure than a slow export), then LOWER THE FRAME
 // RATE rather than drop the tail, and only truncate when even the floor will not
-// fit. Truncation stays possible — the memory ceiling is real — but it is now an
+// fit. Truncation stays possible - the memory ceiling is real - but it is now an
 // honest prefix with `clipSec` telling the caller exactly what was kept.
 
 /** The frame-rate floor. Below this the animation stops reading as animation. */
@@ -109,14 +109,14 @@ export const FPS_FLOOR = 6;
 
 /** How much further an audio-driven clip may fill the frame buffer. A narration
  *  audiogram is worthless cut short, so it gets a longer leash than a silent
- *  render — scaled off the SAME memory signal, so a small device still gets a
+ *  render - scaled off the SAME memory signal, so a small device still gets a
  *  smaller number than a desktop. */
 export const AUDIO_FRAME_HEADROOM = 3;
 
 export interface ClipPlan {
   /** Frames to render. Never exceeds the (possibly raised) cap. */
   frameCount: number;
-  /** The frame rate actually used — reduced from `fps` when that is what it took
+  /** The frame rate actually used - reduced from `fps` when that is what it took
    *  to keep the full duration. */
   fps: number;
   /** The exported clip's real length in seconds. The audio bed is rendered to
@@ -132,7 +132,7 @@ export interface ClipPlan {
  *
  * The invariant every caller depends on: `clipSec === frameCount / fps`, and
  * `clipSec === durationSec` unless `truncated` is true. A tool asked to paint
- * normalised time `t` is at `t * clipSec` seconds — always, in every branch.
+ * normalised time `t` is at `t * clipSec` seconds - always, in every branch.
  */
 export function videoFramePlan(durationSec: number, fps: number, maxFrames: number): ClipPlan {
   const wantFps = Math.max(1, fps);
@@ -143,14 +143,14 @@ export function videoFramePlan(durationSec: number, fps: number, maxFrames: numb
   if (wanted <= cap) return { frameCount: wanted, fps: wantFps, clipSec: wanted / wantFps, truncated: false };
 
   // Too many frames at the requested rate. Keep the whole clip by slowing the
-  // frame rate — a choppy complete narration beats a smooth truncated one.
+  // frame rate - a choppy complete narration beats a smooth truncated one.
   const fitFps = Math.floor(cap / Math.max(dur, 1e-6));
   if (fitFps >= FPS_FLOOR) {
     const frameCount = Math.min(cap, Math.ceil(dur * fitFps));
     return { frameCount, fps: fitFps, clipSec: frameCount / fitFps, truncated: false };
   }
 
-  // Even the floor will not fit. Truncate — but as a genuine prefix, with the
+  // Even the floor will not fit. Truncate - but as a genuine prefix, with the
   // length reported back so the picture clock is cut to match the audio bed.
   return { frameCount: cap, fps: FPS_FLOOR, clipSec: cap / FPS_FLOOR, truncated: true };
 }

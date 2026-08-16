@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Export history — a small, capped log of the files you actually DOWNLOADED (the
+ * Export history - a small, capped log of the files you actually DOWNLOADED (the
  * Download button), each with a thumbnail and enough state to reopen it exactly as
  * it was. Unlike a saved session (the Save button), a download leaves no record on
  * its own, so this is what powers the Dashboard's "Latest exports" stack.
@@ -19,7 +19,7 @@ export interface ExportEntry {
   thumb: string | null; // data-URL preview
   query: string;        // serialised URL-state → reopen link
   at: number;           // epoch ms
-  /** Hex SHA-256 of the exact bytes downloaded — lets /verify match a file back to
+  /** Hex SHA-256 of the exact bytes downloaded - lets /verify match a file back to
    *  this record. Optional: absent on pre-hash records and where crypto.subtle is. */
   contentHash?: string;
 }
@@ -55,14 +55,14 @@ export async function listExports(limit = 12): Promise<ExportEntry[]> {
   } catch { return []; }
 }
 
-/** The reopen link for an entry — the tool plus the exact state it was downloaded
+/** The reopen link for an entry - the tool plus the exact state it was downloaded
  *  with. The single source of the URL shape (dashboard stack + export popup rail). */
 export function exportReopenHref(e: Pick<ExportEntry, 'toolId' | 'query'>): string {
   return `#/tool/${e.toolId}${e.query ? '?' + e.query : ''}`;
 }
 
 /** Hex SHA-256 of a blob's bytes; undefined where crypto.subtle is unavailable
- *  (insecure contexts) or the read fails — callers treat the hash as best-effort. */
+ *  (insecure contexts) or the read fails - callers treat the hash as best-effort. */
 export async function hashBlob(blob: Blob): Promise<string | undefined> {
   try {
     const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());

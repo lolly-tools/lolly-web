@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Catalog view (route /#/c or /#/catalog) — the third top-level destination alongside
+ * Catalog view (route /#/c or /#/catalog) - the third top-level destination alongside
  * Tools and Projects.
  *
  * A gallery-style page over EVERY asset the app knows: the shared SUSE catalog assets AND
@@ -10,16 +10,16 @@
  *
  * Per-asset actions, all persisted on the user PROFILE (see lib/asset-favourites.ts +
  * lib/asset-category.ts), never on the immutable catalog:
- *   ★ Favourite    — pins the asset to a Favourites section here AND at the top of every
+ *   ★ Favourite - pins the asset to a Favourites section here AND at the top of every
  *                    asset picker (lib/asset-favourites.ts, read by views/picker.ts).
- *   Recategorise…  — override which library group an asset falls in (e.g. reclassify a
+ *   Recategorise… - override which library group an asset falls in (e.g. reclassify a
  *                    headshot as a background). Layers over the tag-derived category.
- *   Delete / Hide  — a USER upload is truly deleted; a shared catalog asset can't be
+ *   Delete / Hide - a USER upload is truly deleted; a shared catalog asset can't be
  *                    (it's a permanent, checksum-validated contract) so it is HIDDEN from
- *                    this user's catalogue + every picker instead — reversible via the
+ *                    this user's catalogue + every picker instead - reversible via the
  *                    "Show hidden" toggle.
  *
- * Asset management in /profile (headshot + storage meter) is untouched — this view is
+ * Asset management in /profile (headshot + storage meter) is untouched - this view is
  * additive. The user's headshot is excluded from the grid (it's managed there, and
  * deleting it would orphan profile.headshot).
  */
@@ -65,7 +65,7 @@ import {
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
 import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
-// Type only — the trim module itself is a lazy chunk, loaded when the action is used.
+// Type only - the trim module itself is a lazy chunk, loaded when the action is used.
 import type { TrimProposal } from '../lib/design-system/trim-offer.ts';
 import { icon } from '../lib/icons.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
@@ -111,19 +111,19 @@ import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 
 // The user's headshot is a user asset but is managed on /profile (and backs
-// profile.headshot) — keep it out of the Catalog grid so it can't be orphaned here.
+// profile.headshot) - keep it out of the Catalog grid so it can't be orphaned here.
 const HEADSHOT_ID = 'user/headshot';
 // Only assets that thumbnail as an image belong in the grid; palette/tokens/font/
 // profile entries are engine data (Swatches + Fonts panels cover those below).
-// Shared with the folder overlays, which had no filter at all — see lib/asset-kinds.ts.
+// Shared with the folder overlays, which had no filter at all - see lib/asset-kinds.ts.
 
-/** A font as the catalogue renders it — a bundled spec or an on-device user font. */
+/** A font as the catalogue renders it - a bundled spec or an on-device user font. */
 interface CatFont {
   family: string; role: string; stack: string; typeLine: string;
   downloads: FontDownload[]; onDevice: boolean;
 }
 
-// Coarse filetype filter for the sticky toolbar — buckets over the asset types, NOT one
+// Coarse filetype filter for the sticky toolbar - buckets over the asset types, NOT one
 // option per export format (which would be a huge, noisy list): Image = raster
 // photos/logos, Vector = SVG/EPS artwork, Motion = video + Lottie animations, Audio =
 // the music/audio tiles admitted into the catalogue view (see the allAssets filter below).
@@ -147,8 +147,8 @@ const CAT_ICONS = {
 };
 // Update a sticky-toolbar toggle (Collapse-all / Show-hidden) in place: swap its glyph
 // + label span and keep the accessible name in sync. A plain `.textContent =` would drop
-// the SVG icon entirely — and, since these buttons are icon-only on the toolbar (the
-// label is hidden), leave a bare word behind — as well as re-width the centred pill.
+// the SVG icon entirely - and, since these buttons are icon-only on the toolbar (the
+// label is hidden), leave a bare word behind - as well as re-width the centred pill.
 function setCatToggle(btn: HTMLElement, icon: string, label: string): void {
   btn.innerHTML = `${icon}<span class="cat-btn-label">${label}</span>`;
   btn.title = label;
@@ -168,7 +168,7 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
 /** Stand-in for the search index when there is no query to match against. */
 const EMPTY_HAYSTACK: ReadonlyMap<string, string> = new Map();
 
-/** One stored user-upload record — mirrors bridge/assets.ts's non-exported
+/** One stored user-upload record - mirrors bridge/assets.ts's non-exported
  *  UserAssetRecord for the fields the trim rewrite reads and carries forward
  *  (the same local mirror views/picker.ts keeps for its upload write). */
 interface UserAssetRecordLike {
@@ -207,7 +207,7 @@ interface CatalogHost extends HostV1 {
 }
 
 // Two-colour icons ('themable', c1/c2) and multi-colour illustrations ('illustration',
-// monochromatic remap) both take a colour theme — the engine recolour handles each shape.
+// monochromatic remap) both take a colour theme - the engine recolour handles each shape.
 // Content-credentialed icons are included: a recolour breaks the embedded byte
 // binding, but the download path re-signs the result with the original credential
 // preserved as an ingredient (see downloadSigned), so the chain survives the edit.
@@ -218,7 +218,7 @@ const isThemable = (ref: AssetRef): boolean => {
 
 // Sentinel "theme" = the asset's own bytes, unchanged. Downloading the original
 // keeps any embedded Content Credential intact byte-for-byte; a recolour changes
-// the bytes, so its now-mismatched credential is stripped from them — and the
+// the bytes, so its now-mismatched credential is stripped from them - and the
 // download is re-signed with a Lolly manifest that records the recolour and
 // carries the original credential as an ingredient.
 const ORIGINAL_THEME = '__original';
@@ -233,7 +233,7 @@ function downloadName(ref: AssetRef, ext: string): string {
   return `${base}.${ext}`;
 }
 const svgTextToDataUrl = (svg: string): string => 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-// Read a Blob's bytes as a `data:` URI — a self-contained href for an SVG <image>
+// Read a Blob's bytes as a `data:` URI - a self-contained href for an SVG <image>
 // (an SVG used as an image may not load external refs), so a photo can be baked into
 // a treatment wrapper client-side.
 const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((res, rej) => {
@@ -281,7 +281,7 @@ function svgAspect(svgText: string): number {
   return 1;
 }
 
-// The SVG's user-space extent [minX, minY, width, height] — from viewBox, else its
+// The SVG's user-space extent [minX, minY, width, height] - from viewBox, else its
 // width/height attrs, else a unit square. Used to map a crop fraction onto the real
 // coordinate system so a vector crop stays vector (just a narrower viewBox).
 function svgViewBox(svgText: string): [number, number, number, number] {
@@ -302,7 +302,7 @@ function svgViewBox(svgText: string): [number, number, number, number] {
 // Crop a vector by narrowing ONLY the root <svg>'s viewBox to the sub-rect (content
 // coordinates are untouched, so it stays fully vector); width/height are set to the
 // crop's size and preserveAspectRatio is forced to none so the box maps 1:1 (no
-// letterbox). Only the opening tag is rewritten — child width/height are left alone.
+// letterbox). Only the opening tag is rewritten - child width/height are left alone.
 function cropSvg(svgText: string, box: [number, number, number, number]): string {
   const [x, y, w, h] = box;
   const m = /<svg\b([^>]*)>/i.exec(svgText);
@@ -340,9 +340,9 @@ const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 
 // Containers the C2PA reader can inspect (engine c2pa-verify sniffFormat / EXTRACTORS):
 // any asset in one of these formats CAN be checked, so its details page offers the
-// checker — whether or not it currently carries a credential (a plain file honestly
+// checker - whether or not it currently carries a credential (a plain file honestly
 // reports "No Content Credentials"). Audio joined the reader with the wav RIFF
-// binding + mp3 (see /verify's accept list), then Ogg Opus (opus/ogg — the
+// binding + mp3 (see /verify's accept list), then Ogg Opus (opus/ogg - the
 // OpusTags comment binding, engine c2pa-containers placeOgg); lottie/JSON, fonts
 // and tokens are still not readable, so they get no checker.
 const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'avif', 'mp4', 'm4a', 'webm', 'mkv', 'mp3', 'wav', 'opus', 'ogg']);
@@ -351,19 +351,19 @@ const isVerifiableAsset = (ref: AssetRef): boolean =>
 
 // True while the details modal is in inline-crop mode: the crop box owns the preview stage,
 // so attachZoom's wheel/drag must stand down (and restore on exit). Module-level because
-// attachZoom lives here, outside the view closure that flips it — one modal is open at a time.
+// attachZoom lives here, outside the view closure that flips it - one modal is open at a time.
 let cropModeActive = false;
 
 /**
  * Pan/zoom the details-modal preview so a user can inspect an asset closely. Zoom *sizes*
- * the media element (`.cat-thumb`) — explicit width/height in px — rather than CSS-scaling
- * it, so a vector re-rasterises crisply at every step. (Icons carry a tiny intrinsic size —
- * e.g. `boxes` is 10.58px — which `max-width/object-fit` only *caps*, never upscales, so the
+ * the media element (`.cat-thumb`) - explicit width/height in px - rather than CSS-scaling
+ * it, so a vector re-rasterises crisply at every step. (Icons carry a tiny intrinsic size - 
+ * e.g. `boxes` is 10.58px - which `max-width/object-fit` only *caps*, never upscales, so the
  * old `transform: scale()` was magnifying a ~11px bitmap.) At 100% the art is fit to the
  * stage; pan is a cheap translate, clamped so it can't be dragged fully out of view, and the
  * cursor point is held fixed on wheel/button zoom (focal-zoom formula about the centred
  * origin). Double-click toggles. All listeners live on the stage element, thrown away with
- * the modal — nothing to tear down.
+ * the modal - nothing to tear down.
  */
 function attachZoom(dlg: HTMLDialogElement): void {
   const stage = dlg.querySelector<HTMLElement>('.cat-zoom-stage');
@@ -372,7 +372,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
   if (!stage || !media) return;
   const img = media as HTMLImageElement;
   // A Lottie preview is a mounted <svg> player (data-lottie-src marker), not an <img>: it has no
-  // naturalWidth, and the SVG arrives asynchronously — so we read the aspect from its viewBox and
+  // naturalWidth, and the SVG arrives asynchronously - so we read the aspect from its viewBox and
   // re-fit once it lands, rather than from decode()/load.
   const isLottie = media.hasAttribute('data-lottie-src');
   const MIN = 1, MAX = 16;               // 100%…1600%
@@ -380,7 +380,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
   let s = 1, tx = 0, ty = 0;
   // The s=1 "fit" box: the largest aspect-preserving rectangle inside the padded stage.
   // Zoom multiplies this box; the SVG/image then renders at that true pixel size. Measured
-  // ONCE and locked — never re-measured in place. (In the mobile layout the stage height is
+  // ONCE and locked - never re-measured in place. (In the mobile layout the stage height is
   // indefinite, so an already-enlarged media inflates stage.clientHeight; re-measuring off
   // that would feed back into an ever-growing base. Locking + the viewport cap below make it
   // impossible.) `object-fit: contain` (from CSS) centres the art, so a 0×0-reporting SVG
@@ -389,7 +389,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
   const measureBase = (): void => {
     // Lock the visible clip box at the SAME moment as the fit box, while the media is reset to
     // fit and the stage is deflated to its true size. clampPan must clamp against these locked
-    // values — never a live getBoundingClientRect(). On the mobile layout the stage height is
+    // values - never a live getBoundingClientRect(). On the mobile layout the stage height is
     // indefinite (`.cat-details-preview` is `max-height: 46vh` + `overflow: hidden`), so a
     // zoomed media inflates the stage's live height to its own; clamping off that would collapse
     // the vertical pan range to ~0 and make the top/bottom corners unreachable.
@@ -399,7 +399,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     const availH = Math.max(1, clipH - PAD * 2);
     // Aspect: an <img> exposes naturalWidth/Height; a Lottie renders an <svg viewBox> we read once
     // it has mounted. Until either is known, fall back to the stage aspect (the SVG's own
-    // preserveAspectRatio keeps the art undistorted meanwhile — measureBase re-runs on load).
+    // preserveAspectRatio keeps the art undistorted meanwhile - measureBase re-runs on load).
     let ar = availW / availH;
     if (img.naturalWidth > 0 && img.naturalHeight > 0) ar = img.naturalWidth / img.naturalHeight;
     else if (isLottie) {
@@ -415,7 +415,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     // the art can sit anywhere from centred to one edge aligned with the matching
     // stage edge. This is what lets a cursor-anchored (focal) zoom actually hold its
     // point: the fit box is sized to the CONSTRAINING dimension, so most assets have
-    // a wide margin in the other axis at low zoom — a `max(0, overflow)` clamp pinned
+    // a wide margin in the other axis at low zoom - a `max(0, overflow)` clamp pinned
     // that axis to centre and yanked the cursor point back to the middle on the first
     // wheel steps ("zoom doesn't follow the mouse"). Using the absolute gap gives the
     // focal offset room while still never letting the art leave the viewport.
@@ -432,7 +432,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     media.style.height = `${baseH * s}px`;
     // The media is absolutely positioned at the stage centre (CSS left/top:50%); translate(-50%,-50%)
     // pulls it back onto that centre, then (tx,ty) pans. Grid-centring an oversized item pins it to
-    // the top-left, which broke focal zoom — see the .cat-zoom-stage CSS note. Order is irrelevant for
+    // the top-left, which broke focal zoom - see the .cat-zoom-stage CSS note. Order is irrelevant for
     // pure translations, but the -50% must be present so the art's centre = stage centre + (tx,ty).
     media.style.transform = `translate(-50%, -50%) translate(${tx}px, ${ty}px)`;
     hud?.setReadout(`${Math.round(s * 100)}%`);
@@ -453,7 +453,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     const r = stage.getBoundingClientRect();
     return [e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)];
   };
-  // No dedicated Fit button here (unlike the tool stage) — the readout itself
+  // No dedicated Fit button here (unlike the tool stage) - the readout itself
   // IS the reset control, since MIN (100%) already means "fit".
   const hud = hudEl ? mountZoomHud(hudEl, {
     ariaLabel: t('Zoom'),
@@ -536,7 +536,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Deep link: /#/c?asset=<id> focuses (scrolls to + highlights) that asset on load.
   const linkedAsset = new URLSearchParams(params).get('asset');
   // Deep link: /#/c?section=<key>[,<key>…] lands with those sections EXPANDED (over the
-  // collapsed-by-default state) and scrolls the first into view — the section-level sibling
+  // collapsed-by-default state) and scrolls the first into view - the section-level sibling
   // of ?asset=. Validated against ALL_SECTION_KEYS at apply time (below).
   const linkedSections = (new URLSearchParams(params).get('section') || '')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -556,14 +556,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const setOverrides = (v: Record<string, string>) => { overrides = v; searchHaystack = null; };
   let headshotUrl = '';
   let showHidden = false;
-  let loadFailed = false;                    // the catalog query threw — a total sync failure, distinct from an empty catalogue
+  let loadFailed = false;                    // the catalog query threw - a total sync failure, distinct from an empty catalogue
   let typeFilter: TypeFilter = 'all';        // filetype filter in the sticky toolbar (all/image/vector/motion/audio)
   // Footer search text (lowercased); filters the asset grid. Seeded from #/c?q=… on
   // mount (plans/99 M0) with the same trim+lowercase the input handler applies.
   let query = (new URLSearchParams(params).get('q') || '').trim().toLowerCase();
   let iconThemes: IconTheme[] = [];          // two-colour pairings for themable icons (styler)
   let catIconTheme: string | null = null;    // colour applied to a themable category's grid (null = base)
-  const iconSvgCache = new Map<string, string>();  // base SVG text per themable-icon id — the recolour source
+  const iconSvgCache = new Map<string, string>();  // base SVG text per themable-icon id - the recolour source
   let photoTreatments: PhotoTreatment[] = [];  // greyscale/duotone washes for raster photo groups (like iconThemes)
   let catPhotoTreatment: string | null = null; // treatment applied to a raster category's grid (null = original)
   const TREATMENT_FILTER_PREFIX = 'lolly-pt-'; // id prefix for the injected <filter> defs (live CSS preview)
@@ -574,10 +574,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let dlModal: ModalHandle<void> | null = null;
   let detailsDialog: HTMLDialogElement | null = null;   // the asset details modal, if open
   let detailsModal: ModalHandle<void> | null = null;
-  // The active brand's palette (host.tokens, cached) — set once in reload() before
+  // The active brand's palette (host.tokens, cached) - set once in reload() before
   // the first render; swatchesSectionHtml() reads this closure var synchronously.
   let palette: readonly PaletteEntry[] = PALETTE;
-  // The fonts THIS brand actually carries — its declared font tokens matched to
+  // The fonts THIS brand actually carries - its declared font tokens matched to
   // the bundled specs, plus any on-device Google fonts the user added. Replaces
   // the old hardcoded FONTS list so a custom brand no longer shows SUSE's faces.
   let catFonts: CatFont[] = [];
@@ -588,7 +588,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let coverPool: string[] = [];
 
   // Multi-select of the user's OWN uploads (a closure Set of user-asset ids; survives the
-  // render() that wipes viewEl.innerHTML). Only user uploads are selectable — shared
+  // render() that wipes viewEl.innerHTML). Only user uploads are selectable - shared
   // catalog assets can't be deleted (they're a permanent contract), only hidden. Mirrors
   // the projects view's checkbox + floating bulk-bar pattern.
   const selected = new Set<string>();
@@ -597,12 +597,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Shared verbatim with Projects (lib/tile-select.ts) so the two grids behave the same:
   // drag a box through the gaps between cards to select what it touches, Shift-click a dot
   // to sweep up everything back to the anchor. Only the user's uploads carry a dot, so only
-  // they are ever caught — a box dragged across the library's own cards selects nothing,
+  // they are ever caught - a box dragged across the library's own cards selects nothing,
   // which is right: shared assets can't be bulk-acted on.
   //
   // Wired ONCE per mount against viewEl (the persistent element): render() replaces
   // `.catalog` wholesale and renderBody() replaces the grid, so anything bound inside would
-  // be orphaned — and re-wiring per render would reset the Shift-anchor under the user.
+  // be orphaned - and re-wiring per render would reset the Shift-anchor under the user.
   const selectableTiles = (): HTMLElement[] =>
     [...viewEl.querySelectorAll<HTMLElement>('.cat-tile .cat-check[data-select]')]
       .map(dot => dot.closest<HTMLElement>('.cat-tile'))
@@ -613,7 +613,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     tiles: selectableTiles,
     refOf: (tile) => tile.dataset.id!,
     current: () => new Set(selected),
-    // Reconcile the Set to exactly `refs`, then repaint in place — called on every marquee
+    // Reconcile the Set to exactly `refs`, then repaint in place - called on every marquee
     // frame, so a re-render here would drop scroll/focus and kill the drag.
     setRefs: (refs) => {
       selected.clear();
@@ -628,9 +628,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     },
     clear: () => handleBulk('clear'),
     // Never start a box on a card, control, bar, drop zone, or the favourites strip (it has
-    // its own drag-to-scroll) — only in a genuine gap. `.cat-toolbar` earns its place: it's a
+    // its own drag-to-scroll) - only in a genuine gap. `.cat-toolbar` earns its place: it's a
     // STICKY pill floating over the grid, so its padding and flex gaps read as empty canvas
-    // while actually sitting on top of the cards — a press there is aiming at the toolbar.
+    // while actually sitting on top of the cards - a press there is aiming at the toolbar.
     noStart: '.cat-tile, button, a, input, label, textarea, select, dialog, .cat-bulkbar, '
       + '.cat-toolbar, .cat-fav-strip, .featured, .gallery-topbar, .gallery-footer, .updz, '
       + '[data-dropzone-mount], .cat-dl-section, .cat-uploads-bar',
@@ -640,7 +640,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // shared with gallery + projects). Exposes the actions that previously lived only
   // behind the details modal; a tile inside a multi-selection of uploads opens the
   // BULK menu mirroring the bulk bar. Single-item Duplicate/Delete reuse the
-  // (confirmed) bulk flows over a one-item selection — see onTileMenuAction.
+  // (confirmed) bulk flows over a one-item selection - see onTileMenuAction.
   function catTileMenuHtml(id: string): string {
     const ref = assetById.get(id);
     if (!ref) return '';
@@ -708,7 +708,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     onAction: (act, tgt) => { void onTileMenuAction(act, tgt?.ref ?? null); },
   });
 
-  // Favourites strip presentation — the same cinematic component as the Tools hero,
+  // Favourites strip presentation - the same cinematic component as the Tools hero,
   // with a Gallery ↔ Cover Flow view mode and an on/off switch, both persisted. Kept
   // shorter than the hero (the previews shouldn't dominate the page here).
   const FAV_VIEW_KEY = 'lolly-catalog-fav-view';
@@ -727,8 +727,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   } catch { /* storage off */ }
 
   // Section fold state persists across reloads (like the fav-strip prefs above). The great
-  // default for a big catalogue is EVERYTHING FOLDED — the page opens as a tidy stack of
-  // section headers you expand on demand — so an absent key seeds every collapsible section.
+  // default for a big catalogue is EVERYTHING FOLDED - the page opens as a tidy stack of
+  // section headers you expand on demand - so an absent key seeds every collapsible section.
   const COLLAPSE_KEY = 'lolly-catalog-collapsed';
   const ALL_SECTION_KEYS = ['your-uploads', ...LIB_GROUPS.map(g => g.key), 'hidden', 'swatches', 'fonts'];
   try {
@@ -740,14 +740,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])); } catch { /* storage off */ }
   };
   // Keep the address bar in step with the currently-EXPANDED sections (…#/c?section=a,b)
-  // via replaceState — no navigation / no remount — so the live view is itself a copy-able
+  // via replaceState - no navigation / no remount - so the live view is itself a copy-able
   // deep link. A bare #/c when everything is folded. Runs on user fold/unfold only.
   const syncSectionUrl = (): void => {
     const open = ALL_SECTION_KEYS.filter(k => !collapsed.has(k));
     const base = location.hash.split('?')[0] || '#/c';
     try {
       history.replaceState(history.state, '', `${location.pathname}${base}${open.length ? `?section=${open.join(',')}` : ''}`);
-    } catch { /* history unavailable — non-fatal */ }
+    } catch { /* history unavailable - non-fatal */ }
   };
 
   // The active brand's fonts: its declared font tokens (matched to a bundled spec
@@ -781,7 +781,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   async function reload(): Promise<void> {
-    // A thrown catalog query is a TOTAL sync failure — track it so the render can show a
+    // A thrown catalog query is a TOTAL sync failure - track it so the render can show a
     // distinct "couldn't load" state (with a Retry) rather than the identical-looking empty
     // catalogue. The other two loads degrade quietly (uploads/profile are best-effort).
     let failed = false;
@@ -807,20 +807,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const userVisual = user.filter(a => a.id !== HEADSHOT_ID);
     // Catalog first, then user uploads. Only image-thumbnailable types from the catalog
     // (palette/tokens/font catalog entries are engine data covered elsewhere), a user's OWN
-    // audio upload, AND catalog focus-music (audio tagged 'neurospicy' — the generated
+    // audio upload, AND catalog focus-music (audio tagged 'neurospicy' - the generated
     // songs + lo-fi loops) so they can be auditioned here. Other catalog audio (music beds)
     // stays out. Each audio tile renders a player in the details modal.
     allAssets = [...catalog, ...userVisual]
       .filter(a => VISUAL_TYPES.has(a.type)
         || (a.type === 'audio' && (a.source === 'user' || (Array.isArray(a.meta?.tags) && (a.meta.tags as string[]).includes('neurospicy')))));
     assetById = new Map(allAssets.map(a => [a.id, a]));
-    searchHaystack = null; // asset set changed — drop the stale search index
+    searchHaystack = null; // asset set changed - drop the stale search index
 
-    // Colour pairings for the themable-icon styler — only if the catalog supplies them.
+    // Colour pairings for the themable-icon styler - only if the catalog supplies them.
     if (allAssets.some(isThemable) && typeof host.assets._iconThemes === 'function') {
       iconThemes = await host.assets._iconThemes().catch(() => [] as IconTheme[]);
     }
-    // Photo colour treatments (greyscale/duotone) for raster groups — the bitmap sibling
+    // Photo colour treatments (greyscale/duotone) for raster groups - the bitmap sibling
     // of the icon colours; only fetched when the catalogue actually holds raster assets.
     if (allAssets.some(a => a.type === 'raster') && typeof host.assets._photoTreatments === 'function') {
       photoTreatments = await host.assets._photoTreatments().catch(() => [] as PhotoTreatment[]);
@@ -829,7 +829,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── markup ───────────────────────────────────────────────────────────────────
-  // The shared .gallery-topbar shell (component-audit rec 11) — the view-toggle + the
+  // The shared .gallery-topbar shell (component-audit rec 11) - the view-toggle + the
   // language FAB + profile pill are unified in view-topbar.ts; only the "view options"
   // button (`right`) and its popover are catalog's own.
   function catalogTopbarHtml(): string {
@@ -854,7 +854,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
   }
 
-  // One collapsible section shell — the category, hidden, Swatches and Fonts groups all
+  // One collapsible section shell - the category, hidden, Swatches and Fonts groups all
   // use it, so "Collapse all" and the [data-cat-toggle] handler treat them uniformly.
   // Driven by the `collapsed` Set; an active search force-expands every group so matches
   // are never hidden behind a fold. `count` is optional (null → no pill); `extraClass`
@@ -880,7 +880,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function thumbHtml(ref: AssetRef, asSpan = false, full = false): string {
     const tag = asSpan ? 'span' : 'div';
     if (ref.meta?._placeholder) return `<${tag} class="cat-thumb cat-thumb-stub">${escape(ref.type)}</${tag}>`;
-    // Lottie: a looping player mounted over the still poster — autoplayLottieThumbs mounts it
+    // Lottie: a looping player mounted over the still poster - autoplayLottieThumbs mounts it
     // while the tile is on screen; the poster background (or a ▶ for a posterless user upload)
     // is the resting frame. The json is the play source: a library lottie exposes it on
     // meta.animationUrl (ref.url is the poster); a user upload's url IS the json.
@@ -889,7 +889,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const poster = ref.source !== 'user' && typeof ref.meta?.posterUrl === 'string' ? ref.meta.posterUrl : '';
       // A looping SVG player mounted over the still poster. Grid tiles get it via
       // autoplayLottieThumbs (on-screen gated); the details modal (full) mounts one player and
-      // makes it zoomable — a Lottie renders as SVG, so it inspects crisply like vector art,
+      // makes it zoomable - a Lottie renders as SVG, so it inspects crisply like vector art,
       // with a play/pause overlay (openDetails). The poster is the resting background until the
       // player loads; a posterless user upload shows a centred ▶. In the modal attachZoom sizes
       // the box explicitly, so the "no intrinsic height" grid caveat doesn't apply.
@@ -901,7 +901,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       return `<span class="cat-thumb cat-thumb-stub" aria-hidden="true">▶</span>`;
     }
     // A video plays itself (an <img> src=mp4 would break). <video> is phrasing
-    // content, so it's valid inside the tile's <button> — no span/div switch needed.
+    // content, so it's valid inside the tile's <button> - no span/div switch needed.
     // muted + playsinline are mandatory for autoplay. (gif/apng/animated-webp are
     // type:'raster' and animate natively in the <img> below.)
     if (ref.type === 'video') {
@@ -909,13 +909,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
     // Audio. In the details modal (full) it gets a real <audio controls> player to preview;
     // on a grid tile it draws its own MEASURED waveform (mountAudioThumbs swaps the glyph
-    // for one once peaks exist — a glyph, never an invented shape, until then). The grid
+    // for one once peaks exist - a glyph, never an invented shape, until then). The grid
     // tile nests the thumb inside a <button>, where an interactive <audio> control is
-    // invalid — so the player is the `full` path only (the modal preview isn't a button).
+    // invalid - so the player is the `full` path only (the modal preview isn't a button).
     // Both use `tag` (span inside a button, div in the modal).
     if (ref.type === 'audio') {
       if (full) {
-        // zzfxm songs and tracker modules are song data, not a playable audio file —
+        // zzfxm songs and tracker modules are song data, not a playable audio file - 
         // mark them so openDetails renders them to a WAV blob (plays in ANY browser, no
         // codec dependency). Encoded audio plays directly; an onerror surfaces an
         // unsupported-format note instead of failing quietly.
@@ -925,9 +925,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           : mod ? `data-mod-url="${escape(ref.url)}"`
           : `src="${escape(ref.url)}"`;
         // A big live level meter above the controls (same bar look + theming as the
-        // Neurospicy player's — lib/audio-meter.ts draws both). Wired in openDetails.
+        // Neurospicy player's - lib/audio-meter.ts draws both). Wired in openDetails.
         // The audio surface ESCALATES rather than switching modes: the bars analyser is
-        // what you get for free, a visualiser is one click up, and immersive is one more —
+        // what you get for free, a visualiser is one click up, and immersive is one more - 
         // the same ladder the Neurospicy player uses (inline → panel → fullscreen). The
         // cover commit lives at the top of it because "keep what I'm looking at" is the
         // whole interaction; there is no separate picker to learn.
@@ -940,16 +940,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           + `<div class="cat-stage-bar">`
             // The element is the PLAYBACK ENGINE, not the UI: the meter and the visualiser
             // both tap it, and an element yields only one MediaElementSource ever, so it
-            // stays exactly where it is. Only its native chrome goes — see lib/audio-transport.
+            // stays exactly where it is. Only its native chrome goes - see lib/audio-transport.
             + `<audio ${srcAttr} preload="metadata" data-audio-preview></audio>`
             + audioTransportHtml({
               play: t('Play'), pause: t('Pause'), seek: t('Seek'),
               mute: t('Mute'), unmute: t('Unmute'), volume: t('Volume'),
             })
-            // The look controls only exist once you have escalated — before that the bar
+            // The look controls only exist once you have escalated - before that the bar
             // is just a player, which is all an asset you are auditioning needs.
             // Two dials, deliberately separate: PRESET (the form) and COLOUR (the paint).
-            // Shuffling one must not disturb the other — that is the difference between
+            // Shuffling one must not disturb the other - that is the difference between
             // adjusting a look and losing it.
             + `<span class="cat-viz-group" data-audio-vizbar hidden>`
               + `<button type="button" class="cat-viz-btn" data-viz-prev title="${escape(t('Previous preset'))}" aria-label="${escape(t('Previous preset'))}">‹</button>`
@@ -976,7 +976,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     return `<img class="cat-thumb" src="${escape(src)}" alt="" loading="lazy" decoding="async">`;
   }
 
-  // A row of two-colour theme swatches (the icon "colours" picker) — shared by the download
+  // A row of two-colour theme swatches (the icon "colours" picker) - shared by the download
   // dialog, the asset-details modal and the icons-category header, so they all offer the same
   // control. Reuses the download dialog's .cat-dl-theme / .cat-dl-duo chrome; `active` marks
   // the current pairing.
@@ -1009,11 +1009,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const fmt = ref.type === 'lottie' ? 'LOTTIE' : (ref.format ? String(ref.format).toUpperCase() : '');
     const isUser = ref.source === 'user';
     const sourceLabel = isUser ? t('Yours') : t('Catalog');
-    // Generative-AI disclosure — authored on a catalog entry OR auto-detected from an
+    // Generative-AI disclosure - authored on a catalog entry OR auto-detected from an
     // upload's C2PA credential. Shows a violet GEN AI pill in the caption; collapses to a
     // sparkle circle on narrow tiles (see catalog.css).
     const aiKind = assetAiKind(ref);
-    // EVERY tile carries a selection checkbox (2026-08-09 — people expect a grid to
+    // EVERY tile carries a selection checkbox (2026-08-09 - people expect a grid to
     // marquee): catalog assets select for bulk favourite/hide; the destructive bulk
     // actions gate on an all-uploads selection instead (catalog assets are a permanent
     // contract). The whole tile body (bar the star + checkbox) opens the details modal.
@@ -1032,7 +1032,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>`;
   }
 
-  // The rules below live in ./catalog-filter.ts — pure, DOM-free and unit-tested
+  // The rules below live in ./catalog-filter.ts - pure, DOM-free and unit-tested
   // (catalog-filter.test.ts). This view keeps the mutable state; the module owns
   // the logic. These wrappers just bind the current state to it, so every call
   // site in mountCatalog reads exactly as it did before the extraction.
@@ -1040,7 +1040,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const matchesType = (a: AssetRef): boolean => matchesTypeRule(a, typeFilter);
   // The search index, memoised across keystrokes and dropped whenever the asset
   // set or the category overrides change (see setOverrides and the reload path).
-  // Built on FIRST SEARCH, never merely on render — indexing every asset for a
+  // Built on FIRST SEARCH, never merely on render - indexing every asset for a
   // user who never types in the box would be pure waste.
   function haystack(): ReadonlyMap<string, string> {
     if (!searchHaystack) {
@@ -1052,24 +1052,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     !query || matchesQueryRule(a, query, haystack());
   const favItems = (): AssetRef[] => favItemsRule(visibleAssets(), favSet, assetBaseId);
 
-  // The "Your uploads" section — a standard `.cat-group` that is ALWAYS rendered in the
+  // The "Your uploads" section - a standard `.cat-group` that is ALWAYS rendered in the
   // browse view (even with zero uploads): its body leads with a drop area, so adding files
   // to the library is a first-class affordance right here, not just inside the picker.
   // The "Select all / Deselect all" control lives INSIDE the collapsible body (not the
-  // header) so it folds away with the grid when the section is collapsed — a bulk-select
+  // header) so it folds away with the grid when the section is collapsed - a bulk-select
   // toggle over a hidden grid just reads as confusing (and it's dropped entirely at 0 items).
   function uploadsSectionHtml(items: AssetRef[]): string {
     const key = 'your-uploads';
     const isCollapsed = collapsed.has(key) && !query;
     const allSel = items.length > 0 && items.every(a => selected.has(a.id));
     // Your own raster uploads get the same photo-treatment strip the library photo
-    // groups do — pick a greyscale/duotone wash and the whole uploads grid recolours
+    // groups do - pick a greyscale/duotone wash and the whole uploads grid recolours
     // in place (retreatGroup keys off tile type, not source, so it just works).
     const treatable = photoTreatments.length > 0 && items.some(a => a.type === 'raster');
     const colourRow = treatable
       ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">${t('Colour')}</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
       : '';
-    // Drag files in or click to browse — the shared upload dropzone component
+    // Drag files in or click to browse - the shared upload dropzone component
     // (lib/upload-dropzone.ts, extracted from this view so #/start can mount it too)
     // renders into this placeholder after every body paint: the innerHTML rebuilds
     // destroy the previous instance, so mountDropzone() re-mounts it (called from
@@ -1078,7 +1078,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dropzone = `<div data-dropzone-mount${items.length ? '' : ' data-empty'}></div>`;
     // "Script audio" beside the drop area: type a script, generate speech on-device
     // via the optional host.speech bridge (v1.96), and the saved clip lands right
-    // here in "Your uploads". Feature-detected — absent bridge, absent button.
+    // here in "Your uploads". Feature-detected - absent bridge, absent button.
     const scriptAudio = host.speech?.isAvailable()
       ? `<div class="cat-uploads-tts"><button type="button" class="btn" data-script-audio>${icon('mic', { size: 14 })} ${t('Script audio')}</button></div>`
       : '';
@@ -1101,7 +1101,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   function assetsSectionHtml(): string {
     const hiddenItems = allAssets.filter(a => hiddenSet.has(assetBaseId(a.id)));
-    // A delete can empty the active filter's bucket — its toolbar button would vanish
+    // A delete can empty the active filter's bucket - its toolbar button would vanish
     // (shownFilters below only offers non-empty buckets) while the filter kept hiding
     // every asset with no visible control explaining why. Fall back to All instead.
     if (typeFilter !== 'all' && !allAssets.some(a => matchesTypeRule(a, typeFilter))) typeFilter = 'all';
@@ -1109,7 +1109,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const visible = visibleAssets().filter(matchesQuery).filter(matchesType);
 
     // A total sync failure (nothing loaded) reads distinctly from a genuinely empty
-    // catalogue — a "couldn't load" message with a Retry that re-runs the load (wired in
+    // catalogue - a "couldn't load" message with a Retry that re-runs the load (wired in
     // wire()). Uploads loading while the catalog query failed fall through to the grid.
     if (loadFailed && allAssets.length === 0) {
       return `<div class="cat-empty" role="alert">
@@ -1119,13 +1119,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
 
     if (allAssets.length === 0) {
-      // A genuinely empty library still leads with the uploads section — its drop area
+      // A genuinely empty library still leads with the uploads section - its drop area
       // is exactly what a brand-new profile needs first.
       return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">${t("No catalogue assets found. Once the catalogue syncs they'll appear here — or drop your own images in above.")}</p>`;
     }
 
     // Favourites are presented as a cinematic strip (mounted after render, see
-    // mountFavStrip) — a placeholder goes here when the strip is enabled and non-empty.
+    // mountFavStrip) - a placeholder goes here when the strip is enabled and non-empty.
     // Favourited items still appear in their category group below (the strip is a
     // shortcut, matching the picker's favourites-plus-groups behaviour). Hidden while
     // searching so the results grid is the whole focus.
@@ -1154,9 +1154,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const items = buckets.get(g.key);
       if (!items?.length) continue;
       // A category of themable icons gets the same colour swatches as the download/details
-      // views — pick one and the whole grid recolours (see the .cat-dl-theme handler in wire).
+      // views - pick one and the whole grid recolours (see the .cat-dl-theme handler in wire).
       // A raster/bitmap category (photos, campaign, headshots) instead gets a photo-treatment
-      // strip — the bitmap sibling — that washes the whole grid in place. Mutually exclusive.
+      // strip - the bitmap sibling - that washes the whole grid in place. Mutually exclusive.
       const themableGroup = iconThemes.length > 0 && items.some(isThemable);
       const treatableGroup = !themableGroup && photoTreatments.length > 0 && items.some(a => a.type === 'raster');
       const colourRow = themableGroup
@@ -1184,7 +1184,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         : query
           ? t('No assets match “{query}”.', { query })
           : t('No {type} assets in the catalogue.', { type: typeLabel });
-      // A "clear search" button when a query is active (mirrors projects.ts) — routed to
+      // A "clear search" button when a query is active (mirrors projects.ts) - routed to
       // the shell bar's clearSearchBar() via the body's delegated [data-search-clear] handler in wire().
       const clearBtn = query ? ` <button type="button" class="projects-linkbtn" data-search-clear>${t('Clear search')}</button>` : '';
       parts.push(`<p class="cat-empty" role="status">${msg}${clearBtn}</p>`);
@@ -1205,7 +1205,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // filter (image/vector/motion) stays available even during a search, so you can narrow
     // results by type; the collapse + hide-hidden toggles are section-management, so they're
     // dropped while searching (there are no folds to manage in a flat results grid).
-    // Only offer a bucket the catalogue actually has assets for — e.g. a brand with no
+    // Only offer a bucket the catalogue actually has assets for - e.g. a brand with no
     // video/Lottie/audio assets never sees an always-empty Motion or Audio button.
     const shownFilters = TYPE_FILTERS.filter(f => f.key === 'all' || allAssets.some(a => matchesTypeRule(a, f.key as TypeFilter)));
     const filterSeg = `
@@ -1216,7 +1216,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const showHiddenLabel = showHidden ? t('Hide hidden') : t('Show hidden ({n})', { n: hiddenItems.length });
     // Reserve the counter's width for the widest string it can ever show, so switching filters
     // (which only ever shrink the number) never re-widths the centred toolbar pill and shifts the
-    // filter buttons. Floor the digit count at 4 — a few thousand assets — so the reservation
+    // filter buttons. Floor the digit count at 4 - a few thousand assets - so the reservation
     // doesn't track the current total and a low filtered number can't narrow it; size the suffix
     // for the mode (" assets" normally, " assets found" while searching, where the trailing
     // buttons drop but the type pills still centre off this width). +1ch of slack keeps min-width
@@ -1239,7 +1239,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Mount (or re-mount) the favourites strip into its placeholder using the shared
-  // featured-row component — same Gallery/Cover-Flow presentation as the Tools hero,
+  // featured-row component - same Gallery/Cover-Flow presentation as the Tools hero,
   // but each tile links to the asset's share deep link (→ its details modal).
   function mountFavStrip(): void {
     featuredHandle?.destroy();
@@ -1252,12 +1252,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       id: a.id,
       name: String(a.meta?.name ?? a.id),
       // A user-uploaded lottie's url is JSON, a video's is mp4/webm, and an AUDIO asset's
-      // is an .opus/.mp3/.xm — an <img> (what the featured-row renders) breaks on all of
+      // is an .opus/.mp3/.xm - an <img> (what the featured-row renders) breaks on all of
       // them, so omit the preview rather than ship a broken tile.
       preview: (a.meta?._placeholder || (a.type === 'lottie' && a.source === 'user') || a.type === 'video' || a.type === 'audio') ? undefined : a.url,
       // ...and for audio, fill the strip's `icon` slot with the SAME waveform the grid
       // draws. That slot exists to be the always-present art behind a missing preview,
-      // which is exactly what a favourited track needs — otherwise a starred audio asset
+      // which is exactly what a favourited track needs - otherwise a starred audio asset
       // is a card with a name and nothing above it (the fourth renderer to hit this).
       icon: a.type === 'audio' ? audioCardArt(a) : undefined,
       formats: a.format ? [a.format] : undefined,
@@ -1278,7 +1278,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // Reflect a favourites-MEMBERSHIP change (add/remove) in the strip without a full
   // re-render. The featured-row handle has no incremental entry API, so re-mount just the
-  // strip (cheap next to rebuilding the whole grid) — creating or dropping its placeholder
+  // strip (cheap next to rebuilding the whole grid) - creating or dropping its placeholder
   // as the favourites set crosses empty↔non-empty, exactly like the .cat-favstrip-toggle
   // handler. No-op while the strip is off or a search is active (it isn't shown then).
   function refreshFavStrip(): void {
@@ -1298,8 +1298,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
   }
 
-  // Flip every grid tile sharing this base id to the given favourite state, in place —
-  // the tile class, star pressed-state and its labels — matching what assetTile() would
+  // Flip every grid tile sharing this base id to the given favourite state, in place - 
+  // the tile class, star pressed-state and its labels - matching what assetTile() would
   // render. Favourited assets keep their category-bucket tile (the strip is a shortcut,
   // not a bucket move), so this + refreshFavStrip() fully cover a fav toggle.
   function reflectFavInGrid(base: string, on: boolean): void {
@@ -1320,7 +1320,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // "Collapse all" folds them and the whole page reads as one uniform stack of sections.
   // Their rich bodies keep the existing .cat-panel-* / .plat-* styling. `cat-group--ref`
   // draws a divider above the first one to set the reference zone apart from the assets.
-  // The Swatches section's download row — the palette AS SHOWN (live-resolved
+  // The Swatches section's download row - the palette AS SHOWN (live-resolved
   // brand tokens: catalog-shipped colours plus everything added in the brand
   // editor), in each format a designer/dev workflow expects. Clickable links,
   // matching the Fonts section's convenience; wired in the body click handler.
@@ -1382,16 +1382,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // The scrollable content. Swatches + Fonts are reference material, not searchable
-  // assets — drop them while a search is active so the results grid stands alone.
+  // assets - drop them while a search is active so the results grid stands alone.
   const bodyHtml = (): string =>
     `${assetsSectionHtml()}${(query || typeFilter !== 'all') ? '' : swatchesSectionHtml() + fontsSectionHtml()}`;
 
-  // Floating bulk-action bar for a multi-selection of uploads — markup + sync live in
+  // Floating bulk-action bar for a multi-selection of uploads - markup + sync live in
   // lib/bulk-bar.ts (shared with projects and the gallery); this view supplies its
   // action set. Rendered once per render(); shown/populated by syncBulkBar().
   // Favourite/Hide apply to ANY selection; Duplicate/Download/Delete only light up
   // when the whole selection is the user's own uploads (catalog assets are a
-  // permanent contract — favourite and hide are the only honest bulk verbs there).
+  // permanent contract - favourite and hide are the only honest bulk verbs there).
   const bulkBarCfg: BulkBarConfig = {
     prefix: 'cat-bulkbar',
     rootSelector: '.catalog',
@@ -1425,8 +1425,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
   }
 
-  // Search re-render: rebuild ONLY the body so the fixed footer — and the search input's
-  // focus + caret — survive between keystrokes. The body's delegated click handler is
+  // Search re-render: rebuild ONLY the body so the fixed footer - and the search input's
+  // focus + caret - survive between keystrokes. The body's delegated click handler is
   // bound to the persistent .catalog-body element, so it survives too.
   // (Re)mount the on-screen-gated lottie autoplayer over the current grid. Called after every
   // body (re)render; destroys the prior observer first so re-renders don't stack players.
@@ -1436,7 +1436,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     lottieThumbs = body ? autoplayLottieThumbs(body, { isCurrent: () => mounted }) : null;
   }
 
-  // (Re)mount the waveform upgrader over the current grid — the audio sibling of
+  // (Re)mount the waveform upgrader over the current grid - the audio sibling of
   // mountLottieThumbs, called from the same places. Only tiles the user scrolls to are
   // decoded: SUSE ships 52 audio assets, and analysing all of them because a grid painted
   // would be minutes of decoding nobody asked for.
@@ -1451,7 +1451,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // The mounted upload dropzone's teardown, if any (lib/upload-dropzone.ts).
   let dropzoneDispose: (() => void) | null = null;
   // (Re)mount the shared upload dropzone into the uploads section's placeholder. Called
-  // after every body (re)render — the innerHTML rebuild orphans the previous instance, so
+  // after every body (re)render - the innerHTML rebuild orphans the previous instance, so
   // tear it down first (a mid-ingest re-mount is safe: the component's single-flight
   // ingest guard is module-level, and an in-flight ingest still delivers its onAdded).
   // Files ingest through the SAME storeUserUpload path as the asset picker (downscale/
@@ -1496,11 +1496,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // preview, metadata, and every per-asset action, so a shared link resolves to a real
   // destination (this modal over the catalog), not a bare download.
   // Dispose hook for the audio preview's level meter (attachAudioMeter). openDetails
-  // always closeDetails()-es first — including ←/→ paging — so this can't leak.
-  /** The details modal's meter handle — its dispose, plus accessors for the AnalyserNode
+  // always closeDetails()-es first - including ←/→ paging - so this can't leak.
+  /** The details modal's meter handle - its dispose, plus accessors for the AnalyserNode
    *  and context the MilkDrop preview must SHARE (one MediaElementSource per element). */
   let detailsMeterDispose: import('../lib/audio-meter.ts').MeterHandle | null = null;
-  /** The themed transport driving the preview's <audio> — disposed with the modal. */
+  /** The themed transport driving the preview's <audio> - disposed with the modal. */
   let detailsTransport: import('../lib/audio-transport.ts').AudioTransport | null = null;
   /** Releases the details modal's live visualiser (its WebGL2 context) + key handler. */
   let vizTeardown: (() => void) | null = null;
@@ -1509,7 +1509,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     detailsModal?.close(); // cleanup (meter/lottie/wav dispose + nulling the refs) runs in its onClose
   }
   // Open the Verify checker (#/verify) on this asset and auto-run the on-device C2PA
-  // check — the authoritative source for the AI provenance the badge summarises. The
+  // check - the authoritative source for the AI provenance the badge summarises. The
   // stored copy is the source of truth: if it still carries a Content Credential (catalog
   // assets, verbatim uploads) we check it verbatim; if ingest re-encoded it and dropped
   // the in-file manifest, we re-attach the captured credential store so the provenance
@@ -1523,7 +1523,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const fmt = String(ref.format ?? '').toLowerCase();
       // Heal-then-check: a TTS clip saved before the wav embed shipped holds bare
       // bytes, so rebuild its credential from the stored meta.tts recipe, write it
-      // into the file AND the record, and check the stamped bytes — the user sees
+      // into the file AND the record, and check the stamped bytes - the user sees
       // credentials appear. shouldHealTts refuses anything without the recipe, so
       // recorded/uploaded audio is never stamped. Best-effort: a failed heal falls
       // through to checking the plain bytes.
@@ -1534,7 +1534,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             const healed = await healTtsProvenance(host, ref, bytes);
             if (healed) {
               bytes = new Uint8Array(await healed.arrayBuffer());
-              // The record now serves a fresh object URL — swap the grid's ref so
+              // The record now serves a fresh object URL - swap the grid's ref so
               // a later open or download reads the stamped bytes, not the stale URL.
               try {
                 const fresh = await host.assets.get(ref.id);
@@ -1545,7 +1545,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         } catch { /* heal is additive — the plain bytes still get checked */ }
       }
       if (!extractC2paStore(bytes)) {
-        // Stored file has no embedded credential — fall back to the one captured at ingest.
+        // Stored file has no embedded credential - fall back to the one captured at ingest.
         let cred: { store: Uint8Array; format: string } | null = null;
         try { cred = (await host.assets.credential?.(ref.id)) ?? null; } catch { cred = null; }
         if (cred?.store && C2PA_FORMATS.includes(fmt)) {
@@ -1583,7 +1583,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const assetLink = (ref: AssetRef): string =>
     `${location.origin}${location.pathname}#/c?asset=${encodeURIComponent(ref.id)}`;
 
-  // The previous/next asset for the details modal's lightbox paging — in on-screen grid
+  // The previous/next asset for the details modal's lightbox paging - in on-screen grid
   // order, skipping tiles inside a collapsed group so paging matches what's visible.
   function navRefs(ref: AssetRef): { prev: AssetRef | null; next: AssetRef | null } {
     const ids = [...viewEl.querySelectorAll<HTMLElement>('[data-open]')]
@@ -1600,7 +1600,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   function openDetails(ref: AssetRef, initialTheme?: string | null, initialTreatment?: string | null): void {
     // Fire-and-forget: heal a pre-embed TTS clip while its details are open
-    // (meta.tts is the cheap pre-filter — everything else never fetches).
+    // (meta.tts is the cheap pre-filter - everything else never fetches).
     if (ref.source === 'user' && ref.type === 'audio' && ref.meta?.tts) void maybeHealTtsClip(ref);
     const nav = navRefs(ref);
     const base = assetBaseId(ref.id);
@@ -1615,11 +1615,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // always be checked. The "Made with Lolly" lockup is revealed lazily below.
     const showVerify = isVerifiableAsset(ref) || !!aiKind;
     // Themable icons get the same colour swatches as the download dialog, right here in the
-    // details view — pick a pairing and the preview recolours live; Download + Copy-link then
+    // details view - pick a pairing and the preview recolours live; Download + Copy-link then
     // carry the choice. dBaseSvg caches the raw SVG so re-colouring doesn't re-fetch.
     const themable = isThemable(ref) && iconThemes.length > 0;
     // Raster photos get the bitmap sibling: a colour-treatment strip (greyscale/duotone) that
-    // washes the preview live and bakes into the download — mirroring the category grid.
+    // washes the preview live and bakes into the download - mirroring the category grid.
     const treatable = ref.type === 'raster' && !ref.meta?._placeholder && photoTreatments.length > 0;
     // Anything with a styler (vector/themable icon, or a treatable photo) offers a Download…
     // dialog rather than a bare download.
@@ -1633,13 +1633,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ? initialTreatment
       : null;
     let dBaseSvg: string | null = null;
-    // A Lottie plays in the details view as a live SVG player (mounted below), not a still — with a
+    // A Lottie plays in the details view as a live SVG player (mounted below), not a still - with a
     // play/pause overlay. Both library (json on meta.animationUrl) and user (url IS the json) lotties.
     const lottieJson = ref.type === 'lottie'
       ? (ref.source === 'user' ? ref.url : (typeof ref.meta?.animationUrl === 'string' ? ref.meta.animationUrl : ''))
       : '';
     const isMotionLottie = !!lottieJson;
-    // Zoomable when the preview is a real still image OR a Lottie (both inspect crisply under zoom —
+    // Zoomable when the preview is a real still image OR a Lottie (both inspect crisply under zoom - 
     // a Lottie renders as SVG). A video reads better auto-playing at fit-size, so it opts out; audio
     // is a player, not an image, so it opts out too; a placeholder/dataless-lottie stub has nothing
     // to zoom. attachZoom handles the <svg> player.
@@ -1647,25 +1647,25 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       && ref.type !== 'video'
       && ref.type !== 'audio'
       && !(ref.type === 'lottie' && !isMotionLottie);
-    // Crop only makes sense on a static raster/vector — never a live motion preview.
+    // Crop only makes sense on a static raster/vector - never a live motion preview.
     const croppable = zoomable && !isMotionLottie;
     // On-device AI edits for a raster, brought over from the asset picker: Upscale
-    // (host.upscale, v1.101) and Remove background (host.matte, v1.103) — same gates the
+    // (host.upscale, v1.101) and Remove background (host.matte, v1.103) - same gates the
     // picker uses. Both route through their dialogs, which PRESERVE the source's
     // provenance: an ingested AI image (Gemini, ChatGPT, …) keeps its Content Credential
-    // and Gen-AI flag through the edit — recorded as a cut-out/upscale ingredient, never
-    // laundered away — which is the whole reason to offer these on a credentialed asset.
+    // and Gen-AI flag through the edit - recorded as a cut-out/upscale ingredient, never
+    // laundered away - which is the whole reason to offer these on a credentialed asset.
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
     // "Trim margins" (plan 97 §7.3): the retro-trim of an upload that arrived padded,
-    // offering the same before/after card every ingest surface shows. Uploads only —
+    // offering the same before/after card every ingest surface shows. Uploads only - 
     // a catalog asset is an immutable, checksum-validated contract. A still raster or
     // a vector only: an animated raster would come back as a single-frame PNG, which
     // is a different asset, not a trimmed one.
     const trimmable = isUser && !ref.meta?._placeholder && !ref.meta?.animated
       && (ref.type === 'raster' || ref.type === 'vector');
-    const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal — cue only a FRESH open
+    const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal - cue only a FRESH open
     closeDetails();
     const content = `
       <button type="button" class="cat-details-close" data-act="close" aria-label="${escape(t('Close'))}">×</button>
@@ -1729,7 +1729,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         detailsTransport = null;
         vizTeardown?.();
         vizTeardown = null;
-        // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
+        // Destroy any Lottie player mounted in the preview - lottie-web ticks every mounted player
         // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
         destroyLottiePlayers(modal.el);
         // Free a zzfxm→WAV preview blob (only the one we minted; user-upload URLs are managed).
@@ -1751,7 +1751,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // than asserting it. Cheap gate first: fetch once, skip anything with no embedded
     // credential (most catalog art, and re-encoded user uploads whose store no longer
     // binds) before the heavier verify. Video/audio are skipped (a whole-file fetch just
-    // for a badge isn't worth it — the checker button still covers them). Guarded on the
+    // for a badge isn't worth it - the checker button still covers them). Guarded on the
     // modal still being THIS dialog, since ←/→ paging swaps it out.
     if (showVerify && ref.type !== 'video' && ref.type !== 'audio' && Number(ref.meta?.bytes ?? 0) < 12_000_000) {
       void (async () => {
@@ -1765,7 +1765,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             if (lockup) lockup.hidden = false;
           }
           // Surface the same "Made from" + "Change history" panels the Verify checker
-          // shows, inline — reusing its renderers so they never drift. Only when the
+          // shows, inline - reusing its renderers so they never drift. Only when the
           // credential parsed (report.found + a claim); each renderer returns '' when it
           // has nothing, so a bare credential just shows an empty panel set (skipped).
           if (report.found && report.claim) {
@@ -1776,11 +1776,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             const box = dlg.querySelector<HTMLElement>('.cat-cred-panels');
             if (box && panels) { box.innerHTML = panels; box.hidden = false; }
           }
-        } catch { /* leave the lockup + panels hidden — the checker button is still there */ }
+        } catch { /* leave the lockup + panels hidden - the checker button is still there */ }
       })();
     }
 
-    // A shared themed link opens on that colour — recolour the preview to match on open
+    // A shared themed link opens on that colour - recolour the preview to match on open
     // (the swatch is already marked active above). Best-effort; leaves the base otherwise.
     if (themable && initialTheme && dTheme) {
       void (async () => {
@@ -1792,7 +1792,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         } catch { /* leave the base preview */ }
       })();
     }
-    // A raster photo opens on its carried treatment (category selection / shared link) — a
+    // A raster photo opens on its carried treatment (category selection / shared link) - a
     // cheap live CSS filter over the injected defs, exactly like the grid + picker previews.
     if (treatable && dTreatment) {
       ensureTreatmentDefs();
@@ -1802,7 +1802,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     // Inline crop mode: the Crop action overlays the shared crop box on THIS open preview
     // rather than spawning the standalone crop dialog. Same source prep (prepCropSource),
-    // same crop-box interaction (wireCropBox) and same signed downloadCrop — Cancel/Escape or
+    // same crop-box interaction (wireCropBox) and same signed downloadCrop - Cancel/Escape or
     // a completed download returns to the detail view (this same modal, same asset), never
     // reopening or reloading it. `inlineCrop` holds the exit fn while cropping (null otherwise),
     // which the keydown/close handlers read to know a crop is in progress.
@@ -1818,7 +1818,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       cropEntering = true;
       const src = await prepCropSource(ref, modifier);
       cropEntering = false;
-      if (detailsDialog !== dlg) return;   // modal paged/closed during the fetch — abandon
+      if (detailsDialog !== dlg) return;   // modal paged/closed during the fetch - abandon
       if (!src) { closeDetails(); await directDownload(ref); return; }   // not fetchable/SVG → just save it
       const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
       const actions = dlg.querySelector<HTMLElement>('.cat-details-actions');
@@ -1892,7 +1892,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     /**
      * Inline trim mode: "Trim margins" measures the STORED bytes and, when a trim
      * would buy something, shows the shared before/after card in the body under the
-     * actions — the same card the dropzone and the asset picker show at upload time,
+     * actions - the same card the dropzone and the asset picker show at upload time,
      * offered here after the fact. It stays in THIS modal, like crop.
      *
      * "Trim" rewrites the bytes in place (commitTrim) and reopens the details on the
@@ -1917,7 +1917,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         }),
       ]);
       trimEntering = false;
-      if (detailsDialog !== dlg) return;   // modal paged/closed during the read — abandon
+      if (detailsDialog !== dlg) return;   // modal paged/closed during the read - abandon
       if (!trim || !measured) return;      // unreadable: say nothing rather than something wrong
       const { record, proposal } = measured;
       if (!proposal) { showTrimNote(actions, t('Already tight to its content')); return; }
@@ -1929,7 +1929,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Escape backs out of the TRIM, not the whole modal. The card stops the event
       // propagating (so the dlg keydown handler below never sees it), but a native
       // <dialog>'s close watcher fires off the keydown itself unless it was cancelled
-      // — so cancel it here in the capture phase, before the card's own listener
+      // - so cancel it here in the capture phase, before the card's own listener
       // answers. Same rule inline crop follows.
       //
       // The card's own listener is bound to the card, so it only ever sees an
@@ -1967,7 +1967,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           exit(true);
           if (trimmed) void applyTrim(record, file);
         },
-        // Nothing is being ingested here — the asset already exists — so backing
+        // Nothing is being ingested here - the asset already exists - so backing
         // out and "keep the original margins" land in the same place: the card
         // closes and the stored bytes are untouched.
         onCancel: () => exit(true),
@@ -2009,7 +2009,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     dlg.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
-      // Prev/next lightbox paging — reopen the modal on the neighbouring asset, carrying the
+      // Prev/next lightbox paging - reopen the modal on the neighbouring asset, carrying the
       // current colour choice so paging keeps the look.
       const navBtn = target.closest<HTMLElement>('[data-nav]');
       if (navBtn) { const r = navBtn.dataset.nav === 'prev' ? nav.prev : nav.next; if (r) openDetails(r, dTheme, dTreatment); return; }
@@ -2030,7 +2030,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
       // Colour treatment swatch (raster photos): wash the preview in place via the live CSS
-      // filter, keep the modal open. Checked before the icon branch — treat buttons also carry
+      // filter, keep the modal open. Checked before the icon branch - treat buttons also carry
       // .cat-dl-theme, but this .cat-dl-treat branch owns them.
       const treatSw = target.closest<HTMLElement>('.cat-dl-treat');
       if (treatSw && treatable) {
@@ -2069,7 +2069,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         btn?.classList.toggle('is-fav', on); btn?.setAttribute('aria-pressed', String(on));
         const lbl = btn?.querySelector('span'); if (lbl) lbl.textContent = on ? t('Favourited') : t('Favourite');
         // Reflect in the grid + favourites strip behind the modal, in place (no full
-        // re-render — favouriting never moves a tile between buckets).
+        // re-render - favouriting never moves a tile between buckets).
         if (mounted) { reflectFavInGrid(base, on); refreshFavStrip(); }
         announce(on ? tRaw('Added {name} to favourites', { name }) : tRaw('Removed {name} from favourites', { name }));
         return;
@@ -2077,7 +2077,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (act === 'share') {
         const btn = target.closest<HTMLElement>('.cat-act-share');
         // Share the styled variant when a colour is picked, so the recipient reopens the same
-        // look (the modifier rides in the asset id — buildThemedAssetId / buildTreatedAssetId).
+        // look (the modifier rides in the asset id - buildThemedAssetId / buildTreatedAssetId).
         const link = themable && dTheme
           ? `${location.origin}${location.pathname}#/c?asset=${encodeURIComponent(buildThemedAssetId(base, dTheme))}`
           : treatable && dTreatment
@@ -2091,8 +2091,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         setTimeout(() => { if (s) s.textContent = t('Copy link'); btn?.classList.remove('is-copied'); }, 1200);
         return;
       }
-      // Crop stays IN this detail modal — an inline mode over the current preview, not a
-      // separate dialog — so it must be handled before the closeDetails() below.
+      // Crop stays IN this detail modal - an inline mode over the current preview, not a
+      // separate dialog - so it must be handled before the closeDetails() below.
       if (act === 'crop') { await enterInlineCrop(); return; }
       // Trim is the same shape: the offer card mounts in this body, under the actions.
       if (act === 'trim') { await enterInlineTrim(); return; }
@@ -2112,7 +2112,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             ? await (await import('./upscale-dialog.ts')).openUpscaleDialog(host as unknown as UpscaleHost, { source: ref, sourceName: name })
             : await (await import('./matte-dialog.ts')).openMatteDialog(host as unknown as MatteHost, { source: ref, sourceName: name });
           if (made) { await reload(); rerender(); openDetails(made); }
-          else openDetails(ref); // cancelled — restore the asset the user was inspecting
+          else openDetails(ref); // cancelled - restore the asset the user was inspecting
         } catch (err) {
           host.log('error', act === 'upscale' ? 'Upscale failed' : 'Background removal failed', { id: ref.id, error: String(err) });
         }
@@ -2147,7 +2147,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const motionEl = dlg.querySelector<HTMLElement>('.cat-thumb-motion');
       if (motionEl) void mountLottieMarker(motionEl, { isCurrent: () => detailsDialog === dlg });
     }
-    // Audio preview: render a zzfxm song to a WAV blob (codec-independent — plays in any
+    // Audio preview: render a zzfxm song to a WAV blob (codec-independent - plays in any
     // browser), and surface a clear note if an encoded file's format is unsupported.
     const audioEl = dlg.querySelector<HTMLAudioElement>('[data-audio-preview]');
     if (audioEl) {
@@ -2175,7 +2175,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       });
       wireAudioViz(dlg, ref, detailsMeterDispose);
       // The resting art was built synchronously from whatever peaks were already in
-      // memory — which on a cold open is none, so the stage showed the glyph instead of
+      // memory - which on a cold open is none, so the stage showed the glyph instead of
       // this track's waveform. Measure it now (one asset, deliberately opened) and swap
       // the art in when it lands.
       // Measure this track so the panel art is its real waveform: audioCardArt reads
@@ -2192,28 +2192,28 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * "use as cover" as the commit at any rung.
    *
    * Deliberately NOT a swatch picker. The thing a user wants to say is "keep what I am
-   * looking at", so the chooser IS the viewer — you audition the track, flip through
+   * looking at", so the chooser IS the viewer - you audition the track, flip through
    * looks while it plays, and pin the one you like. That also means there is nothing
    * extra to learn: it is the Neurospicy player's interaction, in the place where you
    * are already listening to the file.
    *
    * MilkDrop needs its audio INJECTED (per-frame time-domain windows), so the wave
-   * payload is decoded once, lazily, only when someone actually opens the visualiser —
+   * payload is decoded once, lazily, only when someone actually opens the visualiser - 
    * a details modal is a deliberate act, unlike a grid of tiles.
    */
   /**
    * The audio stage: an ANALYSER, or a live MilkDrop visualiser. Tap the picture to
-   * swap between them — the Neurospicy player's interaction, in the place you are
+   * swap between them - the Neurospicy player's interaction, in the place you are
    * already listening.
    *
    * The drawn waveform shapes are deliberately NOT offered here. They are the GRID's
-   * job — the free, always-available default every tile falls back to — and carrying
+   * job - the free, always-available default every tile falls back to - and carrying
    * them into this surface as extra rungs bought nothing but bugs: two rendering paths
    * sharing one box, one live and one static, each with its own sizing and teardown.
    * One live surface, one still one, and nothing in between.
    *
    * "Use as cover" SNAPSHOTS THE CURRENT FRAME. Not a re-render, not a deterministic
-   * bake from the preset id — the pixels on screen at the moment of the click. That is
+   * bake from the preset id - the pixels on screen at the moment of the click. That is
    * what the user is looking at and pointing at, and any re-render is a different frame
    * of a feedback simulation, i.e. a different picture. The preset and colour ride along
    * so the cover can still be re-made later, but the image is what was seen.
@@ -2237,7 +2237,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // so form and colour are two dials rather than one.
     let colourAt = coverMap.get(assetBaseId(ref.id))?.colour ?? 0;
 
-    /** The colour the visualiser is currently "about" — the 🎨 dial's value. */
+    /** The colour the visualiser is currently "about" - the 🎨 dial's value. */
     const heroNow = (): string | null =>
       coverPool.length ? coverPool[colourAt % coverPool.length]! : null;
 
@@ -2249,7 +2249,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     /** Mount (or re-mount) the live visualiser on the current preset + colour. */
     /**
      * Put `id` on `h`: our own presets by id, artist presets by fetching the JSON and
-     * wrapping it with the brand blend. Mirrors viz-overlay's applyStockPreset — same
+     * wrapping it with the brand blend. Mirrors viz-overlay's applyStockPreset - same
      * fallback, so a clone without the staged pack still shows a working visualiser
      * rather than a black square.
      */
@@ -2280,13 +2280,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         import('../lib/butterchurn-viz.ts'),
         import('../lib/viz-palette.ts'),
       ]);
-      // The SAME AnalyserNode the meter owns — an <audio> element can only ever produce
+      // The SAME AnalyserNode the meter owns - an <audio> element can only ever produce
       // one MediaElementSource and can never lose it, so a second would throw and leave
       // the preview silent.
       //
       // But the meter only BUILDS its analyser on first play, so flipping to the
       // visualiser before pressing play left `analyser` null, and mountViz refuses that
-      // (`!analyser && !inject`) — it returned null and the canvas was replaced by a
+      // (`!analyser && !inject`) - it returned null and the canvas was replaced by a
       // glyph. Hence the fallback: with no live signal, inject SILENCE so the preset
       // still mounts and draws its idle field. A visualiser that shows nothing until you
       // happen to press play looks broken; one that is calm until the music starts does
@@ -2295,7 +2295,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const silence = new Uint8Array(1024).fill(128);   // 128 = zero amplitude
       // Pass the chosen colour as an EXPLICIT hero hint rather than shuffling it to the
       // front of the values. Without a hint, buildVizPalette re-derives a hero from the
-      // swatches — and that is the documented navy-field trap: SUSE's pine sits a
+      // swatches - and that is the documented navy-field trap: SUSE's pine sits a
       // thousandth under the chroma gate that keeps greys out, so it is dismissed and the
       // most-chromatic swatch (waterhole blue) wins, rendering the whole field navy. The
       // hint IS what the 🎨 dial means: "make it about this colour".
@@ -2308,7 +2308,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!handle) { vizEl.innerHTML = audioThumbPlaceholder({}); label(); return; }
       // An ARTIST preset is not in our registry, so it cannot be mounted by id: mountViz
       // resolves through vizPresetById, which falls back to VIZ_PRESETS[0] for anything it
-      // does not recognise. That fallback is silent and it is total — every one of the 435
+      // does not recognise. That fallback is silent and it is total - every one of the 435
       // artist presets rendered as the same brand-native preset, the label happily naming
       // a different one each time. It reads exactly like "the shuffle does nothing and it
       // is always the same dim picture", with no error to follow. Artist presets have to
@@ -2324,7 +2324,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (on && !presets.length) await loadPresets();
       if (on && !presets.length) {
         // Say so. Returning quietly here is exactly what made the toggle, the shuffle,
-        // the palette and "use as cover" all appear broken at once — one silent gate,
+        // the palette and "use as cover" all appear broken at once - one silent gate,
         // four dead controls, no way to tell which.
         const note = dlg.querySelector<HTMLElement>('.cat-audio-note');
         if (note) {
@@ -2344,7 +2344,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!on) { cycle.stop(); handle?.destroy(); handle = null; return; }
       pickOpening();
       // Start the track. The flip is a user gesture, so autoplay policy allows it, and
-      // it is also what builds the meter's analyser — which the visualiser then shares.
+      // it is also what builds the meter's analyser - which the visualiser then shares.
       const audioEl = audioElOf(dlg);
       if (audioEl?.paused) {
         try {
@@ -2360,7 +2360,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     };
 
     /** The presets on offer: ours first (brand-native, eval-free), then every artist
-     *  preset VERIFIED to render — the 31 measured black or blown-out are excluded, since
+     *  preset VERIFIED to render - the 31 measured black or blown-out are excluded, since
      *  one of those as cover art reads as a broken app. */
     const loadPresets = async (): Promise<void> => {
       const { canBakeViz } = await import('../lib/audio-cover-viz.ts');
@@ -2370,12 +2370,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         import('../lib/viz-stock.ts'),
       ]);
       // Lead with a preset that READS on a card. The GPU audit measured our own set's
-      // mean luminance — bloom 56, aurora 49, vortex 34, kaleido 11, pulse 9 — so opening
+      // mean luminance - bloom 56, aurora 49, vortex 34, kaleido 11, pulse 9 - so opening
       // on `pulse` (the declaration order) hands someone a near-black picture and looks
       // broken. The audiogram's default was moved for the same reason.
       const OPENERS = ['bloom', 'aurora', 'vortex', 'solar'];
       // Our own presets are all comfortably readable (the GPU audit put the dimmest,
-      // `pulse`, at 9 — but it is excluded from OPENERS for exactly that reason), so they
+      // `pulse`, at 9 - but it is excluded from OPENERS for exactly that reason), so they
       // carry no luma and count as openable.
       const own = VIZ_PRESETS.map(d => ({ id: d.id, label: d.name, luma: undefined as number | undefined }));
       own.sort((a, b) => {
@@ -2387,7 +2387,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         .filter(p => p.ok !== false)
         .sort((a, b) => (a.tier ?? 9) - (b.tier ?? 9));
       for (const p of stock) {
-        // Don't repeat the author when the converted NAME already carries it — a handful
+        // Don't repeat the author when the converted NAME already carries it - a handful
         // of preset filenames have no " - " separator, so the whole string stayed in
         // `name` and appending the author again gave "X Trail_of_darkness · X".
         const dupe = p.author && p.name.toLowerCase().startsWith(p.author.toLowerCase());
@@ -2407,12 +2407,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
      * presets, opening on the same one is the difference between a pack and a picture.
      *
      * But random over ALL of them is not the same as a good first impression. A fifth of
-     * the presets measure under READABLE_LUMA — sparse wireframes on black, which are
+     * the presets measure under READABLE_LUMA - sparse wireframes on black, which are
      * fine once chosen and read as "it didn't start" when handed to you unasked. So the
      * OPENING draw is restricted to the ones that read, while ‹ › and the dice still
      * traverse everything: this weights the default, it does not hide anything.
      *
-     * A saved cover wins over both, because that is a deliberate choice, not a default —
+     * A saved cover wins over both, because that is a deliberate choice, not a default - 
      * including a dim one, which someone is perfectly entitled to have picked.
      */
     const READABLE_LUMA = 25;
@@ -2423,7 +2423,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         const i = presets.findIndex(p => p.id === saved || p.id === `stock:${saved}`);
         if (i >= 0) { at = i; return; }
       }
-      // Unmeasured counts as readable — absence of a measurement is not evidence of a
+      // Unmeasured counts as readable - absence of a measurement is not evidence of a
       // dark preset, and an index staged before luma existed must not empty this pool.
       const bright: number[] = [];
       for (let i = 0; i < presets.length; i++) {
@@ -2484,14 +2484,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
      * Freeze the frame currently on screen and keep it as this asset's cover.
      *
      * Reads the LIVE canvas rather than re-rendering: MilkDrop is a feedback simulation,
-     * so a re-render is a different frame — the user pointed at THIS picture, and any
+     * so a re-render is a different frame - the user pointed at THIS picture, and any
      * other one would be a substitution they did not ask for.
      */
     const snapCover = async (): Promise<void> => {
       if (!canvas || !presets.length) return;
       const blob = await new Promise<Blob | null>(res => canvas!.toBlob(res, 'image/webp', 0.92));
       if (!blob) return;
-      // The BARE id, with no `stock:` prefix — the one canonical form. The stored cover
+      // The BARE id, with no `stock:` prefix - the one canonical form. The stored cover
       // has always been bare (vizPresetOf strips it), and the grid looks its bake up with
       // that same bare id, so keying the bake by the prefixed id wrote a record nothing
       // ever read: every artist cover baked correctly and then showed as an empty tile.
@@ -2532,7 +2532,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       void mountLive();
     });
 
-    // The GL context must not outlive the modal — contexts are the scarce resource here.
+    // The GL context must not outlive the modal - contexts are the scarce resource here.
     vizTeardown = () => {
       dlg.removeEventListener('keydown', onEsc, true);
       cycle.stop();
@@ -2542,7 +2542,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
 
   /**
-   * An audio asset's card art — its cover if it has one, else the generated waveform.
+   * An audio asset's card art - its cover if it has one, else the generated waveform.
    * Used by the GRID tiles and the favourites strip, which still want a still image;
    * the details view has its own live surface and does not use this.
    *
@@ -2566,7 +2566,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * Measure the favourited AUDIO assets so the strip can draw real waveforms.
    *
    * The strip builds its markup synchronously, so it can only draw peaks already in
-   * memory — none on a cold load, which left a starred track as a card with a name and
+   * memory - none on a cold load, which left a starred track as a card with a name and
    * nothing above it. Favourites are the one set where measuring up front is justified:
    * few by definition, and the assets the user looks at most. Bounded, sequential, and
    * it re-renders ONCE at the end rather than per asset.
@@ -2602,7 +2602,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (cover) coverMap.set(base, cover); else coverMap.delete(base);
     if (profile) await saveAudioCover(host, profile, id, cover);
     // Drop stale pixels ONLY when they can no longer be right: the cover was cleared, or
-    // it is no longer a MilkDrop one. It must NOT drop for a viz cover — snapCover writes
+    // it is no longer a MilkDrop one. It must NOT drop for a viz cover - snapCover writes
     // the bake around this call, and dropping here deleted the frame the user had just
     // chosen, which is why "use as cover" appeared to do nothing.
     if (!cover || !isVizCover(cover)) {
@@ -2645,7 +2645,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // Minimal in-place reflection of a hide/unhide; returns false to request a full render()
   // when the change would create/reorder a section (not clearly safe to splice). Only the
-  // repeated-hide path (Show hidden off, its toggle already present) is handled in place —
+  // repeated-hide path (Show hidden off, its toggle already present) is handled in place - 
   // the same set of tiles just leaves the grid, exactly as a re-render would omit them.
   function applyHiddenInPlace(base: string, hide: boolean): boolean {
     if (query) return false;                       // search view buckets differently
@@ -2740,7 +2740,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── trim margins (plan 97 §7.3) ─────────────────────────────────────────────────
-  // The retro-trim of an upload that arrived padded — the same offer the dropzone and
+  // The retro-trim of an upload that arrived padded - the same offer the dropzone and
   // the asset picker make at ingest, made again later against the STORED bytes. The
   // card is the confirmation (§14.4): nothing is written until the user takes "Trim",
   // and what is written replaces the original margins for good.
@@ -2752,8 +2752,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    *
    * The read is `_exportUserAssets` because the bridge exposes no get-one-record
    * call, and `_getBlob` hands back bytes without the metadata a rewrite has to carry
-   * forward. It walks the rows, not the pixels — an IndexedDB blob is a file-backed
-   * handle — which is what makes it fine on an explicit one-shot action (the storage
+   * forward. It walks the rows, not the pixels - an IndexedDB blob is a file-backed
+   * handle - which is what makes it fine on an explicit one-shot action (the storage
    * meter's `_userAssetsSize` takes the same read on every visit).
    */
   async function measureTrim(ref: AssetRef): Promise<{ record: UserAssetRecordLike; proposal: TrimProposal | null } | null> {
@@ -2771,7 +2771,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * The stored dimensions for the bytes a trim actually produced. Measured from the
    * RESULT rather than taken from the proposal: the card's padding stepper may have
    * moved since it was built, and it resolves with a file, not a box. Empty when they
-   * can't be read — the record then carries no dimensions rather than the old ones,
+   * can't be read - the record then carries no dimensions rather than the old ones,
    * which after a trim would be a wrong aspect for every tool that reads them.
    */
   async function trimmedDimensions(file: File): Promise<{ width?: number; height?: number }> {
@@ -2795,7 +2795,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * Commit a trim: replace one upload's stored bytes, keeping its id.
    *
    * A read-modify-write in the discipline of the bridge's own `_renameUserAsset` /
-   * `_restampUserAsset` — read the record, change only what the trim changed, put it
+   * `_restampUserAsset` - read the record, change only what the trim changed, put it
    * back under the SAME id. `user/…` ids are a permanent contract: sessions, project
    * folders and tool inputs already point at this one, and minting a new id would
    * quietly orphan every one of them. `version` is bumped for the same reason
@@ -2805,14 +2805,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * The write goes through `_uploadUserAsset`, the one narrow helper the bridge
    * exposes for a whole record, so the quota guard at that boundary still runs. It
    * measures the WHOLE blob rather than the delta (the caveat `_restampUserAsset`
-   * documents) — for a trim that is the safe direction, since the new bytes all but
+   * documents) - for a trim that is the safe direction, since the new bytes all but
    * always weigh less than the ones they replace.
    *
    * Carried forward on purpose: `credential` / `credentialFormat` / `aiGenerated`. A
    * trim is a derivative edit, and ingest already keeps a re-encoded upload's original
    * credential so a download can carry it as an ingredient; dropping it here would
    * launder an AI image's disclosure out of the library. `checksum` is the one field
-   * deliberately left behind — it describes bytes that no longer exist.
+   * deliberately left behind - it describes bytes that no longer exist.
    */
   async function commitTrim(record: UserAssetRecordLike, file: File): Promise<void> {
     const format = /svg/i.test(file.type) ? 'svg' : /png/i.test(file.type) ? 'png' : record.format;
@@ -2831,7 +2831,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       meta: {
         ...record.meta,
         // A raster trim re-encodes to PNG, so a "logo.webp" would now be lying about
-        // its own bytes — the same honesty ingest keeps with renameExt.
+        // its own bytes - the same honesty ingest keeps with renameExt.
         ...(prevName && format !== record.format ? { name: `${prevName.replace(/\.[^./\\]+$/, '')}.${format}` } : {}),
         bytes: file.size,
       },
@@ -2839,7 +2839,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── selection (user uploads only) ───────────────────────────────────────────────
-  // The set of currently-selectable ids — exactly the uploads the grid is SHOWING right now.
+  // The set of currently-selectable ids - exactly the uploads the grid is SHOWING right now.
   // The same three filters assetsSectionHtml() builds the uploads section from (visible +
   // search + filetype), so "Select all" and pruneSelection() can never reach a tile that
   // isn't on screen: an off-screen id in the selection would ride into a bulk delete
@@ -2871,7 +2871,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   function toggleSelect(id: string): void {
     if (selected.has(id)) selected.delete(id); else selected.add(id);
-    // Update the one tile in place — no full render, so scroll + focus are kept.
+    // Update the one tile in place - no full render, so scroll + focus are kept.
     const on = selected.has(id);
     const tile = [...viewEl.querySelectorAll<HTMLElement>('.cat-tile')].find(t => t.dataset.id === id);
     tile?.classList.toggle('is-selected', on);
@@ -2886,7 +2886,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (allSel) for (const id of ids) selected.delete(id);
     else for (const id of ids) selected.add(id);
     // Flip each upload tile's checkbox in place (mirrors toggleSelect) rather than
-    // rebuilding the grid — selection never moves a tile between buckets.
+    // rebuilding the grid - selection never moves a tile between buckets.
     for (const tile of viewEl.querySelectorAll<HTMLElement>('.cat-tile')) {
       const id = tile.dataset.id ?? '';
       if (!ids.has(id)) continue;
@@ -2908,7 +2908,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   const syncBulkBar = (): void => syncSharedBulkBar(viewEl, bulkBarCfg);
 
-  // Escape drops the selection (yielding to any open menu/dialog/field first) —
+  // Escape drops the selection (yielding to any open menu/dialog/field first) - 
   // the keyboard exit the ✕ button and an empty-canvas click already provide.
   const unwireEscape = wireEscapeClearsSelection({
     active: () => mounted && selected.size > 0,
@@ -2917,7 +2917,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   function handleBulk(action: string): void {
     if (action === 'clear') {
-      // Deselect in place — drop the highlight from every selected tile, no full re-render.
+      // Deselect in place - drop the highlight from every selected tile, no full re-render.
       for (const tile of viewEl.querySelectorAll<HTMLElement>('.cat-tile.is-selected')) {
         tile.classList.remove('is-selected');
         tile.querySelector('.cat-check')?.setAttribute('aria-pressed', 'false');
@@ -2939,7 +2939,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     else if (action === 'hide') void hideSelection();
   }
 
-  // Bulk favourite/unfavourite — smart toggle (all starred → unstar all), one
+  // Bulk favourite/unfavourite - smart toggle (all starred → unstar all), one
   // profile write, tiles + strip reflected in place. Works on ANY selection kind.
   async function favouriteSelection(): Promise<void> {
     if (!selected.size) return;
@@ -2954,9 +2954,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     announce(on ? t('{n} added to favourites', { n: bases.size }) : t('{n} removed from favourites', { n: bases.size }));
   }
 
-  // Bulk hide/unhide — smart toggle, one profile write, then a full re-render
+  // Bulk hide/unhide - smart toggle, one profile write, then a full re-render
   // (hiding relocates tiles between the category grids and the Hidden section,
-  // and the selection is cleared with it — the tiles are leaving the view).
+  // and the selection is cleared with it - the tiles are leaving the view).
   async function hideSelection(): Promise<void> {
     if (!selected.size) return;
     const unhide = allSelectedHidden();
@@ -2972,7 +2972,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   /**
    * Bulk "Duplicate": a byte-identical copy of every selected upload, then move
-   * the selection onto the new copies — so the very next move / edit / download
+   * the selection onto the new copies - so the very next move / edit / download
    * acts on THEM, while the originals stay put and untouched. Copies mint with a
    * fresh, now-stamped id, so they sort to the top of "Your uploads" and land in
    * view (we scroll the first into sight), already highlighted and ready to grab.
@@ -2994,23 +2994,23 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (!mounted) return;
     // Hand the selection to the copies (not the originals). render()'s pruneSelection
     // keeps only ids that are present + selectable, so a copy filtered out by an
-    // active search simply drops from the selection — the visible ones stay selected.
+    // active search simply drops from the selection - the visible ones stay selected.
     selected.clear();
     tileSelect.resetAnchor();           // the originals are no longer the selection's origin
     for (const newId of newIds) selected.add(newId);
     render();
     // Bring the first new copy into view so "the copies appeared" is visible, not
-    // just a count in the bar — nearest, so it doesn't jump when already on screen.
+    // just a count in the bar - nearest, so it doesn't jump when already on screen.
     viewEl.querySelector<HTMLElement>('.cat-tile.is-selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     announce(newIds.length === 1 ? t('1 copy made · selected') : t('{n} copies made · selected', { n: newIds.length }));
   }
 
   /**
-   * The byte payload a download of `ref` should carry — byte-exact, EXCEPT a user
+   * The byte payload a download of `ref` should carry - byte-exact, EXCEPT a user
    * upload whose ingest captured a credential store: its stored bytes were
    * re-encoded (credential no longer inside), so wrap them in a Lolly manifest
    * that opens the original as an ingredient. Same rule as directDownload's
-   * single save — keep the two in step.
+   * single save - keep the two in step.
    */
   async function credentialedBytes(ref: AssetRef): Promise<Blob> {
     const format = String(ref.format || 'bin');
@@ -3116,7 +3116,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // rasterise) breaks any credential embedded in them. Instead of shipping a
   // clean-but-unsigned file, re-sign it: a Lolly manifest whose action history
   // records exactly what this download did, with the source's own credential
-  // preserved as an ingredient — so an AI-generated or camera-signed origin, or
+  // preserved as an ingredient - so an AI-generated or camera-signed origin, or
   // a previous round of Lolly edits, stays in the chain. Re-uploading such a
   // download captures its store at ingest, so every edit round adds a manifest.
 
@@ -3151,7 +3151,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // with the same c2pa.created claim a tool render makes. `detail` (plus the
   // source asset id) is recorded under the tools.lolly.export assertion so an
   // inspected file shows the exact transform parameters. Signing is
-  // best-effort — any failure ships the un-stamped bytes; a credential failure
+  // best-effort - any failure ships the un-stamped bytes; a credential failure
   // must never fail a download.
   async function downloadSigned(ref: AssetRef, blob: Blob, format: string, filename: string, o: {
     edits: C2paActionInput[];
@@ -3162,7 +3162,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     let out = blob;
     if (STAMPABLE.has(format)) {
       try {
-        // Lazily reach the 90 KB export bridge — downloads are always a user
+        // Lazily reach the 90 KB export bridge - downloads are always a user
         // gesture, so this never lands on the gallery/boot path.
         const { stampDerivedC2pa } = await import('../bridge/export.ts');
         const ingredients = await sourceIngredients(ref, o.sourceBytes);
@@ -3178,8 +3178,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           : aiKind === 'partial' ? COMPOSITE_SOURCE_TYPE
           : DIGITAL_SOURCE_TYPE;
         // A genAI-flagged source can hand back an ingredient whose OWN chain records no AI
-        // *action* — the flag was authored onto catalog meta (assetAiKind is truthy) or
-        // lives in a non-action assertion collectActionChain can't read — so its
+        // *action* - the flag was authored onto catalog meta (assetAiKind is truthy) or
+        // lives in a non-action assertion collectActionChain can't read - so its
         // digitalSourceType is undefined. The engine's c2pa.opened step then carries
         // nothing and the cropped/edited output loses the flag (this is the real catalog
         // crop drop). Backfill the source type from the asset's authored kind so it rides
@@ -3208,10 +3208,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Raster / video / lottie: download the file as-is (no styling or reformat to
-  // offer) — except a user upload whose ingest captured a credential: its stored
+  // offer) - except a user upload whose ingest captured a credential: its stored
   // bytes were re-encoded (credential no longer inside), so wrap the save in a
   // Lolly manifest that opens the original as an ingredient. Even an unmodified
-  // save then keeps the chain — an AI image stays declared as one.
+  // save then keeps the chain - an AI image stays declared as one.
   async function directDownload(ref: AssetRef): Promise<void> {
     const format = String(ref.format || 'bin');
     const filename = downloadName(ref, format);
@@ -3244,16 +3244,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   interface CropSource {
     vector: boolean;
     svgText: string | null;   // working SVG (may be recoloured)
-    origSvg: string | null;   // pre-recolour source — the credential ingredient
+    origSvg: string | null;   // pre-recolour source - the credential ingredient
     theme: IconTheme | null;
     treatment: PhotoTreatment | null;
-    rasterSrc: string;        // crop source for raster — a treatment bakes it into a wrapper
+    rasterSrc: string;        // crop source for raster - a treatment bakes it into a wrapper
     aspect: number;           // provisional for raster; the real value is read from naturalWidth on load
   }
   // Fetch + prepare the crop source, baking a themable icon's colours or a raster photo's
   // treatment into it (`modifier` is a theme id for themable icons, a treatment id for
   // rasters) so the cropped-out region carries the look and the credential records it.
-  // Returns null when a vector asset isn't fetchable/parseable as SVG — the caller should
+  // Returns null when a vector asset isn't fetchable/parseable as SVG - the caller should
   // fall back to a plain direct download. Used by enterInlineCrop.
   async function prepCropSource(ref: AssetRef, modifier: string | null): Promise<CropSource | null> {
     const vector = isVector(ref);
@@ -3414,21 +3414,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     };
   }
 
-  // Crop-before-download: a dialog with the asset fitted into an aspect-matched stage and
-  // a drag/resize crop box over it. The box is the ONLY way to change dimensions (there is
-  // no width/height resize anywhere else) — you frame the region and download just that.
-  // The stage matches the asset's aspect so the image fills it with no letterbox, which
-  // makes the crop a straight fraction of the asset: box/stage → fraction → asset pixels
-  // (raster, canvas-crop) or a narrowed viewBox (vector, stays vector). The interaction core
-  // and the source prep are shared with the inline crop mode — see wireCropBox /
-  // prepCropSource — so the two paths never drift. The details modal's Crop action now enters
-  // the inline mode instead of this standalone dialog; the dialog is kept intact (it drives
-  // its own crop-box the same way) so a future non-details caller can still reach it.
-  // Render the framed region. Vector → a narrowed viewBox (SVG stays vector; PNG rasterises
-  // that sub-viewBox). Raster → a canvas cut of the source at natural resolution. Every
-  // output is a modified copy, so it goes out signed (downloadSigned): the crop — plus any
-  // theme/treatment already baked into the crop source — in the action history, and the
-  // source's own credential as an ingredient.
+  // Crop-before-download: a dialog with the asset fitted into an aspect-matched stage
+  // and a drag/resize crop box over it. The box is the ONLY way to change dimensions
+  // (there is no width/height resize anywhere else): you frame a region and download
+  // just that. The stage matches the asset's aspect, so the image fills it with no
+  // letterbox. That makes the crop a straight fraction of the asset: box/stage gives a
+  // fraction, which maps to asset pixels (raster, canvas-crop) or a narrowed viewBox
+  // (vector, stays vector). The interaction core and the source prep are shared with
+  // the inline crop mode (see wireCropBox / prepCropSource), so the two paths cannot
+  // drift apart. The details modal's Crop action now opens the inline mode instead of
+  // this standalone dialog. The dialog is kept as-is, driving its own crop box the
+  // same way, so a future caller outside the details modal can still reach it.
+  // Render the framed region. Vector gives a narrowed viewBox (SVG stays vector; PNG
+  // rasterises that sub-viewBox). Raster gives a canvas cut of the source at natural
+  // resolution. Every output is a modified copy, so it goes out signed
+  // (downloadSigned): the crop, plus any theme/treatment already baked into the crop
+  // source, in the action history, and the source's own credential as an ingredient.
   async function downloadCrop(
     ref: AssetRef, vector: boolean, svgText: string | null, imgEl: HTMLImageElement,
     frac: { fx: number; fy: number; fw: number; fh: number }, fmt: string,
@@ -3522,7 +3523,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const t = iconThemes.find(x => x.id === themeId);
       const out = (t && restyleIconTheme(baseSvg, t)) || baseSvg;
       // A recolour changes the bytes, breaking any embedded credential's byte
-      // binding — strip it here; the download re-signs the file with the
+      // binding - strip it here; the download re-signs the file with the
       // original credential preserved as an ingredient (downloadSigned).
       return out === baseSvg ? out : stripC2paManifest(out);
     };
@@ -3599,7 +3600,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         try {
           if (fmt() === 'png') {
             // No user resize (dimension changes live in the details-view crop). PNG renders
-            // the whole asset at a sensible fixed resolution — longest edge 1024, aspect kept.
+            // the whole asset at a sensible fixed resolution - longest edge 1024, aspect kept.
             const edge = 1024;
             const w = aspect >= 1 ? edge : Math.max(1, Math.round(edge * aspect));
             const h = aspect >= 1 ? Math.max(1, Math.round(edge / aspect)) : edge;
@@ -3612,9 +3613,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
               edits, detail, sourceBytes,
             });
           } else {
-            // Original SVG — byte-exact for library assets (any embedded
+            // Original SVG - byte-exact for library assets (any embedded
             // credential stays intact). A user upload was sanitised at ingest,
-            // which stripped the in-file credential the record preserved — when
+            // which stripped the in-file credential the record preserved - when
             // one exists, re-sign so even the unmodified save keeps the chain.
             const blob = new Blob([svg], { type: 'image/svg+xml' });
             if (ref.id.startsWith('user/') && await sourceIngredients(ref)) {
@@ -3632,7 +3633,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Bake a photo treatment into a self-contained SVG wrapper (the source photo inlined as a
-  // data URI + the treatment <filter>), at the photo's natural pixel size — the same wrapper
+  // data URI + the treatment <filter>), at the photo's natural pixel size - the same wrapper
   // the bridge bakes at resolve, but built here so it works for user uploads too (which carry
   // no catalog format dimensions). Returns null when there's no valid treatment.
   async function treatedWrapperSvg(ref: AssetRef, treatmentId: string | null): Promise<{ svg: string; w: number; h: number } | null> {
@@ -3650,7 +3651,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Raster photo: a small dialog to (optionally) apply a colour treatment via the photo
-  // styler, then download as PNG / JPG / WebP. The bitmap sibling of openDownloadDialog —
+  // styler, then download as PNG / JPG / WebP. The bitmap sibling of openDownloadDialog - 
   // the preview washes live via the injected CSS filter (no re-encode until download); the
   // chosen treatment is baked into the exported bytes. "Original" downloads the source as-is.
   async function openPhotoDownloadDialog(ref: AssetRef, initialTreatment?: string | null): Promise<void> {
@@ -3737,7 +3738,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // ── wiring ───────────────────────────────────────────────────────────────────
   // Recolour every themable icon in a category group in place (the category "Colours"
   // switcher). A null theme restores the base URL; base SVGs are cached (iconSvgCache) so
-  // flipping between colours never re-fetches. Best-effort per tile — a failure leaves it.
+  // flipping between colours never re-fetches. Best-effort per tile - a failure leaves it.
   async function retheemeGroup(group: HTMLElement, themeId: string | null): Promise<void> {
     const th = themeId ? iconThemes.find(x => x.id === themeId) : null;
     // Recolour every icon in the group concurrently. The old serial `for…await`
@@ -3758,7 +3759,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Inject the treatment <filter> defs once (a hidden 0×0 SVG in the view root) so the
-  // grid can preview a wash with a live CSS `filter: url(#…)` — no re-encode, and
+  // grid can preview a wash with a live CSS `filter: url(#…)` - no re-encode, and
   // pixel-identical to the baked result (treatmentFilterSvg uses sRGB interpolation).
   // Re-injected after a full render() (which wipes viewEl); a no-op otherwise.
   function ensureTreatmentDefs(): void {
@@ -3774,7 +3775,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // The bitmap sibling of retheemeGroup: wash every raster tile in the group with the
   // chosen treatment via the live CSS filter (or clear it when null). Cheaper than the
-  // icon path — no fetch/re-serialise; raster just points at the injected <filter> def.
+  // icon path - no fetch/re-serialise; raster just points at the injected <filter> def.
   function retreatGroup(group: HTMLElement, treatmentId: string | null): void {
     const def = treatmentId ? photoTreatments.find(t => t.id === treatmentId) : null;
     for (const tile of group.querySelectorAll<HTMLElement>('.cat-tile')) {
@@ -3785,7 +3786,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
   }
 
-  // Re-apply the active treatment to every raster group after a (re-)render — the wash
+  // Re-apply the active treatment to every raster group after a (re-)render - the wash
   // is a CSS style on fresh tiles, so it must be re-stamped when the grid rebuilds.
   function reapplyTreatment(): void {
     ensureTreatmentDefs();
@@ -3805,7 +3806,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const clr = target.closest<HTMLElement>('[data-search-clear]');
       if (clr) { e.preventDefault(); clearSearchBar({ focus: true }); return; }
 
-      // Swatches-section palette download — exports the palette exactly as shown.
+      // Swatches-section palette download - exports the palette exactly as shown.
       const sdl = target.closest<HTMLElement>('[data-swatch-dl]');
       if (sdl) {
         try {
@@ -3825,7 +3826,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      // Selection dot. Shift-click extends from the anchor instead of toggling — see
+      // Selection dot. Shift-click extends from the anchor instead of toggling - see
       // lib/tile-select.ts (the same gesture Projects uses).
       const check = target.closest<HTMLElement>('[data-select]');
       if (check) {
@@ -3850,7 +3851,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const star = target.closest<HTMLElement>('[data-star]');
       if (star) { await toggleFavourite(star.dataset.star!); return; }
 
-      // Category "Colour" treatment swatch — wash this group's raster photos in place
+      // Category "Colour" treatment swatch - wash this group's raster photos in place
       // (checked before the icon branch: treatment buttons also carry .cat-dl-theme).
       const treatSw = target.closest<HTMLElement>('.cat-dl-treat');
       const treatGroup = treatSw?.closest<HTMLElement>('.cat-group');
@@ -3863,7 +3864,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      // Category "Colours" swatch — recolour this group's themable icons in place.
+      // Category "Colours" swatch - recolour this group's themable icons in place.
       const catSw = target.closest<HTMLElement>('.cat-dl-theme');
       const catGroup = catSw?.closest<HTMLElement>('.cat-group');
       if (catSw && catGroup) {
@@ -3878,7 +3879,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const openBtn = target.closest<HTMLElement>('[data-open]');
       if (openBtn) {
         const ref = assetById.get(openBtn.dataset.open!);
-        // Carry the category grid's colour choice into the details modal — an icon opens on
+        // Carry the category grid's colour choice into the details modal - an icon opens on
         // its category theme, a photo on its category treatment (openDetails picks the one
         // that applies to the asset's type; passing both is harmless).
         if (ref) openDetails(ref, catIconTheme, catPhotoTreatment);
@@ -3900,7 +3901,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      // Collapse-all / Expand-all — fold or unfold every section in place (no re-render,
+      // Collapse-all / Expand-all - fold or unfold every section in place (no re-render,
       // so scroll is kept). Checked BEFORE .cat-showhidden since it reuses that button
       // style. If anything is open we collapse all; once all are folded we expand all.
       const collapseAll = target.closest<HTMLElement>('.cat-collapse-all');
@@ -3921,7 +3922,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      // Filetype filter (sticky toolbar) — narrow the grid to image / vector / motion.
+      // Filetype filter (sticky toolbar) - narrow the grid to image / vector / motion.
       // Body-only re-render keeps the footer search + its focus; the toolbar (rebuilt with
       // it) reflects the new pressed state.
       const typeBtn = target.closest<HTMLElement>('[data-typefilter]');
@@ -3947,7 +3948,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // ── Uploads drop area ────────────────────────────────────────────────────────
     // The dropzone + its ingest loop live in the shared lib/upload-dropzone.ts component,
     // mounted per body paint by mountDropzone() (its listeners sit on the zone itself,
-    // not delegated here — the mount is re-established after every innerHTML rebuild).
+    // not delegated here - the mount is re-established after every innerHTML rebuild).
 
     // Capture-phase broken-image fallback: a grid thumbnail whose bytes fail to load (a
     // stale/missing derivative) is swapped for the same cat-thumb-stub the placeholder path
@@ -3971,8 +3972,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
 
     // (The search field, its ✕, debounce and Escape ladder live in the shell's
-    // persistent bar — see the claimSearchBar call in the mount section. Its input
-    // sits outside this view's DOM entirely, so renderBody() can never touch it —
+    // persistent bar - see the claimSearchBar call in the mount section. Its input
+    // sits outside this view's DOM entirely, so renderBody() can never touch it - 
     // the old footer-outside-the-body focus trick, now structural.)
 
     // ── View-options popover (favourites view mode + strip on/off) ──────────────
@@ -3981,7 +3982,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (voPop) wireThemeSegment(voPop, host);   // Theme picker in the view-options popover
     if (voPop) wireSoundSegment(voPop, host);   // Sound on/off segment in the view-options popover
     // Same lifecycle as the gallery's filter popover (toggle `hidden`, aria-expanded,
-    // outside-pointerdown dismissal, Escape, focus restore) — shared in
+    // outside-pointerdown dismissal, Escape, focus restore) - shared in
     // components/body-popover.ts. `onToggle` keeps the render-time `viewOptsOpen` flag
     // in sync so a re-render of the topbar reproduces the popover's current state.
     const voDisclosure = wireDisclosure(voBtn, voPop, { onToggle: (open) => { viewOptsOpen = open; } });
@@ -3996,11 +3997,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       try { localStorage.setItem(FAV_VIEW_KEY, favView); } catch { /* storage off */ }
       voPop.querySelectorAll<HTMLElement>('[data-favview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.favview === favView)));
       featuredHandle?.setViewMode(favView);
-      // Same cue as the main gallery's Gallery|Cover Flow switch (gallery.ts) — Cover Flow is
+      // Same cue as the main gallery's Gallery|Cover Flow switch (gallery.ts) - Cover Flow is
       // cool & futuristic, Gallery is refined.
       if (changed) playSfx(favView === 'coverflow' ? 'coverflow' : 'gallery');
     });
-    // Show / hide the favourites strip — mount or tear down in place (no full re-render,
+    // Show / hide the favourites strip - mount or tear down in place (no full re-render,
     // so the open popover isn't disturbed).
     voPop?.querySelector<HTMLInputElement>('.cat-favstrip-toggle')?.addEventListener('change', (e) => {
       favStripOn = (e.target as HTMLInputElement).checked;
@@ -4025,7 +4026,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── mount ──────────────────────────────────────────────────────────────────────
-  // A lighter, brighter arrival "ahhh" led in by four rising "stacking" clicks — the catalog's
+  // A lighter, brighter arrival "ahhh" led in by four rising "stacking" clicks - the catalog's
   // counterpart to the gallery's bassy one. One-shot, gesture-gated, silent when sound's off.
   playCatalogAah();
   // Claim the shell's persistent search bar (plans/99 M1). The tap applies the same
@@ -4047,7 +4048,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     cancelArrivalAah();
     releaseSearch();
     // Not optional: the marquee's mousedown is bound to viewEl (#view), which the router
-    // REUSES for every route — leave it bound and the next mount stacks another copy.
+    // REUSES for every route - leave it bound and the next mount stacks another copy.
     tileSelect.destroy();
     tileMenu.destroy();
     unwireEscape();
@@ -4087,7 +4088,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     setTimeout(() => scrollToSection(false), 1500);
   }
   // Deep link: open the shared asset's details modal over the catalog once it's painted.
-  // A styled id opens the base asset with its colour pre-selected + applied — an icon theme
+  // A styled id opens the base asset with its colour pre-selected + applied - an icon theme
   // (…?theme=<id>) or a photo treatment (…?treatment=<id>). An id carries at most one.
   if (linkedAsset) {
     const { theme } = parseThemedAssetId(linkedAsset);
@@ -4099,7 +4100,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (ref) openDetails(ref, theme, treatment);
     else {
       // The deep-linked asset isn't in this user's catalogue (never synced, a deleted upload,
-      // or an unknown id) — say so instead of a silent no-op: announce() for assistive tech,
+      // or an unknown id) - say so instead of a silent no-op: announce() for assistive tech,
       // plus a brief self-clearing line at the top of the grid so a sighted user sees it too.
       announce(t('That asset isn’t in your catalogue'));
       const bodyEl = viewEl.querySelector<HTMLElement>('.catalog-body');

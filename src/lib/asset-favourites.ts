@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Favourite + hidden ASSETS — the user's per-asset overlay, surfaced by the Catalog
+ * Favourite + hidden ASSETS - the user's per-asset overlay, surfaced by the Catalog
  * view and every asset picker.
  *
  *   - favourites → a pinned collapsible "Favourites" section at the top of each picker
@@ -8,12 +8,12 @@
  *   - hidden     → the only honest "delete" for an immutable/shared catalog asset: it
  *     drops from THIS user's Catalog + every picker, but the shared file is untouched.
  *
- * Both are `Set<string>` of BASE asset ids (theme suffix stripped, see assetBaseId) —
+ * Both are `Set<string>` of BASE asset ids (theme suffix stripped, see assetBaseId) - 
  * so the same themable icon starred/hidden under two colour themes counts once. Stored
  * on the user PROFILE (`profile.favouriteAssets` / `profile.hiddenAssets`), exactly like
  * the TOOL favourites in ./favourites.ts, so they persist across reloads and travel in
  * the portable backup. Every caller goes through these functions so the storage location
- * stays swappable. Distinct profile keys from `favourites` (tool ids) — the two never
+ * stays swappable. Distinct profile keys from `favourites` (tool ids) - the two never
  * collide.
  */
 
@@ -24,7 +24,7 @@ type FavHost = HostV1 & { profile: { set(p: Profile): Promise<unknown> } };
 
 /** The stable key an asset is favourited / hidden / recategorised under: its base id,
  *  with any presentation-modifier suffix stripped (`?theme=` icon colours, `?treatment=`
- *  photo treatments) — those are presentation, not identity, for these per-user overlays. */
+ *  photo treatments) - those are presentation, not identity, for these per-user overlays. */
 export function assetBaseId(id: string): string {
   return stripAssetModifiers(id);
 }
@@ -33,15 +33,15 @@ const strings = (list: unknown): string[] =>
   Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
 
 /**
- * Assets hidden by default — the shipped "great default state" for a fresh (or not-yet-
+ * Assets hidden by default - the shipped "great default state" for a fresh (or not-yet-
  * seeded) profile: the SUSECON'26 event set plus a curated handful of stock/event photos
- * that shouldn't crowd the general catalogue. These are ordinary hides — the user can
+ * that shouldn't crowd the general catalogue. These are ordinary hides - the user can
  * unhide any of them from the Catalog details modal, and once they touch the hidden
  * overlay the current set is baked in (see saveHiddenAssets) so their choice sticks and
  * this default never re-applies. Base ids (no ?theme/?treatment suffix).
  */
 export const DEFAULT_HIDDEN_ASSETS: readonly string[] = [
-  // SUSECON 2026 — the whole event set.
+  // SUSECON 2026 - the whole event set.
   'suse/photos/susecon26-branding-mon-18',
   'suse/photos/susecon26-demopalooza-mon-4',
   'suse/photos/susecon26-demopalooza-mon-44',
@@ -72,11 +72,11 @@ export function loadFavouriteAssets(profile: Profile | null | undefined): Set<st
 
 /** Write the favourite-assets set back onto the profile and persist it. Mutates the
  *  passed profile object (the cached instance host.profile.get() returned), then flushes
- *  via host.profile.set. Best-effort — a failed write just means the star doesn't survive
+ *  via host.profile.set. Best-effort - a failed write just means the star doesn't survive
  *  a reload. */
 export async function saveFavouriteAssets(host: FavHost, profile: Profile, favs: Set<string>): Promise<void> {
   profile.favouriteAssets = [...favs];
-  try { await host.profile.set(profile); } catch { /* storage off / quota — non-fatal */ }
+  try { await host.profile.set(profile); } catch { /* storage off / quota - non-fatal */ }
 }
 
 /** The hidden asset ids from the profile. Until this profile has been seeded (the user
@@ -97,5 +97,5 @@ export function loadHiddenAssets(profile: Profile | null | undefined): Set<strin
 export async function saveHiddenAssets(host: FavHost, profile: Profile, hidden: Set<string>): Promise<void> {
   profile.hiddenAssets = [...hidden];
   profile.catalogDefaultsSeeded = true;
-  try { await host.profile.set(profile); } catch { /* storage off / quota — non-fatal */ }
+  try { await host.profile.set(profile); } catch { /* storage off / quota - non-fatal */ }
 }

@@ -2,7 +2,7 @@
 /**
  * The /verify Script panel (scriptHtml in valid.ts): a recorded action whose
  * `parameters` carry a `script` string is a synthetic voice declaring its
- * source text (the TTS credential written at creation — the machine-readable
+ * source text (the TTS credential written at creation - the machine-readable
  * EU AI Act Article 50 mark), and the panel must surface it faithfully:
  * Map-shaped parameters (our CBOR decoder) and plain objects (a foreign
  * report) both read, every interpolation escaped (the script is attacker-
@@ -13,7 +13,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-// valid.ts reads `window.__toolIndex` — same type-only augmentation trick as
+// valid.ts reads `window.__toolIndex` - same type-only augmentation trick as
 // valid-appended.test.ts (nothing executes from sync.ts at runtime).
 import type {} from '../catalog/sync.ts';
 import { scriptHtml } from './valid.ts';

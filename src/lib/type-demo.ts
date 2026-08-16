@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Variable-type demonstrator — a live showcase of the two faces IN FORCE,
+ * Variable-type demonstrator - a live showcase of the two faces IN FORCE,
  * driven by the WEIGHT axis itself:
- *   • the mono face (`--font-mono`) — a faux terminal types a command, an italic
+ *   • the mono face (`--font-mono`) - a faux terminal types a command, an italic
  *     comment pops in, and the whole block animates its weight. Rendered larger.
- *   • the brand face (`--font-brand`) — a display word + an italic phrase, both
+ *   • the brand face (`--font-brand`) - a display word + an italic phrase, both
  *     animating the same weight axis.
  *
  * The faces are RESOLVED, not hardcoded: the specimens render in the live
@@ -12,13 +12,13 @@
  * SUSE Mono; overridden inline on <html> by applyBrandFonts when the brand's
  * `font.brand` / `font.mono` tokens or a user-installed primary font are in
  * force), the labels show the first family of each computed stack, and each
- * slider spans the axis the loaded FontFace actually declares — so the
+ * slider spans the axis the loaded FontFace actually declares - so the
  * dashboard always demonstrates the fonts the user has set.
  *
  * Both faces animate by default; each has a slider that scrubs the weight from
  * min to max, and an Auto toggle to hand control back to the animation.
  *
- * The sample text is EDITABLE — the display word, the italic phrase and the terminal
+ * The sample text is EDITABLE - the display word, the italic phrase and the terminal
  * command/comment are all contenteditable, so anyone can type their own words and watch
  * them animate. Focusing the terminal settles the typewriter so it can be edited.
  *
@@ -46,7 +46,7 @@ interface Axis { min: number; max: number; hi: string }
 
 // Faces whose real axis differs from their @font-face descriptor: the bundled
 // SUSE Mono variable file tops out at ExtraBold (800) even though its
-// registration declares 100–900 — stopping the slider there avoids dead travel
+// registration declares 100–900 - stopping the slider there avoids dead travel
 // against the clamped top end.
 const AXIS_OVERRIDES: Record<string, { min: number; max: number }> = {
   'suse mono': { min: 100, max: 800 },
@@ -61,7 +61,7 @@ export function firstFamily(stack: string, fallback: string): string {
 /** The usable weight axis for `family`, read from the FontFaces the document
  *  actually has (CSS @font-face and user fonts registered via the FontFace API
  *  both appear in document.fonts, with `weight` descriptors like "100 900").
- *  Unknown/system faces get the full range — sweeping an axis a static face
+ *  Unknown/system faces get the full range - sweeping an axis a static face
  *  doesn't have is a visual no-op, never an error. */
 export function axisFor(family: string): Axis {
   const key = family.trim().toLowerCase();
@@ -77,7 +77,7 @@ export function axisFor(family: string): Axis {
       const lo = Number(m[1]), hi = m[2] ? Number(m[2]) : lo;
       min = Math.min(min, lo); max = Math.max(max, hi);
     });
-  } catch { /* document.fonts unavailable — fall through to the default */ }
+  } catch { /* document.fonts unavailable - fall through to the default */ }
   if (Number.isFinite(min) && max > min) return named(min, max);
   return named(100, 900); // static/system/unknown face: a full sweep is a harmless no-op
 }
@@ -98,7 +98,7 @@ export function activeFaces(): { brand: LiveFace; mono: LiveFace } {
   };
 }
 
-/** Families with at least one FontFace registered in the document — CSS
+/** Families with at least one FontFace registered in the document - CSS
  *  @font-face rules AND user fonts added via the FontFace API both land in
  *  `document.fonts`. Lowercased + unquoted for comparison. Empty when
  *  `document.fonts` is unavailable (e.g. the jsdom CLI shell). */
@@ -109,7 +109,7 @@ function loadedFamilies(): Set<string> {
       const fam = f.family.replace(/^['"]+|['"]+$/g, '').trim().toLowerCase();
       if (fam) set.add(fam);
     });
-  } catch { /* document.fonts unavailable — leave empty (callers treat as "unknown") */ }
+  } catch { /* document.fonts unavailable - leave empty (callers treat as "unknown") */ }
   return set;
 }
 
@@ -130,12 +130,12 @@ export function loadedFaces(): { brand: LiveFace | null; mono: LiveFace | null }
 
 const WSTART = 440; // resting / reduced-motion weight (within every axis)
 
-// Shared attributes for an editable sample field — plaintext-only so pasted markup can't
+// Shared attributes for an editable sample field - plaintext-only so pasted markup can't
 // break the specimen; the CSS gives it a quiet "click to edit" affordance.
 const EDIT_ATTRS = 'contenteditable="plaintext-only" spellcheck="false" data-td-edit role="textbox" title="Click to edit"';
 
 // One weight control: an Auto toggle + a min↔max range slider, sharing one id `key`.
-// The slider's min/max carry the resolved axis — wireTypeDemo reads them back from
+// The slider's min/max carry the resolved axis - wireTypeDemo reads them back from
 // the DOM, so render and wiring can't disagree.
 function control(face: LiveFace): string {
   const ax = face.axis;
@@ -153,7 +153,7 @@ function control(face: LiveFace): string {
     </div>`;
 }
 
-/** Markup for the demonstrator — one animated specimen per face that is
+/** Markup for the demonstrator - one animated specimen per face that is
  *  actually LOADED (see {@link loadedFaces}), rendered in the LIVE `--font-mono`
  *  / `--font-brand` stacks (see type-demo.css). Labels + axes resolve at call
  *  time from the same vars. A face whose var fell back to an unloaded system
@@ -224,7 +224,7 @@ export function wireTypeDemo(root: HTMLElement): () => void {
     const el = demo.querySelector<HTMLElement>(`[data-td-face="${key}"]`);
     if (!el) return;
     // The axis rides the slider's min/max attributes (stamped by control() from
-    // the resolved face) — read it back so render and sweep can't disagree.
+    // the resolved face) - read it back so render and sweep can't disagree.
     const range = demo.querySelector<HTMLInputElement>(`[data-td-range="${key}"]`);
     faces.push({
       key,
@@ -270,7 +270,7 @@ export function wireTypeDemo(root: HTMLElement): () => void {
   let raf = 0;
   let onScreen = true;                 // flipped false by the IntersectionObserver when scrolled away
   const tick = (t: number): void => {
-    // Park fully when scrolled out of view — the observer re-pumps us on re-entry — so an
+    // Park fully when scrolled out of view - the observer re-pumps us on re-entry - so an
     // off-screen dashboard doesn't keep forcing a style recalc every frame by writing
     // font-variation-settings. When the tab is hidden the browser pauses rAF for us, so we
     // stay scheduled and just skip the work.
@@ -287,7 +287,7 @@ export function wireTypeDemo(root: HTMLElement): () => void {
   const startRaf = (): void => { if (!raf && !reduce) raf = requestAnimationFrame(tick); };
   if (!reduce) raf = requestAnimationFrame(tick);
 
-  // Pause the sweep while the specimen is off-screen and resume on re-entry — matches the
+  // Pause the sweep while the specimen is off-screen and resume on re-entry - matches the
   // gallery / featured-row tickers. rootMargin keeps it running through small scroll jitters.
   let vizObserver: IntersectionObserver | undefined;
   if (!reduce && typeof IntersectionObserver === 'function') {
@@ -308,7 +308,7 @@ export function wireTypeDemo(root: HTMLElement): () => void {
   let typeTimer = 0;
   let frozen = false;   // the user has taken over the terminal to edit it
 
-  // Settle the terminal to its finished state and stop the typewriter — called the moment
+  // Settle the terminal to its finished state and stop the typewriter - called the moment
   // the user focuses the command or comment to edit it, so their caret isn't overwritten.
   const freezeTerminal = (): void => {
     if (frozen) return;

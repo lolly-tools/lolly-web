@@ -127,7 +127,7 @@ test('easeOutCubic is monotonic on [0,1] with 0→0 and 1→1', () => {
 test('easeOutBack pins its endpoints and overshoots exactly once', () => {
   assert.ok(near(easeOutBack(0), 0, 1e-12));
   assert.equal(easeOutBack(1), 1);
-  // It is deliberately NOT monotonic: it rises past 1, then settles back — that
+  // It is deliberately NOT monotonic: it rises past 1, then settles back - that
   // overshoot is what makes `pop` pop. Assert the shape rather than monotonicity.
   let peak = -Infinity, peakAt = 0;
   for (let i = 0; i <= 1000; i++) {
@@ -137,7 +137,7 @@ test('easeOutBack pins its endpoints and overshoots exactly once', () => {
   }
   assert.ok(peak > 1, `expected an overshoot, peak=${peak}`);
   assert.ok(peakAt > 0.4 && peakAt < 0.8, `overshoot should sit mid-ramp, at ${peakAt}`);
-  // Monotonic up to the peak, monotonic down after it — one hump, no ringing.
+  // Monotonic up to the peak, monotonic down after it - one hump, no ringing.
   let prev = -Infinity;
   for (let t = 0; t <= peakAt; t += 0.005) { const v = easeOutBack(t); assert.ok(v > prev); prev = v; }
   prev = Infinity;
@@ -155,7 +155,7 @@ test('only pop and zoom-out ever exceed their resting scale', () => {
 // ── authored easing (geometry only) ───────────────────────────────────────────
 //
 // The contract these pin, in order of how much it would cost to break it:
-//   1. an unauthored box renders EXACTLY as it did before the control existed —
+//   1. an unauthored box renders EXACTLY as it did before the control existed - 
 //      this is what keeps the compositor's output stable;
 //   2. an authored ease moves geometry and leaves alpha alone, because a fade that
 //      tracks a slow curve turns to mud through video compression;
@@ -185,7 +185,7 @@ test('an authored ease moves geometry and never touches alpha', () => {
   }
   // Linear geometry is the identity on progress, which is checkable in closed form:
   // dx is (1 - p) x its full distance. The tolerance is in PIXELS, not in curve
-  // units — the solver's 1e-6 on t is multiplied by a 716px slide, so a tighter
+  // units - the solver's 1e-6 on t is multiplied by a 716px slide, so a tighter
   // bound here would be measuring the iteration count rather than the maths.
   const full = 640 * 0.9 + 140;
   assert.ok(Math.abs(recTransition('slide-left', 0.25, 640, 360, 'linear').dx - 0.75 * full) < 0.01);

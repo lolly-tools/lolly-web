@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand semantic CSS variables — the web half of the brand token contract
+ * Brand semantic CSS variables - the web half of the brand token contract
  * (plans/archive/brand-token-contract.md §3/§5).
  *
  * applyBrandVars(el, host) resolves the seven `color.semantic.*` slots from the
  * active brand tokens (host.tokens) and mirrors them onto the tool-canvas root
  * as namespaced CSS custom properties, so tool templates can consume
- * `var(--brand-primary, #4f84ba)` — always with a fallback. A missing slot
+ * `var(--brand-primary, #4f84ba)` - always with a fallback. A missing slot
  * REMOVES the property (it is never set to '') so the template fallback stays
  * in charge. Best-effort and async: it never throws and mounting never waits
- * on it (though exports may — see views/tool.ts brandVarsReady).
+ * on it (though exports may - see views/tool.ts brandVarsReady).
  *
  * Why `--brand-*`, not bare `--primary` (contract §3): the web shell's
  * styles/tokens.css defines `--primary`/`--muted`/… on `:root` as shadcn HSL
  * *triples*, and community utilities (compress-pdf, strip-data, text-helper)
  * deliberately consume that vocabulary inside the tool canvas as
- * `hsl(var(--primary, …))` — injecting full-colour values under the same names
+ * `hsl(var(--primary, …))` - injecting full-colour values under the same names
  * would make those declarations invalid-at-computed-value-time, and would also
  * leak user brand colours into SUSE tools that use bare `var(--primary)` as a
  * private internal. The namespace removes both collision classes at zero cost
@@ -24,7 +24,7 @@
 
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
-// set is the UNION over every importer — touching it here drags createRuntime
+// set is the UNION over every importer - touching it here drags createRuntime
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
 import { colorToHex, isAlias } from '../../../engine/src/tokens.ts';
@@ -41,19 +41,19 @@ const SLOTS = [
   ['edge', '--brand-edge'],
 ] as const;
 
-/** A resolvable tokens document — the head, or a published design-system version
+/** A resolvable tokens document - the head, or a published design-system version
  *  (plans/97 §6a). Both answer the same two reads, which is the point. */
 interface BrandTokens {
   resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
   colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
 }
 
-/** The host slice this module reads — the (optional) tokens resolver, plus
+/** The host slice this module reads - the (optional) tokens resolver, plus
  * `colors()` for the warm-accent scan (see nearestWarmHex).
  *
  * No version reads: the web bridge's own `resolve`/`colors` already answer for
- * whatever the §6a ladder lands on (bridge/tokens.ts), so both painters here —
- * app chrome and the tool canvas — read one surface and cannot disagree about
+ * whatever the §6a ladder lands on (bridge/tokens.ts), so both painters here - 
+ * app chrome and the tool canvas - read one surface and cannot disagree about
  * which design system is live. A shell or test host whose tokens API has no
  * versioning is on the head, which is what an unversioned system resolves to. */
 interface BrandVarsHost {
@@ -64,7 +64,7 @@ interface BrandVarsHost {
 // The second half of the contract: the SHELL's own chrome follows the brand's
 // primary. tokens.css hardcodes shadcn HSL-triple accents per theme; when the
 // active brand resolves `color.semantic.primary`, we override the accent
-// triples (--primary / --primary-foreground / --ring — deliberately nothing
+// triples (--primary / --primary-foreground / --ring - deliberately nothing
 // else: backgrounds, borders and text stay the shell's own) via one injected
 // <style>, per shell theme so light/dark each take their brand-theme value.
 // No semantic slots (the SUSE doc has none) → the style is removed and the
@@ -75,7 +75,7 @@ interface BrandVarsHost {
 const CHROME_STYLE_ID = 'brand-chrome-vars';
 
 // ── Brand fonts ──────────────────────────────────────────────────────────────
-// The platform's default faces are SUSE (UI/body) and SUSE Mono (code) —
+// The platform's default faces are SUSE (UI/body) and SUSE Mono (code) - 
 // shell-served @font-face registrations (styles/fonts.css) behind the :root
 // --font-brand / --font-mono stacks in tokens.css. When the active brand's
 // tokens declare `font.brand` / `font.mono` (DTCG fontFamily), the resolved
@@ -83,7 +83,7 @@ const CHROME_STYLE_ID = 'brand-chrome-vars';
 // stylesheet default at equal cascade origin), with the default stack kept as
 // the tail so an unloadable family degrades to the platform face. The applied
 // stacks are cached in localStorage so index.html's pre-boot script can restore
-// them before first paint (same trick as the theme flash guard) — without it,
+// them before first paint (same trick as the theme flash guard) - without it,
 // a branded profile would flash the platform SUSE face on every load until
 // boot JS runs.
 
@@ -102,7 +102,7 @@ const FONT_SLOTS = [
 const FONT_CACHE_KEY = 'brand-fonts';
 
 // Family names come from an untrusted imported tokens doc and land in a style
-// value — allow only plain name characters (letters/digits/space/_/-), so no
+// value - allow only plain name characters (letters/digits/space/_/-), so no
 // quotes, braces, url() or declaration smuggling can pass. Same stance as
 // SAFE_CSS_COLOR in color-field.ts.
 const FONT_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/;
@@ -120,7 +120,7 @@ export function brandFontStack(value: unknown, tail: string): string | null {
     .filter(f => FONT_FAMILY_RE.test(f));
   if (!fams.length) return null;
   // A brand naming a platform default (SUSE's font.mono is 'SUSE Mono') would
-  // otherwise emit the family twice — once from the token, again leading the
+  // otherwise emit the family twice - once from the token, again leading the
   // tail. Drop tail entries whose family the token already names.
   const named = new Set(fams.map(f => f.toLowerCase()));
   const restTail = tail.split(',')
@@ -152,20 +152,20 @@ async function applyBrandFonts(host: { tokens?: BrandTokens }): Promise<void> {
 
 // ── Brand shape (corner radius) ──────────────────────────────────────────────
 // The one "shape" token: how rounded the app's OWN chrome (cards, buttons,
-// panels — never a tool canvas; no template consumes var(--radius)) reads.
+// panels - never a tool canvas; no template consumes var(--radius)) reads.
 // Lives at `shape.radius` (DTCG dimension), applied to --radius on <html>
-// exactly like the font stacks above — inline style beats the :root default
-// at equal cascade origin — and cached in localStorage so index.html's
+// exactly like the font stacks above - inline style beats the :root default
+// at equal cascade origin - and cached in localStorage so index.html's
 // pre-boot script restores it before first paint. Reserved for UNLOCKED
 // brands (profile.ts gates the whole "Adjust your brand" card on brandLocked)
-// — a locked catalog's shape is part of its fixed identity like its colours
+// - a locked catalog's shape is part of its fixed identity like its colours
 // and fonts.
 
 const RADIUS_CACHE_KEY = 'brand-radius';
 
 // A DTCG dimension value as this app will ever emit or accept for --radius: a
 // non-negative number (optional decimal) in rem/px/em only. Same defense-in-
-// depth stance as FONT_FAMILY_RE/SAFE_CSS_COLOR above — an untrusted imported
+// depth stance as FONT_FAMILY_RE/SAFE_CSS_COLOR above - an untrusted imported
 // tokens doc's string lands directly in a CSSOM setProperty call.
 const RADIUS_RE = /^\d+(\.\d+)?(rem|px|em)$/;
 
@@ -210,7 +210,7 @@ export function hexToHslTriple(hex: string): string | null {
 }
 
 /** A resolved token value → #rrggbb, or null when it isn't a usable colour.
- * Ramps store raw `oklch()` strings — the browser resolves those in var()
+ * Ramps store raw `oklch()` strings - the browser resolves those in var()
  * injection, but anything needing real RGB (the HSL-triple convention here,
  * the confetti chip pairs in lib/particles.ts) gamut-maps them through the
  * engine (the same path deriveBrandTokens uses). */
@@ -224,7 +224,7 @@ export function tokenValueToHex(value: unknown): string | null {
 }
 
 /**
- * Black or white — whichever reads on `hex`. Perceptual luminance threshold.
+ * Black or white - whichever reads on `hex`. Perceptual luminance threshold.
  *
  * **This is the ONE inversion rule for ink sitting on a colour**, app-wide: the
  * flip point Andy picked from the colour picker's dial disc (the full history
@@ -251,11 +251,11 @@ export function contrastText(hex: string): string {
 // ── Warm accent (--brand-warn) ───────────────────────────────────────────────
 // "Needs attention" UI (the render pill / editor toolbar's unsaved cue) used to
 // hard-code an amber. Instead, scan the active brand's own colours (ramps,
-// spectrum, semantic roles — whatever resolves) and pick whichever sits closest
+// spectrum, semantic roles - whatever resolves) and pick whichever sits closest
 // to the red→amber→yellow arc in OKLCH hue, so the cue is always ON BRAND and
 // automatically follows any colour the user changes. Near-neutral swatches
-// (low chroma) are skipped — a grey has no real hue to judge.
-const WARM_TARGET_HUE = 50;   // OKLCH degrees — the red/amber/yellow arc's centre
+// (low chroma) are skipped - a grey has no real hue to judge.
+const WARM_TARGET_HUE = 50;   // OKLCH degrees - the red/amber/yellow arc's centre
 const MIN_WARM_CHROMA = 0.04; // below this a swatch reads as grey, not warm
 
 function hueDistance(h: number, target: number): number {
@@ -264,7 +264,7 @@ function hueDistance(h: number, target: number): number {
 }
 
 /** Among `swatches`, the resolved hex whose OKLCH hue is nearest red/yellow,
- * plus whichever of black/white reads legibly on top of it — or null when none
+ * plus whichever of black/white reads legibly on top of it - or null when none
  * resolve to a usable, sufficiently-chromatic colour (caller keeps its own
  * static fallback, e.g. `var(--brand-warn, #b28727)`). */
 export function nearestWarmHex(swatches: ReadonlyArray<{ value: unknown }>): { hex: string; ink: string } | null {
@@ -289,41 +289,41 @@ export function nearestWarmHex(swatches: ReadonlyArray<{ value: unknown }>): { h
 // arbitrary brand (see the "WHAT IS DELIBERATELY NOT TOUCHED" note there). That
 // ownership argument is right, but it leaves the ONE control the user came to
 // press as the only thing the pref doesn't touch: SUSE's Jungle #30ba78 pairs
-// at APCA Lc 53 with its dark ink and 54 with white or black — under even the
+// at APCA Lc 53 with its dark ink and 54 with white or black - under even the
 // Lc 60 large-text floor, in the dark and brand themes. So the fix belongs
 // here, where the accent is constructed.
 //
 // The move is a HUE-PRESERVING lightness search: hold the primary's OKLCH hue
 // and chroma, walk its LIGHTNESS away from the authored value until the paired
 // ink clears the bar, and take whichever of the two directions converges with
-// the smaller move — so a brand's accent shifts as little as it can, and a
+// the smaller move - so a brand's accent shifts as little as it can, and a
 // purple brand stays purple. Only --primary/--primary-foreground are emitted:
 // --ring is deliberately NOT re-pointed at the brand, because tokens.css's
 // high-contrast blocks force the theme's brightest ink there on purpose (a dim
 // brand primary can be an invisible focus ring), and that decision outranks
 // brand identity.
 //
-// Unlike brandMarkPrimary, a near-neutral primary cannot be declined here — a
-// CTA still has to be legible — and it doesn't need to be: the search moves
+// Unlike brandMarkPrimary, a near-neutral primary cannot be declined here - a
+// CTA still has to be legible - and it doesn't need to be: the search moves
 // along L with chroma HELD, so a starter brand's ink (OKLCH chroma ~0.012)
 // stays neutral and its unstable hue never becomes visible.
 
 /** The bar a CTA label must clear. Lc 75 is APCA's body-text minimum and the bar
- *  the contrast pass set itself (tokens.css header) — but the bisection below
+ *  the contrast pass set itself (tokens.css header) - but the bisection below
  *  converges on the MINIMUM clearing lightness, so a target of 75 lands every
  *  repaired pair at Lc 75.0-75.4: a tenth of a point of headroom on a floor,
  *  for a 13px/600 button label. 80 buys real margin for a few hundredths of
  *  OKLCH lightness, and still leaves the fill recognisably the brand's. */
 export const HC_TARGET_LC = 80;
-/** Lightness resolution of the search — finer than the eye, and 24 bisection
+/** Lightness resolution of the search - finer than the eye, and 24 bisection
  *  steps get there regardless, so this only guards the loop. */
 const HC_L_EPSILON = 0.001;
 
 // APCA-W3 (APCA-1.0.98G), the minimum needed to SCORE a pair. Ported from the
 // engine's own apcaContrast (engine/src/color-tools.ts, itself ported from
-// chroma.js — BSD-3-Clause, © 2011-2025 Gregor Aisch; algorithm by Andrew
+// chroma.js - BSD-3-Clause, © 2011-2025 Gregor Aisch; algorithm by Andrew
 // Somers / Myndex) rather than imported, because this module is on the boot
-// path and color-tools.ts drags gamut/icc/brand-schemes/css-color with it —
+// path and color-tools.ts drags gamut/icc/brand-schemes/css-color with it - 
 // exactly the ~37 KB that a dedicated perf pass moved OFF boot (see the deep-
 // import note at the top of this file, and scripts/check-bundle-budget.ts).
 // The constants are the spec's magic numbers; do not "clean them up".
@@ -344,7 +344,7 @@ function apcaY(rgb: [number, number, number]): number {
 }
 
 /**
- * |Lc| between two opaque #rrggbb colours — the magnitude only, since every
+ * |Lc| between two opaque #rrggbb colours - the magnitude only, since every
  * caller here compares against a band floor and APCA's sign is just polarity.
  * NaN for anything unparseable, so every `>= floor` check honestly fails
  * (the contrastRatio convention). Exported for the drift test.
@@ -384,13 +384,13 @@ function hcPairAt(
 
 /**
  * The high-contrast replacement for one theme's accent pair, or null when the
- * authored pair already clears Lc 75 (nothing to fix — the brand's colour
+ * authored pair already clears Lc 75 (nothing to fix - the brand's colour
  * stands) or when no lightness of this hue can (a fully saturated hue whose
  * whole L range fails, which sRGB doesn't actually contain, but the search
  * refuses to guess rather than emit a pair it can't justify).
  *
  * `onPrimary` null means the ink is whatever tokens.css statically pairs with
- * this theme's accent — unknowable from here — so the search runs anyway and
+ * this theme's accent - unknowable from here - so the search runs anyway and
  * the returned block always states its ink explicitly.
  *
  * Exported for tests.
@@ -412,7 +412,7 @@ export function highContrastAccent(
     if (here) { found.push({ ...here, move: 0 }); continue; }
     // |Lc| grows monotonically as the fill moves away from the ink's own
     // luminance, and the max of the two candidate inks is monotone too, so the
-    // smallest clearing move is a boundary — bisect for it. If the extreme
+    // smallest clearing move is a boundary - bisect for it. If the extreme
     // itself fails, no lightness in this direction can.
     const bound = dir < 0 ? 0 : 1;
     if (!hcPairAt(bound, base, dir, onPrimary, onPrimaryL)) continue;
@@ -437,12 +437,12 @@ export function highContrastAccent(
  * SPECIFICITY, and why the selectors are shaped like tokens.css's: this sheet
  * is generated at runtime and cannot know the attribute's future state, so it
  * emits BOTH blocks and lets the cascade choose. The gated block therefore has
- * to beat the ungated one it sits beside in the SAME stylesheet — and source
+ * to beat the ungated one it sits beside in the SAME stylesheet - and source
  * order is not enough to rely on, because the ungated light block is spelled
  * `:root, [data-theme="light"]` and would otherwise be reached by a dark
  * document too. Leading with the `html` type selector plus the contrast
- * attribute makes each gated block (0,2,1) — or (0,3,1) for light's two
- * :not()s — against the ungated (0,1,0), so it wins on specificity alone,
+ * attribute makes each gated block (0,2,1) - or (0,3,1) for light's two
+ * :not()s - against the ungated (0,1,0), so it wins on specificity alone,
  * independently of order. The light selector is spelled "neither dark nor
  * brand" for the same reason tokens.css spells it that way: a document with no
  * [data-theme] at all is light, and the block must not leak into the two
@@ -458,7 +458,7 @@ function hcAccentBlock(selector: string, primary: string | null, onPrimary: stri
 
 /** One shell theme's accent overrides, or '' when primary didn't resolve. The
  * ink is COMPUTED from the fill via the app-wide inversion rule (contrastText),
- * not taken from the brand's authored on-primary — see contrastText's note. */
+ * not taken from the brand's authored on-primary - see contrastText's note. */
 function accentBlock(selector: string, primary: string | null): string {
   const p = primary && hexToHslTriple(primary);
   if (!p) return '';
@@ -467,14 +467,14 @@ function accentBlock(selector: string, primary: string | null): string {
 }
 
 /**
- * Construct the `brand` theme — the mid-toned colored chrome — from the brand's
+ * Construct the `brand` theme - the mid-toned colored chrome - from the brand's
  * two primaries. The recipe is the old SUSE theme reverse-engineered into OKLCH
  * (its static block in tokens.css remains the SUSE-palette instance of exactly
  * this): SURFACES take the light primary's hue at low chroma across fixed
  * mid-dark lightness stops (Pine-tinted panels, in SUSE terms); the ACCENT is
  * the dark primary verbatim (Jungle). Chroma is anchored to the light primary's
  * own chroma, so a neutral starter brand (ink primary) yields a tastefully
- * grey chrome and a vivid brand yields a tinted one — never garish: surface
+ * grey chrome and a vivid brand yields a tinted one - never garish: surface
  * chroma is capped at 0.08.
  */
 export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string): string {
@@ -487,19 +487,19 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string): 
     hexToHslTriple(oklchToHex({ l, c: Math.min(cBase * cMul, 0.08), h: hue }));
   const accent = hexToHslTriple(darkPrimaryHex);
   // The accent ink follows the fill by the app-wide inversion rule, same as the
-  // accent blocks — never the authored on-primary (see contrastText's note).
+  // accent blocks - never the authored on-primary (see contrastText's note).
   const accentFg = hexToHslTriple(contrastText(darkPrimaryHex));
   const v = (name: string, val: string | null) => (val ? `  --${name}: ${val};\n` : '');
   // Lightness stops lifted from the SUSE construction: bg .29, card .35,
   // muted .38, secondary .39, accent-surface .40, border .51; body ink .95,
-  // secondary (muted-foreground) ink .90 — raised from .84 (OKLCH), which sat
+  // secondary (muted-foreground) ink .90 - raised from .84 (OKLCH), which sat
   // at APCA Lc ~62 on the lightest surface for every hue, under the Lc 75 body
   // floor; .90 clears it (~75) while staying below the body ink for hierarchy.
   // --foreground-canvas repeats --foreground on purpose: it is the ink the render
   // canvas keeps when the high-contrast preference re-points --foreground, so a
   // comfort setting cannot move exported pixels (styles/tokens.css carries the
   // full note, and the static theme blocks there declare the same pair). It must
-  // be emitted HERE too — this block reconstructs the brand theme at runtime and
+  // be emitted HERE too - this block reconstructs the brand theme at runtime and
   // would otherwise leave the canvas pinned to the static SUSE ink.
   return `[data-theme="brand"] {
   color-scheme: dark;
@@ -507,15 +507,15 @@ ${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('foreground-c
 }
 
 // ── Lolly's own mark, recoloured to the guest brand ──────────────────────────
-// Lolly's IDENTITY (the green-and-white lollipop) is not a verdict — so when a
+// Lolly's IDENTITY (the green-and-white lollipop) is not a verdict - so when a
 // guest brand is active it takes on the brand's hue. The mark exists as a raster
 // bitmap (the app icon / Verify hero / favicon) and as a line-glyph + wordmark
 // (the "Made with Lolly" badge):
-//  • BITMAP  — the actual /icons/icon-192.png swirl is recoloured PROPERLY by a
+//  • BITMAP - the actual /icons/icon-192.png swirl is recoloured PROPERLY by a
 //    canvas hue-remap (tintLogo): each green pixel takes the brand hue but keeps
 //    its own saturation/lightness, the white swirl stays white. One data URL
 //    drives the Verify hero (via --lolly-logo) AND the browser favicon.
-//  • GLYPH/TEXT — the badge glyph + wordmark + the medallion's outer glow wear
+//  • GLYPH/TEXT - the badge glyph + wordmark + the medallion's outer glow wear
 //    --lolly-mark, Lolly's identity-green TONE hue-shifted to the brand.
 // Everything falls back to Lolly green (bitmap: the plain swirl) when no brand is
 // active, so an unbranded Lolly is unchanged. The green VERDICT signals (the
@@ -525,7 +525,7 @@ ${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('foreground-c
  * greens (hsl 145 58% 34% / 145 52% 60%). The mark keeps this L/C and takes the
  * brand's hue. */
 const LOLLY_TONE = { light: { l: 0.5586, c: 0.1286 }, dark: { l: 0.772, c: 0.1338 } } as const;
-// Below this OKLCH chroma a "primary" has no hue worth adopting — a greyscale or
+// Below this OKLCH chroma a "primary" has no hue worth adopting - a greyscale or
 // near-black ink (the blank starter's ink, ~0.012) reads as no brand colour at
 // all, so we leave Lolly its own green rather than tint it an arbitrary hue.
 const MARK_MIN_CHROMA = 0.03;
@@ -593,13 +593,13 @@ export function chromeBrandCss(
     lollyMarkCss(light.primary, dark.primary),
     // High contrast, per theme and gated on the attribute, so a user with no
     // prefs set gets exactly the blocks above and nothing else can match.
-    // Each theme is judged on its OWN pair — a brand whose light accent already
+    // Each theme is judged on its OWN pair - a brand whose light accent already
     // clears Lc 75 (SUSE's Pine does, at 98) emits no light block at all.
     hcAccentBlock('html[data-a11y-contrast="high"]:not([data-theme="dark"]):not([data-theme="brand"])',
       light.primary, light.onPrimary),
     hcAccentBlock('html[data-a11y-contrast="high"][data-theme="dark"]', dark.primary, dark.onPrimary),
     // The brand theme wears the DARK primary as its accent (brandThemeCss), so
-    // it takes the same adjustment — but only when that constructed theme was
+    // it takes the same adjustment - but only when that constructed theme was
     // emitted at all. Without it the static tokens.css brand block is in
     // charge, and patching its accent from a brand that didn't produce it would
     // pair a colour with an ink neither of them chose.
@@ -612,7 +612,7 @@ export function chromeBrandCss(
 /**
  * Inject/refresh the chrome override stylesheet from already-resolved primary
  * (+ on-primary) hexes, per theme. The shared tail of applyChromeBrandVars
- * (below) — split out so the brand editor's live, in-memory DRAFT preview
+ * (below) - split out so the brand editor's live, in-memory DRAFT preview
  * (not yet installed, so nothing to resolve via host.tokens) can paint the
  * same chrome accent without going through the host at all.
  */
@@ -727,13 +727,13 @@ function applyBrandLogo(dataUrl: string | null): void {
 /**
  * Resolve the brand primary per theme and inject/refresh the chrome override
  * stylesheet (appended to <head>, so it wins the tokens.css cascade at equal
- * specificity). Call at boot and again after installUserTokens — the bridge's
+ * specificity). Call at boot and again after installUserTokens - the bridge's
  * bust() empties the token caches but nothing re-paints chrome by itself.
  * Best-effort like applyBrandVars: never throws, removes the style when the
  * brand has no resolvable primary.
  */
 export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
-  // Nothing here to do without a document (a DOM-free shell / test bridge) —
+  // Nothing here to do without a document (a DOM-free shell / test bridge) - 
   // and every branch below writes to documentElement, so bail before any of
   // them can throw a ReferenceError. This is the "never throws" contract: a
   // caller like setPrimaryFont must be able to await this unconditionally.
@@ -751,13 +751,13 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
       return tokenValueToHex(await tk?.resolve(`{color.semantic.${slot}}`, { theme }));
     } catch { return null; }
   };
-  // Fonts and shape first, independently of the colour blocks below — a brand
+  // Fonts and shape first, independently of the colour blocks below - a brand
   // may declare font/shape tokens without semantic colour slots (the SUSE doc)
   // or vice versa.
   await applyBrandFonts({ tokens: tk }).catch(() => { /* never breaks boot */ });
   await applyBrandRadius({ tokens: tk }).catch(() => { /* never breaks boot */ });
   // The warm "needs attention" accent scans every resolved colour (ramps,
-  // spectrum, roles) — independent of the semantic primary/on-primary block
+  // spectrum, roles) - independent of the semantic primary/on-primary block
   // below, so it still finds SUSE's Persimmon even though that catalog
   // declares no color.semantic.* slots at all. The catch must NOT touch the
   // DOM (a resolve() rejection still leaves documentElement writable, but
@@ -780,8 +780,8 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
     ]);
     applyChromeAccent({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
     // Expose the brand primary GLOBALLY on :root (not just the tool canvas that
-    // applyBrandVars paints) so app chrome outside a tool — the gallery's
-    // preview-loading trace, say — can wear it via var(--brand-primary, <fallback>).
+    // applyBrandVars paints) so app chrome outside a tool - the gallery's
+    // preview-loading trace, say - can wear it via var(--brand-primary, <fallback>).
     // Same precedent as --brand-warn above; a brand with no resolvable primary
     // (the SUSE catalog declares no semantic slots) removes it so the CSS
     // fallback stays in charge.
@@ -802,7 +802,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
  * Resolve each semantic slot and set/remove its custom property on `el`.
  * Injection rules (contract §3, identical to the CLI's applyBrandVars):
  * a resolved string passes through (hex or a raw `oklch()` string are both
- * valid CSS colours the browser resolves natively) — UNLESS it is alias
+ * valid CSS colours the browser resolves natively) - UNLESS it is alias
  * residue (a `{path}` that never resolved is a missing slot, not a colour);
  * a structured DTCG colour object is normalised via the engine's colorToHex
  * (null ⇒ missing slot). Missing slots remove the property.
@@ -810,14 +810,14 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
  * The per-TOOL-CANVAS painter, and the reason `host.tokens` had to become the
  * render surface rather than the head (plans/97 §6a): under an active version
  * this must paint that version's colours, and there is no per-mount hook here to
- * resolve a ladder in — the same reason the picker's swatches, the engine's
+ * resolve a ladder in - the same reason the picker's swatches, the engine's
  * token-bound inputs and the export palette all read the bridge directly.
  */
 export async function applyBrandVars(el: HTMLElement, host: BrandVarsHost): Promise<void> {
   await Promise.all(SLOTS.map(async ([slot, cssVar]) => {
     let value: unknown;
     try {
-      // TokenSet.resolve accepts the `{alias}` form or a bare dotted path —
+      // TokenSet.resolve accepts the `{alias}` form or a bare dotted path - 
       // both hit the same lookup (engine/src/tokens.ts strips the braces), so
       // the alias form alone covers both spellings.
       value = await host.tokens?.resolve(`{color.semantic.${slot}}`);

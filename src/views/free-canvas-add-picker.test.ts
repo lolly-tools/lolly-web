@@ -5,12 +5,12 @@
  * Placing a box from the Add menu opens the asset picker straight afterwards, and the kind
  * the user chose is the only thing that knows which pane and which asset type that picker
  * should start on. That mapping used to be partial: the media kinds narrowed the picker by
- * `type`, but the `tool` kind — which seeds `kind: 'image'` like the rest — fell through to
+ * `type`, but the `tool` kind - which seeds `kind: 'image'` like the rest - fell through to
  * the generic image picker, so "add a tool" opened on the library instead of the tool grid.
  *
  * The mapping is asserted through the REAL `initFreeCanvas` on the jsdom harness
  * free-canvas-pen.test.ts established, by recording the options the editor hands
- * `host.assets.pick` — the actual boundary between the editor and picker.ts (whose end of
+ * `host.assets.pick` - the actual boundary between the editor and picker.ts (whose end of
  * the contract is covered in picker-initial-tab.test.ts).
  *
  * Run directly:  node --test shells/web/src/views/free-canvas-add-picker.test.ts

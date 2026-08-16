@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
-// doc-pages.ts — Doc Studio pagination in the TipTap editor.
+// doc-pages.ts - Doc Studio pagination in the TipTap editor.
 //
 // The editor is a single continuous surface; these two pieces make it read as an
 // (infinite) stack of pages:
-//   • PageBreak — an explicit hard-break node. The hook (tools/doc-studio/hooks.js) turns
+//   • PageBreak - an explicit hard-break node. The hook (tools/doc-studio/hooks.js) turns
 //     it into a fresh [data-pdf-page] on export, so a user can force "start a new page".
-//   • mountPageGuides — soft page-boundary guides drawn at each page-height down the
+//   • mountPageGuides - soft page-boundary guides drawn at each page-height down the
 //     paper, recomputed as content grows (so pages are effectively infinite) and reset at
 //     each explicit PageBreak. Measurement is layout-based (offsetHeight) and debounced
-//     with setTimeout — NOT requestAnimationFrame — so it also runs in a backgrounded tab.
+//     with setTimeout - NOT requestAnimationFrame - so it also runs in a backgrounded tab.
 import { Node } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 
@@ -26,7 +26,7 @@ export const PageBreak = Node.create({
 interface PageGuideOpts {
   editor: Editor;
   stageEl: HTMLElement;
-  /** Full printed page height in the paper's own (unscaled) px — e.g. 1123 for A4. The
+  /** Full printed page height in the paper's own (unscaled) px - e.g. 1123 for A4. The
    *  per-page content step is derived from this minus the paper's live top+bottom margins,
    *  so the guides land on the real page cut and adapt to page-size / margin changes. */
   nativeH: number;
@@ -68,7 +68,7 @@ export function mountPageGuides(opts: PageGuideOpts): void {
     });
     breaks.sort((a, b) => a - b);
     // Walk down page by page. An explicit break resets the running height (and bumps the
-    // page count) but draws NO guide line — its own "Page break" marker is the boundary.
+    // page count) but draws NO guide line - its own "Page break" marker is the boundary.
     // Only AUTO overflow boundaries get a dashed guide line.
     const autoYs: number[] = [];
     let base = 0, bi = 0, pages = 1, guard = 0;

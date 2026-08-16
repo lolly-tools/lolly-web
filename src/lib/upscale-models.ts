@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * On-device AI upscaler — the PURE catalogue half of `host.upscale` (v1.101).
+ * On-device AI upscaler - the PURE catalogue half of `host.upscale` (v1.101).
  *
  * Constants only: the model list surfaced to the picker/consent UI, their
  * on-disk file names, the IndexedDB cache coordinates, and a couple of lookup
- * helpers. NO onnxruntime, NO DOM, NO IndexedDB — this is the one part of the
+ * helpers. NO onnxruntime, NO DOM, NO IndexedDB - this is the one part of the
  * feature safe to import from either the main thread (bridge/upscale.ts, for
  * the synchronous `models()`/`modelBytes()`/`isAvailable()` answers) or the
  * worker (lib/upscale-worker.ts → lib/upscaler.ts) without dragging the
@@ -12,7 +12,7 @@
  *
  * The file NAMES and cache coordinates below are a PINNED CONTRACT shared
  * verbatim with the model fetch/convert script (scripts/fetch-upscale-models.ts,
- * Andy-run — this repo never vendors the weights): the runner reads whatever
+ * Andy-run - this repo never vendors the weights): the runner reads whatever
  * that script writes to `/models/upscale/<file>` and caches in the
  * 'upscale-models' IndexedDB store. Change a name here and you must change it
  * there too, or a cache/miss goes silent.
@@ -27,7 +27,7 @@ export const UPSCALE_MODEL_STORE = 'upscale-models';
 /** URL directory under `/models/` the bytes are fetched from. */
 export const UPSCALE_MODEL_DIR = 'upscale';
 /** Bump to invalidate every cached entry (a reconverted model, or a poisoned
- *  cache — the HTML-response guard in createModelFetcher). */
+ *  cache - the HTML-response guard in createModelFetcher). */
 export const UPSCALE_MODEL_CACHE_VERSION = 1;
 
 // ── Model files on disk (`/models/upscale/<file>`) ───────────────────────────
@@ -42,7 +42,7 @@ export const UPSCALE_MODEL_FILES: Record<UpscaleModelId, string> = {
 
 /** The general model's denoise partner. Real-ESRGAN's `dni` blends the general
  *  net with this "with-denoise" net; we blend their float OUTPUTS per-pixel
- *  (weights can't be blended at runtime) — see lib/upscaler.ts. Optional: a run
+ *  (weights can't be blended at runtime) - see lib/upscaler.ts. Optional: a run
  *  with denoise simply skips the blend when this file isn't cached. */
 export const UPSCALE_WDN_FILE = 'realesr-general-wdn-x4v3.onnx';
 
@@ -61,7 +61,7 @@ export const UPSCALE_DEFAULT_MODEL: UpscaleModelId = 'realesr-general-x4v3';
 // `approxBytes` is the one-time consent size the picker + offline manager show;
 // it is the primary weights only (the general model's optional WDN partner adds
 // a similar ~4 MB when denoise is used, surfaced separately if at all). The
-// licence + attribution lines are a real obligation, not decoration — the shell
+// licence + attribution lines are a real obligation, not decoration - the shell
 // carries them in its credits (a "Larger Work" under BSD-3-Clause / Apache-2.0).
 
 const RE_ATTRIBUTION = 'Real-ESRGAN © 2021 Xintao Wang et al. (BSD-3-Clause)';
@@ -118,12 +118,12 @@ export const UPSCALE_MODEL_BYTES: Record<UpscaleModelId, number> = UPSCALE_MODEL
 //
 // A build fact, not a device fact: scripts/fetch-upscale-models.ts pins some
 // models with a PLACEHOLDER sha (no self-contained single-file ONNX source found
-// yet), so their weights are never staged on the server — offering them would
+// yet), so their weights are never staged on the server - offering them would
 // promise a one-time download that can never complete. Withhold them until a real
 // pin lands, and flip the flag HERE in the same change. The general + x4plus +
 // GFPGAN weights (and the GFPGAN face detector) have real, verified fetch-script
 // pins today; the anime/illustration model has no published ONNX mirror, so it is
-// CONVERSION-SOURCED — reproduced on-device from the upstream BSD-3 .pth by
+// CONVERSION-SOURCED - reproduced on-device from the upstream BSD-3 .pth by
 // scripts/convert-anime-upscale-onnx.py (RRDBNet 6-block, verified to run + scale
 // x4 in onnxruntime), which writes it straight into the served /models/upscale/ tree.
 
@@ -140,7 +140,7 @@ export const UPSCALE_STAGED: Record<UpscaleModelId, boolean> = {
  *  is pinned (flip alongside the pin, beside UPSCALE_STAGED). */
 export const UPSCALE_DENOISE_STAGED = false;
 
-/** The models actually runnable in this build — what the picker should OFFER.
+/** The models actually runnable in this build - what the picker should OFFER.
  *  Unstaged models (placeholder pins) are withheld rather than shown as a download
  *  that can never complete (an honest-availability gate). Never empty: the default
  *  general model always has a real pin. */

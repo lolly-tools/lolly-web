@@ -72,7 +72,7 @@ test('the pairing is stable — the same id always yields the same ink', () => {
 
 test('real catalog ids yield many distinct IDENTITIES, which is the actual goal', () => {
   const pool = audioThumbPool(SUSE, host, 'light');
-  // The real catalog ids, not synthetic ones — this is the grid a user actually sees.
+  // The real catalog ids, not synthetic ones - this is the grid a user actually sees.
   const ids = ['lolly/loops/3-am-echoes', 'lolly/loops/after-school-rain', 'lolly/modules/aleja-deszczu',
     'lolly/modules/jazznocn', 'lolly/modules/headspin', 'lolly/songs/drift', 'lolly/modules/take-a-walk',
     'lolly/modules/jazzical-interpolation', 'lolly/loops/fireplace-loop', 'lolly/modules/wild-perspective',
@@ -84,7 +84,7 @@ test('real catalog ids yield many distinct IDENTITIES, which is the actual goal'
   const pairs = new Set(ids.map(id => `${audioThumbShape(id)}/${audioThumbInk(id, pool)!.index}`));
   assert.ok(pairs.size >= 8, `only ${pairs.size} distinct looks across ${ids.length} real tiles`);
 
-  // And more than one colour is genuinely in play — the guard against a pool that
+  // And more than one colour is genuinely in play - the guard against a pool that
   // silently collapsed to one entry.
   assert.ok(new Set(ids.map(id => audioThumbInk(id, pool)!.index)).size >= 2);
 });
@@ -126,7 +126,7 @@ test('the style is a custom property, so the SVG keeps painting currentColor', (
 
 test('the index is always in range — the signed-xor trap', () => {
   // `^` yields a SIGNED 32-bit int, so an un-normalised finaliser makes `h % n`
-  // negative and `pool[-2]` undefined — a tile that paints nothing. Measured over a
+  // negative and `pool[-2]` undefined - a tile that paints nothing. Measured over a
   // 4-colour pool this produced indices from -3 to 3.
   const pool = audioThumbPool(SUSE, host, 'light');
   for (let i = 0; i < 500; i++) {
@@ -139,7 +139,7 @@ test('the index is always in range — the signed-xor trap', () => {
 test('the hash avalanches, so a power-of-two pool is not keyed to FNV\'s worst bits', () => {
   // The real defect this caught: FNV-1a mixes its LOW bits poorly, and `% 4` reads
   // exactly those, so shape (% 5) and colour (% 4) correlated through the same weak
-  // bits — five of six `ring` tiles drew one colour. A 4-entry pool is the worst case.
+  // bits - five of six `ring` tiles drew one colour. A 4-entry pool is the worst case.
   const pool = ['#111111', '#222222', '#333333', '#444444'];
   const counts = new Array(4).fill(0);
   for (let i = 0; i < 2000; i++) counts[audioThumbInk(`lolly/loops/track-${i}`, pool)!.index]++;

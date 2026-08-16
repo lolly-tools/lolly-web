@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * First-visit offline nudge (web/PWA shell only) — the discoverability half of
+ * First-visit offline nudge (web/PWA shell only) - the discoverability half of
  * the "Available offline" download manager (lib/offline-manager.ts).
  *
  * The feature exists for someone with a URL, an hour of airport wifi and a
- * flight — exactly the person who will never dig through the profile page to
+ * flight - exactly the person who will never dig through the profile page to
  * find it. So the gallery surfaces it once, as a dismissible toast beside the
  * personalisation nudge (personalize-nudge.ts, whose placement and lifecycle
  * this mirrors), deep-linking to #/profile?focus=offline-section.
  *
  * Two copy variants, chosen by how the app is running:
- *   - a browser tab: "works offline once downloaded" — an invitation;
+ *   - a browser tab: "works offline once downloaded" - an invitation;
  *   - standalone (installed PWA, display-mode: standalone / iOS
- *     navigator.standalone): "finish installing" — a correction. Installing
+ *     navigator.standalone): "finish installing" - a correction. Installing
  *     puts an icon on the device while precaching only the shell, so
  *     "installed" quietly means "online-only" until the app part is
  *     downloaded. The user must hear that HERE, not mid-flight.
@@ -20,7 +20,7 @@
  * Lifecycle rules:
  *   - one at a time: the gallery renders this only when the personalisation
  *     nudge isn't showing (two toasts is nagging, not helping);
- *   - shown once — profile.offlineNudgeDismissed rides the PROFILE like the
+ *   - shown once - profile.offlineNudgeDismissed rides the PROFILE like the
  *     personalisation flag, and main.ts RE-CLEARS it on `appinstalled` so the
  *     standalone variant gets one fresh showing after an install;
  *   - self-suppressing: once any offline part or tool pin exists the user has
@@ -37,7 +37,7 @@ import { icon } from '../lib/icons.ts';
 // async self-suppress check below, well after first paint.
 import { pinnedToolBytes } from '../lib/offline-pins.ts';
 
-/** The slice of the host this module writes through — the web shell's profile
+/** The slice of the host this module writes through - the web shell's profile
  *  setter (host.profile.set, not on the tool-facing ProfileAPI). */
 interface NudgeHost {
   profile: { get(): Promise<Profile>; set(profile: Profile): Promise<void> };
@@ -55,7 +55,7 @@ export function runsStandalone(): boolean {
 }
 
 /**
- * Markup for the nudge, or '' when it shouldn't show — already seen/dismissed.
+ * Markup for the nudge, or '' when it shouldn't show - already seen/dismissed.
  * The gallery renders this only when the personalisation nudge isn't showing.
  */
 export function offlineNudgeMarkup(profile: Profile | null | undefined): string {
@@ -87,7 +87,7 @@ export function offlineNudgeMarkup(profile: Profile | null | undefined): string 
  * Wire the nudge once it's in the DOM: dismiss (× or "Not now") persists the
  * "seen" flag and removes the toast; the CTA marks it seen and lets the hash
  * navigation proceed. Additionally, an async self-check removes the toast
- * unprompted when offline downloads already exist — the user found the feature
+ * unprompted when offline downloads already exist - the user found the feature
  * without us. No-op when the nudge isn't present.
  */
 export function mountOfflineNudge(viewEl: HTMLElement, host: NudgeHost): void {

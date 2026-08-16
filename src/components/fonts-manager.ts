@@ -6,7 +6,7 @@
 
 // Styles: the `.fonts-*` block lives in styles/parts/brand-studio.css, which the
 // only mounter (lib/brand-editor.ts) already imports. There WAS a second copy in
-// styles/parts/fonts-manager.css — same layer, same specificity, so which one won
+// styles/parts/fonts-manager.css - same layer, same specificity, so which one won
 // depended on Vite's chunk order, and the copies had drifted onto a
 // `var(--text-secondary)` token that is defined nowhere. One home now.
 import { installFontAsset, getInstalledFonts, removeFontAsset, refreshFontRegistry } from '../lib/font-asset-handler.ts';
@@ -26,7 +26,7 @@ const errText = (e: unknown): string => String((e as { message?: unknown } | nul
 
 /** A failure the user needs to know about. This component used to narrate its
  *  whole lifecycle to the console (24 calls, uniquely in the shell) and reported
- *  real failures the same way — i.e. nowhere the user could see. Errors go to the
+ *  real failures the same way - i.e. nowhere the user could see. Errors go to the
  *  live region, the way lib/brand-editor.ts reports its own. */
 const fail = (message: string): void => { announce(message, { assertive: true }); };
 

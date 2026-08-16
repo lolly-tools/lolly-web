@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * private-opener — the `'private'` slot of `lib/collab-launch.ts`: what actually happens
+ * private-opener - the `'private'` slot of `lib/collab-launch.ts`: what actually happens
  * when someone presses "Start a collab" in the Share dialog (plan 100 §0, §6.1, §11.25;
  * wave 2.4).
  *
  * `lib/collab-share-private.ts` renders that row, and has been gated on TWO things since
  * it landed: the `private-collab` flag, and an opener existing at all. Nothing registered
- * one, so the row has never rendered. This file registers it — as a side effect of being
+ * one, so the row has never rendered. This file registers it - as a side effect of being
  * imported, exactly like the share row itself, with `main.ts` importing it for that one
  * effect.
  *
@@ -14,10 +14,10 @@
  *
  * It is on the BOOT path, and what it opens is not: a peer connection, a QR encoder, a
  * ceremony dialog and the codec are ~all of `collab/` (plus the ceremony component). Most
- * loads of the app never start a collab — that was true when the flag was default-OFF and
+ * loads of the app never start a collab - that was true when the flag was default-OFF and
  * is still true now that it is default-ON (2026-08-10), because the flag decides whether
  * the ROW exists, not whether anyone presses it. So the heavy half is behind one `await
- * import('./join-route.ts')` inside the opener — the same chunk `#/join` loads, which is
+ * import('./join-route.ts')` inside the opener - the same chunk `#/join` loads, which is
  * the right pairing anyway: the two sides of one ceremony share every platform piece.
  *
  * The static imports here are the two gates and the registry, nothing else.
@@ -32,7 +32,7 @@
  *
  * ── What happens on connect ────────────────────────────────────────────────────
  *
- * The live pair goes to `lib/collab-mount.ts` — the single-provider seam the co-editing
+ * The live pair goes to `lib/collab-mount.ts` - the single-provider seam the co-editing
  * stitch registers into (`lib/collab-live-mount.ts`, installed from `main.ts`'s boot).
  * With nothing registered the connection is PARKED and the dialog gains one honest
  * sentence. Not a crash, not a silent success: `main.ts` installs a mount on every boot,
@@ -41,7 +41,7 @@
  *
  * ── The seed (§6.1, §12 Q3: transfer-on-connect, one path) ─────────────────────
  *
- * The inviter serialises its live model ONCE, here, at ceremony start — and it does not
+ * The inviter serialises its live model ONCE, here, at ceremony start - and it does not
  * have to build that serialisation, because `CollabLaunchContext.baseParts` already IS
  * it: the Share dialog's own `buildShareParams(runtime)` output, the URL-mode encoding of
  * every declared input. `lib/collab-live-mount.ts`'s header explains why URL params are
@@ -56,7 +56,7 @@
  *     with the same model and unsaved edits survive becoming a collab.
  *
  * The outbound copy is PACKED when the engine can (`z=`, the same compression the address
- * bar uses above ~1800 chars) — the hello has a 64 KB frame ceiling and drops an
+ * bar uses above ~1800 chars) - the hello has a 64 KB frame ceiling and drops an
  * over-sized seed rather than lose the op-version declaration beside it. The local copy
  * stays readable, because the remount merges it with the address bar and two packed
  * blobs cannot be merged.
@@ -87,7 +87,7 @@ import type { RtcTransport } from './rtc-transport.ts';
  * The wire form of the inviter's seed: the readable query, packed when the engine can and
  * when packing actually wins.
  *
- * Best-effort by construction — a browser without `CompressionStream` (`isPackAvailable`)
+ * Best-effort by construction - a browser without `CompressionStream` (`isPackAvailable`)
  * and a pack that came out no smaller both fall through to the readable form, which is
  * what `parseUrlState` reads on the far side either way. A failure here costs a faster
  * first paint, never the collab.
@@ -100,7 +100,7 @@ async function wireSeed(query: string): Promise<string | undefined> {
     const token = await packQuery(query);
     if (token == null) return query;
     // The same `z=<token>` shape `syncUrl` writes, and the same "only if it actually
-    // helped" test — the acceptor's `expandQuery` reads it back either way.
+    // helped" test - the acceptor's `expandQuery` reads it back either way.
     const packed = `${PACK_PARAM}=${token}`;
     return packed.length < query.length ? packed : query;
   } catch {
@@ -124,12 +124,12 @@ export interface PrivateCollabDeps {
   readonly channel?: ChannelFactory | null | undefined;
   /**
    * Replace the §11.25 reply listener wholesale. Given a getter for the open dialog,
-   * returns its teardown (or null for "not listening"). Only a test needs this — it is
+   * returns its teardown (or null for "not listening"). Only a test needs this - it is
    * how the wiring is observed without a real channel behind it.
    */
   readonly listen?: (dialog: () => ParentNode | null) => (() => void) | null;
   readonly profileName?: string;
-  /** Base for the invite link. Defaults to the app root — see `join-route.ts`'s
+  /** Base for the invite link. Defaults to the app root - see `join-route.ts`'s
    *  `appLinkBase`, and why the tool view's `/t/<id>` pathname must never be in it. */
   readonly linkBase?: string;
   readonly renderQr?: CollabCeremonyOptions['renderQr'] | null;
@@ -138,7 +138,7 @@ export interface PrivateCollabDeps {
   readonly onConnected?: (conn: CollabConnection, dialog: ParentNode | null) => void;
   /**
    * Build the {@link CollabConnection} from the connected ceremony. Defaults to Track A's
-   * producer (`./rtc-connection.ts`), which is where the convergence document is built —
+   * producer (`./rtc-connection.ts`), which is where the convergence document is built - 
    * a test with no transport behind its injected effects never reaches it.
    */
   readonly connect?: typeof import('./rtc-connection.ts')['rtcCollabConnection'];
@@ -147,7 +147,7 @@ export interface PrivateCollabDeps {
 /**
  * Open the INVITER ceremony for a session.
  *
- * Resolves with the dialog handle, or `null` when the flag is off — so a caller that
+ * Resolves with the dialog handle, or `null` when the flag is off - so a caller that
  * wants to know (a test, a future keyboard shortcut) can, while the registered opener
  * itself is fire-and-forget.
  */
@@ -159,13 +159,13 @@ export async function openPrivateCollab(
   if (!flagOn()) return null;
 
   let transport: RtcTransport | null = null;
-  // The live model, serialised once, at ceremony start — see the header. Pure
+  // The live model, serialised once, at ceremony start - see the header. Pure
   // `URLSearchParams` work on a value the Share dialog already computed, so it costs
   // nothing on a flag-off open (which returned above).
   const seed = seedFromBaseParts(ctx.baseParts);
   const seedQuery = seedToQuery(seed);
 
-  // One import for the whole platform half — the same chunk `#/join` loads. Skipped
+  // One import for the whole platform half - the same chunk `#/join` loads. Skipped
   // entirely when the caller supplied both halves, which is what keeps this file's own
   // suite free of WebRTC, a camera and a QR encoder.
   let wiring: typeof import('./join-route.ts') | null = null;
@@ -183,7 +183,7 @@ export async function openPrivateCollab(
     seed: await wireSeed(seedQuery),
     onTransport: (built) => { transport = built; deps.onTransport?.(built); },
   });
-  // Both are present by construction — `wiring` is loaded whenever either is missing.
+  // Both are present by construction - `wiring` is loaded whenever either is missing.
   // The guard is for the type checker, not for a state this can actually reach.
   if (!open || !effects) return null;
 
@@ -207,7 +207,7 @@ export async function openPrivateCollab(
       const live = transport;
       const build = deps.connect ?? track?.rtcCollabConnection;
       // No transport (or no producer) means the caller injected effects with nothing
-      // behind them. Handing the mount a connection it cannot send on — or hang up —
+      // behind them. Handing the mount a connection it cannot send on - or hang up - 
       // would be worse than handing it nothing (`lib/collab-mount.ts`).
       if (!live || !build) return;
       const conn: CollabConnection = {
@@ -236,13 +236,13 @@ export async function openPrivateCollab(
       // A pair nobody adopted is a live peer connection with three data channels, and
       // the dialog will not close it (`lib/collab-mount.ts`: after `onConnected` the
       // transport belongs to whoever took it). Closing the ceremony is the moment we
-      // know nobody will — a no-op once a mount has actually taken it.
+      // know nobody will - a no-op once a mount has actually taken it.
       if (handed) { releaseParked(handed); handed = null; }
     },
   });
 
   // Wired for the whole life of the dialog rather than only while the machine is
-  // awaiting an answer. The delivery helper is the real gate — it refuses (and so does
+  // awaiting an answer. The delivery helper is the real gate - it refuses (and so does
   // not ack) whenever the dialog has no reply field to fill, which is exactly every
   // phase before the invite exists and every phase after the pair is live. Listening
   // across all of them costs one closure and removes a race with the human, who can
@@ -257,7 +257,7 @@ export async function openPrivateCollab(
   return dialog;
 }
 
-// Register once, as a side effect of import — see the header. `openCollabLaunch` already
+// Register once, as a side effect of import - see the header. `openCollabLaunch` already
 // swallows a throwing opener; the rejection handler is for the async half, which it
 // cannot see.
 registerCollabOpener('private', (ctx) => {

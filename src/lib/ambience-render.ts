@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Main-thread client for the ambience bake worker — the same shape as
+ * Main-thread client for the ambience bake worker - the same shape as
  * zzfxm-render.ts: one lazily-spawned worker, concurrent bakes keyed by request
  * id, transferable channels back.
  *
  * The worker is a progressive enhancement, not a requirement: where Worker is
- * unavailable (or the module fails to load — an old service-worker cache serving
+ * unavailable (or the module fails to load - an old service-worker cache serving
  * a stale chunk, say), the caller falls back to baking on the main thread. A brief
  * freeze beats no rain at all.
  */
@@ -43,7 +43,7 @@ function ensureWorker(): Worker | null {
 
 /**
  * Bake a bed's stereo channels, off the main thread when that's possible.
- * Rejection is not expected — the fallback swallows a dead worker — so a caller
+ * Rejection is not expected - the fallback swallows a dead worker - so a caller
  * only has to handle a genuine synthesis failure.
  */
 export async function bakeAmbienceOffThread(kind: AmbienceKind, sampleRate: number): Promise<Float32Array[]> {

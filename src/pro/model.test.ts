@@ -4,7 +4,7 @@
  * Run directly:  node --test shells/web/src/pro/model.test.ts
  *
  * These live next to the feature (not in the repo-root tests/ suite) so the
- * whole /pro module — tests included — can be removed in one delete.
+ * whole /pro module - tests included - can be removed in one delete.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,7 +30,7 @@ const TOOLS: Record<string, any> = {
       { id: 'cta', label: 'Call to action', type: 'text' },
     ],
   },
-  // 'headline' here is a number — a type clash with the text headline elsewhere.
+  // 'headline' here is a number - a type clash with the text headline elsewhere.
   oddball: {
     inputs: [{ id: 'headline', label: 'Headline', type: 'number' }],
   },
@@ -45,7 +45,7 @@ test('union of inputs becomes columns in first-seen order', () => {
 
 test('reserved-named inputs (width/height/unit/dpi/…) get no column', () => {
   // These collide with the fixed dimension columns / reserved URL params and are
-  // fed by the export-dimension flow — so they must not duplicate as columns.
+  // fed by the export-dimension flow - so they must not duplicate as columns.
   const dimTool: any = {
     inputs: [
       { id: 'width',  label: 'Width',  type: 'number' },

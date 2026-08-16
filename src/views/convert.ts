@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * #/convert — a verify-like on-device file converter. Drop a supported file, pick a
+ * #/convert - a verify-like on-device file converter. Drop a supported file, pick a
  * target format, convert in the browser (no upload), download. The engine codecs do
  * the work directly (a view CAN import the engine, unlike a tool hook): fonts via
  * sfntToWoff/woffToSfnt, SVG⇄SVGZ via gzip/gunzip, and any image → the whole raster
@@ -8,25 +8,25 @@
  * browser; bmp/tiff via the engine writers; pdf via jsPDF; ico wraps a PNG).
  *
  * Deliberately NOT via host.export.render: that path DOM-serialises an on-screen tool
- * canvas and stalls on a detached node — and we already hold the pixels, so encoding
+ * canvas and stalls on a detached node - and we already hold the pixels, so encoding
  * them is both faster and reliable. Still a follow-on (plans/84): vector→vector
  * transcoding (svg→eps/dxf), archives, catalog "Download as", provenance on the output.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText } from '@lolly/engine';
 import { t } from '../i18n.ts';
-import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) — never re-fork it
+import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) - never re-fork it
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
-import '../styles/parts/convert.css';    // async CSS chunk (lazy view — not on the landing)
+import '../styles/parts/convert.css';    // async CSS chunk (lazy view - not on the landing)
 
 interface Target { id: string; label: string; ext: string; mime: string; render?: boolean; }
 
 // The raster matrix the shell export bridge (host.export.render) produces from a
-// rasterised source — the "amazing rendering engine" reused here so a converted file
+// rasterised source - the "amazing rendering engine" reused here so a converted file
 // reaches the whole matrix, not just its sibling container. Both an SVG and a raster
 // source rasterise to a <canvas> first (sourceToCanvas), then ride this path; the
 // engine owns the per-format encoders (png/jpg/webp/avif/tiff/bmp) plus the pdf/ico
@@ -55,7 +55,7 @@ function targetsFor(kind: string): Target[] {
     // An SVG reaches its compressed sibling AND the whole raster matrix (the engine
     // rasterises it at its intrinsic size). We do NOT offer vector→vector transcoding
     // (svg→eps/dxf/emf/wmf): the engine's vector writers walk a rendered tool canvas,
-    // not arbitrary source SVG, so those would misconvert — a follow-on (plans/84).
+    // not arbitrary source SVG, so those would misconvert - a follow-on (plans/84).
     case 'svg': case 'svgz':
       return [
         kind === 'svg'
@@ -65,7 +65,7 @@ function targetsFor(kind: string): Target[] {
       ];
     // A raster can re-encode to any raster + wrap into PDF/ICO, but cannot become true vector.
     case 'raster': return RASTER_OUT;
-    // Tabular data — every data format converts to every other (grid round-trip). The
+    // Tabular data - every data format converts to every other (grid round-trip). The
     // caller drops the source format. An .xlsx converts from its FIRST sheet.
     case 'xlsx': case 'csv': case 'tsv': case 'json':
       return DATA_OUT;
@@ -84,7 +84,7 @@ const DATA_OUT: Target[] = [
 function detectKind(bytes: Uint8Array, file: File): string {
   const k = sfntKind(bytes);
   if (k) return k;                                          // ttf/otf/woff/woff2
-  // Tabular data — an .xlsx is a zip (workbook inside), csv/tsv/json are text. Checked
+  // Tabular data - an .xlsx is a zip (workbook inside), csv/tsv/json are text. Checked
   // before svgz/raster: an .xlsx's PK-zip and a .json's braces must not fall through.
   if (/\.xlsx$/i.test(file.name)
     || (sniffContainer(bytes) === 'zip' && /application\/vnd\.openxmlformats-officedocument\.spreadsheetml/.test(file.type))) return 'xlsx';
@@ -99,16 +99,16 @@ function detectKind(bytes: Uint8Array, file: File): string {
 }
 
 async function convert(bytes: Uint8Array, kind: string, target: Target, file: File): Promise<Blob> {
-  // Fonts — a pure container swap (engine codecs), never a render.
+  // Fonts - a pure container swap (engine codecs), never a render.
   if (kind === 'ttf' || kind === 'otf' || kind === 'woff') {
     if (target.id === 'woff' && kind !== 'woff') return new Blob([sfntToWoff(bytes) as BlobPart], { type: target.mime });
     if ((target.id === 'ttf' || target.id === 'otf') && kind === 'woff') return new Blob([woffToSfnt(bytes) as BlobPart], { type: target.mime });
     return new Blob([bytes as BlobPart], { type: target.mime });   // sfnt passthrough (ttf⇄otf) / same container
   }
-  // SVG⇄SVGZ — exact-byte gzip, no render (keeps the credential + outlined text intact).
+  // SVG⇄SVGZ - exact-byte gzip, no render (keeps the credential + outlined text intact).
   if (kind === 'svg' && target.id === 'svgz') return new Blob([gzip(bytes) as BlobPart], { type: target.mime });
   if (kind === 'svgz' && target.id === 'svg') return new Blob([gunzip(bytes) as BlobPart], { type: target.mime });
-  // Tabular data — decode the source to a ragged grid (row 0 = header), re-encode to
+  // Tabular data - decode the source to a ragged grid (row 0 = header), re-encode to
   // the target. Pure byte/text work, no canvas. An .xlsx reads its first sheet.
   if (kind === 'xlsx' || kind === 'csv' || kind === 'tsv' || kind === 'json') {
     const grid = sourceToGrid(kind, bytes);
@@ -117,7 +117,7 @@ async function convert(bytes: Uint8Array, kind: string, target: Target, file: Fi
   // Everything else: rasterise the source to a canvas, then encode that canvas straight
   // to the target with the engine's own codecs. We hold the pixels already, so there is
   // no reason to DOM-serialise them back through the tool-export path (dom-to-image
-  // stalls on a detached node anyway) — this is faster and never hangs.
+  // stalls on a detached node anyway) - this is faster and never hangs.
   if (target.render) return encodeFromCanvas(await sourceToCanvas(kind, bytes, file), target);
   throw new Error('That conversion is not supported.');
 }
@@ -164,13 +164,13 @@ export function gridToTarget(grid: string[][], targetId: string): Uint8Array | s
 }
 
 /** Decode the source (SVG markup or a raster file) into a <canvas> at its intrinsic
- *  size. A canvas is a node the export bridge rasterises reliably — passing a bare
+ *  size. A canvas is a node the export bridge rasterises reliably - passing a bare
  *  <svg>/<img> root to dom-to-image can hang on its foreignObject image load. */
 async function sourceToCanvas(kind: string, bytes: Uint8Array, file: File): Promise<HTMLCanvasElement> {
   const isSvg = kind === 'svg' || kind === 'svgz';
   const raw = kind === 'svgz' ? gunzip(bytes) : bytes;
   const mime = isSvg ? 'image/svg+xml' : (file.type || 'image/png');
-  // Intrinsic size — an SVG may lack width/height, so fall back to its viewBox, then a
+  // Intrinsic size - an SVG may lack width/height, so fall back to its viewBox, then a
   // square default. A raster's natural size is authoritative.
   let width = 512, height = 512;
   if (isSvg) {
@@ -226,7 +226,7 @@ function rgbaOf(canvas: HTMLCanvasElement): Uint8Array {
 }
 
 /** Promise wrapper over canvas.toBlob. When the browser can't encode the requested
- *  type it doesn't return null — the HTML spec makes it silently fall back to PNG — so
+ *  type it doesn't return null - the HTML spec makes it silently fall back to PNG - so
  *  we compare the RESULTING type and reject a mismatch rather than hand back a PNG
  *  wearing an .avif name (e.g. AVIF encode on an engine that lacks it). */
 function canvasBlob(canvas: HTMLCanvasElement, mime: string, quality?: number): Promise<Blob> {
@@ -290,7 +290,7 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
       </div>
       <div class="convert-result" data-result hidden></div>
     </div>`;
-  // Reached as a tile OR a deep link — so it carries the full escape chrome (back
+  // Reached as a tile OR a deep link - so it carries the full escape chrome (back
   // pill + always-home) rather than dead-ending anyone sent straight here, plus
   // the language + theme FABs in the same top-right cluster.
   mountBackPill(viewEl);

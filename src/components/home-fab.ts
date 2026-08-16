@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The always-home FAB — a history-INDEPENDENT escape to the front door (Tools).
+ * The always-home FAB - a history-INDEPENDENT escape to the front door (Tools).
  *
  * The nav-less "focused" views (#/start, Dashboard, Profile, Verify) paint no
  * global nav of their own; their only other exit is the back pill. The pill
  * answers "where did I come from" and rides history; this answers "just get me
- * out" and never consults the back stack — so a view reached mid-session, after
+ * out" and never consults the back stack - so a view reached mid-session, after
  * a few hops, is never a one-way trip regardless of what sits behind it. (The
  * pill still traps nobody on its own now that within-view navigations replace
- * rather than push — see components/back-pill.ts — but a guaranteed, history-free
+ * rather than push - see components/back-pill.ts - but a guaranteed, history-free
  * Home is the belt to that braces, and the same affordance on every nav-less
  * view reads as one consistent way out.)
  *
  * Sits in the fixed top-right cluster (.gallery-topright / .plat-header) beside
  * the language FAB and wears the same glass (buttons.css) + glow (overrides.css);
  * the box is `.home-fab` (topbar.css). homeFabHtml() renders the trigger,
- * mountHomeFab(root) wires it — mirrors langFabHtml()/attachLangMenu() so the
+ * mountHomeFab(root) wires it - mirrors langFabHtml()/attachLangMenu() so the
  * cluster stays "one of the set". homeFabEl() is the same control as a ready-wired
  * ELEMENT, for views that build their DOM with createElement rather than an
  * innerHTML template (the collab ceremony routes) and so have no free sink to
@@ -34,7 +34,7 @@ function goHomeOnClick(e: MouseEvent): void {
   navigateTo('/#/');
 }
 
-/** The trigger markup — drop directly into a .gallery-topright / .plat-header
+/** The trigger markup - drop directly into a .gallery-topright / .plat-header
  *  cluster, conventionally BEFORE the language FAB. A real href so middle-click
  *  and copy-link work; the click is intercepted for SPA navigation.
  *
@@ -44,7 +44,7 @@ function goHomeOnClick(e: MouseEvent): void {
  *  set. mountHomeFab() keys off `[data-home-fab]`, so wiring is class-agnostic. */
 export function homeFabHtml(opts: { className?: string } = {}): string {
   const cls = opts.className ?? 'home-fab';
-  // nosemgrep: lolly-href-escape-is-not-scheme-validation — the href is the literal in-app front-door route '/#/', never user input
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation - the href is the literal in-app front-door route '/#/', never user input
   return `<a href="/#/" class="${escape(cls)}" data-home-fab aria-label="${escape(t('Home'))}" title="${escape(t('Home'))}">${icon('home')}</a>`;
 }
 
@@ -57,7 +57,7 @@ export function mountHomeFab(root: HTMLElement): void {
   });
 }
 
-/** The home FAB as a ready-wired anchor ELEMENT — for DOM-built views (the collab
+/** The home FAB as a ready-wired anchor ELEMENT - for DOM-built views (the collab
  *  ceremony routes) that have no innerHTML template to drop homeFabHtml() into.
  *  Same skin, same behaviour; the ONE icon-injection sink here is a constant
  *  lib/icons glyph, never user input (mirrors createThemeToggle/createSoundToggle,

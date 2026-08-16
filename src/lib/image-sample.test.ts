@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * depthHint (lib/image-sample.ts) — bit-depth header sniff over hand-built
+ * depthHint (lib/image-sample.ts) - bit-depth header sniff over hand-built
  * fixture bytes. Reference values are the specs themselves: PNG 3rd ed §11.2.1
  * puts the IHDR bit-depth byte at datastream offset 24; TIFF 6.0 tag 258
  * (BitsPerSample, SHORT) in the first IFD; ITU-T T.81 §B.2.2 puts the JPEG
@@ -29,7 +29,7 @@ const u16be = (n: number): Uint8Array => Uint8Array.of((n >>> 8) & 0xff, n & 0xf
 
 const PNG_SIG = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 
-/** Minimal PNG head: signature + IHDR with the given bit depth (CRC not needed —
+/** Minimal PNG head: signature + IHDR with the given bit depth (CRC not needed - 
  * the sniff stops at byte 24, exactly where the spec puts bit depth). */
 function pngHead(bitDepth: number): Uint8Array {
   const ihdrData = concat([
@@ -106,7 +106,7 @@ test('depthHint: RGB TIFF (count 3) follows the value offset', async () => {
 test('depthHint: JPEG reports the SOF precision byte; 8 without one', async () => {
   assert.deepEqual(await depthHint(jpegHead(8)), { bitsPerChannel: 8, source: 'jpeg' });
   assert.deepEqual(await depthHint(jpegHead(12)), { bitsPerChannel: 12, source: 'jpeg' });
-  // SOI + EOI and no frame header — baseline 8 is the honest default.
+  // SOI + EOI and no frame header - baseline 8 is the honest default.
   assert.deepEqual(await depthHint(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9, 0, 0, 0, 0)), { bitsPerChannel: 8, source: 'jpeg' });
 });
 
@@ -117,7 +117,7 @@ test('depthHint: WebP is 8-bit by format definition', async () => {
 test('depthHint: HEIC/AVIF are recognised but honestly depth-unknown', async () => {
   assert.deepEqual(await depthHint(ftypFile('heic')), { bitsPerChannel: null, source: 'heic' });
   assert.deepEqual(await depthHint(ftypFile('avif')), { bitsPerChannel: null, source: 'avif' });
-  // AVIF commonly ships major 'mif1' with 'avif' in the compatibles — AVIF wins.
+  // AVIF commonly ships major 'mif1' with 'avif' in the compatibles - AVIF wins.
   assert.deepEqual(await depthHint(ftypFile('mif1', ['miaf', 'avif'])), { bitsPerChannel: null, source: 'avif' });
   // An mp4's ftyp is neither.
   assert.deepEqual(await depthHint(ftypFile('isom', ['mp42'])), { bitsPerChannel: null, source: null });
@@ -133,7 +133,7 @@ test('depthHint: accepts a Blob as well as bytes', async () => {
 test('depthHint: truncated and hostile inputs answer null and never throw', async () => {
   assert.deepEqual(await depthHint(new Uint8Array(0)), { bitsPerChannel: null, source: null });
   assert.deepEqual(await depthHint(Uint8Array.of(1, 2, 3)), { bitsPerChannel: null, source: null });
-  // PNG signature only — container recognised, but no IHDR to read a depth from.
+  // PNG signature only - container recognised, but no IHDR to read a depth from.
   assert.deepEqual(await depthHint(PNG_SIG), { bitsPerChannel: null, source: 'png' });
   // PNG signature + garbage where IHDR should be.
   assert.deepEqual(
@@ -158,7 +158,7 @@ test('depthHint: TIFF with a lying IFD offset or truncated IFD answers null', as
     u16le(1), u16le(258), u16le(3), u32le(3), u32le(0xffff_fff0), u32le(0),
   ]);
   assert.deepEqual(await depthHint(badOff), { bitsPerChannel: null, source: 'tiff' });
-  // No BitsPerSample tag at all — stay agnostic rather than guess.
+  // No BitsPerSample tag at all - stay agnostic rather than guess.
   const noTag = concat([
     bytesOf('II'), u16le(42), u32le(8),
     u16le(1), u16le(256), u16le(3), u32le(1), u32le(1), u32le(0), // ImageWidth only

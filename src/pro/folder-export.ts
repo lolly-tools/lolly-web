@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — render a whole folder (group) as one batch.
+ * Pro / Batch mode - render a whole folder (group) as one batch.
  *
  * A folder collects saved sessions. Each session contributes rows to one combined
  * batch run that delivers a single zip with a nested folder tree:
@@ -29,7 +29,7 @@ import type { ExportRow } from './folder-rows.ts';
 export { rowsForFolder, rowFromToolSession, rowFromBatchRow } from './folder-rows.ts';
 
 /**
- * The host slice this module needs: a full runtime host (HostV1 — runBatch mounts
+ * The host slice this module needs: a full runtime host (HostV1 - runBatch mounts
  * real runtimes), with `state.load` loosened to `any` so untrusted stored-session
  * objects read freely, exactly as the original untyped JS did. Erased at runtime.
  */
@@ -38,7 +38,7 @@ type FolderExportHost = Omit<HostV1, 'state'> & {
 };
 
 /**
- * Structural mirror of run-overlay's (non-exported) BatchAuthor — the zip credit
+ * Structural mirror of run-overlay's (non-exported) BatchAuthor - the zip credit
  * block shape. Used only to cast the loosely-typed `author` option at the call
  * boundary; erased at runtime.
  */
@@ -101,7 +101,7 @@ interface ExportSelectionOpts {
   zipLock?: ZipTier;
   /**
    * Called ONCE, after the rows are assembled but before any render, IFF the selection
-   * contains motion/video rows (webm/mp4/gif/apng — real-time captures that need the tab
+   * contains motion/video rows (webm/mp4/gif/apng - real-time captures that need the tab
    * kept active). Returns how to proceed: `'include'` renders them (the caller has
    * committed to keeping the tab active), `'skip'` drops them and renders the rest,
    * `'cancel'` aborts. Omit → render everything (unchanged behaviour, no prompt).
@@ -127,7 +127,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
 
   // `srcIndex` rides along from here on: planBatch COMPACTS, so an index taken after it
   // no longer names the row the user assembled. Source space here is rowsForFolder's
-  // output — rows the user sees as session names and folder paths, not as numbers, so
+  // output - rows the user sees as session names and folder paths, not as numbers, so
   // the overlay leads with the row's label and keeps the number as context.
   // The static pre-pass, with the SAME run-level settings the run below is given.
   // A folder row carries its own print settings (rowFromToolSession / rowFromBatchRow
@@ -159,7 +159,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
 }
 
 /**
- * Render ONE saved single-tool session and download it as a BARE file — its native
+ * Render ONE saved single-tool session and download it as a BARE file - its native
  * format + filename, matching the tool's own Export button, NOT a one-item zip.
  * `runBatch` prepends a `NN-` sequence prefix even for a lone row, so we strip it and
  * deliver the single blob via host.export.download. A BATCH session (many rows) can't
@@ -177,7 +177,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
   // label in the zip). Delivered as a zip by runBatchWithProgress.
   if (data.__batch || isBatchSlot(slot)) {
     const label = data.__label || 'Batch session';
-    // EVERY snapshot row goes to planBatch — including the ones with no template. They
+    // EVERY snapshot row goes to planBatch - including the ones with no template. They
     // used to be filtered out here, which silently renumbered every row after them and
     // deleted them from the run report: the same session rendered from the /pro grid
     // said "2 rows skipped, qr-code is row 3", and rendered from Projects said nothing
@@ -186,7 +186,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
     const batchRows = (data.rows ?? []).map((r: any) => rowFromBatchRow(r, [label]));
     if (batchRows.length === 0) throw new Error('This batch session has no renderable rows.');
     // No run-level format/unit/dpi on this path: a batch snapshot's rows carry their
-    // own, and `runBatchWithProgress` is called without them below — so the collector
+    // own, and `runBatchWithProgress` is called without them below - so the collector
     // is handed the same empty run block the renderer works from.
     const snapshotCheck = await createBatchRowCheck(batchRows as BatchRow[], host, {});
     const plan = await planBatch<Finding>(batchRows as BatchRow[], { check: snapshotCheck.check });
@@ -204,7 +204,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
   if (mount) mount.innerHTML = `<p class="pro-progress-msg"><strong>Rendering…</strong></p>`;
   // The one path with NO overlay and no zip: a single session rendered to a bare file.
   // Its diagnostics reach the caller through the return value or nowhere, and Phase 2
-  // accepts "nowhere" — a single-session render is not a batch report.
+  // accepts "nowhere" - a single-session render is not a batch report.
   const { files } = await runBatch(renderable, host, { isCancelled: () => false, onProgress: () => {} });
   if (files.length === 0) throw new Error('No file was produced.');
   onBatchRendered?.(files);
@@ -212,12 +212,12 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
   const name = file.name.replace(/^\d+-/, '');   // strip runBatch's sequence prefix → bare name
   host.export.download(file.blob, name);
   if (mount) mount.innerHTML = `<p class="pro-progress-msg"><strong>Downloaded ${escape(name)}.</strong></p>`;
-  playSfx('victory'); // a single render finished — the subtle "ta-da" (the ding fired inside runBatch)
+  playSfx('victory'); // a single render finished - the subtle "ta-da" (the ding fired inside runBatch)
   return { files, name };
 }
 
 /**
- * Render an arbitrary SELECTION — any mix of loose sessions and whole folders — as one
+ * Render an arbitrary SELECTION - any mix of loose sessions and whole folders - as one
  * nested zip. The synthetic-parent + `allFolders` recursion trick does NOT compose
  * (rowsForFolder recurses on real `parentId===folder.id`, which a synthetic parent
  * lacks), so we CONCATENATE `rowsForFolder` calls: one synthetic bucket for the loose
@@ -253,7 +253,7 @@ export async function exportSelectionAsBatch(host: FolderExportHost, {
   }
 
   // INVARIANT: nothing may filter, sort or splice `rows` between here and runBatch. The
-  // motion filter above satisfies that only by sitting ABOVE this line — it compacts the
+  // motion filter above satisfies that only by sitting ABOVE this line - it compacts the
   // array a second time, so an index captured before it is already wrong by the time
   // planBatch runs. Any new filter goes above, never below.
   const selectionCheck = await createBatchRowCheck(rows as BatchRow[], host, {});

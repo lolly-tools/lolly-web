@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * bridge/state.ts — the createdAt contract: stamped on first save, PRESERVED
+ * bridge/state.ts - the createdAt contract: stamped on first save, PRESERVED
  * across re-saves (updatedAt moves, createdAt doesn't), surfaced by list(),
  * and absent (not fabricated) for legacy rows written before the field existed.
  * Projects' "Date added" sort depends on exactly this behaviour.
@@ -38,7 +38,7 @@ test('first save stamps createdAt === updatedAt; a re-save moves only updatedAt'
 
 test('list() surfaces createdAt when present and omits it for legacy rows', async () => {
   const db = memDb();
-  // A legacy row written before the field existed — list() must not invent one.
+  // A legacy row written before the field existed - list() must not invent one.
   db.rows.set('old:1', { slot: 'old:1', toolId: 'qr-code', toolVersion: '1', data: {}, thumb: null, updatedAt: '2026-01-01T00:00:00.000Z' });
   const api = createStateAPI(db);
   await api.save('new:2', { __toolId: 'qr-code' });

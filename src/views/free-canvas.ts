@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
-// free-canvas.js — the WYSIWYG direct-manipulation overlay for render.layout:'editor'.
+// free-canvas.js - the WYSIWYG direct-manipulation overlay for render.layout:'editor'.
 //
-// This is the ONLY DOM in the free-canvas feature; all geometry lives in the pure,
+// This is the ONLY DOM in the free-canvas feature. All geometry lives in the pure,
 // unit-tested free-canvas-math.js. It mounts:
 //   • a left toolbar (add / arrange / align / canvas background),
 //   • a selection overlay (rotated outlines + 8 resize handles + a rotate handle),
 //   • a contextual bar (fill / text controls / duplicate / delete + a transform readout),
-// all as SIBLINGS of #tool-canvas inside #tool-stage — so they live OUTSIDE the
-// exported node (runtime.export is handed #tool-canvas) and never leak into output.
-// They also carry [data-export-hide] as a backstop.
+// all as SIBLINGS of #tool-canvas inside #tool-stage. They live OUTSIDE the
+// exported node (runtime.export is handed #tool-canvas), so they never appear in
+// the output. They also carry [data-export-hide] as a backstop.
 //
 // The overlay reads box geometry from the MODEL (runtime.getModel) and maps native
-// canvas pixels ↔ screen via the live canvasEl rect (transform-agnostic: composes
-// fitCanvas's scale AND stageNav's pan/zoom automatically). Edits mutate the box DOM
-// directly for smooth feedback during a gesture and commit ONE runtime.setInput on
-// release — which the shell's undo wrapper coalesces into a single history step.
+// canvas pixels to screen pixels via the live canvasEl rect. This works regardless
+// of transform: it combines fitCanvas's scale with stageNav's pan/zoom
+// automatically. Edits mutate the box DOM directly for smooth feedback during a
+// gesture, then commit ONE runtime.setInput on release, which the shell's undo
+// wrapper coalesces into a single history step.
 //
 // Opt-in and progressive: without this overlay the same flat `boxes` array renders
 // identically headless (CLI/URL). The engine and URL never see the editor.
 //
 // ── THE ONE RULE (sequence editing) ──────────────────────────────────────────
-// On a time-capable tool (`timeCfg`) the canvas is a window onto ONE instant, and
-// one sentence governs everything the user can touch:
+// On a time-capable tool (`timeCfg`) the canvas is a window onto ONE instant. One
+// rule governs everything the user can touch:
 //
 //   "The canvas edits exactly what the canvas shows at the playhead. Moving the
 //    playhead never changes the selection; selecting in the timeline moves the
@@ -30,23 +31,25 @@
 //    inspector and the sidebar are the precision fallbacks and are never gated
 //    by time."
 //
-// It is enforced in three places, deliberately, because one of them alone leaks:
-//   1. ACQUISITION — `seqHiddenSkip` makes a click fall THROUGH a hidden box to
+// This rule is enforced in three places, on purpose, because enforcing it in only
+// one place would leave a gap:
+//   1. ACQUISITION - `seqHiddenSkip` makes a click fall THROUGH a hidden box to
 //      the visible one beneath (no toast: in a stacked scene composition that
 //      would fire on every click).
-//   2. RETENTION — `paintChrome` suppresses the outline, all 8 resize handles,
+//   2. RETENTION - `paintChrome` suppresses the outline, all 8 resize handles,
 //      the rotate handle and the contextual bar when the selection is not live,
 //      so no pointer path can start a gesture on something nobody can see. The
 //      chrome is positioned from the MODEL, not the DOM, so without this it
-//      would paint full editing furniture over nothing.
-//   3. KEYBOARD — `onKey` refuses every mutating key on an off-playhead
-//      selection, because a nudge or a Delete needs no chrome at all.
+//      would paint full editing controls over nothing.
+//   3. KEYBOARD - `onKey` refuses every mutating key on an off-playhead
+//      selection, because a nudge or a Delete needs no visible controls at all.
 // Plus the reconciliation: an off-playhead selection raises the `.fc-offplayhead`
 // banner, whose button dispatches `fc-seek` at the box's own start. The timeline
-// panel answers it, and tells us where the playhead is via `tl-time`.
+// panel answers it, and reports the playhead position back via `tl-time`.
 //
 // Deliberately NOT built: a "selection follows playhead" preference. Premiere
-// ships one and users still lose work to it — time→selection is destructive.
+// ships one and users still lose work to it: letting time change the selection
+// destroys work.
 
 import {
   boxRect, withRect, boxCorners, rectCentre, boxAABB,
@@ -55,7 +58,7 @@ import {
   snapMove, snapPoint, scaleGroup, rotateGroup, num,
   edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
   edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect,
-  // plan 96 P3/P5 — a BOUND path is drawn by connector management, through the engine's
+  // plan 96 P3/P5 - a BOUND path is drawn by connector management, through the engine's
   // ONE routed-line renderer and its ONE kind→route mapping, so the live overlay, the
   // committed render and a headless CLI cannot disagree about where the line goes.
   routedLineSvg, pathRouteStyle, formatEdgePoint,
@@ -94,7 +97,7 @@ import {
   refitFrame, resolveDrawnInk, setNodeContinuity,
 } from './free-canvas-pen.ts';
 import type { PathPaintFields } from './free-canvas-pen.ts';
-// Type-only (erased at build): the timeline modules are LAZY — importing their types
+// Type-only (erased at build): the timeline modules are LAZY - importing their types
 // costs no chunk, and timeline-panel.ts pulls in styles/parts/timeline.css.
 import type { TimeCfg } from './timeline-math.ts';
 import type { TimelinePanel } from './timeline-panel.ts';
@@ -102,7 +105,7 @@ import type { TimelinePanel } from './timeline-panel.ts';
 // ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
 import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
 // Type-only, same terms: the motion-path layer (plans/104 §8) is a lazy chunk that only
-// an editor with a KEYFRAMED box selected ever fetches — and it pulls timeline-math (and
+// an editor with a KEYFRAMED box selected ever fetches - and it pulls timeline-math (and
 // therefore the engine's keyframe module) with it, which is exactly why it must not be a
 // static import here.
 import type { MotionPathHandle } from './motion-path.ts';
@@ -111,7 +114,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
 // The boot-path slice of user-fonts (NOT ../user-fonts.ts, which would drag the
-// whole Google-font fetcher into this view chunk — see user-fonts.ts:73-80).
+// whole Google-font fetcher into this view chunk - see user-fonts.ts:73-80).
 import { brandFontFamilies } from '../lib/register-user-fonts.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { ensureRowIds, ulid } from '../lib/row-id.ts';
@@ -143,7 +146,7 @@ interface Metrics { cr: DOMRect; sr: DOMRect; scale: number }
 type HandleName = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
 
-/** One entry of a `canvas.addKinds` list — a "kind" the add-box menu can create. */
+/** One entry of a `canvas.addKinds` list - a "kind" the add-box menu can create. */
 interface AddKind { id: string; label?: string; seed?: Box }
 
 /** The subset of a blocks-field declaration the editor reads: the font select's
@@ -169,28 +172,28 @@ interface CanvasCfg {
   shadowXField?: string; shadowYField?: string; shadowBlurField?: string;
   /** Vector sub-fields (the `boxes` fields Stage C appends: an authored path plus its
    *  stroke paint and fill rule). `pathField` is the FEATURE FLAG for the whole
-   *  vector-operations section of the context menu — a tool that declares no path
+   *  vector-operations section of the context menu - a tool that declares no path
    *  sub-field has nowhere to put a boolean result, so it is not offered one. Every
    *  entry degrades to "absent", never to "throws", on a manifest that predates them. */
   pathField?: string; strokeField?: string; strokeWField?: string; fillRuleField?: string;
   /** Stroke DECORATION sub-fields (appended after the timeline block): a dash-style
-   *  keyword plus the line cap and join. Keywords, not authored dash arrays — see the
+   *  keyword plus the line cap and join. Keywords, not authored dash arrays - see the
    *  hook's `dashArrayFor` for why the compact URL form cannot carry a comma. */
   strokeDashField?: string; strokeCapField?: string; strokeJoinField?: string;
   /** Power-user dash sub-fields (plan 96 P0). `strokeDashArrayField` holds the AUTHORED
-   *  pattern as a SPACE-separated numeric string ("6 4") — a string, not a list, because a
+   *  pattern as a SPACE-separated numeric string ("6 4") - a string, not a list, because a
    *  block sub-field is one scalar and space is the one separator the compact blocks URL
    *  survives (see lib/blocks-url.ts; a comma would split the row). It WINS over the
    *  keyword style when set. `dashFitField` is the boolean "fit the pattern to the path's
    *  corners" (Illustrator's corner-aligned dashes), applied by the tool's hook. */
   strokeDashArrayField?: string; dashFitField?: string;
-  /** PATH DECORATION sub-fields (plan 96 P0 — the unified path primitive). An arrowhead
+  /** PATH DECORATION sub-fields (plan 96 P0 - the unified path primitive). An arrowhead
    *  shape at each end of an authored path, drawn at its end tangents: none · triangle ·
    *  open · circle · diamond · bar, the same vocabulary the connector heads use, because
    *  a spline, a line and a connector are one primitive that carries one decoration set. */
   headStartField?: string; headEndField?: string;
   /** PATH ENDPOINT BINDING (plan 96 P0). The id of the box each end is attached to, `''`
-   *  for a free end. Model only at this stage: nothing reads them yet — P3 adds the bind
+   *  for a free end. Model only at this stage: nothing reads them yet - P3 adds the bind
    *  gesture and hands a bound path to connector routing. Declared now so the fields ship
    *  in the manifests' wire order before anything depends on them. */
   bindStartField?: string; bindEndField?: string;
@@ -199,28 +202,28 @@ interface CanvasCfg {
    *  the explicit one (elbow-src, curved-v, arc-wide …). '' = auto. It is also what makes
    *  the plan-90 edge migration lossless. */
   routeField?: string;
-  /** The class the tool's hook puts on its committed BOUND-PATH `<svg>` (plan 96 P5) —
+  /** The class the tool's hook puts on its committed BOUND-PATH `<svg>` (plan 96 P5) - 
    *  hidden for the duration of a drag so the live overlay does not double up with the
    *  stale committed one. Named here for the same reason `canvas.connect.layerClass` was:
    *  only the manifest knows what its own hook emits. */
   pathLayerClass?: string;
-  /** Timeline time-model sub-fields (phase 1: schema/manifest only — inert until a
+  /** Timeline time-model sub-fields (phase 1: schema/manifest only - inert until a
    *  timeline panel mounts and reads them; see engine 1.65.0 CHANGELOG entry). */
   startField?: string; durField?: string; clipInField?: string; speedField?: string;
   enterField?: string; exitField?: string; enterMsField?: string; exitMsField?: string;
   muteField?: string; laneField?: string;
   /** OPTIONAL time sub-field: the A/V link (detached audio). Absent on a tool that does
-   *  not offer detach — the ten-field time check below does NOT include it. */
+   *  not offer detach - the ten-field time check below does NOT include it. */
   linkField?: string;
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
   /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 §5.1). Absent means the
-   *  tool is not keyframable — and, in `timeline-math`, that a split/trim/join has no
+   *  tool is not keyframable - and, in `timeline-math`, that a split/trim/join has no
    *  track to rebase. */
   kfField?: string;
   /** OPTIONAL, same terms: the box's DEPTH (plans/104 §5.3, px above the surface).
-   *  Not a timing field — named alongside them because a keyframe's `z` channel
+   *  Not a timing field - named alongside them because a keyframe's `z` channel
    *  replaces it for its segment, so every writer that carries one carries the other. */
   zField?: string;
   minSize?: number;
@@ -249,7 +252,7 @@ interface CanvasCfg {
  */
 type EditorMode = 'select' | 'create' | 'pen' | 'line';
 
-/** `canvas.connect` — how the editor authors + stores connector edges. */
+/** `canvas.connect` - how the editor authors + stores connector edges. */
 interface ConnectCfg {
   input: string;            // input id of the connectors blocks array
   fromField?: string;       // edge field holding the source box id (default 'from')
@@ -319,7 +322,7 @@ interface DocInfo {
   formats?: string[];
   // Export provenance: a READ-ONLY view of the name/contact that gets baked into an
   // export's file metadata, plus an opt in/out toggle. The fields themselves are
-  // edited in the profile (editHref) — never here.
+  // edited in the profile (editHref) - never here.
   provenance?: {
     editHref?: string;
     get(): Promise<{ optedIn: boolean; author: string; contact: string }>;
@@ -358,7 +361,7 @@ interface InitFreeCanvasOpts {
   /** Frame-primitive mode (plan 93 F1b). When present, the box array may include
    *  `kind === frameKind` boxes that render as free-placed `[data-pdf-page]` pages
    *  (the tool's hook emits them at authored x/y). The overlay then (a) drives live
-   *  gestures in frame-local space via each frame's DOM offset — the same math the
+   *  gestures in frame-local space via each frame's DOM offset - the same math the
    *  carousel uses, and (b) re-buckets a moved/created/resized box into the frame its
    *  centre lands in, on drop. Absent for tools whose canvas declares no `frameField`,
    *  so every frame-aware path below is dead for them (no-frames byte-identity). */
@@ -373,7 +376,7 @@ interface PagesCfg {
   max: number;
 }
 
-/** `canvas.frameField`/… — the frame-primitive field names (plan 93). `frameKind`
+/** `canvas.frameField`/… - the frame-primitive field names (plan 93). `frameKind`
  *  is the `kind` value that marks a box as a page container; `frameField` is where a
  *  member box stores its owning frame id. order/clip are read by the hook, not yet by
  *  the overlay (cascade + clip toggles are later F1b slices). */
@@ -431,29 +434,29 @@ interface PopGridItem { label: string; icon?: string; run(): void; disabled?: bo
 interface PopSep { sep: true; grid?: undefined }
 interface PopGrid { sep?: undefined; grid: PopGridItem[]; cols?: number }
 // `key` tags the rendered row with `data-pop="<key>"` so a long-lived menu can be
-// refreshed in place — the undo/redo pair stays open while you step back, and its
+// refreshed in place - the undo/redo pair stays open while you step back, and its
 // enabled state has to follow the history stack rather than the moment it opened.
-// `on` makes a row a RADIO rather than a command — set it (even to false) and the row
+// `on` makes a row a RADIO rather than a command - set it (even to false) and the row
 // reports `aria-checked` and paints its current state. Used by the pen's spline-type menu,
 // where the point of opening it is to see which type you are already on.
 interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean; key?: string; on?: boolean }
 type PopItem = PopSep | PopGrid | PopAction;
 
-// Gesture state — filled in by beginGesture with pointerId/startClient.
+// Gesture state - filled in by beginGesture with pointerId/startClient.
 interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
 interface TapGesture extends GestureBase { type: 'tap' }
 interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
 /**
- * CAMERA PAN (plans/104 §8) — a drag on the EMPTY stage while a camera is selected and
+ * CAMERA PAN (plans/104 §8) - a drag on the EMPTY stage while a camera is selected and
  * running. It takes the gesture the marquee would otherwise have had, which is the
- * whole shape of "camera mode is entered by selection": there is no mode to turn on,
+ * whole idea of "camera mode is entered by selection": there is no mode to turn on,
  * and clicking any box leaves it by ordinary selection semantics.
  *
  * `client` is the last pointer position in CLIENT px (what a pointer event carries);
  * `dx`/`dy` are the accumulated displacement in NATIVE px, converted through
  * `clientToNative` on every move exactly as every other drag in this canvas does. The
  * invariant is direct manipulation: the picture keeps up with the hand at any canvas
- * zoom, which needs a fixed MODEL displacement per SCREEN px — i.e. the client delta
+ * zoom, which needs a fixed MODEL displacement per SCREEN px - i.e. the client delta
  * divided by the zoom. Writing client px straight into the model instead made the same
  * drag move the shot half as far at 50 % and twice as far at 200 %.
  */
@@ -462,7 +465,7 @@ interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx:
  * The CAMERA TILT drag (plans/104 §8, P2): shift + empty-stage drag, the chord §8
  * reserved at M2.5 ("shift-drag reserved for tilt (P2)") and P2 finally spends.
  *
- * CLIENT px, and deliberately NOT native ones — the opposite of its `campan` sibling,
+ * CLIENT px, and deliberately NOT native ones - the opposite of its `campan` sibling,
  * for the same reason that one converts. A pan writes a MODEL DISPLACEMENT, so it must
  * track the hand through the canvas zoom; a tilt writes an ANGLE, which has no length
  * in stage space at all. Converting here would make the same wrist movement turn the
@@ -471,7 +474,7 @@ interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx:
  */
 interface CamTiltGesture extends GestureBase { type: 'camtilt'; client: Point; dx: number; dy: number }
 interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
-// Line tool — one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
+// Line tool - one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
 // edge under plan 90). Both ends are plain canvas points: a line is a path box like any
 // pen shape, and attaching an end to a box is P3's bind gesture, not a side effect of
 // releasing over one.
@@ -481,13 +484,13 @@ interface ResizeGesture extends GestureBase { type: 'resize'; index: number; han
 interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
 interface GScaleGesture extends GestureBase { type: 'gscale'; sel: number[]; startBoxes: Box[]; anchor: Point; origDist: number; liveBoxes?: Box[] }
 interface GRotateGesture extends GestureBase { type: 'grotate'; sel: number[]; startBoxes: Box[]; centre: Point; centerClient: Point; pointerStartDeg: number; liveBoxes?: Box[] }
-// Pen tool (Stage D). Drawing is `pendraw` — one gesture per NODE, not one per path, since
+// Pen tool (Stage D). Drawing is `pendraw` - one gesture per NODE, not one per path, since
 // the path itself is a draft that outlives any single press (see `penDraft`). The other
 // three belong to node-edit mode on an already-committed path box.
 interface PenDrawGesture extends GestureBase { type: 'pendraw'; origin: Point; index: number }
 interface PenNodeGesture extends GestureBase {
   type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean;
-  /** plan 96 P3 — which END of the path is being dragged, when exactly one END node is.
+  /** plan 96 P3 - which END of the path is being dragged, when exactly one END node is.
    *  Set at press; drives the bind affordance during the drag and the write on drop. */
   bindEnd?: 'start' | 'end';
 }
@@ -520,44 +523,44 @@ const HANDLES: HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const SNAP_PX = 6;          // snap threshold in SCREEN px
 const SVG = {
   add: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  // Present — a play triangle (open the frames as a fullscreen deck, plan 112).
+  // Present - a play triangle (open the frames as a fullscreen deck, plan 112).
   present: '<path d="M8 5v14l11-7z"/>',
-  // Code — angle brackets (open the Custom CSS editor, plan 112 M4).
+  // Code - angle brackets (open the Custom CSS editor, plan 112 M4).
   code: '<polyline points="8 6 3 11 8 16"/><polyline points="16 6 21 11 16 16"/>',
-  // Notes — a lined note card (open the speaker-notes panel, plan 112 M5).
+  // Notes - a lined note card (open the speaker-notes panel, plan 112 M5).
   notes: '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
-  // Undo/redo — same glyphs as the sidebar header's history buttons (tool.js).
+  // Undo/redo - same glyphs as the sidebar header's history buttons (tool.js).
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>',
-  // Z-order family — a filled "object" square + a direction arrow; the front/back
+  // Z-order family - a filled "object" square + a direction arrow; the front/back
   // pair add an edge bar (the top/bottom of the stack) to read as "all the way".
   // Object below the arrow = moving up (forward/front); above it = moving down.
   front: '<rect x="6" y="13" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M3 3h18"/><path d="M12 10V6"/><path d="m8.5 9.5 3.5-3.5 3.5 3.5"/>',
   align: '<line x1="3" y1="4" x2="3" y2="20"/><rect x="6" y="7" width="12" height="4" rx="1"/><rect x="6" y="14" width="7" height="4" rx="1"/>',
-  // Line tool — a diagonal shaft ending in an arrowhead (draw a line or arrow).
+  // Line tool - a diagonal shaft ending in an arrowhead (draw a line or arrow).
   line: '<path d="M5 19 L19 5"/><path d="M12 5h7v7"/>',
-  // Snap-to-grid toggle — a magnet in a box (snapping = magnetic pull to the grid).
+  // Snap-to-grid toggle - a magnet in a box (snapping = magnetic pull to the grid).
   grid: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 15.5V11a3 3 0 0 1 6 0v4.5"/><path d="M7.5 15.5h3"/><path d="M13.5 15.5h3"/>',
   // Auto-arrange the connected cards into a tidy hierarchy.
   tidy: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v3"/><path d="M6 16v-2a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2"/>',
   dup: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
-  // "+Keyframe" — the same diamond lib/icons.ts's `keyframe` draws, because it is the
+  // "+Keyframe" - the same diamond lib/icons.ts's `keyframe` draws, because it is the
   // same action wearing the same glyph in its other home (the timeline transport).
   // plans/104 §8's M2.5 revision: TWO homes, ONE action.
   keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
-  // The camera add-kind (plans/104 §5.4) — the same body-and-lens the icon registry's
+  // The camera add-kind (plans/104 §5.4) - the same body-and-lens the icon registry's
   // `camera` draws, so the rail, the timeline menu and the inspector group agree.
   camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   size: '<path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><path d="M9 21H5a2 2 0 0 1-2-2v-4"/>',
-  // Pages/carousel — a centre "page" card flanked by two peeking page edges.
+  // Pages/carousel - a centre "page" card flanked by two peeking page edges.
   pages: '<rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4.5 7v10"/><path d="M19.5 7v10"/>',
-  // Frame add-kind + the Frames reorder rail button — the Figma artboard "#" (two
+  // Frame add-kind + the Frames reorder rail button - the Figma artboard "#" (two
   // pairs of ledger lines running past the edges).
   frame: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
-  // Drag handle in the Frames reorder list — the classic six-dot grip.
+  // Drag handle in the Frames reorder list - the classic six-dot grip.
   grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
   chevUp: '<polyline points="6 15 12 9 18 15"/>',
   chevDown: '<polyline points="6 9 12 15 18 9"/>',
@@ -565,16 +568,16 @@ const SVG = {
   chevRight: '<polyline points="9 18 15 12 9 6"/>',
   minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
   editText: '<path d="M4 7V5h16v2"/><path d="M9 19h6"/><path d="M12 5v14"/>',
-  // Pencil — the "edit text" action (replaces the old 'T' glyph on the object bar).
+  // Pencil - the "edit text" action (replaces the old 'T' glyph on the object bar).
   pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-  // Type glyph — the Text add-kind + the "Aa" text panel.
+  // Type glyph - the Text add-kind + the "Aa" text panel.
   type: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
   boxKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/>',
-  // Animation (Lottie) add-kind — a play triangle inside a rounded frame, echoing the picker's "▶ LOTTIE" badge.
+  // Animation (Lottie) add-kind - a play triangle inside a rounded frame, echoing the picker's "▶ LOTTIE" badge.
   anim: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/>',
-  // Video add-kind — a film clap/frame with a play triangle (a fatter play than `anim`).
+  // Video add-kind - a film clap/frame with a play triangle (a fatter play than `anim`).
   video: '<rect x="2" y="5" width="15" height="14" rx="2.5"/><path d="M17 9l5-3v12l-5-3z"/><path d="M7 9.5l4 2.5-4 2.5z"/>',
-  // Timeline rail toggle — three staggered clip bars with the playhead crossing them,
+  // Timeline rail toggle - three staggered clip bars with the playhead crossing them,
   // i.e. a picture of the panel it opens. The old glyph (one bar over a tick ruler) read
   // as a comb/toaster at rail size: a ruler alone says "measure", not "clips over time",
   // and nothing in it carried the playhead. Staggered bars are the part people recognise.
@@ -584,7 +587,7 @@ const SVG = {
   audioKind: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 11v2"/>',
   toolKind: '<path d="M4 20 14 10"/><path d="m16.5 3.5 1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6L11.5 8.5l3.6-1.4z"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="11" y1="11.5" x2="12" y2="11.5"/><line x1="12" y1="11.5" x2="12" y2="16"/><circle cx="12" cy="8" r="0.7" fill="currentColor" stroke="none"/>',
-  // Import a design file (Figma SVG / Penpot) — an arrow rising UP out of a tray
+  // Import a design file (Figma SVG / Penpot) - an arrow rising UP out of a tray
   // (upload/import, not download: the arrowhead apexes at the top, not the tray).
   importFile: '<path d="M12 3v10"/><polyline points="8 7 12 3 16 7"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
   // Primary editor-rail action glyphs (Export / Save / Share; Copy reuses `dup`).
@@ -624,7 +627,7 @@ const SVG = {
   ungroup: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
   clip: '<rect x="3" y="3" width="12" height="12" rx="2"/><circle cx="15.5" cy="15.5" r="5.5"/>',
   unclip: '<rect x="3" y="3" width="9" height="9" rx="2"/><circle cx="16.5" cy="16.5" r="4.5"/>',
-  // Boolean family — the Illustrator/Figma pictograms: two overlapping squares, A at
+  // Boolean family - the Illustrator/Figma pictograms: two overlapping squares, A at
   // (4,4)-(14,14) and B at (10,10)-(20,20), with the SURVIVING region filled and the
   // discarded one left as a faint outline. Same two squares in all four, so the icons
   // read as one set and the difference between them is only ever what's solid.
@@ -632,39 +635,39 @@ const SVG = {
   boolSubtract: '<path d="M4 4h10v6h-4v4H4z" fill="currentColor" stroke="none"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/>',
   boolIntersect: '<rect x="4" y="4" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="4" height="4" fill="currentColor" stroke="none"/>',
   boolExclude: '<path d="M4 4h10v6h6v10H10v-6H4zM10 10h4v4h-4z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Outline stroke — a band between two concentric outlines (the stroke, now a shape).
+  // Outline stroke - a band between two concentric outlines (the stroke, now a shape).
   outlineStroke: '<path d="M3 5h18v14H3zM7 9h10v6H7z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Offset path — the shape, plus a dashed larger copy of it standing off the edge.
+  // Offset path - the shape, plus a dashed larger copy of it standing off the edge.
   offsetPath: '<rect x="7" y="9" width="10" height="6" rx="1.5"/><rect x="3.5" y="5.5" width="17" height="13" rx="4" stroke-dasharray="3 2.5" opacity="0.75"/>',
-  // Simplify — one smooth curve with only its two end nodes left on it.
+  // Simplify - one smooth curve with only its two end nodes left on it.
   simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
   outlineText: '<path d="M5 7V4h14v3M12 4v12"/><path d="M9 20h6"/><rect x="10.2" y="14.2" width="3.6" height="3.6" fill="none"/>',
-  // Lift layers (plans/104 §7) — the three-plate stack, with the top plate standing
+  // Lift layers (plans/104 §7) - the three-plate stack, with the top plate standing
   // OFF the other two: the glyph says "one drawing, several plates, one of them
   // raised", which is exactly what the action does. The plates are the same isometric
   // diamond the `group`/`ungroup` pair already uses, so the family reads as one set.
   liftLayers: '<path d="m12 2 8 4.5-8 4.5-8-4.5z"/><path d="m4 13 8 4.5 8-4.5"/><path d="m4 17 8 4.5 8-4.5"/>',
-  // Pointer — the arrow cursor itself, outlined to sit with the rest of the line-art rail.
+  // Pointer - the arrow cursor itself, outlined to sit with the rest of the line-art rail.
   // The one glyph in here that names a TOOL by drawing the cursor it gives you.
   pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
-  // Pen — the vector PEN TOOL: the wedge nib with its slit, the anchor point it drops,
+  // Pen - the vector PEN TOOL: the wedge nib with its slit, the anchor point it drops,
   // and the blade trailing behind. Deliberately NOT the `pencil` glyph, which already
   // means "edit this box's text" on the object bar. The previous glyph was a fountain
-  // pen, which reads as "write/draw freehand" — the one thing this mode does not do;
+  // pen, which reads as "write/draw freehand" - the one thing this mode does not do;
   // the anchor circle is what says "click to place points" at a glance.
   pen: '<path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
-  // Edit nodes — a curve with its knots exposed, which is what the mode shows.
+  // Edit nodes - a curve with its knots exposed, which is what the mode shows.
   nodes: '<path d="M4 18C4 9 12 15 12 9s8 0 8-3"/><rect x="2" y="16" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="10" y="7" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="18" y="4" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/>',
-  // Continuity — the same node with the same two arms, changing only how they relate:
+  // Continuity - the same node with the same two arms, changing only how they relate:
   // hinged (corner), collinear (smooth), collinear and equal (symmetric).
   contCorner: '<path d="M5 19 12 12l7 3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>',
   contSmooth: '<path d="M4 15h8"/><path d="M12 15h8"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="4" cy="15" r="1.4"/><circle cx="20" cy="15" r="1.4"/>',
   contSymmetric: '<path d="M6 15h12"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="6" cy="15" r="1.4"/><circle cx="18" cy="15" r="1.4"/><path d="M6 19v2"/><path d="M18 19v2"/><path d="M6 20h12"/>',
   // Leave node-editing (the mode's explicit exit, mirroring how a text edit is committed).
   penDone: '<polyline points="4 13 9 18 20 6"/>',
-  // Closed path — a loop whose ends have met, with the join node called out.
+  // Closed path - a loop whose ends have met, with the join node called out.
   penClose: '<path d="M12 5c5 0 7 3 7 7s-2 7-7 7-7-3-7-7 2-7 7-7z"/><circle cx="12" cy="5" r="2.2" fill="currentColor" stroke="none"/>',
-  // Stroke — two rules of different weight, which is what the panel behind it sets.
+  // Stroke - two rules of different weight, which is what the panel behind it sets.
   strokeIc: '<path d="M4 8h16" stroke-width="4.5"/><path d="M4 16h16" stroke-width="1.3"/>',
   // Gradient: a square whose fill ramps, plus the two stop dots the canvas handles are.
   // Drawn with a gradient def rather than hatching so the button reads as what it does
@@ -688,22 +691,22 @@ const SVG = {
   joinMiter: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="miter" stroke-linecap="butt"/>',
   joinRound: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="round" stroke-linecap="butt"/>',
   joinBevel: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt"/>',
-  // Fill rule — the same two-contour shape, filled by each rule: non-zero fills the
+  // Fill rule - the same two-contour shape, filled by each rule: non-zero fills the
   // inner ring too (same winding), even-odd leaves it as a hole.
   ruleNonzero: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none"/>',
   ruleEvenOdd: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Text alignment (lines of ragged copy) — distinct from the object-align icons.
+  // Text alignment (lines of ragged copy) - distinct from the object-align icons.
   textL: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/>',
   textC: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5.5" y1="18" x2="18.5" y2="18"/>',
   textR: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="7" y1="18" x2="20" y2="18"/>',
   textT: '<line x1="4" y1="4" x2="20" y2="4"/><line x1="6" y1="9" x2="18" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/>',
   textM: '<line x1="6" y1="8" x2="18" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="6" y1="16" x2="18" y2="16"/>',
   textB: '<line x1="4" y1="20" x2="20" y2="20"/><line x1="6" y1="15" x2="18" y2="15"/><line x1="8" y1="11" x2="16" y2="11"/>',
-  // Reset text formatting — a capital T with a diagonal slash through it.
+  // Reset text formatting - a capital T with a diagonal slash through it.
   resetColor: '<line x1="6" y1="6" x2="18" y2="6"/><line x1="12" y1="6" x2="12" y2="18"/><line x1="4.5" y1="20" x2="19.5" y2="4"/>',
-  // Bulleted list — three dotted rows (a list, not a lone bullet).
+  // Bulleted list - three dotted rows (a list, not a lone bullet).
   bulletList: '<circle cx="4.5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.5" fill="currentColor" stroke="none"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>',
-  // Scissors — cut the subject out (host.matte "Remove background").
+  // Scissors - cut the subject out (host.matte "Remove background").
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
   // A plain tick. Used ONLY as the decorative bullet of the Lift layers plan list,
   // which is why it is aria-hidden there: the list is a preview of what will happen,
@@ -719,7 +722,7 @@ function icon(paths: string): string {
 
 /**
  * Where the detached tool rail may sit, in stage-relative px. Pure numbers so the
- * clamp is honestly testable without a browser — the caller does the measuring.
+ * clamp is honestly testable without a browser - the caller does the measuring.
  *
  * `reserveBottom` is the band at the foot of the stage the rail must never cover
  * (the export pill, wherever a host still shows one). It comes off the TRAVEL range,
@@ -736,7 +739,7 @@ export function clampRailPos(
   // An unmeasurable stage (a not-yet-laid-out ResizeObserver delivery, a stage that has
   // gone display:none on navigation) must not be clamped against: every axis would
   // collapse to `pad` and the remembered position would be silently lost. Hand the
-  // wanted position straight back — placePopover guards the same way.
+  // wanted position straight back - placePopover guards the same way.
   if (!(stage.w > 0) || !(stage.h > 0)) return { left: Math.round(want.left), top: Math.round(want.top) };
   const maxLeft = Math.max(pad, stage.w - rail.w - pad);
   const maxTop = Math.max(pad, stage.h - rail.h - pad - Math.max(0, o.reserveBottom ?? 0));
@@ -793,20 +796,20 @@ export interface CtxTopBand { lo: number; hi: number; top: number }
  * The free horizontal band on the top-chrome row where the contextual bar sits.
  *
  * The bar used to float ABOVE (or inside) the selection, which put it right over the very
- * artwork the user was looking at — the thing they were dragging or resizing. So it is
+ * artwork the user was looking at - the thing they were dragging or resizing. So it is
  * pinned to the TOP now, on the same line as the back pill (top-left) and the zoom HUD
  * (top-right): the band runs from the right edge of the left-corner chrome to the left
  * edge of the right-corner chrome, so all three read as one row at every width and none
- * can overlap another — the "layout harmony" the narrow mobile top row needs.
+ * can overlap another - the "layout harmony" the narrow mobile top row needs.
  *
  * `blockers` are that fixed chrome in stage coordinates, measured by the caller (so this
- * stays pure numbers and honestly testable without a browser — the same bargain
+ * stays pure numbers and honestly testable without a browser - the same bargain
  * clampRailPos makes). A blocker whose centre is left of the stage centre bounds the band
  * on the left (the back pill); one to the right bounds it on the right (the zoom HUD). The
  * shared `top` aligns the bar with that chrome so the three sit on one line.
  *
  * The caller caps the bar to `hi - lo` and lets it scroll inside that width (see the
- * `.fc-ctxbar` overflow), so a bar too wide for the band — a phone — becomes a scrolling
+ * `.fc-ctxbar` overflow), so a bar too wide for the band - a phone - becomes a scrolling
  * strip on the row rather than a bar that drops down over the canvas.
  */
 export function ctxTopBand(
@@ -817,7 +820,7 @@ export function ctxTopBand(
   const pad = o.pad ?? 6;
   const gap = o.gap ?? 8;
   // An unmeasurable stage (display:none, a pre-layout ResizeObserver delivery, jsdom)
-  // gives nothing to bound against — hand back a padded strip at the top rather than
+  // gives nothing to bound against - hand back a padded strip at the top rather than
   // inventing a band from zeroes, exactly as clampRailPos and placePopover do.
   if (!(stage.w > 0)) return { lo: pad, hi: pad, top: pad };
   const live = blockers.filter((b) => b.right > b.left && b.bottom > b.top);
@@ -835,8 +838,8 @@ export function ctxTopBand(
 }
 
 /**
- * Centre a bar of width `bw` in the band. A bar wider than the band pins to `lo` — its
- * own `overflow-x` scrolls the rest of its controls into reach — so it never pushes past
+ * Centre a bar of width `bw` in the band. A bar wider than the band pins to `lo` - its
+ * own `overflow-x` scrolls the rest of its controls into reach - so it never pushes past
  * `hi` into the chrome on the right.
  */
 export function centreCtxBar(bw: number, band: CtxTopBand): { left: number; top: number } {
@@ -846,7 +849,7 @@ export function centreCtxBar(bw: number, band: CtxTopBand): { left: number; top:
 }
 
 /**
- * The dragged rail position — CHROME state, exactly like zoom and pan. It lives in
+ * The dragged rail position - CHROME state, exactly like zoom and pan. It lives in
  * the module for the life of the page and deliberately reaches neither the URL, the
  * box model, nor a saved session; a reload puts the rail back on its docked edge.
  * Shared by every free-canvas tool: one editor, one remembered spot for its tools.
@@ -854,7 +857,7 @@ export function centreCtxBar(bw: number, band: CtxTopBand): { left: number; top:
 let railSession: { left: number; top: number } | null = null;
 
 // Weight menu (shared by the Text panel and the in-edit format bar). Mono cuts
-// rarely ship a Black — their variable axes top out at 800 — so the mono menu
+// rarely ship a Black - their variable axes top out at 800 - so the mono menu
 // stops at Extrabold (both profiles' hooks.js + the vector exporter cap it the
 // same way; mono detection lives in isMonoFont inside initFreeCanvas).
 const WEIGHT_CHOICES: Array<[string, string]> = [
@@ -862,12 +865,12 @@ const WEIGHT_CHOICES: Array<[string, string]> = [
   ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extrabold'], ['900', 'Black'],
 ];
 // Fallback font menu for editor tools whose manifest doesn't declare a font
-// select — the historical hard-coded pair, so such tools keep working unchanged.
+// select - the historical hard-coded pair, so such tools keep working unchanged.
 const FALLBACK_FONT_OPTIONS: FontOption[] = [
   { value: 'SUSE', label: 'SUSE Sans' },
   { value: 'SUSE Mono', label: 'SUSE Mono' },
 ];
-// Live-preview font stacks — kept byte-for-byte in step with the shipped
+// Live-preview font stacks - kept byte-for-byte in step with the shipped
 // design hooks.js FONTS maps (SUSE profile: 'SUSE'/'SUSE Mono';
 // lolly-start: 'sans'/'mono') so the in-edit preview matches the committed
 // render and the vector export exactly. Wire values not listed here derive a
@@ -879,7 +882,7 @@ const FONT_STACK: Record<string, string> = {
   'sans': "var(--font-brand, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif)",
 };
 /**
- * The arrowhead vocabulary (plan 96 P1) — EXACTLY the strings `edgeArrowHead` in
+ * The arrowhead vocabulary (plan 96 P1) - EXACTLY the strings `edgeArrowHead` in
  * engine/src/connectors.ts branches on, and in its order, because a spline, a line and a
  * connector are one primitive and must not offer two different sets of heads. Anything
  * outside this list falls through to the engine's triangle, which is why the menu is
@@ -891,7 +894,7 @@ const HEAD_CHOICES: Array<[string, string]> = [
 ];
 /**
  * The route choices a BOUND path offers (plan 96 P3), in the engine's own order. '' is
- * "auto", i.e. read the route off the spline kind — which is what an unbound path has
+ * "auto", i.e. read the route off the spline kind - which is what an unbound path has
  * always done and what a bound one does until someone says otherwise. The other thirteen
  * are `CONNECTOR_ROUTE_STYLES`, spelled with their labels here because six spline kinds
  * cannot name thirteen routes.
@@ -907,7 +910,7 @@ const ROUTE_CHOICES: Array<[string, string]> = [
 ];
 
 /** Is a dash pattern relevant to this box? A dash keyword is on, OR an array is already
- *  authored — the second half is what stops a stored pattern becoming unreachable the
+ *  authored - the second half is what stops a stored pattern becoming unreachable the
  *  moment someone flips the keyword back to Solid. */
 function dashRowOn(styleVal: string, arrVal: string): boolean {
   return styleVal === 'dashed' || styleVal === 'dotted' || String(arrVal).trim() !== '';
@@ -921,10 +924,10 @@ function featureSettings(ligOn: boolean, altOn: boolean): string {
 }
 // A short, unambiguous marker for layout objects copied INSIDE the editor. The
 // serialized boxes ride the OS clipboard behind it, so ⌘V pastes (duplicates)
-// them — even across a reload — while ordinary copied text still lands as a new
+// them - even across a reload - while ordinary copied text still lands as a new
 // text box. Kept in-memory too, in case a browser blocks the clipboard read.
 const FC_CLIP_PREFIX = 'lolly/layout-boxes:';
-// Coerce a manifest/model boolean (real boolean or "true"/"1"/"on" string) — mirrors
+// Coerce a manifest/model boolean (real boolean or "true"/"1"/"on" string) - mirrors
 // hooks.js boolVal so the editor previews match the render.
 function boolOf(v: any, dflt: boolean): boolean {
   if (v === true || v === false) return v;
@@ -934,7 +937,7 @@ function boolOf(v: any, dflt: boolean): boolean {
   if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
   return dflt;
 }
-// Flex mappings for the align/valign live preview — must mirror hooks.js boxCss.
+// Flex mappings for the align/valign live preview - must mirror hooks.js boxCss.
 const H_JUSTIFY: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end' };
 const V_ALIGN: Record<string, string> = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
 
@@ -966,7 +969,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     kindField: 'kind',
     // `pathField` is left un-defaulted on purpose: it is the feature flag, so a manifest
     // that omits it must resolve to undefined. The other three DO default, to the same
-    // names as vector-ops' DEFAULT_VECTOR_FIELDS — the shipped Design manifests
+    // names as vector-ops' DEFAULT_VECTOR_FIELDS - the shipped Design manifests
     // append the `stroke`/`strokeW`/`fillRule` sub-fields but only declare `pathField` on
     // the canvas block, and the overlay has to read the same field the ops write.
     pathField: cv.pathField,
@@ -991,16 +994,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The vector operations' own field view. `cfg` is a superset of `VectorFieldConfig`
   // and vector-ops resolves each name defensively (a non-string falls back to the
   // Design default), so the resolved config is handed over unchanged.
-  // Null until the manifest declares `canvas.pathField` — see CanvasCfg.pathField.
+  // Null until the manifest declares `canvas.pathField` - see CanvasCfg.pathField.
   const vectorCfg: VectorFieldConfig | null = cv.pathField ? cfg : null;
   // Plan 96's path decorations are DECLARED, not defaulted-into-existence: the field names
   // above default (so the reads are simple), but a tool that never named them in its canvas
   // block has a hooks.js that cannot draw an arrowhead or an authored dash pattern, and
-  // authoring one into its boxes would store a decoration the render silently ignores —
+  // authoring one into its boxes would store a decoration the render silently ignores - 
   // worse, one the compact URL drops on the way out because the field is undeclared. Every
-  // `pathField` tool shipping today declares the head set — both Design packs, and
+  // `pathField` tool shipping today declares the head set - both Design packs, and
   // Sequence Studio since its 1.3.0 (fields headStart/headEnd, canvas headStartField/
-  // headEndField) — so the check is a live gate for a tool that has not opted in yet, not a
+  // headEndField) - so the check is a live gate for a tool that has not opted in yet, not a
   // description of one that exists.
   const hasHeadCfg = !!(cv.headStartField || cv.headEndField);
   const hasBindCfg = !!(cv.bindStartField || cv.bindEndField);
@@ -1049,7 +1052,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
   // ── Manifest-driven shape control ─────────────────────────────────────────────
   // The "More" panel's shape segment is built from the tool's OWN declared shape
-  // options — NOT a fixed list — so a tool only ever offers shapes its hooks.js can
+  // options - NOT a fixed list - so a tool only ever offers shapes its hooks.js can
   // render (e.g. `circle` is Design only; Carousel/Org-chart/Record don't
   // declare it, so it never shows there and can't produce a broken square). A known
   // value gets its glyph; anything else falls back to its label text.
@@ -1062,7 +1065,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── Manifest-driven SHADOW control, for the same reason ──────────────────────
   // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
   // manifests had moved on: Design and Sequence Studio both declare a fifth,
-  // `depth` — the very target `liftRows` pre-sets on every lifted layer (plans/104
+  // `depth` - the very target `liftRows` pre-sets on every lifted layer (plans/104
   // §7) and a real branch of SHADOW_TARGETS in all three hooks copies. A segmented
   // control marks `is-on` by exact match, so a lifted layer opened its Shadow row
   // with ALL FOUR segments off (the control reads as broken) and clicking any of
@@ -1077,16 +1080,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Design, whose
-  // canvas config has no `import` key — so its toolbar is unchanged.
+  // canvas config has no `import` key - so its toolbar is unchanged.
   const importCfg = cv.import || null;
   // Brand vocabulary for the importer (engine DesignMapOptions): imported text maps
   // onto the tool's OWN font select values (SUSE: 'SUSE'/'SUSE Mono'; lolly-start:
-  // 'sans'/'mono'), and box seed colours come from its addKinds seeds — so an import
+  // 'sans'/'mono'), and box seed colours come from its addKinds seeds - so an import
   // is indistinguishable from natively-authored boxes under any profile. Fields the
   // manifest doesn't declare stay undefined → the engine's neutral defaults apply.
   const importMap = (() => {
     const monoOpt = fontOptions.find((o) => isMonoFont(o.value));
-    // '' is a real seed value (transparent fill — e.g. record's image seed), so only
+    // '' is a real seed value (transparent fill - e.g. record's image seed), so only
     // a missing/non-string seed defers to the engine default.
     const seedColor = (kindId: string, field: string): string | undefined => {
       const seed = addKinds.find((k) => k.id === kindId)?.seed;
@@ -1097,8 +1100,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       fonts: {
         defaultFamily: defaultFont,
         ...(monoOpt ? { monoFamily: monoOpt.value, monoMaxWeight: maxWeightFor(monoOpt.value) } : {}),
-        // Every family the shell can actually resolve — the manifest's own wire
-        // values plus installed user fonts — passes through mapFontFamily
+        // Every family the shell can actually resolve - the manifest's own wire
+        // values plus installed user fonts - passes through mapFontFamily
         // verbatim instead of bucketing to the two-family vocabulary.
         knownFamilies: [...new Set([...fontOptions.map((o) => o.value), ...brandFontFamilies()])],
       },
@@ -1127,13 +1130,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     defaultWidth: cv.connect.defaultWidth ?? 2.5,
   } : null;
   // Opt-in TIME model (phase 1). A tool is "time-capable" only when its canvas config
-  // maps ALL TEN time sub-fields — a partial mapping would give the panel somewhere to
+  // maps ALL TEN time sub-fields - a partial mapping would give the panel somewhere to
   // read from but nowhere to write, so it is treated as absent.
   //
   // Two tools qualify today: Sequence Studio and Design (both declare the phase-1
   // time model in their canvas block). Carousel Maker, Org Chart, Record and every other
   // editor map none of them, so `timeCfg` is null there and every timeline branch below
-  // is dead code for them — no rail button, no lazy chunk, no stage reserve, no listener.
+  // is dead code for them - no rail button, no lazy chunk, no stage reserve, no listener.
   // On an UNTIMED Design composition the cost is one extra rail button and nothing
   // else: `anyTimed()` is false, so the panel never auto-opens and its chunk is never
   // fetched until the user asks for it.
@@ -1150,8 +1153,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
       // that declares no link sub-field is still fully time-capable, it just never
       // offers "Detach audio" (progressive capability). Both shipping time-capable
-      // tools declare it today — Sequence Studio, and Design since its 1.12.0
-      // (`linkOf`) — so this is a live gate for the next tool to opt in, not a
+      // tools declare it today - Sequence Studio, and Design since its 1.12.0
+      // (`linkOf`) - so this is a live gate for the next tool to opt in, not a
       // description of one that exists.
       linkField: cv.linkField || '',
       // Also optional, for the same reason: the authored easing curves are additive on
@@ -1163,7 +1166,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // (generated captions), and a tool without a group field never groups.
       groupField: cv.groupField || '',
       // And again: the keyframe track. It is the ONE field a split/trim-in/join
-      // rebases instead of copying (plans/104 §5.6) — a tool that declares none is
+      // rebases instead of copying (plans/104 §5.6) - a tool that declares none is
       // simply not keyframable, and every rebase branch in timeline-math is inert.
       kfField: cv.kfField || '',
       // And the depth field, for the one thing the time math needs it for: a `z`
@@ -1173,7 +1176,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     } : null;
   // Can this tool import a design AS timed scenes (frames → timeline clips) at all?
   // Time-capable + import-capable. Design qualifies (it declares the time model), so it
-  // OFFERS the "as scenes vs replace the board" choice (plans/104 §337) — on the drop
+  // OFFERS the "as scenes vs replace the board" choice (plans/104 §337) - on the drop
   // door (the stash's `scenes` flag) and in the import panel (the toggle below).
   const importSceneCapable: boolean = !!(timeCfg && importCfg);
   // Whether SCENES is the DEFAULT: only a manifest that still declares `import.mode:
@@ -1191,7 +1194,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Selection change-notifier for the timeline panel. `selection` is assigned from ~20
   // sites, but EVERY one of them reaches paintChrome (directly via renderChrome /
   // renderChromeLive, or via commit → runtime.subscribe → scheduleSync), so the fire
-  // lives in exactly one place (top of paintChrome) and is guarded by a signature —
+  // lives in exactly one place (top of paintChrome) and is guarded by a signature - 
   // a repaint with an unchanged selection is not a change. No write site is touched.
   const selListeners = new Set<() => void>();
   let selNotifyKey: string | null = null;
@@ -1204,14 +1207,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   let multiTapMode = false;            // touch: taps ADD to the selection (Group/Align need ≥2)
   /**
-   * THE tool mode — see `setMode`. Every mode used to be its own boolean, which is exactly
+   * THE tool mode - see `setMode`. Every mode used to be its own boolean, which is exactly
    * why they could all be true at once.
    */
   let mode: EditorMode = 'select';
   // The Node tool (Inkscape's `N`): a sub-mode of 'select' where a single click on a path
   // box jumps straight into node editing rather than selecting it. A flag, not a 5th
-  // EditorMode, because `setMode` ends any `penEdit` session — the very thing this tool
-  // wants to keep — so a real mode would fight that invariant. Mutually exclusive with the
+  // EditorMode, because `setMode` ends any `penEdit` session - the very thing this tool
+  // wants to keep - so a real mode would fight that invariant. Mutually exclusive with the
   // other tools: picking pen/create/connect (or the plain pointer) clears it.
   let nodeToolActive = false;
   let armedKind: AddKind | null = null;        // the create gesture's seed; set iff mode === 'create'
@@ -1228,7 +1231,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── pen tool state (Stage D) ────────────────────────────────────────────────
   // Two things, never both: `mode === 'pen'` DRAWS a new path; `penEdit` edits a committed
-  // one. Point editing is NOT a fifth mode — it is a sub-state of the pointer, entered by
+  // one. Point editing is NOT a fifth mode - it is a sub-state of the pointer, entered by
   // double-clicking a path exactly as a text edit is (see `setMode`).
   //
   // The draft lives here in NATIVE canvas px and NOT in the model, which is the whole
@@ -1243,17 +1246,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ALL of a field's contours are edited at once (a boolean with a hole, or outlined text
   // that is one path box of many glyph contours). They share ONE box-local coordinate space
   // (one frame), so `path` is a COMBINED AuthoredPath whose `nodes` are every contour's nodes
-  // concatenated in order — every position op (move / drag a handle / align / distribute /
+  // concatenated in order - every position op (move / drag a handle / align / distribute /
   // continuity / hit-test / marquee) runs on it unchanged, and `penSel` indexes into it flat.
   // `parts` records how to split that flat run back into real per-contour paths (each keeps
   // its own kind + closed): the write re-encodes every contour, the frame fits every contour,
   // and render / insert / delete are the only part-AWARE ops. `path.kind` is the first part's
-  // kind (uniform across the contours every producer here makes — all cubic — so it governs
+  // kind (uniform across the contours every producer here makes - all cubic - so it governs
   // handle display + default continuity correctly). A single-contour box has one part and is
   // byte-identical to the old single-`path` model. All DENORMALISED to box-local px.
   let penEdit: { id: string; path: AuthoredPath; parts: PenPart[]; frame: PenFrame } | null = null;
   let penSel = new Set<number>();                // selected node indices while editing
-  // Selected CONTROL POINTS (handles) while editing — keys `${nodeIndex}:in` / `:out`.
+  // Selected CONTROL POINTS (handles) while editing - keys `${nodeIndex}:in` / `:out`.
   // Built by shift-clicking a handle; align/distribute operate on nodes ∪ these. Kept
   // separate from penSel so a handle is a point in its own right, not tied to its node.
   let penHandleSel = new Set<string>();
@@ -1272,7 +1275,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // not a per-frame state, and reading it live makes the corner flicker back to smooth on
   // any move event that happens to arrive without the modifier.
   let penPullBroken = false;
-  // The paint the user last put on a path, so the NEXT path they draw matches it — the
+  // The paint the user last put on a path, so the NEXT path they draw matches it - the
   // drawing-app convention, and the reason a session of pen work doesn't mean recolouring
   // every shape. Session-only (never persisted, never in the model): it is a memory of an
   // action, not a property of the document. Set from a paint write to a path selection and
@@ -1293,12 +1296,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const getBg = (): any => runtime.getModel().find((i) => i.id === bgInputId)?.value ?? '#ffffff';
 
   // A row's identity is its OWN id, never its array position (plan 100 §3): an index key
-  // silently re-points at a different box the moment anything inserts above it — a peer's
-  // concurrent add, an undo, a paste — and a late field op would then land on the wrong
+  // silently re-points at a different box the moment anything inserts above it - a peer's
+  // concurrent add, an undo, a paste - and a late field op would then land on the wrong
   // box. Every shipped canvas manifest declares its id sub-field, and rows that lack a
   // value get one on load (see the normalisation at mount) plus on every commit, so the
   // '' below is only reachable for a row minted after mount by something that bypassed
-  // both — where selecting nothing is the honest outcome, not "select whatever sits at
+  // both - where selecting nothing is the honest outcome, not "select whatever sits at
   // that index". `hasIdField` keeps the promise honest the other way: a manifest that
   // declares no id at all (none ship today) keeps the historical index fallback rather
   // than collapsing every row onto one key.
@@ -1323,7 +1326,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * Frame-aware selection pick (plan 92, ISSUE 2a). Two passes over the SAME hitTest:
    * first the topmost NON-frame box under the point, and only when none is hit does the
    * topmost frame (artboard) take the click. So clicking a child selects the child, and
-   * clicking an artboard's own empty area / edge selects the artboard — regardless of
+   * clicking an artboard's own empty area / edge selects the artboard - regardless of
    * array order, which fixes the appended-frame-swallows-its-children bug (an Add-menu
    * frame is pushed last → topmost → a plain hitTest would let it eat every child click).
    * Frame-agnostic docs (no frameCfg) fall straight through to the ordinary hitTest, and
@@ -1342,7 +1345,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function freshId(boxes: Box[]): string {
     // ULID (plan 100 §3): the old id was a per-mount counter plus 4 random base-36
     // digits, so two devices opening the SAME saved session and adding a box each
-    // could mint the same id — which is exactly the case a collab makes routine. The
+    // could mint the same id - which is exactly the case a collab makes routine. The
     // collision check stays because it costs one pass over an array we already walk.
     const used = new Set(boxes.map((b, i) => idOf(b, i)));
     let id = ulid();
@@ -1350,7 +1353,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return id;
   }
 
-  /** Fill in ids for rows that carry none — an import, a paste, or a hook patch that
+  /** Fill in ids for rows that carry none - an import, a paste, or a hook patch that
    *  minted rows without one. Returns the SAME array when nothing was missing, so a
    *  caller commits only on a real change. Inert for a tool with no id field. */
   const withIds = (boxes: Box[]): Box[] => (hasIdField ? ensureRowIds(boxes, cfg.idField) : boxes);
@@ -1362,7 +1365,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── frame containment-on-drop (plan 93 F1b-1) ────────────────────────────────
   // Re-bucket the boxes TOUCHED by a gesture (by array index) into the frame their
-  // centre now falls inside — the drop half of the frame primitive. Pure + gated on
+  // centre now falls inside - the drop half of the frame primitive. Pure + gated on
   // `frameCfg`: dead (returns nextBoxes unchanged) for every tool whose canvas
   // declares no frameField, so no-frames documents are untouched. A frame-kind box
   // never gets a `frame` membership here (its own move/cascade is a later slice);
@@ -1385,7 +1388,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // F1b-2 frame-move cascade: when a gesture directly moves a frame-kind box, its members
   // must travel with it in the SAME commit (one undo step). `prev` is the pre-gesture
-  // model, `next` the post-transform model — both index-aligned with `sel` (no commit
+  // model, `next` the post-transform model - both index-aligned with `sel` (no commit
   // happens mid-gesture, so getBoxes()/startBoxes and the transform output share indices).
   // For every frame box whose index is in `sel` we read its OWN top-left delta (next−prev)
   // and shift each member (frame === frame.id) that the gesture did NOT already move
@@ -1395,7 +1398,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // would double-apply to both. A frame box is never cascaded as a member (never
   // self-nests). Deriving the delta from prev/next covers move (exact d.dx/d.dy) and the
   // group transforms (each frame's own top-left translation) with one path. No-op without
-  // frameCfg. assignFrames then runs on the touched `sel` only — the cascaded members keep
+  // frameCfg. assignFrames then runs on the touched `sel` only - the cascaded members keep
   // their frame because they moved with it (frame-local position unchanged), so they must
   // NOT be in the touched set, which is what keeps cascade-then-assign consistent.
   function cascadeFrameChildren(prev: Box[], next: Box[], sel: number[]): Box[] {
@@ -1450,8 +1453,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // The playhead's visibility, as the clock APPLIED it to the live DOM (sequence-dom's
-  // OFF_CLASS). A box the sequence currently hides must not swallow a canvas click —
-  // the user edits what they can see — so every pointer hit-test skips it and the
+  // OFF_CLASS). A box the sequence currently hides must not swallow a canvas click - 
+  // the user edits what they can see - so every pointer hit-test skips it and the
   // click falls through to the visible box below. DOM truth, not re-derived timing:
   // selection can never disagree with playback. No timeline mounted (or a box not yet
   // painted) → nothing carries the class → behaviour is unchanged.
@@ -1462,8 +1465,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const SEQ_OFF_CLASS = 'seq-off';
   /**
    * The ONE DOM read behind the whole rule (see the file header): is the sequence
-   * currently hiding the box carrying `id`? Everything else — hit-test skipping,
-   * chrome suppression, the keyboard gate — is a caller of this, so there is exactly
+   * currently hiding the box carrying `id`? Everything else - hit-test skipping,
+   * chrome suppression, the keyboard gate - is a caller of this, so there is exactly
    * one expression that can ever be wrong.
    */
   function seqHiddenId(id: string): boolean {
@@ -1472,14 +1475,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return el != null && el.classList.contains(SEQ_OFF_CLASS);
   }
   /**
-   * The single ACQUISITION gate (see the file header): every pointer pick — click,
-   * marquee, hover, drop — runs through this, so a box that must not be grabbed off the
+   * The single ACQUISITION gate (see the file header): every pointer pick - click,
+   * marquee, hover, drop - runs through this, so a box that must not be grabbed off the
    * canvas is excluded in ONE expression rather than at five call sites.
    *
    * Two exclusions:
-   *   • SEQ-HIDDEN — the box is not on screen at the playhead, so a click falls through
+   *   • SEQ-HIDDEN - the box is not on screen at the playhead, so a click falls through
    *     it to whatever is (the rule this function was written for).
-   *   • CAMERA — a camera has NO canvas footprint at all (plans/104 §5.4: "excluded
+   *   • CAMERA - a camera has NO canvas footprint at all (plans/104 §5.4: "excluded
    *     from hit-testing, marquee…; selected via its bar/chip only"). It paints nothing
    *     and is minted with no geometry, so without this a zero-size marker at the origin
    *     is caught by any marquee crossing it and dragged around as if it were artwork.
@@ -1503,7 +1506,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return false;
   }
 
-  // True when the block already carries authored timing — the auto-open cue. This is a
+  // True when the block already carries authored timing - the auto-open cue. This is a
   // field-presence check, not editing arithmetic, so it stays here rather than pulling
   // timeline-math in eagerly (that module is part of the lazy chunk).
   function isTimedBox(b: Box): boolean {
@@ -1522,14 +1525,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (timelinePanel) {
       timelinePanel.setOpen(open); syncTimelineBtn();
       // The motion path is gated on `timelinePanel.isOpen()` (see motionIds), and this
-      // is the ONE place that answer changes on an already-mounted panel — so this is
+      // is the ONE place that answer changes on an already-mounted panel - so this is
       // where the overlay is re-asked, rather than where it happens to be re-asked.
       //
       // It DOES already arrive without this line, and the route is worth naming because
       // it is not one anybody wrote down: `setOpen` calls `reserve()`, which writes (or
       // clears) `--stage-reserve-bottom` on the stage's inline style, which trips the
       // stage MutationObserver, which schedules a sync, which repaints the chrome. Real,
-      // measured, and made entirely of other decisions — it holds only while opening and
+      // measured, and made entirely of other decisions - it holds only while opening and
       // closing happen to reserve different heights and the observer happens to watch
       // attributes. One repaint on a toggle the user pressed is a cheap price for the
       // gate not resting on that.
@@ -1566,7 +1569,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
       // The contextual bar's "+Keyframe" asks the panel for its enabled state and had to
       // stand in for it while the chunk was in flight (see kfCtxHtml). Now that the real
-      // rule exists, force ONE rebuild against it — the bar is otherwise only rebuilt
+      // rule exists, force ONE rebuild against it - the bar is otherwise only rebuilt
       // when the selection SET changes, so a selection made before the panel loaded would
       // keep the provisional answer for as long as it stands.
       ctxSelKey = null;
@@ -1584,13 +1587,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The panel asks THIS module for new boxes rather than reaching into it: its plus menu
    * (and its empty-sequence "Add a clip" slot) dispatches `tl-add` with
    * `{ kind, atMs }`, which bubbles from the panel root to the stage. Arming create-mode
-   * is exactly what the rail's add menu does, so the next canvas click drops the box —
+   * is exactly what the rail's add menu does, so the next canvas click drops the box - 
    * with the one difference the panel depends on: a box added FROM the timeline lands
    * TIMED at the playhead, where the rail's plus leaves it as scenery. `pendingAddAtMs`
    * carries that single bit through to the create commit and is cleared alongside the
    * armed kind, so an abandoned arm can never time the next hand-drawn box.
    *
-   * The detail is untrusted — a CustomEvent can be dispatched by anything on the page —
+   * The detail is untrusted - a CustomEvent can be dispatched by anything on the page - 
    * so an unknown kind or a non-finite / negative / absurd `atMs` drops the whole event
    * rather than guessing: nothing reaches the model on a bad one.
    */
@@ -1612,10 +1615,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /**
    * The other half of the cross-module seam (same CustomEvent pattern as `tl-add` /
-   * `tl-take`, deliberately — not a new coupling): the panel tells the canvas when the
+   * `tl-take`, deliberately - not a new coupling): the panel tells the canvas when the
    * ACTIVE SET changed, never once per tick. Two things ride on it:
    *   • the chrome repaint that makes the one rule track the playhead at all, and
-   *   • `tlPlaying`, which suppresses the off-playhead banner during playback — scenes
+   *   • `tlPlaying`, which suppresses the off-playhead banner during playback - scenes
    *     coming and going is the whole point of pressing play, and a chip that blinks on
    *     every cut is noise, not information.
    *   • the ONION SKIN, which is opt-in and OFF by default: the panel puts `mode` /
@@ -1637,8 +1640,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── onion skin: the ghost layer, lazily mounted, never in an export ──────────
   // The whole feature is off unless the panel says otherwise, so the module, its
   // stylesheet and every DOM node it makes cost exactly nothing to an editor that never
-  // turns it on. The layer itself lives inside `overlay` — a stage SIBLING of
-  // #tool-canvas carrying [data-export-hide] — so no export path can reach it; see
+  // turns it on. The layer itself lives inside `overlay` - a stage SIBLING of
+  // #tool-canvas carrying [data-export-hide] - so no export path can reach it; see
   // onion-skin.ts's module doc for the three independent guarantees.
   interface OnionTimeDetail { playing?: unknown; mode?: unknown; past?: unknown; future?: unknown; opacity?: unknown; activeIds?: unknown }
   let onionSkin: OnionSkinHandle | null = null;
@@ -1673,14 +1676,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     })();
   }
 
-  /** Re-place the ghosts after a pan / zoom / resize — they are positioned in stage px
+  /** Re-place the ghosts after a pan / zoom / resize - they are positioned in stage px
    *  from the model, exactly like the selection outline, so they move with it. */
   function paintOnion(): void {
     if (onionSkin && onionState) onionSkin.paint(onionState);
   }
 
   // ── motion path: where a keyframed box travels, never in an export ───────────
-  // plans/104 §8's overlay bullet, on onion skin's exact terms — a `.fc-overlay` child
+  // plans/104 §8's overlay bullet, on onion skin's exact terms - a `.fc-overlay` child
   // carrying [data-export-hide] that never writes to a `.lolly-box` (motion-path.ts's
   // module doc restates the three guarantees, and its own test file pins them).
   //
@@ -1698,7 +1701,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     motionPath = null;
   }
 
-  /** The ids whose paths should be on screen right now — possibly none. */
+  /** The ids whose paths should be on screen right now - possibly none. */
   function motionIds(boxes: Box[]): string[] {
     if (!timeCfg?.kfField || !selection.size || !timelinePanel?.isOpen()) return [];
     const out: string[] = [];
@@ -1747,7 +1750,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function destroyTimeline(): void {
     try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
     try { stageEl.removeEventListener('tl-time', onTlTime); } catch { /* stage detached */ }
-    // No panel means no playhead means nothing to be either side OF — and no arm, so
+    // No panel means no playhead means nothing to be either side OF - and no arm, so
     // no motion path either (see motionIds).
     onionOff();
     motionOff();
@@ -1776,21 +1779,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   // `freshEdgeId` + `toggleEdge` (plan 90) lived here: Connect mode's write into the
   // connectors input. Plan 96 P4 deleted both with the mode. An edge is not a thing any
-  // more — a connector is a path box whose `bindStart`/`bindEnd` name the boxes its ends
+  // more - a connector is a path box whose `bindStart`/`bindEnd` name the boxes its ends
   // are attached to, written by the endpoint-bind gesture below, and every tool's hook
   // converts any surviving edge row to one of those on load. `commitEdges` above stays as
   // the DRAIN: nothing calls it today, but a tool that still declares `canvas.connect`
   // keeps its read-only inspector rather than silently losing the ability to delete a row.
   // `createLine` (plan 90) lived here: the Line tool's write into the connectors input.
-  // Plan 96 P2 deleted it. A line is a PATH BOX now — `commitPathBox`, the same call the
-  // pen commits through — so there is no second place a line can come from, and the edge
+  // Plan 96 P2 deleted it. A line is a PATH BOX now - `commitPathBox`, the same call the
+  // pen commits through - so there is no second place a line can come from, and the edge
   // row it used to mint had no nodes to edit. `toggleEdge` above stays: it is the Connect
   // mode's own write, which P4 migrates.
   const gridRound = (v: number): number => Math.round(v / gridSize) * gridSize;
 
   // ── coordinate mapping (transform-agnostic via the live canvas rect) ────────
   // The canvas/stage screen rects are INVARIANT for the duration of a box gesture
-  // (dragging/resizing/rotating a box never pans or zooms the artboard — pan/zoom is
+  // (dragging/resizing/rotating a box never pans or zooms the artboard - pan/zoom is
   // a separate stageNav interaction that fires the transform MutationObserver). So
   // cache them once per gesture instead of forcing a layout flush on every metrics()
   // call (~6 getBoundingClientRect + ~3 forced reflows per drag frame otherwise). The
@@ -1821,8 +1824,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // means subtracting/adding the frame's offset within the canvas. Reading offsetLeft/
   // offsetTop off the live frame keeps this immune to the frame-gap constant (the frame
   // sits wherever the template laid it out). Returns {0,0} when the element isn't inside
-  // a page frame — so a single-page editor (Design) is completely unaffected.
-  // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged —
+  // a page frame - so a single-page editor (Design) is completely unaffected.
+  // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged - 
   // only the box moves. But reading them forces a synchronous layout, and applyLiveRect +
   // the live chrome re-sync call this per box PER pointermove, so a drag with frames present
   // thrashed layout (the reported lag, even for an empty-frame drag whose chrome re-syncs).
@@ -1834,7 +1837,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // No pages AND no frame primitive ⇒ no [data-pdf-page] frames exist, so skip the
     // ancestor walk entirely (a plain single-page editor hits this every gesture frame).
     // A frame-primitive tool (frameCfg) emits [data-pdf-page] pages at authored x/y even
-    // with no `pages` config, so it must walk too — offsetLeft/offsetTop then report the
+    // with no `pages` config, so it must walk too - offsetLeft/offsetTop then report the
     // frame's own position and the frame-local drag math below works unchanged.
     if (!pages && !frameCfg) return { x: 0, y: 0 };
     const f = el.closest?.('[data-pdf-page]') as HTMLElement | null;
@@ -1853,15 +1856,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   overlay.setAttribute('data-export-hide', '');
   stageEl.appendChild(overlay);
 
-  // Frame dimmer — a hole-punch scrim sized to the export frame (repositioned only
-  // when the artboard's screen geometry changes — see scrimDirty). Its big outset
+  // Frame dimmer - a hole-punch scrim sized to the export frame (repositioned only
+  // when the artboard's screen geometry changes - see scrimDirty). Its big outset
   // box-shadow faintly tints everything OUTSIDE the frame, so boxes dragged off the
   // artboard read as gently faded while staying fully visible + selectable. First
   // overlay child so the selection chrome, guides and ctxbar all paint above it.
   const frameScrim = document.createElement('div');
   frameScrim.className = 'fc-frame-scrim';
   overlay.appendChild(frameScrim);
-  // M2 — the scrim only moves on pan/zoom/resize, NEVER on a box drag/hover/selection
+  // M2 - the scrim only moves on pan/zoom/resize, NEVER on a box drag/hover/selection
   // change. onStageMove (the geometry-change path) sets this; paintChrome repositions
   // the 100vmax soft-shadow region only when it's set, dropping a metrics() + a big
   // shadow repaint from every drag/selection sync. Starts true so mount positions it.
@@ -1876,7 +1879,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   guidesEl.className = 'fc-guides';
   overlay.appendChild(guidesEl);
 
-  // Frame name labels (Figma-style) — one small tab above each artboard's top-left that
+  // Frame name labels (Figma-style) - one small tab above each artboard's top-left that
   // NAMES it and selects the FRAME on click. This is the reliable way to "edit the frame
   // itself": a frame is now reachable even when content covers its whole area, so clicking
   // empty frame space is no longer the only door in. Repositioned every sync from the MODEL
@@ -1901,7 +1904,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // Camera-gesture HUD (audit A2/A4). A camera drag commits on release and previews
   // NOTHING on the stage (§8's "drags commit on release"), so a shift-drag tilt or an
-  // empty-stage pan gives no feedback at all until the drop — the single biggest reason
+  // empty-stage pan gives no feedback at all until the drop - the single biggest reason
   // the camera "shortcuts are very noticable". This readout is that feedback: the
   // ABSOLUTE tilt the drop will land (via `timelinePanel.cameraTiltPreview`, so it can
   // never disagree with the write's own clamp) or the pan offset. Hidden except during a
@@ -1916,7 +1919,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const camHudDeg = (n: number): string => `${n > 0 ? '+' : ''}${Math.round(n)}°`;
   const camHudPx = (n: number): string => `${n > 0 ? '+' : ''}${Math.round(n)}`;
   // Built with DOM + textContent, never innerHTML: the values are numbers and the labels
-  // are `t()` strings, so nothing here needs escaping — and keeping it off the raw-HTML
+  // are `t()` strings, so nothing here needs escaping - and keeping it off the raw-HTML
   // path is why this readout is not one more sink the R10 guard has to vouch for.
   const camHudSpan = (cls: string, text: string): HTMLElement => {
     const s = document.createElement('span');
@@ -1924,7 +1927,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     s.textContent = text;
     return s;
   };
-  /** Show the tilt the drop would land — absolute, clamped, straight from the panel. */
+  /** Show the tilt the drop would land - absolute, clamped, straight from the panel. */
   function showCamTiltHud(dRx: number, dRy: number): void {
     const p = timelinePanel?.cameraTiltPreview(getBoxes(), dRx, dRy) ?? null;
     camHud.replaceChildren(
@@ -1935,7 +1938,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     );
     camHud.hidden = false;
   }
-  /** Show the pan offset the drag has accumulated (native px — the model's own units). */
+  /** Show the pan offset the drag has accumulated (native px - the model's own units). */
   function showCamPanHud(dx: number, dy: number): void {
     camHud.replaceChildren(
       camHudSpan('fc-cam-hud-k', t('Pan')),
@@ -1955,7 +1958,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (tilt) showCamTiltHud(0, 0); else showCamPanHud(0, 0);
   }
 
-  // First-run invite on an empty canvas — a blank editor is otherwise a mystery. Only
+  // First-run invite on an empty canvas - a blank editor is otherwise a mystery. Only
   // shown for tools that can add boxes; clicking it opens the same Add menu as the rail.
   const emptyHint = document.createElement('div');
   emptyHint.className = 'fc-empty';
@@ -1967,7 +1970,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   overlay.appendChild(emptyHint);
 
   // Transient VISIBLE status for an action that refused. The overlay had no such
-  // surface — `announce()` is screen-reader-only — and a vector operation that declines
+  // surface - `announce()` is screen-reader-only - and a vector operation that declines
   // must not read as a silent no-op: the kernel throwing `GeomLimitError` means the
   // answer exists and the engine will not guess it, which is a sentence the user needs
   // to see. Pointer-transparent and aria-hidden: the a11y path stays `announce()`, the
@@ -1988,8 +1991,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // The one rule's reconciliation surface. An off-playhead selection is the single
-  // STUCK state the rule can produce — the user asked for a box, it is still theirs,
-  // and the canvas simply cannot show it — so unlike a click that falls through a
+  // STUCK state the rule can produce - the user asked for a box, it is still theirs,
+  // and the canvas simply cannot show it - so unlike a click that falls through a
   // hidden scene (silent, by design: it would fire on every click of a stacked
   // composition) this one gets a persistent chip with a way out. It is the only
   // pointer-receiving child of the otherwise pointer-transparent overlay, and it is a
@@ -1997,7 +2000,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // export path can see it.
   // Built node-by-node rather than through innerHTML: two nodes with static text is
   // not worth a raw-HTML sink (primitive-guards R10 ratchets those for a reason), and
-  // `btn btn--primary btn--sm` is the shell's ONE primary-fill recipe — restating the
+  // `btn btn--primary btn--sm` is the shell's ONE primary-fill recipe - restating the
   // fill pair locally is exactly what R2 refuses.
   const offPlayheadEl = document.createElement('div');
   offPlayheadEl.className = 'fc-offplayhead';
@@ -2054,7 +2057,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // frames are NOT yet sequenced: "Play your N frames in order?" [Place in order][Not now].
   // Accepting lays the frames end-to-end in time on the scenes lane (one commit, one undo
   // step) so the clock gates the canvas to one frame at a time; declining dismisses for the
-  // session. Gated on frameCfg + timeCfg both present — dead on any tool without frames or
+  // session. Gated on frameCfg + timeCfg both present - dead on any tool without frames or
   // without a time model. Built node-by-node (static text, `btn` recipes) like the
   // off-playhead chip; a stage sibling of #tool-canvas carrying [data-export-hide], so no
   // export path sees it.
@@ -2116,7 +2119,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   seqPromptSkip.addEventListener('click', () => { seqPromptDismissed = true; hideSeqPrompt(); });
 
   /**
-   * Offer to sequence the frames when the timeline is open — but only when frames exist and
+   * Offer to sequence the frames when the timeline is open - but only when frames exist and
    * NONE are timed yet (never nag once sequenced), and only once per session (a decline
    * sticks). Positioned by CSS at the top-centre of the overlay, out of the toolbar's way.
    */
@@ -2135,7 +2138,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // Connector preview layer (opt-in): the "rubber" line while linking two cards, and a
   // live redraw of every edge while a connected card is being dragged (so the lines
-  // follow in real time — the tool's real connector <svg> only re-renders on commit).
+  // follow in real time - the tool's real connector <svg> only re-renders on commit).
   // An <svg> covering the canvas in stage space, drawn in NATIVE coords via its viewBox.
   const connectLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   connectLayer.setAttribute('class', 'fc-connect-layer');
@@ -2147,7 +2150,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   connectLayer.style.display = 'none';
   overlay.appendChild(connectLayer);
 
-  // Pen preview layer — the draft path plus the segment under the cursor while drawing,
+  // Pen preview layer - the draft path plus the segment under the cursor while drawing,
   // and the edited path's own outline while node-editing. Same trick as the connector
   // layer: an <svg> covering the artboard in stage px, drawn in NATIVE coords via its
   // viewBox, so a pan/zoom only has to move and resize the element.
@@ -2166,7 +2169,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   overlay.appendChild(chrome);
 
   // Node/handle chrome, in its OWN container so it is built and torn down independently of
-  // the selection chrome — the two are never on screen together, but they key on different
+  // the selection chrome - the two are never on screen together, but they key on different
   // things (a node set vs a selection set) and sharing a container would make one rebuild
   // the other. Same build-once/reposition-many discipline as `chromeNodes`, for the reason
   // documented there: a 40-node path re-created per drag frame is far worse than the ~10
@@ -2194,8 +2197,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // in editor.css), which means at the moment a card is selected the stage is ALREADY
   // hovered: the opacity transition has nothing to run, and a fully formed bar of a
   // dozen controls materialises between two video frames right where the pointer is.
-  // So absent→present gets a real entrance — a short settle after the gesture, then a
-  // fade and a small rise — and ONLY that transition: a reposition mid-drag must never
+  // So absent→present gets a real entrance - a short settle after the gesture, then a
+  // fade and a small rise - and ONLY that transition: a reposition mid-drag must never
   // re-play it, which is what `ctxShown` tracks.
   //
   // The rise is a transform, and a transform on this bar is the containing block for
@@ -2203,7 +2206,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // translateX nor backdrop-filter). Safe here and only here, because the keyframes
   // fill `backwards` and NOT forwards: the computed transform is `none` again the
   // instant the animation ends, and the class comes off on animationend. A popover
-  // cannot exist during the run anyway — rebuildCtxBar replaces the bar's innerHTML,
+  // cannot exist during the run anyway - rebuildCtxBar replaces the bar's innerHTML,
   // which destroys any open one.
   let ctxShown = false;
   const CTX_ENTER = 'fc-ctxbar-enter';
@@ -2225,7 +2228,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     ctxbar.classList.remove(CTX_ENTER);
   }
 
-  // M1 — selection chrome (outline(s) + resize/rotate handles) is built ONCE per
+  // M1 - selection chrome (outline(s) + resize/rotate handles) is built ONCE per
   // selection set (keyed exactly like the ctxbar) and only REPOSITIONED on later
   // syncs. Rebuilding ~10 nodes + re-binding a pointerdown on each, every drag/pan/
   // zoom frame, was the bulk of a sync's DOM cost. chromeNodes holds the live nodes
@@ -2249,7 +2252,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Dock wrapper flex-centres the rail at rest without a transform on the rail
   // itself, and carries the left/top of a DRAGGED rail for the same reason
   // (a transform/backdrop-filter on either would capture the colour popover's
-  // fixed positioning — see the .fc-toolbar-dock CSS note).
+  // fixed positioning - see the .fc-toolbar-dock CSS note).
   const toolbarDock = document.createElement('div');
   toolbarDock.className = 'fc-toolbar-dock';
   toolbarDock.setAttribute('data-export-hide', '');
@@ -2257,7 +2260,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   toolbar.className = 'fc-toolbar';
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', t('Editor tools'));
-  // Grip at the very top — the rail is a floating palette, so it says so and gives a
+  // Grip at the very top - the rail is a floating palette, so it says so and gives a
   // drag target that is not one of the buttons (every button stops pointerdown, which
   // is what keeps a click on a tool from starting a drag).
   const grip = document.createElement('div');
@@ -2273,7 +2276,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Position is written as plain left/top on the DOCK. NEVER a transform: a
   // transformed ancestor becomes the containing block for every position:fixed
   // descendant, which throws the rail's colour popover off-screen. That bug has
-  // already been fixed once here — do not reintroduce it for a drag.
+  // already been fixed once here - do not reintroduce it for a drag.
   let railDrag: { pointerId: number; dx: number; dy: number } | null = null;
   let railWant: { left: number; top: number } | null = null;
   let railRaf = 0;
@@ -2281,7 +2284,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The stage band the rail must never be dragged into. Three things can live in the
    * foot of the stage, and a rail parked under any of them is invisible (the rail is
    * `opacity: 0` at rest) AND unclickable:
-   *   - the docked TIMELINE panel — `z-index: 22` and `pointer-events: auto`, well above
+   *   - the docked TIMELINE panel - `z-index: 22` and `pointer-events: auto`, well above
    *     the dock's 16, so it both paints over the rail and swallows its pointer;
    *   - the export pill, wherever a host still shows one;
    *   - the recorder tools' "Warm the mic / Record" control at the stage foot.
@@ -2338,7 +2341,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sr = stageEl.getBoundingClientRect();
     railWant = { left: e.clientX - sr.left - railDrag.dx, top: e.clientY - sr.top - railDrag.dy };
     // One style write per frame (the timeline resize grip's shape). Live-mutating
-    // only — a rail position is never committed to the model.
+    // only - a rail position is never committed to the model.
     if (railRaf) return;
     railRaf = requestAnimationFrame(() => { railRaf = 0; if (railWant) placeRail(railWant); });
   };
@@ -2358,14 +2361,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The escape hatch the timeline panel's own grip already has: losing pointer capture
   // fires NEITHER pointerup nor pointercancel (the export shutter sets `pointer-events:
   // none` on the rail mid-drag, which releases capture implicitly). Without this the
-  // drag state sticks forever — `.is-dragging` stays on and onRailDown refuses to start
-  // a new drag — so the rail could never be released or re-grabbed.
+  // drag state sticks forever - `.is-dragging` stays on and onRailDown refuses to start
+  // a new drag - so the rail could never be released or re-grabbed.
   toolbar.addEventListener('lostpointercapture', onRailUp);
 
   // ── toolbar ─────────────────────────────────────────────────────────────────
   let popover: HTMLDivElement | null = null;
   let arrangeBtn: HTMLButtonElement | null = null;   // popover anchor (captured, not by index)
-  /** The mode buttons, captured by buildToolbar — see syncModeUI. Absent ones stay null:
+  /** The mode buttons, captured by buildToolbar - see syncModeUI. Absent ones stay null:
    *  pen and connect are opt-in, so not every tool has all four. */
   const modeBtns: Record<'select' | 'create' | 'pen' | 'line', HTMLButtonElement | null> =
     { select: null, create: null, pen: null, line: null };
@@ -2388,7 +2391,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *
    * `hold` is the touch-reachable half of a right-click: press and keep pressing, or
    * right-click, and the tool offers its options instead of running. The short click is
-   * untouched — the tool still does its main job on a tap, which is what makes this safe
+   * untouched - the tool still does its main job on a tap, which is what makes this safe
    * to add to a button people already use. The two never both fire: a hold that opened a
    * menu swallows the click that the pointerup would otherwise deliver.
    */
@@ -2423,7 +2426,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!hold || e.button > 0) return;          // secondary buttons take the contextmenu path
       holdFired = false;
       holdFrom = { x: e.clientX, y: e.clientY };
-      // Bare `setTimeout`/`clearTimeout`, matching `flashTimer` above — pairing
+      // Bare `setTimeout`/`clearTimeout`, matching `flashTimer` above - pairing
       // `window.setTimeout` with a bare `clearTimeout` cancels nothing wherever the two
       // are not the same object, which is every jsdom-hosted test in this file.
       holdTimer = setTimeout(() => { holdTimer = 0; holdFired = true; hold(b); }, HOLD_MS);
@@ -2443,12 +2446,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function buildToolbar(): void {
     // ONE menu at the top of the rail, behind Lolly's own mark: every DOCUMENT-level
-    // action — export, save, undo/redo, canvas size, copy, share, document info,
+    // action - export, save, undo/redo, canvas size, copy, share, document info,
     // import. The rail underneath it is tools only. The trigger is the brand-hued
     // identity mark (--lolly-mark), never the verify verdict green.
     //
     // Export/Save still go through opts.actions (which .click() the hidden
-    // #render-fab / #render-save) — no duplicated export or save logic anywhere.
+    // #render-fab / #render-save) - no duplicated export or save logic anywhere.
     let histUndo = false, histRedo = false;
     if (history) {
       history.register((canUndo, canRedo) => {
@@ -2468,7 +2471,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     let lollyBtn: HTMLButtonElement | null = null;
     const lollyItems = (): PopItem[] => {
       const items: PopItem[] = [];
-      // Export leads — it's the star of the Lolly menu. Present is added LAST (very bottom).
+      // Export leads - it's the star of the Lolly menu. Present is added LAST (very bottom).
       if (actions) {
         items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
         if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
@@ -2494,7 +2497,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // keepOpen, because openImportPanel closes this menu and then assigns its own
         // panel to `popover`: without it fillPopover's trailing closePopover() would
         // tear the freshly-mounted import panel down in the same click. (The pages /
-        // size / info rows are safe — those assign `morePanel`, a different variable.)
+        // size / info rows are safe - those assign `morePanel`, a different variable.)
         if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(lollyBtn!) });
       }
       // Custom CSS (plan 112 M4): only for a tool that declares the `customCss` input
@@ -2503,7 +2506,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (items.length) items.push({ sep: true });
         items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(lollyBtn!) });
       }
-      // Slide transition (plan 112 M5): one compact cycling row — Slide → Fade → Morph.
+      // Slide transition (plan 112 M5): one compact cycling row - Slide → Fade → Morph.
       // The menu closes on click; reopening shows the new value (no live refresh needed).
       const trModel = runtime.getModel().find((i) => i.id === 'transition');
       if (trModel) {
@@ -2529,19 +2532,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     if (actions || history || info || importCfg || pages || setCanvasSize) {
       // `fc-action-primary` is kept on the trigger because it is now the editor's
-      // primary action affordance — mountTool focuses it on open (tool.ts) — with
+      // primary action affordance - mountTool focuses it on open (tool.ts) - with
       // .fc-btn-lolly restyling it back to the mark's own colour.
       lollyBtn = toolBtn(t('Menu — export, save, undo, canvas size'), '',
         () => { const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
         'fc-action fc-action-primary fc-btn-lolly');
       // The mark is a whole <svg> (the brand swirl, root icon.svg), not a path set, so it
-      // replaces toolBtn's icon(). Its three rings spin on hover only — see .fc-btn-lolly in
+      // replaces toolBtn's icon(). Its three rings spin on hover only - see .fc-btn-lolly in
       // editor.css, the same interaction-only treatment as the Ask Lolly send button.
       lollyBtn.innerHTML = LOLLY_MARK_SVG;
       lollyBtn.setAttribute('aria-haspopup', 'menu');
       const ref = actions?.dirtyRef;
       if (ref && actions && actions.canSave !== false) {
-        // The render pill's amber "unsaved" cue, mirrored onto the trigger — Save
+        // The render pill's amber "unsaved" cue, mirrored onto the trigger - Save
         // lives inside the menu now, so the mark is what has to carry the cue.
         const mark = lollyBtn;
         const mirror = (): void => { mark.classList.toggle('is-unsaved', ref.classList.contains('is-unsaved')); };
@@ -2553,13 +2556,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // Pointer leads the tools, and is the way OUT of every other one. Before it existed the
     // only exit from the pen or from connect mode was clicking that same tool's own button
-    // again — discoverable only if you already knew, which is what "trapped in the current
+    // again - discoverable only if you already knew, which is what "trapped in the current
     // tool" meant. Its own click is not a no-op even when it is already lit: it also leaves
     // point editing and finishes a draft.
     modeBtns.select = toolBtn(t('Pointer — select and move (V)'), SVG.pointer, () => pickPointer(), 'fc-btn-pointer');
     const add = toolBtn(t('Add a box'), SVG.add, () => openAddMenu(add), 'fc-btn-add');
     modeBtns.create = add;
-    // Pen (opt-in via canvas.pathField — a tool with nowhere to store an authored path has
+    // Pen (opt-in via canvas.pathField - a tool with nowhere to store an authored path has
     // no pen). The tooltip carries the corner modifier, which is otherwise undiscoverable;
     // Alt is free here because a pen click returns long before `selectionForHit`, where Alt
     // means "drill into the group".
@@ -2570,14 +2573,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Node tool (Inkscape's N): click a shape to edit its points directly.
       nodeToolBtn = toolBtn(t('Edit points (N) - click a shape to edit its nodes directly'), SVG.nodes,
         () => toggleNodeTool(), 'fc-btn-nodes');
-      // Line — the pen's other gesture (plan 96 P2). One drag makes a two-node path box,
+      // Line - the pen's other gesture (plan 96 P2). One drag makes a two-node path box,
       // arrowhead on by default; it lives beside the Pen because it is the SAME primitive
       // drawn a different way, and it is opt-in on `pathField` for the same reason the pen
       // is: a tool with nowhere to store an authored path cannot hold a line either.
       modeBtns.line = toolBtn(t('Line — drag to draw a line or arrow'), SVG.line,
         () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line');
     }
-    // Timeline (opt-in via the canvas time-model fields — a tool with nowhere to store
+    // Timeline (opt-in via the canvas time-model fields - a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
     // itself is only fetched the first time it is opened.
     if (timeCfg) {
@@ -2585,7 +2588,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         () => toggleTimeline(), 'fc-btn-timeline');
       timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
     }
-    // Frames reorder (opt-in via canvas.orderField — the frame primitive's page-order
+    // Frames reorder (opt-in via canvas.orderField - the frame primitive's page-order
     // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
@@ -2598,11 +2601,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (hasBindCfg) {
       toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
-    // One "Arrange" menu — align + distribute + stacking order + group + clip
+    // One "Arrange" menu - align + distribute + stacking order + group + clip
     // (previously two separate rail buttons). Every one of those acts ON a selection,
     // so the button only appears once there is one (syncArrangeUI, from the same
     // paint that shows the object bar). The right-click menu and the keyboard keep
-    // their own gating — nothing here is the only way to reach an action.
+    // their own gating - nothing here is the only way to reach an action.
     arrangeBtn = toolBtn(t('Arrange — align, distribute, order, group'), SVG.align, () => openArrangeMenu());
     syncArrangeUI();
     // Snap-to-grid toggle (opt-in).
@@ -2616,9 +2619,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (gridOn) gbtn.classList.add('is-armed');
     }
     // Pages / canvas size, copy, share, document info and import all live in the
-    // Lolly menu at the top of the rail now — see lollyItems() above.
+    // Lolly menu at the top of the rail now - see lollyItems() above.
     const sep = document.createElement('div'); sep.className = 'fc-sep'; toolbar.appendChild(sep);
-    // Canvas background — the app's shared colour picker (swatches + hex + alpha).
+    // Canvas background - the app's shared colour picker (swatches + hex + alpha).
     const bgWrap = document.createElement('div');
     bgWrap.className = 'fc-btn fc-color-btn';
     bgWrap.setAttribute('data-tip', t('Canvas background'));
@@ -2698,7 +2701,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tc = timeCfg!;
     const { w: cw, h: ch } = canvasWH();
     const all = [...getBoxes()];
-    // Append after the current sequence's end — never disturb existing timing.
+    // Append after the current sequence's end - never disturb existing timing.
     let at = 0;
     for (const b of all) {
       if (String(b[tc.laneField] ?? '') !== 'seq') continue;
@@ -2717,7 +2720,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         [tc.laneField]: 'seq', [tc.startField]: at, [tc.durField]: DEFAULT_CLIP_S,
         // A Penpot prototype flow carries the authored transition INTO each board;
         // scenes from a file without interactions carry neither key, so the box is
-        // written exactly as it always was (enter defaults to 'none' — a cut).
+        // written exactly as it always was (enter defaults to 'none' - a cut).
         ...(sc.enter ? { [tc.enterField]: sc.enter } : {}),
         ...(sc.enterMs !== undefined ? { [tc.enterMsField]: sc.enterMs } : {}),
       } as unknown as Box);
@@ -2739,7 +2742,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     panel.className = 'fc-popover fc-import-panel';
     // The §337 choice, per-import: scenes-capable tools (Design) let the user pick
     // between replacing the board and laying the frames out as timed scenes. Default
-    // follows the manifest (importScenesMode) — false for Design, so it replaces.
+    // follows the manifest (importScenesMode) - false for Design, so it replaces.
     let chooseScenes = importScenesMode;
     // Class-styled, not inline: this panel used to carry its whole look in `style=`
     // attributes (and a HARD-CODED brand green on the choose button, which never themed
@@ -2802,7 +2805,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Re-hide the components offer for the NEW file. One handler serves every pick and
       // the panel survives a failed import (the auto-close is the last statement of the
       // try), so without this a Penpot file's "Also save 6 components as templates" row
-      // stays on screen — checked — while a plain SVG is imported, offering something
+      // stays on screen - checked - while a plain SVG is imported, offering something
       // that can never happen (componentCount is re-derived per file, and is 0).
       tplRow.hidden = true;
       tplLabel.textContent = '';
@@ -2893,7 +2896,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const multi = selection.size >= 2;
     // Outline text is the primary action on a selected text box, so it sits high in
     // the menu (right under Delete) rather than buried at the end of the vector-ops
-    // section — where, for a text selection, every other entry is disabled and the
+    // section - where, for a text selection, every other entry is disabled and the
     // whole menu can run past the bottom of the screen. Shown only when there's an
     // outlinable text box in the selection AND the tool can store the result
     // (vectorCfg = pathField declared) AND host.text is present.
@@ -2907,7 +2910,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         { label: t('Outline text'), icon: icon(SVG.outlineText), run: () => void outlineTextOnSelection() },
         { sep: true } as PopItem,
       ] : []),
-      // Stacking order — icons only, 2×2: columns are magnitude (one step │ all the
+      // Stacking order - icons only, 2×2: columns are magnitude (one step │ all the
       // way), rows are direction (up = forward/front, down = backward/back).
       { grid: [
         { label: t('Bring forward'), icon: icon(SVG.forward), run: () => applyZ('forward'), disabled: !has },
@@ -2916,7 +2919,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         { label: t('Send to back'), icon: icon(SVG.back), run: () => applyZ('back'), disabled: !has },
       ], cols: 2 },
       { sep: true },
-      // Align — icons only, 3 across × 2 rows (L/C/R then T/M/B).
+      // Align - icons only, 3 across × 2 rows (L/C/R then T/M/B).
       { grid: [
         { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left'), disabled: !has },
         { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre'), disabled: !has },
@@ -2925,7 +2928,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre'), disabled: !has },
         { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom'), disabled: !has },
       ], cols: 3 },
-      // Distribute — icons only, one row of 2 (needs 3+ boxes).
+      // Distribute - icons only, one row of 2 (needs 3+ boxes).
       { grid: [
         { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: selection.size < 3 },
         { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: selection.size < 3 },
@@ -2938,7 +2941,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     ];
     // ── timeline ───────────────────────────────────────────────────────────────
     // Right-click parity with the panel's own timing toggle. Present for any
-    // time-capable tool — `timeCfg` is null on Carousel Maker, Org Chart and Record, so
+    // time-capable tool - `timeCfg` is null on Carousel Maker, Org Chart and Record, so
     // their menu is byte-for-byte what it was. It deliberately does NOT also require a
     // MOUNTED panel: a Design composition that has never opened its timeline is
     // exactly the user who needs to discover this, and a menu whose height changes
@@ -2954,7 +2957,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const one = i >= 0 ? rows[i]! : null;
       const oneId = one ? idOf(one, i) : '';
       const timed = !!one && isTimedBox(one);
-      // Open (loading the chunk if this is the first time), THEN write — `ensureTimeline`
+      // Open (loading the chunk if this is the first time), THEN write - `ensureTimeline`
       // resolves only once `timelinePanel` is assigned, and bails silently if the module
       // failed to load, so a broken chunk means no write rather than a half-written box.
       const withPanel = (fn: (p: NonNullable<typeof timelinePanel>) => void) => () => {
@@ -2993,7 +2996,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         };
         items.push({ sep: true });
         // Set as background: fill the box's frame, cover-fit, adopt membership, and send it
-        // behind its siblings — the one-click cover image/video backdrop (plan §8). Any
+        // behind its siblings - the one-click cover image/video backdrop (plan §8). Any
         // image/video box that resolves to a frame; disabled otherwise so the row is stable.
         items.push({
           label: t('Set as slide background'), icon: icon(SVG.image),
@@ -3047,7 +3050,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (vectorCfg) {
       const regions = countSelected((b) => boxOutlineKind(b, vectorCfg) !== 'none');
       const paths = countSelected((b) => boxOutlineKind(b, vectorCfg) === 'path');
-      // A boolean needs two operands that actually bound a region — two text boxes are
+      // A boolean needs two operands that actually bound a region - two text boxes are
       // two selected boxes and no shapes at all.
       const boolItem = (op: BooleanOpName, label: string, ic: string): PopGridItem => ({
         label, icon: icon(ic), disabled: regions < 2,
@@ -3076,7 +3079,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // ── remove background ──────────────────────────────────────────────────────
     // Present for any tool with an image field (somewhere to store the cutout)
-    // once the on-device matte capability has a STAGED model — otherwise absent,
+    // once the on-device matte capability has a STAGED model - otherwise absent,
     // like the timeline/vector sections. Acts on ONE selected image box and, like
     // Ungroup / the vector ops, disables rather than hides so the menu keeps a
     // constant height between right-clicks.
@@ -3095,7 +3098,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // ── lift layers (plans/104 §7) ─────────────────────────────────────────────
     // Present for any tool with an image field (somewhere to put the derived
-    // documents) — absent entirely otherwise, like the timeline/vector/matte
+    // documents) - absent entirely otherwise, like the timeline/vector/matte
     // sections. WITHIN the section it disables rather than hides, so the menu keeps
     // the same height between right-clicks: the entry is what tells someone the
     // action exists at all, and an entry that appears only once you have already
@@ -3126,7 +3129,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function contextMenuAt(clientX: number, clientY: number, soloBox: boolean): void {
     if (editing) commitTextEdit();
     // While node editing, right-click is a NODE menu (align/distribute/continuity/delete),
-    // not the object menu — and it must not re-select boxes underneath.
+    // not the object menu - and it must not re-select boxes underneath.
     if (penEdit) { openPenNodeMenu(clientX, clientY); return; }
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
@@ -3144,9 +3147,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   const ADD_KIND_ICON: Record<string, string> = {
     image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video,
-    // Sequence Studio's kinds — without these all three fell back to the generic "+".
+    // Sequence Studio's kinds - without these all three fell back to the generic "+".
     clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
-    // The frame primitive (plan 93) — the artboard "#" rather than a bare "+".
+    // The frame primitive (plan 93) - the artboard "#" rather than a bare "+".
     frame: SVG.frame,
     // The scene camera (plans/104 §5.4). Same glyph the timeline's add menu and the
     // Camera inspector group wear, so one thing looks like one thing.
@@ -3164,7 +3167,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const multi = selection.size >= 2;
     const canDist = selection.size >= 3;
     spawnPopover(arrangeBtn!, [
-      // Align — a compact 3×2 icon grid (left/centre/right · top/middle/bottom).
+      // Align - a compact 3×2 icon grid (left/centre/right · top/middle/bottom).
       { cols: 3, grid: [
         { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left') },
         { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre') },
@@ -3173,7 +3176,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre') },
         { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom') },
       ] },
-      // Distribute — needs 3+ selected, so disabled otherwise.
+      // Distribute - needs 3+ selected, so disabled otherwise.
       { cols: 2, grid: [
         { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: !canDist },
         { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: !canDist },
@@ -3194,8 +3197,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── contextual bar ───────────────────────────────────────────────────────────
 
-  /** Is every selected box a vector path box? Stroke paint only means something there —
-   *  every other kind is a styled div, whose "border" is a different mechanism entirely —
+  /** Is every selected box a vector path box? Stroke paint only means something there - 
+   *  every other kind is a styled div, whose "border" is a different mechanism entirely - 
    *  so a mixed selection gets no stroke controls rather than controls that write a field
    *  half the selection ignores. */
   function selectionAllPaths(boxes: Box[], idx: number[]): boolean {
@@ -3204,7 +3207,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * The PAINT section of a contextual bar: fill, text colour, and — on a path selection —
+   * The PAINT section of a contextual bar: fill, text colour, and - on a path selection - 
    * stroke colour plus the button onto the rest of the stroke (width, style, ends, corners,
    * fill rule).
    *
@@ -3218,7 +3221,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
     const strokeVal = cfg.strokeField ? (first[cfg.strokeField] || 'transparent') : 'transparent';
     // While a gradient is being edited on the canvas, the SAME field edits the
-    // selected stop's colour instead of the flat fill — so the brand swatch palette
+    // selected stop's colour instead of the flat fill - so the brand swatch palette
     // (the whole reason to reuse this control) is one click from every stop.
     const gradOn = gradEdit != null;
     const fillTitle = gradOn ? t('Gradient stop colour') : t('Fill');
@@ -3232,7 +3235,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
   }
 
-  /** One `wireColorField` call per bar — it binds delegated listeners on the scope, so a
+  /** One `wireColorField` call per bar - it binds delegated listeners on the scope, so a
    *  second call on the same element would fire every change twice. */
   function wirePaintCtx(scope: HTMLElement): void {
     wireColorField(scope, {
@@ -3248,22 +3251,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * "+Keyframe" in its SECOND home (plans/104 §8's M2.5 revision — "TWO homes, one
+   * "+Keyframe" in its SECOND home (plans/104 §8's M2.5 revision - "TWO homes, one
    * action"). The first is the timeline transport's left additive cluster; this is the
    * diamond beside Duplicate / Delete on the selected object itself, because the
    * selection is what the action acts on and the canvas is where the selection lives.
    *
    * Offered only for a tool whose manifest declares a `kf` sub-field (progressive
    * capability, exactly like the timeline rail button next to it), and DISABLED rather
-   * than hidden when the selection has nothing to pose — a control that appears and
+   * than hidden when the selection has nothing to pose - a control that appears and
    * disappears as you click around teaches nothing, and the tooltip is where the reason
    * goes. Audio is the one exclusion: keyframed gain is plan 101's, not this feature's.
    *
    * WHICH boxes count is the PANEL's answer, not a local copy of it (`keyframableIds`
    * on the handle). "Two homes, one action" has to mean one ENABLEMENT rule too, or the
    * homes disagree about what the action can do: the panel's rule reads the live canvas
-   * as well as the model — a box carrying an audio asset is a sound whatever its `kind`
-   * says — and a model-only filter here rendered that box ENABLED, then wrote nothing
+   * as well as the model - a box carrying an audio asset is a sound whatever its `kind`
+   * says - and a model-only filter here rendered that box ENABLED, then wrote nothing
    * and said nothing when it was pressed.
    *
    * Before the lazy panel chunk has ever loaded there is no rule to ask, so the model
@@ -3281,8 +3284,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * The press. It opens the timeline first — `ensureTimeline(true)` loads the lazy
-   * chunk and resolves only once the panel exists — then calls the panel's ONE writer,
+   * The press. It opens the timeline first - `ensureTimeline(true)` loads the lazy
+   * chunk and resolves only once the panel exists - then calls the panel's ONE writer,
    * which reads the shared selection itself. Same `withPanel` shape as the context
    * menu's timing items above, and for the same reason: a broken chunk means no write
    * rather than a half-written box.
@@ -3299,7 +3302,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   //
   // "Camera mode is entered by SELECTION, never a global toggle": with a camera
   // selected and the playhead inside its window, an empty-stage drag pans the shot and
-  // a plain wheel dollies it. There is nothing to switch on and nothing to switch off —
+  // a plain wheel dollies it. There is nothing to switch on and nothing to switch off - 
   // clicking any box hands both gestures straight back.
   //
   // The PANEL owns the answer (it owns the clock, and "inside its window" is a question
@@ -3316,7 +3319,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *
    * A wheel is a stream of small deltas with no end event, so a commit per notch would
    * be a hundred undo steps for one gesture. The deltas accumulate here and one write
-   * lands when the stream stops — the same "one commit per gesture" law the drags obey,
+   * lands when the stream stops - the same "one commit per gesture" law the drags obey,
    * with a timer standing in for pointerup.
    */
   let dollyPending = 0;
@@ -3330,7 +3333,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * a 200 px drag: one comfortable wrist movement reaches the signature angle.
    *
    * The band this runs into is `KF_TILT_CONTROL` (±75), not the ±180 WIRE clamp, and
-   * the hold is in `timelinePanel.cameraWrite` rather than here — a drag supplies a
+   * the hold is in `timelinePanel.cameraWrite` rather than here - a drag supplies a
    * DELTA, so only the site that composes it with the pose it started from can bound
    * the result. 375 px of drag reaches the end of the band; past that the shot stops
    * turning, which is the same thing the Tilt X / Tilt Y number fields do.
@@ -3338,7 +3341,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const CAM_TILT_DEG_PER_PX = 0.2;
   /**
    * `deltaY` is only in PIXELS when `deltaMode` says so. Firefox reports LINES (mode 1,
-   * ~3 per notch) and a page-scroll device reports PAGES (mode 2) — read raw, a notch
+   * ~3 per notch) and a page-scroll device reports PAGES (mode 2) - read raw, a notch
    * there would dolly two thirds of a pixel and the wheel would feel dead. The two
    * factors are the conventional line height and viewport page the browsers themselves
    * use when they normalise.
@@ -3362,7 +3365,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * the reference tool never had to solve).
    *
    * Bound on the canvas with `passive: false` so the notch can be claimed, and it stops
-   * propagating only when it IS claimed — otherwise `tool-stage-nav`'s own listener on
+   * propagating only when it IS claimed - otherwise `tool-stage-nav`'s own listener on
    * the stage keeps the wheel it has always had.
    */
   function onCameraWheel(e: WheelEvent): void {
@@ -3371,7 +3374,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     e.preventDefault();
     e.stopPropagation();
     // AWAY FROM THE VIEWER ON A SCROLL DOWN. `eff = P/(P − (z − camZ))`, so a camera
-    // whose z grows is a camera moving back — and a wheel pushed forward (deltaY < 0)
+    // whose z grows is a camera moving back - and a wheel pushed forward (deltaY < 0)
     // is the universal "closer", so the sign here is deltaY's own.
     dollyPending += wheelPx(e) * DOLLY_PX_PER_DELTA;
     if (dollyTimer) clearTimeout(dollyTimer);
@@ -3383,7 +3386,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // the colour pickers show the selected box); positioned each frame elsewhere.
   function rebuildCtxBar(boxes: Box[], idx: number[]): void {
     // The gradient panel outlives a ctx-bar rebuild. Selecting a stop (and picking a
-    // stop colour) deliberately rebuilds the bar so its Fill field shows that stop —
+    // stop colour) deliberately rebuilds the bar so its Fill field shows that stop - 
     // and `closeMorePanel()` below would take the panel with it every time, so the
     // panel vanished the moment you touched a handle. Re-request it instead; the sync
     // that follows reopens it against the freshly built button.
@@ -3434,7 +3437,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // with the direction on a handle of its own.
   //
   // The model is the engine's gradient spec (a string on the box's `grad` field), and
-  // the CSS comes from `gradientSpecToCss` — the SAME call the tool's hooks make, so
+  // the CSS comes from `gradientSpecToCss` - the SAME call the tool's hooks make, so
   // what the handles show and what the export writes cannot drift. The stops are
   // interpolated in OKLab and baked to sRGB by the engine (plans/60-color-spaces.md §10),
   // which is what keeps a two-colour gradient from going muddy through the middle.
@@ -3446,7 +3449,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let gradStopIdx = 0;                  // which stop the Fill field + Delete act on
   // The panel is opened by the SYNC, not by the click that asks for it. Entering
   // gradient mode resets `ctxSelKey` so the ctx bar rebuilds (its Fill field changes
-  // meaning), and `rebuildCtxBar` begins with `closeMorePanel()` — so a panel opened
+  // meaning), and `rebuildCtxBar` begins with `closeMorePanel()` - so a panel opened
   // synchronously was destroyed a frame later by the very re-sync that opening it
   // required. Found in a browser, invisible to review: the handles appeared, the panel
   // did not, and any click into it hit a detached node.
@@ -3458,7 +3461,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // paint underneath followed the pointer. Same idea as `liveRects` for box gestures.
   let gradLive: GradientSpec | null = null;
 
-  // The gradient line, as an SVG in STAGE px — redrawn each sync. Stage px rather than
+  // The gradient line, as an SVG in STAGE px - redrawn each sync. Stage px rather than
   // native-with-a-viewBox (the pen layer's trick) because the stop handles are DOM
   // divs that must not scale with zoom, and one coordinate system for both is simpler
   // to keep honest than two.
@@ -3526,7 +3529,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const b = boxes[idx[0]!]!;
     gradEdit = idOf(b, idx[0]!);
     gradStopIdx = 0;
-    // A box with no gradient yet gets one, in the same step that opens the editor —
+    // A box with no gradient yet gets one, in the same step that opens the editor - 
     // otherwise the handles would have nothing to sit on.
     if (!gradSpecOf(b)) writeGradSpec(seedGradSpec(b), false);
     ctxSelKey = '';
@@ -3537,7 +3540,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /**
    * Write a spec to the box being edited. `live` mutates only that box's DOM (a drag
-   * in progress — no setInput, so the tool does not re-render every pointermove, the
+   * in progress - no setInput, so the tool does not re-render every pointermove, the
    * same discipline every other gesture here follows); otherwise it commits one undo
    * step through the model.
    */
@@ -3627,7 +3630,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Prefer the in-flight spec so the handles track the pointer, not the last commit.
     const spec = i >= 0 ? (gradLive ?? gradSpecOf(boxes[i])) : null;
     if (!spec) {
-      // The box (or its gradient) is gone — leave the mode rather than showing handles
+      // The box (or its gradient) is gone - leave the mode rather than showing handles
       // for something that no longer exists.
       if (gradEdit != null) exitGradEdit();
       return;
@@ -3663,14 +3666,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       h.className = 'fc-grad-stop' + (si === Math.min(gradStopIdx, spec.stops.length - 1) ? ' is-on' : '');
       h.style.left = `${p.x}px`;
       h.style.top = `${p.y}px`;
-      // The handle IS its colour — a swatch you can see against the paint behind it.
+      // The handle IS its colour - a swatch you can see against the paint behind it.
       h.style.setProperty('--stop', parseColor(st.color) ? st.color : 'transparent');
       h.setAttribute('data-tip', t('Stop {n} — {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) }));
       h.setAttribute('aria-label', h.getAttribute('data-tip') || '');
       h.addEventListener('pointerdown', (e) => onGradStopDown(e, si));
       gradChrome.appendChild(h);
     });
-    // Direction handle, past the 100% end — far enough that its fat touch target
+    // Direction handle, past the 100% end - far enough that its fat touch target
     // clears the last stop's. Appended FIRST so the stops paint (and hit-test) above
     // it: at 18px the two overlapped, and dragging the 100% stop silently rotated the
     // gradient instead of moving the stop.
@@ -3762,7 +3765,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The interpolation control is the reason this panel exists at all. Every other
    * gradient tool bakes sRGB and leaves you to fight the grey middle; here the space
    * is the user's choice, defaulting to OKLab. The options are named for what they
-   * give you — Smooth / Vivid — with sRGB named plainly rather than editorialised: it
+   * give you - Smooth / Vivid - with sRGB named plainly rather than editorialised: it
    * is the classic behaviour, and someone matching an existing asset wants it without
    * being told off for asking.
    *
@@ -3800,7 +3803,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (field === 'gradkind') writeGradSpec({ ...cur, kind: v as GradientSpec['kind'] }, false);
       else if (field === 'gradspace') writeGradSpec({ ...cur, space: v as GradientSpec['space'] }, false);
       else if (field === 'gradhue') writeGradSpec({ ...cur, hue: v as GradientSpec['hue'] }, false);
-      // Reopen so a space change can show/hide the hue row against the new state —
+      // Reopen so a space change can show/hide the hue row against the new state - 
       // through the pending flag, for the same reason the first open goes that way.
       if (field === 'gradspace') { gradPanelPending = true; scheduleSync(); }
     });
@@ -3810,7 +3813,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!cur) return;
       if (btn.dataset.gp === 'add') {
         // Halfway between the selected stop and the NEXT one. On the last stop there is
-        // no next, so go halfway back to the previous instead — the seeded gradient
+        // no next, so go halfway back to the previous instead - the seeded gradient
         // selects a stop at 100%, where "halfway to itself" is 100% and the button did
         // nothing at all.
         const at = Math.min(gradStopIdx, cur.stops.length - 1);
@@ -3850,10 +3853,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * point: returning true when nothing closed is how Escape used to go missing.
    *
    * Three surfaces, innermost first. The colour popover is a child of its own field and
-   * closes itself when focus is inside it — but by the time the user reaches for Escape,
+   * closes itself when focus is inside it - but by the time the user reaches for Escape,
    * focus is usually back on the canvas, so it needs a rung here too. Its teardown is not
    * re-implemented: a non-bubbling Escape on the field lets color-field own its internals.
-   * It has to be non-bubbling — a bubbling one would arrive straight back here.
+   * It has to be non-bubbling - a bubbling one would arrive straight back here.
    */
   function dismissFloating(): boolean {
     const colour = stageEl.querySelector<HTMLElement>('.color-popover:not([hidden])');
@@ -3877,7 +3880,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── canvas (document) size ────────────────────────────────────────────────────
   const SIZE_UNITS = ['px', 'mm', 'cm', 'in', 'pt'];
   let sizeUnit = 'px';   // remembered across opens of the size menu
-  // px per 1 of a unit (96-DPI CSS convention — matches the artboard mapping).
+  // px per 1 of a unit (96-DPI CSS convention - matches the artboard mapping).
   const pxPerUnit = (u: string): number => (u === 'px' ? 1 : toCssPx({ value: 1, unit: u as any }));
   const toUnitVal = (n: number, from: string, to: string): number => (n > 0 ? Math.round(n * pxPerUnit(from) / pxPerUnit(to) * 100) / 100 : n);
   function applyDocSize(w: number, h: number, unit = sizeUnit): void {
@@ -3885,7 +3888,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setCanvasSize(w, h, unit);
     scheduleSync();
   }
-  // 16:9 leads — a design/deck starts widescreen (Andy's rule); the rest cover the range a
+  // 16:9 leads - a design/deck starts widescreen (Andy's rule); the rest cover the range a
   // deck actually ships at: portrait + ultrawide signage, cinematic + full-stage keynote walls,
   // then social/print. Custom W×H below the presets covers anything else.
   const SIZE_PRESETS: Array<[string, number, number]> = [
@@ -3903,7 +3906,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const n = typeof v === 'number' ? v : parseFloat(v);
     return Number.isFinite(n) ? n : dflt;
   };
-  // Pages panel — a page-count stepper (min..max) + shared page-size presets. Each
+  // Pages panel - a page-count stepper (min..max) + shared page-size presets. Each
   // control writes the tool's page inputs via runtime.setInput; the web shell resizes
   // the editing strip in response (see tool.ts pages mode).
   function openPagesMenu(anchor: HTMLElement): void {
@@ -3965,7 +3968,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const wIn = () => p.querySelector<HTMLInputElement>('[data-sz="w"]')!;
     const hIn = () => p.querySelector<HTMLInputElement>('[data-sz="h"]')!;
     p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) => b.addEventListener('click', () => {
-      // Presets are px — switch the unit control back to px and fill it in.
+      // Presets are px - switch the unit control back to px and fill it in.
       sizeUnit = 'px';
       p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.value = 'px';
       p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = 'px'));
@@ -4004,16 +4007,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
     const opt = (v: string, label: string, cur: any): string => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${label}</option>`;
-    // Frame-only "Clip children" toggle — shown only when a SINGLE frame-kind box is
+    // Frame-only "Clip children" toggle - shown only when a SINGLE frame-kind box is
     // selected. Dead for non-frame tools (frameCfg is null there) and for a mixed/multi
     // selection, so no-frames documents and ordinary boxes are byte-identical. The hook
     // defaults an unset clipChildren to ON (boolVal(fb.clipChildren, true)), so reflect
     // that here. Writes through setField → one commit → the render honours overflow.
-    // "Lift layers" (plans/104 §7) — its SECOND home, beside the right-click menu. The
+    // "Lift layers" (plans/104 §7) - its SECOND home, beside the right-click menu. The
     // More panel is where a box's own properties live, and "this picture is a stack of
     // layers" is one of them; a user who never right-clicks would otherwise never meet
     // the feature. Shown only when this exact selection can be lifted (unlike the menu,
-    // which disables to keep its height constant — a panel is rebuilt per open and has
+    // which disables to keep its height constant - a panel is rebuilt per open and has
     // no such promise to keep, and a dead row among live controls reads as broken).
     const showLift = liftTargetIndex(boxes) === idx[0]!;
     const isFrame = !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
@@ -4025,7 +4028,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const blendCur = b[cfg.blendField] || 'normal';
     const radiusCur = Math.max(0, Math.round(parseFloat(String(b[cfg.radiusField])) || 0));
     const opacityCur = Math.round(clampN(b[cfg.opacityField], 100, 0, 100));
-    // Shadow state — target picks the CSS mechanism; colour/x/y/blur are shared.
+    // Shadow state - target picks the CSS mechanism; colour/x/y/blur are shared.
     const shadowCur = String(b[cfg.shadowField] || 'none');
     const shColor = String(b[cfg.shadowColorField] || '#00000055');
     const shX = Math.round(clampN(parseFloat(String(b[cfg.shadowXField])), 0, -300, 300));
@@ -4088,7 +4091,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * ── Instant artboard (plan 112, inclusive-design) ─────────────────────────────
    *
-   * Lay down a new artboard at the current EXPORT / page size in one action — no drag.
+   * Lay down a new artboard at the current EXPORT / page size in one action - no drag.
    * Dragging to size is optional labour; an artboard can be resized once it exists, so a
    * click is enough. The new page is placed clear of everything already on the canvas
    * (to the RIGHT of the content's right edge, or at the origin on a blank doc) so it never
@@ -4104,7 +4107,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const boxes = getBoxes();
     const d = canvasWH();                                       // current export / page size
     const gap = Math.round(d.w * 0.08);
-    // The FIRST artboard sits at the origin — it coincides with the export frame (so it isn't
+    // The FIRST artboard sits at the origin - it coincides with the export frame (so it isn't
     // dimmed by the pasteboard scrim) and wraps any loose content that's already there. Later
     // artboards line up to the RIGHT of the furthest existing frame.
     const frames = boxes.filter((b) => b != null && String(b[cfg.kindField]) === fk);
@@ -4130,14 +4133,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * ── Artboards navigator (plan 112) ────────────────────────────────────────────
    *
    * A bottom-docked filmstrip of the document's frame-kind boxes in page order, each a
-   * LIVE scaled thumbnail (a clipped clone of the canvas over that frame's rect — the same
+   * LIVE scaled thumbnail (a clipped clone of the canvas over that frame's rect - the same
    * trick present-mode's slide previews use, but over the editor canvas). Clicking a
-   * thumbnail — or the ‹ › steppers — frames that artboard in the viewport by dispatching
+   * thumbnail - or the ‹ › steppers - frames that artboard in the viewport by dispatching
    * `fc-focus-rect`; tool.ts holds the StageNav and answers it (`stageZoom.focusRect`).
    *
    * NO reorder (plan 112 M5, "the artboards do not reorder at all"): the sequence IS the
    * canvas layout the hook reads (order asc, x asc), which the user changes by moving frames
-   * on the canvas — a list-drag that only wrote `order` fought that and confused people.
+   * on the canvas - a list-drag that only wrote `order` fought that and confused people.
    *
    * Docks ABOVE the sequence timeline when it is open: a rAF loop keeps its `bottom`
    * tracking the timeline's height (write-guarded, so it only touches the DOM when the height
@@ -4163,7 +4166,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     // A still, scaled clone of just THIS frame's rendered page. The template already emits
     // one `.lolly-frame-page[data-frame-id]` per frame (its boxes at frame-LOCAL coords over
-    // the frame bg), so cloning that page — not the whole canvas — keeps the strip O(N), not
+    // the frame bg), so cloning that page - not the whole canvas - keeps the strip O(N), not
     // O(N²): a whole-canvas clone per cell renders every frame N times over and froze big
     // decks. Media is frozen so N thumbnails don't spin N decoders; pointer-inert (the cell
     // owns the click). Falls back to a canvas-clip if the page markup isn't present.
@@ -4198,7 +4201,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return media;
     }
 
-    // The frame's LIVE on-screen box — the page element (or the frame box as a fallback).
+    // The frame's LIVE on-screen box - the page element (or the frame box as a fallback).
     // Client coords so the stage can frame it without knowing the canvas coordinate space.
     function frameClientRect(fb: Box): DOMRect | null {
       const fid = fb[cfg.idField] == null ? '' : String(fb[cfg.idField]);
@@ -4219,7 +4222,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       p.querySelector<HTMLElement>(`.fc-frame-cell[data-fi="${active}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
-    // The Artboard add-kind (label "Artboard", kind === frameKind) — the same tool the
+    // The Artboard add-kind (label "Artboard", kind === frameKind) - the same tool the
     // Add menu arms. Present on every frame-capable canvas; the empty state offers it
     // directly so "draw one with the Artboard tool" is a button, not a scavenger hunt.
     const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
@@ -4234,7 +4237,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
               ? `<button type="button" class="fc-frames-empty-add" data-add-frame>${icon(SVG.frame)}<span>${escape(t('Draw an artboard'))}</span></button>`
               : `<span>${escape(t('Draw one with the Artboard tool.'))}</span>`) +
           `</div>`;
-        // One click lays down a full page-size artboard (no drag) and closes the panel —
+        // One click lays down a full page-size artboard (no drag) and closes the panel - 
         // dragging to size is optional labour, and the artboard is resizable once it exists.
         p.querySelector<HTMLButtonElement>('[data-add-frame]')?.addEventListener('click', () => {
           closeMorePanel();
@@ -4289,7 +4292,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * call, not cached, because the bridge is assembled asynchronously.
    */
   function parseDashText(text: string): number[] | null {
-    // An emptied field is "no authored array", never an error — decided here rather than
+    // An emptied field is "no authored array", never an error - decided here rather than
     // delegated, so clearing the control cannot depend on how the engine reads a blank.
     if (!text.trim()) return [];
     const viaHost = host?.connectors?.dashFit?.parse;
@@ -4303,7 +4306,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * ── Stroke panel: width / style / ends / corners / fill rule ───────────────────
    *
    * A path box's stroke had a colour control and nothing else, so the width and the two
-   * decorations were unreachable from the canvas — which is the working surface for an
+   * decorations were unreachable from the canvas - which is the working surface for an
    * `render.layout:"editor"` tool. Everything writes through `setField`, i.e. to EVERY
    * selected box in one `commit()`, the same as the More panel's controls.
    *
@@ -4311,7 +4314,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * paint, and it is what makes a hole a hole the moment anyone uses Subtract.
    *
    * Stroke ALIGNMENT (inside / centre / outside) is deliberately absent: SVG strokes on the
-   * centreline only, so inside/outside is not a paint setting but a real outline conversion —
+   * centreline only, so inside/outside is not a paint setting but a real outline conversion - 
    * which the context menu already offers, exactly, as "Outline stroke".
    *
    * Plan 96 adds three things a keyword-only stroke could not say: the two ARROWHEADS (a
@@ -4355,7 +4358,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ['dotted', t('Dotted'), SVG.dashDotted],
       ])) +
       // The power-user pair, where the manifest declares them (hasDashArrayCfg). Shown when
-      // a dash style is on, or whenever an array is already authored — so a pattern can
+      // a dash style is on, or whenever an array is already authored - so a pattern can
       // never become unreachable by switching the keyword back to Solid, and a solid stroke
       // is not asked about dashes it has none of.
       (hasDashArrayCfg
@@ -4374,12 +4377,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ])) +
       // Arrowheads. Two plain menus rather than twelve icon buttons: the six shapes are
       // named things, and the row already carries three other segmented controls. Offered
-      // only where the manifest declares them — see hasHeadCfg.
+      // only where the manifest declares them - see hasHeadCfg.
       (hasHeadCfg
         ? segRow(SVG.line, t('Path start'), headSelect(cfg.headStartField, headStartCur, t('Path start'))) +
           segRow(SVG.line, t('Path end'), headSelect(cfg.headEndField, headEndCur, t('Path end')))
         : '') +
-      // Route — how a line with an attached end is bent between the two boxes. One plain
+      // Route - how a line with an attached end is bent between the two boxes. One plain
       // menu, beside the heads, because the three of them are the connector's whole shape.
       (routeBound
         ? segRow(SVG.tidy, t('Route'),
@@ -4398,7 +4401,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ]));
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // The dash-style segment also decides whether the two dash rows are on screen, so it
-    // needs the write PLUS the reveal — hence a custom onSet rather than wireSegs' default.
+    // needs the write PLUS the reveal - hence a custom onSet rather than wireSegs' default.
     const dashArrEl = p.querySelector<HTMLInputElement>('input[data-sp="dasharray"]');
     const syncDashRows = (styleVal: string): void => {
       const on = dashRowOn(styleVal, dashArrEl?.value ?? dashArrCur);
@@ -4415,8 +4418,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       setField(cfg.strokeWField, Number(rng.value));
     }));
     // Dash array: validated on every keystroke, but a REFUSAL writes nothing at all rather
-    // than a repaired guess. That is what keeps the hook's injection stance intact — only
-    // numbers ever reach `stroke-dasharray` — and it is also the honest answer to "6 x":
+    // than a repaired guess. That is what keeps the hook's injection stance intact - only
+    // numbers ever reach `stroke-dasharray` - and it is also the honest answer to "6 x":
     // there is no pattern there to store, and silently dropping the 'x' would author a
     // pattern the user did not type.
     if (dashArrEl) {
@@ -4453,8 +4456,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── one-number prompt ─────────────────────────────────────────────────────────
   // A couple of menu actions need a number before they can run. There is no prompt() in
   // this app and no dialog light enough for a menu item, so this is the same `fc-panel`
-  // recipe the size and dimensions panels already use — a labelled number field
-  // committed by Enter or by the button — positioned at the point the menu was opened
+  // recipe the size and dimensions panels already use - a labelled number field
+  // committed by Enter or by the button - positioned at the point the menu was opened
   // from. It rides `morePanel`, so an outside click or Escape dismisses it like the rest.
   interface NumberAsk {
     at: Point;
@@ -4507,8 +4510,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // One action in this overlay destroys authored work rather than moving it: switching a
   // path's spline kind to one that solves its own handles. There is no confirm dialog here
   // and a modal would be far too much furniture for a control on the object bar, so this is
-  // the SAME `fc-panel` recipe as askNumber — a titled panel with a sentence and one
-  // primary button — riding `morePanel`, so an outside click or Escape dismisses it and
+  // the SAME `fc-panel` recipe as askNumber - a titled panel with a sentence and one
+  // primary button - riding `morePanel`, so an outside click or Escape dismisses it and
   // that dismissal means "no".
   interface ConfirmAsk {
     at: Point;
@@ -4535,7 +4538,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The two buttons settle it synchronously; the observer only catches the INDIRECT
     // dismissals (Escape, an outside click), which go through the generic closeMorePanel
     // and so cannot call back here themselves. Synchronously matters: the caller usually has
-    // UI to put back — a <select> still showing the kind it did not switch to — and leaving
+    // UI to put back - a <select> still showing the kind it did not switch to - and leaving
     // that until a microtask would show the wrong value for a frame.
     let settled = false;
     const settle = (ok: boolean): void => {
@@ -4568,14 +4571,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   //
   // "The feature that makes this especially for vectors": one box holding a flat SVG
   // becomes N stacked boxes, one per layer of the drawing, sharing a group, with their
-  // depth auto-staggered and `shadow: depth` pre-set — at which point every layer is an
+  // depth auto-staggered and `shadow: depth` pre-set - at which point every layer is an
   // ordinary plate with its own z, keyframes and blur, and the rest of this plan works
   // on it unchanged. Zero new machinery downstream; the whole feature is here plus the
   // engine's enumerator.
   //
   // The division of labour, and why nothing below re-implements any of it:
   //   • `enumerateSvgLayers` (engine, 1.119) reads the sanitised markup and derives one
-  //     STANDALONE `<svg>` per layer, in the source's own root coordinates — which is
+  //     STANDALONE `<svg>` per layer, in the source's own root coordinates - which is
   //     what makes the geometry identity hold (N layers at z = 0 render as the original).
   //   • `liftRows` + `applyLift` (free-canvas-math) synthesise the rows and splice them
   //     in place, including the paint-order distribution (bg on the bottom row, text on
@@ -4601,7 +4604,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const r = (ref || {}) as { url?: unknown; meta?: { name?: unknown } | null };
     const named = typeof r.meta?.name === 'string' ? r.meta.name : '';
     // `decodeURIComponent` THROWS on a lone `%` or a bad escape, and the tail it is
-    // handed comes from a ref the shell did not necessarily mint — `isSvgImageRef`
+    // handed comes from a ref the shell did not necessarily mint - `isSvgImageRef`
     // accepts a hand-written `data:image/svg+xml` link, and a hook patch can put
     // anything in `url`. A URIError here used to escape a naming helper into an
     // unhandled rejection; the raw tail is a perfectly good name.
@@ -4617,12 +4620,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * The confirm dialog: what the lift WILL do, before it does it.
    *
-   * The `fc-panel` recipe `askConfirm` established — a titled panel with a sentence and
+   * The `fc-panel` recipe `askConfirm` established - a titled panel with a sentence and
    * two buttons, riding `morePanel` so an outside click or Escape dismisses it and that
    * dismissal means "no". It grows one thing: the list of layers.
    *
    * The list is READ-ONLY, deliberately, and this is a v1 decision worth stating. §7
-   * calls it a "checklist preview", and the obvious reading is checkboxes — but an
+   * calls it a "checklist preview", and the obvious reading is checkboxes - but an
    * unticked layer has nowhere to go: dropping it would silently delete artwork the
    * user never asked to lose, and merging it into a neighbour is a semantic §7 does not
    * define. So v1 SHOWS the plan and asks yes or no to all of it; per-layer control
@@ -4641,7 +4644,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * `innerHTML` per stage. "Reading the artwork…" is a picture of work in flight, and
    * a picture is all it was: the panel opened without focus and repainted wholesale
    * whenever the enumeration landed, so a screen reader was told nothing at open and
-   * nothing at the finish — and then focus jumped to a button that had appeared out of
+   * nothing at the finish - and then focus jumped to a button that had appeared out of
    * a silence. Three habits the shell already has fix it:
    *
    *   • `aria-busy` on the container while it reads (template-chooser's tile,
@@ -4649,7 +4652,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *   • ONE `role="status"` sentence that OUTLIVES both stages, so the outcome is a
    *     mutation of a mounted live region rather than a new region nobody announces;
    *   • focus taken at OPEN (askConfirm's move, and it is the user's own gesture that
-   *     opened this), then moved WITHIN the panel afterwards — `focusInPanel` declines
+   *     opened this), then moved WITHIN the panel afterwards - `focusInPanel` declines
    *     when the user has since gone somewhere else, because a control that appears
    *     after an await has no claim on where they went while it loaded.
    */
@@ -4671,7 +4674,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.setAttribute('role', 'dialog');
     p.setAttribute('aria-label', t('Lift layers'));
     // Reading is a STATE, not just a sentence. Dropped again by whichever of
-    // renderPlan / renderRefusal lands — both are the end of the work.
+    // renderPlan / renderRefusal lands - both are the end of the work.
     p.setAttribute('aria-busy', 'true');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     p.innerHTML = `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>`
@@ -4687,7 +4690,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
     p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
-    // At OPEN, synchronously, on the gesture that asked for it — so the dialog's name
+    // At OPEN, synchronously, on the gesture that asked for it - so the dialog's name
     // and its reading sentence are what gets read, and every later focus move is a move
     // WITHIN a surface the user is already in rather than a jump out of one they left.
     p.focus();
@@ -4696,7 +4699,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const live = (): boolean => !disposed && morePanel === p && p.isConnected;
 
     /**
-     * Move focus to a control this panel just built — unless the user went elsewhere
+     * Move focus to a control this panel just built - unless the user went elsewhere
      * while it was reading. `document.body` (or nothing at all) counts as "still ours":
      * that is where focus lands when the element it was on is replaced, which is
      * exactly what the stage swap below does.
@@ -4711,7 +4714,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       try {
         // The sanitised markup, through the shell's ONE untrusted-SVG path (DOMPurify,
         // serialised from the sanitised NODE). `fetchAnimSvg` is that path plus a
-        // per-URL cache — named for its first caller, but it is simply "give me this
+        // per-URL cache - named for its first caller, but it is simply "give me this
         // SVG's markup, safely", which is exactly what an enumeration needs.
         const [{ fetchAnimSvg }, { enumerateSvgLayers, svgRootViewBox }] = await Promise.all([
           import('./anim-svg-mount.ts'),
@@ -4721,7 +4724,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (!live()) return;
         // Whether a derived document may be CROPPED to its own ink is a property of
         // the box it will land in, and it has to be settled before the documents
-        // exist — a cropped document needs a row cut to the same rect (plans/104
+        // exist - a cropped document needs a row cut to the same rect (plans/104
         // P3.2). `liftCanCrop` is the one predicate; `liftRows` asks it again at
         // commit time, so the dialog and the write cannot disagree.
         const sboxes = getBoxes();
@@ -4730,7 +4733,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const cropToInk = !!src && liftCanCrop(src, cfg, place);
         // …and WHERE it will be cropped to. A crop is only free if the row it maps
         // to lands on the pixel grid the uncropped picture was already on, and the
-        // scale that decides that is a property of THIS box, not of the artwork —
+        // scale that decides that is a property of THIS box, not of the artwork - 
         // so the engine is told it rather than assuming 1:1 (engine 1.122).
         const cropScale = (src && liftCropScale(src, cfg, place)) || undefined;
         const { layers, warnings, viewBox } = enumerateSvgLayers(markup, { cropToInk, cropScale });
@@ -4764,7 +4767,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     function renderPlan(layers: SvgLayerPlan[], warnings: string[], viewBox: SvgSourceBox): void {
       p.removeAttribute('aria-busy');
       // The count sentence is the headline §7 names verbatim ("6 layers found"), and it
-      // is the SAME line that said "Reading the artwork…" a moment ago — so a screen
+      // is the SAME line that said "Reading the artwork…" a moment ago - so a screen
       // reader hears the finish without the dialog being rebuilt around it.
       msgEl.textContent = t('{n} layers found', { n: layers.length });
       bodyEl.innerHTML =
@@ -4775,7 +4778,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           // from six stray leaves the clusterer happened to group.
           //
           // One exception, and it is an ID rather than a name: `boxId` is the walker's
-          // `data-box-id` come back round (§7's identity passthrough — a Lolly
+          // `data-box-id` come back round (§7's identity passthrough - a Lolly
           // screenshot exported with `layerIds` carries the canvas's own box ids), so
           // when it is there the row can say WHICH element of the original page this
           // layer is. Minted by the canvas, never read out of a stranger's file.
@@ -4787,7 +4790,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }).join('')}</ul>`
         + (warnings.length ? `<p class="fc-num-hint fc-lift-warn">${escape(warnings.join(' '))}</p>` : '')
         // Depth intensity (audit A5#2): how far apart the stack stands. Medium is the
-        // shipped taste ceiling — an unchanged lift is byte-identical to before — with
+        // shipped taste ceiling - an unchanged lift is byte-identical to before - with
         // Dramatic there for a sparse hero shot that reads flat at the default.
         + '<div class="fc-num-row fc-lift-strength-row">'
           + `<label class="field-label fc-lift-strength-lab" for="fc-lift-strength">${escape(t('Depth intensity'))}</label>`
@@ -4808,7 +4811,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const yes = bodyEl.querySelector<HTMLButtonElement>('[data-lift-yes]');
       yes?.addEventListener('click', (e) => {
         e.stopPropagation();
-        // Read the Depth-intensity choice at commit time — the select is the only source
+        // Read the Depth-intensity choice at commit time - the select is the only source
         // of truth, and an unknown value maps to `medium` (1), the byte-identical default.
         const pick = bodyEl.querySelector<HTMLSelectElement>('[data-lift-strength]')?.value ?? 'medium';
         const strength = LIFT_STRENGTH[pick] ?? LIFT_STRENGTH.medium;
@@ -4819,7 +4822,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // it goes, so there is no path that leaves this attribute standing.
         p.setAttribute('aria-busy', 'true');
         // The button that was pressed is now disabled, so focus is about to be dropped
-        // on the floor by the browser — park it on the panel, which still says what is
+        // on the floor by the browser - park it on the panel, which still says what is
         // happening, rather than letting it fall to <body> and out of the dialog.
         p.focus();
         void runLift(sourceId, ref, layers, viewBox, () => live(), strength);
@@ -4828,22 +4831,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
   }
 
-  /** What this file needs from an engine `SvgLayer` — structural, so no runtime import. */
+  /** What this file needs from an engine `SvgLayer` - structural, so no runtime import. */
   interface SvgLayerPlan {
     markup: string; nodes: number; boxId?: string;
     /** The crop the engine cropped this layer's document to (§P3.2), in source user units. */
     viewBox?: { x: number; y: number; w: number; h: number };
-    /** The layer's measured ink extent — what decides which rows are peers. */
+    /** The layer's measured ink extent - what decides which rows are peers. */
     bbox?: { x: number; y: number; w: number; h: number } | null;
   }
-  /** The source document's own viewBox — the denominator for those crops. */
+  /** The source document's own viewBox - the denominator for those crops. */
   type SvgSourceBox = { x: number; y: number; w: number; h: number } | null;
 
   /**
    * Do the lift: store one asset per derived layer, then write the rows in ONE commit.
    *
    * The stores happen FIRST and the commit last, so a failure part-way through leaves
-   * the board exactly as it was — a half-lifted stack (some layers boxed, the original
+   * the board exactly as it was - a half-lifted stack (some layers boxed, the original
    * gone) is the one outcome worth engineering against, and "nothing changed, here is
    * why" is recoverable where that is not.
    *
@@ -4874,7 +4877,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       if (disposed) return;
       // Still closed here on the happy path, BEFORE the commit re-renders the
-      // stage — the `finally` below is the safety net for the paths that used to
+      // stage - the `finally` below is the safety net for the paths that used to
       // sail past this line, not a replacement for it.
       if (stillOpen()) closeMorePanel();
 
@@ -4901,7 +4904,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           bbox: L.bbox ?? null,
         })),
         // `zField` is the DEPTH field (plans/104 §5.3) and lives on the canvas block
-        // rather than in this module's geometry cfg — the only reader it has had until
+        // rather than in this module's geometry cfg - the only reader it has had until
         // now is `timeCfg`, because a keyed `z` replaces it for its segment. A lift is
         // its second reader, so it is named here rather than smuggled into FieldCfg,
         // where thirty other call sites would then have to ignore it.
@@ -4925,7 +4928,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       commit(applyLift(boxes, at, rows));
       // No singular branch: `askLiftLayers` refuses anything under two layers with
       // `renderRefusal`, and `runLift` is reachable only from `renderPlan`, so a
-      // "Lifted 1 layer." string could never have been shown — it was a dead key in
+      // "Lifted 1 layer." string could never have been shown - it was a dead key in
       // twenty-six locales.
       flash(t('Lifted {n} layers.', { n: layers.length }));
     } catch (e) {
@@ -4934,9 +4937,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     } finally {
       // The panel closes whatever happened, which the try alone never guaranteed:
       // an IndexedDB quota rejection during the uploads (the very failure a heavy
-      // lift invites — see the engine's SVG_LAYERS_HEAVY_BYTES warning) flashed a
+      // lift invites - see the engine's SVG_LAYERS_HEAVY_BYTES warning) flashed a
       // message and left the confirm button disabled and reading "Lifting…" for
-      // good, dismissable only by clicking outside. Idempotent — on the happy path
+      // good, dismissable only by clicking outside. Idempotent - on the happy path
       // the panel is already gone and `stillOpen()` is false.
       if (stillOpen()) closeMorePanel();
     }
@@ -4950,7 +4953,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── Dimensions panel: manual X / Y / W / H / rotation for ONE box ─────────────
-  // Opened from the object bar's transform readout (single selection only — editing
+  // Opened from the object bar's transform readout (single selection only - editing
   // X on many boxes would stack them). Writes each field on `change`.
   function openDimsPanel(anchor: HTMLElement): void {
     closeMorePanel();
@@ -4988,7 +4991,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (f === cfg.rotationField) { v = clampN(v, 0, -180, 180); inp.value = String(v); }
       setField(f, Math.round(v * 100) / 100);
     }));
-    // Rotation slider — drags live-mirror the number readout and commit once on
+    // Rotation slider - drags live-mirror the number readout and commit once on
     // release, so a drag never floods the undo history with intermediate steps.
     if (cfg.rotationField) {
       const rotNum = p.querySelector<HTMLInputElement>(`input[type="number"][data-dm="${cfg.rotationField}"]`);
@@ -5034,7 +5037,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Per-frame present `state` panel (plan 112 M4): a one-field editor for a selected
-  // frame's state tokens. Commits on change (blur), not per keystroke — state has no live
+  // frame's state tokens. Commits on change (blur), not per keystroke - state has no live
   // editor effect (it themes present mode), so there is no reason to churn the boxes array.
   function openFrameStatePanel(anchor: HTMLElement, frameIdx: number): void {
     closeMorePanel();
@@ -5058,7 +5061,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Speaker notes (plan 112 M5): a multi-line note the presenter reads while this slide is
-  // active in the speaker view — never rendered on the slide the audience sees.
+  // active in the speaker view - never rendered on the slide the audience sees.
   function openSpeakerNotesPanel(anchor: HTMLElement, frameIdx: number): void {
     closeMorePanel();
     const cur = String(getBoxes()[frameIdx]?.['notes'] ?? '');
@@ -5126,7 +5129,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const authorRow = p.querySelector<HTMLElement>('[data-prov="author"]');
       const contactRow = p.querySelector<HTMLElement>('[data-prov="contact"]');
       const note = p.querySelector<HTMLElement>('[data-prov="note"]');
-      // nosemgrep: lolly-href-escape-is-not-scheme-validation — editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation - editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
     const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>` : '';
       const paint = (optedIn: boolean, author: string, contact: string): void => {
         if (optin) optin.checked = optedIn;
@@ -5164,7 +5167,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const next = boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: value } : b));
     // Recolouring a path is what teaches the pen its next paint. Every paint control on
     // both bars (and the whole stroke panel) writes through here, so this is the one place
-    // that has to notice — and it is gated on the selection being ALL paths so restyling a
+    // that has to notice - and it is gated on the selection being ALL paths so restyling a
     // text box or an image can't hand the pen a fill that means nothing for a curve.
     if (idx.length > 0 && selectionAllPaths(boxes, idx)) {
       const remembered = pickPathPaint(penPaintFields, next[idx[0]!]);
@@ -5172,12 +5175,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     commit(next);
   }
-  // Is this box a circle? (An ellipse the geometry keeps square — see setShape.)
+  // Is this box a circle? (An ellipse the geometry keeps square - see setShape.)
   const isCircle = (b: Box | undefined): boolean =>
     !!cfg.shapeField && String(b?.[cfg.shapeField]) === 'circle';
   // Set the shape on the selection. "circle" additionally squares each box to its
   // smaller side about its centre (an inscribed circle), in the SAME commit as the
-  // shape change (one undo step) — otherwise a w≠h box would render as an ellipse and
+  // shape change (one undo step) - otherwise a w≠h box would render as an ellipse and
   // the label would lie. Any other shape writes straight through.
   function setShape(v: string | undefined): void {
     if (!cfg.shapeField) return;
@@ -5218,7 +5221,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" data-tip="${escape(lbl)}" aria-label="${escape(lbl)}">${ic ? icon(ic) : escape(lbl)}</button>`).join('') +
       '</div>';
   }
-  // Image-position anchor picker — a 3×3 grid of the CSS `object-position` anchors,
+  // Image-position anchor picker - a 3×3 grid of the CSS `object-position` anchors,
   // where the button's CELL is its meaning (top-left cell = anchor top-left). It's a
   // `.fc-seg` so wireSegs writes it like any segmented control; the values are literal
   // CSS object-position keywords (the hook whitelists them; the exporter reads the
@@ -5334,7 +5337,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.style.top = Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
   }
   // `initialTab` is the picker pane this add-kind should OPEN on (picker.ts's
-  // PickerOpts.initialTab — a default the user can leave immediately, not a lock):
+  // PickerOpts.initialTab - a default the user can leave immediately, not a lock):
   // 'tools' for the Tool kind, 'library' for the media kinds, whose `pickType` has
   // already narrowed the library to just the assets that fit.
   async function pickImage(
@@ -5351,7 +5354,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const curToolUrl = curImg?.meta?.toolUrl;
     if (curToolUrl && editTool) {
       // Lazy: picker.ts pulls in the picker's own CSS chunk, and the overlay only needs
-      // it on this one branch — a static import would ship (and evaluate) it for every
+      // it on this one branch - a static import would ship (and evaluate) it for every
       // editor mount.
       const { askLollyIntent } = await import('./picker.ts');
       const intent = await askLollyIntent(curImg?.meta?.name);
@@ -5374,7 +5377,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           : pickType === 'audio' ? t('Choose a sound')
           : pickOpts?.initialTab === 'tools' ? t('Choose a tool')
           : t('Choose an image'),
-        // No type constraint by default: boxes take rasters AND vectors — logos and
+        // No type constraint by default: boxes take rasters AND vectors - logos and
         // the themable two-colour icons (with the picker's theme strip) included, plus
         // animated rasters (gif/apng/webp, which are type:'raster'). The "Animation" /
         // "Video" add-kinds constrain the picker to lottie / video respectively; each
@@ -5386,7 +5389,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         allowUpload: true,
         current: curImg?.id,
         // A box image that's already a Lolly render surfaces the picker's
-        // edit-the-current-tool banner (inputs pre-filled) — the box's only
+        // edit-the-current-tool banner (inputs pre-filled) - the box's only
         // route back into the source tool, since boxes have no Edit badge.
         currentToolUrl: curImg?.meta?.toolUrl,
         currentToolName: curImg?.meta?.name,
@@ -5402,7 +5405,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Cut the background out of the single selected image box on-device (host.matte)
-  // and drop the cutout back over the selection — the exact tail of pickImage, so
+  // and drop the cutout back over the selection - the exact tail of pickImage, so
   // the result is an ordinary image ref with alpha, its original preserved as a
   // C2PA ingredient. Lazy chunk (matte-dialog.ts) like askLollyIntent above.
   async function removeBackgroundOnSelection(): Promise<void> {
@@ -5427,7 +5430,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── outline text ─────────────────────────────────────────────────────────────
-  // Convert selected text boxes' glyphs into ordinary kind:'path' boxes (plan 88 —
+  // Convert selected text boxes' glyphs into ordinary kind:'path' boxes (plan 88 - 
   // the Font Outliner capability, in place). Measurement + shaping live in the lazy
   // outline-text.ts chunk, which reuses the export walk's line machinery; here is
   // only the model surgery: source box → per-fill path boxes at the same z, one
@@ -5444,7 +5447,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  border) keeps its frame; only the text leaves it. A bare text box is replaced
    *  outright. The border matters because a non-path box renders strokeW>0 + a stroke
    *  colour as a CSS border on the frame, and the glyph path boxes deliberately clear
-   *  their stroke — so without keeping the frame a bordered label would silently lose
+   *  their stroke - so without keeping the frame a bordered label would silently lose
    *  its border on outline. */
   function paintsBesidesText(b: Box): boolean {
     const bg = cfg.fillField ? String(b[cfg.fillField] ?? '').trim() : '';
@@ -5483,7 +5486,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return { x: (r.left - cr.left) / scale, y: (r.top - cr.top) / scale, w: r.width / scale, h: r.height / scale };
     };
 
-    // Settle fonts AND layout ONCE, up front — before touching any box DOM. A pending
+    // Settle fonts AND layout ONCE, up front - before touching any box DOM. A pending
     // webfont load resolves here, and the template's fit pass (which re-runs on
     // document.fonts.ready and rewrites --fit → font-size → line wrapping) gets two
     // paint frames to finish. If we awaited this per box instead, a font-load could
@@ -5506,10 +5509,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       } catch { firstRefusal ??= 'empty'; }
     }
 
-    // The model may have moved while shaping — re-read and apply by id, one commit.
+    // The model may have moved while shaping - re-read and apply by id, one commit.
     // `kfField` and `zField` ride along with the timing (plans/104, the M1-flagged
     // gap): a clip on screen 2s..5s stays 2s..5s, and a clip that was FLYING stays
-    // flying — outlining its text must not quietly un-animate it, or drop it back to
+    // flying - outlining its text must not quietly un-animate it, or drop it back to
     // the floor. Both are per-box authored values with no cross-box identity (unlike
     // `linkOf`, which is deliberately absent from this list), and the keyframe
     // channels are relative offsets, so a glyph box inherits the motion correctly
@@ -5547,10 +5550,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       for (const g of groups) {
         const pb = pathToBox(g.path, src, { cfg: vectorCfg, id: freshId(next.concat(made)) });
         // Only the node ceiling gets here (finite, non-empty geometry by construction)
-        // — too much text for one encodable shape. Refuse the whole box.
+        // - too much text for one encodable shape. Refuse the whole box.
         if (!pb) { failed = true; break; }
         // A path box's fill field paints the GLYPHS; the text box's fill was its
-        // background. pathToBox inherited the latter — override with the run colour.
+        // background. pathToBox inherited the latter - override with the run colour.
         if (cfg.fillField) pb[cfg.fillField] = g.fill;
         pb[cfg.strokeField] = '';
         pb[cfg.strokeWField] = 0;
@@ -5560,8 +5563,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // it onto each glyph too would double it. And any carried shadow becomes
         // 'content' (a drop-shadow following the glyph silhouette): 'text' has nothing
         // to attach to once the text is geometry, and 'box' would otherwise draw a
-        // rectangle around each colour group's bounding box — never what was intended.
-        // Timing fields always carry (a clip on screen 2s..5s stays 2s..5s) — but never
+        // rectangle around each colour group's bounding box - never what was intended.
+        // Timing fields always carry (a clip on screen 2s..5s stays 2s..5s) - but never
         // linkOf: duplicating a detach-audio link id would corrupt its link group.
         const shadowField = cfg.shadowField;
         if (!keepSource && shadowField) {
@@ -5624,9 +5627,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
   // A group TAG, not a row identity: it is compared for equality between boxes of this
   // one document, so it keeps its short per-mount form (freshId moved to ULIDs because a
-  // ROW is what a remote op addresses — see plan 100 §3). Its own counter since that
+  // ROW is what a remote op addresses - see plan 100 §3). Its own counter since that
   // move; two peers grouping at the same millisecond can still mint the same tag, which
-  // would merge two unrelated groups — a convergence snag for the collab wave, not this one.
+  // would merge two unrelated groups - a convergence snag for the collab wave, not this one.
   let groupSeq = 0;
   function freshGroupId(boxes: Box[]): string {
     const used = new Set(boxes.map((b) => groupOf(b)).filter(Boolean));
@@ -5729,7 +5732,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The geometry itself lives in vector-ops.ts (pure, DOM-free, engine-backed); this is
   // only the menu wiring: gather the operands, run the op, and commit ONE model write.
   //
-  // Failure never half-edits the model — `run` is called first and nothing is committed
+  // Failure never half-edits the model - `run` is called first and nothing is committed
   // unless it answered `ok:true`.
 
   /** Curve-fitting tolerance for Simplify, in native canvas px. Sub-pixel, so the result
@@ -5744,7 +5747,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /** The selection as vector operands: array order is Z-ORDER (bottom first), which is
-   *  what every operation in vector-ops.ts documents — Subtract's base is operand 0. */
+   *  what every operation in vector-ops.ts documents - Subtract's base is operand 0. */
   function vectorOperands(): { boxes: Box[]; operands: Box[]; ids: string[] } {
     const boxes = getBoxes();
     const idx = selIndices(boxes);
@@ -5754,13 +5757,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * A refusal the user can read.
    *
-   * vector-ops.ts does not import i18n at all — its `message` is diagnostic English
-   * for a log — so the translated sentence is owned here and keyed on `reason`.
+   * vector-ops.ts does not import i18n at all - its `message` is diagnostic English
+   * for a log - so the translated sentence is owned here and keyed on `reason`.
    *
    * `empty-result` is the interesting one, and it is NOT an error: an intersection of two
    * shapes that do not overlap is legitimately empty, and so is an inward offset deeper
    * than the shape's own inradius. This REFUSES AND SAYS SO rather than deleting the
-   * operands. Deleting them is defensible — Illustrator's Intersect does exactly that —
+   * operands. Deleting them is defensible - Illustrator's Intersect does exactly that - 
    * but on screen an empty result and a no-op are the same picture, so the destructive
    * reading of an ambiguous gesture would remove the user's artwork and leave nothing
    * behind to explain where it went. Stating the answer in words costs one more tap and
@@ -5798,7 +5801,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   interface RunVectorOpts {
     /** simplifyBoxes returns one box PER OPERAND, each of which keeps its own place in
-     *  the stack — so the result is applied operand by operand instead of as one swap. */
+     *  the stack - so the result is applied operand by operand instead of as one swap. */
     each?: boolean;
     /** Mention boxes the operation left alone (text/image have no outline). */
     skipNote?: boolean;
@@ -5848,7 +5851,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
   }
 
-  // Outline stroke — the width defaults to the topmost operand's OWN stroke width, which
+  // Outline stroke - the width defaults to the topmost operand's OWN stroke width, which
   // is the stroke the user is looking at.
   function askOutlineStroke(): void {
     if (!vectorCfg) return;
@@ -5864,7 +5867,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     });
   }
 
-  // Offset — no `min` on the field, because a negative distance is an inset and that is
+  // Offset - no `min` on the field, because a negative distance is an inset and that is
   // half of what this control is for.
   function askOffsetPath(): void {
     if (!vectorCfg) return;
@@ -5890,11 +5893,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // model once per completed edit (a drag, an insert, a delete, a continuity change).
 
   /** The kind a NEW path is drawn in. Remembered across draws, seeded from the plan's
-   *  default — `hyperbezier`, whose node default is `'smooth'`, so plain click-click-click
+   *  default - `hyperbezier`, whose node default is `'smooth'`, so plain click-click-click
    *  draws a curve rather than a polyline. */
   let penDrawKind: SplineKind = PEN_DEFAULT_KIND;
 
-  /** One set of spline-type names for every surface that offers them — the pen bar's
+  /** One set of spline-type names for every surface that offers them - the pen bar's
    *  `<select>` and the rail button's hold menu. Built per call rather than frozen at
    *  module load so a language switch renames them. */
   function penKindLabels(): Record<string, string> {
@@ -5908,7 +5911,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The spline type, chosen from the rail BEFORE anything is drawn.
    *
    * Until this existed the switcher only appeared in the pen bar, which only appears once
-   * there is a draft — so choosing the type meant drawing a path in the wrong one first
+   * there is a draft - so choosing the type meant drawing a path in the wrong one first
    * and converting, and `hyperbezier → cubic` is the only conversion that is lossless.
    * Picking up the pen already knowing what you want to draw is the normal case for
    * tracing, so it gets a normal path to it.
@@ -5936,7 +5939,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const penScale = (): number => metrics().scale || 1;
   const penTol = (): number => PEN_HIT_PX / penScale();
 
-  // Entering/leaving pen mode. Neither is called directly — `setMode` owns the transition,
+  // Entering/leaving pen mode. Neither is called directly - `setMode` owns the transition,
   // which is what guarantees the other three modes are down before this one is up.
   function enterPen(): void {
     deselectEdge();
@@ -5957,7 +5960,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── drawing ───────────────────────────────────────────────────────────────────
 
   /** Place a node at a (already snapped) native point and start the drag that pulls its
-   *  handles out. `corner` is the Alt modifier — see the button's tooltip. */
+   *  handles out. `corner` is the Alt modifier - see the button's tooltip. */
   function penPlaceNode(e: PointerEvent, at: Point, corner: boolean): void {
     const kind = penDraft ? penDraft.kind : penDrawKind;
     const nodes = penDraft ? penDraft.nodes.slice() : [];
@@ -5982,7 +5985,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * End the draw and commit — ONE `setInput`, so one undo step removes the whole path.
+   * End the draw and commit - ONE `setInput`, so one undo step removes the whole path.
    *
    * A draft with fewer than two nodes commits nothing: a single click with the pen selected
    * is a mis-click, and materialising a one-node box for it would leave the user something
@@ -6003,13 +6006,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * removes the whole thing.
    *
    * Extracted from `penFinishDraw` for plan 96 P2: the Line tool draws the same primitive
-   * with a different gesture (one drag, two nodes) and must land the same box — same
-   * seeding, same paint fallback, same single commit — or a line would be a second-class
+   * with a different gesture (one drag, two nodes) and must land the same box - same
+   * seeding, same paint fallback, same single commit - or a line would be a second-class
    * shape the moment anyone tried to node-edit or restyle it. `extra` is the per-gesture
    * decoration the line adds on top (its default arrowhead and its empty bindings).
    *
    * Returns false when nothing was committed (fewer than two nodes, an unlowerable kind, a
-   * tool with no `pathField`) — the caller's cue to repaint its own chrome.
+   * tool with no `pathField`) - the caller's cue to repaint its own chrome.
    */
   function commitPathBox(draft: AuthoredPath, extra?: Box): boolean {
     if (!cfg.pathField) return false;
@@ -6019,11 +6022,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const boxes = getBoxes();
     const id = freshId(boxes);
     const pathSeed: Box = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) };
-    // Paint: what the user last used on a path, then this tool's own `path` seed — and
+    // Paint: what the user last used on a path, then this tool's own `path` seed - and
     // nothing else. Other add-kinds are deliberately NOT consulted: a `path` seed's empty
     // fill is a statement ("paths in this brand are stroke-only"), so letting a box seed
     // fill it in would overrule the brand, and where there is no `path` seed at all the
-    // nearest kind's colour is chosen for a filled rectangle, not for a curve — Sequence
+    // nearest kind's colour is chosen for a filled rectangle, not for a curve - Sequence
     // Studio's card is #14181d on a #0b1220 artboard, i.e. invisible. The honest fallback
     // for that case is the ink the path was drawn in, below.
     const seed: Box = {
@@ -6032,7 +6035,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     // Last resort: stroke it in the colour it was DRAWN in. The preview strokes the draft
     // in `currentColor` off .fc-pen-layer (the brand primary), so this is the shape the user
-    // was just looking at rather than an invented hue — and it is resolved to a concrete
+    // was just looking at rather than an invented hue - and it is resolved to a concrete
     // hex here because a box field has to render headlessly, where a CSS variable cannot.
     if (cfg.strokeField && !pathPaintIsVisible(penPaintFields, seed)) {
       seed[cfg.strokeField] = drawnInkHex();
@@ -6052,11 +6055,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return true;
   }
 
-  /** The colour the pen preview is drawn in, as a concrete hex — always a usable value, since
+  /** The colour the pen preview is drawn in, as a concrete hex - always a usable value, since
    *  a shape in the wrong colour still beats a shape in none. Computed at commit time rather
    *  than cached: the brand, and so this colour, can change mid-session. The resolution is
    *  pure (`resolveDrawnInk`) so it can be tested without a stylesheet, which is also the one
-   *  case that reaches its fallback — jsdom applies no CSS, a real browser always resolves. */
+   *  case that reaches its fallback - jsdom applies no CSS, a real browser always resolves. */
   function drawnInkHex(): string {
     try { return resolveDrawnInk(getComputedStyle(penLayer).color); }
     catch { return resolveDrawnInk(null); }
@@ -6073,12 +6076,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── node-edit mode ────────────────────────────────────────────────────────────
 
-  /** Enter node editing on a path box. Entered like `startTextEdit` — a double-click or an
-   *  explicit affordance — and left just as explicitly, so ordinary selection behaviour is
+  /** Enter node editing on a path box. Entered like `startTextEdit` - a double-click or an
+   *  explicit affordance - and left just as explicitly, so ordinary selection behaviour is
    *  never silently different. */
   // ── Multi-contour node editing: combined flat view ↔ per-contour split ─────────
   // Join per-contour paths into ONE combined path (nodes concatenated) + the parts
-  // descriptor that splits it back. The combined kind is the first part's — see the
+  // descriptor that splits it back. The combined kind is the first part's - see the
   // penEdit declaration for why that is correct for every producer here.
   function penJoin(paths: AuthoredPath[]): { path: AuthoredPath; parts: PenPart[] } {
     const parts: PenPart[] = paths.map((p) => ({ count: p.nodes.length, kind: p.kind, closed: p.closed }));
@@ -6171,7 +6174,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * One completed edit → one model write, frame REFITTED to the curve.
    *
-   * The frame is the curve's tight bounding box — that is the invariant every other part of
+   * The frame is the curve's tight bounding box - that is the invariant every other part of
    * the editor reads (selection chrome, marquee, align/distribute, group bounds, the export
    * bbox) and the one `hooks.js` clips to. So an edit that put a node or a curve outside the
    * old frame grows it and an edit that pulled the shape inward shrinks it, and either way
@@ -6182,9 +6185,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * cursor. The live gesture paints on the native pen layer with the box's own `<svg>`
    * hidden, so nothing clips in between.
    *
-   * Every contour is re-encoded, not just the edited one — see `penEdit`.
+   * Every contour is re-encoded, not just the edited one - see `penEdit`.
    *
-   * `next` is the COMBINED path (all contours' nodes flat) that a position op returned — same
+   * `next` is the COMBINED path (all contours' nodes flat) that a position op returned - same
    * node count and same parts as `penEdit.path`, so it splits cleanly by the current parts.
    * A STRUCTURAL op (insert/delete/close/convert) that changes the parts calls
    * `penEditWritePaths` directly with the new per-contour array instead.
@@ -6234,7 +6237,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /** Insert a node where the pointer met the curve. Exact for `cubic` (a de Casteljau
-   *  split), on-curve-but-reshaping for the derived kinds — see `insertNodeOnCurve`.
+   *  split), on-curve-but-reshaping for the derived kinds - see `insertNodeOnCurve`.
    *  Part-aware: the click may land on any contour, so each is tried and the nearest wins;
    *  the insert reshapes only THAT contour, and the new node's flat index is offset by the
    *  contour's start so the selection lands on it. */
@@ -6276,7 +6279,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!sel.size) { out.push(c); continue; }
       // A wholly-selected contour is dropped outright (an intentional per-glyph erase), as
       // long as another survives (`out.length` guard below). A PARTIAL selection that would
-      // orphan a contour under two points keeps it whole instead — the same floor as before.
+      // orphan a contour under two points keeps it whole instead - the same floor as before.
       if (sel.size >= c.nodes.length) { anyDeleted = true; continue; }
       const nd = deleteNodes(c, sel);
       if (nd) { out.push(nd); anyDeleted = true; } else out.push(c);
@@ -6289,7 +6292,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * Align / distribute the SELECTED NODES — the same six-plus-two operations the object
+   * Align / distribute the SELECTED NODES - the same six-plus-two operations the object
    * bar offers, and deliberately the same icons and the same grid shape, because "align
    * left" means the same thing to a user whether the things being aligned are boxes or
    * points. The two never collide: this button only exists while node editing, where
@@ -6299,7 +6302,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * along a straight edge is never actually straight, and the alternative is nudging each
    * one with the arrow keys.
    */
-  /** The selection as point refs — nodes ∪ selected control points — for align/distribute. */
+  /** The selection as point refs - nodes ∪ selected control points - for align/distribute. */
   function penPointRefs(): PenPointRef[] {
     const refs: PenPointRef[] = [...penSel].map((i) => ({ node: i }));
     for (const key of penHandleSel) {
@@ -6407,7 +6410,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The asymmetry is `convertKind`'s: to `cubic` bakes the current lowering into explicit
    * handles and is lossless; to `hyperbezier` (or another derived kind) DROPS them and
    * cannot get them back. So the lossy direction asks, in the same `fc-panel` recipe the
-   * one-number prompts use — the smallest confirmation this overlay has.
+   * one-number prompts use - the smallest confirmation this overlay has.
    */
   function penSetKind(to: SplineKind): void {
     if (!penEdit) return;
@@ -6470,7 +6473,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * caller wraps it in the frame transform, so a rotated box's heads rotate with it).
    *
    * Why it is here at all: a node drag hides the box's own `<svg>` and paints this hairline
-   * outline instead, so without it the arrowheads blink out for the whole gesture — exactly
+   * outline instead, so without it the arrowheads blink out for the whole gesture - exactly
    * while you are moving the point one of them sits on. The geometry is the engine's
    * `edgeArrowHead`, the same call the committed render reaches through the host bridge, so
    * the preview head is the head.
@@ -6479,7 +6482,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * a thing a multi-contour boolean result or a closed loop has. The ink is `currentColor`
    * (the guide colour of the outline it decorates), not the box's stroke: this is chrome,
    * and a head painted in a stroke colour that happens to match the artboard would vanish.
-   * No shaft pullback either — a 1.6px hairline cannot poke through a filled head visibly,
+   * No shaft pullback either - a 1.6px hairline cannot poke through a filled head visibly,
    * and the inset belongs to the committed render, which is what the export reads.
    */
   function penEditHeadsSvg(contours: AuthoredPath[]): string {
@@ -6516,7 +6519,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     let body = '';
     if (penDraft) {
       // The cursor is included as a real node, so the preview is what committing here
-      // would actually produce — for a hyperbezier that means the WHOLE run re-solves,
+      // would actually produce - for a hyperbezier that means the WHOLE run re-solves,
       // which is the honest picture and the reason the warm start matters.
       const preview: AuthoredPath = penCursor
         ? { ...penDraft, nodes: [...penDraft.nodes, { x: penCursor.x, y: penCursor.y, continuity: defaultContinuity(penDraft.kind) }] }
@@ -6551,7 +6554,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Dragging one END of a path onto a box ATTACHES that end to it: the path becomes a
   // connector and the engine routes it from that box's border, re-solving as the box moves.
   // Dragging the same end off every box detaches it and the path is a plain spline again.
-  // There is no mode and no separate tool — the gesture is the one the shape suggests, and
+  // There is no mode and no separate tool - the gesture is the one the shape suggests, and
   // it is the thing Connect mode used to be (plan 96 P4 deleted that).
 
   /** Which end of the edited path a node-drag is moving, or undefined when it is not a
@@ -6580,7 +6583,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /** The snap ring over the box an end would attach to. Drawn in the connector preview
    *  layer (native coordinates, already placed) so it pans and zooms with everything else.
-   *  Same dashed outline Connect mode used to put round its pending source card — the
+   *  Same dashed outline Connect mode used to put round its pending source card - the
    *  affordance survived the mode. */
   function setBindHover(id: string | null): void {
     if (id === bindHover) return;
@@ -6598,7 +6601,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * Write one end's binding — the whole commit, one `setInput`, one undo step.
+   * Write one end's binding - the whole commit, one `setInput`, one undo step.
    *
    * A no-op write is skipped so re-dragging an already-attached end does not mint an undo
    * step that changes nothing. Attaching also seeds a head on the far end when the path has
@@ -6625,7 +6628,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       : t('Detached. The line is a free shape again.'));
   }
 
-  /** Every node's position in NATIVE px, in node order — the one place the two modes'
+  /** Every node's position in NATIVE px, in node order - the one place the two modes'
    *  coordinate spaces are reconciled. */
   function penNodePoints(): Array<{ node: SplineNode; at: Point; hIn: Point | null; hOut: Point | null }> {
     const p = penEdit ? penEdit.path : penDraft;
@@ -6645,7 +6648,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /**
    * Build-once / reposition-many for node chrome, keyed on the node COUNT plus which path
-   * is being edited — nothing else. Repositioning is pure style writes, so a drag, a pan
+   * is being edited - nothing else. Repositioning is pure style writes, so a drag, a pan
    * and a zoom all cost the same handful of them; only placing or deleting a node (or
    * changing which box is edited) recreates elements and rebinds their pointerdown. This
    * is the discipline `chromeNodes` documents, and it matters more here: a 40-node path
@@ -6657,7 +6660,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Handles are drawn while DRAWING as well as while editing. A pen's click-drag is the
     // one gesture whose whole feedback is the arm you are pulling, and on the very first
     // node of a path there is no segment yet, so without the arm the drag has no visible
-    // effect at all — you are aiming a tangent blind. `handlePoint` returns null for a node
+    // effect at all - you are aiming a tangent blind. `handlePoint` returns null for a node
     // with no authored handle, so a click-only node still shows a bare dot and only the
     // nodes actually dragged grow arms.
     const withHandles = kindReadsHandles(p.kind);
@@ -6673,7 +6676,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The node chrome carries NO listeners, unlike the selection handles.
    *
    * Every pen hit test already has to happen in box-local coordinates and be
-   * rotation-aware — a handle can be anywhere, including under another node — so
+   * rotation-aware - a handle can be anywhere, including under another node - so
    * `onCanvasPointerDown` does it with `penHandleAt`/`nodeAt`/`nearestOnPath` against the
    * real geometry. Binding a second, element-based path on top would give two answers to
    * the same question, and it is precisely the per-node listener rebinding that the
@@ -6738,7 +6741,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The first node of an OPEN draft is the one a click closes on, so it reads as a
       // target rather than as another placed point.
       el.classList.toggle('is-close-target', !!penDraft && i === 0 && pts.length >= 3);
-      // plan 96 P3 — an ATTACHED end reads as filled, so "this line is pinned to that box"
+      // plan 96 P3 - an ATTACHED end reads as filled, so "this line is pinned to that box"
       // is visible without dragging it to find out. Only the two ends can carry one.
       const end = penEdit ? (i === 0 ? 'start' : i === pts.length - 1 ? 'end' : null) : null;
       el.classList.toggle('is-bound', !!end && !!penEditBox() && bindOf(penEditBox()!, end) !== '');
@@ -6774,13 +6777,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * The paint section + kind switcher + continuity control, in `ctxbar` — which is the
+   * The paint section + kind switcher + continuity control, in `ctxbar` - which is the
    * contextual control bar that already rebuilds on a selection-signature change, so the
    * pen's signature just joins that scheme rather than inventing a second bar.
    *
    * The paint controls are the SAME `paintCtxHtml` the object bar uses. This bar replaces
    * `ctxbar.innerHTML`, so before that sharing existed fill and stroke disappeared the
-   * instant node editing began — which is the thing the bug report was actually about.
+   * instant node editing began - which is the thing the bug report was actually about.
    */
   function penCtxBar(): void {
     const p = penEdit ? penEdit.path : penDraft;
@@ -6863,7 +6866,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }));
   }
 
-  /** Pinned to the top chrome row, centred between the back pill and zoom HUD — the same
+  /** Pinned to the top chrome row, centred between the back pill and zoom HUD - the same
    *  perch the object bar takes, so the bar does not jump when a draw becomes a selection
    *  and never sits over the path the user is shaping. */
   function positionPenCtxBar(): void {
@@ -6871,7 +6874,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     const bw = ctxbar.offsetWidth || 0;
-    if (bw <= 0) return;   // not laid out yet — next frame, rather than a half-width-off jump
+    if (bw <= 0) return;   // not laid out yet - next frame, rather than a half-width-off jump
     const pos = centreCtxBar(bw, band);
     ctxbar.style.left = pos.left + 'px';
     ctxbar.style.top = pos.top + 'px';
@@ -6881,13 +6884,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * THE mode switch. Every enter/exit below is private to it, because the bug it fixes was
    * not a missing button: the modes were four independent booleans, so each `armX` had to
-   * remember to disarm each of the others by hand — and `armConnect` never disarmed the pen,
+   * remember to disarm each of the others by hand - and `armConnect` never disarmed the pen,
    * so Connect-over-Pen left two live tools, two lit rail buttons, and an Escape that took
    * two presses to dismantle what looked like one state. Here "enter next" IS "leave
    * everything else", once, in one place.
    *
    * `draft` decides an in-progress pen path's fate, and the two answers are deliberately
-   * opposite: a TOOL SWITCH finishes it ('commit', the default — the user asked for a
+   * opposite: a TOOL SWITCH finishes it ('commit', the default - the user asked for a
    * different tool, not to throw the path away, which is what every mainstream design tool
    * does), while Escape means cancel and passes 'discard'. Getting these the same way round
    * either loses drawn work or resurrects work the user just abandoned. `penFinishDraw`
@@ -6895,11 +6898,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * out leaves no invisible one-node box behind.
    *
    * Point editing is not a mode, but it IS something the user is inside, so any tool change
-   * leaves it — the same way switching tools leaves a text edit.
+   * leaves it - the same way switching tools leaves a text edit.
    */
   function setMode(next: EditorMode, o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}): void {
     // The line tool writes a PATH BOX now (plan 96 P2), so it is gated on the same config
-    // the pen is — `pathField` — and no longer on the connectors input it used to write to.
+    // the pen is - `pathField` - and no longer on the connectors input it used to write to.
     if (next === 'line' && !cfg.pathField) return;
     if (next === 'pen' && !cfg.pathField) return;
     if (next === 'create' && !o.kind && !armedKind) return;
@@ -6911,7 +6914,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (from !== next) {
       // A mode switch while a create/line DRAG is still in flight (Escape's discard rung, or
       // a V/P/N tool shortcut pressed mid-draw) ABORTS that gesture, so its eventual
-      // pointerup can't commit a box/line against the discard — both tools committed on
+      // pointerup can't commit a box/line against the discard - both tools committed on
       // release and neither ended the gesture here (plan 90 verify LENS 3). endGesture()
       // nulls `gesture`, so onGestureEnd early-returns on release; the browser auto-releases
       // the pointer capture. Scoped to these two so select-mode move/resize/rotate is
@@ -6926,7 +6929,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (next === 'create') enterCreate(o.kind);
     syncModeUI();
   }
-  /** Back to the pointer, from anywhere — Escape's mode rung, and every internal "this
+  /** Back to the pointer, from anywhere - Escape's mode rung, and every internal "this
    *  gesture consumed the tool" exit. */
   const toPointer = (draft: 'commit' | 'discard' = 'commit'): void => { setMode('select', { draft }); };
   /** The pointer as an EXPLICIT user choice (the rail button, `V`). Announced, because the
@@ -6939,7 +6942,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
 
   /** Toggle the Node tool. Turning it on drops any other tool (it is a select sub-mode)
-   *  and, if exactly one path box is selected, jumps straight into editing it — the
+   *  and, if exactly one path box is selected, jumps straight into editing it - the
    *  "jump straight into node editing an object" ask. */
   function toggleNodeTool(): void {
     if (nodeToolActive) { nodeToolActive = false; if (penEdit) endPenEdit(); syncModeUI(); announce(t('Pointer on - click to select, drag to move.')); return; }
@@ -6974,9 +6977,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // `enterConnect` / `exitConnect` (plan 90) lived here. Plan 96 P4 deleted Connect mode
   // outright: clicking a card and then another card was a third way to make the one
   // primitive the Pen and the Line tool already make, and P3 replaced it with the gesture
-  // the shape itself suggests — drag a line's endpoint onto a box and it attaches. There is
+  // the shape itself suggests - drag a line's endpoint onto a box and it attaches. There is
   // no mode to enter, so there is no mode to be trapped in and none to leave.
-  // The Line tool (plan 96 P2) — the pen's other gesture. One drag draws a straight
+  // The Line tool (plan 96 P2) - the pen's other gesture. One drag draws a straight
   // two-node authored path, committed as an ordinary path box: selectable, node-editable,
   // and carrying the same stroke + arrowhead decorations any spline does.
   function enterLine(): void {
@@ -7002,7 +7005,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * takes it straight back off.
    *
    * Both bindings are written EMPTY rather than left absent, so a line drawn today carries
-   * the same shape of row as one bound in P3 — the field exists, it just names no box.
+   * the same structure of row as one bound in P3 - the field exists, it just names no box.
    */
   const lineBoxSeed = (): Box => ({
     ...(hasHeadCfg ? { [cfg.headStartField]: 'none', [cfg.headEndField]: 'triangle' } : {}),
@@ -7011,7 +7014,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /**
    * The rail's one job: say which tool is live. Attributes only, on buttons captured at
-   * build time — this runs on every chrome sync (so, every frame of a drag), and the rail
+   * build time - this runs on every chrome sync (so, every frame of a drag), and the rail
    * follows the same build-once/touch-many discipline as the selection chrome.
    */
   function syncModeUI(): void {
@@ -7102,12 +7105,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── object copy / paste ───────────────────────────────────────────────────────
-  // ⌘/Ctrl+C on a selection copies the box(es) — both to an in-memory clip and,
-  // behind FC_CLIP_PREFIX, onto the OS clipboard — so the next ⌘V duplicates them
+  // ⌘/Ctrl+C on a selection copies the box(es) - both to an in-memory clip and,
+  // behind FC_CLIP_PREFIX, onto the OS clipboard - so the next ⌘V duplicates them
   // (see onGlobalPaste). While editing text the browser's native text copy wins;
   // this only fires on the bare canvas with a selection.
-  let objectClipboard: Box[] | null = null;   // Array<box> — the in-memory fallback
-  let lastPointer: { x: number; y: number } | null = null;       // last client {x,y} over the stage — paste placement
+  let objectClipboard: Box[] | null = null;   // Array<box> - the in-memory fallback
+  let lastPointer: { x: number; y: number } | null = null;       // last client {x,y} over the stage - paste placement
   function pasteAimedHere(): boolean {
     const ae = document.activeElement;
     return !(ae && ae !== document.body && !stageEl.contains(ae));
@@ -7186,7 +7189,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const pad = Number.isFinite(padRaw) ? padRaw : 8;
     const lines = source.split('\n').length;
     const w = Math.round(Math.min(cw.w * 0.72, 760));
-    // Over-estimate height (the box clips overflow in the render) — the user can drag
+    // Over-estimate height (the box clips overflow in the render) - the user can drag
     // to resize, and a subsequent text edit grows-to-fit exactly.
     const h = Math.round(Math.max(120, lines * fontSize * lh + pad * 2 + fontSize * 0.5));
     const id = freshId(boxes);
@@ -7240,7 +7243,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!clipped) {
         // Stash the inline overflow before lifting the clip so we can restore it
         // EXACTLY. Carousel `.cm-page` clips from the stylesheet (inline ''), but the
-        // frames path bakes `overflow:hidden` INLINE on clipChildren frames — blanket
+        // frames path bakes `overflow:hidden` INLINE on clipChildren frames - blanket
         // resetting to '' there would delete the only clip source, so restore verbatim.
         f.dataset.fcOverflow = f.style.overflow;
         f.style.overflow = 'visible';
@@ -7262,13 +7265,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setHoverEdge(null);   // drop any hover highlight/cursor when a drag begins
     document.body.classList.add('fc-manipulating');
     setFramesClipped(false);
-    frameOffCache = new Map();   // frame offsets are stable during a drag — cache to avoid per-move reflow
+    frameOffCache = new Map();   // frame offsets are stable during a drag - cache to avoid per-move reflow
   }
   function endGesture(): void {
     document.body.classList.remove('fc-manipulating');
     gesture = null;
     rubber.hidden = true;
-    // The camera HUD and its mode cursor die WITH the gesture, whichever way it ended —
+    // The camera HUD and its mode cursor die WITH the gesture, whichever way it ended - 
     // committed, cancelled, or a click that never moved. This one teardown covers every
     // exit path, so no branch has to remember to clear them.
     hideCamHud();
@@ -7277,7 +7280,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setFramesClipped(true);
     frameOffCache = null;   // release the gesture-scoped frame-offset cache
     // The ctx bar's live state dies WITH the gesture: the frozen placement, the cached
-    // chrome rects, and — the visible one — the drag readout. Its values come from
+    // chrome rects, and - the visible one - the drag readout. Its values come from
     // `liveRects`, so without a repaint of its own the bar keeps showing the coordinates
     // the pointer left behind until the tool's own re-render lands, which is a second or
     // more away and outlives things as unrelated as a playhead scrub. `commit()` writes
@@ -7295,8 +7298,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let fmtbar: FmtBar | null = null;
 
   function onDblClick(e: MouseEvent): void {
-    // A double-click ends an open pen path — the polyline-ending gesture every tool with a
-    // multi-click primitive uses — and it never falls through to a text edit, because there
+    // A double-click ends an open pen path - the polyline-ending gesture every tool with a
+    // multi-click primitive uses - and it never falls through to a text edit, because there
     // is no box under the cursor yet to edit.
     if (penDraft) { e.preventDefault(); penFinishDraw(); return; }
     // On a committed path box it ENTERS node editing, the same way a double-click enters a
@@ -7316,7 +7319,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Already editing this box's text → let the browser's native double-click
     // word-selection stand. This listener is on the canvas, so a dblclick inside
     // the editable bubbles up to here; re-entering startTextEdit would commit +
-    // restart the edit and collapse the caret to the end — the reported "word
+    // restart the edit and collapse the caret to the end - the reported "word
     // flashes selected then vanishes" bug. (Triple-click escaped it only because
     // its third click fires no second dblclick event.) Just refresh the bar.
     if (editing && editing.el.contains(e.target as Node)) { refreshFmtStates(); return; }
@@ -7343,7 +7346,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!el) return;
     const boxEl = el.closest<HTMLElement>('.lolly-box');
     // WYSIWYG: edit the RENDERED rich text in place (the element already holds
-    // hooks.js richText output — <strong>/<em> runs, \n line breaks, "•  "
+    // hooks.js richText output - <strong>/<em> runs, \n line breaks, "•  "
     // bullets). Formatting ops round-trip through the rich-text.js char model,
     // and commit serialises back to the stored markdown-subset source.
     // `pending` collects box-field changes (align/weight/size/…) made from the
@@ -7403,7 +7406,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function onEditBlur(e: FocusEvent): void {
     // Clicking our own format bar preventDefaults focus, so blur shouldn't fire from
-    // it — but guard anyway so a stray blur toward the bar never drops the edit.
+    // it - but guard anyway so a stray blur toward the bar never drops the edit.
     if (e && e.relatedTarget && fmtbar && fmtbar.contains(e.relatedTarget as Node)) return;
     commitTextEdit();
   }
@@ -7438,13 +7441,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const i = indexOfId(boxes, done.id);
     const changedText = i >= 0 && String(boxes[i]![cfg.textField] ?? '') !== text;
     const changed = changedText || Object.keys(pending).length > 0;
-    // Grow-to-fit — ONLY when the edit actually changed something (so merely
+    // Grow-to-fit - ONLY when the edit actually changed something (so merely
     // opening a box to read it never mutates its height). The box clips overflow
     // in the final render, so if the copy is taller than the box, grow it (only
     // ever grow) to keep it whole. The editable IS the rendered rich text (with
     // any pending size/weight previews already applied), so measure it directly.
     // A box that opted into shrink-to-fit handles overflow by scaling the text DOWN, so
-    // it must NOT also grow — the two are opposite responses to the same overflow.
+    // it must NOT also grow - the two are opposite responses to the same overflow.
     const fitOn = i >= 0 && !!cfg.fitTextField && boolOf(boxes[i]![cfg.fitTextField], false);
     let grownH: number | null = null;
     if (changed && !fitOn && cfg.hField && done.boxEl) {
@@ -7601,7 +7604,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     refreshFmtStates();
   }
   // Toggle "•  " bullets / "1.  " numbers on every non-blank line (a text box is one
-  // logical list — bullets and numbers are mutually exclusive, handled in rich-text.js).
+  // logical list - bullets and numbers are mutually exclusive, handled in rich-text.js).
   function toggleBullet(): void { toggleList(toggleBullets); }
   function toggleNumber(): void { toggleList(toggleNumbers); }
   function toggleList(fn: (chars: any) => any): void {
@@ -7724,11 +7727,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     const boxes = getBoxes();
     const box: Box = boxes[indexOfId(boxes, editing?.id)] || {};
-    // Type pill — font, weight and text colour joined into ONE connected control
+    // Type pill - font, weight and text colour joined into ONE connected control
     // (a single left→right run: font → weight → colour). These are the type
     // settings reached for most while typing; the weight menu is seeded from the
     // font so it sits between them. CSS collapses the inner borders so the three
-    // read as one pill — only the pill's outer corners round.
+    // read as one pill - only the pill's outer corners round.
     const typeGroup = document.createElement('span');
     typeGroup.className = 'fc-fmt-typegroup';
     if (cfg.fontField) {
@@ -7755,8 +7758,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       typeGroup.appendChild(fsel);
       refs.font = fsel;
     }
-    // Weight (per-selection) sits right after the font — its menu depends on the
-    // font — and before the colour. "Auto" = no explicit run weight (the run
+    // Weight (per-selection) sits right after the font - its menu depends on the
+    // font - and before the colour. "Auto" = no explicit run weight (the run
     // inherits the box weight); refreshFmtStates fills it from the selected run.
     if (cfg.weightField) {
       const sel = document.createElement('select');
@@ -7767,7 +7770,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       sel.innerHTML = `<option value="">${t('Auto')}</option>` + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
       sel.value = '';
       // Stash the selection on engage (the select steals focus/selection when it
-      // opens); no preventDefault — the select needs focus, and the onEditBlur guard
+      // opens); no preventDefault - the select needs focus, and the onEditBlur guard
       // recognises the bar so the edit survives the round trip.
       sel.addEventListener('pointerdown', (e) => { e.stopPropagation(); stashRunWeightRange(); });
       sel.addEventListener('change', () => applyRunWeight(sel.value === '' ? null : parseInt(sel.value, 10)));
@@ -7775,7 +7778,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       refs.weight = sel;
     }
     // Per-selection text colour (distinct from the whole-box fg on the object bar)
-    // — closes the pill.
+    // - closes the pill.
     if (cfg.textColorField) {
       const cw = document.createElement('span');
       cw.className = 'fc-cfield fc-fmt-color';
@@ -7786,7 +7789,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       typeGroup.appendChild(cw);
       wireColorField(cw, { onChange: (_id, val) => applyRunColor(unwrapColor(val)) });
     }
-    // Type section — the connected font·weight·colour pill plus the "reset
+    // Type section - the connected font·weight·colour pill plus the "reset
     // formatting" button (T-with-a-slash: strips bold/italic/weight/colour from the
     // selection, keeping paragraph structure). Grouped so the pill and its reset
     // never split across a wrapped row.
@@ -7795,13 +7798,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (typeGroup.childElementCount) g.appendChild(typeGroup);
       if (cfg.textColorField) refs.clear = mk(t('Reset text formatting'), icon(SVG.resetColor), () => clearFormattingSelection());
     }
-    // Character styles — bold / italic / bulleted + numbered lists.
+    // Character styles - bold / italic / bulleted + numbered lists.
     section();
     refs.b = mk(t('Bold (⌘B)'), '<b>B</b>', () => toggleInline('b'));
     refs.i = mk(t('Italic (⌘I)'), '<i style="font-family:serif">I</i>', () => toggleInline('i'));
     refs.bullet = mk(t('Bulleted list'), icon(SVG.bulletList), () => toggleBullet());
     refs.numbers = mk(t('Numbered list'), '<b style="font-size:11px">1.</b>', () => toggleNumber());
-    // How the copy sits in its box: horizontal alignment, then vertical — each its
+    // How the copy sits in its box: horizontal alignment, then vertical - each its
     // own group so the two icon-runs read apart.
     if (cfg.alignField) {
       section();
@@ -7815,7 +7818,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         refs.valign[v] = mk(t(label), icon(ic), () => applyPending(cfg.valignField, v));
       }
     }
-    // Size steppers — the weight menu moved into the type pill, so this trailing
+    // Size steppers - the weight menu moved into the type pill, so this trailing
     // group is just the A− / A+ font-size nudges.
     if (cfg.fontSizeField) {
       section();
@@ -7828,7 +7831,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       section();
       if (cfg.ligaturesField) refs.lig = mk(t('Ligatures'), '<span style="font-size:13px">fi</span>', () => toggleBoxBool(cfg.ligaturesField, true));
       if (cfg.alternatesField) refs.alt = mk(t('Stylistic alternates'), '<span style="font-size:13px">a͎</span>', () => toggleBoxBool(cfg.alternatesField, false));
-      // Geeko 💚 Tux — drops the brand emoji trio at the caret and forces ligatures
+      // Geeko 💚 Tux - drops the brand emoji trio at the caret and forces ligatures
       // on so the font can shape the three adjacent glyphs as one ligature. Plain
       // click inserts 🦎💚🐧; ⌥/Alt-click flips to penguin-first (🐧💚🦎). Gated on
       // the ligatures field since it turns that feature on.
@@ -7903,7 +7906,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const GAP = 8;
     fmtbar.style.left = Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, m.sr.width - bw - 6)) + 'px';
     // Seat the WHOLE bar above the box using its real height (the two-row
-    // colour version is ~90px — a fixed offset let it dip onto the first line).
+    // colour version is ~90px - a fixed offset let it dip onto the first line).
     // If there's no room above, flip below the box; clamp to the stage so a
     // tall/off-screen box pins the bar to a visible edge, never over the text.
     const above = tl.y - bh - GAP;
@@ -7921,7 +7924,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // element through these same pointer events. That is what the two thresholds are for: a
   // tap is two fingers down together, neither travelling more than TWO_TAP_SLOP, released
   // inside TWO_TAP_MS. A pan travels, a pinch travels, and a two-finger hold outstays the
-  // window — each of those clears the candidate and stageNav keeps the gesture untouched.
+  // window - each of those clears the candidate and stageNav keeps the gesture untouched.
   // Nothing is taken away from it in the tap case either: stageNav's pinch dead-zone
   // swallows a sub-pixel finger spread and a zero-delta two-finger pan is a no-op.
   const TWO_TAP_MS = 500;
@@ -7965,7 +7968,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // (onCanvasPointerDown, bound to canvasEl) and the off-frame handler
   // (onBackdropPointerDown, bound to the stage) share one implementation. The frame is
   // canvasEl's own hit box, so without this a click on the empty stage OUTSIDE the frame
-  // never reaches the pen/create logic — you couldn't start a node or add an object off
+  // never reaches the pen/create logic - you couldn't start a node or add an object off
   // the artboard even though clientToNative maps such points fine and the gesture, once
   // begun, already captures the pointer anywhere. Each returns true when it handled the
   // event (the caller then stops propagation).
@@ -8002,7 +8005,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return true;
   }
   /** A line endpoint's landing spot: grid first (when the grid is on), then the smart
-   *  guides, whose guide lines are drawn as a side effect — the same order tryPenDrawAt
+   *  guides, whose guide lines are drawn as a side effect - the same order tryPenDrawAt
    *  uses, so the two gestures agree about where "here" is. */
   function lineSnap(nat: Point, alt: boolean): Point {
     let px = nat.x, py = nat.y;
@@ -8016,7 +8019,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onCanvasPointerDown(e: PointerEvent): void {
     if (e.button > 0) return;                 // primary button / touch only
     // A second finger belongs to a stage gesture (pan / pinch / two-finger tap), never to
-    // a box drag — and the first finger's gesture is abandoned so no drag commits.
+    // a box drag - and the first finger's gesture is abandoned so no drag commits.
     if (e.pointerType !== 'mouse' && touchPts.size > 1) {
       // A node the FIRST finger placed is retracted, not just abandoned: the create gesture
       // above commits nothing until release, but a pen node is already in the draft, and a
@@ -8036,13 +8039,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Line tool: press starts a line (drag → release attaches to a card or floats free).
     if (tryLineDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
-    // Pen — DRAWING. Click places a node; the drag that follows pulls its handles out
+    // Pen - DRAWING. Click places a node; the drag that follows pulls its handles out
     // symmetrically; a click on the first node closes the path. Nothing about the box
     // selection model runs here, which is why Alt is free to mean "corner". Shared with
     // the off-frame handler so a path can be started/extended outside the artboard.
     if (tryPenDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
-    // Pen — NODE EDITING. Handles first (smaller, and outside the curve), then nodes, then
+    // Pen - NODE EDITING. Handles first (smaller, and outside the curve), then nodes, then
     // the curve itself (a click on it inserts), and only then a marquee over the nodes.
     if (penEdit) {
       const fr = penEdit.frame;
@@ -8052,7 +8055,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (hh) {
         const key = `${hh.index}:${hh.which}`;
         // Shift/⌘-click a control point TOGGLES it into the point selection (for align /
-        // distribute) rather than dragging it — the handle equivalent of shift-clicking a
+        // distribute) rather than dragging it - the handle equivalent of shift-clicking a
         // node. A plain click drags it (a direct edit), and clears any point selection.
         if (e.shiftKey || e.metaKey || e.ctrlKey) {
           penHandleSel.has(key) ? penHandleSel.delete(key) : penHandleSel.add(key);
@@ -8087,7 +8090,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         return;
       }
       // Is the click on ANY contour's curve? Lower each on its own (lowering the combined run
-      // as one path would draw — and hit — a phantom segment joining one glyph to the next),
+      // as one path would draw - and hit - a phantom segment joining one glyph to the next),
       // and take the nearest across all. penInsertAt then reshapes whichever contour that was.
       const contours = penContours();
       let hitD = Infinity;
@@ -8148,18 +8151,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
 
-    // No card under the pointer — try a connector line (they render behind the cards).
+    // No card under the pointer - try a connector line (they render behind the cards).
     if (connectCfg) {
       const eid = edgeAt(nat.x, nat.y);
       if (eid) { selectEdge(eid, e.shiftKey || e.metaKey || e.ctrlKey); e.stopPropagation(); return; }
     }
     deselectEdge();   // clicked empty → drop any connector selection
 
-    // Empty canvas — or the CAMERA's, when one is selected and running (plans/104 §8).
+    // Empty canvas - or the CAMERA's, when one is selected and running (plans/104 §8).
     // The camera takes the drag the marquee would have had: there is nothing on the
     // empty stage for a marquee to catch that a camera user is reaching for, and
     // clicking any box hands the gesture straight back by ordinary selection.
-    // SHIFT IS THE TILT (P2 — §8 reserved the chord at M2.5 and this milestone spends
+    // SHIFT IS THE TILT (P2 - §8 reserved the chord at M2.5 and this milestone spends
     // it). The additive marquee keeps shift everywhere else, including on this very
     // canvas the moment no camera is armed: `camModeId()` is a selection state the user
     // can see, so the chord is never quietly reassigned under them.
@@ -8191,7 +8194,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (e.button > 0 || e.target !== e.currentTarget) return;
     if (editing) commitTextEdit();
     // Off-frame click while DRAWING places/extends a node (not "finish"), and off-frame
-    // click while an Add is armed starts the create — the same as inside the artboard, so
+    // click while an Add is armed starts the create - the same as inside the artboard, so
     // the whole stage is usable, not just the export frame. These come FIRST, before the
     // "clicking off the artboard means I'm done" fallbacks below.
     const natBd = clientToNative(e.clientX, e.clientY);
@@ -8200,18 +8203,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (tryLineDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
     // Clicking right off the artboard is the natural "I'm done" for a node-edit session,
     // and it matches what the same click already does to a selection. (A pen DRAFT is no
-    // longer finished here — an off-frame click extends it, handled above.)
+    // longer finished here - an off-frame click extends it, handled above.)
     if (penEdit) { endPenEdit(); return; }
     closePopover();
     deselectEdge();
-    // A SHIFT/⌘ drag is additive, so it must not wipe what is already selected — same
+    // A SHIFT/⌘ drag is additive, so it must not wipe what is already selected - same
     // rule the in-artboard marquee follows.
     const additive = e.shiftKey || e.metaKey;
     if (selection.size && !additive) selection = new Set<string>();
     renderChrome();
     // …and a plain left-drag out here MARQUEES, exactly as it does over the artboard.
     // Nothing claimed that gesture before: stageNav pans on middle-drag or Space+drag
-    // and lets plain left-clicks through, while the marquee lived on canvasEl — so a
+    // and lets plain left-clicks through, while the marquee lived on canvasEl - so a
     // left-drag on the backdrop fell between the two and did nothing at all, which is
     // what made the whole area outside the artboard feel inert.
     // Touch is left alone: stageNav owns one-finger pan there, as it does inside.
@@ -8233,7 +8236,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // keep receiving it even though the drag started outside.
   }
 
-  /** Right-click on the backdrop opens the SAME menu as right-click on empty artboard —
+  /** Right-click on the backdrop opens the SAME menu as right-click on empty artboard - 
    *  guarded to a direct hit so a bubbled event from a box or the toolbar can't reach it. */
   function onBackdropContextMenu(e: MouseEvent): void {
     if (e.target !== e.currentTarget) return;
@@ -8241,7 +8244,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /** Space is stageNav's pan modifier (Space+left-drag). Tracked here only so the
-   *  backdrop marquee yields to it — stageNav owns the pan and exposes no state. */
+   *  backdrop marquee yields to it - stageNav owns the pan and exposes no state. */
   let spacePan = false;
   function onSpaceKey(e: KeyboardEvent): void {
     if (e.code === 'Space' && !isTypingTarget()) spacePan = e.type === 'keydown';
@@ -8275,13 +8278,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // CAMERA PAN (plans/104 §8). Accumulate in NATIVE px and write nothing: the
     // projection is applied by the sequence DOM applier off the model, so the one
-    // honest preview is the commit itself — which is why §8's gesture law for the
+    // honest preview is the commit itself - which is why §8's gesture law for the
     // camera is "drags commit on release", not "on move".
     //
     // Native, not client, because the model is native: `camX` is stage px, and the
     // picture it displaces is on screen at the canvas zoom. Accumulating client px and
     // writing them as model px made a 200 px drag move the shot 100 screen px at 50 %
-    // zoom and 400 at 200 % — the picture sliding out from under the cursor, which is
+    // zoom and 400 at 200 % - the picture sliding out from under the cursor, which is
     // the opposite of the direct manipulation the release handler promises and every
     // other drag here performs (`marquee`, `move`, `resize`, `pen` all convert first).
     if (gesture.type === 'campan') {
@@ -8305,7 +8308,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // Pen: pull the just-placed node's handles out, the universal click-and-drag idiom.
     // Symmetrically by default; Alt BREAKS the pair and steers only the outgoing arm, which
-    // is the gesture tracing lives on — it is how a curve turns a corner into a new curve
+    // is the gesture tracing lives on - it is how a curve turns a corner into a new curve
     // without giving up the one already drawn. Alt with no drag still places a hard corner,
     // because the break only takes effect past `PEN_PULL_MIN`.
     if (gesture.type === 'pendraw') {
@@ -8315,7 +8318,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!n) return;
       const pulled = Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale();
       // A click-DRAG is the Bézier idiom: it names a direction AND a length. `hyperbezier`
-      // can only honour the direction, and only within a right angle of its chord — past
+      // can only honour the direction, and only within a right angle of its chord - past
       // that `hbArm`'s signed shape function puts the control arm on the far side of the
       // node, so the curve leaves in the OPPOSITE direction to the drag, and approaching
       // 90° the arm collapses to zero so the drag stops mattering at all. That is
@@ -8335,7 +8338,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const at = { ...cur, x: gesture.origin.x, y: gesture.origin.y };
       // Whichever branch runs owns the node's continuity outright: `pullHandles` refuses a
       // `corner` node, and `defaultContinuity` is `'corner'` for every kind except
-      // `hyperbezier` — so without this a click-drag in a `cubic` draft silently did nothing.
+      // `hyperbezier` - so without this a click-drag in a `cubic` draft silently did nothing.
       // Breaking keeps `hIn` exactly where it is: on the first broken frame that is the arm
       // the bake left holding the segment already drawn, so "keep what is behind me, aim what
       // is ahead" needs no recomputation.
@@ -8351,7 +8354,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (gesture.type === 'pennode') {
       if (!penEdit) return;
       // The pointer snaps against sibling boxes and the artboard exactly as a create/resize
-      // drag does — same helper, same `.fc-guides` layer, Alt suppresses it — so a node can
+      // drag does - same helper, same `.fc-guides` layer, Alt suppresses it - so a node can
       // be landed on a neighbour's edge without a second snapping system existing.
       let sx = nat.x, sy = nat.y;
       if (!e.altKey) {
@@ -8365,7 +8368,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const b = frameToLocal(fr, sx, sy);
       gesture.moved = Math.hypot(sx - gesture.origin.x, sy - gesture.origin.y) > 0.01;
       penEdit = { ...penEdit, path: moveNodes(penEdit.path, gesture.indices, b.x - a.x, b.y - a.y, gesture.start) };
-      // plan 96 P3 — the bind affordance. The ring follows the pointer, not the node: the
+      // plan 96 P3 - the bind affordance. The ring follows the pointer, not the node: the
       // node is under the finger and the box is what the drop acts on.
       if (gesture.bindEnd) setBindHover(bindableAt(sx, sy, penEdit.id));
       paintPen();
@@ -8504,7 +8507,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       endGesture();
       hideConnectLayer();
       clearGuides();
-      // A tap is a mis-click, and a zero-length line is not a shape: neither commits — the
+      // A tap is a mis-click, and a zero-length line is not a shape: neither commits - the
       // same floor `penFinishDraw` puts under a one-node draft.
       if (moved < 6 || (Math.abs(to.x - g.origin.x) < 0.5 && Math.abs(to.y - g.origin.y) < 0.5)) { toPointer(); return; }
       commitPathBox({
@@ -8516,7 +8519,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     const boxes = getBoxes();
 
-    // Pen: placing a node commits NOTHING — the draft is a draft until the path ends, which
+    // Pen: placing a node commits NOTHING - the draft is a draft until the path ends, which
     // is what makes the whole drawing one undo step (see `penFinishDraw`).
     if (g.type === 'pendraw') {
       endGesture();
@@ -8529,7 +8532,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (g.type === 'pennode' || g.type === 'penhandle') {
       const moved = g.moved === true;
       const next = penEdit ? penEdit.path : null;
-      // plan 96 P3 — landing an end node ON a box attaches it; landing it anywhere else
+      // plan 96 P3 - landing an end node ON a box attaches it; landing it anywhere else
       // detaches it. Read BEFORE endGesture(), which clears the hover.
       const bindTo = g.type === 'pennode' && g.bindEnd && moved
         ? { which: g.bindEnd, id: bindHover ?? '' } : null;
@@ -8553,7 +8556,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           const pts = penNodePoints();
           const nodeHits = pts.reduce<number[]>((acc, pt, i) => (inR(pt.at) ? (acc.push(i), acc) : acc), []);
           // In "nodes + control points" mode, a marquee also grabs any handle whose point
-          // falls in the box — the direct-selection behaviour Illustrator/Inkscape users
+          // falls in the box - the direct-selection behaviour Illustrator/Inkscape users
           // expect. Nodes-only mode (the default) leaves handles alone.
           const handleHits: string[] = [];
           if (penSelectHandles && penEdit && kindReadsHandles(penEdit.path.kind)) {
@@ -8578,7 +8581,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // rect, not the seed's w/h), so a tap uses one default diameter and a drag squares
       // to its smaller side (anchored at the drag's top-left).
       const circleSeed = cfg.shapeField && String(g.seed?.[cfg.shapeField]) === 'circle';
-      // A tap with the Artboard tool means "a page here" — size it to the export/page
+      // A tap with the Artboard tool means "a page here" - size it to the export/page
       // dimensions, not the tiny generic default. Dragging still sizes it freely.
       const frameSeed = !!frameCfg && String(g.seed?.[cfg.kindField]) === frameCfg.frameKind;
       let rect: Rect;
@@ -8599,18 +8602,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (gridOn && !e.altKey) box = { ...box, [cfg.xField]: gridRound(num(box[cfg.xField], 0)), [cfg.yField]: gridRound(num(box[cfg.yField], 0)) };
       selection = new Set([id]);
       // The Animation and Video add-kinds both seed kind:'image' (they render through
-      // the image field), so they also match wasImage — check them FIRST and open the
+      // the image field), so they also match wasImage - check them FIRST and open the
       // type-constrained picker instead of the general image one.
       const wasLottie = armedKind?.id === 'lottie';
       const wasVideo = armedKind?.id === 'video';
-      // Sequence Studio's kinds. `clip` seeds kind:'image' too, so — like Animation and
-      // Video — it must be recognised BEFORE wasImage or it would open the general image
-      // picker. `tool` also seeds kind:'image', and it still opens the UNTYPED picker —
+      // Sequence Studio's kinds. `clip` seeds kind:'image' too, so - like Animation and
+      // Video - it must be recognised BEFORE wasImage or it would open the general image
+      // picker. `tool` also seeds kind:'image', and it still opens the UNTYPED picker - 
       // that is where the Lolly-link / saved-session path lives, and the picker is
-      // already handed `editTool` so a chosen tool opens its inputs first — but it asks
+      // already handed `editTool` so a chosen tool opens its inputs first - but it asks
       // for the Tools pane, so the tool grid is what the user lands on. Same idea as the
       // typed kinds above: the pane matches the kind that was added.
-      // `card` seeds kind:'box' and takes no asset at all — it is authored like text.
+      // `card` seeds kind:'box' and takes no asset at all - it is authored like text.
       // An add-kind id this switch doesn't know keeps its seed-derived behaviour.
       const wasClip = armedKind?.id === 'clip';
       const wasAudio = armedKind?.id === 'audio' || g.seed?.[cfg.kindField] === 'audio';
@@ -8622,25 +8625,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text' || wasCard;
       // Read BEFORE toPointer(): exitCreate clears the pending time with the armed kind.
       const addAtMs = pendingAddAtMs;
-      toPointer();                  // the gesture consumed the armed kind — back to the pointer
+      toPointer();                  // the gesture consumed the armed kind - back to the pointer
       endGesture();
       // Containment-on-create: the new box lands in whatever frame its centre falls in
       // (dead unless frameCfg). It is the last element of the array, so index boxes.length.
       commit(assignFrames([...boxes, box], new Set([boxes.length])));
       // Added from the timeline, so it lands TIMED at the playhead instead of as scenery
-      // (the rail's plus keeps that default). The panel's promote() owns the write — one
-      // commit through moveOverlay + setDuration — so no timing arithmetic lives here.
+      // (the rail's plus keeps that default). The panel's promote() owns the write - one
+      // commit through moveOverlay + setDuration - so no timing arithmetic lives here.
       // `dur: null` is deliberate and load-shifting: this box was created a moment ago
       // and its asset picker has not even opened, so nothing on the canvas knows how long
       // its media is. Authoring a length HERE would pin a 45s audio track to 3s and would
       // overwrite the `card` kind's own seeded 2.5s. Unauthored, the seq pack derives it
-      // from the media and an overlay runs to the sequence end — same as a canvas add.
+      // from the media and an overlay runs to the sequence end - same as a canvas add.
       if (addAtMs != null) timelinePanel?.promote(id, { start: addAtMs / 1000, dur: null });
-      // A new timed box is only useful next to a timeline, so creating one opens it — and
+      // A new timed box is only useful next to a timeline, so creating one opens it - and
       // a CAMERA needs the timeline up too, because camera mode (and with it the shift-drag
       // tilt / drag-pan gestures, plans/104 §8) only arms while `cameraModeId()` sees an
       // OPEN timeline. Without this, adding a camera left the timeline shut and a shift-drag
-      // fell through to the marquee — "tilt doesn't work" until you happened to open it.
+      // fell through to the marquee - "tilt doesn't work" until you happened to open it.
       if (timeCfg && (wasClip || wasCard || wasAudio || wasCamera)) openTimeline();
       if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie', initialTab: 'library' }), 0);
       else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video', initialTab: 'library' }), 0);
@@ -8660,7 +8663,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // NEGATED, because the content follows the hand: the projection subtracts camX
       // (`cx' = W/2 + (cx − camX − W/2)·eff`), so a camera moving right slides the
       // scene left. Dragging right has to move the picture right, which is the direct
-      // manipulation every other drag in this canvas performs — and `dx`/`dy` arrive in
+      // manipulation every other drag in this canvas performs - and `dx`/`dy` arrive in
       // NATIVE px for the same reason (see CamPanGesture), so the shot keeps up with the
       // hand at every canvas zoom instead of only at 100 %.
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
@@ -8674,7 +8677,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       endGesture();
       // DIRECT MANIPULATION, like every other drag here: you are turning the ARTWORK,
       // not aiming the lens. Drag DOWN and the near edge comes toward you at the bottom
-      // of frame — which is `rx` NEGATIVE in the engine's convention (see
+      // of frame - which is `rx` NEGATIVE in the engine's convention (see
       // `surfaceMatrix`: negative Tilt X pitches the camera nose-down over the surface,
       // far edge receding to a horizon at the top). Drag RIGHT and the right-hand edge
       // comes nearer, which is `ry` positive. Aiming the lens instead would invert both
@@ -8691,7 +8694,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
       if (moved < 6) { selection = new Set<string>(); deselectEdge(); }
       else {
-        // A marquee grabs cards AND any connector lines it crosses — a mixed selection
+        // A marquee grabs cards AND any connector lines it crosses - a mixed selection
         // (card handles + the connector panel editing every selected line at once).
         const rect = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
         const hits = pickMarquee(boxes, rect, cfg, seqHiddenSkip(boxes)).map((i: number) => idOf(boxes[i], i));
@@ -8715,8 +8718,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = g.sel;
       endGesture();
       if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) {
-        // PLAYHEAD-CONTEXTUAL WRITES (plans/104 §8). The gesture is untouched — the
-        // preview path never knew about this and still does not — and the redirection
+        // PLAYHEAD-CONTEXTUAL WRITES (plans/104 §8). The gesture is untouched - the
+        // preview path never knew about this and still does not - and the redirection
         // happens HERE, at the one commit, which is what keeps a keyframed drag one
         // undo step exactly like an ordinary one.
         //
@@ -8730,7 +8733,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         let next = moveIdx.length ? moveBoxes(boxes, moveIdx, d.dx, d.dy, cfg) : boxes;
         if (kfIds.size && timelinePanel) next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: d.dx, y: d.dy });
         // Containment-on-drop: the moved boxes re-bucket into the frame their centre
-        // now lands in. moveBoxes preserves index order, so g.sel indices stay valid —
+        // now lands in. moveBoxes preserves index order, so g.sel indices stay valid - 
         // and only the boxes that actually MOVED are re-bucketed: a posed box's own
         // geometry never changed, so it cannot have crossed a frame edge.
         commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
@@ -8742,26 +8745,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const idx = g.index;
       const rotId = idOf(boxes[idx], idx);
       // BOTH gestures are pose channels now. Rotate always was (`r`); RESIZE became one
-      // at P1 (plans/104 §5.2, REVERSED — Andy, 2026-08-12 hands-on: "I can't change
+      // at P1 (plans/104 §5.2, REVERSED - Andy, 2026-08-12 hands-on: "I can't change
       // width and height of elements and have them tween"), so a resize ON a diamond
       // writes `w`/`h` and a resize anywhere else still writes the box itself.
       //
       // The two channels compose differently and the difference is not cosmetic: `w`/`h`
       // are ABSOLUTE px that replace the box's own size for their segment, so they are
-      // written with 'set' — a dragged handle produces the new WIDTH, not a change to it
-      // — while the origin shift an nw/n/w handle also produces is a `x`/`y` DELTA and
+      // written with 'set' - a dragged handle produces the new WIDTH, not a change to it
+      // - while the origin shift an nw/n/w handle also produces is a `x`/`y` DELTA and
       // is written with 'add', because those channels are offsets from the authored
       // position. Two folds over one array, one commit, one undo step.
       //
       // ZERO DELTA IS NOT A POSE. `liveRect` is only ever assigned in pointermove, so a
       // press-and-release on a handle leaves `live === g.startRect` and every delta
-      // exactly 0 — and a redirected write of `{ r: 0 }` is not a no-op: `kfActiveChannels`
+      // exactly 0 - and a redirected write of `{ r: 0 }` is not a no-op: `kfActiveChannels`
       // ADDS `r` to the box's channel set, so on a track that does not already animate
       // rotation (a URL-authored `t0_x0*t1000_x40`, or one built from the inspector's
       // z/s/o/b fields) a click on the handle rewrites the wire and spends an undo step on
       // a gesture that moved nothing. The move branch above is guarded for the same reason
       // (0.5px there); below the tolerance this falls through to the base write, which is
-      // the identical no-op an unkeyframed box already gets — the two stay in step.
+      // the identical no-op an unkeyframed box already gets - the two stay in step.
       const dr = g.type === 'rotate' ? num(live.rot, 0) - num(g.startRect.rot, 0) : 0;
       const dw = num(live.w, 0) - num(g.startRect.w, 0);
       const dh = num(live.h, 0) - num(g.startRect.h, 0);
@@ -8892,14 +8895,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** One end's binding: the id of the box it is attached to, '' for a free end. */
   const bindOf = (b: Box, which: 'start' | 'end'): string =>
     String(b[which === 'start' ? cfg.bindStartField : cfg.bindEndField] ?? '').trim();
-  /** Is this box a connector? ONE binding is enough — a path pinned at one end and loose at
+  /** Is this box a connector? ONE binding is enough - a path pinned at one end and loose at
    *  the other still routes, from the border toward the loose point. */
   const isBoundPath = (b: Box): boolean =>
     hasBindCfg && String(b[cfg.kindField]) === 'path' && (bindOf(b, 'start') !== '' || bindOf(b, 'end') !== '');
 
   /**
    * A bound path as the engine's endpoint pair + decoration record, or null when it is not
-   * a connector (or when a HALF-bound path's free end cannot be read — half a connector is
+   * a connector (or when a HALF-bound path's free end cannot be read - half a connector is
    * worse than none). `rectFor` resolves a box id to the rect to route from, which is the
    * LIVE DOM rect mid-drag and the model rect otherwise.
    *
@@ -8934,7 +8937,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /** A path box's first and last node in NATIVE canvas px. Nodes are stored normalised to
-   *  the frame; rotation is ignored for the same reason the hook ignores it — a bound path
+   *  the frame; rotation is ignored for the same reason the hook ignores it - a bound path
    *  is drawn between two rects and the router re-solves both ends anyway. */
   function pathEndsNative(b: Box): { start: Point; end: Point } | null {
     const contours = decodePathContours(b[cfg.pathField]);
@@ -8994,7 +8997,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const r = boxRect(boxes[i], cfg);
     return { x: r.x, y: r.y, w: r.w, h: r.h };
   }
-  // Pull the shaft back off an arrow end and build the head fragment(s) for the preview —
+  // Pull the shaft back off an arrow end and build the head fragment(s) for the preview - 
   // mirrors the gap + headInset logic in drawConnector() (org-chart/hooks.js) so the live
   // line matches the committed render and nothing jumps on release. Returns the (copied)
   // shaft points to draw through, plus the heads SVG to append. End direction is the last
@@ -9055,12 +9058,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * Redraw every BOUND PATH from the current (possibly live) box rects — the plan 96 P3
+   * Redraw every BOUND PATH from the current (possibly live) box rects - the plan 96 P3
    * live re-route. Called each frame of a drag that moves a box a line is attached to, so
    * the line follows in real time while the tool's committed layer is hidden.
    *
    * The geometry is `routedLineSvg`, the engine's committed renderer, called with the same
-   * decoration record the hook builds — not a preview approximation of it. So nothing jumps
+   * decoration record the hook builds - not a preview approximation of it. So nothing jumps
    * on release: what the drag showed IS what the commit re-renders.
    *
    * Returns the number of lines drawn, so the caller knows whether the layer is worth
@@ -9097,7 +9100,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     placeConnectLayer(metrics());
     const rectById = liveRectById(boxes);
     // A tool that still declares BOTH (an un-migrated pack on a new shell) draws each from
-    // its own model, once — the bound paths first so they sit under the legacy edges.
+    // its own model, once - the bound paths first so they sit under the legacy edges.
     let body = drawLiveBoundPaths(boxes, rectById);
     for (const e of edges) {
       if (!e) continue;
@@ -9108,7 +9111,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const a = edgeEndRect(fromV, rectById);
       const b = edgeEndRect(toV, rectById);
       if (!a || !b) continue;
-      // Nested pair draws no line (mirrors hooks.js) — but ONLY when both ends are nodes;
+      // Nested pair draws no line (mirrors hooks.js) - but ONLY when both ends are nodes;
       // a free point inside a box is a deliberate endpoint, not an overlap to suppress.
       if (!isEdgePoint(fromV) && !isEdgePoint(toV) && edgeNested(a, b)) continue;
       const style = String((connectCfg.styleField && e[connectCfg.styleField]) || connectCfg.defaultStyle);
@@ -9125,7 +9128,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     connectLayer.innerHTML = body;
     connectLayer.style.display = '';
   }
-  // `drawConnectRubber` (plan 90) lived here — the dashed rubber from a pending source
+  // `drawConnectRubber` (plan 90) lived here - the dashed rubber from a pending source
   // card to the cursor. It went with Connect mode (plan 96 P4); `drawBindRing` below is
   // its replacement, and it hangs off the endpoint being dragged rather than off a mode.
   /**
@@ -9134,7 +9137,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *
    * Both ends are plain points now. Under plan 90 the start resolved through `edgeEndRect`
    * (a card border or an `@x,y`) and the far end outlined whatever card a release would
-   * attach to — honest then, misleading now: releasing over a box binds nothing until P3,
+   * attach to - honest then, misleading now: releasing over a box binds nothing until P3,
    * and an outline promising an attachment that does not happen is worse than no outline.
    *
    * Drawn in the SAME ink and at the same head size as `commitPathBox` will use, so the
@@ -9147,7 +9150,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const headSize = Math.max(9, w * 4);
     const dirL = Math.hypot(to.x - from.x, to.y - from.y) || 1;
     const ux = (to.x - from.x) / dirL, uy = (to.y - from.y) / dirL;
-    // Below the head's own length there is no room for both, so the dot stands in — the
+    // Below the head's own length there is no room for both, so the dot stands in - the
     // same "there is an endpoint here" mark the connect rubber uses.
     const showHead = dirL > headSize;
     const inset = showHead ? edgeHeadInset(head, headSize) : 0;
@@ -9160,9 +9163,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       tip;
     connectLayer.style.display = '';
   }
-  /** The stroke width a line draft previews at: whatever the committed box will take —
+  /** The stroke width a line draft previews at: whatever the committed box will take - 
    *  the last path paint, else the tool's own `path` seed, else `penFinishDraw`'s own 4px
-   *  last resort — so the rubber is not a different weight from the shape it becomes. */
+   *  last resort - so the rubber is not a different weight from the shape it becomes. */
   function lineDraftWidth(): number {
     const seed = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) } as Box;
     const w = Number(penLastPaint?.[cfg.strokeWField] ?? seed[cfg.strokeWField] ?? 0);
@@ -9268,7 +9271,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       hideConnectLayer();
     }
   }
-  // The "primary" selected edge — drives the panel's displayed values + placement.
+  // The "primary" selected edge - drives the panel's displayed values + placement.
   function primaryEdgeId(): string | null { for (const id of selectedEdges) return id; return null; }
   // Geometry for marquee edge-hit: does a connector's polyline overlap the drag rect?
   function pointInRect(x: number, y: number, r: Rect): boolean { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
@@ -9297,7 +9300,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return ids;
   }
   // Select a connector. `additive` (shift/⌘-click) toggles it in the current set;
-  // otherwise it becomes the sole selection. Either way it clears the card selection —
+  // otherwise it becomes the sole selection. Either way it clears the card selection - 
   // a marquee is what mixes cards + connectors (see the marquee gesture end).
   function selectEdge(eid: string, additive?: boolean): void {
     setHoverEdge(null);
@@ -9400,7 +9403,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ['arc', 'Arc — bow'], ['arc-wide', 'Arc — wide bow'], ['arc-flip', 'Arc — reverse bow'], ['arc-flip-wide', 'Arc — wide reverse'],
     ];
     // `row()` below wraps controls in a <div>, not a <label>, so this select gets no
-    // implicit name from its row text — it names itself.
+    // implicit name from its row text - it names itself.
     const styleSelect = `<select class="field-select field-select--sm" data-ep="style" aria-label="${escape(t('Connector bend'))}">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('')}</select>`;
     const row = (lbl: string, ctrl: string): string => `<div class="fc-row"><span class="fc-row-lbl"><span>${lbl}</span></span>${ctrl}</div>`;
     const p = document.createElement('div');
@@ -9483,7 +9486,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Frame name labels: rebuild the tabs only when the frame set / order / active state
-  // changes (tracked by frameLabelKey), and reposition them every sync — the same MODEL-px
+  // changes (tracked by frameLabelKey), and reposition them every sync - the same MODEL-px
   // discipline positionFrameScrim uses. Hidden entirely while editing text or in pen mode so
   // the canvas stays clean. frameCfg-gated.
   let frameLabelKey = '';
@@ -9531,30 +9534,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   function paintChrome(boxes: Box[], liveRects: Map<number, Rect> | null): void {
-    // The one place a selection change is announced (see selListeners) — BEFORE the
+    // The one place a selection change is announced (see selListeners) - BEFORE the
     // text-edit / pen early returns, so a listener never misses a change made in
     // those modes. Inert (returns immediately) when nothing is listening.
     notifySelection();
     syncFrameLabels(boxes);
-    // M2 — reposition the frame scrim only when the artboard geometry changed (pan/
+    // M2 - reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     const movedStage = scrimDirty;
     if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
     // Ghosts and motion paths are both positioned in stage px from the MODEL, exactly
     // like the selection outline, so they have to be re-placed whenever the artboard's
     // geometry or the model moves. Skipped on the LIVE path (`liveRects` non-null = a
-    // box drag is in flight) unless the stage itself moved — and the two have SEPARATE
+    // box drag is in flight) unless the stage itself moved - and the two have SEPARATE
     // reasons, which is worth writing down because the shared line reads like one:
     //
     //   • a GHOST is of an off-playhead box, which is by definition never the one being
     //     dragged, so rebuilding it sixty times a second buys nothing;
     //   • a MOTION PATH is of the box being dragged, and skipping it is what holds the
     //     line still at the pose the drag started from. Not a compromise: no gesture
-    //     here writes the model while the pointer is down (see writeGradSpec's note —
+    //     here writes the model while the pointer is down (see writeGradSpec's note - 
     //     it is the discipline all of them follow), `getBoxes()` hands back the input's
     //     own array, and `samplePaths` memoises on that array's IDENTITY plus the
     //     selection and the artboard size. So a paint per pointermove would re-run the
-    //     same map over the same samples and draw the same polyline — the path CANNOT
+    //     same map over the same samples and draw the same polyline - the path CANNOT
     //     follow a live drag, and the honest picture is the authored one it is still
     //     describing. The commit at pointerup replaces the array, which is the moment
     //     the path is allowed to move.
@@ -9562,7 +9565,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
     // The chrome below is positioned from the MODEL, not from the DOM: a selected box
     // the sequence is hiding would otherwise get a full outline, 8 resize handles, a
-    // rotate handle and a contextual bar painted over empty canvas — the "edit a layer
+    // rotate handle and a contextual bar painted over empty canvas - the "edit a layer
     // you cannot see" failure, and the ONLY drag entry point that never goes through
     // the hit-test (a handle is its own pointerdown target). So the whole apparatus
     // comes down and the reconciliation banner goes up instead.
@@ -9583,7 +9586,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // While editing text, suppress selection chrome + ctxbar; just keep the floating
     // format bar tracking the box as the stage pans/zooms.
     if (editing) { clearChrome(); hideCtxBar(); positionFmtBar(); return; }
-    // Pen mode owns the chrome outright — no selection outline, no resize handles, and the
+    // Pen mode owns the chrome outright - no selection outline, no resize handles, and the
     // object bar replaced by the pen's own. Same suppression a text edit does, for the same
     // reason: the box's frame is not what is being manipulated.
     if (penDraft || penEdit) {
@@ -9605,7 +9608,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const m = metrics();
     // Gradient handles sit UNDER the selection chrome in z-order but are painted here
     // so they track the same pan/zoom sync (and self-exit if their box went away).
-    // Gradient mode belongs to ONE box. If the selection moved on, leave the mode —
+    // Gradient mode belongs to ONE box. If the selection moved on, leave the mode - 
     // otherwise the ctx bar rebuilds for the new box while the Fill field and Delete
     // still write to the old one, which is silent, wrong, and very hard to spot.
     if (gradEdit != null && !(idx.length === 1 && idOf(boxes[idx[0]!], idx[0]!) === gradEdit)) {
@@ -9613,14 +9616,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ctxSelKey = '';
     }
     paintGradChrome(boxes, m);
-    // M1 — build the outline(s) + handles ONCE per selection set, then only reposition.
+    // M1 - build the outline(s) + handles ONCE per selection set, then only reposition.
     const key = idx.length ? idx.map((i) => idOf(boxes[i], i)).sort().join(',') : '';
     if (key !== chromeKey) {
       chromeKey = key;
       buildChrome(idx.length);            // (re)create nodes for the new set
     }
     positionChrome(boxes, idx, liveRects, m);
-    // Contextual bar — rebuild its controls only when the SELECTION set changes
+    // Contextual bar - rebuild its controls only when the SELECTION set changes
     // (so the colour pickers reflect the box); otherwise just reposition it.
     if (key !== ctxSelKey) {
       ctxSelKey = key;
@@ -9714,7 +9717,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Reposition the (already-built) chrome nodes for the current selection. Pure style
-  // writes — pixel-identical to the old build path, just no node churn.
+  // writes - pixel-identical to the old build path, just no node churn.
   function positionChrome(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
     const nodes = chromeNodes;
     if (!nodes) return;
@@ -9752,7 +9755,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       el.style.top = pos[h].y + 'px';
     });
     // rotate handle: outward from the BOTTOM-edge midpoint along the box "down"
-    // normal — kept clear of the contextual bar (which floats above the selection)
+    // normal - kept clear of the contextual bar (which floats above the selection)
     // and the 'n' resize handle, so the two never fight for a grab (Canva-style).
     const ROT_OFFSET = 30;
     const c = nativeToStage(r.x + r.w / 2, r.y + r.h / 2, m);
@@ -9844,7 +9847,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The fixed stage chrome the contextual bar has to keep off, in STAGE coordinates:
    * the zoom HUD top-right (`.stage-nav`) and the back pill top-left
    * (`.tools-home`, which is `position: fixed` and therefore lives outside the stage
-   * in the DOM but squarely on top of it on screen). Measured, never assumed — a
+   * in the DOM but squarely on top of it on screen). Measured, never assumed - a
    * hard-coded HUD width goes stale the first time the theme/sound toggles or the
    * type multiplier change it, and the back pill's label is the view's own name.
    *
@@ -9874,7 +9877,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     showCtxBar();
     // Pinned to the top chrome row (never over the selection, whose artwork the user is
     // looking at), centred in the band between the back pill and the zoom HUD and capped
-    // to it — a bar too wide for a narrow phone row scrolls inside that width (see the
+    // to it - a bar too wide for a narrow phone row scrolls inside that width (see the
     // `.fc-ctxbar` overflow) instead of dropping down over the canvas.
     const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
@@ -9902,13 +9905,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   function updateToolbarState(count: number): void {
-    // Nothing hard-disabled — align-to-canvas works on a single box; arrange/delete
+    // Nothing hard-disabled - align-to-canvas works on a single box; arrange/delete
     // no-op when empty. Just reflect which tool is live, and whether the layout
     // options have anything to act on.
     syncModeUI();
     syncArrangeUI();
   }
-  /** The Arrange button is layout options for a SELECTION — no selection, no button.
+  /** The Arrange button is layout options for a SELECTION - no selection, no button.
    *  Hidden rather than disabled: an always-there control whose whole menu no-ops is
    *  what made "arrange" read as broken. Nothing else reaches these actions through
    *  it (right-click and the keyboard are unchanged), so hiding it removes no path. */
@@ -9938,7 +9941,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!Number.isFinite(n)) return dflt;
     return n < lo ? lo : (n > hi ? hi : n);
   }
-  // Delegates to the canonical 5-char escape (utils.ts) — this used to hand-roll a 4-char
+  // Delegates to the canonical 5-char escape (utils.ts) - this used to hand-roll a 4-char
   // (no `'`) escape, safe only by accident of every call site using double-quoted attrs.
   function escapeHtml(s: any): string { return escape(s); }
   function fmtDate(iso: any): string {
@@ -9953,7 +9956,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return isTypingTarget();
   }
   // Keyboard focus on a card selects it, so Tab / Shift-Tab cycle the cards and the onKey
-  // actions (Delete, arrows, duplicate, group…) apply. Pointer focus is ignored here —
+  // actions (Delete, arrows, duplicate, group…) apply. Pointer focus is ignored here - 
   // pointerdown already owns pointer selection (and would clobber shift-click multi-select).
   function onBoxFocus(e: FocusEvent): void {
     if (gesture || editing) return;
@@ -9970,12 +9973,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * every escape route stay live on an off-playhead selection.
    *
    * The list mirrors onKey's own mutating branches below: arrow nudge, delete, the
-   * text-edit entry (Enter/F2 — starting a text edit on a box nobody can see is the
+   * text-edit entry (Enter/F2 - starting a text edit on a box nobody can see is the
    * same mistake in slow motion), duplicate, group/ungroup, and z-order.
    */
   function isMutatingKey(e: KeyboardEvent): boolean {
     const k = e.key;
-    // Alt+←/→ is the seek chord the nudge branch below declines — it edits nothing, so it
+    // Alt+←/→ is the seek chord the nudge branch below declines - it edits nothing, so it
     // must not be answered with "this card is not on screen". Alt+↑/↓ is NOT that chord
     // and nudges like any other arrow, so it is a mutating press (this used to decline all
     // four, which made Alt+↑/↓ a key that did nothing anywhere).
@@ -9999,10 +10002,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The rule that matters is that a rung only swallows the key if it actually DID
     // something. The old first rung returned on a merely non-null `popover` / `morePanel`
     // reference, so a reference left pointing at a detached element silently ate the next
-    // Escape — the reported "Esc does not leave point editing". A floating surface that is
+    // Escape - the reported "Esc does not leave point editing". A floating surface that is
     // no longer in the document is not a rung.
     if (e.key === 'Escape') {
-      // Rung 1 stays the colour popover — it is the innermost surface, and it can be
+      // Rung 1 stays the colour popover - it is the innermost surface, and it can be
       // open over the gradient panel while picking a stop's brand swatch.
       if (stageEl.querySelector('.color-popover:not([hidden])') && dismissFloating()) { e.preventDefault(); return; }
       // Gradient editing is a MODE like point editing, and its panel is part of it:
@@ -10017,15 +10020,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (mode !== 'select') { e.preventDefault(); toPointer('discard'); return; }
       if (selectedEdges.size) { e.preventDefault(); deselectEdge(); return; }
       if (selection.size) { e.preventDefault(); selection = new Set<string>(); renderChrome(); return; }
-      return;                       // nothing left to back out of — leave the key alone
+      return;                       // nothing left to back out of - leave the key alone
     }
     // ── the pen's other keys ───────────────────────────────────────────────────
     // Each already means something on a box, so the pen takes them only while it is
     // actually on, and hands them straight back when it is not. The split follows the
     // meanings already in this handler rather than redefining them:
-    //   Enter   — "commit the thing you are in the middle of", as it commits a text edit;
+    //   Enter - "commit the thing you are in the middle of", as it commits a text edit;
     //             it finishes the drawn path and leaves point editing.
-    //   Delete/Backspace — "remove what is selected", so it drops the last placed node
+    //   Delete/Backspace - "remove what is selected", so it drops the last placed node
     //             while drawing and the selected nodes while editing, never the box.
     if ((penDraft || penEdit) && !typingTarget()) {
       if (penDraft) {
@@ -10047,15 +10050,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // ── THE ONE RULE, enforcement point 3 of 3: KEYBOARD ────────────────────────
     // Chrome suppression closes every POINTER path onto an off-playhead box; a nudge,
     // a Delete or a duplicate needs no chrome at all. Navigation stays live on purpose
-    // — Tab still moves, Escape (handled above, before this gate) still deselects, and
-    // ⌘A still selects all — because the way out of this state must never be blocked.
+    // - Tab still moves, Escape (handled above, before this gate) still deselects, and
+    // ⌘A still selects all - because the way out of this state must never be blocked.
     if (timeCfg && selection.size && isMutatingKey(e) && !selectionLive(getBoxes())) {
       e.preventDefault();
       announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
       return;
     }
-    // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only —
-    // ⌘V is paste and ⌘P is print — and after `typingTarget()`, so a live text edit or any
+    // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only - 
+    // ⌘V is paste and ⌘P is print - and after `typingTarget()`, so a live text edit or any
     // focused field gets the letter typed into it instead. Neither letter meant anything
     // here before (the only unmodified keys taken are Escape/Enter/F2/Delete/arrows, and
     // tool-stage-nav's 0/1/+/-).
@@ -10069,7 +10072,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (mode !== 'pen') setMode('pen');
       return;
     }
-    // N — the Node tool (Inkscape's key). Toggles direct node editing on the selection.
+    // N - the Node tool (Inkscape's key). Toggles direct node editing on the selection.
     if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'n' || e.key === 'N') && cfg.pathField) {
       e.preventDefault();
       toggleNodeTool();
@@ -10081,7 +10084,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       startTextEdit([...selection][0]!, { selectAll: e.key === 'Enter' });
       return;
     }
-    // In gradient mode the selected thing is a STOP, so Delete removes that — deleting
+    // In gradient mode the selected thing is a STOP, so Delete removes that - deleting
     // the whole card here would be a nasty surprise mid-gradient. Falls through when the
     // gradient is down to its last two stops (deleteGradStop refuses and says so).
     if ((e.key === 'Delete' || e.key === 'Backspace') && gradEdit != null) {
@@ -10095,7 +10098,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if ((e.key === 'g' || e.key === 'G') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? ungroupSelection() : groupSelection(); return; }
     // Stacking order (Illustrator/Figma convention): Cmd/Ctrl + ] forward, + [ back;
     // add Shift to jump all the way to front / back. (Undo/redo is handled globally
-    // by tool.js's onHistoryKey — Cmd+Z / Cmd+Shift+Z / Cmd+Y — and reaches the editor
+    // by tool.js's onHistoryKey - Cmd+Z / Cmd+Shift+Z / Cmd+Y - and reaches the editor
     // because every edit commits through runtime.setInput, which the undo wrapper
     // records; nothing extra is needed here.)
     if ((e.key === ']' || e.key === '[') && (e.metaKey || e.ctrlKey) && selection.size) {
@@ -10116,7 +10119,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // seek chord"), so the chord means one thing in this editor rather than seeking in
     // the panel and nudging on the canvas. It is a reservation, not a collision: the panel
     // binds its keys on its OWN root, this handler is on `window` and bails outright while
-    // focus is inside `.tl-panel`, so the two never race for the same press — the chord is
+    // focus is inside `.tl-panel`, so the two never race for the same press - the chord is
     // simply panel-focus-scoped, like `k`/`s`/`e`. Alt+↑/↓ is NOT that chord: declining it
     // too (as this once did) bought nothing and left a key that did nothing anywhere, so it
     // nudges like any other arrow.
@@ -10130,12 +10133,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Same containment+cascade path as the pointer-drag move (see g.type === 'move'):
       // nudging a frame-kind box must carry its members in the SAME commit, and any box
       // whose centre crosses a frame edge must re-bucket. cascadeFrameChildren + assignFrames
-      // over the selected indices only — no-op on frameless tools (Design), so a
+      // over the selected indices only - no-op on frameless tools (Design), so a
       // no-frame nudge stays byte-identical to the old moveBoxes-only path.
       const idx = selIndices(boxes);
       // …and the SAME playhead-contextual split, for the same reason (plans/104 §8).
       // The nudge is the keyboard equivalent of the drag: on a diamond, dragging a box
-      // poses the keyframe, so nudging it by the same pixel must pose it too — or the
+      // poses the keyframe, so nudging it by the same pixel must pose it too - or the
       // accessible route silently gets the opposite model-write semantics from the
       // pointer one. One commit either way, so it stays one undo step.
       const kfIds = new Set(timelinePanel?.kfPoseIds(idx.map((i) => idOf(boxes[i], i))) ?? []);
@@ -10147,7 +10150,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── wiring ────────────────────────────────────────────────────────────────────
-  // Two-finger-tap recognition — capture phase, so a second finger is already recorded by
+  // Two-finger-tap recognition - capture phase, so a second finger is already recorded by
   // the time the canvas's own pointerdown handler runs (see onCanvasPointerDown).
   stageEl.addEventListener('pointerdown', onStageTouchDown, true);
   stageEl.addEventListener('pointermove', onStageTouchMove, true);
@@ -10167,7 +10170,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   canvasEl.addEventListener('contextmenu', onContextMenu);
   canvasEl.addEventListener('focusin', onBoxFocus);
   // While the editor is mounted, un-clip the canvas (and the tool's own clipping
-  // root inside it) so boxes dragged off the artboard stay visible + selectable —
+  // root inside it) so boxes dragged off the artboard stay visible + selectable - 
   // their DOM still lives inside canvasEl, so clicks bubble to the handlers above.
   // Export semantics are unchanged: the raster capture is bounded by the canvas
   // rect, and the vector walkers' out-of-viewBox geometry never paints.
@@ -10176,7 +10179,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   document.addEventListener('paste', onGlobalPaste);
   document.addEventListener('copy', onCopy);
   // Reposition chrome when the stage pans/zooms/resizes.
-  // Geometry changed (pan/zoom/resize) — invalidate the metrics cache and mark the
+  // Geometry changed (pan/zoom/resize) - invalidate the metrics cache and mark the
   // frame scrim for repositioning (M2: paintChrome only moves the scrim when this is
   // set, so drag/hover/selection syncs skip the 100vmax shadow repaint).
   const onStageMove = (e: any): void => { gestureMetrics = null; ctxBlockers = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); reclampRail(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
@@ -10184,12 +10187,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // handler rebuilt the whole selection chrome (2 getBoundingClientRect + innerHTML swap
   // + 10 handle nodes re-bound) every frame for zero visual change. Here we only track
   // the paste-at-cursor position; a real pan (buttons held) still re-syncs, and pan/zoom
-  // via the transform is already caught by the MutationObserver below — so an idle hover
+  // via the transform is already caught by the MutationObserver below - so an idle hover
   // costs nothing.
   const onStagePointerMove = (e: any): void => {
     if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY };
     // Pen: the segment from the last placed node to the cursor, previewed live. Only while
-    // no gesture is running — mid-drag the pointer is pulling a handle, not proposing a
+    // no gesture is running - mid-drag the pointer is pulling a handle, not proposing a
     // node. Works for `pointerType: 'touch'` too: a touch drag reports `buttons` while
     // down, so this only fires between taps and never fights stageNav's pan/pinch.
     if (mode === 'pen' && penDraft && !gesture && e && typeof e.clientX === 'number' && !e.buttons) {
@@ -10205,7 +10208,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   stageEl.addEventListener('pointermove', onStagePointerMove, { passive: true });
   stageEl.addEventListener('wheel', onStageMove, { passive: true });
-  // The camera's wheel (plans/104 §8) — on the CANVAS, not the stage, and non-passive
+  // The camera's wheel (plans/104 §8) - on the CANVAS, not the stage, and non-passive
   // so a claimed notch can be preventDefault()ed. It runs BEFORE `tool-stage-nav`'s
   // stage-level listener (a canvas-level handler on the way up), and only claims the
   // event when a camera is actually armed.
@@ -10214,12 +10217,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const ro = new ResizeObserver(onStageMove);
   ro.observe(stageEl);
   // Keyboard/HUD zoom (setupStageNav's − / + / 0 / 1 / Fit) changes the canvas
-  // wrapper's transform with NO pointer or wheel event — watch the wrapper's
+  // wrapper's transform with NO pointer or wheel event - watch the wrapper's
   // style attribute so the selection chrome follows those zooms too.
   const mo = new MutationObserver(onStageMove);
   if (canvasEl.parentElement) mo.observe(canvasEl.parentElement, { attributes: true, attributeFilter: ['style'] });
   // Re-sync after every model change (paint()).
-  // A bulk external apply — picking an ANIMATED template after the blank mount — can flip
+  // A bulk external apply - picking an ANIMATED template after the blank mount - can flip
   // the doc from untimed to timed; open the timeline the first time that happens, so the
   // template reads as animated. One-shot: it never re-opens after a manual close, and a
   // static template (poster / pull quote / blank) leaves the stage whole. Mirrors the
@@ -10230,7 +10233,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!timelineAutoOpened && timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
   });
   // Hide-controls full preview (Figma/Penpot `\`): strip the editor chrome to a clean canvas
-  // so the artwork can be seen whole. Chrome-only — the render geometry and export are
+  // so the artwork can be seen whole. Chrome-only - the render geometry and export are
   // untouched. Escape always restores it, so a preview can never trap you.
   const chromeRoot = (): HTMLElement | null => stageEl.closest('.tool-view');
   function onPreviewKey(e: KeyboardEvent): void {
@@ -10253,12 +10256,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The colour popover is a companion of the panel, not an outside click: the whole
     // point of the gradient panel is to pick stop colours from the brand palette, and
     // closing the panel the moment you reached for a swatch made that a two-click
-    // dance. `[data-cx="grad"]` is exempt for the same reason as `more`/`text` — the
+    // dance. `[data-cx="grad"]` is exempt for the same reason as `more`/`text` - the
     // button that opens a panel must not immediately close it.
     const t = e.target as HTMLElement;
     // Everything that IS the gradient-editing surface: the button that opens the panel,
     // the on-canvas handles, and the colour popover the panel sends you to for a brand
-    // swatch. None of those are an "outside click" — treating the handles as one closed
+    // swatch. None of those are an "outside click" - treating the handles as one closed
     // the panel the instant you selected a stop.
     const companion = t.closest?.(
       '[data-cx="more"],[data-cx="text"],[data-cx="grad"],.color-popover,[data-color-field],.fc-grad-stop,.fc-grad-dir');
@@ -10266,23 +10269,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   document.addEventListener('pointerdown', onDocDown, true);
 
-  // Legacy documents — saved before this tool declared an id field, or hand-written into
-  // a URL — get their ids HERE, once, on load. mountTool already ran the same migration
+  // Legacy documents - saved before this tool declared an id field, or hand-written into
+  // a URL - get their ids HERE, once, on load. mountTool already ran the same migration
   // over every blocks input before this view was built, so in the app this pass normally
   // finds nothing; it stays because the canvas keys SELECTION on these ids and a harness
   // (or any future non-mountTool host) must not get an id-less document. Deliberately NOT
   // through commit(): giving a row an identity is not an edit the user made, so no onDirty and no
-  // Save-pill flash — and not through the history-recording `setInput` either, or the
+  // Save-pill flash - and not through the history-recording `setInput` either, or the
   // user's first ⌘Z would undo the id stamping back to an id-less array, where `idOf`
   // returns '' for every row and one click selects the whole document. The ids persist on
   // the next real save; a session closed unsaved simply gets fresh ones next time, which
-  // is what "lazy" buys — no migration pass over stored slots.
+  // is what "lazy" buys - no migration pass over stored slots.
   {
     const loaded = getBoxes();
     let next = withIds(loaded);
     // Frame membership follows spatial position (plan 112 (b)): a box placed OVER a frame
-    // (its centre inside) becomes that frame's member on load — exactly as a drag would
-    // assign it — so a template or import that positioned content spatially WITHOUT setting
+    // (its centre inside) becomes that frame's member on load - exactly as a drag would
+    // assign it - so a template or import that positioned content spatially WITHOUT setting
     // `frame` still presents and per-page-exports as frames, not as excluded pasteboard. A
     // centre OUTSIDE every frame stays '' (assignFrames leaves it), keeping the pasteboard
     // scratchpad. Quiet, like the id stamping below: membership matching position is not a

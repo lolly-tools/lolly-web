@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * The ctx.filter functional probe — lib/canvas-filter-probe.ts (plan 104 §11 S1).
+ * The ctx.filter functional probe - lib/canvas-filter-probe.ts (plan 104 §11 S1).
  *
  * Run directly:  node --test shells/web/src/lib/canvas-filter-probe.test.ts
  *
  * jsdom has no raster canvas and Node has none at all, so what is testable here is
  * the DECISION, not the pixels: the module's core takes a structural 2D context, and
- * these stubs supply the four shapes a real engine can present —
+ * these stubs supply the four shapes a real engine can present - 
  *
  *   blurs        the property exists and spreads ink        -> supported
  *   ignores      the property exists, the value does nothing -> NOT supported
@@ -33,7 +33,7 @@ const SIZE = 16;
 interface StubOpts {
   /** Does assigning a blur actually spread ink? */
   blurs?: boolean;
-  /** Spread ink whatever the filter says — the control pass comes back dirty, so no
+  /** Spread ink whatever the filter says - the control pass comes back dirty, so no
    *  spread can be ATTRIBUTED to the filter. */
   alwaysBlurs?: boolean;
   /** getImageData throws (a tainted or unsupported readback). */
@@ -42,7 +42,7 @@ interface StubOpts {
 
 /**
  * A one-channel stub canvas. `fillRect` paints a rect; when a blur filter is set AND
- * the stub implements it, the rect is box-blurred (radius 3) before compositing —
+ * the stub implements it, the rect is box-blurred (radius 3) before compositing - 
  * enough spread to reach the probe's sample pixel, not so much that a broken
  * threshold would pass by luck.
  */
@@ -121,7 +121,7 @@ test('a context that stores the filter and ignores it is NOT supported', () => {
 });
 
 test('a context with NO filter property is not supported — and assignment lies', () => {
-  // Measured shape of WebKit 26.5 / Safari 26 (2026-08-11): `filter` is on neither the
+  // Measured behavior of WebKit 26.5 / Safari 26 (2026-08-11): `filter` is on neither the
   // context nor CanvasRenderingContext2D.prototype, yet `ctx.filter = 'blur(2px)'`
   // succeeds as a plain expando and reads back verbatim. An assign-and-read-back
   // support check says YES there. The `in` test must come first, and does.
@@ -144,7 +144,7 @@ test('a readback that throws is not supported', () => {
 test('a dirty control pass is not supported — spread must be ATTRIBUTABLE', () => {
   // This stub spreads ink with the filter set to 'none' too, so ink at the sample
   // pixel says nothing about the filter. The probe refuses rather than claiming a
-  // support it did not observe — false only ever costs the caller the slower lane.
+  // support it did not observe - false only ever costs the caller the slower lane.
   assert.equal(probeCanvasFilter(new StubCtx({ alwaysBlurs: true })), false);
 });
 

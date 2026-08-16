@@ -17,8 +17,8 @@ export type FontFormat = 'ttf' | 'otf' | 'woff' | 'woff2' | 'unknown';
  * What a font's OWN `OS/2.fsType` says about embedding and reuse.
  *
  * This is the font vendor's machine-readable statement of intent, and it is the
- * only licence signal a font file carries. It is NOT the licence — a permissive
- * fsType does not grant rights the actual EULA withholds — but a restrictive one
+ * only licence signal a font file carries. It is NOT the licence - a permissive
+ * fsType does not grant rights the actual EULA withholds - but a restrictive one
  * is an unambiguous "no", and it is the thing to show anyone about to pull a font
  * out of a document they were merely sent.
  *
@@ -26,17 +26,17 @@ export type FontFormat = 'ttf' | 'otf' | 'woff' | 'woff2' | 'unknown';
  * flags that ride alongside.
  */
 export type FontEmbedding =
-  | 'installable'   // 0x0000 — no restriction stated
-  | 'restricted'    // 0x0002 — must not be embedded or reused at all
-  | 'preview-print' // 0x0004 — may be embedded to view/print, not to edit
-  | 'editable'      // 0x0008 — may be embedded for editing too
+  | 'installable'   // 0x0000 - no restriction stated
+  | 'restricted'    // 0x0002 - must not be embedded or reused at all
+  | 'preview-print' // 0x0004 - may be embedded to view/print, not to edit
+  | 'editable'      // 0x0008 - may be embedded for editing too
   | 'unknown';      // no OS/2 table (Type1 / bare CFF), so nothing is stated
 
 export interface FontEmbeddingInfo {
   permission: FontEmbedding;
-  /** Bit 8 — the vendor forbids subsetting. */
+  /** Bit 8 - the vendor forbids subsetting. */
   noSubsetting: boolean;
-  /** Bit 9 — only a bitmap may be embedded, never outlines. */
+  /** Bit 9 - only a bitmap may be embedded, never outlines. */
   bitmapOnly: boolean;
   /** The raw value, so a report can be audited rather than trusted. */
   fsType: number | null;
@@ -44,7 +44,7 @@ export interface FontEmbeddingInfo {
 
 /**
  * Read `OS/2.fsType`. Returns `permission: 'unknown'` when the font states
- * nothing — a Type1 or bare-CFF program has no OS/2 table at all, and absence of
+ * nothing - a Type1 or bare-CFF program has no OS/2 table at all, and absence of
  * a restriction is not the same as permission.
  */
 export function readFontEmbedding(buffer: ArrayBuffer): FontEmbeddingInfo {
@@ -160,7 +160,7 @@ function extractFamilyName(view: DataView, nameTableOffset: number): string {
     // Name ID 16 (Typographic Family) preferred, fallback to 1 (Family Name).
     // Both must be collected before choosing: name records are ordered by nameId,
     // so 1 is always encountered first and returning on first match would make the
-    // preference unreachable. It matters for variable fonts — Outfit[wght].ttf has
+    // preference unreachable. It matters for variable fonts - Outfit[wght].ttf has
     // nameId 1 = "Outfit Thin" (legacy, tied to the default instance) but nameId 16
     // = "Outfit", and only the latter groups every weight under one family. Getting
     // this wrong mislabels the Fonts tab, slugs the asset id "outfit-thin", and makes

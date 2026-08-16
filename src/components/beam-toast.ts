@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-toast — the consent + progress UI for a **beam** (plan 100 §6.4, §4.6 point 6:
+ * beam-toast - the consent + progress UI for a **beam** (plan 100 §6.4, §4.6 point 6:
  * "Beam: progress/consent rides the existing toast/progress pill pattern (`.pro-toast`
  * family), with cancel; never a blocking modal.").
  *
@@ -8,8 +8,8 @@
  * `BeamSender`/`BeamReceiver` (only their exported TYPES, for the reason vocabulary),
  * never touches `RTCDataChannel`, and never imports any of the in-flight collab UI
  * (`collab-pill.ts`, `collab-ceremony.ts`, `collab-focus.ts`, `collab-overlay.ts`).
- * Like `beam-protocol.ts` itself, this is a pure consumer of a documented contract —
- * here, an EVENT STREAM rather than a wire — so it mounts and is fully exercised
+ * Like `beam-protocol.ts` itself, this is a pure consumer of a documented contract - 
+ * here, an EVENT STREAM rather than a wire - so it mounts and is fully exercised
  * headlessly with a fake {@link BeamEventSource}, with no transport, no worker, and no
  * beam-protocol instance anywhere in this file or its test.
  *
@@ -37,7 +37,7 @@
  * ── The action channel ────────────────────────────────────────────────────────
  *
  * Events flow ONE way, adapter → toast. The toast never mutates its own idea of a
- * beam's state on a click — it calls back through {@link BeamEventSource}'s
+ * beam's state on a click - it calls back through {@link BeamEventSource}'s
  * `accept`/`decline`/`cancel` (the same object that supplies `subscribe`, doing double
  * duty as a small port rather than forcing a second constructor argument) and waits for
  * the resulting event to arrive before it paints anything new. That is what makes
@@ -46,7 +46,7 @@
  * toast never decided anything on its own. The same rule runs the other way: an event
  * that arrives out of order never PROMOTES a card past a decision the human has not
  * made. A `progress` frame for a card still showing the consent sheet is dropped, not
- * treated as an implied acceptance — see `apply()`'s `progress` case.
+ * treated as an implied acceptance - see `apply()`'s `progress` case.
  *
  * ── Queueing (§6.4: "never a blocking modal … multiple beams queue, one visible at a
  * time") ──
@@ -56,16 +56,16 @@
  * or an outgoing beam and an incoming one overlap). Internally it is a FIFO queue of
  * per-beam card state; only the front of the queue is ever painted. A card is removed
  * from the queue ONLY by an explicit dismiss (the ✕), which is offered ONLY once a beam
- * has reached a terminal state (`complete`/`cancelled`) — there is deliberately no way
+ * has reached a terminal state (`complete`/`cancelled`) - there is deliberately no way
  * to "hide" a beam that is still being decided or still in flight, so a queued offer
  * never silently pre-empts one the human hasn't answered yet, and a queued beam never
  * quietly loses its own terminal result before it's been shown.
  *
  * ── A11y ───────────────────────────────────────────────────────────────────────
  *
- * `announce()` fires at exactly three moments — a consent request landing (receiver
+ * `announce()` fires at exactly three moments - a consent request landing (receiver
  * role only: the sender's own "waiting to be accepted" card is not a request FOR the
- * local human), completion, and failure — never on every progress tick, which would
+ * local human), completion, and failure - never on every progress tick, which would
  * spam a live region on a beam sending many small chunks. Progress is instead exposed
  * the way a progress bar should be: `role="progressbar"` + `aria-valuenow` on both bars
  * (current item and running total), read on demand rather than narrated continuously.
@@ -74,8 +74,8 @@
  *
  * ── Copy ───────────────────────────────────────────────────────────────────────
  *
- * One map, one namespace. Every value in {@link STRINGS} IS its own catalog key —
- * `i18n.ts` looks a translation up by the English source — and the lazy `collab`
+ * One map, one namespace. Every value in {@link STRINGS} IS its own catalog key - 
+ * `i18n.ts` looks a translation up by the English source - and the lazy `collab`
  * namespace carries the translations (this copy appears only once a collab is running,
  * so it has no business in a boot catalog). `tRaw`, not `t`: every string below is
  * `escape()`d at its sink or handed to `announce()`, so t()'s param escaping would
@@ -126,14 +126,14 @@ export const STRINGS = {
   queueMore: '{n} more waiting',
 
   // The item count, per beam kind (BEAM_KINDS: session/assets/project/tag-pack).
-  // A LABEL and a number, never a numeral in front of a noun — see itemsPhrase.
+  // A LABEL and a number, never a numeral in front of a noun - see itemsPhrase.
   countLabel: '{kind}: {n}',
   kindItems: 'Items',
   kindAssets: 'Assets',
   kindSessions: 'Sessions',
   kindProjects: 'Projects',
 
-  // Typed cancel/decline reasons — one line each, exhaustive against BeamEndReason
+  // Typed cancel/decline reasons - one line each, exhaustive against BeamEndReason
   // (see REASON_COPY below; TypeScript enforces completeness against the real
   // union, so a reason beam-protocol adds later fails this file's typecheck
   // instead of rendering blank). `user` is handled separately (declined/cancelled
@@ -164,14 +164,14 @@ export const STRINGS = {
  * the verb it always had. In English the two are the same substitution; in any other
  * language `tRaw` looks the source up in the `collab` catalog first.
  *
- * @deprecated for new code — call {@link tRaw} directly.
+ * @deprecated for new code - call {@link tRaw} directly.
  */
 export const fill = tRaw;
 
 // The two tables below hold KEY NAMES (`keyof typeof STRINGS`), not copy. That is what
 // keeps the "every STRINGS reference sits inside a t()/tRaw() call" rule true of this
-// file — a table of resolved strings would be a set of untranslated references that the
-// scan cannot tell apart from a missed one — and TypeScript still checks both for
+// file - a table of resolved strings would be a set of untranslated references that the
+// scan cannot tell apart from a missed one - and TypeScript still checks both for
 // exhaustiveness and for typos against the map's own keys.
 
 const KIND_LABEL_KEYS: Record<BeamKind, keyof typeof STRINGS> = {
@@ -182,14 +182,14 @@ const KIND_LABEL_KEYS: Record<BeamKind, keyof typeof STRINGS> = {
 };
 
 /**
- * "Assets: 14" — the beam's kind as a label, then the count.
+ * "Assets: 14" - the beam's kind as a label, then the count.
  *
  * NOT "{n} assets". A numeral in front of a noun forces agreement the catalog format
  * cannot express: i18n.ts's `t()`/`tRaw()` is `String.replaceAll` over `{name}` slots
  * and nothing more, so there is no plural category to select on. The previous version
  * carried one singular slot and one plural slot and asked every translator to put the
  * language's GENERAL counting form in the plural one, which is wrong for a Slavic 2-4
- * ("2 zasobów"), wrong for an Arabic dual, and — visible in the shipped catalogs —
+ * ("2 zasobów"), wrong for an Arabic dual, and - visible in the shipped catalogs - 
  * pushed Chinese into smuggling a measure word into the noun itself (`项素材`,
  * `个会话`), where it reads as a fragment anywhere the count is not directly in front.
  *
@@ -207,7 +207,7 @@ function itemsPhrase(kind: BeamKind, n: number): string {
 }
 
 /** Every reason except `user`, which reads differently depending on whether the beam
- *  had been accepted yet (see {@link reasonCopy}) — kept out of this table so its two
+ *  had been accepted yet (see {@link reasonCopy}) - kept out of this table so its two
  *  meanings can't be muddled into one generic line. */
 const REASON_KEYS: Record<Exclude<BeamEndReason, 'user'>, keyof typeof STRINGS> = {
   'bad-message': 'reasonBadMessage',
@@ -240,7 +240,7 @@ function reasonCopy(reason: BeamEndReason, everAccepted: boolean): string {
 export type BeamRole = 'sender' | 'receiver';
 
 /** What a beam offer looks like to a human. Deliberately NOT `beam-protocol.ts`'s own
- *  `BeamOfferMessage` — that has no notion of the human on the other end, which is a
+ *  `BeamOfferMessage` - that has no notion of the human on the other end, which is a
  *  presence concern (plan §4.6's naming rules), not a wire concern. `peerName` is
  *  already the resolved display string ("Priya", "Host", "Invitee") by the time it
  *  reaches here. */
@@ -248,11 +248,11 @@ export interface BeamOfferView {
   readonly beamId: string;
   readonly role: BeamRole;
   readonly kind: BeamKind;
-  /** The pack's own name — "Berlin pack", a session's title, … */
+  /** The pack's own name - "Berlin pack", a session's title, … */
   readonly name: string;
   /** The real payload count the consent sheet should say (an adapter building this
    *  from `lib/beam-pack.ts`'s manifest-plus-items offer excludes the bookkeeping
-   *  manifest entry — this is what a human should be told, not `items.length`). */
+   *  manifest entry - this is what a human should be told, not `items.length`). */
   readonly itemCount: number;
   readonly totalBytes: number;
   /** Absent when the adapter has no presence identity to offer. */
@@ -268,7 +268,7 @@ export type BeamToastEvent =
   | { readonly t: 'cancelled'; readonly beamId: string; readonly reason: BeamEndReason };
 
 /**
- * The single object a caller hands to {@link mountBeamToast} — a stream in
+ * The single object a caller hands to {@link mountBeamToast} - a stream in
  * (`subscribe`) and the three actions the toast can dispatch back out. One object
  * rather than two arguments so a caller wires exactly one adapter per beam direction
  * (or one multiplexed adapter covering both), and so this file never has to reconcile
@@ -295,7 +295,7 @@ export interface BeamToastHandle {
 interface Card {
   offer: BeamOfferView;
   accepted: boolean;
-  /** Guards a second click on the current phase's primary action(s) — reset when the
+  /** Guards a second click on the current phase's primary action(s) - reset when the
    *  card moves into the accepted/active phase, so Cancel there starts out enabled
    *  regardless of whether Accept had already been pressed to get here. */
   decided: boolean;
@@ -308,7 +308,7 @@ interface Card {
 
 function progressBar(label: string, valueLabel: string, now: number, max: number, extraClass = ''): string {
   const pct = max > 0 ? Math.min(100, Math.round((now / max) * 100)) : 0;
-  // `valueLabel` is computed byte counts ("12.0 MB / 38.0 MB"), not app copy — marked
+  // `valueLabel` is computed byte counts ("12.0 MB / 38.0 MB"), not app copy - marked
   // `data-dynamic` so the STRINGS-coverage walk (beam-toast.test.ts) doesn't expect a
   // number to come out of the copy map (the same convention `collab-ceremony.ts` uses
   // for its own scanned/peer-supplied text).
@@ -327,10 +327,10 @@ function renderCard(card: Card, extraQueued: number): string {
     body = card.terminal.kind === 'complete'
       ? `<p class="beam-toast-terminal">${escape(tRaw(offer.role === 'receiver' ? STRINGS.savedToLibrary : STRINGS.sent, { items: itemsPhrase(offer.kind, card.terminal.itemCount) }))}</p>`
       : `<p class="beam-toast-terminal beam-toast-terminal--err">${escape(reasonCopy(card.terminal.reason, card.accepted))}</p>`;
-    // The ✕ dismisses ONLY once a beam is done deciding — see the file header's
+    // The ✕ dismisses ONLY once a beam is done deciding - see the file header's
     // queueing note for why an in-flight or undecided beam never gets one. The glyph
     // itself isn't copy (a screen reader is told "Close" via `aria-label`, from
-    // STRINGS) — `data-dynamic` here means "skip the leaf text, keep the attrs".
+    // STRINGS) - `data-dynamic` here means "skip the leaf text, keep the attrs".
     closeBtn = `<button type="button" class="beam-toast-close" data-action="close" data-dynamic="true" aria-label="${escape(tRaw(STRINGS.close))}">✕</button>`;
   } else if (!card.accepted) {
     if (offer.role === 'receiver') {
@@ -358,7 +358,7 @@ function renderCard(card: Card, extraQueued: number): string {
     const p = card.progress;
     const posDisplay = Math.min(offer.itemCount, (p?.itemIndex ?? 0) + 1);
     // The item's own label (a filename, an asset name, …) is peer/sender-supplied
-    // data, not app copy — `data-dynamic` for the same reason as the byte counts above.
+    // data, not app copy - `data-dynamic` for the same reason as the byte counts above.
     const itemLine = card.itemLabel ? `<p class="beam-toast-item" data-dynamic="true">${escape(card.itemLabel)}</p>` : '';
     const itemBar = progressBar(
       tRaw(STRINGS.itemProgress, { done: posDisplay, count: offer.itemCount }),
@@ -384,7 +384,7 @@ function renderCard(card: Card, extraQueued: number): string {
   // Deliberately NO `role="status"` here: `container.innerHTML` is reassigned wholesale
   // on every render (including once per progress tick), so a live-region role on this
   // node would have assistive tech treat every re-paint as freshly-arrived content and
-  // re-announce it — exactly the spam the file header's a11y section rules out. The
+  // re-announce it - exactly the spam the file header's a11y section rules out. The
   // three real announcements go through `announce()`'s own stable, dedicated region.
   return `<div class="beam-toast">${closeBtn}${body}${queueNote}</div>`;
 }
@@ -421,7 +421,7 @@ export function mountBeamToast(container: HTMLElement, source: BeamEventSource):
     switch (event.t) {
       case 'offer-received': {
         const id = event.offer.beamId;
-        if (cards.has(id)) return; // duplicate offer for a known beam — ignore
+        if (cards.has(id)) return; // duplicate offer for a known beam - ignore
         cards.set(id, { offer: event.offer, accepted: false, decided: false });
         queue.push(id);
         if (event.offer.role === 'receiver') {
@@ -446,7 +446,7 @@ export function mountBeamToast(container: HTMLElement, source: BeamEventSource):
       // ADVANCE a card into the accepted phase: the consent sheet is the only place
       // `accept`/`decline` exist, so treating an early progress frame as consent would
       // destroy the buttons and leave the human unable to answer while the card reads
-      // as though they had — the §11.24 event-order bypass, arriving through the one
+      // as though they had - the §11.24 event-order bypass, arriving through the one
       // door this file owns. (`beam-protocol.ts`'s receiver refuses pre-consent bytes
       // too; this layer must hold on its own, because it is specified against an
       // untyped event stream from an adapter it does not control.)
@@ -528,7 +528,7 @@ export function mountBeamToast(container: HTMLElement, source: BeamEventSource):
   // the natural moment to ask for. English skips it outright rather than relying on
   // loadNamespace's own early return: the repaint would be pure churn in the language
   // the map is written in, and skipping it keeps an English build behaving exactly as it
-  // did before this wave. A repaint is safe at any time — `render()` rebuilds the front
+  // did before this wave. A repaint is safe at any time - `render()` rebuilds the front
   // card from state and this container has no live region on it (see renderCard).
   let disposed = false;
   if (currentLang() !== 'en') {

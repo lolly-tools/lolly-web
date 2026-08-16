@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The colour-profile panel — where an `.icc` on this device becomes a comparison
+ * The colour-profile panel - where an `.icc` on this device becomes a comparison
  * target the Colour Lab can chart against.
  *
  * ## Why it is not a *print* panel
  *
  * It was titled "Print profile", and that was never what the code did: `ingestProfile`
  * has always accepted any profile it can ask a gamut question of, and a `mntr` display
- * profile is exactly as valid a comparison target as a press condition — it simply has
+ * profile is exactly as valid a comparison target as a press condition - it simply has
  * no ink to report. The title claimed a restriction the ingest path does not enforce,
  * which is the kind of stale claim a reader can only discover by dropping a file and
  * being surprised. So the panel is "Colour profiles", and print is one SECTION in it.
  *
- * Loaded profiles are grouped by what the file says it is — `deviceClass` first,
+ * Loaded profiles are grouped by what the file says it is - `deviceClass` first,
  * `dataColourSpace` only as a fallback for rows stored before the class was recorded
- * ({@link groupFor}) — never by guessing from its name. Three groups:
+ * ({@link groupFor}) - never by guessing from its name. Three groups:
  *
  * - **Print** (`prtr`, or an ink space): the press conditions an export can declare.
  * - **Display** (`mntr`): a screen. The ICC publishes an sRGB v2 profile under terms
  *   that plainly allow it, so this section has one preset of its own; everything else
  *   here is a file the reader brought. Apple's `Display P3.icc` is NOT redistributable
  *   and Elle Stone's set is CC-BY-SA, so neither is offered (plans/60-color-spaces.md §11.8).
- * - **Other**: `scnr`, `spac`, `nmcl` — a class that characterises neither a press nor a
+ * - **Other**: `scnr`, `spac`, `nmcl` - a class that characterises neither a press nor a
  *   screen. A scanner profile describes what a device can SEE, and a `spac` conversion
  *   profile (the ICC's own sRGB v4 preference is one) describes a transform, not a
  *   device; filing either under Display would be a claim the file does not make. The
  *   section is hidden when empty, and its rows print the class in words, because for
- *   these the class is the interesting fact. They are still chartable — this panel
+ *   these the class is the interesting fact. They are still chartable - this panel
  *   groups, it does not refuse.
  *
  * A library, not a setting: dropping a file ADDS it, and pressing one of its
  * intent buttons is the separate, deliberate act that repoints the charts. That
  * split is `lib/color-profiles.ts`'s (ingest ≠ activate) and this panel does not
- * blur it — a drop that was only meant to stock the library never moves the
+ * blur it - a drop that was only meant to stock the library never moves the
  * report out from under the reader.
  *
  * ## Why intent is a control here and not a fourth tab out there
@@ -53,7 +53,7 @@
  * ## The press-condition rows
  *
  * The Print section lists the conditions an export can DECLARE in its OutputIntent,
- * and every row is a button. It was a readout, which was honest and useless — FOGRA39
+ * and every row is a button. It was a readout, which was honest and useless - FOGRA39
  * and SWOP are the first two things a print reader looks for. Pressing one charts the
  * condition when its profile is here, fetches it from the ICC registry when there is a
  * licence-clean source (`lib/press-conditions.ts`), and otherwise opens the picker
@@ -64,7 +64,7 @@
  *
  * Two, both from `ingestProfile`, both stated in one line and neither in a modal:
  * a file the reader cannot parse, and a profile no intent can be asked a gamut
- * question in. Nothing else is refused — an RGB monitor profile is a perfectly
+ * question in. Nothing else is refused - an RGB monitor profile is a perfectly
  * good comparison target, it simply has no ink to report.
  */
 
@@ -91,7 +91,7 @@ export interface ProfilesPanelOpts {
   host: ColorProfilesHost;
   /** The profile+intent currently charted against, so its button reads pressed. */
   active?: { digest: string; intent: RenderingIntent } | null;
-  /** A link asked for a profile this device does not have — say so, once. */
+  /** A link asked for a profile this device does not have - say so, once. */
   absent?: boolean;
   /**
    * Chart against this profile under this intent. Returns whether it took.
@@ -107,7 +107,7 @@ export interface ProfilesPanelOpts {
   onActivate(digest: string, intent: RenderingIntent): boolean | Promise<boolean>;
   /** The file (and its tab, and its pill) is gone. */
   onRemove(digest: string): void | Promise<void>;
-  /** A file landed in the library. NOT an activation — the caller decides whether
+  /** A file landed in the library. NOT an activation - the caller decides whether
    *  this is the profile a link was waiting for. */
   onIngest?(digest: string): void | Promise<void>;
 }
@@ -116,7 +116,7 @@ export interface ProfilesPanelOpts {
  * The intent buttons say the whole word.
  *
  * They used to read `per rel sat abs`. That is trade shorthand, and it is the panel
- * where a first-time reader meets rendering intents at all — the abbreviation was
+ * where a first-time reader meets rendering intents at all - the abbreviation was
  * saving width in a modal that has width to spare, and putting the meaning in a
  * `title` attribute, which does not exist on a touch device. A label the reader
  * understands beats a tooltip explaining a label they do not. The Lab's own pill still
@@ -144,7 +144,7 @@ const INK_SPACE = /^(CMYK|CMY|[2-9A-F]CLR)$/i;
 
 /**
  * The device class in words. Only shown for the `other` group, where "this file is a
- * scanner profile" is the fact that explains why it is filed there — for a printer or
+ * scanner profile" is the fact that explains why it is filed there - for a printer or
  * a display the section heading has already said it.
  */
 const CLASS_NAME = (cls: string): string => ({
@@ -161,7 +161,7 @@ const CLASS_NAME = (cls: string): string => ({
  * Which section a profile belongs in, read off the FILE rather than its name.
  *
  * `deviceClass` decides, because that is the profile's own declaration of what it
- * characterises — a file called `MyScreen.icc` can be a press profile and a
+ * characterises - a file called `MyScreen.icc` can be a press profile and a
  * `PSOcoated_v3` copy can be renamed to anything. Only when the class is missing (a row
  * stored before `entryFromRef` recorded one) does the colour space stand in, and an ink
  * space is the one thing it can say with confidence.
@@ -191,18 +191,18 @@ export function groupFor(e: Pick<ProfileEntry, 'deviceClass' | 'colourSpace'>): 
  *
  * The bar for an entry is the bar `SOURCES` sets: the URL is PROBED to serve
  * `application/vnd.iccprofile` with `access-control-allow-origin: *`, and `licence`
- * quotes the provider verbatim. Nothing is mirrored — the bytes go from the ICC to the
+ * quotes the provider verbatim. Nothing is mirrored - the bytes go from the ICC to the
  * reader's device, so Lolly is never the redistributor.
  *
  * What is deliberately absent, from the licence read in plans/60-color-spaces.md §11.8:
- * Apple's `Display P3.icc` ("Copyright Apple Inc., 2022" — not redistributable, and P3
+ * Apple's `Display P3.icc` ("Copyright Apple Inc., 2022" - not redistributable, and P3
  * is already a built-in gamut modelled from matrices), and Elle Stone's CC-BY-SA set,
  * which would be this repo's first copyleft asset and needs a decision, not a commit.
  * The ICC's sRGB **v4 preference** profile is also absent on its own merits: it is
  * device class `spac`, a conversion profile, not a screen (see {@link groupFor}).
  */
 interface DisplayPreset {
-  /** Stable row id — also the `&limit=` -independent key the click handler reads. */
+  /** Stable row id - also the `&limit=` -independent key the click handler reads. */
   id: string;
   /** The short name in the row's first column (`sRGB`). */
   identifier: string;
@@ -231,7 +231,7 @@ const DISPLAY_PRESETS: readonly DisplayPreset[] = [
       name: 'sRGB2014.icc',
       bytes: 3024,
       // Verbatim from registry.color.org/profile-library ("Licensing"), read
-      // 2026-07-28. Note it permits distribution outright — we fetch anyway, so the
+      // 2026-07-28. Note it permits distribution outright - we fetch anyway, so the
       // profile arrives as the reader's own on-device asset like a Google font does.
       licence: 'International Color Consortium: “may be copied, distributed, embedded, made, used, and sold without restriction. Altered versions … shall not be misrepresented as the original profile”.',
     },
@@ -282,7 +282,7 @@ function rowHtml(e: ProfileEntry, active: ProfilesPanelOpts['active'], group: Pr
 }
 
 /**
- * A preset row — one press condition, or one fetchable display profile.
+ * A preset row - one press condition, or one fetchable display profile.
  *
  * ONE treatment for both, reusing the `.labp-cond*` classes rather than growing a
  * second near-identical set: the reader's question ("is this here, and what happens if
@@ -307,7 +307,7 @@ function presetRowHtml(o: {
 /**
  * Open the panel. Resolves when it closes.
  *
- * The whole panel body is an innerHTML target and may be — it hosts buttons and a
+ * The whole panel body is an innerHTML target and may be - it hosts buttons and a
  * file input, no MOUNTED control. (The Lab's readability cards and picker are the
  * ones that must never be rebuilt under themselves; nothing of that kind is here.)
  */
@@ -325,7 +325,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
               never meant: any class mounts, and the count depends on what is loaded. */''}
         <p class="labp-intro">${escape(t('A press condition or a display profile from this device becomes a comparison target beside the built-in gamuts. Nothing leaves this device.'))}</p>
         <label class="updz labp-drop">
-          ${/* `multiple` because `take` has always looped a FileList — a DROP can carry
+          ${/* `multiple` because `take` has always looped a FileList - a DROP can carry
                 several files and was handled, while the picker refused a second one for
                 no reason. A print reader adding their shop's conditions has more than
                 one, and each is an independent ingest. */''}
@@ -340,15 +340,15 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
           </span>
         </label>
         ${/* The fastest route to a real press profile is often one already on the
-              machine — it is offline, and it is the exact separation the shop uses.
+              machine - it is offline, and it is the exact separation the shop uses.
               (The ICC registry can also be fetched; see the condition rows below.)
-              BELOW the drop zone, not inside it — three wrapped lines of path turned
+              BELOW the drop zone, not inside it - three wrapped lines of path turned
               the target into a wall of text. */''}
         <p class="labp-where">${escape(t('Already on this device:'))} <code>${escape(locationHint())}</code></p>
         <p class="labp-msg" data-labp-msg role="status" aria-live="polite"${opts.absent ? '' : ' hidden'}
           >${opts.absent ? escape(t('This link compares against a profile that isn’t on this device.')) : ''}</p>
         ${/* Two sections, because the reader already knows whether they care about press
-              or screen — the split matches the question rather than the storage. Each
+              or screen - the split matches the question rather than the storage. Each
               carries the profiles OF that kind that are loaded, then the ones we can
               honestly offer to get. `Other` is last and hidden until it has a row. */''}
         <section class="labp-sec" data-labp-sec="print">
@@ -424,12 +424,12 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       // Hidden until it has a row: a heading with nothing under it is a question the
       // reader cannot act on.
       otherSec.hidden = !lists.other.childElementCount;
-      // The intent aside belongs to the print rows it explains — paper white is a press
+      // The intent aside belongs to the print rows it explains - paper white is a press
       // fact, and with no press profile loaded there is nothing for it to describe.
       paperHint.hidden = !lists.print.childElementCount;
 
       // A condition is "loaded" when one of the profiles on this device names it.
-      // Matched on the profile's own `desc`, since that is what the vendor wrote —
+      // Matched on the profile's own `desc`, since that is what the vendor wrote - 
       // several spellings are in circulation, which is why the match list is a list.
       loaded.clear();
       for (const e of rows) {
@@ -442,7 +442,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
         // Three different facts, and the row states which one it is holding. Declaring
         // a condition in a PDF is a claim about your target and needs no file;
         // COMPARING against it needs the file's measurements. Nothing here is a
-        // refusal — a condition with no profile still exports exactly as it did.
+        // refusal - a condition with no profile still exports exactly as it did.
         const state = found ? 'loaded' : src ? 'fetch' : 'declare';
         const note = found
           ? tRaw('Loaded — {name}', { name: found.description || found.name })
@@ -469,7 +469,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       }).join('');
 
       // The display presets, same three facts and the same row. There is no `declare`
-      // state here — a display profile is nothing an export names, so a preset with no
+      // state here - a display profile is nothing an export names, so a preset with no
       // source would be a row with nothing to do, and none is listed.
       loadedDisplays.clear();
       for (const e of rows) {
@@ -497,7 +497,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
     }
 
     /**
-     * A condition row was pressed. Never a dead end — the three states it can be in
+     * A condition row was pressed. Never a dead end - the three states it can be in
      * are the three useful things to do:
      *
      * 1. the profile is here → chart against it and get out of the way (this is the
@@ -525,7 +525,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       // it is recorded even for SWOP, whose source states CGATS TR003: sourceIsExact
       // is false there, so the pairing step declines it and the export says `Custom`.
       //
-      // Unless the bytes that actually arrived contradict the row — if the registry
+      // Unless the bytes that actually arrived contradict the row - if the registry
       // ever re-points a filename, the file's own `targ` says so, and an origin that
       // is wrong is worse than no origin at all. Refusing to record it here is
       // cheaper than repairing it on every export (the embed path re-checks anyway).
@@ -551,7 +551,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
      * Shared by both preset kinds: the row keeps its place while the fetch is in flight
      * (`data-busy` stops a second press), the note says which file is coming, and a
      * failure names the file to look for on this device rather than the network's
-     * complaint — offline, the profile is very likely already installed.
+     * complaint - offline, the profile is very likely already installed.
      */
     async function fetchInto(
       sel: string, src: FetchSource, files: readonly string[],
@@ -575,7 +575,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
 
     /**
      * A display preset was pressed. Two states, not three: it is either here (chart it)
-     * or fetchable (get it, then chart it). No `origin` is recorded — provenance exists
+     * or fetchable (get it, then chart it). No `origin` is recorded - provenance exists
      * to let a Print PDF declare a registered press condition (press-profile-embed.ts),
      * and a display profile declares nothing, so inventing an origin for it would put a
      * claim in the store that no export could honour.

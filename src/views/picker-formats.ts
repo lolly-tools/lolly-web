@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The asset picker's format and embeddability rules — pure, DOM-free, testable.
+ * The asset picker's format and embeddability rules - pure, DOM-free, testable.
  *
  * Extracted from views/picker.ts for maintainability-2026-07-29.md item 2, the
  * third increment after catalog-filter.ts and tool-history.ts. views/picker.ts is
@@ -8,7 +8,7 @@
  *
  * WHY THIS CLUSTER. These decide what an upload is STORED as (a wrong answer
  * writes `holiday.heic` as `.bin`, or an Opus recording as `.mp3`) and which
- * tools may be embedded into a slot. They are long ladders of string tests —
+ * tools may be embedded into a slot. They are long ladders of string tests - 
  * exactly the shape where a missing branch is invisible on inspection and obvious
  * to a test, and where the interesting cases are the aliases: jpeg/jpg,
  * heic/heif, oga→ogg, quicktime→mov, m4a via an mp4 mime.
@@ -55,7 +55,7 @@ export function extFromMime(mime: string): string {
  * FILENAME EXTENSION WINS over the mime type, because browsers disagree wildly
  * on audio mimes (an .opus file is served as audio/ogg by some, application/
  * octet-stream by others) while the extension is what the user actually chose.
- * The mime ladder is the fallback, and 'mp3' the last resort — a wrong-but-
+ * The mime ladder is the fallback, and 'mp3' the last resort - a wrong-but-
  * playable guess beats 'bin'.
  */
 export function audioFormatOf(file: { name: string; type: string }): string {
@@ -104,7 +104,7 @@ export interface EmbeddableTool {
  * Can this catalog tool be rendered into an embeddable image?
  *
  * Mirrors the gate compose uses: it must be exportable AND emit at least one
- * image format — SVG specifically for a vector slot. Described-but-non-image
+ * image format - SVG specifically for a vector slot. Described-but-non-image
  * tools (pdf/ics only) and non-exportable transform utilities (strip-data,
  * compress-pdf) are dropped. `exportable !== true` rather than a falsy test, so
  * a manifest that omits the flag is excluded rather than assumed embeddable.
@@ -126,7 +126,7 @@ export function imageFormatSeed(fmt: unknown): string | undefined {
   return IMG_FORMATS.has(f) ? (f === 'jpeg' ? 'jpg' : f) : undefined;
 }
 
-/** Translator shape — matches i18n's `t` exactly, so the app's own function is
+/** Translator shape - matches i18n's `t` exactly, so the app's own function is
  *  assignable without a cast; tests pass a plain formatter with the same shape. */
 export type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -134,7 +134,7 @@ export type Translate = (key: string, vars?: Record<string, string | number>) =>
  * Compact relative time for a saved session ("3d ago").
  *
  * `now` is injected rather than read from Date.now() so the boundaries are
- * testable. An unparseable or missing timestamp yields '' — a session row with no
+ * testable. An unparseable or missing timestamp yields '' - a session row with no
  * date should show nothing, not "NaN ago". A FUTURE timestamp (clock skew, a file
  * copied from another machine) clamps to 0 and reads "just now" rather than
  * counting backwards.

@@ -3,7 +3,7 @@
  * Unit coverage for the website source (sources/website.ts).
  *
  * Everything here runs under bare node with no browser, no extension and no
- * network — which is the design being tested as much as it is the test setup:
+ * network - which is the design being tested as much as it is the test setup:
  * the transports are injected, so a fake records what was asked for and answers
  * with plain data, and every judgement in the module (address validation, byte
  * decoding, type sniffing, logo pairing, screenshot balancing) is a pure
@@ -14,7 +14,7 @@
  * transport, and a scan calls the transport exactly once for exactly the
  * address it validated.
  *
- * `extract-site.ts`, `census.ts` and `tray.ts` are the real modules — the point
+ * `extract-site.ts`, `census.ts` and `tray.ts` are the real modules - the point
  * of the happy path is that a page arrives in the tray as candidates, and a stub
  * census could not answer that.
  *
@@ -190,8 +190,8 @@ test('coerceFetchResult: wire encodings become the typed shape', () => {
     assets: [
       { url: '/a.png', base64: 'AQID', mime: 'IMAGE/PNG' },
       { url: '/b.png', bytes: [4, 5, 6] },
-      { url: '', bytes: [1] },              // no address — dropped
-      { url: '/c.png' },                    // no bytes — dropped
+      { url: '', bytes: [1] },              // no address - dropped
+      { url: '/c.png' },                    // no bytes - dropped
     ],
     finalUrl: 'https://example.com/final',
     screenshotDataUrl: 'data:image/png;base64,AQID',
@@ -384,7 +384,7 @@ function withTauri<T>(invoke: (cmd: string, args?: Record<string, unknown>) => P
 test('detectSiteTransport: a Tauri shell is found through its own global, not through a filename', async () => {
   // THE regression this file exists for. The build-time bridge override that was
   // supposed to supply `_siteFetch` is keyed on a module BASENAME, and there is
-  // no web-shell file with that name — so it never fires, and its failure mode
+  // no web-shell file with that name - so it never fires, and its failure mode
   // is silence: `null` here means the Website tile is simply never rendered, on
   // the two shells the capabilities page names as the way to get one. A probe
   // that owns no filename cannot fail that way, which is why this asserts on the
@@ -402,7 +402,7 @@ test('detectSiteTransport: a Tauri shell is found through its own global, not th
   const result = await transport.fetchSite('https://acme.com/', { timeoutMs: 5_000 });
   assert.equal(result.html, '<p>native</p>');
   // `site_fetch` and `timeoutMs` are the contract with
-  // shells/tauri-{desktop,mobile}/src-tauri/src/site_fetch.rs — Tauri maps the
+  // shells/tauri-{desktop,mobile}/src-tauri/src/site_fetch.rs - Tauri maps the
   // camelCase key onto that command's `timeout_ms`. A rename there is a rename
   // in website.ts, and nothing else checks the two sides against each other.
   assert.deepEqual(calls, [{ cmd: 'site_fetch', args: { url: 'https://acme.com/', timeoutMs: 5_000 } }]);
@@ -446,7 +446,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * `type: 'site-result'` with a top-level `id`, while the extension has always
  * spoken `lolly-capture/site` / `lolly-capture/site-result` with a `requestId`
  * and a flat payload. Neither the request nor the reply could ever match, and
- * the symptom was not an error — it was a 60 s wait ending in "{host} took too
+ * the symptom was not an error - it was a 60 s wait ending in "{host} took too
  * long to answer", which blames the site for the app's own bug.
  */
 const EXT_WIRE = [
@@ -464,7 +464,7 @@ test('the extension protocol is stated once, in the bridge, and not restated her
   }
   // And this module must hold no second client: no relay channel, no postMessage,
   // no message-type literal of its own. It adapts the bridge's transport.
-  // Block comments are stripped first — that file EXPLAINS the protocol at
+  // Block comments are stripped first - that file EXPLAINS the protocol at
   // length, and prose about a mechanism is the opposite of a second copy of it.
   const self = readFileSync(join(HERE, 'website.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!self.includes('postMessage'), 'sources/website.ts must not post to the extension itself');
@@ -474,7 +474,7 @@ test('the extension protocol is stated once, in the bridge, and not restated her
 test('the bridge and the extension agree on the wire, when the extension is mounted', () => {
   // shells/chrome-extension is a sibling submodule: present in the umbrella
   // (where this gate runs), absent in a bare clone of the web shell. Absent is a
-  // skip with a reason, never a silent pass — and the pinned EXT_WIRE above
+  // skip with a reason, never a silent pass - and the pinned EXT_WIRE above
   // still guards the web side either way.
   const extDir = join(HERE, '../../../../../chrome-extension');
   const relay = join(extDir, 'content.js');

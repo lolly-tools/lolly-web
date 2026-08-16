@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * zip-classify — the OOXML/OCF/archive disambiguation ladder, proven against REAL
- * bytes built by the engine's own writers. The load-bearing property is ordering:
+ * zip-classify - the OOXML/OCF/archive disambiguation ladder, proven against REAL
+ * bytes built by the engine's own writers. The property that matters is ordering:
  * every dedicated-reader format (pptx/xlsx/docx/epub/odt/lottie) must win before the
  * generic 'archive' verdict, so a "drop a .zip → explode it" path can never shred a
  * PowerPoint or an EPUB into raw parts.

@@ -150,7 +150,7 @@ test('rowsForFolder stamps a deterministic uid naming the source ref + ordinal',
 
 test('rowsForFolder uids stay unique when the same session sits in two folders', async () => {
   // exportSelectionAsBatch CONCATENATES subtrees, so the same ref legitimately appears
-  // twice — uniqueness is a property of the path prefix, and is pinned, not assumed.
+  // twice - uniqueness is a property of the path prefix, and is pinned, not assumed.
   const host = { state: { async load() { return { __toolId: 'poster', __export_filename: 'hi.png' }; } } };
   const rows = [
     ...await rowsForFolder(host, { name: 'A', items: [{ type: 'session', ref: 'poster:123' }] }, null, ['Selection']),
@@ -181,8 +181,8 @@ test('rowsForFolder keeps a template-less snapshot row, so positions and uids ag
   const rows = await rowsForFolder(host, { name: 'G', items: [{ type: 'session', ref: '__batch__:Wave' }] });
   assert.equal(rows.length, 3);
   assert.deepEqual(rows.map(r => r.toolId), ['', '', 'qr-code']);
-  // The uid's ordinal is the row's SOURCE position — the same number planBatch will
-  // report for it — so the two can never name the row differently.
+  // The uid's ordinal is the row's SOURCE position - the same number planBatch will
+  // report for it - so the two can never name the row differently.
   assert.deepEqual(rows.map(r => r.uid), [
     'G::__batch__:Wave#0', 'G::__batch__:Wave#1', 'G::__batch__:Wave#2',
   ]);

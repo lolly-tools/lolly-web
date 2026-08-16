@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * attachCollabBeam — where a live collab grows a SEND control, and where it must not
+ * attachCollabBeam - where a live collab grows a SEND control, and where it must not
  * (plan 100 §6.4, §7).
  *
  * `collab/beam-ui.test.ts` proves the beam works once it exists. This one proves the
  * gate in front of it, which is the half a user can actually be misled by:
  *
  *   - a WORK collab never gets the control. Track B's transport carries ops and presence
- *     and no bulk lane at all (§7), so the absence is STRUCTURAL — there is no flag to
+ *     and no bulk lane at all (§7), so the absence is STRUCTURAL - there is no flag to
  *     forget, and no code path where a work collab could be handed a beam;
  *   - a mount for a different tool never gets another collab's beam;
  *   - the action's visibility tracks the LANE, not the mount: pre-connect (and after the
@@ -18,7 +18,7 @@
  *     does the plan being disarmed (a pair dying with a toast on screen).
  *
  * The DOM seam is `collab-live-mount.ts`'s own injected {@link LiveMountEnvironment},
- * exactly as `collab-live-mount.test.ts` drives it — plus jsdom, because the attachment
+ * exactly as `collab-live-mount.test.ts` drives it - plus jsdom, because the attachment
  * really does mount the real toast into a real container.
  *
  * Run directly:
@@ -66,7 +66,7 @@ function handle(): CollabSessionHandle {
 }
 
 /**
- * The two members a beam reads off a transport, and nothing else — the bulk lane and
+ * The two members a beam reads off a transport, and nothing else - the bulk lane and
  * the `message` stream. `open` is mutable so a test can drop the pair mid-assertion,
  * which is the whole point of the availability predicate.
  */

@@ -6,10 +6,10 @@
  * after first use (sw.js), and only core-tier catalog assets prefetch. A pin
  * turns that into a per-tool guarantee:
  *
- *   1. Tool FILES — tool.json, template.html, styles.css, hooks.js, sibling
+ *   1. Tool FILES - tool.json, template.html, styles.css, hooks.js, sibling
  *      text templates (template.ics/.vcf/.csv/.md), the active language's
  *      i18n sidecar, plus any tool-local /tools/<id>/assets/… files referenced
- *      literally from the template/hooks — are fetched into a dedicated
+ *      literally from the template/hooks - are fetched into a dedicated
  *      UNVERSIONED Cache Storage bucket (PIN_CACHE). sw.js consults it as the
  *      last-resort fallback on /tools/ requests, and its activate handler never
  *      deletes it, so pins survive service-worker CACHE-generation bumps. The
@@ -18,11 +18,11 @@
  *      defaults, colour palettes, block asset fields) are prefetched into the
  *      IDB blob cache through catalog/sync.ts's checksum-verified prefetch
  *      path. The caller threads that function in (`PrefetchAssets`) because
- *      sync.ts itself imports THIS module — to exclude pinned assets from its
+ *      sync.ts itself imports THIS module - to exclude pinned assets from its
  *      browsed-but-unsaved prune and to refresh them with the core tier each
- *      boot — so importing sync.ts back would be a cycle.
+ *      boot - so importing sync.ts back would be a cycle.
  *
- * Pin state persists in IndexedDB (its own key in the 'profile' KV store —
+ * Pin state persists in IndexedDB (its own key in the 'profile' KV store - 
  * never localStorage). It is deliberately NOT on the profile record itself:
  * a pin describes THIS device's cache, so it must not travel in the portable
  * backup (data-transfer.ts exports only the 'me' record).
@@ -34,14 +34,14 @@ import { instanceFetch, instancePath } from './instance.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 
 /** The Cache Storage bucket pinned tool files live in. Mirrored by sw.js
- *  (PIN_CACHE there) — keep the two literals in sync. */
+ *  (PIN_CACHE there) - keep the two literals in sync. */
 export const PIN_CACHE = 'lolly-pins';
 
 /** Key of the pin map inside the 'profile' KV store (a sibling of the 'me' record). */
 const PIN_KEY = 'offline-pins';
 
 /** Key of the tool-index watermark the pinned FILES were last successfully
- *  refreshed against (sibling of PIN_KEY — deliberately NOT inside the pin map,
+ *  refreshed against (sibling of PIN_KEY - deliberately NOT inside the pin map,
  *  whose keys are tool ids). */
 const PIN_SYNC_KEY = 'offline-pins-synced';
 
@@ -52,18 +52,18 @@ export interface PinRecord {
   /** ISO timestamp of the last (re)pin. */
   at: string;
   /** Measured bytes of the pinned tool FILES (catalog asset blobs are counted
-   *  by the storage meter's Asset-cache slice instead — never double-counted). */
+   *  by the storage meter's Asset-cache slice instead - never double-counted). */
   bytes: number;
   /** How many files the pin cached. */
   files: number;
-  /** Catalog asset ids the manifest references — sync.ts protects these from
+  /** Catalog asset ids the manifest references - sync.ts protects these from
    *  the prune and refreshes them alongside the core tier. */
   assetIds: string[];
 }
 
 type PinMap = Record<string, PinRecord>;
 
-/** Prefetch catalog assets by id — catalog/sync.ts's prefetchAssetsById, bound
+/** Prefetch catalog assets by id - catalog/sync.ts's prefetchAssetsById, bound
  *  to a host by the caller (see the module comment for why it's threaded in). */
 export type PrefetchAssets = (ids: string[]) => Promise<void>;
 
@@ -82,7 +82,7 @@ export async function pinnedToolIds(): Promise<Set<string>> {
   return new Set(Object.keys(await readPins()));
 }
 
-/** Union of catalog asset ids referenced by any pinned tool — sync.ts adds
+/** Union of catalog asset ids referenced by any pinned tool - sync.ts adds
  *  their current-version blob keys to the prune keep-set. */
 export async function pinnedAssetIds(): Promise<Set<string>> {
   const ids = new Set<string>();
@@ -92,7 +92,7 @@ export async function pinnedAssetIds(): Promise<Set<string>> {
   return ids;
 }
 
-/** The full pin map, tool id → record — the profile's offline download manager
+/** The full pin map, tool id → record - the profile's offline download manager
  *  reads per-tool sizes and timestamps from it. Same measured-at-pin-time
  *  numbers pinnedToolBytes() totals. */
 export async function pinRecords(): Promise<Record<string, PinRecord>> {
@@ -101,7 +101,7 @@ export async function pinRecords(): Promise<Record<string, PinRecord>> {
 
 /** Total recorded bytes + count of pinned tools (the storage meter's slice).
  *  Reads the sizes measured at (re)pin time rather than re-reading every cached
- *  blob on each meter open — pins refresh on catalog change, so drift is bounded. */
+ *  blob on each meter open - pins refresh on catalog change, so drift is bounded. */
 export async function pinnedToolBytes(): Promise<{ bytes: number; count: number }> {
   const recs = Object.values(await readPins());
   return { bytes: recs.reduce((n, r) => n + (r.bytes || 0), 0), count: recs.length };
@@ -144,12 +144,12 @@ export function collectManifestAssetIds(manifest: ToolManifest): string[] {
  *  With a remote instance base set (lib/instance.ts) both the fetch AND the
  *  cache key go through instancePath: a remote pin caches the remote bytes
  *  under the remote URL, never poisoning the same-origin keys sw.js serves as
- *  its PIN_CACHE fallback — the trade-off being that remote pins are not
+ *  its PIN_CACHE fallback - the trade-off being that remote pins are not
  *  offline-servable (the SW ignores cross-origin requests entirely). */
 async function pinFile(cache: Cache, url: string, required: boolean): Promise<number> {
   const fetchUrl = instancePath(url);
   let resp: Response | null = null;
-  try { resp = await instanceFetch(fetchUrl); } catch { /* network failure — treated as missing below */ }
+  try { resp = await instanceFetch(fetchUrl); } catch { /* network failure - treated as missing below */ }
   // SPA-fallback guard (same as the tool loader's fetchFile): an HTML body for a
   // non-.html path means the server served the app shell for a missing file.
   const ct = resp?.headers.get('content-type') ?? '';
@@ -164,7 +164,7 @@ async function pinFile(cache: Cache, url: string, required: boolean): Promise<nu
 
 /** Literal /tools/<id>/assets/… and /tools/<id>/lib/… references in the tool's
  *  own sources. lib/ matters for the tools that ship vendored libraries (d3's
- *  d3.min.js, street-map's leaflet bundle) — before it was matched those pins
+ *  d3.min.js, street-map's leaflet bundle) - before it was matched those pins
  *  only worked offline if the runtime /tools/ cache happened to hold the lib
  *  from an online open. Computed paths (e.g. 3d's '…/assets/' + model + '.glb')
  *  can't be enumerated from the client, so those tools stay partially pinned. */
@@ -188,7 +188,7 @@ export async function pinTool(toolId: string, prefetchAssets?: PrefetchAssets): 
   const cache = await caches.open(PIN_CACHE);
   const base = `/tools/${toolId}`;
 
-  // Manifest first — it names every other file the tool can load.
+  // Manifest first - it names every other file the tool can load.
   const resp = await instanceFetch(instancePath(`${base}/tool.json`));
   if (!resp.ok || (resp.headers.get('content-type') ?? '').includes('text/html')) {
     throw new Error(`offline pin: no manifest for "${toolId}"`);
@@ -203,7 +203,7 @@ export async function pinTool(toolId: string, prefetchAssets?: PrefetchAssets): 
     ['template.html', true],
     ['styles.css', false],
   ];
-  // A tool that declares hooks and loses them renders wrong output — for a pin
+  // A tool that declares hooks and loses them renders wrong output - for a pin
   // that's a hard failure, unlike the loader's silent tryFetch degrade.
   if (manifest.hooks && (manifest.hooks as { module?: boolean }).module !== true) wants.push(['hooks.js', true]);
   for (const ext of TEXT_TEMPLATE_EXTS) {
@@ -225,7 +225,7 @@ export async function pinTool(toolId: string, prefetchAssets?: PrefetchAssets): 
   bytes += localSizes.reduce((n, s) => n + s, 0);
   files += localSizes.filter(s => s > 0).length;
 
-  // Catalog refs through the checksum-verified prefetch (best-effort inside —
+  // Catalog refs through the checksum-verified prefetch (best-effort inside - 
   // sync's prefetch settles per asset and never throws for one bad file).
   const assetIds = collectManifestAssetIds(manifest);
   if (assetIds.length && prefetchAssets) await prefetchAssets(assetIds);
@@ -261,15 +261,15 @@ export async function unpinAll(): Promise<void> {
 }
 
 /** Re-pin every pinned tool's FILES when `watermark` (the current tool-index
- *  identity — version|generatedAt) differs from the one the last SUCCESSFUL
+ *  identity - version|generatedAt) differs from the one the last SUCCESSFUL
  *  refresh recorded. The watermark is PERSISTED, not a session flag: only the
  *  single session that fetches fresh index bytes ever sees a "changed" signal,
  *  and if that tab closes mid-refresh (or a pin fetch fails on a flaky link)
  *  every later 304 boot would leave the unversioned PIN_CACHE serving
- *  deploy-old files offline forever. Best-effort per tool — a failed refresh
- *  keeps the existing cached copy — but the watermark only advances after a
+ *  deploy-old files offline forever. Best-effort per tool - a failed refresh
+ *  keeps the existing cached copy - but the watermark only advances after a
  *  pass in which EVERY pin refreshed, so a partial pass retries next boot.
- *  (Catalog asset blobs refresh separately, with the core tier — sync.ts.) */
+ *  (Catalog asset blobs refresh separately, with the core tier - sync.ts.) */
 export async function refreshPinnedToolFiles(watermark: string): Promise<void> {
   const ids = Object.keys(await readPins());
   if (!ids.length) return;
@@ -277,7 +277,7 @@ export async function refreshPinnedToolFiles(watermark: string): Promise<void> {
   if ((await db.get('profile', PIN_SYNC_KEY)) === watermark) return;
   let allOk = true;
   for (const id of ids) {
-    try { await pinTool(id); } catch { allOk = false; /* offline / gone — keep the old pinned copy */ }
+    try { await pinTool(id); } catch { allOk = false; /* offline / gone - keep the old pinned copy */ }
   }
   if (allOk) await db.put('profile', watermark, PIN_SYNC_KEY);
 }
@@ -294,7 +294,7 @@ export async function pinnedRenderLayouts(): Promise<Set<string>> {
   const cache = await caches.open(PIN_CACHE);
   for (const id of Object.keys(pins)) {
     try {
-      // Match under the ACTIVE base — a pin made in remote mode is keyed by its
+      // Match under the ACTIVE base - a pin made in remote mode is keyed by its
       // remote URL; a miss (e.g. after switching base) just skips the warm-up.
       const resp = await cache.match(instancePath(`/tools/${id}/tool.json`));
       if (!resp) continue;

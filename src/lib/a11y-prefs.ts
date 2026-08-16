@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Accessibility preferences — reduce motion / high contrast / large text.
+ * Accessibility preferences - reduce motion / high contrast / large text.
  *
  * Same shape as the theme preference (theme.ts / lib/set-theme.ts): the profile
  * is the canonical store, localStorage is only the FOUC mirror the index.html
@@ -12,14 +12,14 @@
  *
  * Strictly additive (the jelly-effects model): every attribute defaults to
  * ABSENT, no selector matches, and the regular experience is untouched. The
- * gated CSS lives beside the OS-preference blocks it extends — reduced motion
+ * gated CSS lives beside the OS-preference blocks it extends - reduced motion
  * in parts/base.css, high contrast in tokens.css, large text in parts/a11y.css
- * — and, like those blocks, never reaches inside the tool render canvas: a
+ * - and, like those blocks, never reaches inside the tool render canvas: a
  * user's creative output must not change because the app chrome calmed down.
  *
  * hidePreviews ("Hide colourful previews") swaps the tool galleries to calm
  * icon + text cards (parts/gallery.css) and desaturates + lowers the contrast
- * of the Projects/session thumbnails (parts/folders.css) — the one place
+ * of the Projects/session thumbnails (parts/folders.css) - the one place
  * imagery is kept, since a thumbnail you can't recognise is a thumbnail you
  * can't use. It was the gallery filter popover's device-local "Hide
  * previews" toggle before 2026-07-30; it lives here now because its audience is
@@ -33,7 +33,7 @@ export interface A11yPrefs {
   hidePreviews?: boolean;
 }
 
-/** localStorage FOUC mirror key — read by the inline script in index.html. */
+/** localStorage FOUC mirror key - read by the inline script in index.html. */
 export const A11Y_STORE_KEY = 'lolly-a11y';
 
 /** Pref key → the <html> dataset property + value it switches. */
@@ -66,11 +66,11 @@ export function applyA11yPrefs(prefs: A11yPrefs | undefined): void {
     const on = ATTRS.filter(([key]) => prefs?.[key]).map(([key]) => key);
     if (on.length) localStorage.setItem(A11Y_STORE_KEY, JSON.stringify(Object.fromEntries(on.map(k => [k, true]))));
     else localStorage.removeItem(A11Y_STORE_KEY);
-  } catch { /* storage blocked — the attributes still applied */ }
+  } catch { /* storage blocked - the attributes still applied */ }
 }
 
 /**
- * Boot reconciliation — the profile is canonical (the FOUC script already
+ * Boot reconciliation - the profile is canonical (the FOUC script already
  * applied the localStorage mirror; this corrects any drift, e.g. a restored
  * backup or a cleared cache). Mirrors main.ts's theme/sfx hydration calls.
  */
@@ -81,7 +81,7 @@ export function hydrateA11yPrefs(profileValue: A11yPrefs | undefined): void {
   applyA11yPrefs(profileValue);
 }
 
-/** The host slice this module persists through — same weak shape as set-theme.ts. */
+/** The host slice this module persists through - same weak shape as set-theme.ts. */
 export interface A11yPrefsHost {
   profile: {
     get(): Promise<object>;
@@ -96,21 +96,21 @@ export async function setA11yPref(host: A11yPrefsHost, key: keyof A11yPrefs, on:
   try {
     const profile = await host.profile.get();
     await host.profile.set?.({ ...profile, a11y: next });
-  } catch { /* preference save is best-effort — the attribute is already live */ }
+  } catch { /* preference save is best-effort - the attribute is already live */ }
 }
 
 /**
- * Does the user want less motion — from the OS preference OR the app pref?
+ * Does the user want less motion - from the OS preference OR the app pref?
  * The shared read for every JS-driven animation site (view transitions,
  * particles, carousels, the export shutter, …); the CSS side is handled by the
  * gated blocks. Safe in jsdom/tests (no matchMedia ⇒ no motion preference).
  *
  * Read it at USE time, never latched into a module constant: several call sites
- * used to do that and so answered with whatever was true at import — before boot
+ * used to do that and so answered with whatever was true at import - before boot
  * hydration had applied the profile, and permanently stale afterwards.
  *
  * matchMedia() is deliberately re-invoked per call rather than caching the
- * MediaQueryList. A MQL is live, so caching one looks free — but it narrows this
+ * MediaQueryList. A MQL is live, so caching one looks free - but it narrows this
  * function's contract to implementations that return a live object, and the test
  * doubles across the web-shell suites hand back a fresh snapshot per call
  * (view-fade.test.ts is one), so a cache silently latches the first answer for

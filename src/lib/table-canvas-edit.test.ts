@@ -2,7 +2,7 @@
 // Unit tests for the on-canvas table-cell serialiser (table-canvas-edit.ts).
 // cellHtmlToMarkdown/cellPlainText are DOM-agnostic (nodeType/nodeName/
 // nodeValue/childNodes/getAttribute only), so these tests feed plain object
-// trees — no jsdom. The round-trip partner is the engine's {{markdown}} helper
+// trees - no jsdom. The round-trip partner is the engine's {{markdown}} helper
 // (engine/src/template.ts): everything asserted here must re-render to the same
 // structure it was serialised from.
 import test from 'node:test';

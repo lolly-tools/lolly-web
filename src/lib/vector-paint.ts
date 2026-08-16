@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * vector-paint — the vocabulary shared by a canvas that PAINTS and a walker that
+ * vector-paint - the vocabulary shared by a canvas that PAINTS and a walker that
  * SERIALISES, so the two can agree on the same picture without importing each other.
  *
  * The mechanism it exists for: a clip bar keeps its <canvas> exactly as it is for the
- * live UI, and additionally stamps `__lollyVectorTwin` on that element — a function
+ * live UI, and additionally stamps `__lollyVectorTwin` on that element - a function
  * returning SVG markup for what it just painted, or null when it cannot say. The
  * HTML→SVG walker's `tag === 'canvas'` branch asks for the twin FIRST and falls back
  * to today's `toDataURL()` on any miss, throw or timeout. A canvas with no such
- * property must serialise byte-identically to how it always has — that is the whole
+ * property must serialise byte-identically to how it always has - that is the whole
  * safety guarantee for every other tool's export, so nothing here may be reachable
  * from the plain path.
  *
  * DOM-LIGHT ON PURPOSE. This module is imported by BOTH the timeline panel and
  * bridge/export.ts; the panel must never gain a static edge to the export bridge (it
- * has none today, and a twin must not be what introduces one). So the shared pieces —
- * the geometry, the markup builders, the id namespacing — live here, in a file that
+ * has none today, and a twin must not be what introduces one). So the shared pieces - 
+ * the geometry, the markup builders, the id namespacing - live here, in a file that
  * touches only `DOMParser` and the `Element` API and imports nothing at all.
  *
  * THE DRIFT RULE. `waveformPathD` and `stillTilePx` are transcriptions of two loops in
  * views/timeline-panel.ts. If the canvas arithmetic moves and these do not, an export
- * silently stops matching the screen — the one failure this feature must not have.
+ * silently stops matching the screen - the one failure this feature must not have.
  * vector-paint.test.ts pins each against the panel's expression term for term.
  */
 
@@ -39,7 +39,7 @@ export const MAX_TWIN_TILES = 64;
 
 /**
  * A twin larger than this is refused at the parse boundary rather than spliced in.
- * The point of a twin is FIDELITY and resolution independence, not size — a producer
+ * The point of a twin is FIDELITY and resolution independence, not size - a producer
  * emitting a quarter-megabyte of markup has lost the plot, and the raster fallback is
  * both correct and bounded, so declining is strictly the better failure.
  */
@@ -92,7 +92,7 @@ export function rectBody(color: string, w: number, h: number): string {
  *   const bh  = amp * (h - 4);
  *   ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);
  *
- * Every term is reproduced, including the 0.02 floor — which is why a silent clip
+ * Every term is reproduced, including the 0.02 floor - which is why a silent clip
  * exports as the same hairline row of bars it shows on screen rather than as nothing.
  */
 export function waveformPathD(data: ArrayLike<number>, w: number, h: number): string {
@@ -124,20 +124,20 @@ export function stillTilePx(aspect: number, h: number): number {
 }
 
 /**
- * One tile, defined once and repeated across the bar with <use> — the vector form of
+ * One tile, defined once and repeated across the bar with <use> - the vector form of
  * `for (let x = 0; x < w; x += tile) drawImage(...)`.
  *
  * Clipped to the bar box because the canvas version is: the last tile overhangs `w`
  * and the canvas edge cuts it. Without the clip an inlined twin would paint past its
  * bar and over its neighbour.
  *
- * Ids here are LOCAL and deliberately unremarkable — `namespaceSvgRefs` namespaces them at
+ * Ids here are LOCAL and deliberately unremarkable - `namespaceSvgRefs` namespaces them at
  * insertion time, which is what keeps two twins in one document from colliding.
  *
  * Returns NULL rather than a short run when the bar needs more than MAX_TWIN_TILES.
  * The canvas loop this transcribes has no cap (`for (let x = 0; x < w; x += tile)`), so
  * capping the vector form would export a bar whose right-hand end is blank while the
- * screen shows it fully tiled — the one failure this feature must never have, and not a
+ * screen shows it fully tiled - the one failure this feature must never have, and not a
  * rare one: `tile` floors at 6px, so a tall still truncates from about 384px of bar.
  * Null falls through to the PNG the user is actually looking at.
  */
@@ -159,7 +159,7 @@ export function tileBody(innerMarkup: string, tileW: number, w: number, h: numbe
  * Parse a twin's markup into an element the walker can adopt, or null.
  *
  * Null is a first-class answer, not an error path: every rejection here simply leaves
- * the canvas to today's toDataURL block. So the checks are cheap and total — a size
+ * the canvas to today's toDataURL block. So the checks are cheap and total - a size
  * cap before parsing, the browser's own parsererror node, and a root that must
  * actually be <svg> (a producer returning a fragment, HTML, or an error page must not
  * be spliced into the export tree).
@@ -174,7 +174,7 @@ export function parseSvgRoot(markup: string): Element | null {
     return null;
   }
   // Failure is reported IN-BAND as a <parsererror> element, not by throwing, and it can
-  // sit anywhere in the returned tree depending on the engine — hence the query rather
+  // sit anywhere in the returned tree depending on the engine - hence the query rather
   // than a root-tag test.
   if (doc.getElementsByTagName('parsererror').length) return null;
   const root = doc.documentElement;
@@ -183,11 +183,11 @@ export function parseSvgRoot(markup: string): Element | null {
 }
 
 const URL_REF = /url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/g;
-/** The only two attributes that take a bare `#fragment` — see namespaceSvgRefs. */
+/** The only two attributes that take a bare `#fragment` - see namespaceSvgRefs. */
 const LOCAL_HREF = new Set(['href', 'xlink:href']);
 /** `#foo` in CSS SELECTOR position: preceded by start-of-text, whitespace, or a combinator. */
 const ID_SELECTOR = /(^|[\s,>+~{}])#([A-Za-z_][\w-]*)/g;
-/** `.foo` in CSS selector position, same leads. Classes are namespaced wholesale — a
+/** `.foo` in CSS selector position, same leads. Classes are namespaced wholesale - a
  *  twin's stylesheet is unscoped in the export document, so an un-prefixed class rule
  *  reaches every element in the file. */
 const CLASS_SELECTOR = /(^|[\s,>+~{}])\.([A-Za-z_][\w-]*)/g;
@@ -197,12 +197,12 @@ const CLASS_SELECTOR = /(^|[\s,>+~{}])\.([A-Za-z_][\w-]*)/g;
  *
  * HAZARD THIS EXISTS FOR: `renderSvgFromHtml`'s `uid` counter is a per-call local, so
  * two independently-produced twins in one document both mint `fcclip-1` and every
- * later `url(#fcclip-1)` resolves to whichever came first — clip paths, gradients and
+ * later `url(#fcclip-1)` resolves to whichever came first - clip paths, gradients and
  * masks silently swapping between clips. Ids are only unique within the twin that
  * made them, so they get made unique at insertion instead.
  *
  * Only ids DEFINED in this subtree are rewritten. A reference pointing outside (into
- * the host document) is left exactly as it is — rewriting it would break it.
+ * the host document) is left exactly as it is - rewriting it would break it.
  */
 export function namespaceSvgRefs(root: Element, prefix: string): void {
   if (!root || !prefix) return;
@@ -227,8 +227,8 @@ export function namespaceSvgRefs(root: Element, prefix: string): void {
       const v = attr.value;
       if (!v) continue;
       // A bare fragment reference, and ONLY on the two attributes that actually take
-      // one. The tempting rule — "any value starting with # whose target is a defined
-      // id" — is ambiguous by construction: `fill="#abc"` is the colour #abc, and a
+      // one. The tempting rule - "any value starting with # whose target is a defined
+      // id" - is ambiguous by construction: `fill="#abc"` is the colour #abc, and a
       // twin embedding arbitrary user SVG (the still path resolves a data: URL) can
       // easily define an id named `abc`. That rewrite produced `fill="#tw1-abc"`,
       // which is not a colour at all, so the shape silently lost its paint.
@@ -236,14 +236,14 @@ export function namespaceSvgRefs(root: Element, prefix: string): void {
         const target = v.slice(1);
         if (defined.has(target)) { attr.value = `#${rename(target)}`; continue; }
       }
-      // Class ATTRIBUTES move with the class selectors renamed in <style> below —
+      // Class ATTRIBUTES move with the class selectors renamed in <style> below - 
       // renaming one without the other is how a twin loses its paint.
       if (attr.localName === 'class') {
         attr.value = v.split(/\s+/).filter(Boolean).map((c) => `${prefix}${c}`).join(' ');
         continue;
       }
       // url(#…) can appear in ANY attribute value, including the inline `style`
-      // attribute (which is why style needs no special case — it is an attribute).
+      // attribute (which is why style needs no special case - it is an attribute).
       if (v.includes('url(')) {
         URL_REF.lastIndex = 0;
         attr.value = v.replace(URL_REF, (whole, q: string, target: string) =>
@@ -254,10 +254,10 @@ export function namespaceSvgRefs(root: Element, prefix: string): void {
     // A twin may carry its own <style>, and it reaches the export document UNSCOPED
     // (export.ts runs unscopeStyleEls before this), so everything in it has to be
     // namespaced or it addresses the whole file:
-    //   • url(#…) — the same references the attributes above carry;
-    //   • `#foo { … }` ID SELECTORS — renaming the id without renaming the selector
+    //   • url(#…) - the same references the attributes above carry;
+    //   • `#foo { … }` ID SELECTORS - renaming the id without renaming the selector
     //     leaves a rule matching nothing, so the twin silently loses that styling;
-    //   • `.cls-1 { … }` CLASS SELECTORS — nothing else namespaces classes, and an
+    //   • `.cls-1 { … }` CLASS SELECTORS - nothing else namespaces classes, and an
     //     Illustrator-style `.cls-1 { fill: … }` riding in on a still would restyle
     //     unrelated elements ANYWHERE in the exported document.
     if (el.localName === 'style' && el.textContent) {

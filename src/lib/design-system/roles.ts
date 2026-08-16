@@ -5,15 +5,15 @@
  * A role is a SLOT, not a colour. Primary, Secondary, Surface and Text are
  * satisfied by pointing `color.semantic.<role>` at a swatch that already exists
  * in the palette, and a design system with three loose colours and no roles at
- * all is valid — nothing here ever invents a swatch, and nothing forces a slot
+ * all is valid - nothing here ever invents a swatch, and nothing forces a slot
  * to be filled.
  *
  * WHAT THIS MODULE DELIBERATELY DOES NOT DO. It writes the one slot it is asked
  * to write, and nothing else. `deriveBrandTokens` maintains `on-primary`,
  * `muted` and `edge` as a contrast-enforced SET (see engine/brand-derive.ts's
  * buildSemantic: the primary step itself shifts along its ramp until a passing
- * on-primary exists), and `setSemanticRampAlias` in brand-doc.ts — the only
- * other role write in the shell — likewise touches exactly the named role. So
+ * on-primary exists), and `setSemanticRampAlias` in brand-doc.ts - the only
+ * other role write in the shell - likewise touches exactly the named role. So
  * assigning Primary here does not re-pick on-primary: re-deriving those pairs
  * from one hand-assigned swatch would be new policy, and the readouts below
  * exist precisely so a pairing the user has broken is VISIBLE rather than
@@ -37,7 +37,7 @@ type Rec = Record<string, unknown>;
 
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** `{color.ramp.primary.5}` — a reference, not a literal colour. Kept in step
+/** `{color.ramp.primary.5}` - a reference, not a literal colour. Kept in step
  *  with brand-doc.ts's `isAliasStr` (the same one-line test, duplicated rather
  *  than imported so this module stays free of the editor's doc surgery). */
 const aliasTarget = (v: unknown): string | null => {
@@ -71,7 +71,7 @@ const SET_KEYS = ['base', 'light', 'dark'] as const;
 /**
  * The document's top-level token sets, or `[]` when it is flat.
  *
- * The ENGINE decides whether a document is layered at all — `tokenSetNames`,
+ * The ENGINE decides whether a document is layered at all - `tokenSetNames`,
  * the same test `withRoleAliases` and `createTokenSet` consult. Nothing here may
  * answer that question on its own, in either direction:
  *
@@ -82,7 +82,7 @@ const SET_KEYS = ['base', 'light', 'dark'] as const;
  *    a root with no `color` group at all.
  *  - Saying "layered" of a flat one is the same bug wearing the other face. A
  *    hand-written `{ base: {…} }` with no `$metadata` and no `$themes` is FLAT
- *    to the engine — `base` is just a group. Trusting the name there wrote a
+ *    to the engine - `base` is just a group. Trusting the name there wrote a
  *    role into `base.color.semantic.*`, reported success, and left a reference
  *    the resolver cannot see.
  *
@@ -100,7 +100,7 @@ function setKeysOf(doc: Rec): string[] {
 /**
  * Which ONE set of a layered non-themed document owns the roles, in order of
  * preference: the set that already carries a `color.semantic` group (that IS
- * the answer — it is where `withRoleAliases` put them); else the last set in the
+ * the answer - it is where `withRoleAliases` put them); else the last set in the
  * resolution order that has a `color` group at all (last wins, so a role written
  * there overrides the sets below it, and a set of spacing tokens is no place for
  * one); else the last set in the order.
@@ -120,13 +120,13 @@ function roleSetOf(doc: Rec, keys: string[]): string {
  * Which sets a role write lands in, and a read looks at.
  *
  * A derived document carries the roles once per THEME, and the two are
- * deliberately different — `deriveBrandTokens` inverts surface and text so the
+ * deliberately different - `deriveBrandTokens` inverts surface and text so the
  * dark theme's surface is the darkest neutral where the light theme's is the
  * lightest. So a themed document ALWAYS reads one theme, and a write names the
  * theme it is editing: writing both sets from a light-theme strip would replace
  * the dark theme's inverted role with the light one and destroy dark mode.
  *
- * `theme` omitted means "every theme set" — the deliberate both-themes write,
+ * `theme` omitted means "every theme set" - the deliberate both-themes write,
  * used where a value genuinely is theme-invariant (the brand primary a logo
  * hands over). It is not a default to reach for from a themed UI.
  *
@@ -202,7 +202,7 @@ function hexOfSlot(raw: unknown, slot: string, resolve?: (key: string) => unknow
   return '';
 }
 
-/** One slot's resolved hex ('' when absent/unresolvable) — the pairing colours
+/** One slot's resolved hex ('' when absent/unresolvable) - the pairing colours
  *  (`on-primary`, `text`, `surface`) read through this. */
 function semanticHex(doc: unknown, theme: string, slot: string, resolve?: (key: string) => unknown): string {
   return hexOfSlot(slotValue(doc, theme, slot), slot, resolve);
@@ -215,7 +215,7 @@ function semanticHex(doc: unknown, theme: string, slot: string, resolve?: (key: 
  * so this module stays pure: without it a role that references a ramp step reads
  * back with its `ref` intact and a blank `hex`.
  *
- * An unset role is `{ ref: null, hex: '', literal: false }` — which is how "not
+ * An unset role is `{ ref: null, hex: '', literal: false }` - which is how "not
  * set" is told apart from a literal (`literal: true`, `hex` filled).
  */
 export function readRoles(
@@ -270,7 +270,7 @@ function stampGroup(leaf: Rec): void {
  * unscoped write from a light-theme strip would overwrite the dark theme's
  * surface and text with the light ones. Omit it only for a value that genuinely
  * belongs to both themes (see {@link roleSets}); on a single-set or layered
- * import it makes no difference — there is one set either way.
+ * import it makes no difference - there is one set either way.
  *
  * Creates the `color.semantic` group when it is absent, keeps any `$description`
  * and print lock already on the slot, and stamps the engine's group hint.
@@ -300,7 +300,7 @@ export function assignRole(doc: unknown, role: RoleId, swatchKey: string, theme?
   return wrote;
 }
 
-/** Drop a role. `theme` scopes it exactly as {@link assignRole}'s does — the
+/** Drop a role. `theme` scopes it exactly as {@link assignRole}'s does - the
  *  theme being edited, or every theme set when omitted. A system with no roles
  *  is valid, so this is an ordinary action and not a repair. False when there
  *  was nothing to remove. */
@@ -318,7 +318,7 @@ export function clearRole(doc: unknown, role: RoleId, theme?: string): boolean {
 
 /** The Lc under which the strip paints its readout as a warning: APCA's
  *  headline floor, the point below which a pair carries nothing but icons and
- *  borders. Not a pass/fail — APCA has none — just where the readout stops
+ *  borders. Not a pass/fail - APCA has none - just where the readout stops
  *  being reassuring. */
 export const WEAK_LC = 45;
 
@@ -437,7 +437,7 @@ export interface RolesModel {
  * document, the theme, and the swatches on offer.
  *
  * `swatches` is expected to be pre-filtered to the non-semantic ones (a role
- * cannot take a role) — the caller has that list already from `walkSwatches`,
+ * cannot take a role) - the caller has that list already from `walkSwatches`,
  * and re-deriving it here would mean importing the editor's doc surgery.
  */
 export function buildRolesModel(
@@ -463,7 +463,7 @@ export function buildRolesModel(
   return { rows, options };
 }
 
-/** `Lc 78` — one decimal would suggest a precision APCA does not claim at this
+/** `Lc 78` - one decimal would suggest a precision APCA does not claim at this
  *  size, and the sign matters (it is the polarity), so it is kept. */
 const fmtLc = (lc: number): string => `${lc < 0 ? '-' : ''}${Math.round(Math.abs(lc))}`;
 
@@ -518,18 +518,18 @@ export function rolesStripHtml(model: RolesModel): string {
     </div>`).join('')}</div>`;
 }
 
-/** Live getters, the same ctx shape `mountPrintLock` and the rooms use — the
+/** Live getters, the same ctx shape `mountPrintLock` and the rooms use - the
  *  room reassigns its `doc` on Replace, undo and reload, so nothing here may
  *  hold a reference to one. */
 export interface RolesCtx {
   doc: () => Record<string, unknown>;
-  /** 'light' | 'dark' — which theme's roles are being edited. */
+  /** 'light' | 'dark' - which theme's roles are being edited. */
   theme: () => string;
   /** Resolves an `{alias}` to a colour, typically a `createTokenSet` lookup. */
   resolve?: (key: string) => unknown;
   /** Assignable swatches, non-semantic, already resolved to hex. */
   swatches: () => RoleSwatchOption[];
-  /** The room does the write (`assignRole`), the repaint and the persist — this
+  /** The room does the write (`assignRole`), the repaint and the persist - this
    *  module never touches the document from the DOM half. Write the theme you
    *  are reading: pass `theme()` through to `assignRole`/`clearRole`, or a strip
    *  showing the light theme edits the dark one too. */
@@ -538,7 +538,7 @@ export interface RolesCtx {
 }
 
 /** The option list as one comparable string. A role write only ever touches
- *  `color.semantic.*`, which `buildRolesModel` filters OUT of the options — so
+ *  `color.semantic.*`, which `buildRolesModel` filters OUT of the options - so
  *  the picker's own change event leaves this identical, which is what lets the
  *  repaint it triggers patch rather than rebuild. */
 function optionsSig(options: RoleSwatchOption[]): string {
@@ -548,8 +548,8 @@ function optionsSig(options: RoleSwatchOption[]): string {
 /**
  * Update an already-rendered strip in place, or report that it cannot be done.
  *
- * False means "the DOM is not the shape this model describes" — first paint, a
- * language switch, a changed row set — and the caller rebuilds. Everything else
+ * False means "the DOM is not the shape this model describes" - first paint, a
+ * language switch, a changed row set - and the caller rebuilds. Everything else
  * is written onto the nodes already there, through the DOM rather than through
  * markup (no second raw-HTML sink, and no detached `<select>`), so the element
  * the person is operating survives the repaint its own `change` event caused.
@@ -598,7 +598,7 @@ function patchStrip(mount: HTMLElement, model: RolesModel): boolean {
 /**
  * Render the roles strip into `mount` and wire its pickers.
  *
- * `render()` is the caller's resync hook — the room pushes it onto
+ * `render()` is the caller's resync hook - the room pushes it onto
  * `paletteHooks`, so the strip re-reads after every add, delete, replace and
  * undo with no extra seam. One delegated `change` listener on the mount, so a
  * re-render never leaks handlers.
@@ -607,7 +607,7 @@ function patchStrip(mount: HTMLElement, model: RolesModel): boolean {
  * because the commonest caller of all is the picker's own `change`: assigning a
  * role repaints the palette, which calls this back while the `<select>` that
  * fired the event is the focused element. Replacing the markup there detaches
- * it mid-interaction — focus falls to `<body>`, and on the platforms where a
+ * it mid-interaction - focus falls to `<body>`, and on the platforms where a
  * CLOSED select fires `change` on every arrow key (Windows/Linux Chrome and
  * Firefox) the second arrow press has nothing left to land on, so the picker
  * cannot be operated by keyboard at all. A wholesale rebuild is still the

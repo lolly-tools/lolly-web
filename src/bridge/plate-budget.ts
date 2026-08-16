@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * THE PLATE BUDGET — how much memory a sequence export may spend on plates, and what
+ * THE PLATE BUDGET - how much memory a sequence export may spend on plates, and what
  * it gives back when it cannot afford what the camera asked for (plan 104 §5.5).
  *
  * Layers are rasterised ONCE, before the frame loop, and re-drawn every frame. That is
@@ -8,7 +8,7 @@
  * a layer flown toward the camera is magnified by `eff`, and a plate shot at S and then
  * blown up by eff is a soft plate, so §5.5 shoots it at `S·eff` instead. `eff` is
  * capped at KF_EFF_MAX = 10 by the behind-camera guard, and a six-layer 1080p job at
- * eff 2.5 is already ~311 MB of plates — doubled while the worker path has both the
+ * eff 2.5 is already ~311 MB of plates - doubled while the worker path has both the
  * originals and their transferred copies alive. Fly-pasts are EXPECTED to hit the cap.
  * That path is designed, not exceptional.
  *
@@ -16,12 +16,12 @@
  *
  *   budget      = min(8, deviceMemory ?? 4)/8 × 512 MB   (the `maxVideoFrames`
  *                 deviceMemory-scaling precedent, sequence-render.ts)
- *   long side   ≤ 4096 px below 8 GB, 8192 px at or above it — Safari's canvas-area
+ *   long side   ≤ 4096 px below 8 GB, 8192 px at or above it - Safari's canvas-area
  *                 caps are real, and `rasterBox`'s bare catch nulls a refused plate
  *                 SILENTLY, which is the worst possible way to find out
  *   over budget → ONE λ = sqrt(budget / need), applied to every layer's eff, floored
  *                 at 1, and ONE warn line naming the clamp
- *   pad         — the OTHER multiplier on plate size (§5.5's capture margin for a
+ *   pad - the OTHER multiplier on plate size (§5.5's capture margin for a
  *                 blur/shadow spill). It gets its own cap against the same long side,
  *                 because eff floors at 1 and λ only scales eff: without one, a big
  *                 authored blur grows a plate ~90× with nothing able to take it back
@@ -29,14 +29,14 @@
  * TWO RULES MAKE THIS SAFE TO SHIP AT P0, WHERE THERE IS NO CAMERA AND EVERY eff IS 1.
  *
  *  1. The floor is TODAY'S QUALITY. λ and the long-side cap only ever scale the eff
- *     multiplier, never below 1 — so a document that asked for no extra resolution
+ *     multiplier, never below 1 - so a document that asked for no extra resolution
  *     cannot have resolution taken away, and its plates are the bytes they always were.
  *  2. Nothing is CLAMPED and nothing is LOGGED unless some layer actually asked for
  *     extra. A 4× export of a 4000 px board is over the long-side cap at eff 1 and must
  *     stay exactly as it is; warning about a clamp that did not happen is how a
  *     no-silent-caps rule turns into noise nobody reads.
  *
- * Pure arithmetic, no DOM, no canvas — so `plate-budget.test.ts` can drive it with
+ * Pure arithmetic, no DOM, no canvas - so `plate-budget.test.ts` can drive it with
  * synthetic eff values that P0 cannot produce and P1 will.
  */
 
@@ -62,19 +62,19 @@ export const PLATE_WORKER_FACTOR = 2;
 
 /**
  * Plate resolution multipliers, bucketed so a layer that drifts between eff 1.83 and
- * 1.84 across a re-render keeps the SAME plate key — deterministic exports need
+ * 1.84 across a re-render keeps the SAME plate key - deterministic exports need
  * deterministic plate sizes, and a continuous eff would reshoot on every rounding bit.
  */
 export const EFF_BUCKETS: readonly number[] = Object.freeze([1, 1.5, 2, 2.5, 3]);
 
-/** The smallest bucket ≥ `eff` — quality is never rounded DOWN by bucketing alone. */
+/** The smallest bucket ≥ `eff` - quality is never rounded DOWN by bucketing alone. */
 export function bucketEffUp(eff: number): number {
   if (!Number.isFinite(eff) || eff <= 1) return 1;
   for (const b of EFF_BUCKETS) if (eff <= b) return b;
   return EFF_BUCKETS[EFF_BUCKETS.length - 1] as number;
 }
 
-/** The largest bucket ≤ `eff` — how a clamp lands, so the result is never over budget. */
+/** The largest bucket ≤ `eff` - how a clamp lands, so the result is never over budget. */
 export function bucketEffDown(eff: number): number {
   if (!Number.isFinite(eff) || eff <= 1) return 1;
   let out = 1;
@@ -86,7 +86,7 @@ export function bucketEffDown(eff: number): number {
 export function platesPerLayer(kind: PlateKind, needsLiveRaster = false): number {
   // A camera has no picture and an audio bed has none either (§5.4).
   if (kind === 'audio' || kind === 'camera') return 0;
-  // A video layer is shot twice — everything under the media, and everything over it.
+  // A video layer is shot twice - everything under the media, and everything over it.
   if (kind === 'video') return 2;
   // A live lottie keeps its static fallback AND a re-shot frame plate at once.
   if (kind === 'lottie' && needsLiveRaster) return 2;
@@ -134,15 +134,15 @@ export interface PlateBudgetInput {
   budgetBytes?: number;
   longSideCap?: number;
   /**
-   * Bytes this render will hold that are NOT plates but come out of the same pocket —
+   * Bytes this render will hold that are NOT plates but come out of the same pocket - 
    * today, the blur lanes' pooled scratch canvases (plans/104 P1 obligation 3).
    *
    * The scratches are individually capped (`scratchPadCap`, `BLUR_SCRATCH_MAX_PIXELS`)
    * but their POOL peak was never priced against the plate budget, so a job could sit
    * inside its plate allowance and then allocate the same again in scratches while it
    * ran. Subtracted from the budget before λ is computed, so the degradation knob is
-   * turned by the whole memory picture instead of by half of it. Absent — every caller
-   * that does not blur — leaves the arithmetic exactly as it was.
+   * turned by the whole memory picture instead of by half of it. Absent - every caller
+   * that does not blur - leaves the arithmetic exactly as it was.
    */
   reserveBytes?: number;
 }
@@ -152,15 +152,15 @@ export interface PlateBudgetPlan {
   effOf: Map<number, number>;
   /**
    * The capture margin per layer idx, in stage-native px, AFTER the long-side cap has
-   * had its say — the number the shot must actually use.
+   * had its say - the number the shot must actually use.
    *
    * `pad` is a multiplier on plate size that nothing else can take back: `eff` floors
    * at 1 by design, so neither λ nor `effUnderSideCap` can shrink a plate an authored
    * blur inflated. A 640×360 clip with a 300 px blur asks for a 2474×2194 plate at
-   * S = 1 and 4948×4388 at S = 2 — ~90× the pixels, on a canvas Safari may simply
+   * S = 1 and 4948×4388 at S = 2 - ~90× the pixels, on a canvas Safari may simply
    * refuse (and `rasterBox`'s bare catch nulls a refused plate silently, which is the
    * layer disappearing from the video with no warning). Capped, the spill is clipped
-   * at a stated distance instead — which is strictly better than pre-104, where it was
+   * at a stated distance instead - which is strictly better than pre-104, where it was
    * clipped at the box edge.
    */
   padOf: Map<number, number>;
@@ -205,7 +205,7 @@ function effUnderSideCap(layer: PlateLayerNeed, scale: number, cap: number): num
  * The counterpart to `effUnderSideCap`, and the reason both exist: eff floors at 1 (an
  * un-lifted plate is today's plate and must not shrink), so on a layer whose SIZE is
  * driven by `pad` rather than by eff there is otherwise no knob at all. A box already
- * over the cap on its own gets pad 0 — its plate stays exactly what it has always
+ * over the cap on its own gets pad 0 - its plate stays exactly what it has always
  * been, and nothing new is added on top of it.
  */
 function padUnderSideCap(layer: PlateLayerNeed, scale: number, eff: number, cap: number): number {
@@ -221,7 +221,7 @@ function padUnderSideCap(layer: PlateLayerNeed, scale: number, eff: number, cap:
  * The order is: bucket the demand up, cap each layer by the long side, price it, and
  * only if the total is over budget compute the ONE λ = sqrt(budget/need) and re-bucket
  * every layer DOWN through it. λ is a length ratio because plate cost is quadratic in
- * it — scaling every eff by λ scales the total bytes by λ², which is the point.
+ * it - scaling every eff by λ scales the total bytes by λ², which is the point.
  */
 export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
   const scale = Number.isFinite(input.scale) && input.scale > 0 ? input.scale : 1;
@@ -245,7 +245,7 @@ export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
     want: Math.max(1, Number.isFinite(L.maxEff) ? (L.maxEff as number) : 1),
   }));
   // Rule 2: with nothing asking for extra resolution there is nothing to clamp, no λ to
-  // compute and nothing to warn about — the export is byte-for-byte the one it was
+  // compute and nothing to warn about - the export is byte-for-byte the one it was
   // before this machinery existed. `pad` is the SECOND thing a layer can ask for, and
   // it is priced and capped on its own account: λ only ever scales eff, so a run where
   // every eff is 1 but a pad is enormous would otherwise pass through unclamped.
@@ -332,7 +332,7 @@ export interface BlurScratchNeed {
   h: number;
   /** Capture margin on all four sides, stage-native px. */
   pad?: number;
-  /** True when the COMPOSITOR owns this layer's filter — the only layers that blur here. */
+  /** True when the COMPOSITOR owns this layer's filter - the only layers that blur here. */
   owned?: boolean;
 }
 
@@ -340,7 +340,7 @@ export interface BlurScratchNeed {
  * Peak bytes the pooled blur scratches will hold, for `planPlateBudget`'s `reserveBytes`.
  *
  * The pool is shared across layers and across frames (that is the whole reason it
- * exists), and `takeStage` RESIZES rather than reallocating — so the peak is set by the
+ * exists), and `takeStage` RESIZES rather than reallocating - so the peak is set by the
  * single LARGEST filtered layer, not by their sum. A render with no compositor-owned
  * filter reserves nothing at all, which is every export written before plans/104.
  *
@@ -348,7 +348,7 @@ export interface BlurScratchNeed {
  * the exact `spillPad`-derived stage `drawItem` will ask for: the pad already carries
  * the spill the sigma implies (that is what `spillPad` computed it from), and the extra
  * `plateEff` factor is exactly the thing the budget is about to decide. Under-reserving
- * by the eff factor is the safe direction — λ only ever takes resolution away, so a
+ * by the eff factor is the safe direction - λ only ever takes resolution away, so a
  * scratch sized off a degraded plate is smaller than this, never larger.
  */
 export function blurScratchNeedBytes(
@@ -371,7 +371,7 @@ export function blurScratchNeedBytes(
 
 /**
  * Share of the machine's plate allowance the compositor may RETAIN as cached fx
- * plates — a layer's filtered picture, rendered once and re-composited per frame
+ * plates - a layer's filtered picture, rendered once and re-composited per frame
  * (`fxPlateKey` in the executor).
  *
  * Half, and the reasoning is that this is the same trade the plates themselves are:
@@ -385,7 +385,7 @@ export function blurScratchNeedBytes(
  * caches, a layer that does not fit simply keeps re-rendering its filter (identical
  * pixels, today's cost), and the executor logs ONE line naming what it refused. So it
  * is deliberately NOT subtracted from `planPlateBudget`'s allowance the way
- * `blurScratchNeedBytes` is — a reservation would degrade plate RESOLUTION, which is
+ * `blurScratchNeedBytes` is - a reservation would degrade plate RESOLUTION, which is
  * quality, to buy back time, which is not the trade §5.5 makes anywhere else.
  */
 export const FX_CACHE_BUDGET_SHARE = 0.5;

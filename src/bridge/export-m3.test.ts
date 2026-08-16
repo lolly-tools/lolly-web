@@ -5,7 +5,7 @@
  *
  * Each of these was measured MISSING from the walker's output on the audit fixtures
  * before it was built, so every test here asserts presence of something that used to
- * be absent, and — where the old behaviour was wrong rather than missing — pins the
+ * be absent, and - where the old behaviour was wrong rather than missing - pins the
  * specific wrongness (a chevron stretched across a whole select, a slotted label
  * painted twice).
  *
@@ -117,7 +117,7 @@ test('a <canvas> exports its pixels instead of an empty box', { skip: SKIP }, as
 
 test('a blank canvas still emits, and a tainted one does not throw', { skip: SKIP }, async () => {
   const svg = await render(root(`<canvas width="10" height="10" style="width:10px;height:10px"></canvas>`));
-  // No assertion on content — the point is that the export completes and parses,
+  // No assertion on content - the point is that the export completes and parses,
   // which renderSvgFromHtml's own parse gate enforces before returning.
   assert.match(svg, /<svg/);
 });
@@ -184,7 +184,7 @@ test('a tiling background becomes a <pattern>, not a screenshot', { skip: SKIP }
 
 test('an inline svg using currentColor keeps the page\'s inherited color', { skip: SKIP }, async () => {
   // The clone is emitted into a STANDALONE svg with no HTML ancestors, where
-  // currentColor falls back to black — the gallery's ghost icons (blue via an
+  // currentColor falls back to black - the gallery's ghost icons (blue via an
   // inherited CSS `color`) exported as black ink. The walker must stamp the
   // live computed color onto the clone root so currentColor resolves the same.
   const svg = await render(root(
@@ -198,7 +198,7 @@ test('an inline svg using currentColor keeps the page\'s inherited color', { ski
 test('a replaced element inside a plain-inline wrapper is not dropped', { skip: SKIP }, async () => {
   // The block walk skips a no-own-box wrapper (an unstyled <a>/<span>) and the
   // inline text walk returns at own-box children on the assumption the block
-  // walk visited them — so an <img> inside an unstyled inline link vanished.
+  // walk visited them - so an <img> inside an unstyled inline link vanished.
   const svg = await render(root(
     `<a href="#"><img src="${PNG20x10}" width="20" height="10"></a>`));
   assert.match(svg, /<image[^>]*href="data:image\/png/,

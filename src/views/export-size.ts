@@ -4,7 +4,7 @@
  *
  * A "size" select can drive the export dimensions: any select input whose options
  * carry width/height (+ optional unit) maps each option value to a physical export
- * size, so choosing e.g. "A6 landscape" actually sets the exported page size — not
+ * size, so choosing e.g. "A6 landscape" actually sets the exported page size - not
  * just the on-canvas proportions. Kept in its own module (no DOM / flatpickr
  * imports) so the manifest→dims parsing is unit-testable; the shell wiring that
  * applies the dims to the export bar lives in tool.js.
@@ -50,7 +50,7 @@ export function exportSizeDriver(manifest: ExportSizeManifest): ExportSizeResult
  * Aspect-ratio guard. A tool may declare render.aspectWarning to flag page sizes
  * its layout isn't built for (e.g. a portrait-only document set to landscape).
  * aspect = width ÷ height; the warning fires when it falls outside the declared
- * [min, max] band (either bound optional). Editor-only — the message is shown
+ * [min, max] band (either bound optional). Editor-only - the message is shown
  * beside the dimension controls and never affects the rendered output.
  *
  * Returns the warning message when the given width/height trip the guard, else null.

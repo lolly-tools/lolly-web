@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Gallery view — preview-forward masonry of available tools.
+ * Gallery view - preview-forward masonry of available tools.
  *
  * Each tool is a card. When the tool has a saved session, the card leads with a
  * preview of the most-recent one at its natural aspect (portrait previews show
- * in full — no crop, no letterbox); the masonry packs the varying heights.
+ * in full - no crop, no letterbox); the masonry packs the varying heights.
  * Tools with no session show a compact "open to start" tile instead.
  *
  * Feature flags hide whole categories; the remaining categories surface as
  * single-select filter pills, so any mix of flags just reflows the grid.
  *
  * Two per-card actions open modals: (i) tool info (formats + details) and
- * (h) history — the full list of that tool's saved sessions (resume / delete).
+ * (h) history - the full list of that tool's saved sessions (resume / delete).
  */
 
 import { escape } from '../utils.ts';
@@ -69,7 +69,7 @@ interface GalleryTool {
   name: string;
   description?: string;
   /** Pristine English name/description, stashed by catalog/sync.ts's
-   *  localizeToolIndex before it overlays a translation — searched alongside
+   *  localizeToolIndex before it overlays a translation - searched alongside
    *  the localized strings so "compress" finds Compress PDF in any session
    *  language (plans/99 §2e). Absent in English sessions. */
   en?: { name?: string; description?: string };
@@ -98,7 +98,7 @@ interface GalleryTool {
 
 // Sort options for the gallery masonry. 'category' groups tools by
 // their catalog category (offline utilities last, see categoryRank); 'recent' (the default)
-// surfaces the most recently-added tools first — the featured content the hero leads with.
+// surfaces the most recently-added tools first - the featured content the hero leads with.
 type SortKey = 'recent' | 'az' | 'za' | 'format' | 'category';
 const SORT_KEYS: readonly SortKey[] = ['recent', 'az', 'za', 'format', 'category'];
 const SORT_LABELS: Record<SortKey, string> = {
@@ -120,7 +120,7 @@ type SortDir = 'desc' | 'asc';
 const SORT_DIR_STORAGE = 'lolly-gallery-sort-dir';
 // How many trailing catalog entries (newest-appended) wear the "New" badge. The
 // catalog preserves authoring order and appends new tools, so the tail is genuinely
-// the newest — this stays honest and self-expiring as more tools ship.
+// the newest - this stays honest and self-expiring as more tools ship.
 const NEW_COUNT = 5;
 // Most example looks a gallery tile's preview strip will show (after the lead slide).
 // Keeps the carousel DOM + the number of live renders per tile bounded.
@@ -129,7 +129,7 @@ const EXAMPLE_MAX = 6;
 // Fit a page of aspect `ar` (width / height) inside the square deck box (hydratePaged),
 // as width/height percentages of that square. A landscape page keeps full width and loses
 // height; a portrait page keeps full height and loses width; a square page fills it. Extreme
-// aspects (a 5:1 banner → h 20%, a 1:5 vertical banner → w 20%) stay true to shape — the fan
+// aspects (a 5:1 banner → h 20%, a 1:5 vertical banner → w 20%) stay true to shape - the fan
 // offset is applied by the outer layer in box units, so the deck still reads as a stack even
 // when each sheet is a thin strip. The card element is then sized to the page's TRUE shape,
 // so its shadow + hairline rim wrap the real page rather than a letterboxed square.
@@ -166,7 +166,7 @@ function categoryRank(cat: string): number {
   return i === -1 ? CATEGORY_ORDER.length : i;
 }
 
-// Short category names for the filter pills / card sub-lines — distinct from the
+// Short category names for the filter pills / card sub-lines - distinct from the
 // longer feature-flag labels (e.g. "Tools for Everyone") shown in profile settings.
 const CAT_LABEL: Record<string, string> = { everyone: 'Everyone', designer: 'Designer', event: 'Event', utility: 'Utilities' };
 const catLabel = (c: string | undefined) => CAT_LABEL[c as string] || (c ? c[0]!.toUpperCase() + c.slice(1) : 'Other');
@@ -198,7 +198,7 @@ const fmtKind = (f: string): FmtKind => FMT_KIND[f] ?? 'data';
 const FMT_KIND_ORDER: readonly FmtKind[] = ['vector', 'raster', 'video', 'data'];
 const FMT_KIND_LABEL: Record<FmtKind, string> = { vector: 'Vector', raster: 'Raster', video: 'Video', data: 'Data' };
 
-// "1080 × 1080 px" — the tool's intended output canvas (render.width/height carried
+// "1080 × 1080 px" - the tool's intended output canvas (render.width/height carried
 // into the index entry, at the manifest unit; px when unset). Empty when a tool
 // declares no size, so callers can drop the line entirely.
 function dimText(tool: GalleryTool | undefined): string {
@@ -208,12 +208,12 @@ function dimText(tool: GalleryTool | undefined): string {
   return `${w} × ${h} ${u}`;
 }
 
-// Shared, /pro-free batch-slot helpers (finding #13) — the gallery still takes
+// Shared, /pro-free batch-slot helpers (finding #13) - the gallery still takes
 // zero dependency on the removable /pro folder.
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
 import { captureNeutralPinned, settleForCapture } from '../lib/capture-neutral.ts';
 
-// Lucide "info" and "history" — per-card action icons (own stroke-width, so the
+// Lucide "info" and "history" - per-card action icons (own stroke-width, so the
 // thin .tool-card-icon rule doesn't apply to them). Path data lives in lib/icons.ts;
 // 'info' is deduped against profile.ts's identical INFO_ICON (component-audit rec 5).
 const INFO_ICON = icon('info');
@@ -223,16 +223,16 @@ const HISTORY_ICON = icon('history');
 const OPEN_ICON = icon('externalLink');
 const LINK_ICON = icon('link');
 const EYE_ICON = icon('eye');
-// "Start a collab" row — a two-person glyph, matching the collab presence chrome's
+// "Start a collab" row - a two-person glyph, matching the collab presence chrome's
 // avatar-cluster idiom (collab-pill / collab-tile-state) so the affordance reads as
 // live co-editing rather than a plain share.
 const USERS_ICON = icon('users');
 
-// Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
+// Lucide "star" - the per-card favourite toggle. Filled via CSS when active (.is-fav).
 const STAR_ICON = icon('star');
 // The per-card "available offline" toggle is a three-layer button (see pinButtonHtml):
 // a download glyph at rest, a spinning progress ring while the pin's fetches are in
-// flight (.is-busy), and an accent-filled circled tick once pinned (.is-pinned) —
+// flight (.is-busy), and an accent-filled circled tick once pinned (.is-pinned) - 
 // the tick doubles as the "works offline" indicator the tooltip describes.
 const DOWNLOAD_ICON = icon('download');
 const PIN_RING_ICON = icon('ring');
@@ -249,39 +249,39 @@ function pinButtonHtml(tool: GalleryTool, isPinned: boolean): string {
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
-// Lucide "sliders-horizontal" — the filter trigger (collapses the category pills).
+// Lucide "sliders-horizontal" - the filter trigger (collapses the category pills).
 const FILTER_ICON = icon('filterLines');
 
 // (Footer nav links + their glyphs live in components/footer-nav.ts, shared with
 // Projects and the Catalogue so all three bottom bars stay identical.)
-// Sort-direction toggle — paired up/down arrows. CSS emphasizes the .sd-up or
+// Sort-direction toggle - paired up/down arrows. CSS emphasizes the .sd-up or
 // .sd-down group depending on the button's .is-asc state, so the lit arrow shows
 // which way the results run.
 const SORT_DIR_ICON = icon('sortDir');
 
-// lucide "package" — placeholder thumbnail for batch sessions, which have no
+// lucide "package" - placeholder thumbnail for batch sessions, which have no
 // single render to show (they resume into #/pro). Deduped against projects.ts's
 // and folder-tiles.ts's identical PACKAGE_ICON.
 const PACKAGE_ICON = icon('package');
 
-// Lucide "chevron-left/right" — the preview-strip's prev/next affordances (fine-pointer
+// Lucide "chevron-left/right" - the preview-strip's prev/next affordances (fine-pointer
 // only; touch just swipes). Decorative buttons, so aria-hidden.
 const CHEVRON_LEFT = icon('chevronLeft', { strokeWidth: 2.4 });
 const CHEVRON_RIGHT = icon('chevronRight', { strokeWidth: 2.4 });
 
 // Always-present backup art for a tile: the tool's own icon. The icon is INLINED into
-// the catalog index (never a network fetch), so unlike a committed preview PNG/SVG — a
-// build artifact that can 404 on a fresh install / before `npm run previews` — it can
+// the catalog index (never a network fetch), so unlike a committed preview PNG/SVG - a
+// build artifact that can 404 on a fresh install / before `npm run previews` - it can
 // never fail to load. It sits BEHIND every preview image and carousel (z-index:-1, see
 // gallery.css .gtile-iconfill) as an instant, on-brand placeholder while lazy art
-// decodes, and as the permanent fallback if a preview is missing or errors — so a gallery
-// tile never shows a broken image or an empty box. '' when a tool has no icon (rare — the
+// decodes, and as the permanent fallback if a preview is missing or errors - so a gallery
+// tile never shows a broken image or an empty box. '' when a tool has no icon (rare - the
 // tile's checkerboard background still stands in).
 function iconBackdrop(icon: string | undefined): string {
   if (!icon) return '';
   // Two stacked copies of the icon: a static muted BASE, and a green TRACE on top
   // whose stroke-dasharray leaves only a short segment drawn and whose animated
-  // stroke-dashoffset walks that green segment along the icon's outline — a "drawing"
+  // stroke-dashoffset walks that green segment along the icon's outline - a "drawing"
   // shimmer shown WHILE a preview is still loading. The trace is transparent wherever
   // it isn't currently stroking, so the muted base shows through (green passes over a
   // stretch, then it's muted again). CSS stops the trace once art loads / on the
@@ -313,14 +313,14 @@ function galleryExampleLooks(tool: GalleryTool, darkTheme: boolean): Array<{ v: 
 // IntersectionObserver gives us both: the above-the-fold tiles fire in the first
 // callback and cascade by a tiny per-tile delay, while everything below fades in
 // only as it scrolls into view (the mobile single-column win). The CSS does the
-// actual fade — JS just arms it (.reveal-armed) and toggles .is-in per tile.
+// actual fade - JS just arms it (.reveal-armed) and toggles .is-in per tile.
 // Returns the observer so the caller can disconnect it before the next render.
 const REVEAL_STEP_MS = 30;  // delay between tiles within one reveal batch
-// Reading order: top-to-bottom, then left-to-right within a row — a gentle wave that
+// Reading order: top-to-bottom, then left-to-right within a row - a gentle wave that
 // reads left-to-right regardless of the column-major order the masonry packs the DOM
 // into. The 8px top-bucket tolerates sub-pixel row misalignment between columns.
 // Each tile's geometry key is read ONCE (getBoundingClientRect forces layout), then we
-// sort on the cached keys — a comparator that measured inside itself would re-read both
+// sort on the cached keys - a comparator that measured inside itself would re-read both
 // operands O(n log n) times, thrashing layout for no reason.
 function sortByReadingOrder<T extends Element>(els: T[]): T[] {
   const keyed = els.map(el => {
@@ -335,7 +335,7 @@ function reveal(el: HTMLElement, i: number): void {
   el.classList.add('is-in');
 }
 function revealCards(masonry: HTMLElement, animate: boolean): IntersectionObserver | null {
-  // Not animating — returning from a tool, reduced motion, or no IO support:
+  // Not animating - returning from a tool, reduced motion, or no IO support:
   // leave tiles un-armed so the CSS renders them at full opacity immediately.
   if (!animate || typeof IntersectionObserver === 'undefined') {
     masonry.classList.remove('reveal-armed');
@@ -346,7 +346,7 @@ function revealCards(masonry: HTMLElement, animate: boolean): IntersectionObserv
 
   // First screen: reveal every currently-visible tile in ONE deterministic,
   // geometry-ordered pass. The old code leaned on the IntersectionObserver to deliver
-  // the whole above-the-fold set in a single callback and sorted *that* — but on a cold
+  // the whole above-the-fold set in a single callback and sorted *that* - but on a cold
   // load the preview images decode and reflow the column masonry, so the set arrived
   // split across several callbacks, each restarting the stagger at 0. The top-right
   // cards (late in the column-major DOM order) landed in a later batch and animated
@@ -374,7 +374,7 @@ function revealCards(masonry: HTMLElement, animate: boolean): IntersectionObserv
 }
 
 // Demo-preview heroes (a tool with no saved session yet) start hidden on the cold
-// paint and fade in per-card as each image decodes — so the first view never shows a
+// paint and fade in per-card as each image decodes - so the first view never shows a
 // broken/blank preview, and they "appear as they are" ready. Armed only on the first
 // cold paint: when returning from a tool or re-rendering on a filter/search, previews
 // must show instantly, and reduced motion opts out entirely (animate is false in all
@@ -392,10 +392,10 @@ function armPreviewReveal(masonry: HTMLElement, animate: boolean): void {
 
 export interface GalleryMountOpts {
   /** Show ONLY this tool category (the `#/u` Utilities view = `only: 'utility'`).
-   *  Bypasses the per-category feature flags — a deep link to the Utilities tab
+   *  Bypasses the per-category feature flags - a deep link to the Utilities tab
    *  shows utilities even when the user hid that section from the main gallery. */
   only?: string;
-  /** Raw route query string. `q` seeds the search field — read at mount only,
+  /** Raw route query string. `q` seeds the search field - read at mount only,
    *  never written back while typing (plans/99 M0). */
   params?: string;
 }
@@ -406,12 +406,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // display value, lowercased below for `query` (the same normalisation the input
   // handler applies at each keystroke).
   const initialQuery = (new URLSearchParams(opts.params || '').get('q') || '').trim();
-  // Whether the on-device speech bridge exists — computed ONCE so every
+  // Whether the on-device speech bridge exists - computed ONCE so every
   // utilityViews(speechOk) call in this mount sees the same card set.
   const speechOk = !!host.speech?.isAvailable();
   // `window as unknown as …` bypasses the global Window['__toolIndex'] augmentation
   // (typed as the loosely-shaped ToolIndex in catalog/sync); this view reads it as the
-  // denormalised GalleryTool slice. Erased cast — no runtime effect.
+  // denormalised GalleryTool slice. Erased cast - no runtime effect.
   const syncedIndex: { tools: GalleryTool[] } = (window as unknown as { __toolIndex?: { tools: GalleryTool[] } }).__toolIndex ?? { tools: [] };
   // Fold in any tools the instance injects (lib/injected-tools, populated by the
   // control-plane seam in src/org/). Empty by default ⇒ byte-identical. An injected
@@ -421,24 +421,24 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     .filter((it) => !present.has(it.id))
     .map((it) => ({ id: it.id, name: it.name, category: it.category ?? 'other', listed: true, ...(it.openQuery ? { openQuery: it.openQuery } : {}) }));
   const rawIndex: { tools: GalleryTool[] } = { tools: [...syncedIndex.tools, ...injected] };
-  // Unlisted tools (manifest `listed:false`) are mechanisms invoked from context — e.g.
-  // asset-export, reached from the catalog's per-asset Download — not gallery destinations.
+  // Unlisted tools (manifest `listed:false`) are mechanisms invoked from context - e.g.
+  // asset-export, reached from the catalog's per-asset Download - not gallery destinations.
   // Drop them once, here, so every downstream membership set (grid, search, favourites,
   // featured + utility strips, pill counts) excludes them with no per-site guard. They
-  // still load via #/tool/<id>, URL mode and the CLI — this only hides them from the listing.
+  // still load via #/tool/<id>, URL mode and the CLI - this only hides them from the listing.
   const index: { tools: GalleryTool[] } = { tools: rawIndex.tools.filter(t => t.listed !== false) };
   const [savedEntries, profile, sessionSizes, pinnedTools] = await Promise.all([
     host.state.list(),
     host.profile.get(),
     host.state.sizes().catch((): Record<string, number> => ({})),
-    // Tools pinned "available offline" (lib/offline-pins.ts) — drives each card's
+    // Tools pinned "available offline" (lib/offline-pins.ts) - drives each card's
     // pin toggle state. Unreadable pins just render every card unpinned.
     pinnedToolIds().catch(() => new Set<string>()),
   ]);
 
   // Profile-personalized previews (see ../personalize-previews.js). `sig` is empty
   // unless the user opted in ("use my details"); only cache entries matching the
-  // current sig are fresh — a stale one is ignored and re-rendered below. Held in a
+  // current sig are fresh - a stale one is ignored and re-rendered below. Held in a
   // Map so re-renders (search/filter) keep the personalized image, not just the
   // committed placeholder.
   const previewSig = profileSignature(profile);
@@ -454,7 +454,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
   }
 
-  // Per-tool saved sessions (newest first), batch sessions excluded — they have
+  // Per-tool saved sessions (newest first), batch sessions excluded - they have
   // no toolId and resume into #/pro, so they're not a tool's history.
   const entriesByTool = new Map<string, SavedEntry[]>();
   for (const entry of savedEntries) {
@@ -469,7 +469,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   }
   const latestByTool = (id: string): SavedEntry | undefined => entriesByTool.get(id)?.[0];
   const countByTool = (id: string): number => entriesByTool.get(id)?.length ?? 0;
-  // Recent session previews (newest first) that a tool's tile can cross-fade through —
+  // Recent session previews (newest first) that a tool's tile can cross-fade through - 
   // capped so a tool with dozens of saved works keeps its tile DOM bounded. Sessions
   // whose preview failed to capture (thumb === null) are skipped.
   const HERO_ROTATE_MAX = 5;
@@ -487,17 +487,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // filtered view), so applying a filter never changes what counts as new/recent.
   const orderById = new Map(index.tools.map((t, i) => [t.id, i]));
   const newIds = new Set(index.tools.slice(-NEW_COUNT).map(t => t.id));
-  // A tool is "new" if it's in the trailing window OR its manifest sets `new: true` —
+  // A tool is "new" if it's in the trailing window OR its manifest sets `new: true` - 
   // the explicit flag keeps the badge on a tool we want highlighted even after later
   // tools ship and push it out of the positional tail.
   const isNew = (id: string): boolean => newIds.has(id) || toolById.get(id)?.new === true;
 
-  // All saved sessions (tool + batch) newest first — the global drawer's list.
+  // All saved sessions (tool + batch) newest first - the global drawer's list.
   const sortedSaved = [...savedEntries].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   const nameById = new Map(index.tools.map(t => [t.id, t.name]));
 
   // Group by category; feature flags hide whole categories. In only-mode
-  // (the Utilities view) every OTHER category goes into the hidden set instead —
+  // (the Utilities view) every OTHER category goes into the hidden set instead - 
   // reusing the one membership mechanism every downstream surface (grid, search,
   // favourites count, featured strip, pill counts) already respects. The main
   // gallery ALWAYS hides 'utility' now: utilities moved wholesale to the `#/u`
@@ -511,22 +511,22 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     : hiddenCategories(profile).add('utility');
   const proEnabled = flagEnabled(profile, PRO_FLAG.id);
 
-  // The user's starred tools — held in memory for this mount, persisted to the profile
+  // The user's starred tools - held in memory for this mount, persisted to the profile
   // on every toggle. Read here (before the featured row) because a favourite is also
-  // promoted INTO the featured hero strip — see featuredEntriesNow().
+  // promoted INTO the featured hero strip - see featuredEntriesNow().
   const favourites = loadFavourites(profile);
   const isFav = (id: string): boolean => favourites.has(id);
   const isPinned = (id: string): boolean => pinnedTools.has(id);
 
-  // The user's hidden tools (+ `view:<id>` utility cards) — "Hide tool" removes the
+  // The user's hidden tools (+ `view:<id>` utility cards) - "Hide tool" removes the
   // tile from the browse grid, search results and the featured strip, behind the
   // grey "Show hidden tools" box that sits last in the grid. Deep links (#/tool/<id>,
-  // URL mode, the CLI) keep working — this is a browse-surface overlay, like the
+  // URL mode, the CLI) keep working - this is a browse-surface overlay, like the
   // catalog's hidden assets.
   const hiddenTools = loadHiddenTools(profile);
   let showHiddenTools = false;   // ephemeral reveal, per mount (matches the catalog's showHidden)
 
-  // Multi-selection of tiles — tool ids plus `view:<id>` card keys. A closure Set so
+  // Multi-selection of tiles - tool ids plus `view:<id>` card keys. A closure Set so
   // it survives the render() that wipes the masonry; repainted in place (never via a
   // re-render) so marquee drags and scroll position are preserved.
   const selected = new Set<string>();
@@ -541,7 +541,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const allSelectedHidden = (): boolean => selected.size > 0 && [...selected].every(r => hiddenTools.has(r));
   const sessionToolIds = (): string[] => selectedToolIds().filter(id => countByTool(id) > 0);
 
-  // The floating selection bar (lib/bulk-bar.ts — shared with projects/catalog).
+  // The floating selection bar (lib/bulk-bar.ts - shared with projects/catalog).
   // Labels are smart toggles read at sync time: all-favourited → Unfavourite, etc.
   const bulkBarCfg: BulkBarConfig = {
     prefix: 'gallery-bulkbar',
@@ -556,7 +556,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     ],
   };
   // The floating selection bar is lazy-loaded (lib/bulk-bar.ts, ~8 KB) OFF the boot
-  // path — it is position:fixed and hidden until a tile is selected, so it never paints
+  // path - it is position:fixed and hidden until a tile is selected, so it never paints
   // on first frame. ensureBulkBar() injects + wires it (dispatch + Escape-clears) on the
   // first selection, a user gesture, and is idempotent; syncBulkBar() drives it after
   // (a no-op before the first selection, when the module isn't loaded and there's nothing
@@ -569,7 +569,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       const root = viewEl.querySelector('.gallery');
       if (root && !viewEl.querySelector('.gallery-bulkbar')) {
         root.insertAdjacentHTML('beforeend', m.bulkBarHtml(bulkBarCfg));
-        // Bulk-action dispatch — delegated on the now-present, stable bar node.
+        // Bulk-action dispatch - delegated on the now-present, stable bar node.
         viewEl.querySelector<HTMLElement>('.gallery-bulkbar')?.addEventListener('click', (e) => {
           const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-bulk]');
           if (!btn) return;
@@ -587,7 +587,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   };
 
   // Editor-layout tools mount an extra lazy view chunk (free-canvas / doc-editor /
-  // deck-editor — see views/tool.ts). Warm the matching import when a tool is
+  // deck-editor - see views/tool.ts). Warm the matching import when a tool is
   // pinned, and once per gallery mount for already-pinned tools, so the chunk
   // lands in the SW's cache-first bucket and a pinned editor tool still boots
   // offline. import() promises are cached, so repeats are free.
@@ -599,7 +599,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   if (pinnedTools.size) {
     void pinnedRenderLayouts().then(layouts => layouts.forEach(warmEditorChunk)).catch(() => {});
   }
-  // Favourites visible in the current catalog (not hidden by a flag) — the pill count.
+  // Favourites visible in the current catalog (not hidden by a flag) - the pill count.
   // Starred VIEW cards (their `view:`-keyed favourites) count too, but only in the
   // Utilities grid, the one place those tiles exist.
   const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)).length
@@ -607,7 +607,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // A catalog tool → a featured-strip entry. A tool with no manifest `featured` block
   // (a favourited plain tool) still gets one, falling back to its description as the
-  // blurb — the same shape the Utilities strip uses.
+  // blurb - the same shape the Utilities strip uses.
   // Utility tools lead with their ICON, not a preview: every utility's resting
   // state is the same empty drop area, so a strip of them is indistinguishable
   // screenshots. Dropping preview + examples leaves the row's always-present
@@ -627,12 +627,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     };
   };
 
-  // Featured hero row — the user's favourites, and ONLY their favourites (starring a tool
+  // Featured hero row - the user's favourites, and ONLY their favourites (starring a tool
   // promotes it into the hero strip), minus any in a hidden category (a category the user
   // turned off shouldn't be promoted). A fresh session has no favourites, so the strip is
   // empty and collapses (see mountFeatured's has-featured toggle): a new visitor builds the
   // carousel up by adding, not by clearing out a pre-curated default set. Manifest `featured`
-  // no longer auto-seeds the strip — its blurb/variants still style a tile once the tool is
+  // no longer auto-seeds the strip - its blurb/variants still style a tile once the tool is
   // favourited (see toFeaturedEntry). Tools appear in catalog order. Carries the "New" flag
   // through. Recomputed on every star toggle (refreshFeatured).
   const featuredEntriesNow = (): FeaturedEntry[] => {
@@ -642,10 +642,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
     // Starred VIEW cards (Verify, Unpack, Colour Lab) promote into the
-    // hero strip exactly like starred tools — as icon-hero tiles, since a view has
+    // hero strip exactly like starred tools - as icon-hero tiles, since a view has
     // no preview or render path. `href` routes the tile to the view (the same
     // non-tool-tile mechanism the Projects ribbon uses), and the `view:`-prefixed
-    // id can never collide with a tool's. Utilities grid only — the tiles
+    // id can never collide with a tool's. Utilities grid only - the tiles
     // themselves exist nowhere else.
     if (opts.only === 'utility') {
       for (const v of utilityViews(speechOk)) {
@@ -661,14 +661,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Featured hero view mode (Gallery strip vs Cover Flow), persisted like the sort.
   // Declared here (before the markup) since the popover's segmented control reads it.
   // New users (no stored preference) default to Cover Flow on desktop, but Gallery on a
-  // mobile viewport — the coverflow fan is still buggy at that size. An explicit choice wins.
+  // mobile viewport - the coverflow fan is still buggy at that size. An explicit choice wins.
   const mobileViewport = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 640px)').matches;
   let featuredView: FeaturedViewMode = mobileViewport ? 'gallery' : 'coverflow';
   try {
     const savedView = localStorage.getItem(FEATURED_VIEW_STORAGE);
     if (savedView && (FEATURED_VIEWS as readonly string[]).includes(savedView)) featuredView = savedView as FeaturedViewMode;
   } catch { /* storage off */ }
-  // An automated screenshot run always frames the filmstrip, never Cover Flow — the
+  // An automated screenshot run always frames the filmstrip, never Cover Flow - the
   // house rule for docs shots, and it is about the OUTPUT format, not taste. Cover
   // Flow fans its covers with a 3-D `rotateY`; `parseCssMatrix` refuses 3-D matrices,
   // so a vector capture falls back to the axis-aligned box and the covers come out
@@ -677,7 +677,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // never be fully still. The filmstrip is both vector-expressible and static.
   if (captureNeutralPinned()) featuredView = 'gallery';
 
-  // Utilities live in the grid like every other category now — their own "Utilities"
+  // Utilities live in the grid like every other category now - their own "Utilities"
   // filter pill, always sorted LAST (categoryRank → Infinity). The old bottom carousel
   // is gone; a utility renders as a regular tile.
   const visibleCats = Object.keys(grouped)
@@ -744,14 +744,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   mountPrivacyNotice(viewEl);
   mountPersonalizeNudge(viewEl, host);
   // One toast at a time: the offline nudge renders only when the personalise
-  // nudge didn't (the || above) — it gets its turn on a later gallery mount.
+  // nudge didn't (the || above) - it gets its turn on a later gallery mount.
   // Both mounts are no-ops when their markup isn't present.
   mountOfflineNudge(viewEl, host);
 
   // Wires the language menu + the profile pill's mobile menu, and (via `headshotId`)
-  // resolves the profile-pill avatar OFF the first-paint path — the headshot is a blob
+  // resolves the profile-pill avatar OFF the first-paint path - the headshot is a blob
   // fetch + createObjectURL (and the stored object URL goes stale across reloads, so
-  // it must be re-fetched by id) — awaiting it before the initial innerHTML delayed
+  // it must be re-fetched by id) - awaiting it before the initial innerHTML delayed
   // the whole gallery. The pill renders name-only immediately; once the headshot
   // resolves the <img> swaps in. `openHistoryOverlay` is a hoisted function
   // declaration, so referencing it here (before its textual definition) is safe.
@@ -763,7 +763,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Universal drop front door: any file dragged onto the gallery is sniffed and
   // routed (design → Design, PDF → import/compress, media → library or
   // /verify). Scoped to this view's root (its listeners die with the node on
-  // navigation) — never a window/document-global handler. drop-router (~6 KB) is
+  // navigation) - never a window/document-global handler. drop-router (~6 KB) is
   // dynamic-imported off the boot path; kicked at mount, it resolves in ~ms same-origin,
   // so a file dropped in that sliver is effectively never missed. The cast is erased:
   // the concrete web host carries the picker's upload surface.
@@ -781,7 +781,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const pillbar    = viewEl.querySelector<HTMLElement>('.filter-pop-pills'); // category pills now live in the filter popover
   const masonry    = viewEl.querySelector<HTMLElement>('.tool-masonry');
 
-  // Cleanup registry — main.js's navigate() calls viewEl._cleanup on unmount. Both
+  // Cleanup registry - main.js's navigate() calls viewEl._cleanup on unmount. Both
   // the featured row (timers + drift loop) and the personalized-preview queue below
   // register their teardown here so neither keeps running after the user moves on.
   const cleanups: Array<() => void> = [];
@@ -789,14 +789,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     for (const fn of cleanups.splice(0)) { try { fn(); } catch { /* best-effort teardown */ } }
   };
 
-  // A single punchy, bassy, breathy "ahhh" on arrival at the gallery — one-shot (no loop),
+  // A single punchy, bassy, breathy "ahhh" on arrival at the gallery - one-shot (no loop),
   // gesture-gated, silent when sound is off. Cancel on leave so a pending one can't fire elsewhere.
   playGalleryAah();
   cleanups.push(() => cancelArrivalAah());
 
   // ── Multi-select: marquee + Shift-range (lib/tile-select.ts, shared with
   // projects/catalog) over the tiles' top-left selection dots. Everything repaints
-  // IN PLACE — applyView()'s live-node model must never see a re-render here.
+  // IN PLACE - applyView()'s live-node model must never see a re-render here.
   const selectableTiles = (): HTMLElement[] =>
     masonry ? [...masonry.querySelectorAll<HTMLElement>('.gtile[data-select-ref]')] : [];
   function paintSelection(): void {
@@ -822,7 +822,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       setRefs: (refs) => { selected.clear(); for (const r of refs) selected.add(r); paintSelection(); },
       clear: () => dropSelection(),
       // Never start a box on a tile, the strips, the chrome bars, a popover, or any
-      // control — only in a genuine gap between cards.
+      // control - only in a genuine gap between cards.
       noStart: '.gtile, .featured, .featured-mount, .gallery-topbar, .gallery-footer, '
         + '.filter-popover, .filter-backdrop, .gallery-bulkbar, .gallery-no-results, '
         + 'button, a, input, select, label, dialog',
@@ -840,7 +840,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // there is nothing to clear until a first selection exists, and that first selection
   // is what loads the bar module that owns the handler.
 
-  // Selection dots — delegated on the persistent masonry node so the per-render
+  // Selection dots - delegated on the persistent masonry node so the per-render
   // innerHTML rebuilds don't orphan the handler. Shift-click extends from the anchor.
   masonry?.addEventListener('click', (e) => {
     const dot = (e.target as HTMLElement).closest<HTMLElement>('.tile-check[data-select]');
@@ -857,7 +857,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // lazily built on the first selection), so it can't be bound here to a not-yet-present node.
 
   // ── Context menu: right-click / long-press on any tile (bulk variant inside a
-  // multi-selection) — lib/context-menu.ts, lazy-loaded OFF the boot path (a right-click
+  // multi-selection) - lib/context-menu.ts, lazy-loaded OFF the boot path (a right-click
   // surface, never first paint). Imported fire-and-forget at mount so it resolves in ~ms
   // same-origin; a right-click landing in that sliver just no-ops that once. ctxMod backs
   // tileMenuHtml/bulkMenuHtml's menuItemHtml, which only run via the callbacks below.
@@ -891,7 +891,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     featuredHandle?.destroy();
     featuredHandle = entries.length
       // The 'gallery' favourites strip is STATIC now (Andy 2026-08-10): no marquee drift,
-      // no example/preset cross-fade — a favourite is the tool's single template, swipe/drag
+      // no example/preset cross-fade - a favourite is the tool's single template, swipe/drag
       // only. Cover Flow keeps its own motion, so only opt the gallery mode into staticStrip.
       ? mountFeaturedRow(featuredMount, entries, host, { viewMode: featuredView, staticStrip: featuredView === 'gallery' })
       : null;
@@ -904,9 +904,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     updateFeaturedVisibility();
   }
   if (featuredMount) mountFeatured(featuredEntries);
-  // Featured view-mode segmented control (Gallery | Cover Flow) in the filter popover —
+  // Featured view-mode segmented control (Gallery | Cover Flow) in the filter popover - 
   // drives BOTH strips.
-  // Scoped to the Featured-view seg specifically — the popover now also holds a Theme
+  // Scoped to the Featured-view seg specifically - the popover now also holds a Theme
   // .view-seg (added above), so a bare `.view-seg` query could grab the wrong one. The
   // hook is segHtml()'s own `data-be-seg` name, not the (translated) aria-label.
   const viewSeg = viewEl.querySelector<HTMLElement>('.view-seg[data-be-seg="featured-view"]');
@@ -915,7 +915,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   wireThemeSegment(viewEl, host);   // Theme picker in the same popover
   // The Sound on/off segment (components/sound-toggle.ts, which statically pulls the
   // ambient-audio modules) is injected into its [data-sound-slot] and wired lazily when
-  // the filter popover is first opened — see ensureSoundSegment near the filter wiring
+  // the filter popover is first opened - see ensureSoundSegment near the filter wiring
   // below. Keeps sound-toggle + atmosphere + neurospicy off the gallery's boot chunk.
   paintViewSeg();
   viewSeg?.addEventListener('click', (e) => {
@@ -929,7 +929,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // Re-mount (not setViewMode) so the strip re-reads `staticStrip` for the new mode:
     // Gallery is static, Cover Flow animates. setViewMode only flips `coverflow` and leaves
     // `reduced`/the variant queue armed from mount, so a Cover Flow → Gallery switch would
-    // keep drifting — exactly the marquee we're killing (Andy 2026-08-10).
+    // keep drifting - exactly the marquee we're killing (Andy 2026-08-10).
     if (changed) {
       refreshFeatured();
       // Each mode has its own character: Cover Flow = cool & futuristic, Gallery = refined.
@@ -937,18 +937,18 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
   });
   // Landing state only: the strip is noise above a searched/filtered grid. It is KEPT
-  // (collapsed to icon + text via .hide-previews) when previews are off — it doesn't
+  // (collapsed to icon + text via .hide-previews) when previews are off - it doesn't
   // disappear, so the featured picks stay reachable.
   function updateFeaturedVisibility(): void {
     const show = !query && activeCat === 'all';
     if (featuredMount && featuredHandle) { featuredMount.hidden = !show; featuredHandle.setVisible(show); }
   }
 
-  // A demo preview can be absent — it's a build artifact (catalog/previews/) that,
+  // A demo preview can be absent - it's a build artifact (catalog/previews/) that,
   // though committed, can be missing on a fresh checkout / before `npm run previews`,
   // or drift from the index. The hero img then errors; drop the broken <img> and let
   // the always-present icon backdrop (rendered behind every preview) stand in, so the
-  // card shows the tool's own icon rather than a broken image — never a blank or
+  // card shows the tool's own icon rather than a broken image - never a blank or
   // broken tile. Error events don't bubble, so listen in the capture phase. Saved-
   // session thumbs are data: URLs and never hit this path.
   masonry?.addEventListener('error', (e) => {
@@ -957,26 +957,26 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const hero = img.closest('.gtile-hero--preview');
     if (!hero) return; // a saved-session hero failing is handled elsewhere; only demo previews
     // Reveal the hero: the armed cascade keys off .is-ready, normally added on img
-    // *load* — which now never fires — so add it here or the tile stays invisible
+    // *load* - which now never fires - so add it here or the tile stays invisible
     // under .previews-armed. The icon backdrop behind the (now-removed) img shows through.
     img.remove();
     hero.classList.add('is-ready', 'gtile-hero--icononly');
   }, true);
 
-  // Demo previews start hidden on the cold paint (the masonry is "previews-armed" —
+  // Demo previews start hidden on the cold paint (the masonry is "previews-armed" - 
   // see armPreviewReveal) and fade in only once their image has actually decoded, so
-  // the first view never flashes a blank or half-loaded preview — each appears on its
+  // the first view never flashes a blank or half-loaded preview - each appears on its
   // own as it arrives. Like the error handler above, load doesn't bubble → capture.
   masonry?.addEventListener('load', (e) => {
     // A committed preview is usually an <img>, but an animated HTML card is an <iframe>
-    // (see previewMedia) — both fire a capture-phase load, and both reveal the hero.
+    // (see previewMedia) - both fire a capture-phase load, and both reveal the hero.
     const el = e.target;
     if (!((el instanceof HTMLImageElement || el instanceof HTMLIFrameElement) && el.classList.contains('gtile-hero-img'))) return;
     el.closest('.gtile-hero--preview')?.classList.add('is-ready');
   }, true);
 
-  // First-visit "open what you see": a left-click on an example preview — or anywhere on a
-  // card whose strip is currently showing an example look — opens the tool SEEDED with that
+  // First-visit "open what you see": a left-click on an example preview - or anywhere on a
+  // card whose strip is currently showing an example look - opens the tool SEEDED with that
   // exact look, rather than a blank session. So the carousel state you're looking at is the
   // first setup you land in (openExample). Modified / middle clicks fall through to the
   // slide's plain href, so cmd/ctrl/middle-click still open a fresh tab. Delegated on the
@@ -1008,7 +1008,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   let activeCat = 'all';   // active category pill
   let query = initialQuery.toLowerCase();  // current search text (lowercased)
   // The query folded + tokenized ONCE per change (mount + each debounced
-  // keystroke), not per tile — matchesQuery runs over every tile per applyView.
+  // keystroke), not per tile - matchesQuery runs over every tile per applyView.
   let queryTokens = tokenize(initialQuery);
   let sortKey: SortKey = 'recent';   // global sort default; persisted like the theme
   try {
@@ -1020,7 +1020,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const savedDir = localStorage.getItem(SORT_DIR_STORAGE);
     if (savedDir === 'asc' || savedDir === 'desc') sortDir = savedDir;
   } catch { /* storage off */ }
-  // Entrance reveal runs the cascade once, on the cold mount — not when returning
+  // Entrance reveal runs the cascade once, on the cold mount - not when returning
   // from a tool (cards are already known) nor on filter/search re-renders (those
   // show instantly). Tracked here so render() can decide and disconnect cleanly.
   const isReturning = viewEl.classList.contains('is-returning');
@@ -1033,14 +1033,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // look between two runs rewrites the baseline. See featured-row.ts's `reduced`.
   const prefersReduced = prefersReducedMotion() || captureNeutralPinned();
   // Which theme-tagged example looks the tiles show (transparent-ink looks are filtered
-  // to the matching UI theme — see galleryExampleLooks). Read once at mount, like the
+  // to the matching UI theme - see galleryExampleLooks). Read once at mount, like the
   // featured row; switching theme refreshes on the next gallery visit.
   const darkTheme = currentTheme() !== 'light';
   let firstPaint = true;
   let revealObserver: IntersectionObserver | null = null;
   cleanups.push(() => revealObserver?.disconnect());   // render() replaces it; unmount drops the last one
 
-  // Ambient cross-fade for tiles with several saved sessions — the tile cycles
+  // Ambient cross-fade for tiles with several saved sessions - the tile cycles
   // through that tool's recent session previews (the same dissolve the featured
   // strip uses). ONE timer scans the DOM each tick, so it survives the masonry
   // re-renders that search / filter / favourite toggles trigger without any
@@ -1057,7 +1057,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       if (document.hidden || !masonry) return;
       heroTick++;
       const vh = window.innerHeight || document.documentElement.clientHeight;
-      // Read every hero's rect in ONE pass up front, then act — measuring inside the
+      // Read every hero's rect in ONE pass up front, then act - measuring inside the
       // loop would interleave layout reads with the class writes below and thrash.
       const heroes = [...masonry.querySelectorAll<HTMLElement>('.gtile-hero--rotate')];
       const heroRects = heroes.map(h => h.getBoundingClientRect());
@@ -1065,10 +1065,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         if (i % HERO_ROTATE_PHASES !== heroTick % HERO_ROTATE_PHASES) return; // stagger
         const r = heroRects[i]!;
         if (!r.width) return;                      // filtered-out (display:none) tile
-        if (r.bottom < 0 || r.top > vh) return;   // off-screen — don't animate
+        if (r.bottom < 0 || r.top > vh) return;   // off-screen - don't animate
         if (hero.matches(':hover')) return;        // let the user look while aiming
         const frames = [...hero.querySelectorAll<HTMLImageElement>('.gtile-hero-frame')];
-        // Only cross-fade to a DECODED frame — a not-yet-decoded one would fade in
+        // Only cross-fade to a DECODED frame - a not-yet-decoded one would fade in
         // blank. Until ≥2 have decoded the tile just holds its first frame.
         const ready = frames.filter(f => f.complete && f.naturalWidth > 0);
         if (ready.length < 2) return;
@@ -1084,8 +1084,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // ── Example preview strips (carousels) ──────────────────────────────────────
   // A tile with manifest `examples` is a horizontally-scrollable strip: the newest saved
   // session (if any) then a few live-rendered example states. Each example <img> is empty
-  // in the markup and rendered lazily — serial, on idle, cached in host.previews under the
-  // same `featured:<id>:<i>` key the hero row uses — only once its tile nears the viewport,
+  // in the markup and rendered lazily - serial, on idle, cached in host.previews under the
+  // same `featured:<id>:<i>` key the hero row uses - only once its tile nears the viewport,
   // so a gallery full of example-bearing tools never fires hundreds of off-screen renders.
   const ricIdle = (cb: () => void): number =>
     (typeof requestIdleCallback === 'function' ? requestIdleCallback(cb, { timeout: 3000 }) : setTimeout(cb, 60)) as unknown as number;
@@ -1114,13 +1114,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!gcar.isConnected || !track || !urls.length) return;
     gcar.dataset.pagedDone = '1';
     const openHref = `#/tool/${escape(toolId)}`;
-    // Multi-page content reads as a swipeable STACK, not a flat carousel — the same
+    // Multi-page content reads as a swipeable STACK, not a flat carousel - the same
     // language as carousel-maker's featured card. Show the first few pages as an offset,
     // slightly-rotated deck (front page on top, the rest peeking behind). Cap at 3: enough
     // to say "multiple pages" without clutter; the real page-by-page view is the tool.
     const shown = urls.slice(0, 3);
     // Two layers per page: an OUTER square layer (.gcar-deck-page) carries the fan offset +
-    // rotation — expressed as % of the square box, so the spread stays constant no matter the
+    // rotation - expressed as % of the square box, so the spread stays constant no matter the
     // page shape (a razor-thin 5:1 banner fans by the same amount as a portrait sheet). The
     // INNER image (.gcar-deck-card) is sized to the page's real aspect (deckPageFit) so its
     // shadow + rim wrap the true sheet. Seed the size from the manifest render size (no load
@@ -1133,7 +1133,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     track.outerHTML =
       `<a class="gcar-open gcar-deck" href="${openHref}" data-new-tool="${escape(toolId)}" tabindex="-1" aria-hidden="true">${pages}</a>`;
     gcar.classList.add('has-art', 'gcar--deck');   // pages rendered → stop the waiting tracer
-    // Correct each card to the decoded image's true aspect (authoritative — covers tools
+    // Correct each card to the decoded image's true aspect (authoritative - covers tools
     // whose rendered page differs from, or omits, its manifest size, incl. wide banners).
     gcar.querySelectorAll<HTMLImageElement>('.gcar-deck-card').forEach(img => {
       const fit = (): void => {
@@ -1145,7 +1145,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       if (img.complete) fit();
       else img.addEventListener('load', fit, { once: true });
     });
-    // The deck is a static preview — it has no per-page nav/dots (unlike the old carousel).
+    // The deck is a static preview - it has no per-page nav/dots (unlike the old carousel).
     gcar.querySelectorAll('.gcar-nav, .gcar-dots').forEach(el => el.remove());
   }
 
@@ -1187,7 +1187,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // same path deliberately. Observer-driven hydration is a race against the capture:
     // which strips had fired depended on timing, so the same page serialised a strip
     // more or fewer between runs (±26% and ±3% swings). Hydrating the whole set makes
-    // the CONTENT fixed, and settleForCapture then waits for it — off-frame strips are
+    // the CONTENT fixed, and settleForCapture then waits for it - off-frame strips are
     // dropped by the shot pipeline's own cull, so this costs bytes in neither direction.
     if (typeof IntersectionObserver === 'undefined' || captureNeutralPinned()) {
       cars.forEach(g => exJobs.push(() => hydrateCarousel(g)));
@@ -1214,7 +1214,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   }
   // The strip's box is a FIXED SQUARE (parts/gallery.css .gcar) and every slide is
   // object-fit:contain, so differently-shaped example looks fit within one unchanging
-  // frame — no per-look reflow as the carousel advances (which used to jitter the whole
+  // frame - no per-look reflow as the carousel advances (which used to jitter the whole
   // masonry). Nothing here resizes the box any more.
   function scrollCarTo(gcar: HTMLElement, idx: number): void {
     const track = gcar.querySelector<HTMLElement>('.gcar-track');
@@ -1222,7 +1222,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     track.scrollTo({ left: idx * track.clientWidth, behavior: 'smooth' });
     setCarDot(gcar, idx);
   }
-  // Child indices of the slides that are actually READY to show — a lead frame (a real
+  // Child indices of the slides that are actually READY to show - a lead frame (a real
   // src from the start) or an example/page slide whose art has decoded (.is-loaded).
   // Auto-advance and prev/next cycle ONLY these, so a strip with several previews still
   // pending never rotates onto a not-yet-loaded slide's flat skeleton; the set grows as
@@ -1280,7 +1280,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     return raw === undefined ? null : Number(raw);
   }
 
-  // Open a tool seeded with one of its manifest example looks — the first-visit path where
+  // Open a tool seeded with one of its manifest example looks - the first-visit path where
   // the preview the user clicked (or is watching) becomes the tool's opening configuration.
   // The seeded URL is built by the shared `toolSeedHref` helper (also used by the featured
   // row) so parseUrlState in the tool view seeds the identical inputs the tile rendered from,
@@ -1294,7 +1294,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // No auto-advance: the example strips move only when the USER moves them
   // (arrows, dots, swipe/scroll). The old shared ticker rotated every visible
-  // strip on a stagger — retired 2026-07-09 by request; a busy grid of
+  // strip on a stagger - retired 2026-07-09 by request; a busy grid of
   // self-scrolling cards read as noise, and reduced-motion users already had
   // the static behaviour this makes universal.
 
@@ -1327,16 +1327,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // The stable, full tile set: every tool that could ever show in the grid (feature
   // flags hide whole categories). Utilities live in the bottom strip in the default
   // browse view, but they ARE rendered as (hidden) grid tiles too so a search can
-  // surface them — matchesQuery gates them to query-only (see below).
-  // Search / category / sort only ever hide-show or reorder THIS set's tiles — they
-  // never change membership — so we render it to the DOM once and mutate in place.
+  // surface them - matchesQuery gates them to query-only (see below).
+  // Search / category / sort only ever hide-show or reorder THIS set's tiles - they
+  // never change membership - so we render it to the DOM once and mutate in place.
   const allTools: GalleryTool[] = index.tools.filter(t => !hidden.has(t.category));
 
-  // Per-tool search haystacks, folded ONCE at mount (the tool set is stable —
+  // Per-tool search haystacks, folded ONCE at mount (the tool set is stable - 
   // see allTools above): localized name/description PLUS the pristine English
-  // stash (`en`, written by localizeToolIndex — plans/99 §2e) so a Spanish
+  // stash (`en`, written by localizeToolIndex - plans/99 §2e) so a Spanish
   // session still finds "Compress PDF" by "compress", plus the tags. Weights
-  // are all 1 — this view only gates on match/no-match, it never ranks.
+  // are all 1 - this view only gates on match/no-match, it never ranks.
   const searchFields = new Map<string, SearchField[]>(allTools.map(t => [
     t.id,
     [t.name, t.en?.name, t.description, t.en?.description, ...(t.tags ?? [])]
@@ -1349,12 +1349,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   function matchesQuery(t: GalleryTool): boolean {
     const q = query.trim();
     // Utilities live in their own `#/u` view now and NEVER appear in the main
-    // gallery — not even via search (the Utilities view has its own search box).
+    // gallery - not even via search (the Utilities view has its own search box).
     // In only-mode they're ordinary tiles and take the normal path below.
     if (t.category === 'utility' && !opts.only) return false;
     // Tags carry the vocabulary the name and description do not: a tool called
     // "Finish Preview" is what someone searching "foil" or "spot uv" wants, and
-    // "Imperfections" is what they want for "riso". Tags are search-only — they
+    // "Imperfections" is what they want for "riso". Tags are search-only - they
     // are never rendered, so this widens recall without changing any tile.
     // lib/search semantics (plans/99 M3): folded, multi-word queries AND across
     // tokens over name + English stash + description + tags.
@@ -1372,7 +1372,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const total = index.tools.filter(t => !hidden.has(t.category ?? 'other') && !hiddenTools.has(t.id)).length;
     const allActive = activeCat === 'all' && !query;
     let html = `<button class="gallery-pill${allActive ? ' active' : ''}" data-cat="all" type="button" aria-pressed="${allActive}">${t('All')}<span class="ct">${total}</span></button>`;
-    // Favourites — the starred collection. Always shown (even at 0) so it's discoverable;
+    // Favourites - the starred collection. Always shown (even at 0) so it's discoverable;
     // clicking into an empty one explains how to add.
     const favActive = activeCat === FAV_CAT && !query;
     html += `<button class="gallery-pill gallery-pill--fav${favActive ? ' active' : ''}" data-cat="${FAV_CAT}" type="button" aria-pressed="${favActive}"><span class="pill-star" aria-hidden="true">★</span>${t('Favourites')}<span class="ct">${favCount()}</span></button>`;
@@ -1387,18 +1387,18 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // toolId → its live tile node, rebuilt only on a full render() (rare). applyView()
   // reads it to reorder + hide-show the existing tiles without re-stringifying them.
   const tileById = new Map<string, HTMLElement>();
-  // Persistent empty-state line — a real node (not markup) so it survives the in-place
+  // Persistent empty-state line - a real node (not markup) so it survives the in-place
   // filter passes; shown/hidden + re-messaged by applyView(). Lives inside the masonry
   // after the tiles, so with every tile hidden it's the only flowed column item.
   const noResults = document.createElement('p');
   noResults.className = 'gallery-no-results';
   noResults.hidden = true;
 
-  // The grey "Show hidden tools" box — a persistent non-tile node like noResults,
+  // The grey "Show hidden tools" box - a persistent non-tile node like noResults,
   // kept LAST in the grid by applyView(). Present only while something in this
   // view's scope is hidden; clicking toggles the (per-mount) reveal, under which
   // hidden tiles show dimmed at the end of the grid with Unhide in their menus.
-  // textContent only — no markup, so no new raw-HTML sink.
+  // textContent only - no markup, so no new raw-HTML sink.
   const hiddenBox = document.createElement('button');
   hiddenBox.type = 'button';
   hiddenBox.className = 'gtile gtile--hiddenbox';
@@ -1413,7 +1413,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // FULL rebuild: re-stringify EVERY tile in the stable set. Costly (re-inlines base64
   // session thumbs, re-hydrates example <img>s, recreates observers), so it runs only
   // on mount and when the underlying tool SET changes (a saved session deleted). Search
-  // / category / sort / direction go through applyView() instead — nodes stay live.
+  // / category / sort / direction go through applyView() instead - nodes stay live.
   function render(): void {
     if (!masonry) return;
     // View-backed tiles lead the utility grid; they carry no data-tool-id, so the
@@ -1445,7 +1445,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     settleForCapture(viewEl);
   }
 
-  // IN-PLACE update for search / category / sort / direction — the hot path. Reorders
+  // IN-PLACE update for search / category / sort / direction - the hot path. Reorders
   // the existing tile nodes (append keeps them live, preserving hydrated <img src> and
   // IntersectionObserver registrations) and toggles a hide class on non-matching ones;
   // it never touches innerHTML, so nothing re-decodes and no observer is recreated.
@@ -1455,12 +1455,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // Dot on the filter trigger whenever a non-default category OR non-default sort
     // is in effect, so the collapsed control still signals "a view choice is active".
     filterFab?.classList.toggle('has-active', activeCat !== 'all' || sortKey !== 'recent' || sortDir !== 'desc');
-    // Show the hero row only in the default landing state — a search or category
+    // Show the hero row only in the default landing state - a search or category
     // filter makes it noise above the results. Toggle the mount + pause its motion.
     updateFeaturedVisibility();
-    // Reorder: append the tiles in sorted order (moves live nodes, no re-render) —
+    // Reorder: append the tiles in sorted order (moves live nodes, no re-render) - 
     // hidden tools trail the visible set so a reveal reads as "the hidden ones, at
-    // the end" — then keep the empty-state + Show-hidden nodes last.
+    // the end" - then keep the empty-state + Show-hidden nodes last.
     const ordered = [...allTools].sort(sortCompare);
     for (const t of ordered) { if (hiddenTools.has(t.id)) continue; const el = tileById.get(t.id); if (el) masonry.append(el); }
     for (const t of ordered) { if (!hiddenTools.has(t.id)) continue; const el = tileById.get(t.id); if (el) masonry.append(el); }
@@ -1468,7 +1468,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     masonry.append(hiddenBox);
     // Hide-show: filtered-out tiles get .is-filtered (display:none); count the shown.
     // A hidden tool only ever shows while the reveal is on, and then dimmed
-    // (.is-hidden-tool) — search and the Favourites pill skip it otherwise.
+    // (.is-hidden-tool) - search and the Favourites pill skip it otherwise.
     let shown = 0;
     for (const t of allTools) {
       const el = tileById.get(t.id);
@@ -1486,7 +1486,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     for (const v of (opts.only === 'utility' ? utilityViews(speechOk) : [])) {
       const el = masonry.querySelector<HTMLElement>(`[data-view-card="${v.id}"]`);
       if (!el) continue;
-      // Same lib/search semantics as matchesQuery (folded, token AND) — a search
+      // Same lib/search semantics as matchesQuery (folded, token AND) - a search
       // that found "café" for tools but not view cards would read as a bug.
       const q = query.trim();
       const vHidden = hiddenTools.has(viewFavKey(v.id));
@@ -1503,7 +1503,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     hiddenBox.hidden = nHidden === 0;
     hiddenBox.textContent = showHiddenTools ? t('Hide hidden tools') : t('Show hidden tools ({n})', { n: nHidden });
     hiddenBox.setAttribute('aria-pressed', String(showHiddenTools));
-    // Re-apply the selection highlight — render() rebuilds tiles unselected, and a
+    // Re-apply the selection highlight - render() rebuilds tiles unselected, and a
     // filter pass may have moved tiles under a live selection.
     paintSelection();
     if (shown === 0) {
@@ -1557,9 +1557,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         else renderPills();                    // otherwise just refresh the pill count
       });
     });
-    // Star / unstar a utility VIEW card — same favourites list as the tools,
+    // Star / unstar a utility VIEW card - same favourites list as the tools,
     // under the collision-proof view: key, with the same promotion into the
-    // featured hero strip (as an icon-hero tile — a view has no render path).
+    // featured hero strip (as an icon-hero tile - a view has no render path).
     container.querySelectorAll<HTMLElement>('[data-fav-view]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
@@ -1599,7 +1599,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         el.classList.add('is-busy');
         try {
           if (on) {
-            // Same erased cast as the syncCatalog call above — the concrete web host
+            // Same erased cast as the syncCatalog call above - the concrete web host
             // satisfies sync's structural SyncHost slice at runtime.
             const manifest = await pinTool(id, ids => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids));
             pinnedTools.add(id);
@@ -1649,7 +1649,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       activeCat = btn.dataset.cat!;
       if (query) { query = ''; queryTokens = []; setSearchBarValue(''); }
       applyView();
-      // applyView() rebuilds the pills, dropping focus — restore it to the active one
+      // applyView() rebuilds the pills, dropping focus - restore it to the active one
       // so keyboard users aren't bounced to the top of the tab order. The popover
       // stays open so the choice (and the Hide-previews toggle) remain in reach.
       pillbar.querySelector<HTMLElement>('.gallery-pill.active')?.focus();
@@ -1660,7 +1660,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Matches the color-field popover conventions (Escape + outside-pointerdown
   // close, focus returns to the trigger).
   // The lifecycle (toggle `hidden`, aria-expanded, outside-pointerdown dismissal,
-  // Escape, backdrop, focus restore) is the shared one in components/body-popover.ts —
+  // Escape, backdrop, focus restore) is the shared one in components/body-popover.ts - 
   // the catalog's view-options popover rides the same helper.
   const filterDisclosure = wireDisclosure(filterFab, filterPop, {
     backdrop: filterBackdrop,
@@ -1669,12 +1669,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     initialFocus: pop => pop.querySelector<HTMLElement>('.gallery-pill.active, .gallery-pill'),
   });
   // If the view is torn down with the popover open, its document-level pointerdown
-  // listener would outlive the detached tree — close() is idempotent and its default
+  // listener would outlive the detached tree - close() is idempotent and its default
   // returnFocus=false makes this a no-op when already closed.
   cleanups.push(() => filterDisclosure.close());
 
   // Lazily inject + wire the Sound on/off segment the first time the filter popover is
-  // opened (a user gesture) — this is what keeps components/sound-toggle.ts and the
+  // opened (a user gesture) - this is what keeps components/sound-toggle.ts and the
   // ambient-audio modules it statically imports (atmosphere/neurospicy) off the boot
   // chunk. pointerdown gives the ~KB import a head start before the popover paints;
   // 'click' also covers keyboard activation of the fab. Idempotent via the guard.
@@ -1693,16 +1693,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // "Hide previews" is no longer a per-gallery toggle: it moved to the profile's
   // Accessibility card as the "Hide colourful previews" pref (lib/a11y-prefs.ts),
   // and the CSS that collapses cards + the featured strip now keys off
-  // html[data-a11y-previews="hidden"] directly — nothing to wire here.
+  // html[data-a11y-previews="hidden"] directly - nothing to wire here.
 
-  // Global sort — persisted like the theme; re-renders the grid in place.
+  // Global sort - persisted like the theme; re-renders the grid in place.
   const sortSelect = viewEl.querySelector<HTMLSelectElement>('.gallery-sort');
   if (sortSelect) {
     sortSelect.value = sortKey;
     sortSelect.addEventListener('change', () => {
       sortKey = sortSelect.value as SortKey;
       try { localStorage.setItem(SORT_KEY_STORAGE, sortKey); } catch { /* storage off */ }
-      applyView();   // reorder the live tiles in place — no re-render
+      applyView();   // reorder the live tiles in place - no re-render
     });
   }
 
@@ -1721,12 +1721,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       sortDir = sortDir === 'asc' ? 'desc' : 'asc';
       try { localStorage.setItem(SORT_DIR_STORAGE, sortDir); } catch { /* storage off */ }
       syncDirBtn();
-      applyView();   // reorder the live tiles in place — no re-render
+      applyView();   // reorder the live tiles in place - no re-render
     });
   }
 
   // The search field lives in the persistent shell bar (components/search-bar.ts,
-  // plans/99 M1) — the view claims it with its placeholder + the live-filter tap
+  // plans/99 M1) - the view claims it with its placeholder + the live-filter tap
   // and releases on unmount. The ✕, Escape ladder and debounce are the bar's.
   cleanups.push(claimSearchBar({
     placeholder: opts.only ? t('Search utilities…') : t('Search tools…'),
@@ -1745,7 +1745,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   });
 
   // Global saved-sessions overlay (folders over all tool + batch sessions),
-  // opened from the history button beside the profile pill — and, on mobile, from
+  // opened from the history button beside the profile pill - and, on mobile, from
   // the consolidated profile menu (the standalone history button is hidden there).
   // User images are loaded lazily so folders that also hold images render here too.
   const historyFab = viewEl.querySelector<HTMLButtonElement>('.history-fab');
@@ -1813,7 +1813,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // ── Group actions (bulk bar + bulk context menu) and the per-tile context menu ──
 
-  /** A tile's display name — tool name or view-card name — for announcements. */
+  /** A tile's display name - tool name or view-card name - for announcements. */
   function refName(ref: string): string {
     return isViewRef(ref) ? (viewByRef(ref)?.name ?? ref) : (toolById.get(ref)?.name ?? ref);
   }
@@ -1879,7 +1879,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     announce(unhide ? tRaw('{name} unhidden', { name: refName(ref) }) : tRaw('{name} hidden — find it under “Show hidden tools”', { name: refName(ref) }));
   }
 
-  /** Pin or unpin one tool (context-menu path) — same lifecycle as the tile button. */
+  /** Pin or unpin one tool (context-menu path) - same lifecycle as the tile button. */
   async function pinOne(id: string): Promise<void> {
     if (isViewRef(id) || unavailableIds.has(id)) return;
     const on = !pinnedTools.has(id);
@@ -1998,12 +1998,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!tool) return '';
     const unavailable = unavailableIds.has(ref);
     const n = countByTool(ref);
-    // "Start a collab" — a private (P2P) collab pairs two devices on this tool from its
+    // "Start a collab" - a private (P2P) collab pairs two devices on this tool from its
     // current state; from a tile that state is the tool's defaults (a blank-slate co-edit),
     // and the pairing's remount-on-connect brings the tool up on both ends. Gated exactly
     // like the in-tool Share dialog's Private-collab row (lib/collab-share-private.ts): the
     // `private-collab` flag (default on, may be user-/org-off) AND a registered opener,
-    // re-checked on every menu open. No per-tool capability — private collab works for any
+    // re-checked on every menu open. No per-tool capability - private collab works for any
     // tool that can mount, so an unavailable tool (missing a host capability) is excluded.
     const collabStart = !unavailable && isFlagOnSync(PRIVATE_COLLAB_FLAG) && !!getCollabOpener('private');
     return [
@@ -2018,7 +2018,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     ].join('');
   }
 
-  /** The bulk context menu (right-click inside a multi-selection) — mirrors the bar.
+  /** The bulk context menu (right-click inside a multi-selection) - mirrors the bar.
    *  Head outside the nested role="menu" list, per the shared a11y shape. */
   function bulkMenuHtml(): string {
     const menuItemHtml = ctxMod!.menuItemHtml;   // set: only reached via the lazy ctx-menu callbacks
@@ -2031,7 +2031,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       ].join('')}</div>`;
   }
 
-  /** Context-menu dispatch — `ref` null means the bulk menu. */
+  /** Context-menu dispatch - `ref` null means the bulk menu. */
   async function onMenuAction(act: string, ref: string | null): Promise<void> {
     if (ref === null) { await handleBulk(act); return; }
     if (act === 'open') {
@@ -2055,7 +2055,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (act === 'pin') { await pinOne(ref); return; }
     if (act === 'history') { const tool = toolById.get(ref); if (tool) openHistoryFor(tool); return; }
     if (act === 'collab') {
-      // A tile has no mounted runtime, so there is no live state to seed — pass empty
+      // A tile has no mounted runtime, so there is no live state to seed - pass empty
       // baseParts (the collab starts at the tool's defaults, a blank-slate co-edit). The
       // opener re-checks the flag itself and the ceremony overlay takes over; on connect
       // its own remount ('lolly:remount') brings the tool up on the inviter's side. Uses
@@ -2075,10 +2075,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   render();
 
   // ── Deep-link (read-only): open a card's dialog on mount. ───────────────────
-  // Read the hash query directly (same shape as main.ts's peekUrlLang) — these
+  // Read the hash query directly (same shape as main.ts's peekUrlLang) - these
   // flags are this view's own, not router state (only `q` rides opts.params). `?tool=<id>`
   // opens that card's info dialog; adding the `history` flag (or `?history=<id>`)
-  // opens its saved-sessions dialog instead. Consumed here only — a READ-ONLY flag,
+  // opens its saved-sessions dialog instead. Consumed here only - a READ-ONLY flag,
   // never propagated into a generated share link. An unknown/absent id opens
   // nothing; the gallery just renders normally.
   const deepLink = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
@@ -2094,10 +2094,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // `user/tokens/brand` and this never fires again. The check rides on the
   // SYNCED asset metadata, so it can resolve null on a pre-sync mount (the
   // boot fast-path paints from the cached tool index before the asset sync
-  // lands — including the eviction case where IndexedDB was dropped but the
+  // lands - including the eviction case where IndexedDB was dropped but the
   // localStorage index survived; main.ts's post-sync re-mount is gated on the
   // TOOL index bytes changing, which says nothing about the asset-meta store).
-  // On null we re-run the check ONCE against the catalog index itself — the
+  // On null we re-run the check ONCE against the catalog index itself - the
   // same cold-load fallback the tokens bridge uses (bridge/tokens.ts
   // findTokensAsset). That's faithful: user tokens live in the same IndexedDB
   // as the asset meta, so a null here means the user store had none either,
@@ -2107,13 +2107,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // branded installs pay nothing; the continuation re-checks this gallery is
   // still mounted before touching the DOM (the trigger must never surface on
   // another view), and the dialog itself closes on any route change (see
-  // components/welcome-dialog.ts) — no cleanup entry here, so the same-route
-  // post-sync re-mount keeps it open seamlessly.
+  // components/welcome-dialog.ts) - no cleanup entry here, so the same-route
+  // post-sync re-mount keeps it open without a flash.
   const galleryRoot = viewEl.querySelector<HTMLElement>('.gallery');
   void (async () => {
     let tokensId: string | undefined;
     try {
-      // A LOCKED brand (brandLock — e.g. the SUSE build) is branded by decree:
+      // A LOCKED brand (brandLock - e.g. the SUSE build) is branded by decree:
       // there's no brand question to settle, so never greet it with the welcome
       // or the tips strip, whatever the placeholder check below resolves to.
       if (await host.tokens?.isLocked?.()) return;
@@ -2136,8 +2136,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   })();
 
   // Profile-personalized previews: once the user has opted in to "use my details",
-  // re-render the few profile-bound tools that have no saved session — off the
-  // critical path (idle, serial) — and lazily swap the personalized image into its
+  // re-render the few profile-bound tools that have no saved session - off the
+  // critical path (idle, serial) - and lazily swap the personalized image into its
   // card. Feature-detected (host.previews) and scoped via canPersonalize(), so it's
   // a no-op for shells without the cache and for the ~24 tools whose output doesn't
   // change with the profile. The committed preview shows until the swap lands; cache
@@ -2146,7 +2146,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const cssEscape = (s: string) => (window.CSS && CSS.escape ? CSS.escape(s) : s);
     const toRegenerate = index.tools.filter(t =>
       canPersonalize(t) &&
-      !latestByTool(t.id) &&                  // no saved session — only placeholders
+      !latestByTool(t.id) &&                  // no saved session - only placeholders
       !personalizedByTool.has(t.id) &&        // not already fresh in cache
       toolSupport(t, host.capabilities).status !== 'unavailable',
     );
@@ -2166,7 +2166,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       });
       // Stop the idle render queue when the gallery is torn down or re-mounted
       // (navigate() in main.js calls view._cleanup), so it can't keep rendering
-      // off-screen — or double up — after the user has moved on. Registered
+      // off-screen - or double up - after the user has moved on. Registered
       // alongside the featured row's teardown (both run from the one _cleanup).
       cleanups.push(cancel);
     }
@@ -2176,17 +2176,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 // ── Card markup ───────────────────────────────────────────────────────────
 
 /**
- * Utility surfaces that are VIEWS rather than tools — pages in the app that
+ * Utility surfaces that are VIEWS rather than tools - pages in the app that
  * belong in the Utilities grid but have no manifest, no render and no session.
  *
  * They get a real tile, the same shape as a tool's, because to a user they are
- * the same kind of thing: something you open from this grid — including a
+ * the same kind of thing: something you open from this grid - including a
  * favourite star and a details dialog. A view's favourite lives in the SAME
  * profile favourites list as a tool's, under a `view:`-prefixed key
  * (viewFavKey) so it can never collide with a tool id (ids are permanent
  * contracts, so the namespace must be carved out, not hoped about). What a view
  * still doesn't get is keep-offline or saved-sessions: it ships with the app
- * shell (always offline-capable, nothing to pin) and has no session store —
+ * shell (always offline-capable, nothing to pin) and has no session store - 
  * wiring those in WOULD mean inventing a fake tool for other subsystems to
  * believe in.
  */
@@ -2199,7 +2199,7 @@ interface UtilityView {
 }
 
 /**
- * `speechOk` gates the Script-audio card on `host.speech?.isAvailable()` —
+ * `speechOk` gates the Script-audio card on `host.speech?.isAvailable()` - 
  * every call site inside mountGallery passes the one flag computed at mount, so
  * the grid, the featured strip, search and the fav/info wiring can never
  * disagree about whether the card exists.
@@ -2232,7 +2232,7 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   name: t('Spreadsheet'),
   description: t('Open, read and edit an .xlsx, .csv or .tsv on your device — no Excel or internet needed. Switch sheets, edit cells, download as CSV or Excel.'),
 },
-// Script audio only where the speech bridge exists — a card that opened a dead
+// Script audio only where the speech bridge exists - a card that opened a dead
 // surface would break the grid's promise that every tile is something you can
 // actually use here and now.
 ...(speechOk ? [{
@@ -2243,11 +2243,11 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   description: t('Write a script and turn it into natural speech, generated on your device. Nothing you type is uploaded.'),
 }] : [])];
 
-/** The profile-favourites key for a utility VIEW card — namespaced so it can
+/** The profile-favourites key for a utility VIEW card - namespaced so it can
  *  never collide with a tool id. */
 const viewFavKey = (id: string): string => `view:${id}`;
 
-/** The top-left multi-select dot every gallery tile carries — the same
+/** The top-left multi-select dot every gallery tile carries - the same
  *  `.tile-check` primitive as projects/catalog tiles (folder-tiles.ts), with a
  *  gallery-scoped reveal (gallery.css). `ref` doubles as the tile's selection
  *  key: the tool id, or `view:<id>` for a utility view card. */
@@ -2262,7 +2262,7 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
         <div class="gtile-cap">
           <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
           <span class="gtile-meta">
-            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/unpack', '#/lab', '#/data', '#/script') */ ''}
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - v.href comes from the hardcoded utilityViews() table ('#/verify', '#/unpack', '#/lab', '#/data', '#/script') */ ''}
             <a class="gtile-name" href="${escape(v.href)}">${escape(v.name)}</a>
             <p class="gtile-desc">${escape(v.description)}</p>
           </span>
@@ -2275,9 +2275,9 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
     </article>`;
 }
 
-/** Details dialog for a utility VIEW card — the same spec-sheet chrome as a
+/** Details dialog for a utility VIEW card - the same spec-sheet chrome as a
  *  tool's, on the facts a view actually has (no manifest, no formats, no
- *  defaults — it's a page of the app). */
+ *  defaults - it's a page of the app). */
 function showViewInfoDialog(v: UtilityView): void {
   const content = `
     <div class="meta-dialog-body">
@@ -2294,7 +2294,7 @@ function showViewInfoDialog(v: UtilityView): void {
         <div><dt>${t('Offline')}</dt><dd>${t('Ships with the app, so it always works offline')}</dd></div>
       </dl>
       <div class="meta-dialog-actions">
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — same hardcoded utilityViews() table route as the card link */ ''}
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - same hardcoded utilityViews() table route as the card link */ ''}
         <a class="btn meta-dialog-open" href="${escape(v.href)}">${t('Open utility')}</a>
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
@@ -2371,20 +2371,20 @@ function cardMarkup(
   const hasSession = !!latest && !unavailable;          // resumable, with or without a preview
   const hasThumbHero = hasSession && !!latest!.thumb;    // resumable AND has a preview image
   const hasPreview = !unavailable && !hasSession && !!tool.preview; // committed demo preview, no session yet
-  // A committed AUTHORED card (tools/<id>/card.svg|png — e.g. pose-geeko's animated-Geeko
+  // A committed AUTHORED card (tools/<id>/card.svg|png - e.g. pose-geeko's animated-Geeko
   // SVG, which animates natively in an <img>) is served from /tools/, unlike a generated
   // preview (/catalog/previews/…). When a tool ALSO has examples, we lead its carousel
   // with this card so the tile opens on the tool's real, often-animated hero and then
-  // swipes to the example looks — the best of "show the motion" + "show the range".
+  // swipes to the example looks - the best of "show the motion" + "show the range".
   const animCard = (!unavailable && tool.preview && tool.preview.startsWith('/tools/')) ? tool.preview : null;
   // Paged tool (render.paged, e.g. multi-page-pdf): the tile shows the pages as a stacked
   // DECK (hydratePaged) rather than input-variant looks. Needs a displayable (svg/raster)
   // format. A paged tool that ships its OWN authored card (carousel-maker's hand-tuned
-  // stacked-deck card.svg — animCard) is EXCLUDED so it shows that card directly, identical
+  // stacked-deck card.svg - animCard) is EXCLUDED so it shows that card directly, identical
   // to the featured hero, instead of a live-rendered deck that would drift from it.
   const paged = !unavailable && !!tool.paged && !!displayFormatOf(tool.formats) && !animCard;
   // Example looks (manifest.examples) turn the tile into a horizontally-scrollable
-  // preview strip — leading with the newest saved session when there is one, then a
+  // preview strip - leading with the newest saved session when there is one, then a
   // handful of live-rendered example states. Supersedes the committed demo preview and
   // the multi-session cross-fade (both are the no-examples fallback below).
   const exampleLooks = (unavailable || paged) ? [] : galleryExampleLooks(tool, darkTheme);
@@ -2411,7 +2411,7 @@ function cardMarkup(
       </div>`;
   } else if (hasExamples) {
     // Horizontally-scrollable preview strip. Slide 0 is the newest saved session (a
-    // data-URL — instant, resumes on click) when one exists; the rest are example
+    // data-URL - instant, resumes on click) when one exists; the rest are example
     // states, each an EMPTY <img> hydrated lazily by mountGallery (renderFeaturedVariant,
     // cached under featured:<id>:<i>) as the tile nears the viewport. The box is a FIXED
     // SQUARE (gallery.css) so masonry packs it with no reflow ever, and every slide is
@@ -2463,7 +2463,7 @@ function cardMarkup(
     // (an ambient "you have a few saved works here"). The first frame is the newest
     // and sits in normal flow so it sets the tile's natural height; the rest are
     // absolutely stacked over it and only .is-active is opaque (the fade is CSS, the
-    // ticker in mountGallery advances .is-active). The rotation is decorative —
+    // ticker in mountGallery advances .is-active). The rotation is decorative - 
     // clicking always resumes the newest, the Continue target.
     const frames = sessionThumbs.length >= 2 ? sessionThumbs : [latest!.thumb!];
     const rotate = frames.length >= 2;
@@ -2482,11 +2482,11 @@ function cardMarkup(
         ${statusBadge}
       </button>`;
   } else if (hasSession) {
-    // Session exists but its preview failed to capture — still resumable from the card.
+    // Session exists but its preview failed to capture - still resumable from the card.
     visual = `<button class="gtile-tile gtile-tile--resume" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}"
               aria-label="${escape(tRaw('Continue {name}', { name: latest!.filename || tool.name }))}"><span class="gtile-tile-txt">${t('Continue · {time}', { time: relativeTime(latest!.updatedAt) })}</span></button>`;
   } else if (hasPreview) {
-    // No saved session, but a committed demo preview exists (npm run thumbs) — show
+    // No saved session, but a committed demo preview exists (npm run thumbs) - show
     // it as a hero that starts a NEW session. Decorative duplicate of the name link
     // (tabindex/aria-hidden so AT hears one link), matching the empty-tile pattern.
     // When the user has opted in to their profile, a personalized re-render replaces
@@ -2495,16 +2495,16 @@ function cardMarkup(
       <a class="gtile-hero gtile-hero--preview" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">
         ${iconBackdrop(tool.icon)}
         ${personalizedThumb
-          // A personalized re-render is always a raster data URL — a plain <img>.
+          // A personalized re-render is always a raster data URL - a plain <img>.
           ? `<img class="gtile-hero-img" src="${escape(personalizedThumb)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`
           // Fixed-square hero (gallery.css): the img/iframe fills it and contains within,
-          // so no per-tool aspect is threaded through — every preview box is the same size.
+          // so no per-tool aspect is threaded through - every preview box is the same size.
           : previewMedia(tool.preview!, 'gtile-hero-img')}
         <span class="gtile-continue">${t('Open')}</span>
         ${statusBadge}
       </a>`;
   } else {
-    // No session, no preview, no examples — still lead with the tool's icon (never
+    // No session, no preview, no examples - still lead with the tool's icon (never
     // a network fetch, so never broken) so the tile is a real, on-brand card rather
     // than a bare line of text. Decorative duplicate of the name link (tabindex/
     // aria-hidden so AT hears one link).
@@ -2512,17 +2512,17 @@ function cardMarkup(
   }
 
   // Caption sub-line: only the last-opened time, and only on resumable cards.
-  // The category is deliberately omitted here — it's discoverable via the filter
-  // pills and shown in the info dialog — so the card stays about this tool itself.
+  // The category is deliberately omitted here - it's discoverable via the filter
+  // pills and shown in the info dialog - so the card stays about this tool itself.
   const sub = hasSession
     ? t('Last opened · {time}', { time: relativeTime(latest!.updatedAt) })
     : '';
 
-  // Export formats no longer clutter the card — they live in the info (i) dialog now,
+  // Export formats no longer clutter the card - they live in the info (i) dialog now,
   // grouped by vector / raster with the default highlighted (see showInfoDialog).
 
   // The title is the "start a new session" link. A stretched ::after (see CSS)
-  // makes the whole text body — caption + description — its click target, so a
+  // makes the whole text body - caption + description - its click target, so a
   // fresh session is as easy to hit as the hero's Continue. On a tool that
   // already has a saved session the link carries an explicit aria-label so it
   // reads as "new" against the hero's "Continue".
@@ -2570,7 +2570,7 @@ function cardMarkup(
 function showInfoDialog(tool: GalleryTool | undefined): void {
   if (!tool) return;
   const caps = Array.isArray(tool.capabilities) ? tool.capabilities : [];
-  // Formats + privacy come straight from the catalog index entry — no fetch.
+  // Formats + privacy come straight from the catalog index entry - no fetch.
   // Transform-vs-export is decided by the `exportable` flag alone (NOT by whether
   // formats happen to be present), so a tool that declares formats always lists
   // them; only genuinely non-exporting utilities show the transform note.
@@ -2591,7 +2591,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   const exportsDd = tool.exportable === false
     ? t('On-device transform (no file export)')
     : hasFmtChips ? `<div class="meta-fmt-groups">${fmtGroupsHtml}</div>` : '—';
-  // Intended canvas size — paired with the format list so the modal answers both
+  // Intended canvas size - paired with the format list so the modal answers both
   // "what file" and "how big". Omitted for transforms (size isn't meaningful) and for
   // any tool that declares no render size.
   const dims = tool.exportable === false ? '' : dimText(tool);
@@ -2637,7 +2637,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
 
 // ── Info dialog: the defaults spec list ──────────────────────────────────────
 // The gallery index deliberately carries no input model, so the dialog fetches
-// the manifest on open and renders each input's out-of-the-box value — a small
+// the manifest on open and renders each input's out-of-the-box value - a small
 // spec sheet, not a settings UI. Failure (offline, tool gated) just leaves the
 // section hidden; the dialog stands on the index data alone.
 
@@ -2645,7 +2645,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
 function defaultText(input: Record<string, unknown>): { text: string; swatch?: string } | null {
   const d = input.default;
   const type = String(input.type ?? 'text');
-  if (type === 'file') return null;                       // user-supplied by nature — no default exists
+  if (type === 'file') return null;                       // user-supplied by nature - no default exists
   if (d === undefined || d === null || d === '') return { text: '—' };
   switch (type) {
     case 'boolean': return { text: d ? t('On') : t('Off') };
@@ -2680,7 +2680,7 @@ async function fillDefaultsList(dialog: HTMLElement, toolId: string): Promise<vo
   const list = dialog.querySelector<HTMLElement>('.meta-defaults-list');
   if (!section || !list || !dialog.isConnected || !inputs.length) return;
 
-  const MAX_ROWS = 14; // a spec sheet, not a scroll chore — the tool itself shows the rest
+  const MAX_ROWS = 14; // a spec sheet, not a scroll chore - the tool itself shows the rest
   const rows: string[] = [];
   for (const input of inputs) {
     if (rows.length >= MAX_ROWS) break;
@@ -2748,7 +2748,7 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
       const slot = el.dataset.delete!;
-      // confirm-dialog is lazy-loaded here (off the boot path) — this is a click handler,
+      // confirm-dialog is lazy-loaded here (off the boot path) - this is a click handler,
       // so paying its ~1 KB on the delete gesture is free.
       const { confirmDialog } = await import('../components/confirm-dialog.ts');
       const ok = await confirmDialog({
@@ -2759,7 +2759,7 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
       if (!ok) return;
       await host.state.delete(slot);
       el.closest('.saved-row')?.remove();
-      onDelete?.(slot);            // update in-memory state only — render happens on close
+      onDelete?.(slot);            // update in-memory state only - render happens on close
       changed = true;
       announce(t('Session deleted'));
       const left = modal.el.querySelectorAll('.saved-row').length;
@@ -2771,20 +2771,20 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
 }
 
 // ── Saved-session row (shared by the history modal) ─────────────────────────
-// Builds on folder-tiles.ts's sessionRow() — the shared row primitive behind
+// Builds on folder-tiles.ts's sessionRow() - the shared row primitive behind
 // this history list AND the profile Storage manager's session list
 // (component-audit rec 6). Only this view's chrome (a full-row resume trigger,
 // the h4/small tags its own stylesheets key off) lives here; the batch/thumb/
 // size resolution is shared. (A data-search row attribute used to be built here
-// too — nothing ever read it; dropped per plans/99 M3's sweep.)
+// too - nothing ever read it; dropped per plans/99 M3's sweep.)
 
 function savedItem(entry: SavedEntry, bytes: number | undefined): string {
   const batch = isBatchSlot(entry.slot);
   const when = entry.updatedAt ? fmtDateTime(new Date(entry.updatedAt)) : '';
   const title = batch ? (entry.label || t('Batch session')) : (entry.filename || entry.toolId);
   // The tool name is the row's title (h4) just above, so the sub-line only needs
-  // the timestamp — no need to repeat the name.
-  // sessionRow() escapes `subtitle` itself — tRaw keeps that the single escaping step.
+  // the timestamp - no need to repeat the name.
+  // sessionRow() escapes `subtitle` itself - tRaw keeps that the single escaping step.
   const subtitle = batch ? tRaw('Batch · {when}', { when }) : when;
   // Tool sessions resume into #/tool; batch sessions resume into #/pro.
   const resumeAttrs = batch

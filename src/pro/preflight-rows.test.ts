@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The BATCH PREFLIGHT COLLECTOR — `pro/preflight-rows.ts`, against the real engine.
+ * The BATCH PREFLIGHT COLLECTOR - `pro/preflight-rows.ts`, against the real engine.
  *
  * The engine's rules are tested in `tests/preflight.test.ts`; nothing here re-tests
  * a rule. What is tested here is the COLLECTION: that the job handed to the engine
  * describes the render that is actually about to happen.
  *
- * The load-bearing property is SETTINGS PARITY. A preflight that checks settings
+ * The essential property is SETTINGS PARITY. A preflight that checks settings
  * the renderer will not use is worse than none, so the parity test restates
  * `runBatch`'s own two-level resolution independently (quoted from `batch.ts`) and
- * pins the collector to it — a drift in either direction fails here rather than
+ * pins the collector to it - a drift in either direction fails here rather than
  * shipping a confident report about a job nobody ran.
  *
  * The other three cases are the ones plan §7 names: a clean row, a row with a
@@ -50,7 +50,7 @@ const CTX = { srcIndex: 0 };
 test('a clean row produces NOTHING — not one note, not one refusal', () => {
   // The per-row channel is a claim about THIS row. `refuse.output-file-size` fires on
   // every job ever, so left in here it put a chip on all 50 cards of a clean 50-row
-  // batch and made the headline read "50 with notes" — the noise plan §6 names.
+  // batch and made the headline read "50 with notes" - the noise plan §6 names.
   // svg: no pixel count to report, so a clean row has genuinely nothing to say.
   const m = toPreflightManifest(manifestOf({ render: { width: 1200, height: 900, formats: ['svg'] } }));
   assert.deepEqual(preflightRow({ toolId: 'demo', values: { title: 'hello' } }, m, 0, CTX, ENV), []);
@@ -169,7 +169,7 @@ test('the job carries the settings runBatch would render with (row beats run)', 
   };
   const job = preflightJobForRow(row, toPreflightManifest(manifestOf()), 0, CTX, { ...ENV, run });
 
-  // batch.ts:317 — `printSettingsFor(row, { profile, bleed, marks }, format)`. The
+  // batch.ts:317 - `printSettingsFor(row, { profile, bleed, marks }, format)`. The
   // collector calls the GATE itself, so this is the renderer's own answer.
   const print = printSettingsFor(row, { profile: run.profile, bleed: run.bleed, marks: run.marks }, run.format);
   assert.deepEqual(print, { profile: 'fogra39', bleed: '5mm', marks: 'crop,reg' });
@@ -190,7 +190,7 @@ test('the job carries the settings runBatch would render with (row beats run)', 
   assert.deepEqual(job.settings.size.width, { value: 210, unit: 'mm' });
   assert.equal(job.settings.size.declaredBy, 'row');
   assert.equal(job.settings.size.unitDeclared, true);
-  // `chooseFormat(manifest, row.format || run.format)` — the row's own wins.
+  // `chooseFormat(manifest, row.format || run.format)` - the row's own wins.
   assert.equal(job.settings.format, 'pdf');
   assert.equal(job.settings.filename, 'poster');
 });
@@ -215,7 +215,7 @@ test('no run format and no row format falls through to the tool\'s first declare
 test('ONE declared dimension is a declaration: the other stays 0, never the manifest', () => {
   // `bothGiven` governs LAYOUT only. `render-export.ts:315-317` builds outW/outH
   // independently, so `width: '210mm'` really does reach the export boundary and the
-  // PDF page really is 210mm wide — the CLI's `sizeFacts` shape is the honest one.
+  // PDF page really is 210mm wide - the CLI's `sizeFacts` shape is the honest one.
   const size = rowSize({ toolId: 'demo', values: {}, outWidth: 210, unit: 'mm' }, toPreflightManifest(manifestOf()), {});
   assert.deepEqual(size.width, { value: 210, unit: 'mm' });
   assert.deepEqual(size.height, { value: 0, unit: 'mm' });
@@ -363,7 +363,7 @@ test('the run-level findings are collected ONCE for the whole run, with no row s
     getTool: async () => ({ manifest: manifestOf({ render: { width: 1200, height: 900, formats: ['svg'] } }) }),
   });
   const perRow = rows.map((r, i) => check(r, i, { srcIndex: i }));
-  // Three clean rows, three empty note lists — the run summary says "0 with notes".
+  // Three clean rows, three empty note lists - the run summary says "0 with notes".
   assert.deepEqual(perRow, [[], [], []]);
   const fileSize = runFindings.filter(f => f.id === 'refuse.output-file-size');
   assert.equal(fileSize.length, 1, 'one platform fact, stated once, not once per row');

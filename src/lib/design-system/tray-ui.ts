@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The candidate tray's SURFACE (plan 97 §8, M2) — the panel over `tray.ts`.
+ * The candidate tray's SURFACE (plan 97 §8, M2) - the panel over `tray.ts`.
  *
  * `tray.ts` is the model: what a source scan found, persisted, deduped, and
  * never committed to anything. This module is the one place a person can see
- * that list and act on it. The split is the point — the model is testable under
+ * that list and act on it. The split is the point - the model is testable under
  * bare node and outlives any view, the surface is DOM-bound and disposable.
  *
  * ONE DOM, TWO LAYOUTS. From 641px up it is a dock: a small fixed panel parked
@@ -13,7 +13,7 @@
  * palette sheet's peek/half/full grip (lib/mobile-sheet.ts). CSS decides which,
  * so nothing re-renders across the breakpoint; JS only attaches the sheet driver
  * while the media query actually matches. Sheet and grip are DIRECT children of
- * `.start` — the same specificity contract mountPaletteSheet documents, and the
+ * `.start` - the same specificity contract mountPaletteSheet documents, and the
  * reason styles/parts/tray.css writes its fixed-position rules at `.start > …`.
  *
  * NOTHING HERE COMMITS ANYTHING BY ITSELF. Every add is a press, one candidate
@@ -22,17 +22,17 @@
  * add is one token), a family through the Type room's installer, a name through
  * the head document. A candidate type with no handler renders with Dismiss and
  * NO Add button rather than a dead control or a promise about a later milestone
- * — plan 97 §9, never show something that cannot be used.
+ * - plan 97 §9, never show something that cannot be used.
  *
  * The tray closes itself when its last pending candidate leaves (added or
  * dismissed): an empty tray is an empty concept, and advertising one is exactly
- * what §9 rules out. `open()` refuses for the same reason — a rescan that finds
+ * what §9 rules out. `open()` refuses for the same reason - a rescan that finds
  * nothing new must not raise an empty panel.
  *
  * KEYBOARD. Every action here destroys the control that ran it: the list is one
  * innerHTML write off the model's subscription, so the button under the cursor
  * is a different node a tick later. `render()` therefore remembers what had
- * focus and puts it back — on the same control when it survives, on the row that
+ * focus and puts it back - on the same control when it survives, on the row that
  * took its place when it does not. The panel is a disclosure of the rail's tray
  * toggle: it carries an id the toggle points `aria-controls` at, opening from
  * that press moves focus inside, and closing hands focus back to where it came
@@ -41,7 +41,7 @@
  * pair and the focus moves are not optional here.
  */
 
-import '../../styles/parts/tray.css'; // .ds-tray* rules — rides this module's lazy chunk
+import '../../styles/parts/tray.css'; // .ds-tray* rules - rides this module's lazy chunk
 
 import { escape } from '../../utils.ts';
 import { t, tRaw } from '../../i18n.ts';
@@ -66,7 +66,7 @@ export interface TrayUiCtx {
   /** Present only where a Google face can actually be fetched. Absent → font
    *  candidates render without an Add. */
   installFont?: (family: string) => Promise<void>;
-  /** A name candidate's Add — reinstalls the head document under that label. */
+  /** A name candidate's Add - reinstalls the head document under that label. */
   setName?: (name: string) => Promise<void>;
   /** Fires on every open/close. The view uses it for the phone bottom edge's
    *  single-owner rule: two fixed bottom sheets must never coexist. */
@@ -79,7 +79,7 @@ export interface TrayUiCtx {
 }
 
 export interface TrayUi {
-  /** Show the panel — unless there is nothing pending, in which case this is a
+  /** Show the panel - unless there is nothing pending, in which case this is a
    *  no-op (see the module note). `focus` moves focus into the panel and is for
    *  a deliberate press on the toggle; a scan that lands candidates while some
    *  other dialog is open must NOT steal focus, so it omits the flag. */
@@ -96,7 +96,7 @@ export interface TrayUi {
    *  return value is what the view's Escape stack reads either way, so a caller
    *  only ever asks "did the tray take that key?". */
   collapse(): boolean;
-  /** Pending candidates — what the rail's toggle badges, and what decides
+  /** Pending candidates - what the rail's toggle badges, and what decides
    *  whether the tray is worth advertising at all. */
   count(): number;
   /** The panel's element id, so the view can point its toggle's `aria-controls`
@@ -138,12 +138,12 @@ const TYPE_ICON: Record<Exclude<CandidateType, 'color'>, IconName> = {
   name: 'tag',
 };
 
-/** Families we hold a fetchable source for. Lowercased once — a census reports a
+/** Families we hold a fetchable source for. Lowercased once - a census reports a
  *  family as the source spelled it, and case is not identity here. */
 const FETCHABLE = new Set(POPULAR_FAMILIES.map((f) => f.trim().toLowerCase()));
 
 /** True when a Google face for this family can actually be fetched. Says
- *  nothing about whether the family exists elsewhere — see the copy on the
+ *  nothing about whether the family exists elsewhere - see the copy on the
  *  unavailable line, which claims no more than this. */
 export function isFetchableFamily(family: string): boolean {
   return FETCHABLE.has(String(family ?? '').trim().toLowerCase());
@@ -154,7 +154,7 @@ function addLabel(c: Candidate, opts: TrayHtmlOpts): string | null {
   if (c.type === 'color') return t('Add');
   if (c.type === 'font') return opts.canInstallFont && isFetchableFamily(c.value) ? t('Install from Google') : null;
   if (c.type === 'name') return opts.canSetName ? t('Use this name') : null;
-  return null; // logo / asset — no producer yet, so no control
+  return null; // logo / asset - no producer yet, so no control
 }
 
 /** The muted line under a candidate that cannot be added, or '' when it can.
@@ -178,13 +178,13 @@ function markHtml(c: Candidate): string {
 }
 
 /** The provenance chip. `detail` (a paint bucket, a font's role) rides as the
- *  title rather than a second line — it is a footnote, not a fact the row is
+ *  title rather than a second line - it is a footnote, not a fact the row is
  *  about.
  *
  *  The title is written even without a detail, because the chip is clipped to
  *  16rem with an ellipsis and a provenance label is a FILE NAME: without it a
  *  long one is unrecoverable to a pointer user. It is a pointer affordance only,
- *  which is fine — CSS truncation hides nothing from a screen reader, so the
+ *  which is fine - CSS truncation hides nothing from a screen reader, so the
  *  full label is already in the accessibility tree as the chip's own text. */
 function chipHtml(c: Candidate): string {
   const full = c.provenance.detail
@@ -216,13 +216,13 @@ function rowHtml(c: Candidate, opts: TrayHtmlOpts): string {
 }
 
 /**
- * The tray's candidate list as markup — pure, so the grouping, the escaping and
+ * The tray's candidate list as markup - pure, so the grouping, the escaping and
  * every "is there an Add here" decision are testable without a DOM (the
  * `overviewHtml` precedent).
  *
  * Renders the GROUPS only; the head, the count and the standing sub-line are the
  * mount's scaffold, because they do not change with the list. An empty list
- * renders '' — the mount closes the tray rather than showing an empty panel.
+ * renders '' - the mount closes the tray rather than showing an empty panel.
  */
 export function trayHtml(pending: Candidate[], opts: TrayHtmlOpts = {}): string {
   let out = '';
@@ -250,7 +250,7 @@ export function trayHtml(pending: Candidate[], opts: TrayHtmlOpts = {}): string 
 const SHEET_MQ = '(max-width: 640px)';
 const SHEET_STATES = ['peek', 'half', 'full'] as const;
 
-/** The panel's id — one tray per studio, so a constant is honest and lets the
+/** The panel's id - one tray per studio, so a constant is honest and lets the
  *  rail's toggle name it in `aria-controls`. */
 const TRAY_PANEL_ID = 'ds-tray-panel';
 
@@ -266,7 +266,7 @@ const SHEET_STATE_SAID: Record<(typeof SHEET_STATES)[number], () => string> = {
 /**
  * Mount the tray into `shell` (the studio's `.start` element) and wire it.
  *
- * The panel starts CLOSED and hidden. Opening it is the caller's call — a press
+ * The panel starts CLOSED and hidden. Opening it is the caller's call - a press
  * on the rail's tray toggle, or a scan that just landed candidates in it.
  */
 export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
@@ -349,7 +349,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
 
   /** Which control had focus in the list, as something that survives the DOM
    *  it was read from: what KIND of action, which candidate, and where its row
-   *  sat — so a row that has left the tray can hand focus to its successor
+   *  sat - so a row that has left the tray can hand focus to its successor
    *  instead of to `<body>`. */
   interface FocusMemo { attr: string; id: string; row: number }
 
@@ -394,7 +394,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
   function focusIn(): void {
     // Duck-typed, not `instanceof HTMLElement`: the constructor is a property of
     // the document's own window, and this module is mounted under jsdom too.
-    // `<body>` is not a return target — it is where focus goes when there isn't
+    // `<body>` is not a return target - it is where focus goes when there isn't
     // one, so remembering it would just re-drop focus on close.
     const active = trayEl.ownerDocument.activeElement as HTMLElement | null;
     returnFocus = active && active !== trayEl.ownerDocument.body && typeof active.focus === 'function' ? active : null;
@@ -409,7 +409,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
     const active = doc.activeElement as HTMLElement | null;
     // Only a panel that HAS focus hands it back. Someone who opened the tray,
     // clicked into the studio and then pressed Escape is working somewhere else
-    // — pulling them to the toggle would be the tray taking focus, not
+    // - pulling them to the toggle would be the tray taking focus, not
     // returning it. `<body>` counts as inside: that is where the repaint just
     // dropped it when the last row left.
     const wasInside = !active || active === doc.body || trayEl.contains(active) || gripEl.contains(active);
@@ -427,7 +427,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
     if (groupsEl) groupsEl.innerHTML = trayHtml(list, opts);
     if (open && list.length === 0) { setOpen(false); return; }
     if (memo) restoreFocus(memo);
-    handle?.refresh(); // the head's height can change with the count — re-measure
+    handle?.refresh(); // the head's height can change with the count - re-measure
   }
 
   function setOpen(next: boolean): void {
@@ -437,7 +437,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
     gripEl.hidden = !open;
     syncSheet();
     // The view resyncs its toggle here, so a focus return that lands on it must
-    // happen AFTER — an empty tray hides that toggle, and focusing an element
+    // happen AFTER - an empty tray hides that toggle, and focusing an element
     // one line before it is hidden is the same as focusing nothing.
     ctx.onOpenChange?.(open);
     if (!open) focusOut();
@@ -446,13 +446,13 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
   // ── Adds ───────────────────────────────────────────────────────────────────
 
   /** Commit one candidate through the room that owns its material. Returns
-   *  false when there is no path for it, or the path failed — a failure leaves
+   *  false when there is no path for it, or the path failed - a failure leaves
    *  the candidate PENDING, so nothing is silently lost. */
   async function addOne(c: Candidate | null): Promise<boolean> {
     if (!c) return false;
     // A refusal is as loud as a failure. A press that reports nothing added is
     // the same experience as a dead button, and the button is still there
-    // afterwards (the candidate stays pending) — so say so, once, here, rather
+    // afterwards (the candidate stays pending) - so say so, once, here, rather
     // than leaving the caller to guess which of its own paths went quiet.
     const failed = (): false => {
       announce(tRaw('{value} could not be added.', { value: c.value }));
@@ -470,7 +470,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
         if (!ctx.setName) return failed();
         await ctx.setName(c.value);
       } else {
-        return false; // logo / asset — no producer, and no Add button to press
+        return false; // logo / asset - no producer, and no Add button to press
       }
     } catch {
       return failed();
@@ -513,7 +513,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
   };
 
   // The sheet driver's grip handling is pointer-only, so keyboard activation
-  // (Enter/Space — a click with detail 0 and no pointer sequence) would do
+  // (Enter/Space - a click with detail 0 and no pointer sequence) would do
   // nothing on a focusable button. Step through the stops with the same bounce
   // as a tap; real pointer taps (detail ≥ 1) already went through pointerup.
   let keyDir: 1 | -1 = 1;
@@ -543,7 +543,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
     // render()'s own self-close guard only fires on an ALREADY-open tray, so
     // the empty case has to be refused here too: a rescan whose candidates were
     // all added before returns 0 new ones, and raising a panel reading "0 kept"
-    // — whose toggle the view hides in the same tick — is exactly the empty
+    // - whose toggle the view hides in the same tick - is exactly the empty
     // concept §9 rules out.
     if (pending().length === 0) return;
     setOpen(true);
@@ -584,6 +584,6 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
   };
 }
 
-/** Spelling alias — the studio's other mounts are `mountX`, and both spellings
+/** Spelling alias - the studio's other mounts are `mountX`, and both spellings
  *  of this one appear in plan 97. Same function, no second implementation. */
 export const mountTrayUI = mountTrayUi;

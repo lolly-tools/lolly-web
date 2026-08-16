@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The bed-duck gain envelope — pure scheduling math shared by the two Web Audio
+ * The bed-duck gain envelope - pure scheduling math shared by the two Web Audio
  * mix graphs: bridge/export.ts's looped-bed path (live AudioContext and the
  * WebCodecs OfflineAudioContext bed render) and bridge/sequence-render.ts's
  * OfflineAudioContext mix. The rule (plans/41-tts-stt-programme.md §6.1): a mix-in
  * bed plays at FULL volume wherever the primary audio (a tool's own clip, or a
- * sequence's audio boxes) is silent — before it starts and after it ends, the
- * top-and-tail intro/outro — and glides to a user-set CENTRE level underneath
+ * sequence's audio boxes) is silent - before it starts and after it ends, the
+ * top-and-tail intro/outro - and glides to a user-set CENTRE level underneath
  * it. Boundaries are always linear ramps (setValueAtTime/linearRampToValueAtTime
  * consumers), never hard steps.
  *
@@ -31,7 +31,7 @@ export interface ExportAudioMixIn {
 }
 
 /**
- * The export bar's audio selection — THE one declaration of this shape (memory
+ * The export bar's audio selection - THE one declaration of this shape (memory
  * export-settings-fragmentation: fields are added here once; bridge/export.ts's
  * ExportOpts and views/tool.ts's RunExportOpts both reference it). Without `mix`
  * it is the single track today's readers always understood; with `mix` the
@@ -56,7 +56,7 @@ export interface ExportAudio {
  *  ENDING at `t`, starting from the previous event). */
 export interface GainEvent { t: number; v: number; ramp: boolean }
 
-/** Boundary ramp length, seconds — the bed glides between full and centre. */
+/** Boundary ramp length, seconds - the bed glides between full and centre. */
 export const MIX_RAMP_SEC = 0.8;
 
 /** The "low" centre level of the export card's off/low/full select. */
@@ -94,7 +94,7 @@ export function bedDuckEnvelope(o: {
   if (fadeIn > 0) { events.push({ t: 0, v: 0, ramp: false }, { t: fadeIn, v: vol, ramp: true }); }
   else events.push({ t: 0, v: vol, ramp: false });
 
-  // Where the fade-out begins (the bed must be back at full by here) — the same
+  // Where the fade-out begins (the bed must be back at full by here) - the same
   // `clip > fadeIn` guard the legacy single-window envelope used.
   const wantFadeOut = fadeOut > 0 && clip > fadeIn;
   const fs = wantFadeOut ? Math.max(fadeIn, clip - fadeOut) : clip;
@@ -131,7 +131,7 @@ export function bedDuckEnvelope(o: {
   return events;
 }
 
-/** The subset of AudioParam the scheduler touches — fakeable in Node tests. */
+/** The subset of AudioParam the scheduler touches - fakeable in Node tests. */
 export interface GainParamLike {
   setValueAtTime(value: number, time: number): unknown;
   linearRampToValueAtTime(value: number, time: number): unknown;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/team-session-origin.ts — where a mounted tool CAME FROM, when it came from a
+ * org/team-session-origin.ts - where a mounted tool CAME FROM, when it came from a
  * team session on the instance (plans/100 §7; the stitch-2 gap named in
  * `lib/collab-launch.ts`'s `CollabLaunchContext.sessionId`).
  *
@@ -11,13 +11,13 @@
  * rewrite is a faithful working copy and a deliberate amnesiac: the instance's id for
  * the session survives nowhere in the route, the runtime, or the slot, so by the time
  * the Share dialog builds a `CollabLaunchContext` the id is genuinely unknowable from
- * anything the tool view holds — and the `'work'` opener, whose whole prerequisite is
+ * anything the tool view holds - and the `'work'` opener, whose whole prerequisite is
  * that id (a work collab is a room keyed by it), could only refuse.
  *
  * So the id travels beside the navigation instead of inside it: a one-shot stash armed
  * by the open and spent by the mount it was armed for. The same shape as the other
- * hand-offs that cross this exact seam — `lib/collab-live-mount.ts`'s
- * `carryMountState`/`takeCarriedMountState` and the drop router's stash-then-route —
+ * hand-offs that cross this exact seam - `lib/collab-live-mount.ts`'s
+ * `carryMountState`/`takeCarriedMountState` and the drop router's stash-then-route - 
  * and for the same reason: the route is a lossy encoder, and some facts about a mount
  * are not input values and have no business being serialised into a shareable link.
  * A team session's id is one of them: it is an instance-side identifier, not part of
@@ -25,20 +25,20 @@
  *
  * ── Two states, both deliberately small ────────────────────────────────────────
  *
- *  - `pending` — armed by {@link rememberTeamSessionOrigin} in the window between the
+ *  - `pending` - armed by {@link rememberTeamSessionOrigin} in the window between the
  *    open and the mount. Spent by the FIRST {@link consumeTeamSessionOrigin}, whether
  *    or not it matches: a mount of a different tool means the navigation this stash
  *    was armed for never happened, and a stash that outlives its window is exactly how
  *    an unrelated later mount inherits someone else's session id.
- *  - `active` — what that consume promoted, for the life of the mount that consumed
+ *  - `active` - what that consume promoted, for the life of the mount that consumed
  *    it. Read (never taken) by {@link activeTeamSessionOrigin}, which requires the
  *    caller to name the tool it is asking about, so an origin can only ever answer for
  *    the tool it belongs to.
  *
  * ── The honesty rules (why this file is so cautious) ───────────────────────────
  *
- * The failure mode worth designing against is not "the id is missing" — the opener
- * already has an honest sentence for that — it is **an id that is present and wrong**,
+ * The failure mode worth designing against is not "the id is missing" - the opener
+ * already has an honest sentence for that - it is **an id that is present and wrong**,
  * which silently opens a room on somebody else's session. Hence:
  *
  *  1. **Every mount consumes.** A non-matching consume clears BOTH states, so a stash
@@ -46,30 +46,30 @@
  *     mount that earned it.
  *  2. **A remount never resurrects one.** The collab adoption path force-remounts the
  *     same tool (`lib/collab-live-mount.ts`), and an acceptor's remount is a document
- *     seeded by a PEER — the same tool id, a completely different session. Since the
+ *     seeded by a PEER - the same tool id, a completely different session. Since the
  *     stash is already spent, that remount consumes nothing and clears `active`. The
  *     origin is lost rather than re-asserted; losing it costs an honest refusal, and
  *     keeping it would cost a wrong room.
  *  3. **The mount releases it on teardown** ({@link releaseTeamSessionOrigin}), so a
- *     Share dialog opened somewhere else later — the Projects view can share a LOCAL
- *     session of the same tool — cannot read an origin from a mount that is gone.
+ *     Share dialog opened somewhere else later - the Projects view can share a LOCAL
+ *     session of the same tool - cannot read an origin from a mount that is gone.
  *  4. **Reloading the tab loses it**, and that is accepted, not worked around. Nothing
  *     here is persisted: `sessionStorage` would survive a reload and thereby survive
  *     every guarantee above. The durable path to a work collab is the invite deep link,
- *     which carries the id in the message (§7 item 9) — this stash only makes the
+ *     which carries the id in the message (§7 item 9) - this stash only makes the
  *     in-app "I am already looking at that session" path work.
  *
  * Module state, not a DOM/storage/network surface: this file imports nothing, which is
  * why `views/` may statically import it without dragging the control plane onto the
  * boot path. It lives under `org/` because the fact it carries is control-plane
- * awareness — an id only an instance issues — and the generic seams it threads between
+ * awareness - an id only an instance issues - and the generic seams it threads between
  * (`lib/share-sections.ts`, `lib/collab-launch.ts`) stay product-neutral by not
  * learning about it. `org/collab-share.ts` is the only reader.
  */
 
 /** Where a mounted tool came from, as the instance holds it. */
 export interface TeamSessionOrigin {
-  /** The instance's id for the session (`TeamSessionRef.id`) — the room key. */
+  /** The instance's id for the session (`TeamSessionRef.id`) - the room key. */
   readonly sessionId: string;
   /** The tool the session opened into; every read must match it. */
   readonly toolId: string;
@@ -86,7 +86,7 @@ let pending: TeamSessionOrigin | null = null;
 let active: TeamSessionOrigin | null = null;
 
 /**
- * Arm the stash for the mount that is ABOUT to happen — call it immediately before
+ * Arm the stash for the mount that is ABOUT to happen - call it immediately before
  * navigating, never speculatively.
  *
  * A blank session or tool id arms nothing (and clears any previous arm): an origin
@@ -110,7 +110,7 @@ export function rememberTeamSessionOrigin(origin: {
  * armed for THIS tool (`null` for every mount that is not a team-session open, which
  * is nearly all of them).
  *
- * Called once per mount, as early as possible, whatever the mount turns out to be —
+ * Called once per mount, as early as possible, whatever the mount turns out to be - 
  * that is what bounds the stash to its window (rule 1 in the header). The returned
  * value is a convenience for the caller; the module keeps it, so nothing has to be
  * threaded through the view.
@@ -135,7 +135,7 @@ export function activeTeamSessionOrigin(toolId: string | null | undefined): Team
   return active;
 }
 
-/** Drop the live mount's origin — called from the tool view's teardown, so an origin
+/** Drop the live mount's origin - called from the tool view's teardown, so an origin
  *  never outlives the mount that earned it (rule 3). Idempotent. */
 export function releaseTeamSessionOrigin(): void {
   active = null;

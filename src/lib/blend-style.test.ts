@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * The shared blend vocabulary — lib/blend-style.ts.
+ * The shared blend vocabulary - lib/blend-style.ts.
  *
  * Run directly:  node --test shells/web/src/lib/blend-style.test.ts
  *
@@ -49,7 +49,7 @@ test('only the polar spaces admit a hue route', () => {
 });
 
 test('the CSS fragment omits the default route and never states one CSS would reject', () => {
-  // `shorter` is CSS's default — writing it is noise.
+  // `shorter` is CSS's default - writing it is noise.
   assert.equal(cssInterpolation('oklch'), 'in oklch');
   assert.equal(cssInterpolation('oklch', 'shorter'), 'in oklch');
   assert.equal(cssInterpolation('oklch', 'longer'), 'in oklch longer hue');

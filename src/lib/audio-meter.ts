@@ -2,14 +2,14 @@
 /**
  * Frequency-bar audio meters. drawMeterBars/drawMeterBaseline paint one frame of the
  * shared bar look, so the Neurospicy player's meter (components/music-player.ts) and
- * the catalog details modal's big preview meter stay visually identical — both read
+ * the catalog details modal's big preview meter stay visually identical - both read
  * their colour from the canvas's CSS `color` at draw time, so they follow the theme.
  *
  * attachAudioMeter drives a canvas from an <audio> element: the modal preview plays
  * through a plain element (outside the focus-loop graph), so it needs its own
- * analyser. One shared AudioContext serves every preview — createMediaElementSource
+ * analyser. One shared AudioContext serves every preview - createMediaElementSource
  * permanently reroutes an element's output, and contexts are a scarce per-page
- * resource — with one source per element, created lazily on first play (the context
+ * resource - with one source per element, created lazily on first play (the context
  * can't run before a user gesture anyway).
  */
 
@@ -47,12 +47,12 @@ export function drawMeterBaseline(c2d: CanvasRenderingContext2D, w: number, h: n
 let previewCtx: AudioContext | null = null;
 
 /**
- * Drive `canvas` from `audioEl`'s output while it plays. Returns a dispose fn —
+ * Drive `canvas` from `audioEl`'s output while it plays. Returns a dispose fn - 
  * call it when the element's UI is torn down (it disconnects the media source,
  * which also silences a detached element that would otherwise play on).
  *
  * Only same-origin/blob sources are metered: a cross-origin element routed through
- * a MediaElementSource is CORS-tainted and outputs SILENCE — worse than no meter —
+ * a MediaElementSource is CORS-tainted and outputs SILENCE - worse than no meter - 
  * so those get the plain element (the canvas hides itself).
  */
 export interface MeterHandle {
@@ -62,7 +62,7 @@ export interface MeterHandle {
    * The live AnalyserNode, once the graph exists (first play), else null.
    *
    * Exposed because an element can only ever produce ONE MediaElementSource and can
-   * never lose it — so anything else that wants this element's audio (the MilkDrop
+   * never lose it - so anything else that wants this element's audio (the MilkDrop
    * visualiser in the catalog's details modal) MUST share this node rather than build a
    * second source, which would throw and leave the preview silent.
    */
@@ -90,7 +90,7 @@ export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioEl
   };
   idle();
 
-  // 'pending' = no src yet (e.g. a zzfxm song still rendering to its WAV blob) — a
+  // 'pending' = no src yet (e.g. a zzfxm song still rendering to its WAV blob) - a
   // play in that window must NOT latch the canvas hidden; the next 'play' retries.
   const sourceState = (): 'ok' | 'pending' | 'unsafe' => {
     const src = audioEl.currentSrc || audioEl.src;

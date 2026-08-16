@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Illustrative "your palette applied to graphics" mockups for the brand
- * generator — à la palettemaker.com: instead of a flat row of swatches, show
+ * generator - à la palettemaker.com: instead of a flat row of swatches, show
  * the palette living on real-looking artwork (a poster, a chart, a UI card) so
  * the user sees how the colours actually behave together, and how the picture
  * fills out as they add more colours.
@@ -9,7 +9,7 @@
  * Every scene is a self-contained, viewBox'd SVG string (no <script>, no
  * external <image>/href, no url() refs) meant to be dropped into the DOM via
  * innerHTML. Because the palette comes from user input, EVERY colour is passed
- * through `col()` before it touches an SVG attribute — only `#rgb…#rrggbbaa`
+ * through `col()` before it touches an SVG attribute - only `#rgb…#rrggbbaa`
  * hex (per /^#[0-9a-f]{3,8}$/i) or the literal 'transparent' survives; anything
  * else (`'#000;url(x)'`, `'red"/>'`, …) is replaced with a safe fallback, so a
  * hostile string can never break out of the attribute it lands in.
@@ -52,7 +52,7 @@ function toRgb(hex: string): [number, number, number] | null {
   return [r, g, b].some(Number.isNaN) ? null : [r, g, b];
 }
 
-/** A readable ink colour (near-black or white) for text/marks sitting on `bg` —
+/** A readable ink colour (near-black or white) for text/marks sitting on `bg` - 
  *  the app-wide inversion rule (contrastText, brand-vars.ts), with its black
  *  softened to this preview's near-black. It briefly ran a WCAG-ratio winner
  *  here instead, which flips far darker than the shared rule and left these
@@ -181,7 +181,7 @@ function uiCard(ex: string[]): string {
     chips += `<rect x="${x}" y="130" width="42" height="20" rx="10" fill="${at(ex, i + 1)}"/>`;
   }
   return open(w, h, 'App UI card using your palette')
-    // card body (full border — not a one-sided stripe)
+    // card body (full border - not a one-sided stripe)
     + `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="16" fill="#ffffff" stroke="#e7e9ee"/>`
     // header bar with top corners rounded to match the card
     + `<path d="M0 16 A16 16 0 0 1 16 0 L304 0 A16 16 0 0 1 320 16 L320 46 L0 46 Z" fill="${primary}"/>`
@@ -207,7 +207,7 @@ function uiCard(ex: string[]): string {
 
 /**
  * Three illustrative SVG scenes painted from `colors` (the brand palette, in
- * order — `colors[0]` is treated as primary). Bar count in the chart reflects
+ * order - `colors[0]` is treated as primary). Bar count in the chart reflects
  * the palette size, or `opts.steps` when given. Pure + deterministic; each SVG
  * is self-contained and safe to inject via innerHTML.
  */

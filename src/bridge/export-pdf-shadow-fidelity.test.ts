@@ -5,20 +5,20 @@
  *
  * ## The renderer matters
  *
- * The PDF is rasterised by **Quartz** — the renderer Preview and every macOS app use
- * — via a ~30-line CoreGraphics program (`scripts/lib/pdfrender.swift`), compiled on
+ * The PDF is rasterised by **Quartz** - the renderer Preview and every macOS app use
+ * - via a ~30-line CoreGraphics program (`scripts/lib/pdfrender.swift`), compiled on
  * demand and cached. poppler is the fallback when Swift is unavailable, but it is a
  * strictly worse oracle here and the thresholds below are Quartz's: on the same
  * bytes, poppler reports 0.39% mean on plain text where Quartz reports 0.11%, and
  * 12.5% worst-pixel on a shadow where Quartz reports 7.8%. That gap is poppler's own
- * error, and it is largest in exactly the areas shadow work touches — transparency
+ * error, and it is largest in exactly the areas shadow work touches - transparency
  * groups, soft masks, blend modes. Measuring against it would have meant chasing
  * error that was never in our output.
  *
  * ## Read every row against a control
  *
  * `CONTROL: no-shadow box` (0.03% / 9.7%) is the geometry floor and
- * `CONTROL: plain text` (0.11% / 45.5%) the text floor — glyph rasterisation differs
+ * `CONTROL: plain text` (0.11% / 45.5%) the text floor - glyph rasterisation differs
  * between Chromium and Quartz, and no shadow row can beat that.
  *
  * ## What this caught
@@ -29,7 +29,7 @@
  *   - `text-shadow`: not drawn at all (blurred 0.62% → 0.16%, hard 0.50% → 0.10%)
  *
  * PDF has no blur operator, but box shadows no longer bake: the blur of an edge IS
- * the Gaussian CDF, so they are drawn as concentric bands at computed alphas — pure
+ * the Gaussian CDF, so they are drawn as concentric bands at computed alphas - pure
  * vector, 4.9x smaller, and still editable. Only blurred TEXT shadows bake, because
  * offsetting a glyph outline needs a path-offsetting algorithm we do not have.
  */
@@ -166,7 +166,7 @@ const ROWS: Row[] = [
 
   // ── outer box-shadow: vector Gaussian bands ─────────────────────────────────
   // These read HIGHER than the bitmap bake they replaced (0.02% → 0.11%) and that is
-  // the accepted trade: a tenth of a percent of mean error — invisible — for output
+  // the accepted trade: a tenth of a percent of mean error - invisible - for output
   // that is 4.9x smaller and still editable vector. See §13 in the plan.
   { name: 'soft outer shadow', markup: box('background:#fff;box-shadow:0 6px 16px rgba(0,0,0,0.35)'),
     maxMean: 0.004, maxWorst: 0.14 },                       // Quartz 0.11% / 7.1%
@@ -193,10 +193,10 @@ const ROWS: Row[] = [
   // ── plan 104 P1d: filter: blur() / drop-shadow() reaching PDF at all ─────────
   // These are the pixel half of the P1d proof; export-pdf-filter.test.ts is the
   // structural half (it counts the embedded image objects). Both are needed: an image
-  // object of the right size can still be the wrong picture, and a good pixel score
+  // object of the correct size can still be the wrong picture, and a good pixel score
   // says nothing about which of the two defects below produced it.
   //
-  // The blur was not merely inaccurate, it was ABSENT — detectUnsupportedCss declared
+  // The blur was not merely inaccurate, it was ABSENT - detectUnsupportedCss declared
   // any parseable filter supported for every caller, so the PDF walker, which has no
   // filter branch, dropped it in silence. Guards the vectorCaps.cssFilter split: with
   // the cap wrongly declared here the box draws sharp and this row reads 1.62%.
@@ -204,17 +204,17 @@ const ROWS: Row[] = [
     maxMean: 0.005, maxWorst: 0.08 },                       // absent → 0.14% / 2.4%
   // The mixed chain, which is what design emits for a blurred box carrying a
   // depth shadow. This one ALWAYS rasterised (parseCssFilter cannot tokenise the nested
-  // rgba(), so it fell to the hatch by accident) — what it guards is the SPILL: measured
+  // rgba(), so it fell to the hatch by accident) - what it guards is the SPILL: measured
   // whole-value it came out at zero padding, the capture was sized to the bare box, and
   // the shadow sheared off at the edge for 3.12%. Per-function measurement is the fix.
   { name: 'layer blur + drop-shadow', markup: box('background:#4a90d9;filter:blur(4px) drop-shadow(0 8px 16px rgba(0,0,0,0.5))'),
     maxMean: 0.005, maxWorst: 0.08 },                       // 3.12% → 0.11% / 1.6%
   // Two owners, one ring of pixels. The box-shadow is drawn as vector bands BEFORE the
-  // hatch fires, and the hatch's pad — which exists to hold the filter's spill — reaches
+  // hatch fires, and the hatch's pad - which exists to hold the filter's spill - reaches
   // into exactly the ring those bands occupy, so the shadow was painted twice and came
   // out twice as dark. Neutralising box-shadow for the capture gives each pixel one
   // owner: 0.93% doubled, 0.45% with the blur simply dropped (what shipped before P1d),
-  // 0.27% now — so the combination ends up MORE faithful than it was, not less.
+  // 0.27% now - so the combination ends up MORE faithful than it was, not less.
   { name: 'layer blur over a box-shadow', markup: box('background:#fff;box-shadow:0 6px 16px rgba(0,0,0,0.35);filter:blur(3px)'),
     maxMean: 0.005, maxWorst: 0.14 },                       // 0.93% doubled → 0.27% / 7.1%
 ];

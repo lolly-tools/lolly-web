@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Authored-deck-model lowering — the PURE, DOM-free half of the tool→native-pptx path.
+ * Authored-deck-model lowering - the PURE, DOM-free half of the tool→native-pptx path.
  *
  * A tool may emit its own deck as inline JSON (a `[data-pptx-deck]` <script>) so it gets
- * NATIVE PowerPoint objects — editable text, real `a:tbl` tables, a brand theme — rather
+ * NATIVE PowerPoint objects - editable text, real `a:tbl` tables, a brand theme - rather
  * than pictures from the DOM walk. This module lowers that (UNTRUSTED, tool-authored)
  * JSON into the engine's `PptxSlide`/`PptxShape` model: CSS colours → hex, the deck's own
  * px space → EMU, everything coerced defensively so a hostile/typo'd field degrades to a
@@ -11,7 +11,7 @@
  * (they fetch bytes) and stay in export-pptx.ts; everything here is synchronous and
  * node-testable. The engine (buildPptxParts) frames the OOXML; this never touches a DOM.
  *
- * Contract (the deck model a tool emits) — all positions/sizes in the deck's px space:
+ * Contract (the deck model a tool emits) - all positions/sizes in the deck's px space:
  *   { size?:{w,h}, theme?:DeckTheme, slides:[ { bg?:DeckFill, notes?, elements:[DeckEl] } ] }
  *   DeckEl.t ∈ 'rect' | 'text' | 'table' | 'image'   (image handled by the caller)
  *   colours are CSS strings: '#30BA78', '#3bfa', 'rrggbb', 'rgb(…)', 'rgba(…)'.
@@ -21,8 +21,8 @@
  * (text, notes, cell text, bullet char, theme name, image src) containing '</script>'
  * can't close the tag and break out into HTML. Use
  *   JSON.stringify(deck).replace(/</g, '\\u003c')
- * This module's reader (parseDeckModel) is safe either way — a truncated model just fails
- * JSON.parse and falls back to the DOM walk — but the un-escaped emit is a stored-XSS /
+ * This module's reader (parseDeckModel) is safe either way - a truncated model just fails
+ * JSON.parse and falls back to the DOM walk - but the un-escaped emit is a stored-XSS /
  * DOM-breakout hole in the tool's OWN render, so it is mandatory on the emit side.
  */
 import { EMU_PER_PX, MAX_TABLE_COLS, MAX_TABLE_ROWS } from "../../../../engine/src/pptx.ts";
@@ -30,7 +30,7 @@ import type { PptxFill, PptxPara, PptxRun, PptxShape, PptxTable, PptxTableCell, 
 
 export type DeckBox = { x: number; y: number; cx: number; cy: number };
 
-// ECMA-376 ST_Coordinate bound — an EMU past this is schema-invalid (→ PowerPoint repair),
+// ECMA-376 ST_Coordinate bound - an EMU past this is schema-invalid (→ PowerPoint repair),
 // so an absurd px value gets clamped rather than emitted. Gradient stops are also capped.
 const ST_COORD_MAX = 27273042316900;
 const MAX_GRAD_STOPS = 64;
@@ -49,7 +49,7 @@ const hex2 = (n: number): string => Math.max(0, Math.min(255, Math.round(Number.
 
 // A CSS colour string → { hex:'RRGGBB', alpha? } or null (none/transparent/unparseable).
 // Handles #rgb / #rgba / #rrggbb / #rrggbbaa (with or without '#') and rgb()/rgba(). Named
-// CSS colours are NOT resolved — an authored deck emits hex/rgb (pptxgenjs convention).
+// CSS colours are NOT resolved - an authored deck emits hex/rgb (pptxgenjs convention).
 export function deckColor(v: unknown): { hex: string; alpha?: number } | null {
   const s = (typeof v === 'string' ? v : '').trim();
   if (!s || s === 'transparent') return null;
@@ -69,7 +69,7 @@ export function deckColor(v: unknown): { hex: string; alpha?: number } | null {
   return null;
 }
 
-// A DeckFill — a CSS colour string OR { grad:{ stops:[{pos,color}], angle } }.
+// A DeckFill - a CSS colour string OR { grad:{ stops:[{pos,color}], angle } }.
 export function deckFill(f: unknown): PptxFill | undefined {
   if (typeof f === 'string') { const c = deckColor(f); return c ? { solid: c.hex, alpha: c.alpha } : undefined; }
   const g = (f as { grad?: { stops?: unknown; angle?: unknown } } | null)?.grad;
@@ -154,7 +154,7 @@ export function deckSyncShape(el: Record<string, unknown>): PptxShape | null {
       return { kind: 'text', ...box, anchor: oneOf(el.anchor, ['t', 'ctr', 'b'] as const), paras: (Array.isArray(el.paras) ? el.paras : []).map(deckPara) };
     case 'table': {
       // Cap rows/cols at the engine's own limits (the engine slices too, but doing it
-      // here avoids building a huge intermediate — a 5000×200 table is 1e6 cell objects).
+      // here avoids building a huge intermediate - a 5000×200 table is 1e6 cell objects).
       const cols = (Array.isArray(el.cols) ? el.cols : []).slice(0, MAX_TABLE_COLS).map((w: unknown) => emuOf(w, 100));
       const rows = (Array.isArray(el.rows) ? el.rows : []).slice(0, MAX_TABLE_ROWS).map((row: Record<string, unknown>) => ({
         h: row?.h != null ? emuOf(row.h) : undefined,

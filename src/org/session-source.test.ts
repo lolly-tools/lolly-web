@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/session-source.ts — the control-plane SessionSource adapter.
+ * org/session-source.ts - the control-plane SessionSource adapter.
  *
  * Stubs global fetch (org traffic goes through instanceFetch → window.fetch for the
  * same-origin relative paths used here). Proves it maps the server contract onto the

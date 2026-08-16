@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Characterization tests for the `<path>` EMISSION inside renderSvgFromHtml
- * (export.ts) — the seam plans/archive/maintainability-2026-07-29.md item 1 names as the
+ * (export.ts) - the seam plans/archive/maintainability-2026-07-29.md item 1 names as the
  * largest untested surface in the repo, and the blocker on decomposing the
  * biggest file.
  *
@@ -12,19 +12,19 @@
  * DECISION layer around them inside export.ts: which runs get outlined at all,
  * which fall back to `<text>`, and whether the surrounding CSS (letter-spacing,
  * variable weight, text-transform) reaches the shaper. That is precisely where
- * this project's own notes record the historical drift — glyph mangling, pill to
+ * this project's own notes record the historical drift - glyph mangling, pill to
  * ellipse, the inline-flex drop. Every test here asserts an emission DECISION, not
  * glyph geometry, so it stays honest if HarfBuzz's output ever legitimately moves.
  *
  * A REAL CHROMIUM IS THE ORACLE. Every decision hinges on getComputedStyle
- * resolving a font stack, a used weight and a letter-spacing — jsdom has no font
+ * resolving a font stack, a used weight and a letter-spacing - jsdom has no font
  * matching, so it cannot answer any of them. Same harness shape as
  * export-m3.test.ts (esbuild bundle → page.addScriptTag), which is why the
  * `chromiumOrSkip` dance below looks familiar.
  *
  * THIS TIER IS BRAND-INDEPENDENT ON PURPOSE. The existing golden suite needs SUSE
  * font files under `catalog/fonts/`, a gitignored profile view, so it skips on the
- * `lolly-start` profile and in public CI — the second gap the audit called out.
+ * `lolly-start` profile and in public CI - the second gap the audit called out.
  * This file instead uses `Outfit[wght].ttf`, which is committed in the WEB SHELL's
  * own `public/fonts/` and is therefore present on every clone regardless of
  * profile. It is also a variable font (wght 100..900), which is what makes the
@@ -43,7 +43,7 @@ const EXPORT_MODULE = fileURLToPath(new URL('./export.ts', import.meta.url));
 // bridge/ -> src/ -> web/ -> shells/ -> repo root.
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-/** The platform face, committed in the web shell itself — not a brand asset. */
+/** The platform face, committed in the web shell itself - not a brand asset. */
 const OUTFIT_TTF = join(REPO_ROOT, 'shells/web/public/fonts/Outfit[wght].ttf');
 const HB_WASM = join(REPO_ROOT, 'node_modules/harfbuzzjs/dist/harfbuzz.wasm');
 
@@ -70,7 +70,7 @@ async function bundle(): Promise<string> {
   const out = await build({
     stdin: {
       // createExportAPI is what assigns export.ts's module-level `_host`, and the
-      // outlining branch is gated on `_host?.text` — without this call every run
+      // outlining branch is gated on `_host?.text` - without this call every run
       // silently falls back to <text> and the whole suite would pass vacuously.
       // The `emits a <path>` test is the canary for exactly that mistake.
       contents: `import { renderSvgFromHtml, createExportAPI } from ${JSON.stringify(EXPORT_MODULE)};
@@ -103,7 +103,7 @@ async function bundle(): Promise<string> {
 const FONT_CSS =
   `@font-face{font-family:Outfit;src:url('/fonts/Outfit[wght].ttf') format('truetype');font-weight:100 900}`;
 
-/** One browser for the whole file — launching per test dominates the runtime. */
+/** One browser for the whole file - launching per test dominates the runtime. */
 let shared: any = null;
 async function page(): Promise<any> {
   const { chromium } = browser as { chromium: any };
@@ -219,7 +219,7 @@ test('text-transform is applied BEFORE shaping, not left to the renderer',
 test('font-feature-settings reaches the shaper (frac changes the emitted geometry)',
   { skip: SKIP }, async () => {
     // featureSettingsToHb (the parser) is covered in text-svg.test.ts; this is
-    // the missing half — proof the COMPUTED style actually reaches toPath
+    // the missing half - proof the COMPUTED style actually reaches toPath
     // through export.ts. `frac` is a discretionary feature only reachable via
     // font-feature-settings (no CSS default turns it on), and probing Outfit
     // through the real HarfBuzz confirmed it is effective in this face (as are
@@ -238,7 +238,7 @@ test('font-feature-settings reaches the shaper (frac changes the emitted geometr
 test('a run the font cannot cover (notdef) keeps its <text> instead of emitting tofu',
   { skip: SKIP }, async () => {
     // Outfit has no CJK. export.ts refuses the path when toPath reports notdef
-    // glyphs — emitting them would bake a row of .notdef boxes into the artwork,
+    // glyphs - emitting them would bake a row of .notdef boxes into the artwork,
     // which is worse than a <text> the viewer's own fonts can still render.
     const svg = await render(OUTFIT('漢字テスト'));
     assert.equal(pathCount(svg), 0, 'uncovered glyphs must NOT be outlined');
@@ -249,9 +249,9 @@ test('CHARACTERIZATION: a mixed run (covered Latin + one uncovered CJK char) fal
   { skip: SKIP }, async () => {
     // Characterization, not judgement: this pins what export.ts does TODAY with
     // a run the font only partly covers (Outfit shapes the Latin, but the CJK
-    // char is .notdef — HarfBuzz probe: notdef=1 with real outline data for the
+    // char is .notdef - HarfBuzz probe: notdef=1 with real outline data for the
     // rest). Observed behaviour: the notdef refusal is per-RUN, so the whole
-    // run — including the perfectly coverable Latin — stays a single <text>;
+    // run - including the perfectly coverable Latin - stays a single <text>;
     // there is no split-run or per-glyph tofu path. If a future change splits
     // the run and outlines the covered segment, update this test deliberately.
     const svg = await render(OUTFIT('Latin 漢 mix'));
@@ -263,7 +263,7 @@ test('CHARACTERIZATION: a mixed run (covered Latin + one uncovered CJK char) fal
 
 test('convertPaths:false keeps every run as selectable <text>', { skip: SKIP }, async () => {
   // The user-facing "Convert paths" toggle. Same markup as the first test, which
-  // DOES outline — so this pins the toggle itself, not an accident of the fixture.
+  // DOES outline - so this pins the toggle itself, not an accident of the fixture.
   const svg = await render(OUTFIT('NoConvert'), { convertPaths: false });
   assert.equal(pathCount(svg), 0, 'convertPaths:false must suppress every outline');
   assert.match(svg, /NoConvert/, 'the text must be present and selectable');
@@ -289,7 +289,7 @@ test('a TILED conic background becomes one <pattern>, not an element-sized sweep
     // The stage's transparency checkerboard is
     //   repeating-conic-gradient(...) 50% / 2em 2em
     // Until 2026-07-30 the walker passed the ELEMENT box to parseConicGradient and
-    // fanned wedges across it, ignoring background-size — so a 32px checkerboard
+    // fanned wedges across it, ignoring background-size - so a 32px checkerboard
     // rendered as a single 800x500 four-quadrant sweep. Not a raster, but silently
     // WRONG PIXELS, which is worse. Chromium cannot help here either: PDF has no
     // conic shading type, so the print path rasterises it (measured), which makes
@@ -307,7 +307,7 @@ test('a TILED conic background becomes one <pattern>, not an element-sized sweep
 test('an UNTILED conic with a real RAMP is still emitted as a wedge fan', { skip: SKIP }, async () => {
   // Guards the sampling path: a genuine colour ramp has no exact vector form, so it
   // stays a fan. (The fixture here used to be a hard-stopped gradient, which now takes
-  // the exact-sector path below — a fan was never the RIGHT answer for it, only the
+  // the exact-sector path below - a fan was never the RIGHT answer for it, only the
   // answer we had.)
   const svg = await render(
     `<div style="width:200px;height:120px;background:` +
@@ -321,7 +321,7 @@ test('a TILED gradient layer becomes a <pattern>, not an element-sized sweep',
   { skip: SKIP }, async () => {
     // The editor stage's transparency checkerboard: two 45deg linear-gradient layers at
     // `24px 24px`, offset `0 0, 12px 12px`. A gradient is sized by background-size like
-    // any other background image, but only the conic and url() branches tiled — so this
+    // any other background image, but only the conic and url() branches tiled - so this
     // had no honest vector form and fell to the raster escape hatch. Measured: a
     // 1080x676, 53 KB PNG of a faint checkerboard inside docs/shots/use-chart-output.svg.
     const svg = await render(
@@ -358,7 +358,7 @@ test('a HARD-STOPPED conic emits one EXACT sector per band, not a sampled fan',
     // `A 0 25%, B 0 50%` is the checkerboard idiom: constant-colour bands with
     // instantaneous transitions. A uniform fan puts wedge edges where the colour does
     // NOT change, and each carries the deliberate 0.004rad overlap that stops
-    // antialiasing seams — so a 14px checker tile came out with a faint diagonal
+    // antialiasing seams - so a 14px checker tile came out with a faint diagonal
     // hairline across every square. Measured on docs/shots/use-chart-output.svg.
     const svg = await render(
       `<div style="width:200px;height:120px;background:` +
@@ -374,7 +374,7 @@ test('a HARD-STOPPED conic emits one EXACT sector per band, not a sampled fan',
 
 test('a fully TRANSPARENT band paints nothing at all', { skip: SKIP }, async () => {
   // The checker's clear squares are `transparent`. Emitting them as zero-alpha paths is
-  // pure weight in every exported file — half the sectors, painting nothing.
+  // pure weight in every exported file - half the sectors, painting nothing.
   const svg = await render(
     `<div style="width:200px;height:120px;background:` +
     `repeating-conic-gradient(rgb(255,0,0) 0% 25%, transparent 0% 50%)"></div>`);
@@ -388,7 +388,7 @@ test('a fully TRANSPARENT band paints nothing at all', { skip: SKIP }, async () 
 test('an <img> with a PATH src is inlined as a data: URI, not left as a fetchable href',
   { skip: SKIP }, async () => {
     // A docs screenshot is served as `<img src="/info/shots/x.svg">`, and an SVG
-    // consumed that way runs in SECURE STATIC MODE with no network access — so a
+    // consumed that way runs in SECURE STATIC MODE with no network access - so a
     // bare `href="/catalog/thumb.png"` renders blank and the file is not
     // self-contained. Until 2026-07-30 only data: and blob: were inlined; an
     // http/relative src fell through verbatim. The sibling CSS-url branch
@@ -412,11 +412,11 @@ test('an <img> with a PATH src is inlined as a data: URI, not left as a fetchabl
 
 test('a background-image whose data-URI contains quotes is emitted, not dropped',
   { skip: SKIP }, async () => {
-    // firstCssUrl matched `(["\']?)([^)"\']+)\\1` — a character class banning BOTH
+    // firstCssUrl matched `(["\']?)([^)"\']+)\\1` - a character class banning BOTH
     // quote marks from the URL body. An inline SVG data-URI is full of
     // `xmlns=\'…\'`, so the match failed, firstCssUrl returned null, the background
     // branch never ran, and NOTHING was emitted. That silently removed the select
-    // chevron (--field-chevron, styles/parts/fields.css:42 — one declaration, on
+    // chevron (--field-chevron, styles/parts/fields.css:42 - one declaration, on
     // every <select> in the app) from every SVG and PDF export, not just docs
     // screenshots. Measured before the fix: 0 <image> for this markup.
     const chevron = "url(\"data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' "
@@ -506,7 +506,7 @@ test('text inside a SCALED element exports at the size the browser paints it',
       host.innerHTML = svg;
       document.body.appendChild(host);
       // getBoundingClientRect, NOT getBBox: getBBox reports the element's own user
-      // space and ignores ancestor transforms — including the very <g transform> the
+      // space and ignores ancestor transforms - including the very <g transform> the
       // scale fix emits, which would make this measure the bug it is meant to catch.
       let x0 = Infinity, x1 = -Infinity;
       for (const pth of host.querySelectorAll('svg path')) {
@@ -529,7 +529,7 @@ test('text inside a SCALED element exports at the size the browser paints it',
 test('an oversized bitmap is downscaled to what its display box can show',
   { skip: SKIP }, async () => {
     // A gallery preview committed as a 3200x1800 PNG appears in a ~341px tile, so the
-    // walker was inlining ~5.76M pixels for a box that resolves at ~700 — one such tile
+    // walker was inlining ~5.76M pixels for a box that resolves at ~700 - one such tile
     // was 4.6 MB of a 6.6 MB shot. The inlined <image> should carry no more resolution
     // than the box needs at the export dpi, and none of the pixels should be visible as
     // a quality loss (not asserted here; verified by eye on the real gallery shot).

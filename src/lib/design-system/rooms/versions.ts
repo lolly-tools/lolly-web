@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Versions panel — publish, activate, restore (plan 97 §6a, M7).
+ * The Versions panel - publish, activate, restore (plan 97 §6a, M7).
  *
  * A foot-pinned panel rather than a room, because versioning acts on the WHOLE
  * design system rather than on one part of it, and because a studio that has
@@ -11,7 +11,7 @@
  *
  * WHAT THIS FILE OWNS: the copy, the markup and which press calls what. Every
  * byte that reaches disk goes through `../versions-io.ts`, which goes through
- * `installUserTokens` — the one write chokepoint, where immutability is
+ * `installUserTokens` - the one write chokepoint, where immutability is
  * actually enforced. Nothing here writes an asset itself.
  *
  * THE HONESTY RULES this panel is built around:
@@ -26,8 +26,8 @@
  *     stack and the panel offers the Undo straight away.
  *
  * ONE RAW-HTML SINK: `paint()` re-renders the whole panel from the pure
- * `versionsHtml(model)`. Everything after that — the live slug line, the error
- * line, the busy states — is `textContent`, `disabled` or `hidden`, never
+ * `versionsHtml(model)`. Everything after that - the live slug line, the error
+ * line, the busy states - is `textContent`, `disabled` or `hidden`, never
  * markup. That is also why the label field's feedback is computed from the
  * in-memory ledger rather than from `publishPreview`: a repaint on every
  * keystroke would take the caret with it.
@@ -53,7 +53,7 @@ import { t, tRaw } from '../../../i18n.ts';
 
 export interface VersionsCtx extends VersionsIoCtx {
   /**
-   * Step the head document back one edit — the studio's own undo, offered
+   * Step the head document back one edit - the studio's own undo, offered
    * straight after a restore. Absent in a degraded studio, in which case the
    * Undo is not shown rather than shown dead.
    */
@@ -119,7 +119,7 @@ const EMPTY_MODEL: VersionsModel = {
  * from a studio that has not been touched, is machinery with nothing behind it.
  *
  * Cost: the head document is already memoised by the tokens bridge, so the only
- * new read is one keyed blob lookup, and it happens in the studio view alone —
+ * new read is one keyed blob lookup, and it happens in the studio view alone - 
  * never on a render or an export path.
  */
 export async function hasPublishableSystem(ctx: VersionsIoCtx): Promise<boolean> {
@@ -140,7 +140,7 @@ function fmtDate(iso: string): string {
 
 /**
  * One `<details>` of token paths. `summary` is already-translated markup (t()
- * output), so it is not escaped again — a locale string is allowed to carry
+ * output), so it is not escaped again - a locale string is allowed to carry
  * emphasis, and double-escaping would print the tags. Every PATH is escaped:
  * those come out of the user's own document.
  */
@@ -361,11 +361,11 @@ export function mountVersionsRoom(el: HTMLElement, ctx: VersionsCtx): VersionsRo
    *
    * Captured by `act()` BEFORE anything is disabled, because the first thing an
    * action does is `setBusy(true)`, which disables the very control the press
-   * came from — and per the HTML focus fixup rule a real browser then blurs it to
+   * came from - and per the HTML focus fixup rule a real browser then blurs it to
    * `<body>`. By the time the repaint asks `focusKey()` the live answer is gone,
    * so the panel's whole restore ladder would run on '' and bail. (jsdom does not
    * implement the fixup, which is why this could not be caught by watching
-   * `document.activeElement` in a test — the guard test presses a button and
+   * `document.activeElement` in a test - the guard test presses a button and
    * asserts the landing instead.)
    */
   let pendingFocus: { key: string; caret?: number } | null = null;
@@ -376,7 +376,7 @@ export function mountVersionsRoom(el: HTMLElement, ctx: VersionsCtx): VersionsRo
    * A whole-panel re-render destroys the control that was pressed, and a
    * keyboard user landing on `document.body` afterwards has lost their place.
    * The ladder: the same control, else the name field (the publish flow's home),
-   * else the heading — which is why the heading carries `tabindex="-1"`. A
+   * else the heading - which is why the heading carries `tabindex="-1"`. A
    * control that came back DISABLED (publish, after a name that has no
    * successor to suggest) is skipped rather than focused into a dead end.
    */
@@ -405,7 +405,7 @@ export function mountVersionsRoom(el: HTMLElement, ctx: VersionsCtx): VersionsRo
    * and synchronous on purpose: this runs on every keystroke, and the panel must
    * not repaint (or read storage) while somebody is typing.
    */
-  /** True while the name field's last verdict was a refusal — so the reason is
+  /** True while the name field's last verdict was a refusal - so the reason is
    *  announced once per transition, not once per keystroke. */
   let nameWasBad = false;
 
@@ -624,7 +624,7 @@ export function mountVersionsRoom(el: HTMLElement, ctx: VersionsCtx): VersionsRo
       if (!open) return false;
       const held = el.ownerDocument.activeElement;
       open.open = false;
-      // Only re-seat focus if the fold was holding it — otherwise closing a
+      // Only re-seat focus if the fold was holding it - otherwise closing a
       // disclosure would steal the caret out of the name field.
       if (held && open.contains(held)) open.querySelector<HTMLElement>('summary')?.focus();
       return true;

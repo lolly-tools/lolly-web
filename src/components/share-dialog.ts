@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Share-link dialog — a ready-to-copy link plus toggles for the on-visit behaviour
+ * The Share-link dialog - a ready-to-copy link plus toggles for the on-visit behaviour
  * flags (fullscreen / export panel / auto-download / copy-on-visit / pin-version) and an
  * optional "Shortest link" pack. Extracted from views/tool.js so it can be invoked from
- * anywhere that has a tool id + serialised state — the tool view's Share button AND the
+ * anywhere that has a tool id + serialised state - the tool view's Share button AND the
  * Projects view's per-session "Share link" action (which reconstructs the state from a
  * saved session via createRuntime → serializeUrlState).
  *
@@ -28,17 +28,17 @@ export interface ShareDialogLolly {
   save: (blob: Blob, filename: string) => Promise<void>;
   /** Hand the built file to the OS share sheet (Web Share / AirDrop / Android share).
    *  Resolves false when there's no share target, so the caller falls back to save().
-   *  Present only when the host exposes `export.share` — the "Send to…" button is
+   *  Present only when the host exposes `export.share` - the "Send to…" button is
    *  feature-detected off it. */
   share?: (blob: Blob, filename: string) => Promise<boolean>;
 }
 
 // AUTO_PACK_MIN (auto-adopt the packed form) and SHARE_WARN_LEN (warn "very long")
-// are imported from lib/url-budget.ts — the cost model owns those thresholds so the
+// are imported from lib/url-budget.ts - the cost model owns those thresholds so the
 // gauge, the dialog and syncUrl can never disagree on where the ceiling is. Past
 // SHARE_WARN_LEN even the shortest packed link has outgrown a reliably-pasteable URL
 // (chats/emails/social truncate past ~2000, and the engine hard-rejects past 4096,
-// tool-url MAX_URL, so it wouldn't reopen) — so we warn and nudge to trim.
+// tool-url MAX_URL, so it wouldn't reopen) - so we warn and nudge to trim.
 
 // Bitmap formats copy to the clipboard as a PNG; text/html copy as text/rich text.
 // Vector (svg/pdf) and video formats have no useful clipboard form, so the
@@ -60,7 +60,7 @@ async function copyToClipboard(text: string): Promise<void> {
 }
 
 // Assemble a full shareable URL from query parts. For a tool we emit the crawler-visible
-// PATH form (/t/<id>) — the fragment is never sent to the server, so social crawlers only
+// PATH form (/t/<id>) - the fragment is never sent to the server, so social crawlers only
 // ever saw the generic og.png; /t/<id> is the per-tool OG stub that redirects a human back
 // into the SPA with these params. `toolId` is passed explicitly (the tool view resolves it
 // from location; the Projects session-share passes the saved session's toolId); if absent,
@@ -75,7 +75,7 @@ function shareUrlFromParts(parts: readonly string[], toolId?: string): string {
   return window.location.origin + window.location.pathname + window.location.hash.split('?')[0] + query;
 }
 
-/** An input field (top-level, or a `blocks` sub-field) — we only need its type. */
+/** An input field (top-level, or a `blocks` sub-field) - we only need its type. */
 interface ShareInput {
   type?: string;
   fields?: readonly { type?: string }[];
@@ -94,7 +94,7 @@ interface ShareManifest {
 
 // Input types that carry a user image. Catalog assets serialise as a shared ref,
 // but a device-local image (an upload, or one from the picker's saved/library
-// tabs) is bytes in this browser — it can't ride in a URL, so the recipient never
+// tabs) is bytes in this browser - it can't ride in a URL, so the recipient never
 // gets it. When a tool declares one of these, the Share dialog says so.
 const IMAGE_INPUT_TYPES = new Set(['asset', 'file']);
 function hasImageInput(manifest: ShareManifest): boolean {
@@ -112,7 +112,7 @@ function hasImageInput(manifest: ShareManifest): boolean {
  * bug). Content loss is distinct from length: a long link may still be faithful
  * (packing rescues it); an unfaithful one drops images/text no matter how short.
  */
-// The report now lives with the cost model that produces it (lib/url-budget.ts) —
+// The report now lives with the cost model that produces it (lib/url-budget.ts) - 
 // it is a projection of the costed params. Re-exported here so existing importers of
 // the dialog keep working (imported at the top for local use).
 export type { ShareFidelity };
@@ -154,7 +154,7 @@ export interface ShareDialogOpts {
    */
   fidelity?: ShareFidelity;
   /**
-   * The `.lolly` file vehicle. When supplied, the dialog offers "Download .lolly" —
+   * The `.lolly` file vehicle. When supplied, the dialog offers "Download .lolly" - 
    * the faithful fallback a link can't be (device-local images, big designs). The
    * content-loss verdict points here.
    */
@@ -171,7 +171,7 @@ export interface ShareDialogOpts {
  * @param {string} [o.title]       dialog heading
  */
 export function openShareDialog({ toolId, baseParts = [], manifest = {}, currentFormat = '', title = 'Share this tool', fidelity, lolly }: ShareDialogOpts): HTMLDialogElement {
-  // The readable query we'd pack (tool state + export settings) — WITHOUT the on-visit
+  // The readable query we'd pack (tool state + export settings) - WITHOUT the on-visit
   // flags, which stay readable outside the pack and merge on load.
   const baseQuery = baseParts.join('&');
 
@@ -184,7 +184,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const copyLabel  = isBitmap ? 'Copy image to clipboard on visit' : 'Copy to clipboard on visit';
   const version    = manifest.version;
   // When the caller supplies a fidelity report (the live tool view), the verdict
-  // banner below names exactly what won't travel — so the generic manifest note is
+  // banner below names exactly what won't travel - so the generic manifest note is
   // redundant and doubly-noisy. Keep the static note only for callers without one
   // (the Projects per-session share reconstructs state and can't measure the drops).
   const showImageNote = hasImageInput(manifest) && !fidelity;
@@ -280,16 +280,16 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const fullCb      = dialog.querySelector<HTMLInputElement>('[data-flag="full"]');
   const optionsCb   = dialog.querySelector<HTMLInputElement>('[data-flag="options"]');
   const optionsRow  = dialog.querySelector<HTMLElement>('[data-options-row]');
-  // All on-visit flag checkboxes, wherever they live — the behaviour toggles sit in the
+  // All on-visit flag checkboxes, wherever they live - the behaviour toggles sit in the
   // "Link behaviour" section, "Pin this tool version" (_v) in "Link options".
   const checkboxes  = [...dialog.querySelectorAll<HTMLInputElement>('input[data-flag]')];
   const shortestRow = dialog.querySelector<HTMLElement>('[data-shortest-row]')!;
   const shortestCb  = dialog.querySelector<HTMLInputElement>('[data-shortest]')!;
   const shortestNote = dialog.querySelector<HTMLElement>('[data-shortest-note]');
   const warnEl      = dialog.querySelector<HTMLElement>('[data-share-warning]')!;
-  // Packed token for the current state — filled in async once we know it helps.
+  // Packed token for the current state - filled in async once we know it helps.
   let packedToken: string | null = null;
-  // Encrypted (`zx`) token for the current state + typed password — recomputed as the
+  // Encrypted (`zx`) token for the current state + typed password - recomputed as the
   // password changes; null when protection is off or no password is set yet.
   const encryptCb   = dialog.querySelector<HTMLInputElement>('[data-encrypt]');
   const encryptBody = dialog.querySelector<HTMLElement>('[data-encrypt-body]');
@@ -299,8 +299,8 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 
   // The share verdict combines the two independent ways a link can fail its job.
   // CONTENT loss (fidelity: device-local images, or text/blocks past the link caps
-  // that a URL cannot hold) is the worse failure — packing can rescue length, but
-  // nothing rescues a dropped image — so it wins the banner and reads red. Otherwise
+  // that a URL cannot hold) is the worse failure - packing can rescue length, but
+  // nothing rescues a dropped image - so it wins the banner and reads red. Otherwise
   // an over-LONG link reads amber. `bestLen` is the shortest achievable length (the
   // packed length once known, else readable), so length is judged on the best case,
   // never the current toggle. A control-plane deployment (or private collab) registers
@@ -342,7 +342,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 
   const refresh = () => {
     // On-visit flags always ride readable (and outside the pack/encryption, where
-    // they still override on load) so the recipient — and any crawler — can see the
+    // they still override on load) so the recipient - and any crawler - can see the
     // behaviour even on a password-protected link.
     const flags = flagParts();
     const encryptOn = !!encryptCb?.checked;
@@ -354,7 +354,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       // Never emit an unencrypted link while protection is on but no token is ready.
       field.value = encryptPw?.value ? 'Generating protected link…' : 'Enter a password above to generate the protected link.';
       // toggleAttribute (not .disabled): a jelly-button reflects disabled via the
-      // ATTRIBUTE only, and a native <button> honours it too — one path for both.
+      // ATTRIBUTE only, and a native <button> honours it too - one path for both.
       copyBtn.toggleAttribute('disabled', true);
       return;
     }
@@ -372,7 +372,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     packQuery(baseQuery).then(token => {
       if (!token || !dialog.isConnected) return;
       const packedLen   = shareUrlFromParts([`${PACK_PARAM}=${token}`], toolId).length;
-      if (packedLen >= readableLen) return;             // packing wouldn't help — don't offer it
+      if (packedLen >= readableLen) return;             // packing wouldn't help - don't offer it
       packedToken = token;
       if (shortestNote) shortestNote.textContent = `${readableLen} → ${packedLen} characters`;
       shortestRow.hidden = false;
@@ -384,7 +384,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   shortestCb?.addEventListener('change', refresh);
 
   // Password-protect: recompute the encrypted token as the password changes
-  // (debounced — PBKDF2 is deliberately slow). The password never leaves the client;
+  // (debounced - PBKDF2 is deliberately slow). The password never leaves the client;
   // only the ciphertext token goes into the link.
   let encReq = 0;
   let encDebounce: ReturnType<typeof setTimeout> | undefined;
@@ -406,7 +406,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     encDebounce = setTimeout(recomputeEnc, 250);
   });
 
-  // `full` collapses the sidebar, so the export panel has nowhere to anchor —
+  // `full` collapses the sidebar, so the export panel has nowhere to anchor - 
   // full wins, exactly as the URL handling and CSS do. Reflect that here.
   const syncFullWins = () => {
     const dim = !!fullCb?.checked;
@@ -468,10 +468,10 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 }
 
 /**
- * Wire a .lolly delivery button — Download (save to disk) or "Send to…" (OS share
+ * Wire a .lolly delivery button - Download (save to disk) or "Send to…" (OS share
  * sheet, with a save fallback). Build once holding licensed brand content back (the
  * safe default); only if the result reports licensed assets do we ask whether to include
- * them — so an ordinary design goes out in one click, and licensed content never travels
+ * them - so an ordinary design goes out in one click, and licensed content never travels
  * without an explicit, informed yes. `deliver` is the delivery strategy; `labels.verb`
  * ("Download"/"Send") keeps the licensed-choice copy honest for each.
  */
@@ -501,7 +501,7 @@ function wireLollyDelivery(
 
 /** Present the licensed-content choice: deliver without the brand assets (the file
  *  already built), or rebuild including them. Handing the file over distributes those
- *  bytes, so the decision is explicit — and worded for the chosen verb (download/send). */
+ *  bytes, so the decision is explicit - and worded for the chosen verb (download/send). */
 function offerLicensedChoice(
   built: { blob: Blob; filename: string; summary: LollySummary },
   lolly: ShareDialogLolly,

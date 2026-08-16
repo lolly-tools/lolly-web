@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Capture-clip Content Credentials — the recorder/screencap self-assert path
+ * Capture-clip Content Credentials - the recorder/screencap self-assert path
  * (bridge/export.ts `stampCaptureClip` + `captureContainer`), run for real and
  * verified with the ENGINE's own reader as the oracle.
  *
  * Why this file exists: `stampCaptureClip` was typed `'mp4' | 'webm' | 'png'`,
  * so a voice take fell out of the only branch that signs anything and every
- * audio recording shipped uncredentialed. That was never a capability gap — the
- * engine embeds into m4a, mp3, wav and Ogg Opus as happily as into mp4/webm —
+ * audio recording shipped uncredentialed. That was never a capability gap - the
+ * engine embeds into m4a, mp3, wav and Ogg Opus as happily as into mp4/webm - 
  * it was a type signature nobody re-read after the containers landed. The guard
  * against a repeat is the first test: every format the capture path may name is
  * one the engine can actually place a manifest in.
@@ -15,8 +15,8 @@
  * The engine half (placer grammar, hard binding, tamper detection) is pinned in
  * tests/c2pa-containers.test.ts and tests/c2pa-formats.test.ts. What is pinned
  * HERE is the shell's claim: that an audio take asserts the same house capture
- * shape a video take does — one c2pa.created step, IPTC digitalCapture, an
- * honest description of which sensors ran — and that its store comes back
+ * shape a video take does - one c2pa.created step, IPTC digitalCapture, an
+ * honest description of which sensors ran - and that its store comes back
  * extractable so the clip chains as an ingredient once composited.
  *
  * Run directly:  node --test shells/web/src/bridge/capture-clip-c2pa.test.ts
@@ -29,7 +29,7 @@ import { C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE } from '../../../
 import { verifyC2pa, extractC2paStore, prepareC2paIngredientFromStore } from '../../../../engine/src/c2pa-verify.ts';
 
 // ── fixtures: the smallest structurally valid container per format ────────────
-// Same shapes tests/c2pa-formats.test.ts uses — enough grammar for the placer and
+// Same shapes tests/c2pa-formats.test.ts uses - enough grammar for the placer and
 // the verifier; neither decodes samples.
 
 const bytesOf = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
@@ -43,7 +43,7 @@ const u16le = (n: number): Uint8Array => Uint8Array.of(n & 0xff, (n >>> 8) & 0xf
 const u32le = (n: number): Uint8Array => Uint8Array.of(n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff);
 const u32be = (n: number): Uint8Array => Uint8Array.of(n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff);
 
-// M4A — ISO BMFF audio, what `audio/mp4` MediaRecorder output is.
+// M4A - ISO BMFF audio, what `audio/mp4` MediaRecorder output is.
 const mp4box = (type: string, ...parts: Uint8Array[]): Uint8Array => {
   const p = concat(parts);
   return concat([u32be(8 + p.length), bytesOf(type), p]);
@@ -54,7 +54,7 @@ const tinyM4a = (): Uint8Array => concat([
   mp4box('mdat', bytesOf('fake-aac-payload')),
 ]);
 
-// WebM — a finalised MediaRecorder blob (known-size Segment, SeekHead + Void).
+// WebM - a finalised MediaRecorder blob (known-size Segment, SeekHead + Void).
 const ebVint = (n: number): Uint8Array => {
   let w = 1;
   while (w < 8 && n > 2 ** (7 * w) - 2) w++;
@@ -80,7 +80,7 @@ function tinyWebm(): Uint8Array {
   return concat([EBML_HEAD, SEG_ID, Uint8Array.of(0x40 | (payload.length >> 8), payload.length & 0xff), payload]);
 }
 
-// Ogg Opus — OpusHead (BOS) + OpusTags (where the credential lands) + audio.
+// Ogg Opus - OpusHead (BOS) + OpusTags (where the credential lands) + audio.
 // Pages carry a real libogg CRC so the fixture is a decodable stream.
 const OGG_CRC_T = (() => {
   const t = new Uint32Array(256);
@@ -110,10 +110,10 @@ const tinyOgg = (): Uint8Array => concat([
   oggPage(0x04, 2, bytesOf('fake-opus-audio')),
 ]);
 
-// MP3 — a bare frame sync; the placer wraps a fresh ID3v2.4 GEOB around it.
+// MP3 - a bare frame sync; the placer wraps a fresh ID3v2.4 GEOB around it.
 const tinyMp3 = (): Uint8Array => concat([Uint8Array.of(0xff, 0xfb, 0x90, 0x00), bytesOf('fake-mp3-audio-frames')]);
 
-// MP4 — the video take, for the "audio matches video" comparison.
+// MP4 - the video take, for the "audio matches video" comparison.
 const tinyMp4 = (): Uint8Array => concat([
   mp4box('ftyp', bytesOf('isom'), u32be(0x200), bytesOf('isommp42')),
   mp4box('moov', mp4box('mvhd', new Uint8Array(100))),
@@ -171,7 +171,7 @@ test('captureContainer maps every MIME the recorder bridge can hand back', () =>
 
 // [format handed to the stamp, fixture bytes, what the READER's magic-byte sniff
 // calls the result]. The two differ for M4A: ISO BMFF audio and video share a
-// container, so the sniff reports 'mp4' — the manifest still records the true
+// container, so the sniff reports 'mp4' - the manifest still records the true
 // export format in its tools.lolly.export assertion (report.environment.format),
 // which is the field asserted below.
 const AUDIO_TAKES: Array<[CaptureFormat, Uint8Array, string]> = [
@@ -227,7 +227,7 @@ test('the audio take asserts the same shape a camera take does, minus the camera
   ]);
   assert.equal(vr.state, 'valid');
   assert.equal(ar.state, 'valid');
-  // Same action, same source type, same recording tool — only the sensor wording differs.
+  // Same action, same source type, same recording tool - only the sensor wording differs.
   assert.equal(created(ar)!.action, created(vr)!.action);
   assert.equal(created(ar)!.digitalSourceType, created(vr)!.digitalSourceType);
   assert.equal(vr.environment?.tool, ar.environment?.tool);
@@ -244,7 +244,7 @@ test('a transcoded take adds an honest c2pa.converted step after the capture', a
   assert.equal(report.state, 'valid', JSON.stringify(report.checks));
   const steps = report.claim?.actions ?? [];
   assert.equal(steps.length, 2, JSON.stringify(steps));
-  // The essence is still the mic take — the re-encode is an edit on top, never a
+  // The essence is still the mic take - the re-encode is an edit on top, never a
   // replacement of the origin claim.
   assert.equal(steps[0]!.action, 'c2pa.created');
   assert.equal(steps[0]!.digitalSourceType, CAPTURE_SOURCE_TYPE);

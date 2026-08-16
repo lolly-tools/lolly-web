@@ -16,13 +16,13 @@
  *     because their output doesn't change with the profile.
  *   - IDLE + SERIAL: each render is *started* on a requestIdleCallback and they
  *     run one at a time, so the queue yields to interaction between renders and
- *     never piles up. (A single render isn't itself time-sliced — but the set is
- *     tiny, see SCOPE — and the next is only scheduled once the previous resolves.)
+ *     never piles up. (A single render isn't itself time-sliced - but the set is
+ *     tiny, see SCOPE - and the next is only scheduled once the previous resolves.)
  *   - CACHED: each result is persisted (host.previews) keyed by a profile `sig`,
  *     so the work happens once per profile change, not once per gallery visit.
  *
- * The actual render reuses renderRowToBlob — the same off-screen path the compose
- * bridge and batch mode use — so the personalized thumbnail is produced by the
+ * The actual render reuses renderRowToBlob - the same off-screen path the compose
+ * bridge and batch mode use - so the personalized thumbnail is produced by the
  * exact engine path a real export would take, picking up the live profile through
  * createRuntime's bindToProfile resolution.
  */
@@ -45,7 +45,7 @@ export interface PersonalizableToolEntry {
 
 /**
  * The slice of the host bridge this module touches: everything the engine's
- * render path needs (HostV1 — renderRowToBlob mounts a real runtime), plus the
+ * render path needs (HostV1 - renderRowToBlob mounts a real runtime), plus the
  * previews store this module writes thumbnails into.
  */
 interface PreviewHost extends HostV1 {
@@ -60,7 +60,7 @@ const RASTER_FORMATS = ['png', 'jpg', 'jpeg', 'webp'];
 
 // Profile fields any tool currently binds via bindToProfile. The signature changes
 // iff one of these changes, which is exactly when a personalized thumbnail goes
-// stale. (Headshot is intentionally absent — no tool binds it today.)
+// stale. (Headshot is intentionally absent - no tool binds it today.)
 const SIGNATURE_FIELDS: ReadonlyArray<'firstname' | 'lastname' | 'email' | 'phone' | 'city' | 'country'> =
   ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
 
@@ -71,7 +71,7 @@ const ric = (cb: () => void) =>
 
 /**
  * A stable signature of the profile fields that affect personalized previews.
- * Returns '' when the user hasn't opted in — the caller treats '' as "don't
+ * Returns '' when the user hasn't opted in - the caller treats '' as "don't
  * personalize", so opting out instantly reverts cards to the committed previews.
  */
 export function profileSignature(profile: Profile | null | undefined): string {

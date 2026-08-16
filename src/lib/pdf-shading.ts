@@ -3,14 +3,14 @@
  * PDF shading colour sampling + the ShadingType 1 (function-based) classifier.
  *
  * The SHELL half of gradient import. The pure engine never evaluates a PDF
- * /Function and never sees a PostScript program — it receives a pre-sampled colour
+ * /Function and never sees a PostScript program - it receives a pre-sampled colour
  * ramp, a flat colour, or an opaque raster-tile key. Everything that decides WHICH
  * of those three a shading becomes lives here.
  *
  * Why a classifier at all: Chromium's print backend does not emit an axial shading
  * for a CSS `oklch()` colour, a `conic-gradient()` or a wide-gamut interpolated
- * gradient. It emits a **ShadingType 1** — a colour function over a 2-D domain
- * rectangle (PDF 32000-1 §8.7.4.5.3) — usually driven by a FunctionType 4
+ * gradient. It emits a **ShadingType 1** - a colour function over a 2-D domain
+ * rectangle (PDF 32000-1 §8.7.4.5.3) - usually driven by a FunctionType 4
  * PostScript calculator. Most of those are not actually 2-D:
  *
  *   rung 1 "flat"      the function is CONSTANT. Chromium routes a solid `oklch()`
@@ -18,7 +18,7 @@
  *                      not because it varies. Emits one hex colour, no shading.
  *                      This is the rung that recovers a wall of palette swatches.
  *   rung 2 "axialised" the function is near-linear in (u,v). Re-expressed as an
- *                      ordinary ShadingType 2 along the fitted direction — real
+ *                      ordinary ShadingType 2 along the fitted direction - real
  *                      vector output, no raster. This recovers slider tracks.
  *   rung 3 "tiled"     genuinely 2-D (a hue wheel). Keeps the domain + a tile key
  *                      the caller rasterises, AND an area-weighted mean colour as
@@ -29,7 +29,7 @@
  * so guessing at one would buy a heuristic and its failure modes for no observed
  * input. Deliberately unbuilt.
  *
- * KNOWN LIMITATION — the thresholds below are tuned against one page. Too loose and
+ * KNOWN LIMITATION - the thresholds below are tuned against one page. Too loose and
  * a real gradient silently flattens; the caller's `shading.type1.*` warning census
  * is the only detector, and a warning nobody reads is a weak defence.
  *
@@ -40,7 +40,7 @@ import type { PdfGradientStop } from '../../../../engine/src/pdf-map.ts';
 
 /** A parsed PDF function: input value(s) → colour components (each in [0,1]).
  *  Returns null when the function faulted (e.g. a Type 4 program that divided by
- *  zero) — a null must never be silently read as black. */
+ *  zero) - a null must never be silently read as black. */
 export type ColorFn = (...inputs: number[]) => number[] | null;
 
 const chan = (v: number): number => Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255);
@@ -51,7 +51,7 @@ const hex2 = (v: number): string => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v)).
  * (1 = Gray, 4 = CMYK naive, else RGB).
  *
  * KNOWN LIMITATION: a /Separation, /Indexed, /Lab or /DeviceN shading produces a
- * CONFIDENTLY WRONG colour here rather than none — the component count can't tell
+ * CONFIDENTLY WRONG colour here rather than none - the component count can't tell
  * those apart from a device space. Narrow, and it is part of why the classifier's
  * warnings matter.
  */
@@ -114,7 +114,7 @@ export function sampleStops(fn: ColorFn, domain: number[], comps: number): PdfGr
 
 // ── ShadingType 1 classification ─────────────────────────────────────────────
 
-/** The classifier's verdict. `flat` is populated on every successful rung — it is
+/** The classifier's verdict. `flat` is populated on every successful rung - it is
  *  the last rung of the fidelity ladder and back-stops anything the serializer
  *  ultimately refuses to emit. */
 export interface Type1Classification {
@@ -139,7 +139,7 @@ const AXIAL_MAX_RESID = 4;
 const AXIAL_MEAN_RESID = 2;
 
 // 17×17 on the domain, plus a 16×16 mid-cell offset pass. The offset pass exists
-// specifically to REDUCE — not eliminate — the risk that a periodic field reads as
+// specifically to REDUCE - not eliminate - the risk that a periodic field reads as
 // constant on the primary grid. 545 evaluations, sub-millisecond.
 const GRID = 16;
 
@@ -233,7 +233,7 @@ export function classifyFunctionShading(
         // The axis: the line through the grid centroid along d̂, cut to the extent
         // the samples actually span. Its endpoints may land OUTSIDE the domain rect
         // (they do for any oblique direction, since a segment of the projected
-        // extent along d̂ need not fit inside the box) — which is fine for an SVG
+        // extent along d̂ need not fit inside the box) - which is fine for an SVG
         // gradient axis, but means we must NOT evaluate the function there: a real
         // PDF function clamps its inputs to /Domain, so sampling off the edge would
         // return a plateau and the fit would reject its own gradient. So the ramp
@@ -282,7 +282,7 @@ function mag(g: [number, number]): number { return Math.hypot(g[0], g[1]); }
  *
  * The distinction matters and is not cosmetic: the offset sampling pass lands
  * samples exactly half-way between nodes, so bucket averaging biases every node by
- * half a step — ~8/255 on a full black→white ramp, which is twice the axial
+ * half a step - ~8/255 on a full black→white ramp, which is twice the axial
  * residual threshold. A textbook gradient would then be rejected as "irreducibly
  * 2-D" and rasterised. Local linear regression is unbiased for a linear field
  * including at the two end nodes, where a one-sided window would otherwise skew.
@@ -383,7 +383,7 @@ export interface TileSource {
  *
  * No flip: the shading /Matrix (and the page's own y-flip) rides on the SVG
  * `patternTransform`, so flipping here too would cancel it out and turn every
- * wheel upside down. Pure — the caller owns the canvas.
+ * wheel upside down. Pure - the caller owns the canvas.
  */
 export function renderTilePixels(src: TileSource, size: number): Uint8ClampedArray {
   const [x0, x1, y0, y1] = src.domain;

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "This device" — a live, read-only snapshot of the browser / runtime this
+ * "This device" - a live, read-only snapshot of the browser / runtime this
  * session is running on. Read entirely from the active session; never stored or
- * transmitted. Every value degrades to '—' when the browser doesn't expose it,
+ * transmitted. Every value degrades to ' - ' when the browser doesn't expose it,
  * and whole groups (Network, Graphics) are omitted when their API is absent.
  *
  * Extracted from the old Platform view so the merged Dashboard (#/d) can reuse
  * it. It exposes four things:
- *   - collectDevice()   → { headline, groups } — the full snapshot
+ *   - collectDevice()   → { headline, groups } - the full snapshot
  *   - renderDeviceCards(groups) → the KV-card grid (all rows, nothing dropped)
  *   - liveValue(key)    → the values that change mid-session (viewport, orientation)
  *   - wireDeviceLive(root) → keep those [data-live] rows current; returns a disposer
  * The Dashboard owns layout and the hero band; this module owns the data + the
  * detailed cards, so the two can't drift. A view wanting only part of the
  * snapshot (Colour Lab takes Display + the two Graphics cards) filters
- * `groups` by `key` — never by `title`, which is translated.
+ * `groups` by `key` - never by `title`, which is translated.
  */
 
 import { escape } from '../utils.ts';
@@ -26,7 +26,7 @@ const yesNo = (v: boolean | null | undefined): string => (v === true ? t('Yes') 
 
 // Values that can change while the session is live (window resize, device
 // rotation). Read on demand so the same code produces the initial render and
-// every real-time refresh — see the `live` rows and the listener wiring the
+// every real-time refresh - see the `live` rows and the listener wiring the
 // Dashboard attaches over [data-live]. Reading (not caching) also means they
 // speak the active language: t() resolves at call time, not at module load.
 export const LIVE_VALUES: Record<string, () => string> = {
@@ -36,7 +36,7 @@ export const LIVE_VALUES: Record<string, () => string> = {
     const h = window.innerHeight;
     return h > w ? t('Portrait') : w > h ? t('Landscape') : t('Square');
   },
-  // The Screen Orientation API's own token ('landscape-primary') — a spec value
+  // The Screen Orientation API's own token ('landscape-primary') - a spec value
   // like a UA string or a GPU renderer name, so it rides through verbatim.
   orientation: () => screen.orientation?.type || DASH,
 };
@@ -56,7 +56,7 @@ function matchPref(feature: string, options: string[]): string {
 
 // A media-feature keyword as a person reads it. The raw CSS tokens leak the spec
 // into the card ("Reduced motion: no-preference"), and a token that never reaches
-// t() can't be localised at all — so each one gets a human label, which is also
+// t() can't be localised at all - so each one gets a human label, which is also
 // its translation key. Unknown keywords (a future value) pass through as-is.
 // Every label here is dynamically keyed, so it lives in scripts/i18n/extra-keys.spa.json.
 const PREF_LABELS: Record<string, string> = {
@@ -89,7 +89,7 @@ export function fmtBytes(n: number): string {
 // Heading icons for the device cards. Two-tier "kind-changing" logic: a generic
 // icon each card names for itself, overridden by a specific icon when we can
 // identify the browser brand or operating system. Everything is monochrome
-// `currentColor`. Brand glyphs are simplified, theme-tinted marks — not the
+// `currentColor`. Brand glyphs are simplified, theme-tinted marks - not the
 // vendors' colour logos.
 const ICONS: Record<string, string> = {
   browser:
@@ -133,7 +133,7 @@ const ICONS: Record<string, string> = {
 // Each card names its own generic icon at the push site (see collectDevice), so a
 // brand/OS-specific mark can override it and the fallback still resolves. It used
 // to be a title → icon Record, which quietly coupled the icon to the ENGLISH card
-// title — the moment the title became a t() call, every fallback icon vanished.
+// title - the moment the title became a t() call, every fallback icon vanished.
 function browserIcon(name: string): string | null {
   if (!name || name === DASH) return null;
   if (/edge/i.test(name)) return ICONS.edge!;
@@ -158,7 +158,7 @@ function gpuIcon(vendor: string): string | null {
   return null;
 }
 
-// Compact "ARM64"/"x64"-style label for the glance chip — UA-CH's raw
+// Compact "ARM64"/"x64"-style label for the glance chip - UA-CH's raw
 // architecture ('arm'/'x86') + bitness, in the short form people actually recognise.
 function archChip(architecture: string, bitness?: string): string {
   const a = architecture.toLowerCase();
@@ -167,7 +167,7 @@ function archChip(architecture: string, bitness?: string): string {
   return architecture;
 }
 
-// "macOS 27.0.0" → "macOS"; "Android 15" → "Android" — the version-free family
+// "macOS 27.0.0" → "macOS"; "Android 15" → "Android" - the version-free family
 // name for the glance chip (the detail cards keep the full version elsewhere).
 function osFamily(os: string): string {
   return os === DASH ? DASH : os.replace(/\s+[\d./]+.*$/, '');
@@ -203,7 +203,7 @@ interface RenderStackInfo {
 }
 
 // The native libraries that actually rasterise vectors and shape text are NOT
-// exposed by any web API — but they're a deterministic function of (engine × OS),
+// exposed by any web API - but they're a deterministic function of (engine × OS),
 // so we infer them (the card says so). Blink/Gecko bundle Skia + HarfBuzz
 // cross-platform; WebKit uses Core Graphics / Core Text on Apple OSes and
 // Skia (Cairo before WebKitGTK 2.46) + HarfBuzz elsewhere.
@@ -260,7 +260,7 @@ function readGpu(): GpuInfo | null {
       webgl2: !!gl2,
       maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE) || null,
     };
-    // Release the context now — we only needed its parameters. Browsers cap live
+    // Release the context now - we only needed its parameters. Browsers cap live
     // WebGL contexts (~16); without this, one leaks per dashboard visit until GC,
     // eventually logging "Too many active WebGL contexts" and force-dropping old ones.
     gl.getExtension('WEBGL_lose_context')?.loseContext();
@@ -272,7 +272,7 @@ function readGpu(): GpuInfo | null {
 
 // Chromium runs WebGL through ANGLE, which buries the real hardware inside a
 // translation wrapper. describeGpu() pulls the parts that actually identify the
-// machine — vendor, chip and graphics backend — and keeps the raw string as a
+// machine - vendor, chip and graphics backend - and keeps the raw string as a
 // detail row. Degrades gracefully for non-ANGLE strings (Safari/Firefox report
 // the chip directly).
 const GPU_APIS: Array<[RegExp, string]> = [
@@ -383,7 +383,7 @@ export interface ClientRow {
 }
 
 /**
- * A stable identity for one card, independent of its (translated) title — the
+ * A stable identity for one card, independent of its (translated) title - the
  * handle a view uses to take a subset of the snapshot. Adding a group means
  * adding a key here; the titles stay free to be reworded or localised.
  */
@@ -413,11 +413,11 @@ export interface DeviceStat {
 export interface DeviceSnapshot {
   headline: DeviceStat[];
   groups: ClientGroup[];
-  /** Best-fit icon for the collapsed section header — OS mark, else browser
+  /** Best-fit icon for the collapsed section header - OS mark, else browser
    *  mark, else a generic device glyph. Never blank. */
   icon: string;
   /** Compact glance facts for the collapsed header (machine, memory,
-   *  architecture, browser, OS) — only the ones this session actually exposes;
+   *  architecture, browser, OS) - only the ones this session actually exposes;
    *  unavailable facts are omitted rather than shown as a dash. */
   chips: string[];
 }
@@ -486,9 +486,9 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   });
 
   const dpr = window.devicePixelRatio;
-  // Gamut names are proper nouns (sRGB, Display P3, Rec. 2020) — never translated.
+  // Gamut names are proper nouns (sRGB, Display P3, Rec. 2020) - never translated.
   // One detector for the whole shell (lib/display-gamut.ts), which the colour
-  // charts also anchor their pixels to — so this readout and what is on screen can
+  // charts also anchor their pixels to - so this readout and what is on screen can
   // never come from two different answers. Unlike the charts, this one reports the
   // rec2020 claim as-is: it is a diagnostic, not a promise about pixels.
   const gamut = GAMUT_LABELS[displayGamutClaim()] || DASH;
@@ -574,7 +574,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
       icon: ICONS.render!,
       note: t('The engine’s native 2D and text libraries — inferred from engine + OS, not reported by any web API.'),
       rows: [
-        // Library names (Skia, HarfBuzz, Core Text…) are proper nouns — untranslated.
+        // Library names (Skia, HarfBuzz, Core Text…) are proper nouns - untranslated.
         { k: t('2D rasteriser'), v: stack.raster },
         { k: t('Text shaping'), v: stack.text },
         { k: t('Compositor'), v: stack.compositor },
@@ -602,7 +602,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
       title: t('Browser Graphics'),
       icon: ICONS.layers!,
       rows: [
-        // 'Native' is the only word here — API names (Metal, Vulkan, Direct3D) and
+        // 'Native' is the only word here - API names (Metal, Vulkan, Direct3D) and
         // the translation layer (ANGLE) are proper nouns, as is the raw report.
         { k: t('Graphics API'), v: g.api },
         { k: t('Translation'), v: g.translation === 'Native' ? t('Native') : g.translation },
@@ -615,9 +615,9 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     });
   }
 
-  // Headline readouts for the hero band — the facts people find fascinating,
+  // Headline readouts for the hero band - the facts people find fascinating,
   // sized big. The GPU chip is the star (it names the actual machine), so it
-  // leads. Everything degrades to '—' the same way the cards do.
+  // leads. Everything degrades to ' - ' the same way the cards do.
   const headline: DeviceStat[] = [
     { label: t('Machine'), value: chip, sub: hwVendor !== DASH ? hwVendor : gpuApi !== DASH ? gpuApi : undefined, icon: gpuIcon(hwVendor) || ICONS.graphics!, mono: true },
     { label: t('Operating system'), value: os, sub: arch !== DASH ? arch : undefined, icon: osIcon(os) || ICONS.system! },
@@ -629,19 +629,19 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
 
   // A single best-fit icon for the collapsed section header: the OS mark reads
   // best (it's what people recognise their own device by), then the browser
-  // mark, then the generic chip glyph the System card already uses — never blank.
+  // mark, then the generic chip glyph the System card already uses - never blank.
   const icon = osIcon(os) || browserIcon(browser) || ICONS.system!;
 
-  // Compact glance chips for the collapsed header — machine leads (it's the
+  // Compact glance chips for the collapsed header - machine leads (it's the
   // most identifying fact, same as the hero band), then memory/architecture/
   // browser/OS. Only facts this session actually exposes; the rest are
-  // silently skipped rather than shown as a dash — a chip row is a preview,
+  // silently skipped rather than shown as a dash - a chip row is a preview,
   // not a checklist of what's missing. The machine chip in particular is only
-  // worth showing when it's actually short (a clean "AppleM4") — a software
+  // worth showing when it's actually short (a clean "AppleM4") - a software
   // renderer's verbose GPU string ("Google Vulkan 1.3.0 (SwiftShader Device
   // (LLVM 10.0.0))") reads as a wall of text, not a glance chip, so skip it.
   // The chip string itself sometimes already carries the vendor name (real
-  // Apple Silicon reports the GPU renderer as "Apple M4", not just "M4") — only
+  // Apple Silicon reports the GPU renderer as "Apple M4", not just "M4") - only
   // prepend hwVendor when chip doesn't already start with it, or it reads
   // "AppleApple M4".
   const machineChip = (hwVendor !== DASH && chip !== DASH
@@ -691,13 +691,13 @@ export function renderDeviceCards(groups: ClientGroup[]): string {
 
 /**
  * Keep the `[data-live]` rows inside `root` current for as long as the view is
- * mounted — viewport size and orientation are the only values in the snapshot
+ * mounted - viewport size and orientation are the only values in the snapshot
  * that move while you watch them, and a stale "1440 × 900" beside a window you
  * just resized reads as a bug in the readout rather than a stale render.
  *
  * Call AFTER the rows exist (the snapshot is async, so that's inside the
  * `collectDevice()` continuation). Returns a disposer; every caller must run it
- * on unmount — `#view` is persistent, so nothing detaches these listeners for us.
+ * on unmount - `#view` is persistent, so nothing detaches these listeners for us.
  */
 export function wireDeviceLive(root: HTMLElement): () => void {
   const liveEls = [...root.querySelectorAll<HTMLElement>('[data-live]')];

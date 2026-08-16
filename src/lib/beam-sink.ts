@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-sink — the receiver-side staging driver behind `BeamSink`
+ * beam-sink - the receiver-side staging driver behind `BeamSink`
  * (plan 100 §6.4, §11.15a, §11.18; the storage half of wave 3's beam).
  *
  * `collab/beam-protocol.ts` is deliberately storage-blind: it defines the frames and
  * the two state machines, and writes every received byte through an injected
- * `BeamSink` (`write` / `finalize` / `discard`). This module is that injection — the
+ * `BeamSink` (`write` / `finalize` / `discard`). This module is that injection - the
  * one place in the shell that knows what a staging row is. The protocol's guarantees
  * are only as good as this driver, so the two plan sections it exists to satisfy are
  * worth restating as properties of THIS file:
  *
- *  - **§11.15a — a 38 MB pack never accumulates in renderer RAM.** `write()` puts one
+ *  - **§11.15a - a 38 MB pack never accumulates in renderer RAM.** `write()` puts one
  *    chunk into IndexedDB as one row and returns; nothing is buffered per item, per
  *    beam, or anywhere else. The payload is stored as a `Blob`, so reading an item
  *    back at `finalize()` hands out lazy, disk-backed handles that `new Blob(parts)`
  *    concatenates by reference rather than by copying tens of megabytes through the
  *    JS heap. This is also why the module is DOM-free: it runs unchanged in a Worker
  *    (the intended home for pack ingest) or on the main thread.
- *  - **§11.18 — no partial ingest.** `finalize()` SEALS an item; it does not ingest
+ *  - **§11.18 - no partial ingest.** `finalize()` SEALS an item; it does not ingest
  *    one. Nothing here writes to `user-assets`, `state`, or any other real store, and
  *    `discard()` removes every row for the beam, idempotently and safely mid-write.
  *    The assembled `Blob`s stay in this driver's hand until the receiver reaches
@@ -26,7 +26,7 @@
  * ── Where the rows live ───────────────────────────────────────────────────────
  *
  * The shell owns ONE central IndexedDB (`bridge/db.ts`, database `lolly`), and every
- * feature that needs storage adds a store to it through the existing version ladder —
+ * feature that needs storage adds a store to it through the existing version ladder - 
  * `derived-media`, `audio-peaks`, `upscale-models` and the rest all arrived that way.
  * A private database for beam staging would be the only one in the codebase, would
  * add a second connection that blocks the shared DB's version upgrades, and would sit
@@ -34,7 +34,7 @@
  * store in the central DB, created at DB_VERSION 13. Like every other derived and
  * evictable store it is intentionally NOT in `REQUIRED_STORES` (its absence must
  * never escalate into wiping the user's real data) and NOT part of the portable
- * backup — a half-received transfer is not user data, and `clearStaleBeams()` is what
+ * backup - a half-received transfer is not user data, and `clearStaleBeams()` is what
  * removes what a crash left behind.
  *
  * The store is keyed `[beamId, itemIndex, seq]`, so IndexedDB's own key order IS seq
@@ -44,7 +44,7 @@
  *
  * ── Byte-exactness ───────────────────────────────────────────────────────────
  *
- * A transferred asset's bytes must arrive byte-identical — that is the rule that lets
+ * A transferred asset's bytes must arrive byte-identical - that is the rule that lets
  * C2PA credentials survive a beam (§6.4, the `credentialedBytes` convention from the
  * catalog's downloads). This driver therefore never transforms a payload: no text
  * decoding, no re-encoding, no MIME sniffing, no separators. It stores the exact
@@ -58,16 +58,16 @@
  * sink first refusal on producing that digest (`finalize` MAY return it; when it does
  * the protocol buffers nothing itself). Three modes, in increasing thrift:
  *
- *   1. default — `finalize()` materialises the assembled item ONCE to hash it, then
+ *   1. default - `finalize()` materialises the assembled item ONCE to hash it, then
  *      drops the buffer. Peak is one item, transient. Still strictly better than the
  *      protocol's built-in `sha256Hasher`, which retains every chunk on the JS heap
  *      for the whole item transfer, because during the transfer this driver holds
  *      nothing at all.
- *   2. `hasher` — inject a streaming digest (from a Worker, say) and it is fed chunk
+ *   2. `hasher` - inject a streaming digest (from a Worker, say) and it is fed chunk
  *      by chunk as they arrive: O(1) memory, nothing materialised. If chunks ever
  *      arrive out of seq order the streaming digest would be wrong, so that item
  *      silently falls back to mode 1 rather than producing a plausible lie.
- *   3. `digest: false` — `finalize()` returns no digest and the caller must leave the
+ *   3. `digest: false` - `finalize()` returns no digest and the caller must leave the
  *      protocol's own hasher in place. Verification is never skipped: a sink that
  *      returns nothing and a protocol constructed with `hasher: null` fails closed
  *      (`sink-failure`), which is the protocol's design, not an accident here.
@@ -76,7 +76,7 @@
  *
  * ── Failure surfacing ────────────────────────────────────────────────────────
  *
- * Every storage failure leaves this module as a `BeamSinkError` — a typed, coded
+ * Every storage failure leaves this module as a `BeamSinkError` - a typed, coded
  * error the protocol turns into a cancel (`enqueue` catches it and fails the beam
  * with `sink-failure`), never a raw DOMException and never an unhandled rejection.
  * A device that runs out of room mid-beam is the case that matters: it surfaces as
@@ -113,18 +113,18 @@ const MAX_KEY_PART = Number.MAX_SAFE_INTEGER;
 export interface BeamStagingRow {
   readonly beamId: string;
   readonly itemIndex: number;
-  /** 0-based within the item, +1 per chunk — the protocol's own numbering. */
+  /** 0-based within the item, +1 per chunk - the protocol's own numbering. */
   readonly seq: number;
   readonly bytes: Blob;
   /** `bytes.size`, denormalised so byte accounting never has to open a payload. */
   readonly size: number;
-  /** ms since epoch. The orphan sweep's only clock, and nothing else reads it —
+  /** ms since epoch. The orphan sweep's only clock, and nothing else reads it - 
    *  convergence and verification are wall-clock-free (§11.7). */
   readonly at: number;
 }
 
 /**
- * The slice of storage this driver needs, in domain terms — the `StateDb` idiom from
+ * The slice of storage this driver needs, in domain terms - the `StateDb` idiom from
  * `bridge/state.ts`, one purpose over. Injected so the sink's own logic (assembly,
  * continuity, discard, sweep) is testable headlessly, and so a Worker can hand in a
  * connection it already holds instead of opening a second one.
@@ -142,7 +142,7 @@ export interface BeamStagingDb {
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 export type BeamSinkErrorCode =
-  /** The device is out of room — the failure a big beam actually hits. */
+  /** The device is out of room - the failure a big beam actually hits. */
   | 'quota'
   /** Staging refused a write for any other reason. */
   | 'write-failed'
@@ -155,7 +155,7 @@ export type BeamSinkErrorCode =
 
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
-// One map, one wave — the same shape `lib/beam-pack.ts` uses, keyed here by the
+// One map, one wave - the same shape `lib/beam-pack.ts` uses, keyed here by the
 // error code so a caller writes `STRINGS[err.code]`. Short and plain: these are read
 // at the moment a transfer dies, where a sentence is already one too many.
 //
@@ -164,12 +164,12 @@ export type BeamSinkErrorCode =
 // pointed at: that predates the namespace existing, and a boot catalog every locale
 // downloads must not carry a flagged beta's copy. The map is a slice of the collab
 // corpus, which is exactly how a dynamically-keyed read gets translated with no
-// hand-list — and `collab-i18n.test.ts` pins it from both ends.
+// hand-list - and `collab-i18n.test.ts` pins it from both ends.
 //
 // Importing i18n.ts costs this module nothing it claims not to have: nothing in that
 // file touches `document`/`window`/`localStorage` at import time, so the DOM-free
 // promise in the header holds and it still loads in a Worker. What a Worker does not
-// have is a POPULATED catalog, and there the English source renders — the same
+// have is a POPULATED catalog, and there the English source renders - the same
 // fallback as a language whose catalog is missing.
 
 export const STRINGS: Record<BeamSinkErrorCode, string> = {
@@ -226,7 +226,7 @@ function errText(err: unknown): string {
 
 // ── The sink ──────────────────────────────────────────────────────────────────
 
-/** An item, sealed and assembled. Not yet ingested — §11.18 keeps it here until the
+/** An item, sealed and assembled. Not yet ingested - §11.18 keeps it here until the
  *  receiver reaches `complete`. */
 export interface BeamStagedItem {
   readonly itemIndex: number;
@@ -234,17 +234,17 @@ export interface BeamStagedItem {
   readonly blob: Blob;
   readonly bytes: number;
   readonly chunks: number;
-  /** SRI `sha256-<base64>`, the catalog's checksum form — or `''` when digesting is
+  /** SRI `sha256-<base64>`, the catalog's checksum form - or `''` when digesting is
    *  off (or Web Crypto is absent) and the protocol's own hasher verifies instead. */
   readonly checksum: string;
 }
 
 export interface BeamSinkOptions {
   /** Storage. Defaults to the `beam-staging` store in the shell's central DB, opened
-   *  lazily on first write — a declined beam never opens the database at all. */
+   *  lazily on first write - a declined beam never opens the database at all. */
   readonly db?: BeamStagingDb;
   /** Produce the SRI digest from `finalize()` (default true). `false` hands
-   *  verification back to the protocol's own hasher — never skips it. */
+   *  verification back to the protocol's own hasher - never skips it. */
   readonly digest?: boolean;
   /** A streaming digest fed chunk-by-chunk, so nothing is ever materialised to hash
    *  (mode 2 above). One `BeamHash` per item; the protocol's `BeamHasher` type. */
@@ -265,12 +265,12 @@ export interface BeamStagingSink extends BeamSink {
   finalize(itemIndex: number): Promise<string | undefined>;
   discard(): Promise<void>;
   /** Seal an item: assemble its staged chunks in seq order, check that none is
-   *  missing, drop the staging rows, and keep the assembled Blob. Idempotent —
+   *  missing, drop the staging rows, and keep the assembled Blob. Idempotent - 
    *  a second call returns the same item without touching storage. */
   finalizeItem(itemIndex: number): Promise<BeamStagedItem>;
   /** Items sealed so far, in index order. */
   items(): readonly BeamStagedItem[];
-  /** Hand every sealed item to the caller and forget them — the ingest hand-off,
+  /** Hand every sealed item to the caller and forget them - the ingest hand-off,
    *  called once the receiver reaches `complete`. */
   takeAll(): BeamStagedItem[];
 }
@@ -327,7 +327,7 @@ export function createBeamSink(beamId: string, opts: BeamSinkOptions = {}): Beam
     }
     if (!entry) return;                       // already fell back for this item
     if (entry.next !== seq) {
-      streams.set(itemIndex, null);           // out of order — a streamed digest would lie
+      streams.set(itemIndex, null);           // out of order - a streamed digest would lie
       return;
     }
     entry.hash.update(bytes);
@@ -347,11 +347,11 @@ export function createBeamSink(beamId: string, opts: BeamSinkOptions = {}): Beam
     // Everything above (and the two lines below) runs SYNCHRONOUSLY, before the first
     // await: the Blob constructor copies the payload out of the caller's buffer, and
     // the streaming digest reads it, so the caller may reuse that buffer the moment
-    // write() returns — the same ownership rule the protocol states for its wire.
+    // write() returns - the same ownership rule the protocol states for its wire.
     const row: BeamStagingRow = { beamId: id, itemIndex, seq, bytes: new Blob([bytes as BlobPart]), size: bytes.byteLength, at: now() };
     feedStream(itemIndex, seq, bytes);
     touched = true;
-    if (closed) return;                       // discarded mid-flight — stage nothing
+    if (closed) return;                       // discarded mid-flight - stage nothing
     try {
       await (await db()).put(row);
     } catch (err) {
@@ -415,7 +415,7 @@ export function createBeamSink(beamId: string, opts: BeamSinkOptions = {}): Beam
     streams.delete(itemIndex);
 
     // The assembled Blob is independent of the rows that fed it, so staging for this
-    // item can go now — a sealed item costs one copy, not two. A failure here leaks
+    // item can go now - a sealed item costs one copy, not two. A failure here leaks
     // rows rather than the item: never worth failing a verified transfer over, and
     // clearStaleBeams() is the backstop.
     try {
@@ -477,7 +477,7 @@ export function createBeamSink(beamId: string, opts: BeamSinkOptions = {}): Beam
       sealed.clear();
       // …and the seal memo with it. Each entry is a settled promise holding the
       // assembled Blob, so keeping them would retain the whole 38 MB pack for as long
-      // as this sink lives — and a driver whose beam reached `complete` has no reason
+      // as this sink lives - and a driver whose beam reached `complete` has no reason
       // to call `discard()`. "Forget them" has to mean both maps or it means neither.
       sealing.clear();
       return all;
@@ -490,7 +490,7 @@ export function createBeamSink(beamId: string, opts: BeamSinkOptions = {}): Beam
 export interface ClearStaleBeamsOptions {
   readonly db?: BeamStagingDb;
   readonly now?: () => number;
-  /** Beam ids to spare — the transfers this session has live. A beam being received
+  /** Beam ids to spare - the transfers this session has live. A beam being received
    *  right now refreshes its own stamp on every chunk, so this is belt-and-braces for
    *  a stalled-but-alive transfer (and for §11.8's second tab). */
   readonly keep?: Iterable<string>;
@@ -499,7 +499,7 @@ export interface ClearStaleBeamsOptions {
 
 /**
  * Remove staging a crashed or force-quit session left behind, returning the beam ids
- * cleared. Call once at startup and forget it: this never throws and never rejects —
+ * cleared. Call once at startup and forget it: this never throws and never rejects - 
  * a device with no usable IndexedDB simply has nothing to sweep.
  *
  * Staleness is judged per BEAM, on its newest row, so the first chunk of a long slow
@@ -545,12 +545,12 @@ async function openBeamStagingDb(): Promise<BeamStagingDb> {
 
 /**
  * The `beam-staging` store, over an already-open connection to the shell's central
- * DB — exported so a Worker can reuse the connection it holds instead of opening a
+ * DB - exported so a Worker can reuse the connection it holds instead of opening a
  * second one.
  *
  * Both ranges lean on the compound key `[beamId, itemIndex, seq]`: one item is a
  * contiguous slice, one beam is a contiguous slice, so an item's rows read back in
- * seq order and a whole beam is deleted with a single range delete — no cursor, and
+ * seq order and a whole beam is deleted with a single range delete - no cursor, and
  * no interleaved awaits inside a write transaction.
  */
 export function createIdbStagingDb(db: IDBPDatabase): BeamStagingDb {

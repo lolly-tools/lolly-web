@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * localizeToolIndex — the non-destructive-localization contract (plans/99 §2e).
+ * localizeToolIndex - the non-destructive-localization contract (plans/99 §2e).
  *
  * Run directly:  node --test shells/web/src/catalog/sync.test.ts
  *
@@ -10,7 +10,7 @@
  * could not find "Compress PDF" by typing "compress"). The fix stashes the
  * pristine strings on `tool.en` before overlaying; search haystacks read both.
  *
- * jsdom globals go in before the module import — i18n (setActiveLang writes
+ * jsdom globals go in before the module import - i18n (setActiveLang writes
  * document.documentElement.lang) and sync's transitive imports expect a DOM.
  */
 import { test } from 'node:test';
@@ -25,7 +25,7 @@ globalThis.localStorage = dom.window.localStorage;
 const { setActiveLang } = await import('../i18n.ts');
 const { localizeToolIndex } = await import('./sync.ts');
 
-/** A fresh two-tool fixture per test — one translated into Spanish, one not.
+/** A fresh two-tool fixture per test - one translated into Spanish, one not.
  *  The explicit type mirrors sync.ts's ToolIndex entry shape (incl. the `en`
  *  stash localizeToolIndex writes), which a bare literal would not infer. */
 type FixtureTool = {
@@ -61,7 +61,7 @@ test('non-English session: overlays the translation AND stashes pristine English
   assert.equal(pdf!.description, 'Reduce un PDF en el dispositivo');
   assert.equal((pdf!.featured as { blurb: string }).blurb, 'Exprímelo');
   assert.deepEqual(pdf!.en, { name: 'Compress PDF', description: 'Shrink a PDF on-device' });
-  // A tool with no overlay for the language is untouched — its fields already
+  // A tool with no overlay for the language is untouched - its fields already
   // ARE English, so consumers read `tool.en?.name ?? tool.name`.
   assert.equal(qr!.name, 'QR Code');
   assert.equal(qr!.en, undefined);

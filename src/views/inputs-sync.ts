@@ -3,7 +3,7 @@
  * Sidebar input-sync decision logic.
  *
  * renderInputs() (in tool.js) rebuilds the whole control panel's innerHTML and
- * re-wires every listener — necessary on first render or a structural change, but
+ * re-wires every listener - necessary on first render or a structural change, but
  * pure waste on a keystroke, where the only thing that changed is a value the
  * edited field already shows. These helpers decide when that rebuild can be
  * skipped. They live in their own module, free of the DOM-component / flatpickr
@@ -52,7 +52,7 @@ export function visibleInputKey(model: SyncableInput[]): string {
 }
 
 /**
- * True only when the live DOM control ALREADY shows the input's model value — i.e.
+ * True only when the live DOM control ALREADY shows the input's model value - i.e.
  * the user just typed it, so there is nothing to repaint. Structural controls (and
  * a missing control) always return false so any change takes the full rebuild.
  */
@@ -62,7 +62,7 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
   if (input.control === 'checkbox') return control.checked === Boolean(input.value);
   // A custom slider is a <div> (no .value), but mountCustomSlider keeps its
   // authoritative value in aria-valuenow, updated live through a drag AND on every
-  // keyboard step. So a committed slider change is already shown — comparing here
+  // keyboard step. So a committed slider change is already shown - comparing here
   // lets it SKIP the full-panel rebuild that otherwise fires on drop and made the
   // whole section flash/jump ("the sliders feel unreliable"). Numeric compare so a
   // hook that clamps/transforms the value (aria ≠ model) still forces the rebuild.
@@ -77,17 +77,17 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
 }
 
 /**
- * True while the user is mid-typing in an editable block field — number or text.
+ * True while the user is mid-typing in an editable block field - number or text.
  * Such a field's live control holds the authoritative value, so rebuilding the
  * panel on the keystroke is at best redundant and at worst destructive:
  *
  *  · NUMBER: a half-typed decimal like "1." reports back as "" (validity.badInput),
  *    and a recreated number input can't have its caret restored (setSelectionRange
- *    is a no-op on type=number) — so the caret jumps and characters scramble
+ *    is a no-op on type=number) - so the caret jumps and characters scramble
  *    ("1.2" lands as "2.1", Backspace deletes the wrong end).
  *  · TEXT / TEXTAREA: the caret DOES survive (renderInputs restores it by
  *    data-field-id), but the rebuild replaces every row in the panel, so focus is
- *    lost and re-established within the frame — which restarts the focus-spotlight
+ *    lost and re-established within the frame - which restarts the focus-spotlight
  *    opacity transition on every other row and section. The whole sidebar visibly
  *    pulses once per keypress. The only thing the rebuild refreshed here is the
  *    collapsed-pill preview, which syncInputs now patches in place instead.
@@ -97,7 +97,7 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
  */
 /**
  * A table input can be POPPED OUT into a floating panel (lib/float-panel), which
- * mounts the grid on `.tool-layout` — outside `#tool-inputs`. Its cells still hold
+ * mounts the grid on `.tool-layout` - outside `#tool-inputs`. Its cells still hold
  * the authoritative value, so the containment test above has to follow the GRID,
  * not the sidebar box.
  *
@@ -108,7 +108,7 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
  * into a new one. The element the caret would be restored into no longer exists,
  * and typing dies after a single character.
  *
- * Structural like its caller — `closest` is feature-tested so a plain test stub
+ * Structural like its caller - `closest` is feature-tested so a plain test stub
  * simply reports "not in a panel" rather than throwing.
  */
 function inPoppedTable(active: { closest?: (s: string) => unknown }): boolean {
@@ -125,7 +125,7 @@ function isEditingBlockField(el: HTMLElement): boolean {
   if (active.type === 'number') return true;
   // A block text field renders with NO type attribute (see blockField), so `type`
   // reads back as 'text'; a textarea has no type at all. Everything else a block
-  // can hold — range, checkbox, colour, select, asset button — is a discrete
+  // can hold - range, checkbox, colour, select, asset button - is a discrete
   // commit rather than typing, and keeps the full rebuild.
   const tag = String(active.tagName || '').toLowerCase();
   if (tag === 'textarea') return true;
@@ -135,14 +135,14 @@ function isEditingBlockField(el: HTMLElement): boolean {
 /**
  * True while focus is inside a virtualized table GRID (the >50-row data-grid,
  * components/data-grid). Like a block field, the grid's own DOM holds the
- * authoritative value — it repaints the edited cell before committing — so a
+ * authoritative value - it repaints the edited cell before committing - so a
  * rebuild on the commit is pure waste, and DESTRUCTIVE when the table is popped
  * out: the rebuild re-pops the float panel (tool-inputs' stale-repop), exiting
  * fullscreen and dropping the caret to <body> on every single cell edit. The
  * grid's cells and editor carry NO data-field-id, so isEditingBlockField can't
  * see them; this matches on the grid container (.table-vgrid) instead, in the
  * sidebar OR a popped panel. Structural (feature-tested closest), like
- * inPoppedTable — a plain stub simply reports "not in a grid".
+ * inPoppedTable - a plain stub simply reports "not in a grid".
  */
 function isEditingGrid(el: HTMLElement): boolean {
   const active = (el && el.ownerDocument && el.ownerDocument.activeElement) as
@@ -162,7 +162,7 @@ export function canSkipInputsRebuild(el: HTMLElement, model: SyncableInput[], pr
   if (!prevModel) return false;
   // Defer the rebuild while a block field is being typed into (see above).
   if (isEditingBlockField(el)) return true;
-  // …and while a virtualized table grid holds focus — the grid already shows the
+  // …and while a virtualized table grid holds focus - the grid already shows the
   // edit, and rebuilding would remount it (and re-pop a fullscreen panel).
   if (isEditingGrid(el)) return true;
   if (model.length !== prevModel.length) return false;

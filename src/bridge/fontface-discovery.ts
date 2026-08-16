@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Discover the `@font-face` families declared in the LIVE document's stylesheets, so
- * vector text export can outline ANY brand/system font — not only the brand catalog's
- * statics / installed user fonts / the shell's platform faces — by resolving the family
+ * vector text export can outline ANY brand/system font - not only the brand catalog's
+ * statics / installed user fonts / the shell's platform faces - by resolving the family
  * to its actual font file.
  *
  * This is the discovery half; font-registry.ts fetches + decompresses (woff2→sfnt) the
@@ -26,7 +26,7 @@ export interface DiscoveredFace {
 
 /**
  * The first `url()` in a CSS `@font-face` `src` list, skipping `local()`. Accepts
- * quoted or unquoted forms and `data:` URIs. Pure — the unit-tested core of discovery.
+ * quoted or unquoted forms and `data:` URIs. Pure - the unit-tested core of discovery.
  */
 export function firstFontSrcUrl(src: string | null | undefined): string | null {
   if (!src) return null;

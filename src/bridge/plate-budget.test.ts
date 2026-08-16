@@ -2,7 +2,7 @@
 /**
  * The plate budget (plan 104 §5.5).
  *
- * P0 cannot produce an eff above 1 — there is no camera yet — so every case here feeds
+ * P0 cannot produce an eff above 1 - there is no camera yet - so every case here feeds
  * SYNTHETIC eff values. That is the point: the machinery has to be real and provably
  * correct before the thing that drives it exists, or the first fly-past ships an
  * untested degradation path. §4.5 pins eff_max at 10, which means the cap engages on
@@ -60,7 +60,7 @@ test('fxCacheBudgetBytes is a share of the same allowance, and scales with it', 
     assert.equal(fxCacheBudgetBytes(gb), Math.round(plateBudgetBytes(gb) * FX_CACHE_BUDGET_SHARE), `${gb}GB`);
   }
   // It is a CEILING on what a render may retain, never a reservation taken off the
-  // plate budget — nothing here may make a plate lower-resolution (plans/104 P3.1).
+  // plate budget - nothing here may make a plate lower-resolution (plans/104 P3.1).
   const before = planPlateBudget({ layers: [layer({ maxEff: 3 })], scale: 2, worker: false });
   const after = planPlateBudget({ layers: [layer({ maxEff: 3 })], scale: 2, worker: false, budgetBytes: plateBudgetBytes(8) });
   assert.equal(after.effOf.get(0), before.effOf.get(0));
@@ -99,7 +99,7 @@ test('platesPerLayer: two for video, two for a LIVE lottie, none for a citizen w
 
 test('a flat scene is never clamped, never warned about, and never scaled', () => {
   // Deliberately absurd: eight 4K layers at 4x export is far over any budget, and at
-  // eff 1 not one pixel of it may be taken away — that is what the export already did
+  // eff 1 not one pixel of it may be taken away - that is what the export already did
   // before this feature existed.
   const layers = Array.from({ length: 8 }, (_, i) => layer({ idx: i, w: 3840, h: 2160 }));
   const plan = planPlateBudget({ layers, scale: 4, worker: true, budgetBytes: 16 * MB });
@@ -111,7 +111,7 @@ test('a flat scene is never clamped, never warned about, and never scaled', () =
 });
 
 test('the long-side cap never shrinks a plate below eff 1 either', () => {
-  // 4000px box at 4x is a 16000px plate at eff 1 — four times the cap. It stays.
+  // 4000px box at 4x is a 16000px plate at eff 1 - four times the cap. It stays.
   const plan = planPlateBudget({
     layers: [layer({ w: 4000, h: 4000 })],
     scale: 4, worker: false, longSideCap: PLATE_LONG_SIDE_SMALL,
@@ -191,11 +191,11 @@ test('the pad is priced: a padded plate is a bigger plate', () => {
 test('the PAD is capped on its own account, because eff floors at 1 and lambda only scales eff', () => {
   // THE HOLE. Every clamp used to be gated on "some layer asked for extra RESOLUTION",
   // and `pad` is the other multiplier on plate size. A 640×360 clip with a 300px
-  // authored blur asks for a (640+1834)×(360+1834) plate — 5.4 Mpx at S=1, 87 MB at
+  // authored blur asks for a (640+1834)×(360+1834) plate - 5.4 Mpx at S=1, 87 MB at
   // S=2, ~90× the plate it needs, on a document that authored no depth at all. Nothing
   // could take it back: `effUnderSideCap` floors at 1, and λ never touches the pad. A
   // canvas that big is one Safari refuses, and `rasterBox`'s bare catch nulls a refused
-  // plate SILENTLY — the layer vanishes from the video.
+  // plate SILENTLY - the layer vanishes from the video.
   const pad = 1834;
   const plan = planPlateBudget({
     layers: [layer({ w: 640, h: 360, pad })],

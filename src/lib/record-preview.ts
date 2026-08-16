@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Shell-internal side channel for the live record self-view.
 //
-// The engine bridge is deliberately DOM-free — it never sees a MediaStream or <video>
+// The engine bridge is deliberately DOM-free - it never sees a MediaStream or <video>
 // (see host-v1.ts), so the recording self-view can't flow through it. Both the recorder
 // bridge (recorder.ts, which owns the capture MediaStream) and the tool view (tool.ts,
 // which shows the framing UI) live in the web shell, so they rendezvous here instead:

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Deep output in the export panel — the pro-format grouping and the depth fact
+ * Deep output in the export panel - the pro-format grouping and the depth fact
  * (plans/61-deeprichpixels.md §10 item 3).
  *
  * Both halves obey the plan's governing rule, DEPTH FOLLOWS PROVENANCE.
  *
  * 1. `isProFormat` names the float interchange formats (OpenEXR, Radiance RGBE).
  *    They are compositing/VFX containers, not peers of png/jpg, so the picker
- *    puts them under their own <optgroup> — a native one, which costs no CSS and
+ *    puts them under their own <optgroup> - a native one, which costs no CSS and
  *    no space and carries its own a11y semantics. The group is built only from
  *    formats that SURVIVED the picker's support filter, so where they cannot be
  *    produced there is no group and no option. Today that is everywhere on the
@@ -32,8 +32,8 @@
  *                 so it is a different fact. `depth=8` DOES opt out here (back to
  *                 the legacy 8-bit PQ path), so the fact disappears with it.
  *
- * Everything else the web shell writes is 8 bits per channel — including HDR
- * AVIF and HDR TIFF, which still take the legacy 8-bit transform — and says
+ * Everything else the web shell writes is 8 bits per channel - including HDR
+ * AVIF and HDR TIFF, which still take the legacy 8-bit transform - and says
  * nothing at all. Absence is the information.
  */
 import { t } from '../i18n.ts';
@@ -49,7 +49,7 @@ export const isProFormat = (f: string | undefined): boolean => !!f && PRO_FORMAT
  * into their own native <optgroup>.
  *
  * `formats` is the list that already survived the picker's support filter, so a
- * format that cannot be produced here never reaches this function — and the group
+ * format that cannot be produced here never reaches this function - and the group
  * is emitted only when it would hold something. Ordinary formats keep their exact
  * original order and markup; a tool with no pro format gets byte-identical output
  * to the flat list this replaced.
@@ -80,7 +80,7 @@ export interface DepthFact {
 
 /**
  * What the export will actually carry beyond an ordinary 8-bit image, or null when
- * it carries nothing beyond one — which is the common case, and renders nothing.
+ * it carries nothing beyond one - which is the common case, and renders nothing.
  */
 export function depthFact(
   fmt: string | undefined,
@@ -107,7 +107,7 @@ export function depthFact(
 
 /**
  * Reflect `fact` into the panel: create the element when there is something true to
- * say, remove it when there is not. Nothing is reserved and nothing is left behind —
+ * say, remove it when there is not. Nothing is reserved and nothing is left behind - 
  * in the common case the panel's markup does not contain the node at all.
  *
  * The fact is inserted AFTER `.filename-extension`, never inside it: that row is a

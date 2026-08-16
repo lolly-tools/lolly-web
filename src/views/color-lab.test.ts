@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * Colour Lab (#/lab) — the report's structure and its picking contract.
+ * Colour Lab (#/lab) - the report's structure and its picking contract.
  *
  * Run directly:  node --test shells/web/src/views/color-lab.test.ts
  *
  * What matters here is that the report never describes one colour while showing
- * another. The subject is deliberately NOT clamped to sRGB, so there are two
- * values in play at all times — the authored one and the nearest displayable one
- * — and the failure mode to guard against is them being silently conflated.
+ * another. The subject is deliberately NOT clamped to sRGB, so two values are
+ * always in play: the authored one and the nearest displayable one. Guard against
+ * the failure mode where the two get silently conflated.
  *
  * jsdom gives no canvas 2D context and no layout, so the chart fills and the 3D
  * solid can't paint here; both bail cleanly on a zero-size box, which is exactly
@@ -34,7 +34,7 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Element = dom.window.Element;
 globalThis.MutationObserver = dom.window.MutationObserver;
 // jsdom rejects an Event built by Node's own constructor (different realm), and
-// `applyTheme` dispatches one on window — so the jsdom versions have to win here.
+// `applyTheme` dispatches one on window - so the jsdom versions have to win here.
 globalThis.CustomEvent = dom.window.CustomEvent;
 globalThis.Event = dom.window.Event;
 globalThis.localStorage = dom.window.localStorage;
@@ -42,7 +42,7 @@ globalThis.sessionStorage = dom.window.sessionStorage;
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
   dom.window.setTimeout(() => cb(0), 0) as unknown as number) as typeof requestAnimationFrame;
 globalThis.cancelAnimationFrame = ((id: number) => dom.window.clearTimeout(id)) as typeof cancelAnimationFrame;
-// jsdom has no <dialog> showModal/close — shim the surface mountModal uses, so the
+// jsdom has no <dialog> showModal/close - shim the surface mountModal uses, so the
 // profile panel (components/profiles-manager.ts) can open here.
 const Dlg = dom.window.HTMLDialogElement.prototype as unknown as { showModal(): void; close(): void };
 Dlg.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
@@ -58,7 +58,7 @@ dom.window.Element.prototype.hasPointerCapture = function () { return false; };
   escape: (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`),
 };
 globalThis.CSS = (dom.window as unknown as { CSS: typeof globalThis.CSS }).CSS;
-/** jsdom has no clipboard — record what the view tries to copy. `navigator` is a
+/** jsdom has no clipboard - record what the view tries to copy. `navigator` is a
  *  getter-only global, so define the property rather than assigning it. */
 const copied: string[] = [];
 Object.defineProperty(globalThis, 'navigator', {
@@ -73,7 +73,7 @@ const view = document.getElementById('view')!;
 
 /** Mount the view fresh with an optional `?c=` seed. */
 async function mount(params = ''): Promise<void> {
-  // Tear the previous mount down the way the router does — `#view` is persistent,
+  // Tear the previous mount down the way the router does - `#view` is persistent,
   // so clearing its children alone leaves the last view's rAF loop, observers and
   // its body-level toast behind (which is exactly what used to leak in the app).
   (view as HTMLElement & { _cleanup?: () => void })._cleanup?.();
@@ -86,7 +86,7 @@ const $ = (sel: string): HTMLElement | null => view.querySelector<HTMLElement>(s
 const text = (sel: string): string => ($(sel)?.textContent ?? '').trim();
 
 /** The subject's sRGB hex, read off the swatch's hex alternate. There is no text
- *  field to read any more — the picker's own value pill is the single entry. */
+ *  field to read any more - the picker's own value pill is the single entry. */
 function subjectHex(): string {
   const li = [...view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt')]
     .find(x => (x.querySelector('.lab-sw-alt-space')?.textContent ?? '').trim() === 'hex');
@@ -116,7 +116,7 @@ test('the report mounts with every section present', async () => {
   // The real picker mounted, rather than a native colour input.
   assert.ok($('[data-lab-picker] [data-color-field]'), 'the shared colour field is mounted');
   // The colour field keeps ONE native input as a display:none canonical-hex
-  // store, never clicked — the shell deliberately opens no OS colour picker. So
+  // store, never clicked - the shell deliberately opens no OS colour picker. So
   // the check is that every native input is that store, not that none exists.
   for (const native of view.querySelectorAll('input[type="color"]')) {
     assert.ok(native.closest('.color-popover-native'),
@@ -131,11 +131,11 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
   // The gamut verdict names P3, not sRGB.
   assert.match(text('[data-lab-gamut] [data-lab-gamut-name]'), /Display-P3/);
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'p3');
-  // Headroom is negative — it is past the sRGB ceiling.
+  // Headroom is negative - it is past the sRGB ceiling.
   assert.equal($('[data-lab-headroom]')!.dataset.state, 'over');
   assert.match(text('[data-lab-headroom] [data-lab-headroom-val]'), /^-/);
   // And the report SAYS the swatch is showing something else.
-  // The notice is a toast — the nudge on crossing the boundary. The standing
+  // The notice is a toast - the nudge on crossing the boundary. The standing
   // record is the gamut card in step 5, so nothing sits in the flow.
   const toast = document.querySelector('[data-lab-toast]');
   assert.ok(toast, 'the out-of-gamut toast was raised');
@@ -161,7 +161,7 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
 test('the picker is handed the authored colour, not its sRGB restatement', async () => {
   const subject = 'color(display-p3 1 0 0)';
   await mount('?c=' + encodeURIComponent(subject));
-  // Read what the field was SEEDED with — the canonical attribute when the component
+  // Read what the field was SEEDED with - the canonical attribute when the component
   // publishes one, otherwise the rendered value attribute. Not the live input value:
   // that is the picker's own working notation, which is its business, not the view's.
   const field = $('[data-lab-picker] [data-color-field]') ?? $('[data-lab-picker]')!;
@@ -230,15 +230,15 @@ test('readability leads with APCA and follows with WCAG, on three surfaces', asy
     'exactly one of the two extremes is marked best');
 
   for (const c of cards) {
-    // APCA first — an Lc and the band it falls in.
+    // APCA first - an Lc and the band it falls in.
     const apca = c.querySelector('[data-lab-apca]');
     assert.ok(apca, 'every card carries an Lc');
     assert.match(apca!.textContent ?? '', /Lc \d+\.\d/, 'the Lc is shown');
     assert.ok((apca as HTMLElement).dataset.use, 'and the band it falls in');
-    // WCAG second — still present, still with both badges.
+    // WCAG second - still present, still with both badges.
     assert.match(c.textContent ?? '', /\d+\.\d+:1/, 'shows a ratio');
     assert.equal(c.querySelectorAll('.lab-wcag').length, 2, 'body and large badges');
-    // The order in the DOM IS the hierarchy — APCA must come first.
+    // The order in the DOM IS the hierarchy - APCA must come first.
     const kids = [...c.children].map(k => k.className);
     const iApca = kids.findIndex(k => k.includes('lab-apca'));
     const iWcag = kids.findIndex(k => k.includes('lab-contrast-wcag'));
@@ -255,7 +255,7 @@ test('readability leads with APCA and follows with WCAG, on three surfaces', asy
 test('the third surface is pickable and re-scores when it changes', async () => {
   await mount('?c=%23c0392b');
   const third = [...view.querySelectorAll('.lab-contrast-card')][2]!;
-  // A popover picker, which is what a secondary control on a card wants — the
+  // A popover picker, which is what a secondary control on a card wants - the
   // expanded form's rings would dominate the two numbers beside them.
   const pick = third.querySelector('[data-lab-ink-pick]');
   assert.ok(pick, 'the third card carries its own picker');
@@ -268,7 +268,7 @@ test('the third surface is pickable and re-scores when it changes', async () => 
     view.querySelectorAll('.lab-contrast-card')[2]?.querySelector('.lab-apca-lc')?.textContent ?? ''
   ).trim();
   const before = lcOf();
-  // Drive it the way the component reports a pick — its own value field.
+  // Drive it the way the component reports a pick - its own value field.
   const field = pick!.querySelector('input[data-color-hex]') as HTMLInputElement | null;
   assert.ok(field, 'the popover has a value field');
   field!.value = '#111111';
@@ -283,7 +283,7 @@ test('the third surface is pickable and re-scores when it changes', async () => 
 
 test('the tone ramp is pickable and every step re-seeds the report', async () => {
   await mount('?c=%23c0392b');
-  // Scoped to the TONES ramp — there is a second ramp (the blend) further down.
+  // Scoped to the TONES ramp - there is a second ramp (the blend) further down.
   const steps = [...view.querySelectorAll<HTMLElement>('[data-lab-ramp] [data-lab-step]')];
   assert.equal(steps.length, 9);
   const before = text('[data-lab-sw-primary]');
@@ -299,7 +299,7 @@ test('the gamut limit narrows the charts and their legends', async () => {
   await mount();
   const legendKeys = (): number => view.querySelectorAll('[data-lab-chart="lc"] .okls-key').length;
   const seg = $('[data-lab-limit]')!;
-  // Rec.2020 is the DEFAULT — the report should not start by hiding colour the
+  // Rec.2020 is the DEFAULT - the report should not start by hiding colour the
   // user's screen might well be able to show.
   assert.equal(seg.querySelector('[data-val="rec2020"]')!.getAttribute('aria-pressed'), 'true');
   const atWidest = legendKeys();
@@ -317,14 +317,14 @@ test('the gamut limit narrows the charts and their legends', async () => {
 
 test('a narrower target narrows the CHARTS, never the controls or the colour', async () => {
   // The pill is a lens, not an editor. `oklch(50% 0.38 328)` is a real Rec.2020
-  // colour, and pressing sRGB to see where sRGB stops must not take it away — that
+  // colour, and pressing sRGB to see where sRGB stops must not take it away - that
   // would be the comparison target rewriting the subject, and it did: the chroma
   // range's own `max` dropped to sRGB's axis ceiling and the browser clamped the
   // value under it while the readout still said 0.380.
   await mount('?c=' + encodeURIComponent('oklch(50% 0.38 328)'));
   const num = (): HTMLInputElement => $('[data-lab-num="ch"]') as HTMLInputElement;
   const rng = (): HTMLInputElement => $('[data-lab-slider="ch"] [data-gsl-input]') as HTMLInputElement;
-  /** Every chroma tick on the C×H chart, biggest first — the axis the chart draws. */
+  /** Every chroma tick on the C×H chart, biggest first - the axis the chart draws. */
   const axisTop = (): number => Math.max(...[...view.querySelectorAll('[data-lab-chart="ch"] .okls-tick')]
     .map(el => Number(el.textContent)).filter(n => Number.isFinite(n) && n <= 1));
 
@@ -344,14 +344,14 @@ test('a narrower target narrows the CHARTS, never the controls or the colour', a
   num().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.ok(Math.abs(subjectOklch().c - 0.38) < 1e-6, `re-typing 0.38 sticks, got ${subjectOklch().c}`);
 
-  // The chart's axis is the part that SHOULD follow the tab — that is what makes the
-  // envelope fill the plot — so this is not a "nothing changed" test.
+  // The chart's axis is the part that SHOULD follow the tab - that is what makes the
+  // envelope fill the plot - so this is not a "nothing changed" test.
   assert.ok(axisTop() < wideAxis, `the chart axis narrowed (${axisTop()} < ${wideAxis})`);
 });
 
 test('a chroma past every axis stays expressible, and the slider stretches to it', async () => {
   // A chroma ceiling is a choice, not a bound. A range input cannot hold a value
-  // above its own max, so the axis has to grow — otherwise a shared link at 0.7
+  // above its own max, so the axis has to grow - otherwise a shared link at 0.7
   // opens with the thumb pinned at the end reporting a colour it is not on.
   await mount('?c=' + encodeURIComponent('oklch(50% 0.7 328)'));
   const rng = $('[data-lab-slider="ch"] [data-gsl-input]') as HTMLInputElement;
@@ -362,7 +362,7 @@ test('a chroma past every axis stays expressible, and the slider stretches to it
 
 test('the report opens in OKLCH, not hex', async () => {
   await mount();
-  // The swatch leads in the picker's space, which defaults to OKLCH — hex is the
+  // The swatch leads in the picker's space, which defaults to OKLCH - hex is the
   // sRGB-only fallback expression and must not be what greets you.
   assert.match(text('[data-lab-sw-primary]'), /^oklch\(/, text('[data-lab-sw-primary]'));
   assert.match(text('[data-lab-sw-space]'), /^oklch/);
@@ -371,7 +371,7 @@ test('the report opens in OKLCH, not hex', async () => {
 test('all three planes are sliced through the SAME colour', async () => {
   await mount('?c=' + encodeURIComponent('oklch(62% 0.15 260)'));
   // Each plane holds a different channel constant, and each must hold the
-  // subject's own value for it — otherwise the three charts are unrelated views
+  // subject's own value for it - otherwise the three charts are unrelated views
   // rather than three cuts through one colour.
   assert.match(text('[data-lab-slice-at="lc"]'), /^260°$/);   // hue
   assert.match(text('[data-lab-slice-at="ch"]'), /^62%$/);    // lightness
@@ -407,7 +407,7 @@ test('the page reads as one narrowing sequence, in order', async () => {
   assert.match(heads[3]!, /Tones and blends/);
   assert.match(heads[4]!, /Displayable range and readability/);
 
-  // The charts sit high — second block, right after setting a colour — and the
+  // The charts sit high - second block, right after setting a colour - and the
   // gamut control travels WITH them, because it governs what they draw.
   const charts = view.querySelectorAll('.lab-step-block')[1]!;
   assert.equal(charts.querySelectorAll('[data-lab-chart]').length, 3);
@@ -437,7 +437,7 @@ test('the blend ramp spans the subject to a second colour the user sets', async 
   // It starts at the subject.
   assert.equal(before[0]!.toLowerCase(), '#c0392b');
 
-  // Changing the far end changes the ramp — and only the far end of it.
+  // Changing the far end changes the ramp - and only the far end of it.
   const raw = $('[data-lab-blend-raw]') as HTMLInputElement;
   raw.value = 'oklch(90% 0.15 200)';
   raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -495,8 +495,8 @@ test('the blend style tabs change what the middle looks like', async () => {
       new dom.window.MouseEvent('click', { bubbles: true }));
   };
 
-  // VIVID is the default on this page — it is where you come to see how much colour
-  // a blend can hold — and the tab says so.
+  // VIVID is the default on this page - it is where you come to see how much colour
+  // a blend can hold - and the tab says so.
   assert.equal(seg.querySelector('[data-val="oklch"]')!.getAttribute('aria-pressed'), 'true');
   const vivid = midHex();
   assert.match(vivid, /^#[0-9A-F]{6}$/);
@@ -512,7 +512,7 @@ test('the blend style tabs change what the middle looks like', async () => {
   pick('srgb');
   assert.notEqual(midHex(), vivid, 'sRGB is not Vivid');
 
-  // The ends are exact in every style — a blend that does not start at the subject
+  // The ends are exact in every style - a blend that does not start at the subject
   // is describing a different colour from the one the page is about.
   const ends = (): [string, string] => {
     const steps = [...view.querySelectorAll('[data-lab-blend] [data-lab-step] .lab-step-hex')];
@@ -532,7 +532,7 @@ test('the hue route appears only where hue travel is a real choice', async () =>
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   };
   // Vivid is the default and IS polar, so the row starts visible. OKLab and sRGB are
-  // rectangular — no circle to go round, and CSS would reject `in oklab longer hue`.
+  // rectangular - no circle to go round, and CSS would reject `in oklab longer hue`.
   assert.equal(hue.hidden, false, 'shown for the default Vivid');
   pickSpace('srgb');
   assert.equal(hue.hidden, true, 'hidden for sRGB');
@@ -553,7 +553,7 @@ test('the hue route appears only where hue travel is a real choice', async () =>
 
 test('the blend slider rail carries the gradient it subdivides', async () => {
   await mount('?c=%23c0392b');
-  // The rail IS the preview — there is no separate strip — so it has to be painted,
+  // The rail IS the preview - there is no separate strip - so it has to be painted,
   // in the chosen space, from the AUTHORED values rather than their sRGB hexes.
   const seg = $('[data-lab-blend-steps] [data-gsl-track] .gsl-seg') as HTMLElement;
   assert.ok(seg, 'the rail has a painted segment');
@@ -577,7 +577,7 @@ test('the blend slider rail carries the gradient it subdivides', async () => {
 
 test('the swatch leads in the picker’s space and lists popular alternates', async () => {
   await mount('?c=' + encodeURIComponent('color(display-p3 1 0 0)'));
-  // Read the LABEL element, not textContent — the label and the value sit in
+  // Read the LABEL element, not textContent - the label and the value sit in
   // adjacent elements with no whitespace between them, so textContent runs
   // "oklch" straight into "oklch(64.857% …".
   const spacesOf = (): string[] =>
@@ -590,7 +590,7 @@ test('the swatch leads in the picker’s space and lists popular alternates', as
   assert.ok(!spaces.includes('oklch'), `the leading space is not repeated: ${spaces}`);
   assert.ok(spaces.includes('display-p3'), `the authored space is listed: ${spaces}`);
   assert.ok(spaces.includes('lch'), `lch present: ${spaces}`);
-  // Hex is LAST — sRGB-only, so it's the fallback expression, not a peer.
+  // Hex is LAST - sRGB-only, so it's the fallback expression, not a peer.
   assert.equal(spaces[spaces.length - 1], 'hex');
   // Every alternate carries a real value beside its label.
   for (const li of view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt')) {
@@ -610,7 +610,7 @@ test('the swatch leads in the picker’s space and lists popular alternates', as
 test('a picker echo of the mapped hex does not collapse a wide-gamut subject', async () => {
   // The bug this pins: the picker emits an onChange as it wires up, carrying the
   // sRGB hex it was just handed. Unguarded, that arrives as if the user had picked
-  // it, replacing `color(display-p3 1 0 0)` with #FF0B0C — so EVERY colour in the
+  // it, replacing `color(display-p3 1 0 0)` with #FF0B0C - so EVERY colour in the
   // report read "sRGB" no matter what was typed.
   //
   // jsdom does not fire the mount-time event, which is exactly why the suite was
@@ -630,7 +630,7 @@ test('a picker echo of the mapped hex does not collapse a wide-gamut subject', a
 
   // …but a DIFFERENT value from the picker is a real edit and must land. Written
   // in the ACTIVE MODE's format (OKLCH by default), because that is what the
-  // picker's value field parses — a hex would simply be held as unparseable there.
+  // picker's value field parses - a hex would simply be held as unparseable there.
   valueField.value = '55% 0.13 145';
   valueField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'a real pick still works');
@@ -639,11 +639,11 @@ test('a picker echo of the mapped hex does not collapse a wide-gamut subject', a
 
 test('each chart panel is named for the channel it sets, and sets it three ways', async () => {
   await mount('?c=' + encodeURIComponent('oklch(70% 0.19 317)'));
-  // Panel titles are CHANNELS — the thing the panel's slider and number control —
+  // Panel titles are CHANNELS - the thing the panel's slider and number control - 
   // not the plane the chart happens to draw.
   // Scoped to the SLICE figures. A bare `.lab-chart-title` sweep was exhaustive
   // over every titled figure, so giving the 3D solid a title bar (for its pop-out
-  // button) failed this test without anything being wrong — the assertion was
+  // button) failed this test without anything being wrong - the assertion was
   // pinning "these are the only figures" when it means "these three are named for
   // their channels".
   const titles = [...view.querySelectorAll('.lab-chart:not(.lab-chart--solid) .lab-chart-title')]
@@ -679,7 +679,7 @@ test('each chart panel is named for the channel it sets, and sets it three ways'
 
 test('bounds off lets you leave the gamut and marks it; bounds on yields chroma', async () => {
   // The stance, pinned: leaving sRGB is usually the intent, so the default must not
-  // prevent it — it marks it. Turning bounds ON then pulls the colour in by giving
+  // prevent it - it marks it. Turning bounds ON then pulls the colour in by giving
   // up CHROMA rather than refusing the axis being dragged, because refusing would
   // trap the thumb inside one segment of a broken track.
   await mount('?c=' + encodeURIComponent('oklch(70% 0.19 317)'));
@@ -717,12 +717,12 @@ test('bounds off lets you leave the gamut and marks it; bounds on yields chroma'
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'held on the next edit too');
 });
 
-// The out-of-bounds MARK itself lives entirely in vendor thumb pseudo-elements that
-// jsdom neither applies nor exposes, so the only honest way to pin it is against the
-// stylesheet text — the precedent set by color-field.test.ts's dashed-border sweep.
-// What matters is the COUPLING: the glyph is baked into an SVG pre-rotated -45deg so
-// it lands upright once the thumb's own rotate(45deg) applies. Drop or change either
-// rotation and the exclamation mark silently sits on its side.
+// The out-of-bounds MARK lives entirely in vendor thumb pseudo-elements that jsdom
+// neither applies nor exposes, so the only way to test it is against the stylesheet
+// text (the same approach color-field.test.ts's dashed-border sweep uses). What
+// matters is the COUPLING: the glyph is baked into an SVG pre-rotated -45deg, so it
+// lands upright once the thumb's own rotate(45deg) applies. Change either rotation
+// and the exclamation mark silently ends up sideways.
 test('the out-of-bounds diamond carries an upright exclamation mark', () => {
   const css = readFileSync(new URL('../lib/oklch-slice.css', import.meta.url), 'utf8');
 
@@ -745,8 +745,8 @@ test('the out-of-bounds diamond carries an upright exclamation mark', () => {
   assert.match(svg, /rotate\(-45 6 6\)/, 'the glyph is counter-rotated about the viewBox centre');
   assert.match(svg, /<rect[^>]*\/>[\s\S]*<circle[^>]*\/>/, 'a bar over a dot — an exclamation mark');
   // Sized to the diamond's UPRIGHT inscribed square, so the mark cannot overrun the
-  // rotated corners. Both lengths are custom properties now — a coarse pointer scales
-  // the whole slider up — so what has to hold is the RATIO between their defaults
+  // rotated corners. Both lengths are custom properties now - a coarse pointer scales
+  // the whole slider up - so what has to hold is the RATIO between their defaults
   // (thumb / √2) and the fact that a bigger thumb takes a bigger mark with it.
   const thumb = /width:\s*var\(--gsl-thumb,\s*([\d.]+)rem\)/.exec(css);
   const bang = /background-size:\s*var\(--gsl-bang-size,\s*([\d.]+)rem\)/.exec(css);
@@ -764,7 +764,7 @@ test('a blend stop copies; a tone step re-seeds', async () => {
   const before = subjectHex();
   copied.length = 0;
 
-  // A BLEND stop is an output you take away — copying it must not move the subject,
+  // A BLEND stop is an output you take away - copying it must not move the subject,
   // which would also destroy the blend it came from (its near end IS the subject).
   const blendStop = view.querySelectorAll<HTMLElement>('[data-lab-blend] [data-lab-step]')[4]!;
   blendStop.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -817,7 +817,7 @@ test('the blend target gets the expanded picker, dials included', async () => {
   await mount('?c=%23c0392b');
   const picker = $('[data-lab-blend-picker]')!;
   // The dials are gated on the inline form inside the component, so a float
-  // popover can only ever show the hex field, alpha and swatches — which is what
+  // popover can only ever show the hex field, alpha and swatches - which is what
   // this used to be, and why a blend target could not be picked perceptually.
   assert.ok(picker.querySelector('.color-field--inline'), 'mounted inline, not as a popover');
   assert.ok(picker.querySelector('[data-color-modes]'), 'has the space tabs');
@@ -842,7 +842,7 @@ test('the theme toggle rides the top-right chrome, icon-only, and cycles', async
   await mount('?c=%23c0392b');
   const chrome = $('[data-lab-chrome]')!;
   assert.ok(chrome, 'the chrome capsule exists');
-  // Opposite the back pill, in the same row — not stacked above the heading.
+  // Opposite the back pill, in the same row - not stacked above the heading.
   assert.ok($('.lab-back .back-pill, .lab-back [data-back-pill]'), 'the back pill shares the row');
   const btn = chrome.querySelector('button')!;
   assert.ok(btn, 'the toggle is mounted');
@@ -863,7 +863,7 @@ test('the theme toggle rides the top-right chrome, icon-only, and cycles', async
 test('the third surface’s picker survives its own change — the card is scored, not rebuilt', async () => {
   // The bug this pins, reported from the browser: "the sliders on the your surface
   // card disappear when clicked, they won't drag". `onChange` re-rendered the card
-  // with innerHTML, which destroyed the live popover on its own FIRST input event —
+  // with innerHTML, which destroyed the live popover on its own FIRST input event - 
   // so the slider under the pointer vanished and the gesture died with it.
   await mount('?c=%23c0392b');
   const host = $('[data-lab-ink-pick]')!;
@@ -872,7 +872,7 @@ test('the third surface’s picker survives its own change — the card is score
   const before = sliders();
   assert.ok(before > 0, 'the popover mounted its channel sliders');
 
-  // A whole drag's worth of events — a real gesture is many, and the first one is
+  // A whole drag's worth of events - a real gesture is many, and the first one is
   // what used to kill it.
   for (const v of ['#111111', '#222222', '#333333']) {
     field.value = v;
@@ -881,7 +881,7 @@ test('the third surface’s picker survives its own change — the card is score
     assert.equal($('[data-lab-ink-pick]'), host, 'the picker host is the SAME element');
     assert.equal(sliders(), before, `the sliders are still there after ${v}`);
   }
-  // And the scoring still happened — in place.
+  // And the scoring still happened - in place.
   assert.match(
     view.querySelector('[data-lab-card="ink"] .lab-apca-lc')?.textContent ?? '', /Lc \d/);
 
@@ -895,13 +895,13 @@ test('the third surface’s picker survives its own change — the card is score
 
 test('one inversion rule: the swatch, the ramp labels and the picker flip together', async () => {
   // Andy's report: he liked the dial disc's flip point and wanted the value pill and
-  // the big swatch — which flipped a good deal earlier — to match. There were three
+  // the big swatch - which flipped a good deal earlier - to match. There were three
   // rules: contrastText's luma threshold (the disc), a WCAG-ratio winner (the pill),
   // and `>= 4.5 against white` (the swatch and the ramp labels). The last two both
   // cross around relative luminance 0.18, far darker than the first.
   //
   // These two pinks sit either side of contrastText's threshold (luma 144.6 and
-  // 157.9 against a 150 cut) but on the SAME side of the other two — so if any
+  // 157.9 against a 150 cut) but on the SAME side of the other two - so if any
   // surface reverts to an old rule, one of these two mounts disagrees.
   for (const [hex, want] of [['%23cf6ca9', '#ffffff'], ['%23dd79b6', '#000000']] as const) {
     await mount('?c=' + hex);
@@ -931,7 +931,7 @@ test('no surface re-implements the ink inversion', async () => {
 });
 
 test('the single-solid vector snapshot is a polygon SVG of the current limit', async () => {
-  // The canvas is the turntable; this is the STILL a docs screenshot captures —
+  // The canvas is the turntable; this is the STILL a docs screenshot captures - 
   // real polygons, not a raster. Folded by default (a diagnostic), rendered on open.
   await mount();   // the default limit is Rec.2020
   const panel = view.querySelector<HTMLDetailsElement>('[data-lab-solid-svg-panel]');
@@ -977,14 +977,14 @@ test('the compare panel emits Display-P3 and Rec.2020 hulls side by side at one 
 });
 
 test('the charts open on Rec.2020, whatever the display claims', async () => {
-  // The tab is a COMPARISON TARGET — the question the reader is asking — so it opens
+  // The tab is a COMPARISON TARGET - the question the reader is asking - so it opens
   // at the widest gamut we classify and nothing narrows it for them. It was briefly
   // seeded from the display (a P3 screen opened on the P3 tab); Andy asked for
   // Rec.2020 back, and the reasoning is that answering "how far past sRGB is this?"
   // with the reader's own hardware hides colour before they have asked anything.
   //
-  // The display still decides what it should — the tier opacity anchor and the canvas
-  // encoding — which is why those live behind different functions.
+  // The display still decides what it should - the tier opacity anchor and the canvas
+  // encoding - which is why those live behind different functions.
   const claims: Array<string | null> = ['(color-gamut: p3)', '(color-gamut: rec2020)', null];
   const realMatchMedia = window.matchMedia;
   try {
@@ -1043,7 +1043,7 @@ const pressIcc = (): Uint8Array => labBuildProfile({
 
 interface LabStored { id: string; type: string; format: string; blob: Blob; meta?: Record<string, unknown> }
 
-/** The user-asset rail, in memory — the same four methods the real bridge has. */
+/** The user-asset rail, in memory - the same four methods the real bridge has. */
 function profileHost(): { assets: Record<string, (...a: never[]) => unknown> } & { store: Map<string, LabStored> } {
   const store = new Map<string, LabStored>();
   return {
@@ -1094,7 +1094,7 @@ test('the print affordance appears only where there is somewhere to store a prof
 
 test('the + names the panel it actually opens, and says what it does', async () => {
   // The panel was renamed to "Colour profiles" (Print / Display / Other) precisely
-  // because the ingest path was never print-only — and this trigger kept announcing
+  // because the ingest path was never print-only - and this trigger kept announcing
   // "Print profile", which is the claim the rename retracted and a dialog name that
   // no longer exists. The control's ONLY accessible name was false.
   const { host } = await seedProfile();
@@ -1134,7 +1134,7 @@ test('a link naming a stored profile charts against it', async () => {
   assert.match(rows.get('Paper') ?? '', /^L\* \d+\.\d$/, `a Paper row: ${JSON.stringify([...rows])}`);
   assert.ok(card.querySelector('.lab-press-chip'), 'the substrate is shown as a colour, not only as a number');
 
-  // A fourth ceiling, and its gain carries an explicit sign — a press is
+  // A fourth ceiling, and its gain carries an explicit sign - a press is
   // frequently NARROWER than sRGB, which is the reason to show it at all.
   const ceils = [...$('[data-lab-ceilings]')!.querySelectorAll('.lab-ceil')];
   assert.equal(ceils.length, 4);
@@ -1142,7 +1142,7 @@ test('a link naming a stored profile charts against it', async () => {
   assert.match(ceils[3]!.querySelector('.lab-ceil-gain')!.textContent!, /^[+−]\d+%$/);
 
   // One notation row for the press, after the CSS spaces, and it is the ONLY
-  // CMYK the table ever prints — nothing generic is added.
+  // CMYK the table ever prints - nothing generic is added.
   const heads = [...$('[data-lab-notations]')!.querySelectorAll('th')].map(h => h.textContent!.trim());
   assert.equal(heads.filter(h => /Test Press/.test(h)).length, 1);
   assert.equal(heads.indexOf(heads.find(h => /Test Press/.test(h))!), heads.length - 1);
@@ -1221,7 +1221,7 @@ test('a display profile gets its own name and no ΔE it is not decided by', asyn
   // A matrix/TRC profile has no B2A table, so `iccGamutSource` decides it on the
   // device cube and the round-trip ΔE is near zero well outside the gamut. The
   // card used to print "Outside the gamut / Shift ΔE 0.1" directly above "in gamut
-  // is decided by a round trip within ΔE 3.0" — a rule and its own refutation.
+  // is decided by a round trip within ΔE 3.0" - a rule and its own refutation.
   const { srgbIccProfile } = await import('@lolly/engine');
   labResetProfiles();
   const host = profileHost();
@@ -1256,7 +1256,7 @@ test('a display profile gets its own name and no ΔE it is not decided by', asyn
 test('activating a profile widens EVERY picker on the page, not only the subject’s', async () => {
   // A field bakes its tab strip at mount and subscribes to nothing, so only the
   // re-mounted ones grow the tab. The blend and ink pickers used to be left with
-  // the strip they were born with — the same page showing two different tab rows
+  // the strip they were born with - the same page showing two different tab rows
   // depending on whether the reader arrived by link or by drop.
   closePanels();
   const { host, digest } = await seedProfile();
@@ -1294,7 +1294,7 @@ test('an intent that cannot be activated is not reported as if it had been', asy
   // pill row asserting opposite things, and erased the line that said so.
   closePanels();
   const { host, digest } = await seedProfile();
-  // The bytes go, and so does this document's parse cache — otherwise the profile
+  // The bytes go, and so does this document's parse cache - otherwise the profile
   // is still live in memory and activating it legitimately succeeds.
   (host as { store: Map<string, unknown> }).store.delete(`user/profiles/${digest}`);
   await mountWithHost(host, '?c=%23c0392b');
@@ -1321,7 +1321,7 @@ test('the blend picker sits BESIDE the ramp it changes, not above it', async () 
   // Andy's report: "in color lab it would be good to have the picker side by side the
   // blend color swatches." Stacked, the expanded picker's ~554px of tabs, dials,
   // channel sliders and alpha pushed the style pills, the stop count and every
-  // swatch about 600px down the page — so the ramp moving under your hands, the one
+  // swatch about 600px down the page - so the ramp moving under your hands, the one
   // thing worth watching while you pick, was the one thing off screen.
   //
   // Structural rather than pixel-measured on purpose: jsdom has no layout, and the
@@ -1349,7 +1349,7 @@ test('the blend picker sits BESIDE the ramp it changes, not above it', async () 
 });
 
 test('“Keep in bounds” is built from the shared field recipe', async () => {
-  // It was a bare <input type=checkbox>, which the UA drew at 13×13 — outside
+  // It was a bare <input type=checkbox>, which the UA drew at 13×13 - outside
   // styles/parts/fields.css, so it missed the recipe's coarse-pointer bump to 20px
   // and was a fingertip miss on a phone. Every form control comes from the one
   // recipe; this is the assertion that keeps this one in it.
@@ -1362,10 +1362,10 @@ test('“Keep in bounds” is built from the shared field recipe', async () => {
 
 test('the copy affordances are reachable without a mouse', async () => {
   // `title=` is invisible to touch and to the keyboard, and the swatch's value lines
-  // look like plain text — nothing else says pressing one copies it. So they carry
+  // look like plain text - nothing else says pressing one copies it. So they carry
   // the tooltip primitive (`data-tip`, styles/parts/tooltip.css, which opens on plain
-  // focus where there is no hover), announce themselves as buttons, and — since a
-  // thing that says "button" has to answer Enter — copy from the keyboard too.
+  // focus where there is no hover), announce themselves as buttons, and - since a
+  // thing that says "button" has to answer Enter - copy from the keyboard too.
   await mount('?c=%23c0392b');
   const primary = $('[data-lab-sw-primary]')!;
   assert.ok(primary.dataset.tip, 'the leading value carries a tooltip');
@@ -1389,7 +1389,7 @@ test('the copy affordances are reachable without a mouse', async () => {
 });
 
 test('the blend styles explain themselves on a phone, and the clamp marker does too', async () => {
-  // A blend style's ENTIRE rationale was in `title=t(b.why)` — the pills are labelled
+  // A blend style's ENTIRE rationale was in `title=t(b.why)` - the pills are labelled
   // in one word each precisely because the tooltip carries the reason, and on touch
   // there was no tooltip. Same for the notation table's "clamped", where the
   // explanation is the whole content of the marker.
@@ -1412,7 +1412,7 @@ test('the blend styles explain themselves on a phone, and the clamp marker does 
 
 test('the 64 brand swatches are NOT given 64 tooltips', async () => {
   // Deliberate, and the reason is worth keeping: a swatch's tooltip would say its
-  // name, and TAPPING it makes the colour the subject of the whole report — which
+  // name, and TAPPING it makes the colour the subject of the whole report - which
   // names it, in every notation, better than a bubble could. Sixty-four bubbles
   // stacked over a rail is noise, so the rail keeps `title` as a pointer nicety and
   // the accessible name as the real answer.
@@ -1428,7 +1428,7 @@ test('the report never lays out two rules for one grid, and holds the touch cont
   //  · A DUPLICATE `.lab-charts` block dead-overrode the auto-fit grid with four
   //    fixed columns, which crushed every plot to 122×76 CSS px at 840px wide.
   //  · `white-space: nowrap` on `.lab-sw-alt` defeated its own `overflow-wrap`, and
-  //    a long `color(display-p3 …)` then scrolled the DOCUMENT sideways — 71px at
+  //    a long `color(display-p3 …)` then scrolled the DOCUMENT sideways - 71px at
   //    660px wide, 47px at 720px.
   //  · `touch-action: none` on the 3D solid froze the page under a control taking
   //    ~60% of a phone's viewport height.
@@ -1456,7 +1456,7 @@ test('"This screen" hydrates from the same device probe the Dashboard uses', asy
   // so the guard is that it (a) unhides, (b) carries the Display card's live gamut
   // row rather than a hand-written copy of it, and (c) offers the way out to the
   // full readout. jsdom has no WebGL, so the two Graphics cards are legitimately
-  // absent here — which is the degradation the section is meant to survive.
+  // absent here - which is the degradation the section is meant to survive.
   // The snapshot reads the bare `screen` global (as a browser has it); this file's
   // header only wires `window`, so give it one for the duration of this test.
   Object.defineProperty(globalThis, 'screen', { configurable: true, value: dom.window.screen });
@@ -1489,7 +1489,7 @@ test('swatchGamutState: out of gamut yields an in-gamut clip and a positive ΔE'
   const s = swatchGamutState(wide, 'srgb');
   assert.equal(s.outOfGamut, true, 'reported outside sRGB');
   assert.ok(s.deltaE > 0, `the clip moved the colour: ΔE ${s.deltaE}`);
-  // The clip actually fits — asserted of the ACTUAL gamut, via the returned hex.
+  // The clip actually fits - asserted of the ACTUAL gamut, via the returned hex.
   const clipped = hexToOklch(s.clippedHex)!;
   assert.ok(inGamut(clipped.l, clipped.c, clipped.h, 'srgb'), `clippedHex ${s.clippedHex} is inside sRGB`);
 });
@@ -1504,7 +1504,7 @@ test('swatchGamutState: an in-gamut colour is unclipped, ΔE 0, hex == oklchToHe
 
 test('swatchGamutState: fires against a gamut narrower than sRGB (the press-profile case)', () => {
   // A synthetic press-narrow source: inside sRGB AND low chroma. A saturated brand
-  // red is a plain sRGB hex, yet it still falls outside — which is the whole reason
+  // red is a plain sRGB hex, yet it still falls outside - which is the whole reason
   // the badge exists for an sRGB-sourced palette.
   const narrow: GamutSource = {
     id: 'test:narrow',
@@ -1551,10 +1551,10 @@ test('the brand rail badges an out-of-gamut swatch and clears it when the target
   assert.equal(sw!.dataset.oog, 'true', 'it is flagged out of gamut against sRGB');
   assert.ok(sw!.querySelector('.lab-brand-badge'), 'the corner badge is present');
   assert.match(sw!.getAttribute('title') ?? '', /Outside/, 'the tip explains the clip');
-  // Clicking must still SEED the colour, not the badge — the pick is the sRGB hex.
+  // Clicking must still SEED the colour, not the badge - the pick is the sRGB hex.
   assert.equal(sw!.dataset.labBrandPick, '#00c04a', 'the click target is the token value, unchanged');
 
-  // Widen the comparison target to Rec.2020, which contains the P3 green — the badge clears.
+  // Widen the comparison target to Rec.2020, which contains the P3 green - the badge clears.
   const rec = view.querySelector<HTMLElement>('[data-lab-limit] [data-val="rec2020"]');
   assert.ok(rec, 'the Rec.2020 target button is present');
   rec!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -1586,7 +1586,7 @@ test('contrastMatrix: the diagonal — a colour on itself — is ~0', () => {
 
 test('contrastMatrix: APCA is polarity-dependent, so the grid is asymmetric', () => {
   // White and black are the extreme polar pair: dark-on-light is positive, the
-  // mirror is negative — a symmetric matrix would collapse the two.
+  // mirror is negative - a symmetric matrix would collapse the two.
   const m = contrastMatrix(['#ffffff', '#000000']);
   assert.notEqual(m[0]![1]!.lc, m[1]![0]!.lc, 'cell(i,j) != cell(j,i) for a polar pair');
   assert.ok(m[0]![1]!.lc < 0, 'white text on black is reverse polarity (negative)');
@@ -1618,7 +1618,7 @@ const paletteHost = {
 
 test('the matrix panel appears with a palette and grids white + black + the palette', async () => {
   await mountWithHost(paletteHost, '?c=%23c0392b');
-  // The brand block is async (host.tokens.colors) — let it resolve.
+  // The brand block is async (host.tokens.colors) - let it resolve.
   await new Promise(r => setTimeout(r, 0));
   const diag = $('[data-lab-diag]') as HTMLDetailsElement;
   assert.ok(diag, 'the diagnostic panel is in the markup');
@@ -1636,7 +1636,7 @@ test('the matrix panel appears with a palette and grids white + black + the pale
 test('the matrix stays hidden when there is no brand palette', async () => {
   await mount('?c=%23c0392b');
   const diag = $('[data-lab-diag]') as HTMLDetailsElement | null;
-  // Present in the markup but never revealed — a palette diagnostic with no palette.
+  // Present in the markup but never revealed - a palette diagnostic with no palette.
   assert.ok(diag, 'the panel markup is always present');
   assert.equal(diag!.hidden, true, 'but hidden without a palette');
 });
@@ -1653,7 +1653,7 @@ test('a vision mode recolours the matrix and rescores it on the simulated colour
   const railBefore = view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw')!
     .getAttribute('style');
 
-  // Switch to Deuteranopia — a saturated palette shifts, so both the fills and the
+  // Switch to Deuteranopia - a saturated palette shifts, so both the fills and the
   // scores move.
   view.querySelector<HTMLElement>('[data-lab-cvd] [data-val="deutan"]')!
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -1661,7 +1661,7 @@ test('a vision mode recolours the matrix and rescores it on the simulated colour
   assert.notEqual(cellAt(2, 2).style.background, bgBefore, 'a coloured cell repaints for the vision');
   assert.notEqual(($('[data-lab-matrix]')?.textContent ?? ''), wholeBefore,
     'and at least one Lc recomputes on the simulated colours');
-  // The brand rail above is transformed too — the same diagnostic, scoped to it.
+  // The brand rail above is transformed too - the same diagnostic, scoped to it.
   assert.notEqual(view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw')!.getAttribute('style'),
     railBefore, 'the brand rail recolours with the matrix');
   // The severity slider is offered only for the graded CVD types.

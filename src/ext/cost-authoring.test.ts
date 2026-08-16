@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ext/cost-authoring.ts — the rate-card AUTHORING furniture, extracted behind
+ * ext/cost-authoring.ts - the rate-card AUTHORING furniture, extracted behind
  * slot:cost-authoring.
  *
- * Proves the extraction's four load-bearing properties:
+ * Proves the extraction's four required properties:
  *   - AUTHORING ABSENT when the slot is empty: mounting `cost-authoring` with
  *     nothing registered leaves the container untouched (counts-only, dormant);
  *   - REGISTERING RESTORES AUTHORING: enableLocalCostAuthoring() hydrates a single

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby — the discovery-provider registry (lib/nearby.ts): registration/last-wins,
+ * nearby - the discovery-provider registry (lib/nearby.ts): registration/last-wins,
  * the dormant default, source ordering, and the pure visibility-window maths.
  *
  * Run directly:  node --test shells/web/src/lib/nearby.test.ts
  *
- * No DOM, no timers, no network — the registry is pure and the window helpers take
+ * No DOM, no timers, no network - the registry is pure and the window helpers take
  * an injected `now`, so this is plain node:test.
  */
 
@@ -61,7 +61,7 @@ test('last-wins per source; unregister of a replaced provider is a no-op', () =>
   const offFirst = registerNearbyProvider(first);
   registerNearbyProvider(second);
   assert.equal(getNearbyProvider('lan'), second);
-  offFirst(); // first is no longer the registered one — must not evict second
+  offFirst(); // first is no longer the registered one - must not evict second
   assert.equal(getNearbyProvider('lan'), second);
 });
 

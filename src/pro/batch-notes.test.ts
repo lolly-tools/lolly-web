@@ -3,7 +3,7 @@
  * The per-row DIAGNOSTIC CHANNEL, against the real `planBatch`/`runBatch`.
  * Run directly:  node --test shells/web/src/pro/batch-notes.test.ts
  *
- * What is under test is not the payload — its element type is Phase 1's and this
+ * What is under test is not the payload - its element type is Phase 1's and this
  * module declares none. It is the CHANNEL and the row IDENTITY: a note handed in
  * against row k comes back out against row k, and the mapping survives planBatch's
  * compaction. The fixtures use plain strings and objects precisely to demonstrate
@@ -40,7 +40,7 @@ test('planBatch keys findings by QUEUE position while reporting the source posit
   assert.deepEqual(plan.renderable.map(r => r.uid), ['u1', 'u3']);
   assert.deepEqual(plan.srcIndex, [0, 2]);
   assert.deepEqual(plan.skipped.map(s => s.srcIndex), [1]);
-  // The third row's queue position is 1 but its source position is 2 — the exact gap
+  // The third row's queue position is 1 but its source position is 2 - the exact gap
   // that makes an index captured before planBatch point at the wrong row afterwards.
   assert.deepEqual(plan.findings, [
     { rowIndex: 0, uid: 'u1', items: ['u1@q0@s0'] },
@@ -57,7 +57,7 @@ test('runBatch re-emits each row’s notes on its result and its progress event'
   const rows = [row('a', 'u1'), row('b', 'u2')];
   const notes = [['first'], ['second']];
   const seen: BatchProgress<string>[] = [];
-  // Every render throws here (no catalog, no DOM) — which is the error arm, and the
+  // Every render throws here (no catalog, no DOM) - which is the error arm, and the
   // arm that matters most: a row that produced no file is exactly the one a report
   // has to name correctly.
   const { results } = await runBatch<string>(rows, HOST, {

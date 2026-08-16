@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * scrub-registry.test.ts — the bounds and the audio rule.
+ * scrub-registry.test.ts - the bounds and the audio rule.
  *
  * Everything here is memory-only and synchronous, so it is fully provable in
  * node. Two properties matter and neither is cosmetic:
@@ -11,7 +11,7 @@
  *    of a reload.
  *  • A proxy whose audio was discarded by the transcode must not answer a
  *    WAVEFORM read. It would draw flat silence over a clip that exports with
- *    sound — a lie in the UI, and one nothing else would ever catch.
+ *    sound - a lie in the UI, and one nothing else would ever catch.
  */
 
 import test from 'node:test';

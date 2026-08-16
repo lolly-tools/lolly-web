@@ -4,8 +4,8 @@
  *
  * The spec defines each CSS shorthand filter AS an SVG filter, so these assertions
  * are against the spec's own matrices and transfer functions rather than against
- * anything measured by eye. Getting one wrong is not a subtle shift — a bad
- * `contrast` intercept inverts mid-tones — but it is invisible in a screenshot diff,
+ * anything measured by eye. Getting one wrong is not a subtle shift - a bad
+ * `contrast` intercept inverts mid-tones - but it is invisible in a screenshot diff,
  * which is why the numbers are pinned here instead.
  *
  * The other half of the contract is the null return: a chain containing anything we
@@ -57,7 +57,7 @@ test('percentages and unitless amounts are the same thing', () => {
 });
 
 test('an omitted amount uses the CSS default, not zero', () => {
-  // filter: grayscale() means grayscale(1) — defaulting to 0 would silently no-op.
+  // filter: grayscale() means grayscale(1) - defaulting to 0 would silently no-op.
   assert.deepEqual(only('grayscale()'), only('grayscale(1)'));
   assert.deepEqual(only('invert()'), only('invert(1)'));
 });

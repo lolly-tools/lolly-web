@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * motion-path.ts — the PATH a keyframed box travels, drawn over the canvas while that
+ * motion-path.ts - the PATH a keyframed box travels, drawn over the canvas while that
  * box is selected (plans/104 §8's motion-path bullet, under §6.5's projection rule).
  *
  * One polyline per selected animated box, with a diamond at every keyframe time. The
  * numbers are not this module's: `kfMotionPath` (views/timeline-math.ts) samples
  * `pose(t) = evaluateKf → resolveCamera → projectLayer` straight out of the engine and
  * hands over native-px points, which this file maps through the SAME `nativeToStage`
- * the selection outline uses. That division is §6.5's rule made structural — a path
+ * the selection outline uses. That division is §6.5's rule made structural - a path
  * drawn from raw keyframe offsets would promise a straight line where a camera will
  * actually render a parallax curve, i.e. it would lie about the export.
  *
@@ -15,21 +15,21 @@
  * A path must never reach a rendered file. Three INDEPENDENT guarantees, each with its
  * own test in motion-path.test.ts:
  *
- *   1. The layer is a child of `.fc-overlay`, a STAGE SIBLING of `#tool-canvas` — it is
+ *   1. The layer is a child of `.fc-overlay`, a STAGE SIBLING of `#tool-canvas` - it is
  *      outside the node `runtime.export` is ever handed.
  *   2. It carries `data-export-hide`, so bridge/export.ts's `detachExportHidden` REMOVES
  *      it from the DOM upstream of every format dispatch (including parseSequenceStage),
  *      even if an export node were ever widened to the whole stage.
  *   3. It never writes a class or an inline style to a `.lolly-box`. Here that is
  *      STRUCTURAL rather than merely observed: this module is never handed the canvas
- *      element at all, so there is no `.lolly-box` in reach to write to — it draws from
+ *      element at all, so there is no `.lolly-box` in reach to write to - it draws from
  *      the model's own numbers and the injected metrics, and a source scan pins that.
  *
  * ── WHY SVG, AND WHY ONE ELEMENT PER RUN ────────────────────────────────────────────
  * A polyline needs real path geometry, so this is the one overlay layer that is an
  * `<svg>` rather than positioned divs. Stroke widths are plain px in STAGE space, so
  * they stay constant under canvas zoom by construction (there is no vector-effect and
- * none is wanted — a hairline that thins as you zoom out is the failure mode).
+ * none is wanted - a hairline that thins as you zoom out is the failure mode).
  *
  * The engine's behind-camera ramp (`projectDepth().alphaGuard`) is carried on every
  * sample, and a run of samples is BROKEN wherever it reaches 0: a layer that passes
@@ -37,12 +37,12 @@
  * gap would draw travel that never happens.
  *
  * ── MOTION ──────────────────────────────────────────────────────────────────────────
- * The path itself is a SOLID static line and is drawn under every preference — it is
+ * The path itself is a SOLID static line and is drawn under every preference - it is
  * geometry, and geometry is information. The one ANIMATED affordance is a second,
  * additive stroke over the same points (`.mp-flow`) whose dashes travel forward to
  * read out the direction of the move, and it has two independent gates:
  *
- *   1. `prefersReducedMotion()` (which ORs the OS media query with the app pref) —
+ *   1. `prefersReducedMotion()` (which ORs the OS media query with the app pref) - 
  *      checked at paint, so the element is NOT MINTED AT ALL. The gate is therefore a
  *      DOM fact a test can assert, not a CSS property nobody can see in jsdom.
  *   2. The stylesheet's own `prefers-reduced-motion` + `html[data-a11y-motion]` blocks,
@@ -50,14 +50,14 @@
  *
  * plans/104 §8's a11y note is the reason there are two: canvas visuals are exempt from
  * the a11y prefs by contract (`a11y-prefs.ts:14–18`), so the lever for anything moving
- * over the canvas is playback policy — and an animated affordance is playback.
+ * over the canvas is playback policy - and an animated affordance is playback.
  */
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { boxRect, rectCentre, type Box } from './free-canvas-math.ts';
 import { deriveDuration, kfCameraClips, kfMotionPath, type TimeCfg } from './timeline-math.ts';
 import '../styles/parts/motion-path.css';
 
-/** What `nativeToStage` needs, and nothing more — so a test can pass plain objects. */
+/** What `nativeToStage` needs, and nothing more - so a test can pass plain objects. */
 export interface MotionMetrics {
   cr: { left: number; top: number };
   sr: { left: number; top: number };
@@ -65,7 +65,7 @@ export interface MotionMetrics {
 }
 
 /**
- * The SPATIAL field names (free-canvas's own `cfg`), narrowed to what a path needs —
+ * The SPATIAL field names (free-canvas's own `cfg`), narrowed to what a path needs - 
  * the box's authored rect, whose CENTRE is what `projectLayer` folds (§4.1's `bx`/`by`).
  * Structural, so the canvas hands over its resolved config unchanged.
  */
@@ -84,17 +84,17 @@ export interface MotionPoint {
 }
 
 export interface MountMotionPathOpts {
-  /** `.fc-overlay` — the layer becomes its FIRST child, under every selection chrome. */
+  /** `.fc-overlay` - the layer becomes its FIRST child, under every selection chrome. */
   overlayEl: HTMLElement;
   /** free-canvas's resolved geometry field names. */
   geom: MotionGeomCfg;
-  /** free-canvas's resolved TIME field names — `kfField` is what makes a box animated. */
+  /** free-canvas's resolved TIME field names - `kfField` is what makes a box animated. */
   time: TimeCfg;
   /** The live model. Read once per paint, exactly like the ghost layer's. */
   getBoxes: () => Box[];
   /** The canvas→stage mapping, read fresh on every paint so a pan/zoom tracks. */
   metricsOf: () => MotionMetrics;
-  /** The artboard's CURRENT native size — the projection's principal point is its centre. */
+  /** The artboard's CURRENT native size - the projection's principal point is its centre. */
   canvasSize: () => { w: number; h: number };
 }
 
@@ -109,7 +109,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Half-diagonal of a keyframe diamond, STAGE px. Matches the timeline strip's dots. */
 const KEY_R = 4.5;
 
-/** A run shorter than this is a single sample with nowhere to go — nothing to stroke. */
+/** A run shorter than this is a single sample with nowhere to go - nothing to stroke. */
 const MIN_RUN = 2;
 
 const fin = (v: unknown): number => {
@@ -143,7 +143,7 @@ export function motionRuns(pts: readonly MotionPoint[] | null | undefined): Moti
   return out;
 }
 
-/** One box's resolved path — what {@link samplePaths} produces and `paint` draws. */
+/** One box's resolved path - what {@link samplePaths} produces and `paint` draws. */
 interface MotionPathItem {
   id: string;
   pts: readonly MotionPoint[];
@@ -179,7 +179,7 @@ export function mountMotionPath(opts: MountMotionPathOpts): MotionPathHandle {
   /**
    * The MODEL half: turn a selection into projected paths, all of it through
    * `timeline-math` (which is itself all engine). The camera set and the sequence
-   * length are resolved ONCE for the whole paint, not once per box — a camera is a
+   * length are resolved ONCE for the whole paint, not once per box - a camera is a
    * property of the scene, not of the thing looking at it.
    *
    * A CAMERA box is skipped outright: it has no canvas footprint at all (§5.4), so the
@@ -192,13 +192,13 @@ export function mountMotionPath(opts: MountMotionPathOpts): MotionPathHandle {
     const boxes = getBoxes();
     if (!Array.isArray(boxes) || !boxes.length) return out;
     const wh = canvasSize();
-    // The samples are in NATIVE px, so a pan or a zoom does not change one of them —
+    // The samples are in NATIVE px, so a pan or a zoom does not change one of them - 
     // only the map applied to them afterwards. `paint` runs on every chrome repaint
     // (which is every rAF of a pan), and re-evaluating up to 240 poses per selected box
     // sixty times a second to arrive at the same numbers is the kind of cost that shows
-    // up on a phone. So the memo's key is an IDENTITY test on the model array —
+    // up on a phone. So the memo's key is an IDENTITY test on the model array - 
     // free-canvas hands out the input's own value, whose reference changes exactly when
-    // a commit does — plus the selection and the artboard size, which are the only other
+    // a commit does - plus the selection and the artboard size, which are the only other
     // inputs to a sample. Nothing here depends on the metrics, which is what makes the
     // memo sound rather than merely cheap.
     const key = `${ids.join(',')}|${wh.w}x${wh.h}`;
@@ -251,7 +251,7 @@ export function mountMotionPath(opts: MountMotionPathOpts): MotionPathHandle {
         line.setAttribute('class', 'mp-line');
         line.setAttribute('points', pointsAttr);
         g.appendChild(line);
-        // The direction cue, over the same geometry — and simply NOT MINTED when the
+        // The direction cue, over the same geometry - and simply NOT MINTED when the
         // user has asked for less motion (see the module doc's two gates).
         if (!still) {
           const flow = doc.createElementNS(SVG_NS, 'polyline');

@@ -2,18 +2,18 @@
 /**
  * The presence engine (plan 100 §4.5–§4.8, §11.4, §11.5; wave 1.1).
  *
- * Everything here runs on FAKE TIME — the engine takes its clock and its timers as
+ * Everything here runs on FAKE TIME - the engine takes its clock and its timers as
  * options for exactly this reason, so a 30-second eviction is asserted at the
  * millisecond rather than slept through, and the heartbeat can later move into a
  * Worker without a single test changing.
  *
  * The claims, in order of what a regression would cost:
  *
- *  1. ZERO traffic when alone (§4.7). Not "less" — no frame, and no timer even
+ *  1. ZERO traffic when alone (§4.7). Not "less" - no frame, and no timer even
  *     scheduled. It is the promise single-player makes to every build.
  *  2. The 50 ms throttle coalesces a burst to one frame per window, and the LAST
  *     state of a burst still lands (trailing flush).
- *  3. TTL eviction at exactly 30 s — and never for an `away` peer (§11.4): a
+ *  3. TTL eviction at exactly 30 s - and never for an `away` peer (§11.4): a
  *     background tab whose timers Chrome throttled is not a crashed tab.
  *  4. Newest-only per sender (§11.5): the lossy presence lane delivers frames out
  *     of order, and presence is a whole-value register with no field merge to fall
@@ -44,7 +44,7 @@ interface FakeClock {
   /** Run every timer due within `ms`, in due order, then park the clock there. */
   advance(ms: number): void;
   advanceTo(t: number): void;
-  /** Timers still armed — how "schedules nothing at all" is asserted. */
+  /** Timers still armed - how "schedules nothing at all" is asserted. */
   pending(): number;
 }
 
@@ -94,7 +94,7 @@ function frameOf(from: string, seq: number, extra: Partial<PresenceFrame> = {}):
 
 /** TYPE PIN: the contract's full v1.1 `Presence` is a `PresenceState`. The engine
  *  relaxes `cursor`/`selection` for the sidebar-only tools; if that relationship
- *  ever inverts, this assignment stops compiling — which is the point. */
+ *  ever inverts, this assignment stops compiling - which is the point. */
 const CANONICAL: Presence = {
   userId: 'host', name: 'Priya F.', color: '#4f46e5',
   cursor: { x: 0.5, y: 0.25 }, selection: [], focus: 'headline',
@@ -500,7 +500,7 @@ test('a transport that throws does not take the heartbeat with it', () => {
 
 test('an away peer whose counter restarts is admitted after one TTL, not never', () => {
   // The away exemption (§11.4) removes eviction, which is the ONLY thing that clears
-  // a sender's sequence bookkeeping — so without the silence rule a background tab
+  // a sender's sequence bookkeeping - so without the silence rule a background tab
   // that reloads is locked out for the life of the session, not for 30 s.
   const { clock, engine } = rig();
   engine.setLocal(stateOf('me'));
@@ -509,7 +509,7 @@ test('an away peer whose counter restarts is admitted after one TTL, not never',
     assert.equal(engine.receive(frameOf('p1', seq, { away: true })), true);
   }
 
-  // Genuine reordering — a frame that overtook a newer one milliseconds ago — is
+  // Genuine reordering - a frame that overtook a newer one milliseconds ago - is
   // still dropped. The escape is silence, not a lower sequence number.
   clock.advance(PRESENCE_TTL_MS - 1);
   assert.equal(engine.receive(frameOf('p1', 1, { away: true })), false, 'stale inside the TTL');
@@ -544,7 +544,7 @@ test('a live peer that reloads is the documented evict-then-rejoin, unchanged', 
 test('announce: emits while the roster is empty, and the seq stays coherent with later sends', () => {
   const { clock, sends, engine } = rig();
 
-  // No-op before the first setLocal — nothing to announce.
+  // No-op before the first setLocal - nothing to announce.
   engine.announce();
   assert.equal(sends.length, 0);
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * versions.ts — the versioned design-system model (plans/97 §6a).
+ * versions.ts - the versioned design-system model (plans/97 §6a).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/versions.test.ts"
@@ -238,7 +238,7 @@ test('diffTokenDocs reports added, changed and removed leaves across sets', () =
   // A description edit is not a compatibility event; an identical doc has no diff.
   const described = layeredDoc() as Record<string, unknown>;
   // Typed through the shape the fixture actually builds. The old double cast went
-  // via Record<string, never>, which makes every index `never` — casting `never`
+  // via Record<string, never>, which makes every index `never` - casting `never`
   // onward does not restore an indexable chain, so tsc flagged the two hops as
   // possibly-undefined and the whole tests project failed to typecheck.
   (described.light as { color: { semantic: { primary: Record<string, unknown> } } })
@@ -246,7 +246,7 @@ test('diffTokenDocs reports added, changed and removed leaves across sets', () =
   assert.deepEqual(diffTokenDocs(a, described), { added: [], changed: [], removed: [] });
   assert.deepEqual(diffTokenDocs(a, layeredDoc()), { added: [], changed: [], removed: [] });
 
-  // A rename reads as one removal plus one addition — exactly how it breaks a tool.
+  // A rename reads as one removal plus one addition - exactly how it breaks a tool.
   const renamed = layeredDoc() as Record<string, unknown>;
   const rSpectrum = (renamed.base as { color: { spectrum: Record<string, unknown> } }).color.spectrum;
   rSpectrum.citrus = rSpectrum.lime;
@@ -262,7 +262,7 @@ test('diffTokenDocs reports added, changed and removed leaves across sets', () =
 // This module became a re-export of engine/src/design-version.ts (engine 1.109.0,
 // plans/97 §6a M7). Every test above still runs against the real implementation
 // through it; this last one guards the seam itself, because a re-export list is
-// the one kind of code that can lose a symbol with no error anywhere — the import
+// the one kind of code that can lose a symbol with no error anywhere - the import
 // simply resolves to undefined at the call site, in a room nobody typechecks twice.
 test('versions: the module re-exports the whole engine surface', async () => {
   const mod = await import('./versions.ts');

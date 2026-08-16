@@ -10,9 +10,9 @@
  * INFINITE animation had no termination argument at all.
  *
  * A browser is the only possible oracle here. jsdom has no cascade, no animation
- * timeline, no `getAnimations()` and no layout, so every mechanism under test —
+ * timeline, no `getAnimations()` and no layout, so every mechanism under test - 
  * "does an animation outrank an inline style", "does cancelling it let the inline
- * style through", "how many groups came out" — is precisely what it cannot model.
+ * style through", "how many groups came out" - is precisely what it cannot model.
  *
  * The bounds asserted below are deliberately generous multiples of the measured
  * numbers: this file exists to catch an EXPLOSION (three orders of magnitude), not to
@@ -65,7 +65,7 @@ type Shot = {
   depth: number;
   /** Wrapper transforms emitted (`rotate(`/`matrix(` on a group). */
   rotates: number;
-  /** The element's inline `transform` after the walk — the restore check. */
+  /** The element's inline `transform` after the walk - the restore check. */
   inlineAfter: string;
   /** Is the element still moving 120 ms after the export finished? */
   stillMoving: boolean;
@@ -143,14 +143,14 @@ test('a RUNNING transform transition walks once, not once per attempt',
   { skip: SKIP }, async () => {
     const markup = PAGE(
       // Both ends of the transition are well away from identity, so the element is
-      // genuinely rotated at EVERY instant of it — a 0deg → Ndeg tween spends its
+      // genuinely rotated at EVERY instant of it - a 0deg → Ndeg tween spends its
       // first frames indistinguishable from no transform at all, and would take the
       // AABB path for reasons that have nothing to do with what is under test.
       'transform: rotate(30deg); transition: transform 60s linear;',
       '#target.go { transform: rotate(70deg); }',
     );
     // Start a 60-second transition and let it get properly under way, so the walk
-    // happens mid-flight — the exact state that used to re-enter forever.
+    // happens mid-flight - the exact state that used to re-enter forever.
     const prep = `
       const el = document.getElementById('target');
       el.classList.add('go');
@@ -219,7 +219,7 @@ test('an INFINITE transform animation terminates, and the page keeps spinning',
 test('a transform an author `!important` rule owns falls to the AABB path, bounded',
   { skip: SKIP }, async () => {
     // Author `!important` outranks an inline declaration of normal importance, so the
-    // neutralise cannot win here either — and a STRONGER inline style is not the fix
+    // neutralise cannot win here either - and a STRONGER inline style is not the fix
     // (an animation would outrank that too). The element is walked from its
     // transformed bounding box instead: one element, one group, no wrapper.
     const markup = PAGE('transform: rotate(25deg) !important;');

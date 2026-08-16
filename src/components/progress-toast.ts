@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The floating progress toast that hosts an offscreen render/export pipeline's
- * progress UI (`.pro-toast` — see styles/parts/projects.css).
+ * progress UI (`.pro-toast` - see styles/parts/projects.css).
  *
- * The scaffold — create a `.pro-toast`, give it a close button + a
+ * The scaffold - create a `.pro-toast`, give it a close button + a
  * `.pro-toast-mount`, append it to <body>, run an export into the mount, and
- * swap in an error paragraph if the job throws — was retyped four times
+ * swap in an error paragraph if the job throws - was retyped four times
  * (projects.ts, multi-edit.ts, folder-overlay.ts, profile.ts). This is that one
  * copy. Reconciled drift, picked deliberately:
  *
  * - Close label: translated `t('Close')` (projects/multi-edit/profile) rather
  *   than folder-overlay's untranslated hardcoded "Close".
  * - Glyph: the literal ✕ (three of four) rather than folder-overlay's
- *   `&#x2715;` entity — same rendered character, one fewer indirection.
+ *   `&#x2715;` entity - same rendered character, one fewer indirection.
  * - Error branch: present for EVERY caller. profile.ts had no outer failure
  *   path at all, so a throw outside its two inner try/catches left a stale
  *   "rendering…" toast on screen; it now surfaces the message like the rest.
@@ -21,7 +21,7 @@
  *   view teardown drains, so a nav-away can't leave a toast floating over the
  *   next view. folder-overlay deliberately passes nothing: its only lifecycle is
  *   a showModal() dialog, and the toast is BELOW that dialog's top layer, so the
- *   user only ever sees it after closing the overlay — binding it there would
+ *   user only ever sees it after closing the overlay - binding it there would
  *   destroy it exactly when it becomes visible. It's dismissed by its own ✕.
  */
 import { escape } from '../utils.ts';
@@ -56,7 +56,7 @@ export function mountProgressToast(
   opts.track?.add(toast);
   const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
   /* The mount is the only channel a long batch export has for "still going",
-     "done" and "failed". Painting that text is not enough — mark it a polite
+     "done" and "failed". Painting that text is not enough - mark it a polite
      live region so a screen-reader user hears the same progress a sighted one
      watches. Not `aria-atomic`: these runs append log lines, and re-reading the
      whole log on every append would be unusable. */

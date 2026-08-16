@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Places spotlight provider (plans/99 §2b) — a static registry of
+ * The Places spotlight provider (plans/99 §2b) - a static registry of
  * navigable views, so "verify", "colour lab" or "spreadsheet" typed anywhere
  * lands on the right route. This is also where the utilities view's non-tool
- * cards (Convert, PDF, Data — cards that link to VIEWS, not fake tools) are
+ * cards (Convert, PDF, Data - cards that link to VIEWS, not fake tools) are
  * searchable, so the tools/utilities providers never double-list them.
  *
  * Labels are the exact English t() keys those views already use; matching runs
  * over BOTH the translated and English labels (weight 3) plus an English
  * keyword bag (weight 1), so a German session finds Verify by either name and
  * the Colour Lab by "oklch". Batch mode joins the registry only while the Pro
- * flag is on — checked per search call (flagEnabledSync), never at module
+ * flag is on - checked per search call (flagEnabledSync), never at module
  * load, so a toggle mid-session takes effect on the next keystroke.
  */
 
@@ -22,7 +22,7 @@ import type { SearchField } from '../match.ts';
 import type { SearchHit, SearchProvider } from '../registry.ts';
 
 interface PlaceEntry {
-  /** English t() key — translated at search/render time. */
+  /** English t() key - translated at search/render time. */
   label: string;
   href: string;
   glyph: Parameters<typeof icon>[0];
@@ -45,7 +45,7 @@ const PLACES: readonly PlaceEntry[] = [
   { label: 'Script audio', href: '#/script', glyph: 'speech' },
 ];
 
-/** Gated on the Pro flag per call — the same flagEnabledSync gate the footer's
+/** Gated on the Pro flag per call - the same flagEnabledSync gate the footer's
  *  Batch link uses, so the two can't disagree. */
 const PRO_PLACE: PlaceEntry = { label: 'Batch mode', href: '#/pro', glyph: 'zap', keywords: 'pro batch' };
 

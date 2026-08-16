@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Paint order for the HTML→SVG walker — CSS 2.1 Appendix E §E.2 under
+ * Paint order for the HTML→SVG walker - CSS 2.1 Appendix E §E.2 under
  * `ExportOpts.stackingOrder`, and the guarantee that tool exports (flag absent)
  * still paint in DOM order.
  *
  * ## Why a real browser
  *
  * jsdom cannot be the oracle. Every case here hinges on `getComputedStyle`
- * resolving `z-index`, `isolation`, `opacity` and — critically — CSS Display 3
+ * resolving `z-index`, `isolation`, `opacity` and - critically - CSS Display 3
  * §2.7 blockification, which is what makes an `position: absolute` inline
  * element reachable by the walker's block-child loop at all. Hand-feeding a fake
  * computed style would only test the fake. So this follows the gated pattern of
@@ -122,7 +122,7 @@ test('z-index sorts positioned siblings: declared 40,30,20 must PAINT 20,30,40',
     assert.ok(ASC(order(svg, [[56, 161, 105], [229, 62, 62], [43, 108, 176]])),
       'expected paint order z20 → z30 → z40');
 
-    // Premise: DOM order gets this backwards, so the assertion above is load-bearing.
+    // Premise: DOM order gets this backwards, so the assertion above is required.
     const dom = await renderFixture(markup, false);
     assert.ok(ASC(order(dom, [[43, 108, 176], [229, 62, 62], [56, 161, 105]])),
       'premise: with the flag off the walker still paints in DOM order (40,30,20)');
@@ -200,7 +200,7 @@ test('position:relative;z-index:2 declared FIRST still paints above a later stat
 
 // ─── (f) a hoist across an overflow clip must KEEP the clip ───────────────────
 // The one wrapper a hoist can cross. `overflow:hidden` creates no stacking
-// context, so the z-indexed child leaves the clip group — and must carry the
+// context, so the z-indexed child leaves the clip group - and must carry the
 // clip's id, or content that is correctly cropped today starts spilling.
 test('a unit hoisted out of an overflow-clip group re-applies the clip',
   { skip: SKIP }, async () => {
@@ -286,13 +286,13 @@ test('KNOWN LIMITATION: floats are painted in tree order, not §E.2 layer 4',
 //
 // `renderSvgFromHtml` is the shipping SVG/PDF/EMF/EPS path for every tool in
 // every profile. The protection is that `PaintCtx.frame === null` with the flag
-// off makes every deferral branch unreachable — so the OFF path emits nodes in
+// off makes every deferral branch unreachable - so the OFF path emits nodes in
 // pure document order, exactly as it always has.
 //
 // The oracle is version-independent on purpose: no golden bytes (Chromium
 // layout and font metrics drift), no image diff. It is the PROPERTY that tool
-// exports depend on — "the walker emits one paint unit per element, in document
-// order" — checked against the DOM itself.
+// exports depend on - "the walker emits one paint unit per element, in document
+// order" - checked against the DOM itself.
 test('flag OFF: emitted order is exactly document order, even on a heavily z-indexed tree',
   { skip: SKIP }, async () => {
     // Deliberately stuffed with everything that would move under the flag:
@@ -321,7 +321,7 @@ test('flag OFF: emitted order is exactly document order, even on a heavily z-ind
     for (let i = 1; i <= 12; i++) seq.push(at(svg, i, i, i));
     assert.ok(ASC(seq), `flag OFF must emit in document order, got ${JSON.stringify(seq)}`);
 
-    // And the fixture really does exercise the feature — otherwise the assertion
+    // And the fixture really does exercise the feature - otherwise the assertion
     // above proves nothing.
     const on = await renderFixture(markup, true);
     const onSeq: number[] = [];
@@ -333,7 +333,7 @@ test('flag OFF: emitted order is exactly document order, even on a heavily z-ind
 //
 // A canvas painter can publish a `__lollyVectorTwin` producer (lib/vector-paint.ts)
 // and the walker inlines its SVG instead of a toDataURL raster. The contract is
-// presence-keyed — no ExportOpts field, no attribute, no flag — so the load-bearing
+// presence-keyed - no ExportOpts field, no attribute, no flag - so the essential
 // guarantee is the NEGATIVE one: a canvas WITHOUT the property must serialise
 // byte-identically to how it always has, for every tool export in every profile.
 //
@@ -347,7 +347,7 @@ const CANVAS_FIXTURE = `<div id="root" style="width:200px;height:100px;backgroun
   <canvas id="cv" width="100" height="50" style="display:block;width:100px;height:50px"></canvas>
 </div>`;
 
-/** A twin whose ids (`twin-clip`) collide with any other twin's — that is the point. */
+/** A twin whose ids (`twin-clip`) collide with any other twin's - that is the point. */
 const TWIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">`
   + `<defs><clipPath id="twin-clip"><rect x="0" y="0" width="100" height="50"/></clipPath></defs>`
   + `<rect id="twin-tile" clip-path="url(#twin-clip)" x="0" y="0" width="100" height="50" fill="rgb(9,9,9)"/>`
@@ -410,7 +410,7 @@ test('a canvas with NO vector twin serialises byte-identically before and after 
     assert.match(out.twinned!, /<svg[^>]*\bwidth="100"[^>]*\bheight="50"[^>]*\bpreserveAspectRatio="none"/,
       'the twin inherits the raster branch\'s box and stretch semantics');
 
-    // (3) THE GOLDEN. Same page, same layout, property removed — the bytes must return.
+    // (3) THE GOLDEN. Same page, same layout, property removed - the bytes must return.
     assert.equal(out.after, out.before,
       'a canvas without __lollyVectorTwin must serialise BYTE-IDENTICALLY to the pre-feature output');
   });
@@ -438,7 +438,7 @@ test('every twin-producer failure mode falls back to the unmodified raster path'
 test('a twin producer that re-enters the walker gets NO twins inside it (depth guard)',
   { skip: SKIP }, async () => {
     // The real timeline twin builds its node thumbnails by calling the walker. If the
-    // guard were missing, an inner canvas carrying its own twin would recurse — and a
+    // guard were missing, an inner canvas carrying its own twin would recurse - and a
     // twin whose producer renders its OWN subtree would not terminate at all.
     const out = await twinScenario(`
       const host = document.createElement('div');
@@ -456,7 +456,7 @@ test('a twin producer that re-enters the walker gets NO twins inside it (depth g
       return { nested };
     `);
     const svg = out.nested!;
-    // Premise, and it is load-bearing: the OUTER twin really was used, so the raster
+    // Premise, and it is required: the OUTER twin really was used, so the raster
     // below can only have come from the nested walk. The two canvases are deliberately
     // different sizes (100×50 vs 40×20) so the boxes tell them apart.
     assert.ok(!/<image[^>]*\bwidth="100"[^>]*\bheight="50"/.test(svg),

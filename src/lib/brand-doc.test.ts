@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * brand-doc.ts — the pure DTCG surgery behind the Dashboard's brand editor.
+ * brand-doc.ts - the pure DTCG surgery behind the Dashboard's brand editor.
  *
  * Run with: node --test "shells/web/src/**\/*.test.ts"
  *
@@ -31,7 +31,7 @@ import type { ContrastLockPreset } from './brand-doc.ts';
 const BRAND = fileURLToPath(
   new URL('../../../../brands/lolly-start/catalog/assets/lolly/tokens/brand.json', import.meta.url),
 );
-/** A fresh deep clone per test — every helper mutates in place. */
+/** A fresh deep clone per test - every helper mutates in place. */
 const load = (): Record<string, unknown> => JSON.parse(readFileSync(BRAND, 'utf8'));
 const resolverFor = (doc: unknown, theme: string) => {
   const set = createTokenSet(doc, { theme });
@@ -47,7 +47,7 @@ test('walkSwatches finds the starter brand’s ramps and one theme’s roles', (
   const roles = s.filter(x => x.kind === 'semantic');
 
   // The minimal starter is two ramps (primary + neutral) × 9 steps and the 7 semantic
-  // slots (light only) — contract shape, so pinned. It deliberately ships NO chart
+  // slots (light only) - contract shape, so pinned. It deliberately ships NO chart
   // spectrum and NO secondary ramp: a new brand grows by ADDING those, not by clearing
   // a big preset (chart tools fall back to their own palette until a spectrum exists).
   assert.equal(ramps.length, 18, 'primary + neutral, 9 steps each');
@@ -68,7 +68,7 @@ test('roles resolve their {alias} to a real hex (the tiles must never be blank)'
     assert.ok(r.isAlias, `${r.key} should be stored as an alias`);
     assert.match(r.hex, /^#[0-9a-f]{6}$/i, `${r.key} must resolve to a hex, got ${JSON.stringify(r.hex)}`);
   }
-  // Without a resolver, an alias has no colour of its own — the exact bug the
+  // Without a resolver, an alias has no colour of its own - the exact bug the
   // resolver argument exists to prevent.
   const blind = walkSwatches(doc, 'light').filter(x => x.kind === 'semantic');
   assert.ok(blind.every(r => r.hex === ''));
@@ -90,7 +90,7 @@ test('the theme argument selects which set’s roles surface', () => {
 test('roles are structural (not deletable); ramps, spectrum + custom are the user’s', () => {
   const doc = load();
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  // Semantic roles are the fixed contract slots — never deletable.
+  // Semantic roles are the fixed contract slots - never deletable.
   assert.ok(s.filter(x => x.kind === 'semantic').every(x => !x.deletable));
   // Ramp steps ARE user-deletable now (the user shapes their own shade set).
   assert.ok(s.filter(x => x.kind === 'ramp').every(x => x.deletable));
@@ -171,7 +171,7 @@ test('addSwatch can grow the spectrum, and lands in the spectrum group', () => {
   const p = addSwatch(doc, 'spectrum', 'Chartreuse', '#7fff00');
   assert.deepEqual(p, ['base', 'color', 'spectrum', 'chartreuse']);
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  // Relative to the starter's own palette size — the point is that the group GREW by
+  // Relative to the starter's own palette size - the point is that the group GREW by
   // one, not how many hues the starter happens to ship.
   assert.equal(s.filter(x => x.kind === 'spectrum').length, before + 1);
   assert.equal(s.find(x => x.key === 'color.spectrum.chartreuse')!.group, 'Spectrum');
@@ -264,7 +264,7 @@ test('cmyk and spot locks are independent: setting/clearing one never touches th
   assert.equal(setSwatchCmykLock(doc, path, [80, 20, 0, 5]), true);
   assert.equal(setSwatchSpotLock(doc, path, { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated' }), true);
 
-  // Both present at once — the spot lock is a fallback source, not a replacement.
+  // Both present at once - the spot lock is a fallback source, not a replacement.
   const locked = getSwatchPrintOverride(doc, path);
   assert.deepEqual(locked, { cmyk: [80, 20, 0, 5], spot: { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated' } });
 
@@ -292,7 +292,7 @@ test('a spot lock carries its tactile finish through write → read → walk', (
   assert.equal(setSwatchSpotLock(doc, path, { name: 'Gold foil', book: 'Luxor', finish: 'foil' }), true);
   assert.deepEqual(getSwatchPrintOverride(doc, path), { spot: { name: 'Gold foil', book: 'Luxor', finish: 'foil' } });
 
-  // It reaches walkSwatches unchanged — that's the read the tiles and the
+  // It reaches walkSwatches unchanged - that's the read the tiles and the
   // popover's control both use.
   const s = walkSwatches(doc, 'light').find(sw => sw.path.length === path.length && sw.path.every((seg, i) => seg === path[i]));
   assert.equal(s?.lock?.spot?.finish, 'foil');
@@ -304,7 +304,7 @@ test('a spot lock carries its tactile finish through write → read → walk', (
   assert.deepEqual(bare, { name: 'PANTONE 186 C' });
   assert.equal('finish' in bare, false, 'an unfinished spot writes no finish key at all');
 
-  // A finish the shell has never heard of is data, not an error — FinishKind is
+  // A finish the shell has never heard of is data, not an error - FinishKind is
   // an open union so a brand can declare its own.
   assert.equal(setSwatchSpotLock(doc, path, { name: 'Scodix', finish: 'raised-gloss' }), true);
   assert.equal(getSwatchPrintOverride(doc, path)?.spot?.finish, 'raised-gloss');
@@ -315,7 +315,7 @@ test('a spot lock carries its tactile finish through write → read → walk', (
 });
 
 test('a malformed finish in a stored doc degrades to no finish, keeping the ink', () => {
-  // Not something the editor can write — this is an imported or hand-edited
+  // Not something the editor can write - this is an imported or hand-edited
   // brand doc. Total-function tolerance, matching engine/src/tokens.ts's
   // readSpotColor: `name` is what a /Separation plate is named for, so a
   // nonsense finish must cost us the field and nothing more.
@@ -354,7 +354,7 @@ test('swatch exclusions: hide (not remove) derived leaves; empty list cleans up'
   // Re-excluding is idempotent.
   assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', true), true);
   assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.primary.2', 'color.semantic.muted']);
-  // walkSwatches still lists it — filtering is the CALLER's seam (the editor's
+  // walkSwatches still lists it - filtering is the CALLER's seam (the editor's
   // repaintPalette / the bridge's colors()), so other consumers stay whole.
   assert.ok(walkSwatches(doc, 'light').some(s => s.key === 'color.ramp.primary.2'));
 
@@ -382,7 +382,7 @@ test('addSwatch displayGroup files a custom swatch under a derived section headi
 
 test('a "Roles" displayGroup tag follows the CURRENT theme’s Roles section', () => {
   const doc = load();
-  // The editor stores the tag theme-less — it must merge into whichever
+  // The editor stores the tag theme-less - it must merge into whichever
   // theme's Roles heading is showing, never a phantom stale-theme section.
   const path = addSwatch(doc, 'custom', 'Accent ink', '#224466', { displayGroup: 'Roles' })!;
   const find = (theme: string) => walkSwatches(doc, theme, resolverFor(doc, theme))
@@ -479,7 +479,7 @@ test('a ramp curve SURVIVES a "Use this colour" re-derive (the forbidden failure
   const edited = rampStepValues(doc, 'primary');
 
   // Simulate the derive handler: a FRESH derive (no extension) with the curve
-  // carried forward in editor state and overlaid — exactly what brand-editor does.
+  // carried forward in editor state and overlaid - exactly what brand-editor does.
   const next = deriveBrandTokens({ primary: '#4f83cc', steps, name: 'x' }) as Record<string, unknown>;
   overlayRampCurves(next, { primary: curve }, steps);
 
@@ -524,13 +524,13 @@ test('rotateCurveHue shifts every H point by degrees (mod 360), leaving L and C 
   // Every H control point shifts by +40, wrapping mod 360 (350 + 40 = 390 → 30).
   assert.deepEqual(out.H.points.map(p => p.v), [50, 240, 30], 'hue rotates mod 360 (wrap-safe)');
   assert.deepEqual(out.H.points.map(p => p.t), [0, 0.5, 1], 'tone positions unchanged (no resample)');
-  // L and C are byte-identical — only the hue turns.
+  // L and C are byte-identical - only the hue turns.
   assert.deepEqual(out.L.points, curve.L.points);
   assert.deepEqual(out.C.points, curve.C.points);
   // A negative rotation wraps the other way (10 - 40 = -30 → 330).
   const back = rotateCurveHue(curve, -40);
   assert.deepEqual(back.H.points.map(p => p.v), [330, 160, 310]);
-  // One control point per existing point — no resample.
+  // One control point per existing point - no resample.
   assert.equal(out.H.points.length, curve.H.points.length);
   // The input is never mutated (a fresh curve is returned).
   assert.deepEqual(curve.H.points.map(p => p.v), [10, 200, 350]);
@@ -594,7 +594,7 @@ test('generateAnalogous yields `count` accents whose hues step by `angle` (the p
 // ── Contrast-lock ─────────────────────────────────────────────────────────────
 // A faithful port of community/color-palette/hooks.js `_targets`/`_fitTargets`/
 // `_parseLc`, so `contrastTargets` is proved to speak the SAME numbers the
-// Palette Lab tool does — a drift here means the two surfaces disagree.
+// Palette Lab tool does - a drift here means the two surfaces disagree.
 const TOOL_SPANS: Record<ContrastLockPreset, [number, number]> = { even: [15, 90], text: [45, 100], ui: [8, 66] };
 const toolR1 = (n: number): number => Math.round(n * 10) / 10;
 function toolParseLc(s: string): number[] {
@@ -615,7 +615,7 @@ function toolFit(list: number[], steps: number): number[] {
 function toolTargets(preset: ContrastLockPreset, steps: number, custom: string): number[] {
   // The one deliberate correction to the literal port: an empty/whitespace custom
   // falls through to the preset (the tool's `_parseLc('')` returns [0], zeroing the
-  // ramp — see contrastTargets' note). All non-empty numeric parsing is identical.
+  // ramp - see contrastTargets' note). All non-empty numeric parsing is identical.
   const list = custom.trim() ? toolParseLc(custom) : [];
   if (list.length) return toolFit(list, steps);
   const ends = TOOL_SPANS[preset] || TOOL_SPANS.even;
@@ -625,7 +625,7 @@ function toolTargets(preset: ContrastLockPreset, steps: number, custom: string):
 }
 
 test('contrastTargets speaks the Palette Lab tool numbers (presets × steps, and custom-list fit)', () => {
-  // Concrete anchors — the exact spans + one-decimal rounding, pinned so a change
+  // Concrete anchors - the exact spans + one-decimal rounding, pinned so a change
   // to the shared table is caught here and not only via the port below.
   assert.deepEqual(contrastTargets('even', 5), [15, 33.8, 52.5, 71.3, 90]);
   assert.deepEqual(contrastTargets('text', 3), [45, 72.5, 100]);
@@ -656,7 +656,7 @@ test('contrastLockCurve retones each step to its APCA target (or caps it), prese
   const base = seedRampCurve(doc, 'primary', steps);
   const baseStops = sampleCurve(base, steps);
   const bg = '#ffffff';
-  const TOL = 3; // Lc — the solver's continuous bisection then 8-bit-hex quantisation.
+  const TOL = 3; // Lc - the solver's continuous bisection then 8-bit-hex quantisation.
 
   for (const preset of ['even', 'text', 'ui'] as ContrastLockPreset[]) {
     const targets = contrastTargets(preset, steps);
@@ -680,7 +680,7 @@ test('contrastLockCurve retones each step to its APCA target (or caps it), prese
     assert.equal(unreachable, capped, `${preset}: the reported unreachable count matches the solver`);
   }
   // An impossible target (Lc 999 exceeds the APCA ceiling of ~106) makes EVERY
-  // step unreachable — exercises the capped branch + the count deterministically,
+  // step unreachable - exercises the capped branch + the count deterministically,
   // regardless of hue.
   assert.equal(contrastLockCurve(base, steps, contrastTargets('even', steps, '999'), bg).unreachable, steps);
 });
@@ -701,7 +701,7 @@ test('a contrast-locked curve is an ordinary ColorCurve — round-trips through 
   assert.ok(getRampCurve(doc, 'secondary'), 'the curve survives overlay + re-stamp');
 });
 
-// ── nudgeSwatch — keyboard OKLCH channel nudging (palette grid) ──────────────────
+// ── nudgeSwatch - keyboard OKLCH channel nudging (palette grid) ──────────────────
 
 // Circular hue distance (degrees), so a wrap across 360 reads as "close".
 const hueDelta = (a: number, b: number): number => {
@@ -742,7 +742,7 @@ test('nudgeSwatch: Shift (big) multiplies the step by NUDGE_BIG', () => {
 });
 
 test('nudgeSwatch: the result is always a real sRGB colour', () => {
-  // Push a saturated stop further out — clipToGamut + oklchToHex must land in sRGB.
+  // Push a saturated stop further out - clipToGamut + oklchToHex must land in sRGB.
   const base = oklchToHex({ l: 0.7, c: 0.25, h: 30 });
   const out = hexToOklch(nudgeSwatch(base, 'C', 1, true))!;
   assert.ok(inGamut(out.l, out.c, out.h, 'srgb'), 'nudged colour fits sRGB');

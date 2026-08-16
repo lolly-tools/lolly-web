@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * atmosphere.ts — the background-noise mixer under the Neurospicy player.
+ * atmosphere.ts - the background-noise mixer under the Neurospicy player.
  *
  * Run directly:  node --test shells/web/src/lib/atmosphere.test.ts
  *
  * These drive the REAL module against a jsdom document and a fake AudioContext that
- * records what was built, started and stopped — so the promises the feature makes
+ * records what was built, started and stopped - so the promises the feature makes
  * are actually checked rather than assumed:
  *   - a layer only sounds when the user put it above zero, and stops at zero;
  *   - the master mute silences everything and un-muting restores exactly what was up;
  *   - levels reach the profile and survive a reload, including a hostile stored blob;
- *   - ambience connects to the DESTINATION, never to the music gain — that separation
+ *   - ambience connects to the DESTINATION, never to the music gain - that separation
  *     is the whole point (noise under music, mixed independently).
  * The DSP itself is covered by ambience-dsp.test.ts.
  */
@@ -78,11 +78,11 @@ class FakeAudioContext {
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
 globalThis.localStorage = dom.window.localStorage;
-// Node has its own Event class, and jsdom's dispatchEvent refuses it — the module
+// Node has its own Event class, and jsdom's dispatchEvent refuses it - the module
 // builds its cross-player notification with the ambient `Event`, so hand it jsdom's.
 globalThis.Event = dom.window.Event;
 // Interface sound defaults to MUTED for a new user, and mute is the master mute here
-// — so an unmuted baseline is what these tests need.
+// - so an unmuted baseline is what these tests need.
 localStorage.setItem('lolly:sfxMuted', '0');
 
 const {
@@ -293,7 +293,7 @@ test('a renamed layer keeps the level it was stored under', () => {
   hydrateAtmosphere({ levels: { cafe: 0.55 }, open: true });
   assert.equal(atmosphereLevel('chimes'), 0.55, 'the old key migrates to the new one');
   assert.equal(activeAtmosphereCount(), 1, 'and does not count twice');
-  // An explicit NEW-key level always wins — a stale legacy key must not overwrite it.
+  // An explicit NEW-key level always wins - a stale legacy key must not overwrite it.
   hydrateAtmosphere({ levels: { cafe: 0.2, chimes: 0.7 }, open: false });
   assert.equal(atmosphereLevel('chimes'), 0.7);
   reset();

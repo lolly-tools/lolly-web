@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * formatTime is the only part of the transport that is pure — the rest is element
+ * formatTime is the only part of the transport that is pure - the rest is element
  * wiring, verified in a real browser. What is worth pinning here is the behaviour that
  * caused an actual bug: a non-finite duration.
  */
@@ -23,7 +23,7 @@ test('formatTime truncates rather than rounding, so the clock never shows a time
 });
 
 test('a minute count past an hour keeps counting rather than wrapping', () => {
-  // No h:mm:ss form on purpose — the catalog previews are loops and clips. Wrapping to
+  // No h:mm:ss form on purpose - the catalog previews are loops and clips. Wrapping to
   // 0:00 at an hour would be a silent lie; 60:00 is merely unusual.
   assert.equal(formatTime(3600), '60:00');
 });

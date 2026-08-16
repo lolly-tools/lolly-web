@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * typing-target tests — the shadow-DOM focus walk behind every "don't hijack a
+ * typing-target tests - the shadow-DOM focus walk behind every "don't hijack a
  * keystroke while the user is typing" guard.
  *
  * The regression that motivated this module: the sidebar's text fields are
  * <jelly-input> custom elements whose real <input> lives in a shadow root, so
  * `document.activeElement` reports the HOST. Every guard tested tagName on the
- * host, read "not typing", and let the tool stage's single-key shortcuts fire —
+ * host, read "not typing", and let the tool stage's single-key shortcuts fire - 
  * `0` (fit) and `1` (100%) could not be typed into any text field at all.
  *
  * Driven against real jsdom elements with real attached shadow roots, so what is

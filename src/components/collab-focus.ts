@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-focus — remote focus decorations: the sidebar ring and the canvas outline
+ * collab-focus - remote focus decorations: the sidebar ring and the canvas outline
  * (plan 100 §4.1, §4.6, §4.8, §11.14).
  *
  * Focus, not x/y, is the presence primitive that ships on EVERY tool (§4.1): the
@@ -18,7 +18,7 @@
  *    are re-applied idempotently, because `renderInputs` rebuilds the whole panel's
  *    innerHTML on every keystroke and would otherwise wash them away.
  *  - **The CANVAS is the user's artwork.** Nothing here writes a class, an attribute
- *    or a node into it — not once, not "just a data attribute". Two independent
+ *    or a node into it - not once, not "just a data attribute". Two independent
  *    reasons, and either alone would be enough: an export must stay byte-identical
  *    (§4.6), and the tool's own paint replaces `#tool-canvas`'s innerHTML wholesale,
  *    so anything written in would be clobbered within a keystroke anyway. Outlines
@@ -26,14 +26,14 @@
  *    elements' `getBoundingClientRect`, and re-anchored on paint / scroll / resize.
  *
  * HOW A FOCUS STRING FINDS A NODE. The contract carries `focus` as an input id, or
- * `"<blocksId>:<rowId>"` for a blocks row (canvas-op v1.1, `Presence.focus`) — a
+ * `"<blocksId>:<rowId>"` for a blocks row (canvas-op v1.1, `Presence.focus`) - a
  * STABLE row id, because an array index is not an identity when two peers insert
  * concurrently (lib/row-id.ts). The DOM, however, addresses blocks by INDEX:
  * `.block-item[data-block-index]` in the sidebar, and `data-canvas-input="<id>:<n>"`
  * on the canvas (the `annotateTemplate` markers `resolveCanvasAnnotations` converts).
  * So this module owns the one mapping between them: id → index, resolved through the
  * runtime's input model, which is the same array both renderers numbered. The
- * mapping is deliberately re-derived on every apply rather than cached — a remote
+ * mapping is deliberately re-derived on every apply rather than cached - a remote
  * insert renumbers every row below it, and a cache would point the ring at the wrong
  * card exactly when a collaborator is adding rows.
  *
@@ -43,7 +43,7 @@
  * `SyntaxError` at best and a selector that matches somewhere else at worst. The
  * scan costs a walk of a handful of nodes and removes the class of bug entirely.
  *
- * A11Y (§4.8). Colour is never the only differentiator — the sidebar wash is paired
+ * A11Y (§4.8). Colour is never the only differentiator - the sidebar wash is paired
  * with a name CHIP, the canvas outline with a name LABEL and a theme-ground hairline
  * that reads as a shape rather than a hue, and every focus handoff is spoken through
  * `announce()`. The chips are `aria-hidden` ON PURPOSE and that is not an oversight:
@@ -51,11 +51,11 @@
  * absorbed into the wrapped control's accessible name and a screen-reader user would
  * hear "Headline Priya" as the field's label. The live region carries the same
  * information without corrupting the form. Reduced motion removes the outline's
- * transition (rings do not move on their own, so they need nothing else — §4.8).
+ * transition (rings do not move on their own, so they need nothing else - §4.8).
  * Every glyph and offset in the sheet below is `calc(<px> * var(--a11y-fs))`.
  *
  * IT CARRIES ITS OWN STYLESHEET, injected into `<head>` on first mount, exactly like
- * `collab-overlay.ts` and `collab-pill.ts` — the lazy-chrome pattern that keeps a
+ * `collab-overlay.ts` and `collab-pill.ts` - the lazy-chrome pattern that keeps a
  * single-player build byte-identical. `styles/parts/collab.css` owns ONLY the
  * `.collab-tile-*` family and says so in its own header; an unlayered injected sheet
  * beats every `@layer`, so a shared `parts/*.css` rule using one of these bare class
@@ -82,7 +82,7 @@ import type { OverlayLayer, RectLike } from './collab-overlay.ts';
 
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
-// One string, but it goes in a map like every other collab surface's — for one reason
+// One string, but it goes in a map like every other collab surface's - for one reason
 // that matters more than tidiness: an inline `tRaw('…')` literal is INVISIBLE to the
 // translation pipeline (its scanner only matches a quote immediately after `t(`), so
 // this announcement was translated in appearance and English in fact. The value IS its
@@ -225,7 +225,7 @@ export interface FocusTarget {
  * Split a `Presence.focus` string.
  *
  * The LAST colon separates, matching the greedy `^(.+):(\d+)$` the canvas
- * click-mapping in views/tool.ts already uses — one splitting convention for the two
+ * click-mapping in views/tool.ts already uses - one splitting convention for the two
  * directions, so an input id that itself contains a colon resolves the same way on
  * both. A trailing or leading colon is not a row reference; it is a malformed id,
  * and the whole string is treated as the input.
@@ -244,15 +244,15 @@ export function parseFocus(focus: string | null | undefined): FocusTarget | null
  *
  * The documented index mapping (see the header): a stable id crosses the wire, both
  * renderers number the same array, so the model's value order IS the translation.
- * `rowIdField` is the shared definition of WHICH sub-field holds the id — a canvas
+ * `rowIdField` is the shared definition of WHICH sub-field holds the id - a canvas
  * collection uses the tool's own declared id field, everything else the hidden
- * `__rid` — so a row minted by the sidebar and one minted on the canvas resolve
+ * `__rid` - so a row minted by the sidebar and one minted on the canvas resolve
  * identically.
  *
  * The numeric fallback is for a peer that sends an INDEX rather than an id: a build
  * from before row ids existed, or a legacy session whose lazy migration has not run
  * (`migrateBlockRowIds`). Wrong under a concurrent insert, which is precisely why it
- * is a fallback — but a ring on the neighbouring row beats no ring at all, and this
+ * is a fallback - but a ring on the neighbouring row beats no ring at all, and this
  * is cosmetic chrome, not convergence.
  */
 export function blockRowIndex(item: RowIdInput | null | undefined, rowId: string): number {
@@ -271,14 +271,14 @@ export function blockRowIndex(item: RowIdInput | null | undefined, rowId: string
 
 /** One collaborator, as far as focus decoration is concerned. */
 export interface FocusPeer {
-  /** The peer's collab client id — the decoration key. */
+  /** The peer's collab client id - the decoration key. */
   readonly id: string;
   readonly name: string;
   /** The assigned collaborator colour (lib/collab-colors.ts). */
   readonly color: string;
   /** `Presence.focus`: an input id, or `"<blocksId>:<rowId>"`. */
   readonly focus?: string | null;
-  /** A hidden tab (§11.4). An away peer keeps its roster entry but drops its ring —
+  /** A hidden tab (§11.4). An away peer keeps its roster entry but drops its ring - 
    *  a stale ring on a field nobody is looking at is worse than none. */
   readonly away?: boolean;
 }
@@ -286,11 +286,11 @@ export interface FocusPeer {
 export interface CollabFocusOptions {
   /** The sidebar panel (`#tool-inputs`). Chrome: decorated in place. */
   sidebar?: HTMLElement | null;
-  /** The tool render surface (`#tool-canvas` / `#tool-content`). READ ONLY — this
+  /** The tool render surface (`#tool-canvas` / `#tool-content`). READ ONLY - this
    *  module never writes into it. */
   canvas?: HTMLElement | null;
   /** An ALREADY-MOUNTED `.collab-canvas-layer` to paint into, shared with the cursor
-   *  layer (collab-overlay.ts) — which is the arrangement the two sheets' internal
+   *  layer (collab-overlay.ts) - which is the arrangement the two sheets' internal
    *  z-order assumes. Omit and this module mounts its own; `dispose()` only ever
    *  unmounts a layer it created. */
   layer?: HTMLElement | null;
@@ -298,7 +298,7 @@ export interface CollabFocusOptions {
    *  `.tool-stage`, else the canvas's parent; anything inside the canvas is walked
    *  out of it (mountOverlayLayer). */
   host?: HTMLElement | null;
-  /** The runtime's input model — how a stable row id becomes an array index. */
+  /** The runtime's input model - how a stable row id becomes an array index. */
   getModel?: () => readonly RowIdInput[];
   reducedMotion?: () => boolean;
   /** Live-region sink. Defaults to the shared `announce()` (polite). */
@@ -330,7 +330,7 @@ export interface CollabFocus {
 }
 
 /** The row-level state class, per plan §4.6 ("Sidebar: `.input-row.is-remote-focus`")
- *  — styled by this module's own injected sheet, which names it verbatim. */
+ * - styled by this module's own injected sheet, which names it verbatim. */
 export const REMOTE_FOCUS_CLASS = 'is-remote-focus';
 /** Marker on the chip stack this module appends, so a re-apply finds its own node. */
 export const CHIP_STACK_ATTR = 'data-collab-chips';
@@ -341,7 +341,7 @@ export const CHIP_STACK_ATTR = 'data-collab-chips';
 interface Entry {
   peer: FocusPeer;
   target: FocusTarget;
-  /** Monotonic tick of the peer's LAST focus change — "most-recent wins" (§4.6). */
+  /** Monotonic tick of the peer's LAST focus change - "most-recent wins" (§4.6). */
   seq: number;
 }
 
@@ -373,7 +373,7 @@ function defaultCancelRaf(handle: number): void {
 
 /**
  * Find the descendant whose `data-*` value equals `value`, by SCANNING rather than
- * by building a selector — see the header's note on untrusted focus ids.
+ * by building a selector - see the header's note on untrusted focus ids.
  */
 function scanByData(
   root: HTMLElement,
@@ -410,18 +410,18 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
   const cancelRaf = opts.cancelRaf ?? defaultCancelRaf;
 
   // The announcement's copy is in the lazy `collab` namespace (i18n.ts). Nothing is
-  // said at mount — the first announcement follows a peer moving their focus, which is
-  // a network round trip away — so kicking the load here and never awaiting it is
+  // said at mount - the first announcement follows a peer moving their focus, which is
+  // a network round trip away - so kicking the load here and never awaiting it is
   // enough, and an unloaded namespace announces in English rather than failing.
   if (currentLang() !== 'en') void loadNamespace('collab');
 
   ensureFocusStyles(doc);
   // The outline paints into the shared overlay layer, whose own classes belong to
-  // collab-overlay.ts — ensured here too, because a BORROWED layer never went
+  // collab-overlay.ts - ensured here too, because a BORROWED layer never went
   // through that module's mount path.
   ensureOverlayStyles(doc);
 
-  // A layer handed IN is borrowed — shared with the cursor layer and never unmounted
+  // A layer handed IN is borrowed - shared with the cursor layer and never unmounted
   // here, because the lender owns its lifetime.
   const borrowed = opts.layer ?? null;
   let layer: OverlayLayer | null = borrowed
@@ -483,7 +483,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
   /**
    * The annotated CANVAS element a focus target points at, if the template rendered
    * one. `resolveCanvasAnnotations` stamps `data-canvas-input="<inputId>"` and
-   * `"<blocksId>:<index>"` — the same index mapping the sidebar uses, from the same
+   * `"<blocksId>:<index>"` - the same index mapping the sidebar uses, from the same
    * model, which is what keeps the two decorations pointing at the same thing.
    */
   function canvasTarget(target: FocusTarget): HTMLElement | null {
@@ -502,7 +502,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
   // ── sidebar decoration ──────────────────────────────────────────────────────
 
   /**
-   * This row's OWN chip stack — a direct child, never a descendant.
+   * This row's OWN chip stack - a direct child, never a descendant.
    *
    * `querySelector` would be wrong here and the bug is not hypothetical: a
    * `.block-item` lives INSIDE the `.input-row` of its blocks input, and both can be
@@ -529,13 +529,13 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
   /**
    * Ring the row in the most-recent collaborator's colour and stack everyone's chip
    * on it (§4.6: "most-recent-wins when two people sit on one input (both show in
-   * the roster)" — the stack is the roster, in place).
+   * the roster)" - the stack is the roster, in place).
    *
    * NOTHING ABOUT THE PLACEMENT IS INLINE. The sheet's `.collab-focus-chip` rule
    * positions a SINGLE chip absolutely at the row's top-inline-end; the plan wants
    * everyone, so `[data-collab-chips]` takes that placement over and the chips flow
    * inside it as `position: static`. Both rules live in this module's own sheet, so
-   * the offsets scale with `--a11y-fs` the way an inline `-9px` never could — and
+   * the offsets scale with `--a11y-fs` the way an inline `-9px` never could - and
    * the only thing this function writes is the per-collaborator colour, which no
    * stylesheet can know.
    */
@@ -580,7 +580,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
     }
     // Swept by QUERY rather than from a remembered node set: `renderInputs` replaces
     // the panel's innerHTML on every keystroke, so the nodes decorated a moment ago
-    // may already be detached — and the ones that replaced them are freshly clean.
+    // may already be detached - and the ones that replaced them are freshly clean.
     for (const el of sidebar.querySelectorAll<HTMLElement>(`.${REMOTE_FOCUS_CLASS}`)) {
       if (!wanted.has(el)) undecorateRow(el);
     }
@@ -627,7 +627,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
     // The sheet already kills `.collab-focus-box`'s transition under BOTH reduced-
     // motion gates. This mirrors it from the INJECTED preference seam, so a caller
     // with a policy of its own (a capture harness, a test) gets a still ring from
-    // that seam alone — the sheet can only see the OS query and the app attribute.
+    // that seam alone - the sheet can only see the OS query and the app attribute.
     const still = reducedMotion();
     const live = new Set<string>();
     for (const entry of entries) {
@@ -640,7 +640,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
       node.root.style.transition = still ? 'none' : '';
       node.root.style.width = `${r.width + RING_PAD * 2}px`;
       node.root.style.height = `${r.height + RING_PAD * 2}px`;
-      // transform, not top/left: the sheet's own note (§11.14) — position moves must
+      // transform, not top/left: the sheet's own note (§11.14) - position moves must
       // not cost the overlay a layout pass on every re-anchor.
       node.root.style.transform =
         `translate3d(${r.left - layerRect.left - RING_PAD}px, ${r.top - layerRect.top - RING_PAD}px, 0)`;
@@ -702,7 +702,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
 
   // The fourth trigger, and the one none of the other three can stand in for: a
   // canvas ZOOM or PAN. `views/tool-stage-nav.ts` applies both as a CSS transform on
-  // `.tool-canvas-outer` and dispatches no event — no scroll offset changes, no
+  // `.tool-canvas-outer` and dispatches no event - no scroll offset changes, no
   // window resizes, and no observed BORDER BOX changes, so the ResizeObserver above
   // stays silent while every ring sits at its pre-zoom position. See
   // {@link observeAnchorTransforms} for why watching the ancestors' style/class is

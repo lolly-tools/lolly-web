@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The projects search source (plans/99 M2) — the ONE definition of how a saved
+ * The projects search source (plans/99 M2) - the ONE definition of how a saved
  * session or folder is matched, and how a session opens, shared by BOTH
  * views/projects.ts and the spotlight's projects provider
  * (lib/search/providers/projects.ts). Extracted per plans/99 §8 M2 so the two
  * surfaces cannot drift: same haystack, same token semantics, same open target.
  *
- * Matching is lib/search's folded token-AND (plans/99 principle 1) — this is
+ * Matching is lib/search's folded token-AND (plans/99 principle 1) - this is
  * the deliberate migration off the view's old substring `.includes()`: a query
  * of several words now requires every word to hit (in any field), and
  * diacritics fold (a session named "Café menu" matches "cafe"). Haystacks are
@@ -28,7 +28,7 @@ export interface SessionSearchEntry {
 /**
  * A session's search haystack: display title parts (label, filename), the
  * tool's display name and id, and the literal 'batch' keyword for batch
- * sessions (so "batch" surfaces every batch grid — the view's long-standing
+ * sessions (so "batch" surfaces every batch grid - the view's long-standing
  * semantics, preserved verbatim). Pre-folded; match with matchesHaystack.
  */
 export function buildSessionHaystack(
@@ -49,7 +49,7 @@ export function buildFolderHaystack(name: string): string {
 }
 
 /**
- * Score a prebuilt (folded) haystack against tokenize()d query tokens — the
+ * Score a prebuilt (folded) haystack against tokenize()d query tokens - the
  * single-field, weight-1 form of scoreHaystack. 0 = no match (AND semantics:
  * every token must hit); positive = match, usable as a spotlight hit score.
  */
@@ -75,7 +75,7 @@ export function armSessionReturn(returnTo: string): void {
 }
 
 /**
- * Where opening a saved session navigates — exactly what a projects tile does:
+ * Where opening a saved session navigates - exactly what a projects tile does:
  * a batch session opens its grid in /pro; a single-tool session resumes its
  * tool with the saved slot. Callers pass `isBatch` (lib/batch-slots.ts
  * isBatchSlot) so this module stays a leaf.

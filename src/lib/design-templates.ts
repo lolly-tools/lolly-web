@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Components as templates — the storage half.
+ * Components as templates - the storage half.
  *
  * `views/design-import.ts` parses a design file's component masters into
  * {@link DesignTemplate}s (boxes + slots, through the SAME shared resolvers the
@@ -15,8 +15,8 @@
  *
  * The template artifact is a plain session (plan §2.2): nothing new has to exist
  * for a template to be stored, listed, renamed, filed, shared or backed up.
- * Template-ness is metadata in the established `__` namespace on the payload —
- * `__template: true` plus `__slots` — which is purely additive, so old readers
+ * Template-ness is metadata in the established `__` namespace on the payload - 
+ * `__template: true` plus `__slots` - which is purely additive, so old readers
  * ignore it and SESSION_FORMAT_VERSION does not move.
  */
 
@@ -58,7 +58,7 @@ export interface TemplateHost extends FolderHost {
 
 /** Options for {@link fileTemplatesAsSessions}. */
 export interface TemplateFilingOpts {
-  /** The imported file's name — the folder is named after it. */
+  /** The imported file's name - the folder is named after it. */
   fileName: string;
   /** The tool the sessions resume into (the editor that ran the import). */
   toolId: string;
@@ -69,7 +69,7 @@ export interface TemplateFilingOpts {
   format?: string;
   /** Per-template failures are reported here and skipped, never thrown. */
   warn?: (msg: string) => void;
-  /** Injected clock — the slot stamp. Tests pin it; production omits it. */
+  /** Injected clock - the slot stamp. Tests pin it; production omits it. */
   now?: () => number;
 }
 
@@ -122,7 +122,7 @@ export function templateSessionData(
  * half a design system is worth more than an aborted import. The folder is
  * created ONCE, up front, so a partially failed batch still lands somewhere the
  * user can find it. Re-importing the same file mints a second folder (plan §2.8
- * question 2 — the v1 assumption).
+ * question 2 - the v1 assumption).
  */
 export async function fileTemplatesAsSessions(
   host: TemplateHost,
@@ -167,8 +167,8 @@ const msg = (err: unknown): string => String((err as Error)?.message || err);
  * is what the component looks like in Penpot, so a template tile needs no bake.
  *
  * The bytes are UNTRUSTED: the magic number decides the type (never the
- * declared `contentType`), only real raster formats are accepted — an SVG or
- * anything unrecognised is dropped rather than carried into an `<img>` — and an
+ * declared `contentType`), only real raster formats are accepted - an SVG or
+ * anything unrecognised is dropped rather than carried into an `<img>` - and an
  * oversized preview is dropped rather than inlined into a session record. The
  * result is a data URL used as an image source only; it is never inserted as
  * markup.
@@ -223,7 +223,7 @@ function base64(bytes: Uint8Array): string {
  * geometry. Both are in the same order by construction, so the walk is linear.
  *
  * If the engine ever changes how a box is derived the pairing simply stops
- * matching, and the affected slots lose their `boxId` — it can never silently
+ * matching, and the affected slots lose their `boxId` - it can never silently
  * hand a slot the WRONG box.
  */
 /** The slice of a finalized box the pairing reads (structurally satisfied by

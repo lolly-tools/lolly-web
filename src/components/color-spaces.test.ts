@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the colour picker's space registry. DOM-free — the module never
+ * Unit tests for the colour picker's space registry. DOM-free - the module never
  * touches document, which is the point of splitting it out of color-field.ts.
  * Run directly:  node --test shells/web/src/components/color-spaces.test.ts
  */
@@ -29,7 +29,7 @@ test('the eleven built-ins register in family order', () => {
     'display-p3', 'rec2020', 'cmyk',              // output
   ]);
   // The two judgement calls. XYZ says 'reference' on screen; bare CMYK says
-  // nothing on screen — a name is the claim, so the space with no profile behind
+  // nothing on screen - a name is the claim, so the space with no profile behind
   // it carries no name, and the qualification reaches AT through `ariaSuffix`.
   assert.equal(getColorSpace('xyz-d65')!.sub, 'reference');
   assert.equal(getColorSpace('cmyk')!.sub, undefined);
@@ -47,7 +47,7 @@ test('compose(decompose(c)) is the same colour, in every registered space', () =
 
 test('a grey keeps the remembered hue rather than reading one out of noise', () => {
   const grey = parseColor('#808080')!;
-  // OKLCH and LCH mark the powerless hue as component 2, HSL as component 0 —
+  // OKLCH and LCH mark the powerless hue as component 2, HSL as component 0 - 
   // decomposeColor derives the flag from the channel's index, so all three work.
   for (const mode of ['oklch', 'lch', 'hsl'] as const) {
     const spec = getColorSpace(mode)!;
@@ -61,7 +61,7 @@ test('a grey keeps the remembered hue rather than reading one out of noise', () 
 test('a chroma track is truncated by the gamut it is measured against', () => {
   const oklch = getColorSpace('oklch')!;
   const chroma = { ...oklch.channels[1]!, stops: 24 };
-  const at = { l: 90, c: 0.2, h: 140 };   // a light green — where the gamuts differ most
+  const at = { l: 90, c: 0.2, h: 140 };   // a light green - where the gamuts differ most
   // Only the TIER-0 runs are what the limit can show. The list now covers the whole
   // axis (the rest are the onion-ring washes), so summing every run would total 1
   // under every limit and measure nothing.
@@ -80,7 +80,7 @@ test('the runs cover the whole axis, and adjacent ones share a boundary EXACTLY'
   // Contiguity is pinned because it is easy to lose: refining each run's own two
   // edges independently (which is what this replaced) lands the two estimates of one
   // boundary up to a tolerance apart, and CSS then interpolates an alpha fade across
-  // that sliver — a soft, wrong-looking gamut edge where the whole purpose of the
+  // that sliver - a soft, wrong-looking gamut edge where the whole purpose of the
   // bisection was to sharpen it.
   const oklch = getColorSpace('oklch')!;
   const vals = decomposeColor(oklch, parseColor('oklch(62% 0.19 260)')!, 260);
@@ -101,7 +101,7 @@ test('the runs cover the whole axis, and adjacent ones share a boundary EXACTLY'
 
 test('an unreachable stretch is a RING, ranked by membership, not a hole', () => {
   // The point of the whole exercise: what the limit cannot show is still painted, at
-  // the tier of the narrowest gamut that CAN — so the band a wider screen would carry
+  // the tier of the narrowest gamut that CAN - so the band a wider screen would carry
   // reads brighter than the band nothing carries.
   const oklch = getColorSpace('oklch')!;
   const chroma = { ...oklch.channels[1]!, stops: 24 };
@@ -113,7 +113,7 @@ test('an unreachable stretch is a RING, ranked by membership, not a hole', () =>
     `past sRGB the axis enters the first ring before anything else: ${srgb.join(',')}`);
   assert.equal(srgb[srgb.length - 1], BEYOND_TIER, 'chroma 0.4 at this hue is past every gamut');
   // A second ring appears where a second gamut genuinely adds reach. On THIS chroma
-  // axis it does not — at hue 29 Rec.2020 stops short of P3's red corner, so the axis
+  // axis it does not - at hue 29 Rec.2020 stops short of P3's red corner, so the axis
   // goes from ring 1 straight to beyond, which is the truth and not a missing case.
   // The hue axis at a chroma both wider gamuts can partly hold shows all four.
   const hue = { ...oklch.channels[2]!, stops: 24, hold: undefined };
@@ -121,26 +121,26 @@ test('an unreachable stretch is a RING, ranked by membership, not a hole', () =>
   for (const ring of [0, 1, 2, BEYOND_TIER]) {
     assert.ok(sweep.includes(ring), `expected a tier ${ring} around the hue circle: ${sweep.join(',')}`);
   }
-  // Every ring carries colours to paint — a tierless hole is what this replaced.
+  // Every ring carries colours to paint - a tierless hole is what this replaced.
   for (const r of channelRuns(oklch, chroma, at)) {
     assert.ok(r.stops.length >= 1 && r.stops.every(s => typeof s === 'string' && s.length > 0));
     // …and a wash is capped at three, because 24 stops across a faint low-contrast
     // band is most of the cost for none of the information.
     if (r.tier !== 0) assert.ok(r.stops.length <= 3, `a wash carried ${r.stops.length} stops`);
   }
-  // Under Rec.2020 the P3-only region is still a ring rather than "beyond" — the
+  // Under Rec.2020 the P3-only region is still a ring rather than "beyond" - the
   // membership question, asked of P3, not an index into an ordering.
   assert.ok(tiers('rec2020').every(t => t === 0 || t === 2 || t === BEYOND_TIER),
     `Rec.2020 cannot produce a tier 1 (its own subset answers 0): ${tiers('rec2020').join(',')}`);
 });
 
 test('a ring on a two-stop channel has real WIDTH and lands where the tier changes', () => {
-  // `stops` is a paint density, and it used to double as the tier sweep — so the 15
+  // `stops` is a paint density, and it used to double as the tier sweep - so the 15
   // channels declaring `stops: 2` (hex/RGB/P3/Rec.2020 components, Lab/LCH/OKLab L,
-  // HSL S — both DEFAULT tabs among them) were classified from frac 0 and frac 1 alone.
+  // HSL S - both DEFAULT tabs among them) were classified from frac 0 and frac 1 alone.
   // Two consequences, both pinned here: the single bracket was the whole axis, so a
   // fixed halving count left the edge off by up to 25% of the track and often produced
-  // `from === to` — a ring computed and then painted as nothing; and a band neither
+  // `from === to` - a ring computed and then painted as nothing; and a band neither
   // endpoint landed in was invisible however hard the edge was refined.
   const truth = (spec: Parameters<typeof channelRuns>[0], ch: ChannelSpec, vals: Record<string, number>) => {
     const probe = gamutTierProbe(spec.limit);
@@ -174,7 +174,7 @@ test('a ring on a two-stop channel has real WIDTH and lands where the tier chang
     // Every band the axis really carries is painted, at its tier, over nearly all of
     // its true extent. Stated as overlap rather than as a run list, because a band
     // thinner than a sample step may legitimately be missing (or present, and then it
-    // splits a run in two) — that is the documented sub-sample limit, not this defect.
+    // splits a run in two) - that is the documented sub-sample limit, not this defect.
     for (const band of truth(spec, ch, vals)) {
       const covered = runs
         .filter(r => r.tier === band.tier)
@@ -191,7 +191,7 @@ test('a run leaves gaps where the axis is not displayable', () => {
   const oklch = getColorSpace('oklch')!;
   const hue = { ...oklch.channels[2]!, stops: 24, hold: undefined };
   // High chroma at mid lightness fits some hues and not others, so the hue track
-  // becomes several arcs — the shape that tells you where you can go.
+  // becomes several arcs - the shape that tells you where you can go.
   const runs = channelRuns(oklch, hue, { l: 60, c: 0.15, h: 0 });
   const solid = runs.filter(r => r.tier === 0);
   assert.ok(solid.length >= 2, `expected several arcs, got ${solid.length}`);
@@ -206,7 +206,7 @@ test('exactness is a bounded-space question, not a gamut one', () => {
   assert.equal(spaceExactness(getColorSpace('rgb')!, p3red), 'approx');
   assert.equal(spaceExactness(getColorSpace('hsl')!, p3red), 'approx');
   assert.equal(spaceExactness(getColorSpace('display-p3')!, p3red), 'exact');
-  // The perceptual spaces are unbounded, so they can always state it exactly —
+  // The perceptual spaces are unbounded, so they can always state it exactly - 
   // which is why the picker's canonical value can now be a P3 colour at all.
   for (const mode of ['oklch', 'oklab', 'lch', 'lab', 'xyz-d65'] as const) {
     assert.equal(spaceExactness(getColorSpace(mode)!, p3red), 'exact', mode);
@@ -242,13 +242,13 @@ test('a value field states the colour in its own sliders\' units', () => {
   assert.ok(srgbDelta(spaceParse(getColorSpace('rgb')!, 'rgb(48 186 120)')!, green) < 1e-9,
     "RGB's own text must read back as the same colour");
   // Out of sRGB it stays unclamped, matching the (clamped-slider, unclamped-readout)
-  // convention — rgb() parses an out-of-range component as-is, so this round-trips.
+  // convention - rgb() parses an out-of-range component as-is, so this round-trips.
   const p3red = parseColor('color(display-p3 1 0 0)')!;
   const wide = spaceText(getColorSpace('rgb')!, p3red);
   assert.match(wide, /^rgb\(278\.73 -57\.82 -38\.28\)$/);
   assert.ok(srgbDelta(spaceParse(getColorSpace('rgb')!, wide)!, p3red) < 1e-4,
     "RGB's unclamped text must still read back as the colour it states");
-  // Alpha rides along in both, so text copied out of the field keeps its opacity —
+  // Alpha rides along in both, so text copied out of the field keeps its opacity - 
   // CMYK dropped it entirely.
   assert.equal(spaceText(getColorSpace('rgb')!, parseColor('#3c7a9f40')!), 'rgb(60 122 159 / 0.251)');
   assert.equal(spaceText(getColorSpace('cmyk')!, parseColor('#3c7a9f40')!), 'cmyk(62% 23% 0% 38% / 0.251)');
@@ -260,7 +260,7 @@ test('the HSL tab states a saturation hsl() can actually reproduce', () => {
   const hsl = getColorSpace('hsl')!;
   // srgbToHsl reports the TRUE saturation of a wider colour (152% for P3 red) while
   // hsl() clamps s/l on the way in, so an unclamped string is a notation no consumer
-  // — this field included — resolves to the colour shown. Clamp the DISPLAY only.
+  // - this field included - resolves to the colour shown. Clamp the DISPLAY only.
   const shown = spaceText(hsl, parseColor('color(display-p3 1 0 0)')!);
   const nums = (shown.match(/[\d.]+(?=%)/g) ?? []).map(Number);
   assert.equal(nums.length, 2, `expected s% and l% in ${shown}`);
@@ -275,7 +275,7 @@ test('the HSL tab states a saturation hsl() can actually reproduce', () => {
 
 test('pinValue tolerates conversion noise: plain white is inside every space', () => {
   // Lab/LCH L convert to 100.00000139, Rec.2020 R to 255.00000000000006, XYZ Z to
-  // 1.08905775 — float noise and a rounded axis ceiling, not an excursion. An
+  // 1.08905775 - float noise and a rounded axis ceiling, not an excursion. An
   // untoleranced compare flagged all four, so the caution line said "Outside Lab"
   // for a colour spaceExactness (BOUNDS_SLACK 1e-4) calls exact, with the flagged
   // readout printing the in-range bound.
@@ -307,11 +307,11 @@ test('a run reaches the gamut edge, so the thumb never stands on emptiness', () 
   for (const ch of oklch.channels) {
     const runs = channelRuns(oklch, ch, vals, 1);
     const frac = ((vals[ch.ch] ?? ch.min) - ch.min) / (ch.max - ch.min);
-    // The thumb must sit in a REACHABLE run, not merely in some run — every axis is
+    // The thumb must sit in a REACHABLE run, not merely in some run - every axis is
     // fully covered now, so "in a run" no longer says anything.
     assert.ok(runs.some(r => r.tier === 0 && r.from - 1e-9 <= frac && frac <= r.to + 1e-9),
       `the ${ch.ch} thumb at ${frac.toFixed(4)} sits outside the reachable band: ${JSON.stringify(runs.map(r => [r.from, r.to, r.tier]))}`);
-    // And no run is a zero-width sliver — a single reachable sample used to paint
+    // And no run is a zero-width sliver - a single reachable sample used to paint
     // as literally nothing.
     for (const r of runs) assert.ok(r.to > r.from, `${ch.ch} has a zero-width run at ${r.from}`);
   }

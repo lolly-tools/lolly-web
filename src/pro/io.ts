@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — import/export bridge between the batch state and portable
+ * Pro / Batch mode - import/export bridge between the batch state and portable
  * formats, so jobs can be authored in external tools (Sheets, Excel, a script)
  * and loaded here, or exported for someone else to manage.
  *
@@ -9,8 +9,8 @@
  *   ----   ------   ---------------------------
  *   poster, png    , Hello     , #ff0000   , …
  *
- * • `tool`   — the tool id (permanent contract; stable across renames).
- * • `format` — optional per-row export format; blank falls back to the global one.
+ * • `tool` - the tool id (permanent contract; stable across renames).
+ * • `format` - optional per-row export format; blank falls back to the global one.
  * • the remaining columns are input ids (union across all selected tools). A blank
  *   cell means "leave this tool's default". Cells for inputs a tool doesn't have
  *   are simply ignored on import.
@@ -51,7 +51,7 @@ function serializeValue(input: InputSpec | undefined, value: InputValue | undefi
     case 'boolean': return value ? 'true' : 'false';
     case 'asset':   return (value as { id?: string })?.id ?? '';
     case 'blocks':  return Array.isArray(value) && value.length ? JSON.stringify(value) : '';
-    case 'vector':  return ''; // expanded into one "<id>.<field>" column each — see batchToCsv
+    case 'vector':  return ''; // expanded into one "<id>.<field>" column each - see batchToCsv
     default:        return String(value);
   }
 }
@@ -65,7 +65,7 @@ function parseValue(input: InputSpec | undefined, raw: string | undefined): Inpu
     case 'number': { const n = Number(str); return Number.isNaN(n) ? undefined : n; }
     case 'asset':   return { id: str };
     case 'blocks':  try { return JSON.parse(str); } catch { return undefined; }
-    case 'vector':  return undefined; // edited via "<id>.<field>" sub-columns — see csvToBatch
+    case 'vector':  return undefined; // edited via "<id>.<field>" sub-columns - see csvToBatch
     default:        return raw; // preserve original (untrimmed) string for text
   }
 }
@@ -80,7 +80,7 @@ interface CsvCol {
 /**
  * Serialize the current batch rows to CSV text.
  * @param {Array} rows
- * @param {{unit?:string, dpi?:number}} [defaults]  toolbar defaults — used to
+ * @param {{unit?:string, dpi?:number}} [defaults]  toolbar defaults - used to
  *        resolve each row's EFFECTIVE unit/DPI so the CSV reproduces the run.
  */
 export function batchToCsv(rows: IoRow[], defaults: { unit?: string; dpi?: number } = {}): string {
@@ -168,7 +168,7 @@ export async function csvToBatch<R extends IoRow>(
   const errors: string[] = [];
 
   // Two columns sharing one input id would silently last-write-win on import
-  // (the per-row loop writes each header in order). Warn rather than fail — the
+  // (the per-row loop writes each header in order). Warn rather than fail - the
   // data still imports, just with the rightmost column winning. Reserved/blank
   // headers and distinct vector sub-columns ("pos.x" vs "pos.y") aren't dupes.
   const seenHeaders = new Set<string>();

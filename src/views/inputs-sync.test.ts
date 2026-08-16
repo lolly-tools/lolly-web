@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * inputs-sync — the sidebar rebuild-skip decision. Driven with plain stubs (no DOM
+ * inputs-sync - the sidebar rebuild-skip decision. Driven with plain stubs (no DOM
  * globals), exactly as the module is designed for: every containment/focus check is
  * a feature-tested `closest`/`contains`, so a stub reports honestly.
  *
@@ -49,7 +49,7 @@ test('focus inside a POPPED-OUT grid defers even though it is outside the sideba
 });
 
 test('a grid that is neither in the sidebar nor a panel does not defer', () => {
-  // .table-vgrid matches but it is detached (not contained, not popped) — be safe.
+  // .table-vgrid matches but it is detached (not contained, not popped) - be safe.
   const active = { closest: (s: string) => (s === '.table-vgrid' ? {} : null) };
   const el = panel({ active, contains: false });
   assert.equal(canSkipInputsRebuild(el, model([1]), model([2])), false);

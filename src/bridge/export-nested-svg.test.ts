@@ -3,7 +3,7 @@
  * Nested-<svg> presentation fidelity in the HTML→SVG walker (plans/101).
  *
  * The inline-SVG passthrough clones verbatim, so anything the CASCADE supplied
- * — class rules, var() paints, inherited text style — used to vanish from the
+ * - class rules, var() paints, inherited text style - used to vanish from the
  * standalone output: a class-filled status ring flattened to the SVG-default
  * black dot, a stroke="var(--series)" chart line didn't paint at all, and
  * un-familied <text> fell to the viewer's serif. The walker now bakes each SVG
@@ -13,7 +13,7 @@
  * glyph + numbered text), which is where the regression was first seen.
  *
  * Real Chromium via Playwright (self-skips without it): jsdom returns '' for
- * SVG presentation properties, so a jsdom version of these tests is vacuous —
+ * SVG presentation properties, so a jsdom version of these tests is vacuous - 
  * see export-stroke-paint.test.ts for the ruling.
  */
 import test from 'node:test';

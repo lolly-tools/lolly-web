@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * brand-logos.ts — pure doc surgery for the logo tokens (canonical matrix +
+ * brand-logos.ts - pure doc surgery for the logo tokens (canonical matrix +
  * custom variants + named identities), plus the bridge-backed install/list/
  * remove round-trip on an in-memory host.
  * Run directly:  node --test shells/web/src/lib/brand-logos.test.ts
@@ -209,7 +209,7 @@ test('installLogo rejects bad slugs, bad identities and shadowing identities', a
 
 test('installLogo refuses cross-shape collisions in the asset.logo namespace', async () => {
   const host = memoryHost();
-  // 'default' is the unnamed identity's reserved key — naming a second logo
+  // 'default' is the unnamed identity's reserved key - naming a second logo
   // "default" must not silently merge into the primary identity.
   await assert.rejects(installLogo(host, 'icon', png('x.png'), { identity: 'default' }), /reserved/);
   // A custom default-identity mark and an identity share asset.logo.<key>:

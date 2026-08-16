@@ -4,18 +4,18 @@
  *
  * A tool is data, not code: it can't import butterchurn, can't hold a WebGL context
  * and can't reach the host bridge from a template script. So it renders a PLACEHOLDER
- * carrying the parameters, and this module — the same post-paint enhancer contract as
- * lottie-mount.ts and video-mount.ts — owns the canvas, the visualizer and the clock.
+ * carrying the parameters, and this module - the same post-paint enhancer contract as
+ * lottie-mount.ts and video-mount.ts - owns the canvas, the visualizer and the clock.
  *
  * THE CANVAS IS OURS, AND IT IS RE-ADOPTED, NOT REBUILT. Every paint swaps the tool's
  * innerHTML, which orphans anything inside it. Remounting butterchurn per keystroke
- * would mean a new WebGL2 context each time — browsers cap those at ~16 and drop the
+ * would mean a new WebGL2 context each time - browsers cap those at ~16 and drop the
  * oldest, so the tool would go black a dozen edits in with nothing logged. Instead the
  * canvas element (and its context, and the loaded preset) outlives the rebuild and is
  * appended into whatever placeholder the newest paint produced.
  *
  * AUDIO IS INJECTED, NOT LISTENED TO. The placeholder carries the decoded clip's
- * time-domain windows (host.audio's opt-in `samples`, base64) — one window per analysis
+ * time-domain windows (host.audio's opt-in `samples`, base64) - one window per analysis
  * frame. butterchurn takes those per frame, so the image is a function of (preset,
  * palette, frame index) and not of what the speakers happen to be doing. That is what
  * makes the exported video match the audio track instead of matching the render's
@@ -23,7 +23,7 @@
  *
  * DETERMINISM, AND WHY THERE IS A WARM-UP. MilkDrop is a feedback simulation: frame N
  * is a function of frame N-1, so there is no such thing as seeking. A single frame
- * rendered cold is a near-empty field — the black-frame failure people report as "the
+ * rendered cold is a near-empty field - the black-frame failure people report as "the
  * visualizer is broken". So a jump (an export's t=0, or a scrub backwards) resets the
  * visualizer to its just-loaded state and replays WARMUP frames of real audio up to the
  * target before the frame is read; sequential playback after that costs exactly one
@@ -32,7 +32,7 @@
  * depending on how long it had been on screen first.
  *
  * Marker attributes on the placeholder element:
- *   data-lolly-viz    required — preset id: one of ours, or `stock:<id>` for an artist preset
+ *   data-lolly-viz    required - preset id: one of ours, or `stock:<id>` for an artist preset
  *   data-viz-colors   space-separated swatches the palette is derived from
  *   data-viz-hero     optional hero hint (the colour the palette is "about")
  *   data-viz-brand    artist-preset brand influence: off | subtle | strong | full
@@ -40,7 +40,7 @@
  *   data-viz-meta     JSON { count, samples, fps, poster }
  *   data-viz-calm     'true' → the calm treatment: the calm preset pool only, no artist
  *                     preset. The TOOL's setting, deliberately not the viewer's motion
- *                     preference — see readConfig().
+ *                     preference - see readConfig().
  *   data-viz-fallback selector, relative to the marker's root, of the 2D canvas to hide
  *                     once this mounts
  */
@@ -49,7 +49,7 @@ import { buildVizPalette, type VizPalette } from './viz-palette.ts';
 import { vizPresetById, VIZ_PRESETS } from './viz-presets.ts';
 import { vizSupported } from './viz-support.ts';
 
-/** Frames of real audio replayed before a frame is read after a jump. ~1.6s at 30fps —
+/** Frames of real audio replayed before a frame is read after a jump. ~1.6s at 30fps - 
  *  enough for the warp/feedback field to fill, cheap enough to do per export still. */
 const WARMUP = 48;
 /** Ceiling on a single step() so scrubbing to the end of a long clip can't render the
@@ -67,7 +67,7 @@ interface VizToolConfig {
 }
 
 interface Entry {
-  /** The stable tool content element — the placeholder itself is replaced each paint. */
+  /** The stable tool content element - the placeholder itself is replaced each paint. */
   container: Element;
   canvas: HTMLCanvasElement & { __lollyFrameRender?: (t: number) => void; __lollyFrameDriven?: boolean };
   handle: VizHandle;
@@ -83,7 +83,7 @@ interface Entry {
    * on the stable content element, so an input change re-adopts the existing mount
    * rather than building a fresh one. The frame provider and the step loop close over
    * the track, so without this they would keep feeding butterchurn the samples from
-   * whichever clip happened to be chosen when the visualizer was first mounted —
+   * whichever clip happened to be chosen when the visualizer was first mounted - 
    * changing the audio (or the in-point) would leave the picture reacting to the old
    * one, silently and forever.
    */
@@ -101,14 +101,14 @@ function readConfig(el: HTMLElement): VizToolConfig {
     brand: el.dataset.vizBrand || 'strong',
     meta: el.dataset.vizMeta || '',
     // Calm is the TOOL's setting, never the viewer's. It used to also read the viewer's
-    // reduced-motion preference, on the reasoning that a tool cannot know it — but this
+    // reduced-motion preference, on the reasoning that a tool cannot know it - but this
     // canvas is a render, and `calm` does not merely slow it down: ownPresetId() below
     // refuses to leave the calm pool and applyConfig() skips the artist-preset fetch
     // entirely, so a viewer preference silently chose a DIFFERENT VISUALISER, and the
     // export clock films this same mount. An Audiogram exported with reduced motion on
     // came out as a different picture than the one the author configured, and than the
     // CLI renders from the same URL. Motion inside the render canvas is the user's
-    // creative output — which is exactly why parts/base.css exempts the canvas subtree
+    // creative output - which is exactly why parts/base.css exempts the canvas subtree
     // from the reduced-motion rule too. A user who wants a calm visualiser has the
     // tool's own control for it.
     calm: el.dataset.vizCalm === 'true',
@@ -147,7 +147,7 @@ interface WaveTrack {
  *
  * A payload shorter than its own header is a bug in the tool, not something to render
  * around: mounting anyway would feed butterchurn a window that runs off the end of the
- * buffer, and a zero-length subarray reads as silence — a visualizer that sits perfectly
+ * buffer, and a zero-length subarray reads as silence - a visualizer that sits perfectly
  * still, which is indistinguishable from a broken one.
  */
 export function parseTrack(meta: string, wave: string): WaveTrack | null {
@@ -172,7 +172,7 @@ function paletteFor(cfg: VizToolConfig): VizPalette {
   return buildVizPalette(colors, cfg.hero || colors[0] || null);
 }
 
-/** Our own preset for this config — the one that mounts first even when an artist preset
+/** Our own preset for this config - the one that mounts first even when an artist preset
  *  was asked for, since that one has to be fetched. A calm config never leaves the calm
  *  pool, and never reaches an artist preset at all. */
 function ownPresetId(cfg: VizToolConfig): string {
@@ -191,7 +191,7 @@ function destroyEntry(e: Entry): void {
   delete e.canvas.__lollyFrameRender;
 }
 
-/** Drop entries whose tool canvas has left the document — a tool navigation, or a view
+/** Drop entries whose tool canvas has left the document - a tool navigation, or a view
  *  teardown that didn't route through destroyToolViz. */
 function reap(): void {
   for (const [key, e] of registry) {
@@ -209,7 +209,7 @@ export interface MountToolVizOpts {
  * Run one enhancement pass over `container` (the tool's content element).
  *
  * Resolves once the requested preset is actually loaded, so views/tool.ts can await it
- * before an export — otherwise a deep-linked export of an artist preset would capture
+ * before an export - otherwise a deep-linked export of an artist preset would capture
  * whichever brand-native preset happened to be up while the fetch was in flight.
  */
 export async function mountToolViz(container: Element, opts: MountToolVizOpts = {}): Promise<void> {
@@ -225,7 +225,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
   const cfg = readConfig(marker);
   const track = parseTrack(cfg.meta, marker.dataset.vizWave || '');
   // No WebGL2, or nothing to drive it with: leave the tool's own 2D fallback visible
-  // and running. This is progressive enhancement, not a capability gate — the tool
+  // and running. This is progressive enhancement, not a capability gate - the tool
   // renders (and exports) either way.
   if (!track || !vizSupported()) {
     if (existing) { destroyEntry(existing); registry.delete(container); }
@@ -277,7 +277,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
     container, canvas, handle, cfg, cursor: -1,
     step: () => {},
     // New samples mean the feedback field was warmed from the PREVIOUS clip, so force a
-    // re-warm as well as swapping the data — otherwise the first frames of the new clip
+    // re-warm as well as swapping the data - otherwise the first frames of the new clip
     // render against the old one's trails.
     setTrack: (next) => { live = next; entry.cursor = -1; },
     stop: () => {},
@@ -296,7 +296,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
     if (w && h && (w !== lastW || h !== lastH)) {
       lastW = w; lastH = h;
       handle.resize();
-      // A resize reallocates the feedback targets, so whatever was on them is gone —
+      // A resize reallocates the feedback targets, so whatever was on them is gone - 
       // the next frame has to warm up again or it renders against an empty field.
       entry.cursor = -1;
     }
@@ -307,7 +307,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
     const t = Math.min(live.count - 1, Math.max(0, target));
     const jumped = restart || entry.cursor < 0 || t < entry.cursor || t - entry.cursor > MAX_STEP;
     // Start a warm-up from a cleared field, not from whatever the preview left on the
-    // buffers — otherwise the same clip exports differently depending on how long it
+    // buffers - otherwise the same clip exports differently depending on how long it
     // had been playing on screen first.
     if (jumped) handle.reset();
     const from = jumped ? Math.max(0, t - WARMUP) : entry.cursor + 1;
@@ -323,7 +323,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
   entry.step = step;
 
   // The shared frame-clock convention (bridge/export.ts): t is normalised clip time and
-  // t === 0 is the poster frame — a still of an audiogram should show the loudest moment,
+  // t === 0 is the poster frame - a still of an audiogram should show the loudest moment,
   // not the silence clips routinely open on.
   // Every export begins at t === 0, so that is where the sequence is pinned: reset,
   // warm up from a cleared field, and render. Two exports of the same clip then agree
@@ -333,7 +333,7 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
   };
 
   // Live preview. Stands down while the export clock is driving, and holds the poster
-  // under reduced motion rather than looping — auto-motion is exactly what that
+  // under reduced motion rather than looping - auto-motion is exactly what that
   // preference is asking us not to do.
   if (!cfg.calm) {
     let raf = 0;
@@ -359,13 +359,13 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
 /** Re-append our canvas into the newest paint's placeholder. Parent-identity check only:
  *  this runs on every paint and the common case is that nothing moved. */
 function adopt(e: Entry, marker: HTMLElement): void {
-  // Deliberately does NOT touch e.cfg — applyConfig compares against the config the
+  // Deliberately does NOT touch e.cfg - applyConfig compares against the config the
   // visualizer was actually built with, and overwriting it here would make every
   // change look like no change.
   if (e.canvas.parentElement !== marker) marker.appendChild(e.canvas);
 }
 
-/** Hide the tool's own 2D fallback once we're actually drawing — it stays in the DOM so
+/** Hide the tool's own 2D fallback once we're actually drawing - it stays in the DOM so
  *  a later failure (or a style change) can fall back to it, and so the export path has
  *  something to capture if we never mounted. */
 function hideFallback(container: Element, cfg: VizToolConfig): void {
@@ -392,12 +392,12 @@ async function applyConfig(e: Entry, cfg: VizToolConfig, track: WaveTrack): Prom
       ? (cfg.brand as Parameters<typeof loadStockPreset>[2])
       : 'strong';
     // Rebuilt against the palette rather than recoloured through setPalette: an artist
-    // preset's colour lives in its composite SHADER, which is compiled at load — and
+    // preset's colour lives in its composite SHADER, which is compiled at load - and
     // setPalette reloads by ID, which for a `stock:` id finds nothing in our registry
     // and would silently drop the user onto the default preset.
     const preset = await loadStockPreset(cfg.preset.slice(6), palette, tint);
     // Null means the pack isn't staged in this build. Staying on the brand-native
-    // preset is the honest outcome — a black canvas is not.
+    // preset is the honest outcome - a black canvas is not.
     if (preset) e.handle.setRawPreset(cfg.preset, preset);
   } else {
     e.handle.setPalette(palette);
@@ -410,7 +410,7 @@ async function applyConfig(e: Entry, cfg: VizToolConfig, track: WaveTrack): Prom
   if (cfg.calm) e.step(track.poster);
 }
 
-/** Tear every mounted visualizer down — views/tool.ts calls this on navigation, where the
+/** Tear every mounted visualizer down - views/tool.ts calls this on navigation, where the
  *  container is about to be discarded and the GL context must go with it. */
 export function destroyToolViz(): void {
   for (const [key, e] of registry) { destroyEntry(e); registry.delete(key); }

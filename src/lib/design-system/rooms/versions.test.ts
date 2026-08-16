@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Versions panel — what it says, what it refuses, and what a press writes
+ * The Versions panel - what it says, what it refuses, and what a press writes
  * (plan 97 §6a, M7).
  *
  * Run directly:
@@ -15,7 +15,7 @@
  *
  * The other half is the copy. A version is permanent, so the panel has to say so
  * before the press, name a removal as breaking, and never print a user's own
- * label or note as markup — all three are asserted rather than left to review.
+ * label or note as markup - all three are asserted rather than left to review.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -452,7 +452,7 @@ test('a repaint keeps focus and does not eat a half-typed name', async () => {
  *
  * jsdom does not implement it: `b.focus(); b.disabled = true;` leaves `b` as
  * `document.activeElement`, where a real browser blurs it to `<body>`. That gap
- * is load-bearing here — the panel disables every `.ds-v-btn` the instant a press
+ * matters here - the panel disables every `.ds-v-btn` the instant a press
  * lands, so in a browser the control that was pressed loses focus BEFORE the
  * repaint asks where focus was, and a guard test run without this rule exercises
  * a state that never occurs.
@@ -473,7 +473,7 @@ async function withFocusFixup(fn: () => Promise<void>): Promise<void> {
 }
 
 test('the focus fixup rule really is what a browser does, and jsdom really does not', () => {
-  // The premise of the harness above, asserted rather than assumed — if a future
+  // The premise of the harness above, asserted rather than assumed - if a future
   // jsdom implements the rule, withFocusFixup becomes a no-op and the two tests
   // below quietly stop testing anything.
   const b = document.createElement('button');
@@ -505,7 +505,7 @@ test('a press does not drop keyboard focus on the document (browser focus fixup)
     btn.focus();
     btn.click();
     // The press disables its own control, so by here a browser has already
-    // blurred it — the panel has to have remembered where it was.
+    // blurred it - the panel has to have remembered where it was.
     assert.equal(document.activeElement, document.body, 'the premise: focus is gone mid-action');
     await settle();
 
@@ -571,7 +571,7 @@ test('a refused name is exposed to assistive tech, not just coloured', async () 
 
 test('every plural in this panel is a literal the translation extractor can see', async () => {
   // scripts/translate.ts scans for a quote immediately after `t(`, so `t(cond ? a
-  // : b)` ships English in all 26 locales — and nothing else in the repo would
+  // : b)` ships English in all 26 locales - and nothing else in the repo would
   // catch it, since the fallback list is hand-maintained.
   const src = (await readFile(new URL('./versions.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')     // prose about t() is not a call
@@ -583,7 +583,7 @@ test('every plural in this panel is a literal the translation extractor can see'
 
 test('the diff disclosures look like disclosures and are real touch targets', async () => {
   // `display: flex` on a <summary> removes its native marker in every engine, so
-  // one has to be drawn back — otherwise the only way into the removed/changed/
+  // one has to be drawn back - otherwise the only way into the removed/changed/
   // added paths reads as a plain bold sentence. And the panel's own rule is that
   // every control is 44px; these toggles are controls.
   const css = await readFile(new URL('../../../styles/parts/start.css', import.meta.url), 'utf8');
@@ -612,7 +612,7 @@ test('focus lands somewhere real when the control that was pressed goes away', a
   await settle();
   const input = el.querySelector<HTMLInputElement>('[data-ds-v-label]')!;
   // A free name, so the next suggestion is blank and the publish buttons come
-  // back DISABLED — the worst case for a naive "focus what was pressed".
+  // back DISABLED - the worst case for a naive "focus what was pressed".
   input.value = 'jupiter';
   input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   const btn = el.querySelector<HTMLButtonElement>('[data-ds-v-publish="only"]')!;

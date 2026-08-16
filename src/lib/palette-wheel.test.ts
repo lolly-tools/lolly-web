@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * palette-wheel.ts geometry — the pure OKLCH↔polar mapping the editable wheel
+ * palette-wheel.ts geometry - the pure OKLCH↔polar mapping the editable wheel
  * drags through. Run: node --test "shells/web/src/**\/*.test.ts"
  */
 

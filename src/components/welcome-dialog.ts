@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * First-run welcome for an UNBRANDED install (the lolly-start profile) — plus
+ * First-run welcome for an UNBRANDED install (the lolly-start profile) - plus
  * the slim "how Lolly works" tips strip the gallery shows until dismissed.
  *
  * The gallery decides WHEN to show these (token discovery still resolves the
- * `lolly/tokens/brand` placeholder — see mountGallery); this module owns the
+ * `lolly/tokens/brand` placeholder - see mountGallery); this module owns the
  * dialog/strip themselves. The welcome is built on mountModal (components/modal.ts,
  * Escape via the `cancel` event, backdrop-box click test, mounted on <body>),
  * offering two paths:
  *
  *   "Make it yours"          → the #/start brand wizard. Deliberately does NOT
- *                              set the dismissed flag — installing a brand (or
+ *                              set the dismissed flag - installing a brand (or
  *                              explicitly choosing to explore) is what settles
  *                              the question; backing out of the wizard brings
  *                              the welcome back next visit.
@@ -20,13 +20,13 @@
  *                              the wizard path, it does NOT persist the flag.
  *   "Explore the tools"      → dismiss, persist the flag, stay on the gallery.
  *
- * Dismissing by any other means (Escape, backdrop) persists the flag too — a
+ * Dismissing by any other means (Escape, backdrop) persists the flag too - a
  * welcome that keeps re-appearing after being waved away is a nag, not a hello.
  *
  * Singleton: the gallery force re-mounts itself after a catalog sync, and a
  * second show call while open must hand back the SAME promise instead of
  * stacking a second modal. Any route change tears the dialog down (without
- * setting the flag — navigation isn't a dismissal), so it can never linger
+ * setting the flag - navigation isn't a dismissal), so it can never linger
  * over another view.
  */
 import '../styles/parts/welcome.css';
@@ -43,28 +43,28 @@ import { mountModal } from './modal.ts';
 export const WELCOME_DISMISSED_KEY = 'lolly-welcome-dismissed';
 const TIPS_DISMISSED_KEY = 'lolly-tips-dismissed';
 
-/** True once the user has settled the welcome (or when storage is unavailable —
+/** True once the user has settled the welcome (or when storage is unavailable - 
  *  we'd re-prompt every visit otherwise, which is worse than never prompting). */
 export function isWelcomeDismissed(): boolean {
   try { return localStorage.getItem(WELCOME_DISMISSED_KEY) === '1'; }
   catch { return true; }
 }
 
-/** Persist the dismissal — also called by the #/start wizard after an install. */
+/** Persist the dismissal - also called by the #/start wizard after an install. */
 export function markWelcomeDismissed(): void {
-  try { localStorage.setItem(WELCOME_DISMISSED_KEY, '1'); } catch { /* storage off — just won't persist */ }
+  try { localStorage.setItem(WELCOME_DISMISSED_KEY, '1'); } catch { /* storage off - just won't persist */ }
 }
 
 export type WelcomeChoice = 'brand' | 'import' | 'explore' | 'dismiss';
 
 let openPromise: Promise<WelcomeChoice> | null = null;
-// The open dialog's settle fn — lets closeWelcomeDialog() tear down through the
+// The open dialog's settle fn - lets closeWelcomeDialog() tear down through the
 // same path a route change does (resolve without persisting the flag).
 let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 
 // Renders the dialog's own copy through t() so a language-chip switch can
 // re-paint it in place, and the chip row itself (native names, active state
-// from the resolved boot-time language — see i18n.ts's initI18n).
+// from the resolved boot-time language - see i18n.ts's initI18n).
 // `withImport` gates the "Bring your design" card on the caller having handed
 // over an upload-capable host (the drop router needs it for the library route).
 function renderWelcomeContent(withImport: boolean): string {
@@ -121,7 +121,7 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
       ariaLabel: 'Welcome to Lolly',
       cancelValue: 'dismiss', // Escape / backdrop click
       initialFocus: (el) => el.querySelector<HTMLElement>('.welcome-card--brand'), // lead with the brand path
-      // `result` null = programmatic teardown (a navigation) — resolve without
+      // `result` null = programmatic teardown (a navigation) - resolve without
       // persisting; every USER dismissal except the wizard path sets the flag.
       onClose: (result) => {
         if (result === 'explore' || result === 'dismiss') markWelcomeDismissed();
@@ -137,7 +137,7 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
     modal.el.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
 
-      // Language chip — applies immediately (re-renders this dialog's own copy),
+      // Language chip - applies immediately (re-renders this dialog's own copy),
       // persists to the profile (if we have write access) + localStorage, and
       // deliberately does NOT settle the dialog: picking a language isn't a choice
       // about brand vs. explore.
@@ -167,7 +167,7 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
         modal.close(choice);
         if (choice === 'brand') window.location.hash = '#/start';
         // Like the wizard path, 'import' doesn't persist the dismissal (onClose
-        // above) — cancelling the file picker brings the welcome back next visit.
+        // above) - cancelling the file picker brings the welcome back next visit.
         if (choice === 'import' && uploadHost) openDropFilePicker(uploadHost);
       }
       // Backdrop dismissal is handled by mountModal (cancelValue: 'dismiss').
@@ -177,15 +177,15 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
   return openPromise;
 }
 
-/** Tear down an open welcome without persisting the flag (safety hatch for hosts) —
+/** Tear down an open welcome without persisting the flag (safety hatch for hosts) - 
  *  the same non-dismissal path a route change takes. No-op when nothing is open. */
 export function closeWelcomeDialog(): void {
   settleOpen?.(null);
 }
 
 /**
- * The one-time tips strip — "Every tool is a URL · works offline · nothing
- * leaves this device" — inserted just above the gallery masonry while the
+ * The one-time tips strip - "Every tool is a URL · works offline · nothing
+ * leaves this device" - inserted just above the gallery masonry while the
  * install is unbranded and until the user dismisses it. `anchorEl` is the
  * element to insert before (the `.tool-masonry`); no-op when it's gone
  * (navigated away) or the strip was already dismissed.
@@ -193,7 +193,7 @@ export function closeWelcomeDialog(): void {
 export function mountBrandTips(anchorEl: HTMLElement | null): void {
   if (!anchorEl || !anchorEl.isConnected) return;
   try { if (localStorage.getItem(TIPS_DISMISSED_KEY) === '1') return; }
-  catch { return; } // storage off — a dismissal couldn't persist, so don't nag every visit
+  catch { return; } // storage off - a dismissal couldn't persist, so don't nag every visit
   if (anchorEl.parentElement?.querySelector('.brand-tips')) return; // already mounted
   const strip = document.createElement('aside');
   strip.className = 'brand-tips';

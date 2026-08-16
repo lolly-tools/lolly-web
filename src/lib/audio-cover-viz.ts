@@ -5,19 +5,19 @@
  * This is the bridge between lib/audio-cover-bake.ts (which owns the cache and the
  * offscreen host) and lib/butterchurn-viz.ts (which owns the GL). It is separate from
  * both so the caching logic stays unit-testable without a GPU, and so the visualizer is
- * imported lazily — butterchurn is a 44 KB chunk that a user who never opens a cover
+ * imported lazily - butterchurn is a 44 KB chunk that a user who never opens a cover
  * picker should not pay for.
  *
  * WHY A WARM-UP RATHER THAN "RENDER ONE FRAME". MilkDrop is a feedback simulation: each
  * frame is a function of the last, so a cold first frame is a nearly empty field. Asking
- * for a single frame yields something between black and a faint smear — the exact
+ * for a single frame yields something between black and a faint smear - the exact
  * failure this area is notorious for, and it announces itself with no error at all. So
  * the visualizer is reset to a known state, driven with real injected audio for
  * BAKE_WARMUP frames, and only then read.
  *
  * WHY INJECTED AUDIO. Reading whatever the speakers happen to be playing would make a
  * cover depend on when you clicked. The frames come from host.audio's opt-in sample
- * windows instead, so (asset, preset, brand) always produces the same picture — which is
+ * windows instead, so (asset, preset, brand) always produces the same picture - which is
  * what makes the bake a legitimate CACHE rather than a snapshot.
  */
 import { BAKE_WARMUP } from './audio-cover-bake.ts';
@@ -26,7 +26,7 @@ import { vizSupported, vizPossible } from './viz-support.ts';
 
 /** Time-domain window length. NOT a free choice: butterchurn's AudioProcessor allocates
  *  `numSamps * 2 = 1024` and `updateAudio` copies in with a bare `.set()`, so a longer
- *  window throws RangeError inside the renderer — which stands the visualizer down for
+ *  window throws RangeError inside the renderer - which stands the visualizer down for
  *  the session, silently, behind a black canvas. */
 export const VIZ_SAMPLES = 1024;
 
@@ -36,13 +36,13 @@ export interface VizAudio {
   bytes: Uint8Array;
   samples: number;
   count: number;
-  /** The frame to READ — the loudest moment in the middle of the clip, so a cover shows
+  /** The frame to READ - the loudest moment in the middle of the clip, so a cover shows
    *  the track doing something rather than the silence clips routinely open on. */
   poster: number;
 }
 
 /** Can this browser render a MilkDrop cover at all? Callers use it to decide whether to
- *  OFFER the option — a missing WebGL2 must degrade to "not shown", never to a failure. */
+ *  OFFER the option - a missing WebGL2 must degrade to "not shown", never to a failure. */
 export function canBakeViz(): boolean {
   // The LAX probe: this is a surface someone tapped, not ambient chrome. See vizPossible.
   return vizPossible();
@@ -52,7 +52,7 @@ export function canBakeViz(): boolean {
  * Mount a visualizer into `el`, warm it deterministically, and hand back the canvas with
  * a readable frame on it.
  *
- * Returns null rather than throwing when the visualizer cannot mount — the caller falls
+ * Returns null rather than throwing when the visualizer cannot mount - the caller falls
  * back to the drawn waveform, which is a fine cover and always available.
  */
 export async function renderVizFrame(
@@ -77,8 +77,8 @@ export async function renderVizFrame(
   const { mountViz } = await import('./butterchurn-viz.ts');
   let cur = 0;
   // Mount on a preset id we KNOW resolves, then swap an artist preset in below. Handing
-  // mountViz an unrecognised id is not an error — vizPresetById falls back to
-  // VIZ_PRESETS[0] silently — so a stock id passed here would bake a cover of an entirely
+  // mountViz an unrecognised id is not an error - vizPresetById falls back to
+  // VIZ_PRESETS[0] silently - so a stock id passed here would bake a cover of an entirely
   // different preset, and nothing would say so.
   const handle = await mountViz(canvas, undefined, presetId, undefined, buildVizPalette(pool), {
     driven: true,          // no rAF loop — we advance it ourselves
@@ -116,7 +116,7 @@ export async function renderVizFrame(
     }
     return canvas;
   } finally {
-    // The context is released here, before the caller reads the canvas — the pixels
+    // The context is released here, before the caller reads the canvas - the pixels
     // survive because `capture` kept the drawing buffer, and holding the context open
     // would waste one of the ~16 the browser allows.
     handle.destroy();

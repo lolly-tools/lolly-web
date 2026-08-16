@@ -1,95 +1,97 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * join-route — the two URL entry points of a private collab, and the platform
+ * join-route - the two URL entry points of a private collab, and the platform
  * composition both ceremony roles share (plan 100 §6.1 skin 1, §11.25, §11.26; wave 2.4).
  *
  * `components/collab-ceremony.ts` owns the screens and imports no platform. `collab/`'s
  * other modules own one platform piece each (the codec, the machine, the transport, the
- * QR). NOTHING joined them up: the invite the dialog mints points at `#/join?inv=…`, and
+ * QR). Nothing joined them up: the invite the dialog mints points at `#/join?inv=…`, and
  * until this file there was no `#/join`. This is the wiring, and it is deliberately the
  * only place that knows all four names at once.
  *
  * ── The two routes ─────────────────────────────────────────────────────────────
  *
- * **`#/join?inv=<token>`** — the acceptor's front door. It checks the `private-collab`
- * flag, reads the token, refuses honestly when it cannot (§11.21: this is a stranger's
- * link, so an unreadable one is a plain error screen, never a thrown view), and opens the
- * ACCEPTOR ceremony with the invite already delivered — the human pasted it by clicking
- * the link, so making them paste it again would be theatre.
+ * **`#/join?inv=<token>`** - the acceptor's front door. It checks the `private-collab`
+ * flag, reads the token, and refuses honestly when it cannot (§11.21: this is a
+ * stranger's link, so an unreadable one gets a plain error screen, never a thrown view).
+ * It opens the ACCEPTOR ceremony with the invite already delivered. The human pasted it
+ * by clicking the link, so making them paste it again would be pointless.
  *
- * **`#/join` with no `inv` at all** — the same door for the other skin. An invite is a
- * link OR a code (§6.1), and the code half had nowhere to go: this route said "this link
- * carries no invite" and stopped, which is a true sentence and a dead end for the one
- * person it was shown to — somebody holding a code from a chat message. So a bare
- * `#/join` is a paste card now (one field, one button), reachable from the Share dialog's
- * "Join with a code" as well as from the address bar. It FORKS NOTHING: the text goes
- * through the same `readSignal` call the URL token goes through and then walks the same
- * path, delivery included. `inv=` present but EMPTY stays the old refusal, because that
- * is a link that was built and then damaged, which is worth saying out loud.
+ * **`#/join` with no `inv` at all** - the same door for the other skin. An invite is a
+ * link OR a code (§6.1), and the code half had nowhere to go: this route used to say
+ * "this link carries no invite" and stop. That is a true sentence, but a dead end for
+ * the one person it was shown to: somebody holding a code from a chat message. So a
+ * bare `#/join` is now a paste card (one field, one button), reachable from the Share
+ * dialog's "Join with a code" as well as from the address bar. It FORKS NOTHING: the
+ * text goes through the same `readSignal` call the URL token goes through, then walks
+ * the same path, delivery included. `inv=` present but EMPTY still gets the old
+ * refusal, because that is a link that was built and then damaged, and it is worth
+ * saying so.
  *
  * ── The flag gate has two answers, not one (§6.3 enable-on-accept) ─────────────
  *
- * `private-collab` is ON by default since 2026-08-10, so the ordinary arrival — a fresh
- * profile, a device that has never seen this feature — walks straight past this gate into
- * the ceremony, which is the whole point of the flip: an invite link is received by
- * someone who has never heard of the feature, and "turn it on in your profile settings"
- * dead-ended the one moment they had a reason to care. Two kinds of reader still reach the
- * gate, and which branch they get is a question about WHO decided:
+ * `private-collab` has been ON by default since 2026-08-10, so the ordinary arrival (a
+ * fresh profile, a device that has never seen this feature) walks straight past this
+ * gate into the ceremony. That is the whole point of the flip: an invite link is
+ * received by someone who has never heard of the feature, and "turn it on in your
+ * profile settings" used to dead-end the one moment they had a reason to care. Two
+ * kinds of reader still reach the gate, and which branch they get depends on WHO
+ * decided:
  *
- *   - **governed off** — a control plane HIDES the flag (`flagHidden`, i.e. the org's
- *     `orgFlagGovernance` entry forces the value and no toggle exists for it). The
- *     organization decided, so the page says that, names it as the decider, and offers
- *     no button that would be a lie. A merely-defaulted flag is NOT this: an instance
- *     default the user could still change in their own profile leaves the decision with
- *     the user, so it takes the other branch.
- *   - **ungoverned** — nobody but the reader decides, and since the default went ON that
- *     means they turned it OFF at some point (or their instance defaults it off without
- *     hiding the switch). They get the enable card: what a private collab is, in one
- *     paragraph, then "Turn on and continue" or "Not now". Turning it on writes the flag
- *     the way the profile toggle writes it (the profile record first, then the synchronous
- *     mirror) and falls straight through into the ceremony with the invite this route is
- *     already holding — no reload, no re-paste. Offering rather than obeying is the point:
- *     an off switch someone chose is not a reason to dead-end them, and not a reason to
- *     quietly overrule them either.
+ *   - **governed off** - a control plane HIDES the flag (`flagHidden`, meaning the
+ *     org's `orgFlagGovernance` entry forces the value and no toggle exists for it).
+ *     The organization decided, so the page says that, names it as the decider, and
+ *     offers no button that would be a lie. A merely-defaulted flag is NOT this: an
+ *     instance default the user could still change in their own profile leaves the
+ *     decision with the user, so it takes the other branch.
+ *   - **ungoverned** - nobody but the reader decides. Since the default is ON, this
+ *     means they turned it OFF at some point (or their instance defaults it off
+ *     without hiding the switch). They get the enable card: what a private collab is,
+ *     in one paragraph, then "Turn on and continue" or "Not now". Turning it on writes
+ *     the flag the way the profile toggle writes it (the profile record first, then
+ *     the synchronous mirror), and falls straight through into the ceremony with the
+ *     invite this route is already holding - no reload, no re-paste. The point is to
+ *     offer, not to obey: an off switch someone chose is not a reason to dead-end
+ *     them, and not a reason to quietly overrule them either.
  *
- * **The gate renders before the token is read, and that ordering is load-bearing.** A
- * card that said "this invite is unreadable" to a flag-off reader would answer a question
- * about a stranger's link that nobody asked, and would let anyone probe which tokens this
- * build considers valid without ever turning the feature on. Both branches paint the same
- * card for a good invite and a mangled one; the verdict is shown afterwards, on the
- * ordinary path, once the feature is actually on.
+ * **The gate renders before the token is read, and that ordering is essential.** A
+ * card that said "this invite is unreadable" to a flag-off reader would answer a
+ * question about a stranger's link that nobody asked, and would let anyone probe which
+ * tokens this build considers valid without ever turning the feature on. Both branches
+ * paint the same card for a good invite and a mangled one; the verdict shows afterwards,
+ * on the ordinary path, once the feature is actually on.
  *
- * **`#/join-reply?ans=<token>`** — §11.25's fix for the ceremony's weak point. The
+ * **`#/join-reply?ans=<token>`** - §11.25's fix for the ceremony's weak point. The
  * answer leg is the awkward half: the invite travels as a link the inviter chose to
  * send, but the reply has to travel BACK, and a blob pasted into a waiting dialog is
  * where pairs give up. So the reply is a link too. Clicking it opens a tab that hands
- * the payload to the tab holding the invite dialog over a `BroadcastChannel` and then
- * gets out of the way. Both legs are then click-or-paste-or-scan.
+ * the payload to the tab holding the invite dialog over a `BroadcastChannel`, then gets
+ * out of the way. Both legs are then click-or-paste-or-scan.
  *
  * ── One more thing the channel is used for: "did I make this invite?" ──────────
  *
- * Testing an invite in two tabs of one browser is a legitimate thing to do — it is how
- * this ceremony is drilled — and the app said nothing about it, so a person doing it had
- * no way to tell "this works" from "this device is talking to itself". `#/join` now asks,
- * on the same channel and in the same vocabulary ({@link inviteAskMessage}), whether a
- * window here minted the invite it is opening, and puts one dismissible line above the
- * flow if one says yes.
+ * Testing an invite in two tabs of one browser is a legitimate thing to do (it is how
+ * this ceremony is drilled), and the app said nothing about it, so a person doing it
+ * had no way to tell "this works" from "this device is talking to itself". `#/join`
+ * now asks, on the same channel and in the same vocabulary ({@link inviteAskMessage}),
+ * whether a window here minted the invite it is opening, and puts one dismissible line
+ * above the flow if one says yes.
  *
- * It is INFORMATION and nothing else, and everything about how it is wired follows from
- * that: the question goes out AFTER the ceremony is already open and running, it is never
- * awaited, and silence — no channel, no listener, a listener that is busy — is the same
- * screen as "not mine". A note that could delay or refuse a join would have turned a true
- * observation into a gate over a workflow that works.
+ * It is INFORMATION and nothing else, and everything about how it is wired follows
+ * from that: the question goes out AFTER the ceremony is already open and running, it
+ * is never awaited, and silence (no channel, no listener, a listener that is busy) gets
+ * the same screen as "not mine". A note that could delay or refuse a join would turn a
+ * true observation into a gate over a workflow that already works.
  *
  * ── Why the handoff is a BroadcastChannel and not something cleverer ───────────
  *
  * The two tabs are the same origin on the same device, which is exactly the one thing
- * `BroadcastChannel` does with no server, no permission prompt and no storage write. It
- * is also honest about failure: a channel with nobody listening is silent, and silence
- * within {@link REPLY_ACK_WAIT_MS} is what tells this tab to say "the invite window is
- * not open" instead of spinning. The reply tab NEVER assumes it worked — it waits for an
- * ack from the tab that actually took the payload, and that ack is posted only once the
- * dialog has LEFT its paste step (a refused reply is not a delivered one).
+ * `BroadcastChannel` does with no server, no permission prompt, and no storage write.
+ * It is also honest about failure: a channel with nobody listening stays silent, and
+ * silence within {@link REPLY_ACK_WAIT_MS} tells this tab to say "the invite window is
+ * not open" instead of spinning. The reply tab NEVER assumes it worked; it waits for
+ * an ack from the tab that actually took the payload, and that ack is posted only once
+ * the dialog has LEFT its paste step (a refused reply is not a delivered one).
  *
  * ── Why the payload is offered before it is sent ───────────────────────────────
  *
@@ -97,9 +99,9 @@
  * is a valid answer to any offer: a reply broadcast raw would be swallowed by every tab
  * holding an invite dialog, and the ones it does not belong to would feed a foreign
  * answer to their own ceremony and die on the connect watchdog. Nothing in the payloads
- * can correct that afterwards — a `kind: 'answer'` blob carries only the acceptor's own
+ * can correct that afterwards - a `kind: 'answer'` blob carries only the acceptor's own
  * connection material (`collab/sdp-codec.ts`), with no back-reference to the invite it
- * answers — so the correlation has to be made on the channel, in three steps:
+ * answers - so the correlation has to be made on the channel, in three steps:
  *
  *   1. this tab posts an OFFER carrying a fresh request id, and no payload;
  *   2. every window whose dialog could actually take a reply BIDS with an id of its own;
@@ -107,22 +109,22 @@
  *
  * A window that did not win is never sent the reply at all, so it cannot be poisoned by
  * one. Two bids inside {@link REPLY_BID_WINDOW_MS} means this device has more than one
- * invite waiting, and the reply belongs to precisely one of them: the tab says so and
+ * invite waiting, and the reply belongs to exactly one of them: the tab says so and
  * leaves the code to paste, because guessing would break the ceremony it guessed wrong
  * about. Zero bids is the "nobody home" case that was always handled.
  *
  * The delivery itself drives the dialog's OWN paste path ({@link deliverReplyToDialog}):
- * fill the field, press the button. Not a private back door into the machine — a reply
- * arriving this way is validated by the same `readSignal` call, shows the same notice
- * when it is wrong, and leaves the same trace on screen as one a human pasted. The two
- * selectors that path needs are the dialog's public DOM surface, pinned by a test that
- * renders the real dialog rather than trusting this comment.
+ * fill the field, press the button. It is not a private back door into the machine: a
+ * reply arriving this way is validated by the same `readSignal` call, shows the same
+ * notice when it is wrong, and leaves the same trace on screen as one a human pasted.
+ * The two selectors that path needs are the dialog's public DOM surface, pinned by a
+ * test that renders the real dialog rather than trusting this comment.
  *
  * ── Both routes are cancellable, and stamp that BEFORE they wait ───────────────
  *
  * `#view` is one persistent element (`main.ts`), so a route that paints after the router
  * has moved on does not paint a stale page: it destroys the live one. Both mounts here
- * wait — for an ack, for a profile read, for a camera probe — so both assign their
+ * wait (for an ack, for a profile read, for a camera probe), so both assign their
  * `_cleanup` before the first `await` and re-check `leaving` after every one. A teardown
  * assigned late is worse than none at all: by then it lands on the NEXT view's element
  * and silently replaces that view's own teardown.
@@ -131,11 +133,12 @@
  *
  * {@link createCollabEffects} is the one place the three platform pieces meet: the RTC
  * transport (`collab/rtc-transport.ts`) supplies `createOffer`/`createAnswer`/
- * `applyRemote` plus the ICE events without which no ceremony ever reaches `connected`,
- * and the local catalog supplies `checkTool` — the probe §6.1 requires BEFORE answering,
- * because peers send values and never code (§11.22), so a tool this device does not have
- * is a refusal rather than a degraded join. It is a FACTORY, not a bundle: the acceptor
- * names itself after the probe, and `restart` must get a genuinely fresh peer connection.
+ * `applyRemote` plus the ICE events without which no ceremony ever reaches `connected`.
+ * The local catalog supplies `checkTool`, the probe §6.1 requires BEFORE answering,
+ * because peers send values and never code (§11.22), so a tool this device does not
+ * have gets a refusal rather than a degraded join. It is a FACTORY, not a bundle: the
+ * acceptor names itself after the probe, and `restart` must get a genuinely fresh peer
+ * connection.
  *
  * ── Copy ───────────────────────────────────────────────────────────────────────
  *
@@ -181,7 +184,7 @@ import { ENGINE_VERSION } from '../../../../engine/src/version.ts';
 //
 // One map, one namespace. Every value here IS its own catalog key (i18n.ts looks a
 // translation up by the English source), and every render site below reads it through
-// `tRaw(…)` — `tRaw` rather than `t` because all of it lands in `textContent` or
+// `tRaw(…)` - `tRaw` rather than `t` because all of it lands in `textContent` or
 // `announce()`, never an HTML sink. The translations ride the lazy `collab` namespace,
 // awaited once at the top of each route mount before anything is painted.
 
@@ -197,7 +200,7 @@ export const STRINGS = {
   offBody: 'Turn on "Private collab" in your profile settings, then open the invite link again.',
 
   // The flag gate on #/join, which has two answers (§6.3 enable-on-accept). The
-  // organization decided, or nobody but the reader did — and the second one is an
+  // organization decided, or nobody but the reader did - and the second one is an
   // offer, not a refusal.
   governedTitle: 'Private collabs are turned off here',
   governedBody: 'The organization that runs this instance decides whether private collabs are allowed on it, and it has turned them off. This is not a setting on this device, so the invite cannot be opened here. Ask whoever runs the instance if this needs to change.',
@@ -217,7 +220,7 @@ export const STRINGS = {
   wrongKindTitle: 'That link is a reply, not an invite',
   wrongKindBody: 'A reply link only works on the device that made the invite.',
 
-  // The code door — `#/join` with no invite in the link at all. One field, one button,
+  // The code door - `#/join` with no invite in the link at all. One field, one button,
   // and the same decoder the link path runs.
   codeTitle: 'Join with an invite code',
   codeBody: 'Paste the invite you were sent. A code or a link both work here.',
@@ -234,7 +237,7 @@ export const STRINGS = {
   ownInvite: 'This invite was created on this device. Testing with two tabs works - or send the link to the other person.',
   ownInviteDismiss: 'Dismiss',
 
-  // #/join-reply — the handoff (§11.25).
+  // #/join-reply - the handoff (§11.25).
   replyTitle: 'Sending the reply back',
   replyWorking: 'Handing the reply to the window that made the invite.',
   replyDelivered: 'Reply delivered. You can close this tab.',
@@ -265,7 +268,7 @@ export const CEREMONY_CHANNEL_NAME = 'lolly-collab-ceremony';
  * How long the reply tab waits for a tab to admit it took the payload.
  *
  * 800 ms is a same-device, same-origin postMessage plus one synchronous DOM drive, so it
- * is generous by two orders of magnitude — the number is sized for "a tab that is there
+ * is generous by two orders of magnitude - the number is sized for "a tab that is there
  * but busy", not for the wire. Waiting much longer would only make "nobody is listening"
  * feel like a hang, and that message is the useful one.
  */
@@ -277,7 +280,7 @@ export const REPLY_ACK_WAIT_MS = 800;
  * The trade is stated in one line: this is added to the happy path so that a device with
  * two invites waiting is NOTICED rather than guessed at. A bid is a same-device
  * postMessage round trip, so 150 ms is roughly two orders of magnitude of headroom, and
- * it buys the difference between "one window is waiting" and "more than one is" — which
+ * it buys the difference between "one window is waiting" and "more than one is" - which
  * is the difference between a delivered reply and a broken ceremony.
  */
 export const REPLY_BID_WINDOW_MS = 150;
@@ -287,7 +290,7 @@ export const REPLY_BID_WINDOW_MS = 150;
  *
  * Nothing is gated on the answer, so this number buys a NOTE and nothing else: the
  * ceremony is already open and running while the question is out. Short for the same
- * reason the bid window is short — it is one same-origin postMessage round trip — and
+ * reason the bid window is short - it is one same-origin postMessage round trip - and
  * silence is a perfectly good answer, because the overwhelmingly common case is an
  * invite that really did come from somebody else's device.
  */
@@ -314,7 +317,7 @@ const MAX_ID_CHARS = 64;
  * silently opens something else. A tool session canonicalises its address bar to the
  * path form `/t/<id>` (so a copied link carries the per-tool OG card), and production
  * serves a crawler stub at that exact path whose inline redirect does
- * `location.replace('/#/tool/<id>' + location.search)` — which DROPS the fragment. An
+ * `location.replace('/#/tool/<id>' + location.search)` - which DROPS the fragment. An
  * invite minted from a tool page with that pathname in its base would therefore land the
  * other device on the tool, with the invite gone and nothing to explain it. Nothing is
  * served in front of the root.
@@ -390,7 +393,7 @@ export interface ReplyTarget {
   readonly bid: string;
 }
 
-/** "I have a reply for whoever is waiting for one." No payload — see the header. */
+/** "I have a reply for whoever is waiting for one." No payload - see the header. */
 export function replyOfferMessage(rid: string): Record<string, unknown> {
   return { type: 'collab-reply-offer', v: CHANNEL_MESSAGE_VERSION, rid };
 }
@@ -411,7 +414,7 @@ export function replyAckMessage(rid: string): Record<string, unknown> {
 }
 
 /**
- * "Did a window on this device MINT this invite?" — the own-invite ask.
+ * "Did a window on this device MINT this invite?" - the own-invite ask.
  *
  * Two more words in the same vocabulary, at the same version, read by the same total
  * parsers. Nothing about the ceremony depends on the answer: it decides one sentence on
@@ -435,7 +438,7 @@ function messageBag(data: unknown): Record<string, unknown> | null {
   return data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null;
 }
 
-/** An own, string, non-empty, bounded field — or null. Same rules as the signal below. */
+/** An own, string, non-empty, bounded field - or null. Same rules as the signal below. */
 function bagId(bag: Record<string, unknown> | null, key: string): string | null {
   if (!bag || !Object.hasOwn(bag, key)) return null;
   const value = bag[key];
@@ -443,7 +446,7 @@ function bagId(bag: Record<string, unknown> | null, key: string): string | null 
   return value;
 }
 
-/** Our kind of message, at our version — own properties only, like every field here. */
+/** Our kind of message, at our version - own properties only, like every field here. */
 function isOurs(bag: Record<string, unknown> | null, type: string): boolean {
   if (!bag || !Object.hasOwn(bag, 'type') || !Object.hasOwn(bag, 'v')) return false;
   return bag.type === type && bag.v === CHANNEL_MESSAGE_VERSION;
@@ -509,7 +512,7 @@ export function isReplyAck(data: unknown, rid?: string): boolean {
 }
 
 /**
- * The ask inside an own-invite question, or null. Total, own-property-only, bounded —
+ * The ask inside an own-invite question, or null. Total, own-property-only, bounded - 
  * the same rules the reply parsers hold, for the same reason (another tab is not a
  * stranger, but it is not this function either).
  */
@@ -554,7 +557,7 @@ function press(root: ParentNode, selector: string): boolean {
  *
  * Used on `#/join`, where the human already made the "yes, this invite" gesture by
  * clicking the link. The dialog still decodes it, still probes the tool, and still shows
- * its own refusal if either fails — this only saves a paste, it does not skip a check.
+ * its own refusal if either fails - this only saves a paste, it does not skip a check.
  */
 export function deliverInviteToDialog(dialog: ParentNode, text: string): boolean {
   if (!fillField(dialog, INVITE_FIELD_SELECTOR, text)) return false;
@@ -565,8 +568,8 @@ export function deliverInviteToDialog(dialog: ParentNode, text: string): boolean
  * Whether this dialog is in a state where a reply could land at all.
  *
  * The reply field is step 2's; step 1 still shows the invite and reaches step 2 through
- * `to-waiting`. Every other screen — the acceptor's whole flow, a connected pair, a
- * failure — has neither, and a window in one of those must not bid for a payload it
+ * `to-waiting`. Every other screen - the acceptor's whole flow, a connected pair, a
+ * failure - has neither, and a window in one of those must not bid for a payload it
  * would only drop.
  */
 export function canTakeReply(dialog: ParentNode): boolean {
@@ -579,11 +582,11 @@ export function canTakeReply(dialog: ParentNode): boolean {
  * The reply field lives on step 2, and the dialog may still be sitting on step 1 showing
  * the invite ("I have not sent it yet"), so the step is advanced first through the same
  * button a human would press. Returns false when there is no dialog in a state to take
- * it — which is precisely when the reply tab must NOT be told it worked.
+ * it - which is precisely when the reply tab must NOT be told it worked.
  *
  * "Took it" is read off the dialog, not off the button press. `submitReply` renders its
  * refusal in place (the field, and the text in it, stay put) and the machine ignores an
- * answer arriving in a phase that cannot use one — both of which press a button that
+ * answer arriving in a phase that cannot use one - both of which press a button that
  * exists and change nothing. Leaving the paste step is the observable fact that the
  * reply was accepted, and it is the fact the ack is allowed to claim.
  */
@@ -612,7 +615,7 @@ export function dialogInvite(dialog: ParentNode): string {
  *
  * The dual of {@link askOwnInvite}, and deliberately the thinner half: a window either
  * minted the exact invite being asked about or it says nothing at all. Silence is the
- * default and the safe answer — an ack that a window guessed at would put a note on
+ * default and the safe answer - an ack that a window guessed at would put a note on
  * somebody's screen telling them their collab is not real when it is.
  *
  * Split out from {@link listenForReply} rather than folded into it because the two
@@ -642,7 +645,7 @@ export function answerInviteAsks(
  * Wired by whoever opened the INVITER ceremony, for as long as that dialog is open. Two
  * messages matter here: an OFFER, which is bid for only when the dialog could actually
  * take a reply, and the GRANT that names this window's bid. Anything addressed to
- * another window is not read as a reply at all — see the header on why a raw broadcast
+ * another window is not read as a reply at all - see the header on why a raw broadcast
  * could not be. The ack is posted only when the payload actually landed, because the
  * other tab's whole "did anyone take this?" answer is that ack. Returns the teardown.
  *
@@ -689,7 +692,7 @@ export function listenForReply(
  *
  * NEVER blocks anything: the caller fires this beside an already-open ceremony and
  * spends the answer on one note. `false` is returned for silence, for a channel that
- * cannot be posted to, and for a teardown — three different reasons to say nothing,
+ * cannot be posted to, and for a teardown - three different reasons to say nothing,
  * which is the same thing on screen.
  */
 export function askOwnInvite(
@@ -718,7 +721,7 @@ export function askOwnInvite(
       finish(false);
       return;
     }
-    // Only if a same-tick ack has not already settled it — a fake channel in a test
+    // Only if a same-tick ack has not already settled it - a fake channel in a test
     // delivers synchronously, and a timer left armed there would outlive the test.
     if (!settled) timer = globalThis.setTimeout(() => finish(false), waitMs);
   });
@@ -797,7 +800,7 @@ export interface CollabEffectsOptions {
   /** Override the catalog probe. Tests, and any shell whose catalog is not `window`-shaped. */
   readonly probe?: (req: ToolProbeRequest) => ToolProbeResult | Promise<ToolProbeResult>;
   /**
-   * Called with each transport as it is built — once per ceremony, again after a
+   * Called with each transport as it is built - once per ceremony, again after a
    * `restart`. The dialog hands the CHANNEL to `onConnected` but not the object that
    * owns it, so this is the only way the caller can pass it to the mount (see
    * `lib/collab-mount.ts`'s note on who may hang up).
@@ -892,7 +895,7 @@ export async function makeCameraScan(signal: AbortSignal): Promise<(() => Promis
       document.body.appendChild(preview);
       return await scanQrFromVideo(video, { signal });
     } catch {
-      // A denied camera is not a failure of the ceremony — the dialog says so and the
+      // A denied camera is not a failure of the ceremony - the dialog says so and the
       // paste field is right there.
       return null;
     } finally {
@@ -940,7 +943,7 @@ export function appendScaffoldNote(dialog: ParentNode): void {
 }
 
 /**
- * "This invite was made here" — one dismissible line above the ceremony.
+ * "This invite was made here" - one dismissible line above the ceremony.
  *
  * PREPENDED to the dialog, for the same reason the scaffold note is appended to it: the
  * screen subtree is rebuilt on every render and a note inside it would vanish on the
@@ -981,8 +984,8 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void }
 /**
  * A handle a route can pull to stop waiting when it is being torn down.
  *
- * Both routes here wait on something outside themselves — the reply tab on an ack from
- * another window, `#/join` on a human deciding whether to turn the feature on — and both
+ * Both routes here wait on something outside themselves - the reply tab on an ack from
+ * another window, `#/join` on a human deciding whether to turn the feature on - and both
  * waits are inside a promise the mount is parked on. Teardown has to be able to settle
  * that promise, or `main.ts` deleting the view leaves the mount pending forever.
  */
@@ -995,7 +998,7 @@ interface NodeSpec {
   attrs?: Record<string, string>;
 }
 
-/** One element. `text` is `textContent`, never markup — the same rule as the dialog. */
+/** One element. `text` is `textContent`, never markup - the same rule as the dialog. */
 function node<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   spec: NodeSpec = {},
@@ -1015,11 +1018,11 @@ const TITLE = 'margin:0 0 .5rem;font-size:1.35rem;font-weight:650';
 const BODY = 'margin:0 0 1rem;color:hsl(var(--muted-foreground))';
 
 // The fixed top-right escape cluster the ceremony shares with every other
-// nav-less view: an always-home FAB (history-free — it goes to the front door no
+// nav-less view: an always-home FAB (history-free; it goes to the front door no
 // matter how the reader arrived), plus the theme cycle when a host can persist it
 // (the reply route hands off WITHOUT one, so it gets home only). Every ceremony
-// screen — terminal card, enable gate, code door — is painted by card(), which
-// replaceChildren()s `view`; so the cluster is rebuilt as a sibling on each paint
+// screen (terminal card, enable gate, code door) is painted by card(), which calls
+// `view.replaceChildren()`. So the cluster is rebuilt as a sibling on each paint
 // and dies with the view. Nothing to tear down, and no state survives a leave.
 let ceremonyHost: JoinRouteHost | null = null;
 function ceremonyChrome(): HTMLElement {
@@ -1066,7 +1069,7 @@ function flagOff(view: HTMLElement): void {
  *
  * Three ways out, and each of them settles the promise exactly once: the primary action
  * (`true`, and the caller does the writing), "Not now" and Esc (`false`, plus a page that
- * says what was and was not done), and the router leaving (`false`, painting nothing —
+ * says what was and was not done), and the router leaving (`false`, painting nothing - 
  * the view is already being replaced, so the declined page would land on the NEXT route).
  * Esc is the same code path as "Not now" rather than a quieter one: a key that dismissed
  * the offer without saying so would leave a reader unsure whether they had just enabled
@@ -1129,11 +1132,11 @@ function offerEnable(view: HTMLElement, hooks: Cancellable): Promise<boolean> {
  * order: read the profile, merge ONE key into `featureFlags`, write the record back, then
  * update the synchronous localStorage mirror every flag-gated surface reads. Doing only
  * the second half would light the feature up for exactly one page load and lose it on the
- * next boot — a setting the user chose has to survive being chosen.
+ * next boot - a setting the user chose has to survive being chosen.
  *
  * Returns whether the RECORD was written. A host with no `set` (or a storage error) still
  * gets the mirror, because the invite in front of them is time-limited and refusing to
- * open it would be a worse answer than opening it — but the caller says so out loud
+ * open it would be a worse answer than opening it - but the caller says so out loud
  * rather than letting the reader believe a preference was saved.
  */
 async function enablePrivateCollab(host: JoinRouteHost | null | undefined): Promise<boolean> {
@@ -1165,7 +1168,7 @@ async function enablePrivateCollab(host: JoinRouteHost | null | undefined): Prom
  * token said "this link carries no invite" and stopped. This is that missing field.
  *
  * **It forks nothing.** The text goes through the same {@link readSignal} call the URL
- * token goes through — same decoder, same skin sniffing, same kind check — and the
+ * token goes through - same decoder, same skin sniffing, same kind check - and the
  * caller then walks the same path a link walks, right down to
  * {@link deliverInviteToDialog} re-delivering it as if pasted. Two doors, one corridor.
  *
@@ -1174,7 +1177,7 @@ async function enablePrivateCollab(host: JoinRouteHost | null | undefined): Prom
  *
  *   - EMPTY is a slip; the notice sits beside the field they are still holding.
  *   - UNREADABLE is a truncated or mangled code; same, because the fix is another paste.
- *   - A REPLY is the one that needs a screen. It is not a broken code — it is a perfectly
+ *   - A REPLY is the one that needs a screen. It is not a broken code - it is a perfectly
  *     good one in the wrong window, and the person is one hop from where it belongs, so
  *     they are told where that is (and handed the field back).
  *
@@ -1184,7 +1187,7 @@ async function enablePrivateCollab(host: JoinRouteHost | null | undefined): Prom
 function askForCode(view: HTMLElement, hooks: Cancellable): Promise<SignalView | null> {
   return new Promise<SignalView | null>((resolve) => {
     let settled = false;
-    // Mirrored out of the field, so a notice re-render cannot eat what was pasted —
+    // Mirrored out of the field, so a notice re-render cannot eat what was pasted - 
     // the same rule the ceremony's own paste fields hold (§11.25).
     let typed = '';
 
@@ -1290,7 +1293,7 @@ export interface JoinRouteDeps {
    * Override the "is this flag the ORGANIZATION's decision?" read (§6.3).
    *
    * Defaults to `flagHidden`, which is true only when a control plane has hidden the
-   * flag's toggle — i.e. its value is forced and no user can change it. An instance that
+   * flag's toggle - i.e. its value is forced and no user can change it. An instance that
    * merely sets a default is not this: the user can still choose, so the enable card is
    * the honest screen for them.
    */
@@ -1315,7 +1318,7 @@ export interface JoinRouteDeps {
    * Open the channel the own-invite ask goes out on. `null` asks nobody.
    *
    * Defaults to the real `BroadcastChannel`, and a browser without one is already the
-   * `null` case — which costs a note and nothing else.
+   * `null` case - which costs a note and nothing else.
    */
   readonly channel?: ChannelFactory | null;
   /** How long the own-invite ask waits. Tests pass 0; nothing is gated on it either way. */
@@ -1323,17 +1326,17 @@ export interface JoinRouteDeps {
 }
 
 /**
- * `#/join` — the acceptor's front door, with or without an invite in the link.
+ * `#/join` - the acceptor's front door, with or without an invite in the link.
  *
  * Order matters and is the order a person experiences it: may this feature run here at
- * all (and if not, who says so — see the header on the two-branch gate), then is there an
+ * all (and if not, who says so - see the header on the two-branch gate), then is there an
  * invite (in the link, or pasted into the code door when the link carries none), and only
  * then does anything touch a camera or open a peer connection. Every failure before that
  * point is a sentence on a page.
  *
  * The two doors converge deliberately early. Once there is a decoded invite, a code
  * pasted here and a link clicked in a chat app are the same value walking the same path,
- * so nothing downstream — the ceremony, the probe, the delivery, the own-invite ask —
+ * so nothing downstream - the ceremony, the probe, the delivery, the own-invite ask - 
  * knows or could behave differently based on which door it came through.
  */
 export async function mountJoinRoute(
@@ -1357,7 +1360,7 @@ export async function mountJoinRoute(
   // `leaving` is set before the view is torn down, so the dialog's own `onClose` knows
   // the difference between "the human closed the ceremony" (repaint the page, announce
   // it) and "the router is leaving" (say nothing into a view that is already being
-  // replaced) — and so the awaits below stop rather than open a ceremony over a view
+  // replaced) - and so the awaits below stop rather than open a ceremony over a view
   // that no longer exists.
   let leaving = false;
   // Stamped HERE, before the first await, and never assigned again: the namespace load,
@@ -1376,7 +1379,7 @@ export async function mountJoinRoute(
   };
 
   // Before the first word is painted, including the refusals below. A route handler is
-  // already async, so this costs the flow nothing — and unlike a mount that repaints,
+  // already async, so this costs the flow nothing - and unlike a mount that repaints,
   // it means the page is never briefly English for a reader who chose another language.
   // A no-op in English, and a namespace that fails to load simply leaves the page in
   // English (i18n.ts), so nothing here has to handle a failure.
@@ -1388,7 +1391,7 @@ export async function mountJoinRoute(
   // the page behind the ceremony then carries the one sentence that says so.
   let notSaved: HTMLElement | null = null;
   // What to say out loud once the route has painted whatever comes after the gate. Empty
-  // unless the flag was turned on right here — the ordinary path announces nothing extra.
+  // unless the flag was turned on right here - the ordinary path announces nothing extra.
   let proceedSaid = '';
   if (!flagOn()) {
     // Whose refusal is it? A forced flag is the organization's, and no button on this
@@ -1396,7 +1399,7 @@ export async function mountJoinRoute(
     const governedOff = deps.governedOff ?? (() => flagHidden(PRIVATE_COLLAB_FLAG.id));
     if (governedOff()) { card(view, tRaw(STRINGS.governedTitle), tRaw(STRINGS.governedBody)); return; }
 
-    // NOTHING has been decoded yet, deliberately — the gate must not double as an oracle
+    // NOTHING has been decoded yet, deliberately - the gate must not double as an oracle
     // on a stranger's token (see the header).
     if (!(await offerEnable(view, gate))) return;
     if (leaving) return;
@@ -1415,10 +1418,10 @@ export async function mountJoinRoute(
   }
 
   // Absent and empty are two different arrivals, and they get two different screens.
-  // NO `inv` at all is somebody who navigated here — from the Share dialog's "Join with
-  // a code", a bookmark, a typed address — and has a code in hand; the door is the whole
-  // answer. `inv=` present but empty is a link that was BUILT and then damaged on the way,
-  // which is a fact about that link and worth saying.
+  // NO `inv` at all is somebody who navigated here (from the Share dialog's "Join with
+  // a code", a bookmark, a typed address) and has a code in hand; the door is the whole
+  // answer. `inv=` present but empty is a link that was BUILT and then damaged on the
+  // way. That is a fact about the link, and worth saying.
   const token = new URLSearchParams(params).get(INVITE_PARAM);
   let invite: SignalView;
   if (token === null) {
@@ -1478,7 +1481,7 @@ export async function mountJoinRoute(
       scanning.abort();
       // This page is about to say "nothing else is being shared", so make that true. A
       // pair nobody adopted is still a live peer connection with three data channels,
-      // and the dialog will not close it (`lib/collab-mount.ts`) — we hold the transport
+      // and the dialog will not close it (`lib/collab-mount.ts`) - we hold the transport
       // precisely so somebody can. A no-op once a mount has taken it.
       if (handed) { releaseParked(handed); handed = null; }
       if (leaving) return;
@@ -1491,7 +1494,7 @@ export async function mountJoinRoute(
 
   // And then, beside a ceremony that is already running, one question that changes
   // nothing: did a window on this device make this invite? Fired without an `await`
-  // precisely so it cannot delay the flow — the answer, if it ever comes, buys a
+  // precisely so it cannot delay the flow - the answer, if it ever comes, buys a
   // sentence. Silence, no channel, and a torn-down view are all the same screen.
   const asking = deps.channel === null ? null : openCeremonyChannel(deps.channel);
   if (!asking) return;
@@ -1556,15 +1559,15 @@ export interface JoinReplyDeps {
 }
 
 /**
- * `#/join-reply?ans=<token>` — §11.25's handoff tab.
+ * `#/join-reply?ans=<token>` - §11.25's handoff tab.
  *
  * It does exactly three things: decode, offer the payload to any tab holding an invite
  * dialog, and then either get out of the way or explain itself. It never opens a peer
- * connection of its own — the connection this reply belongs to lives in the OTHER tab,
+ * connection of its own - the connection this reply belongs to lives in the OTHER tab,
  * and a second one would be a second ceremony.
  *
  * `window.close()` only works on a window script-opened; a link clicked in a chat app
- * usually is not one. That is why the success copy exists at all — the tab says the job
+ * usually is not one. That is why the success copy exists at all - the tab says the job
  * is done and lets the human close it, rather than silently looking like it failed.
  */
 export async function mountJoinReplyRoute(
@@ -1572,14 +1575,14 @@ export async function mountJoinReplyRoute(
   params = '',
   deps: JoinReplyDeps = {},
 ): Promise<void> {
-  // No host on this route by design — it hands a payload to the tab that owns the
-  // ceremony and reads no profile of its own — so its escape cluster is Home only,
+  // No host on this route by design - it hands a payload to the tab that owns the
+  // ceremony and reads no profile of its own - so its escape cluster is Home only,
   // no theme cycle (nothing to persist a theme to). Set before the first card().
   ceremonyHost = null;
-  await loadNamespace('collab'); // see mountJoinRoute — the copy loads before it paints
+  await loadNamespace('collab'); // see mountJoinRoute - the copy loads before it paints
   // One answer here, not two: §6.3's enable-on-accept is deliberately `#/join` only. A
   // reply link is opened on the device that MINTED the invite, whose flag is necessarily
-  // already on — so a flag-off reply tab is not a newcomer to be introduced to the
+  // already on - so a flag-off reply tab is not a newcomer to be introduced to the
   // feature, it is a link on the wrong device, and the existing sentence says so.
   const flagOn = deps.flagOn ?? (() => isFlagOnSync(PRIVATE_COLLAB_FLAG));
   if (!flagOn()) { flagOff(view); return; }
@@ -1637,7 +1640,7 @@ type HandoffOutcome = 'delivered' | 'nobody' | 'ambiguous' | 'abandoned';
  * Offer the reply, hand it to the one window that claims it, and wait for the ack.
  *
  * Never rejects, and never resolves twice. The three-step shape is the header's; what
- * lives here is the bookkeeping it needs — one deadline for the whole exchange, one
+ * lives here is the bookkeeping it needs - one deadline for the whole exchange, one
  * short window opened by the FIRST bid (so a run with no bidders sets one timer, not
  * two), and a payload that is posted only when exactly one window asked for it.
  */

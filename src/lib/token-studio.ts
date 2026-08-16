@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Token studio — pure DTCG surgery for the brand's NON-colour primitives
+ * Token studio - pure DTCG surgery for the brand's NON-colour primitives
  * (spacing, sizing, stroke widths, opacity, rotation, plain numbers, shadows)
  * plus gradient colour tokens. The non-swatch counterpart to brand-doc.ts:
  * everything here is a pure function over the raw tokens document so it can be
  * unit tested without a browser (token-studio.test.ts). Nothing in this module
  * imports the DOM, the bridge, or any component.
  *
- * Group scheme — each kind owns one top-level group (written under `base` when
+ * Group scheme - each kind owns one top-level group (written under `base` when
  * the doc is layered, mirroring brand-doc's addSwatch):
  *
  *   spacing  → space.<slug>     $type dimension   $value CSS length ('8px', '0.5rem')
@@ -20,7 +20,7 @@
  *   gradient → gradient.<slug>  $type gradient    $value [{ color, position }…] stops (positions 0–1,
  *                                                 sorted) + optional $extensions[TOKEN_EXT].angle for CSS
  *
- * Leaves are classified by that group segment (set prefix stripped) — a leaf
+ * Leaves are classified by that group segment (set prefix stripped) - a leaf
  * under any other group (`color.*`, `font.*`, `asset.*`, `shape.radius`, …)
  * is simply not a studio token. `shape.radius` in particular stays on the
  * existing setBrandRadius path, and colour swatches stay brand-doc.ts's.
@@ -67,7 +67,7 @@ const KIND_HOME: Record<StudioKind, { group: string; type: string }> = {
 const GROUP_KIND = new Map<string, StudioKind>();
 for (const k of Object.keys(KIND_HOME) as StudioKind[]) GROUP_KIND.set(KIND_HOME[k].group, k);
 
-/** Every group segment the studio owns — the brand editor carries these across
+/** Every group segment the studio owns - the brand editor carries these across
  *  a palette re-derive (deriveBrandTokens only rebuilds colour; a fresh doc
  *  must not silently drop the user's spacing/shadows/gradients). */
 export const STUDIO_GROUPS: readonly string[] = [...GROUP_KIND.keys()];
@@ -80,7 +80,7 @@ function kindAt(path: string[]): StudioKind | null {
 
 // ── Per-kind value normalisation ─────────────────────────────────────────────
 // Every write funnels through these: a value either normalises to the kind's
-// canonical stored form or the write is refused — a studio token never holds a
+// canonical stored form or the write is refused - a studio token never holds a
 // value its previews can't render.
 
 /** Finite number from a number or numeric string, else undefined. */
@@ -110,7 +110,7 @@ function normOpacity(v: unknown): number | undefined {
   return Math.min(1, Math.max(0, pct ? n / 100 : n));
 }
 
-/** Degrees, normalised to -360..360 — sign kept (never clamped positive), a
+/** Degrees, normalised to -360..360 - sign kept (never clamped positive), a
  *  full turn either way passes through, anything beyond wraps. */
 function normRotation(v: unknown): number | undefined {
   const n = toNum(typeof v === 'string' ? v.trim().replace(/(?:deg|°)$/i, '') : v);
@@ -120,7 +120,7 @@ function normRotation(v: unknown): number | undefined {
   return r === 0 ? 0 : r; // never store -0
 }
 
-/** The DTCG shadow shape — all five fields stored as strings. */
+/** The DTCG shadow shape - all five fields stored as strings. */
 interface ShadowValue { color: string; offsetX: string; offsetY: string; blur: string; spread: string }
 
 /** Full-replacement shadow: colour must be readable (colorToHex), dimensions
@@ -136,10 +136,10 @@ function normShadow(v: unknown): ShadowValue | undefined {
 }
 
 /** Gradient stops: a colour is either a literal colorToHex can read OR a
- *  `{path}` alias into the palette (resolved at render time — resolveStopHex);
+ *  `{path}` alias into the palette (resolved at render time - resolveStopHex);
  *  anything else, or a non-numeric position, DROPS the stop. Survivors are
  *  clamped to 0–1 and sorted. The stored colour string stays as authored
- *  (oklch() and alias refs survive verbatim; hex is for CSS) — this is the one
+ *  (oklch() and alias refs survive verbatim; hex is for CSS) - this is the one
  *  write gate every gradient edit funnels through, so an angle-only edit
  *  round-trips alias stops unchanged. */
 function normStops(v: unknown): GradientStop[] | undefined {
@@ -157,7 +157,7 @@ function normStops(v: unknown): GradientStop[] | undefined {
   return stops.length ? stops : undefined;
 }
 
-/** A gradient write's value is EITHER a bare stop array OR `{ stops, angle? }` —
+/** A gradient write's value is EITHER a bare stop array OR `{ stops, angle? }` - 
  *  both accepted everywhere a gradient value is taken. The bare-array form (and
  *  an object without a numeric `angle`) leaves any stored angle untouched. */
 function readGradientInput(v: unknown): { stops: GradientStop[]; angle: number | undefined } | undefined {
@@ -177,7 +177,7 @@ function readAngle(leaf: Rec): number | null {
 }
 
 /** Write the angle into the DTCG `$extensions` vendor namespace (TOKEN_EXT),
- *  creating the scaffolding when absent — same shape as the print locks. */
+ *  creating the scaffolding when absent - same shape as the print locks. */
 function writeAngle(leaf: Rec, angle: number): void {
   const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
   const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
@@ -191,7 +191,7 @@ function writeAngle(leaf: Rec, angle: number): void {
  *
  * A leaf qualifies when its group segment (first path segment after any
  * base/light/dark set prefix) is one of the studio homes AND its effective
- * DTCG $type (own or inherited, when present at all) agrees with that kind —
+ * DTCG $type (own or inherited, when present at all) agrees with that kind - 
  * so `color.*`, `font.*`, `asset.*` and `shape.radius` never surface here,
  * and neither does a mislabeled leaf squatting in a studio group.
  */
@@ -240,7 +240,7 @@ function toToken(path: string[], leaf: Rec, effType: string | null): StudioToken
 /**
  * Add a token under its kind's group, creating the group (and `base`, on a
  * multi-set doc) when absent so the very first token has somewhere to live.
- * Slugs collide-safely. The value normalises per kind first — an unusable
+ * Slugs collide-safely. The value normalises per kind first - an unusable
  * value returns null without touching the doc. Returns the new leaf's JSON
  * path so the caller can select it.
  */
@@ -287,7 +287,7 @@ function normalizeScalar(kind: Exclude<StudioKind, 'gradient'>, value: unknown):
 /**
  * Replace the token at `path`'s `$value`, validated + normalised for the kind
  * its group claims (an unmanaged path, or a value that won't normalise, is a
- * refused write — `false`, doc untouched). Gradient values take either shape
+ * refused write - `false`, doc untouched). Gradient values take either shape
  * `readGradientInput` accepts; a numeric `angle` in the object form also
  * updates `$extensions[TOKEN_EXT].angle`, otherwise the stored angle stays.
  */
@@ -308,7 +308,7 @@ export function setStudioTokenValue(doc: unknown, path: string[], value: unknown
   return true;
 }
 
-/** Rename a token (its `$description` — the label editors show); clearing it
+/** Rename a token (its `$description` - the label editors show); clearing it
  *  removes the key so the name falls back to the prettified leaf key. */
 export function renameStudioToken(doc: unknown, path: string[], name: string): boolean {
   const leaf = leafAt(doc, path);
@@ -320,7 +320,7 @@ export function renameStudioToken(doc: unknown, path: string[], name: string): b
 
 /**
  * Remove a token, then prune now-empty ancestor groups (objects left holding
- * only $-metadata) along its path — including the emptied `base.<group>` —
+ * only $-metadata) along its path - including the emptied `base.<group>` - 
  * stopping short of the doc root and of a top-level set (`base` survives).
  */
 export function deleteStudioToken(doc: unknown, path: string[]): boolean {
@@ -342,7 +342,7 @@ export function deleteStudioToken(doc: unknown, path: string[]): boolean {
 
 // ── Gradient alias integrity (write-time materialisation) ────────────────────
 // Stops prefer `{path}` aliases into the palette so a recoloured swatch flows
-// into every gradient — but a swatch DELETE, or a re-derive that rebuilds the
+// into every gradient - but a swatch DELETE, or a re-derive that rebuilds the
 // ramps, can orphan those refs, and an exported brand pack must never carry a
 // dangling alias. These run at the write chokepoints (brand-editor's swatch
 // delete / re-derive apply) to pin affected stops to their last-resolved hex;
@@ -361,7 +361,7 @@ export function gradientAliasRefCount(doc: unknown, key: string): number {
 /**
  * Rewrite alias stop colours to concrete values: every alias `shouldPin`
  * approves is replaced by `resolveTo(ref)`'s answer (a null or unreadable
- * answer leaves the stop alone — the render guard still covers it). Returns
+ * answer leaves the stop alone - the render guard still covers it). Returns
  * how many stops were pinned.
  */
 export function materializeGradientAliases(
@@ -411,7 +411,7 @@ const fmtNum = (n: number): string => String(Math.round(n * 100) / 100);
  * A stop's concrete CSS colour: a `{path}` alias goes through `resolve` (no
  * resolver, or one that can't answer → null), a literal through colorToHex.
  * EITHER WAY the output re-validates via colorToHex before it may reach a
- * style attribute — the resolver is caller-supplied and the doc is untrusted,
+ * style attribute - the resolver is caller-supplied and the doc is untrusted,
  * so junk/non-string answers must die here, not render.
  */
 export function resolveStopHex(stop: GradientStop, resolve?: (ref: string) => unknown): string | null {
@@ -425,7 +425,7 @@ export function resolveStopHex(stop: GradientStop, resolve?: (ref: string) => un
 export interface GradientCssOptions {
   /** Answers `{path}` alias stop colours (a TokenSet.resolve or equivalent). */
   resolve?: (ref: string) => unknown;
-  /** 'oklch' emits `linear-gradient(<angle>deg in oklch, …)` — perceptual
+  /** 'oklch' emits `linear-gradient(<angle>deg in oklch, …)` - perceptual
    *  interpolation between the stops. Default 'srgb' (the plain form). */
   space?: 'srgb' | 'oklch';
 }
@@ -434,8 +434,8 @@ export interface GradientCssOptions {
  * A gradient token's stops as a CSS `linear-gradient(<angle>deg, …)`. Safe by
  * construction: every stop colour passes through colorToHex (token values come
  * from untrusted imported documents and this lands in inline styles), invalid
- * stops drop — an alias stop the resolver can't answer drops too, the render-
- * time last resort behind the write-time materialisation — and no renderable
+ * stops drop - an alias stop the resolver can't answer drops too, the render-
+ * time last resort behind the write-time materialisation - and no renderable
  * stops at all → ''. Accepts the raw `$value` stop array or the
  * `{ stops, angle }` object; an explicit `angle` argument wins over an
  * embedded one, and the CSS default (180 = to bottom) fills in last. A single
@@ -479,7 +479,7 @@ export function formatStudioValue(t: StudioToken): string {
     }
     case 'shadow': {
       // Callers inject this straight into a style="box-shadow:…" attribute, and
-      // an IMPORTED doc's shadow never passed normShadow — so every field must
+      // an IMPORTED doc's shadow never passed normShadow - so every field must
       // re-validate as a plain length here or the whole readout is refused
       // ('0px; position:fixed' must not ride a display string into live CSS).
       if (!isRec(t.raw)) return '';

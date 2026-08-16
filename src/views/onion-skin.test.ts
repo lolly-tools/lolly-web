@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * onion-skin — the opt-in ghost layer, and above all its EXPORT CONTRACT.
+ * onion-skin - the opt-in ghost layer, and above all its EXPORT CONTRACT.
  *
  * The feature is one paragraph of drawing code and one very hard constraint: a ghost
  * must never reach a rendered file. That constraint is why the ghosts are an overlay
  * layer rather than a class on the real box, and this file is where the three
- * independent guarantees are pinned — independent on purpose, so no single refactor
+ * independent guarantees are pinned - independent on purpose, so no single refactor
  * can quietly remove all three:
  *
- *   (a) the layer is NOT a descendant of the canvas — it is outside the node
+ *   (a) the layer is NOT a descendant of the canvas - it is outside the node
  *       `runtime.export` is handed;
  *   (b) it carries [data-export-hide], so bridge/export.ts's detachExportHidden
  *       REMOVES it from the DOM even if an export node were ever widened to the stage;
  *   (c) the module never writes a class or an inline style to a `.lolly-box`, pinned
- *       by a source scan — because CSS-only hiding is demonstrably not export-safe here
+ *       by a source scan - because CSS-only hiding is demonstrably not export-safe here
  *       (bridge/sequence-render.ts has to strip `.seq-off` before photographing a layer
  *       or dom-to-image clones `display:none` and rasterises blank).
  *
@@ -21,7 +21,7 @@
  * snapshotted before the ghosts are mounted and compared after a paint. Exports are
  * byte-identical with onion skin on because the artboard is not touched at all.
  *
- * NOT covered here (browser-only): that the ghosts LOOK right — jsdom has no layout,
+ * NOT covered here (browser-only): that the ghosts LOOK right - jsdom has no layout,
  * no colour resolution and no `oklch()`, so the alpha ramp, the outline weight, the
  * corner chip's `content: attr(data-offset)` and the high-contrast branch are all
  * assertions about the stylesheet's text, made in styles/parts/onion.css itself.
@@ -69,7 +69,7 @@ interface Fixture {
   layer(): HTMLElement;
   ghosts(): HTMLElement[];
   skin: ReturnType<typeof mountOnionSkin>;
-  /** className + inline cssText of every rendered box — the export byte-identity probe. */
+  /** className + inline cssText of every rendered box - the export byte-identity probe. */
   boxSnapshot(): string[];
   teardown(): void;
 }
@@ -145,15 +145,15 @@ test('(b) the layer carries [data-export-hide], so detachExportHidden removes it
 
 test('(c) source scan: no class is ever written, and every style/attribute write is on a ghost', () => {
   // A class on the real box (a `.seq-ghost { opacity: .3 }`) would be baked straight
-  // into every exported plate. The module reads the live element — classList.contains
-  // and an <img>'s currentSrc — and nothing else.
+  // into every exported plate. The module reads the live element - classList.contains
+  // and an <img>'s currentSrc - and nothing else.
   for (const sink of ['classList.add(', 'classList.remove(', 'classList.toggle(']) {
     assert.equal(SOURCE.includes(sink), false, `onion-skin.ts must never call ${sink}`);
   }
   // Every inline-style and attribute write must target a node this module MINTED.
   // `live` / `canvasEl` are the read-only handles on the artboard; if either ever
   // appears on the left of a write, this fails.
-  // Nodes this module CREATED — including `clone`/`sub`, which are cloneNode products:
+  // Nodes this module CREATED - including `clone`/`sub`, which are cloneNode products:
   // a clone is the module's own node, and the element it was copied from is never
   // touched (the byte-identity test below is the independent proof of that).
   const MINTED = new Set(['g', 'f', 'img', 'layer', 'holder', 'clone', 'sub']);
@@ -324,7 +324,7 @@ test('a ghost coincident with the ACTIVE scene escalates to the picture, even in
     // scale): two coincident ghosts would otherwise centre their words on each other.
     assert.equal(holder.style.transform, `translateY(${-0.25 * 100 * METRICS.scale}px) scale(${METRICS.scale})`);
     // The clone gives up its own colour so the ghost's warm/cool coding can show
-    // through — two coincident ghosts otherwise draw the same-coloured words in the
+    // through - two coincident ghosts otherwise draw the same-coloured words in the
     // same place.
     assert.equal((holder.firstElementChild as HTMLElement).style.color, '');
   } finally { f.teardown(); }
@@ -469,7 +469,7 @@ test('onion.css: no custom property is defined in terms of ITSELF', () => {
   // Properties L1 §3.2): it computes to the guaranteed-invalid value, and it does NOT
   // fall through to the inherited one. The high-contrast branch was written as
   // `--onion-master: max(var(--onion-master), 0.6)` on the ghost, intending to floor the
-  // value the LAYER writes inline — which instead invalidated every opacity built on it,
+  // value the LAYER writes inline - which instead invalidated every opacity built on it,
   // and since opacity is not inherited, painted the ghosts at full strength over the live
   // scene. The floor is a second token (--onion-floor) for exactly that reason.
   const css = readFileSync(join(HERE, '..', 'styles', 'parts', 'onion.css'), 'utf8');

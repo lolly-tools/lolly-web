@@ -3,7 +3,7 @@
  * Turn a matte RUN failure into a small, human-actionable category so the dialog
  * never shows a raw runtime string. The one this exists for: ort-web aborts a
  * too-heavy run with `failed to call OrtRun(). ERROR_CODE: 6, ERROR_MESSAGE:
- * std::bad_alloc` — the wasm32 heap ran out (canRun can't model a transformer's
+ * std::bad_alloc` - the wasm32 heap ran out (canRun can't model a transformer's
  * activation memory, so a run can still OOM after a green feasibility check). That
  * verbatim C++ string in a friendly dialog is the exact papercut this removes.
  *
@@ -31,7 +31,7 @@ export function classifyMatteError(e: unknown): MatteErrorKind {
 
   // Out-of-memory, however the runtime phrases it: ORT's std::bad_alloc, a JS
   // RangeError (buffer allocation), or wasm heap-growth / bounds failures. Keyed on
-  // an actual allocation/memory word — ORT's ERROR_CODE 6 alone is a generic runtime
+  // an actual allocation/memory word - ORT's ERROR_CODE 6 alone is a generic runtime
   // exception (a bad input rank is also code 6), so it stays 'generic'.
   if (name === 'RangeError'
     || /bad_alloc|out of memory|cannot allocate|allocation failed|failed to grow|out of bounds|\boom\b/.test(msg)) {

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/context-menu.ts — the shared tile context menu's contract: right-click
+ * lib/context-menu.ts - the shared tile context menu's contract: right-click
  * routing (single vs bulk vs declined-to-native), action dispatch after close,
  * and the press-and-hold touch bridge (timer fire, slop cancel, click swallow).
  *
  * jsdom hosts the real mountBodyPopover underneath, so what this pins is the
- * genuine open/close lifecycle, not a stub. Timers use node:test's mock clock —
+ * genuine open/close lifecycle, not a stub. Timers use node:test's mock clock - 
  * the module deliberately uses BARE setTimeout for exactly this reason.
  */
 import { test } from 'node:test';
@@ -98,7 +98,7 @@ test('right-click inside a multi-selection opens the BULK menu (role demoted to 
   assert.equal(menu.getAttribute('role'), 'group', 'outer div demotes; the inner list carries role=menu');
   assert.match(menu.textContent ?? '', /2 selected/);
 
-  // A one-item selection is never "bulk" — the tile gets its own single menu.
+  // A one-item selection is never "bulk" - the tile gets its own single menu.
   h.menu.close();
   h.selected.clear();
   h.selected.add('b');
@@ -129,11 +129,11 @@ test('press-and-hold (touch) opens the menu and swallows the trailing click', (t
   t.mock.timers.tick(1);
   assert.ok(h.openMenuEl(), 'menu opens at HOLD_MS');
 
-  // The pointerup that ends the hold still delivers a click — it must not reach the tile.
+  // The pointerup that ends the hold still delivers a click - it must not reach the tile.
   const click = fire(tile, 'click');
   assert.ok(click.defaultPrevented, 'trailing click swallowed');
 
-  // Android also fires a late contextmenu after a long-press — absorbed, not a re-open flicker.
+  // Android also fires a late contextmenu after a long-press - absorbed, not a re-open flicker.
   // (holdFired was consumed by the click above, so this exercises the normal path instead.)
   h.menu.destroy();
   t.mock.timers.reset();

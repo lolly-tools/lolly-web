@@ -8,10 +8,10 @@
  * The catalog base defaults to same-origin /catalog/, and every fetch here goes
  * through lib/instance.ts (instancePath/instanceFetch): when the user points
  * the shell at a remote Lolly deployment, the same sync runs against that
- * instance's catalog — checksum verification included. See lib/instance.ts's
+ * instance's catalog - checksum verification included. See lib/instance.ts's
  * module header for the offline/SW/signing consequences of a remote base.
  *
- * Sync is idempotent and resumable. Network failure ≠ broken app — we fall back
+ * Sync is idempotent and resumable. Network failure ≠ broken app - we fall back
  * to whatever is in cache and flip `networkStatus.offline`, which surfaces a small
  * self-contained "offline" chip (and is readable by views that want their own
  * indicator).
@@ -23,7 +23,7 @@ import { currentLang, t } from '../i18n.ts';
 import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
 // The "Available offline" download manager is DYNAMICALLY imported: this module is
 // on the boot path (main.ts syncs the catalog), but both reads below happen inside
-// `syncCorePrefetch`, which already runs on the idle pass AFTER first paint — and
+// `syncCorePrefetch`, which already runs on the idle pass AFTER first paint - and
 // they are the only two edges to a ~7.9 KB module that also drags the upscale/matte
 // model tables along. Both call sites are async, so the import is invisible.
 const offlineManager = () => import('../lib/offline-manager.ts');
@@ -36,7 +36,7 @@ interface AssetFormat {
   format: string;
   url: string;
   checksum?: string;
-  /** Byte size stamped by scripts/build-catalog-index.ts — what the offline
+  /** Byte size stamped by scripts/build-catalog-index.ts - what the offline
    *  download UI prices tags/scopes with before fetching anything. */
   size?: number;
 }
@@ -47,7 +47,7 @@ interface AssetMetaRecord {
   id: string;
   version?: string;
   tier?: string;
-  /** Generative-AI provenance disclosure — flows verbatim into the asset-meta store. */
+  /** Generative-AI provenance disclosure - flows verbatim into the asset-meta store. */
   aiGenerated?: 'full' | 'partial';
   formats: AssetFormat[];
   [key: string]: unknown;
@@ -57,9 +57,9 @@ interface AssetMetaRecord {
 interface ToolIndex {
   version?: string;
   /** Rolls only when the tool set actually changes (build-catalog-index.ts keeps
-   *  it stable on idempotent regeneration) — the pin-refresh watermark. */
+   *  it stable on idempotent regeneration) - the pin-refresh watermark. */
   generatedAt?: string;
-  /** Each entry may carry `en` — the pristine English name/description, stashed
+  /** Each entry may carry `en` - the pristine English name/description, stashed
    *  by localizeToolIndex before it overlays a translation (in-memory only, never
    *  serialized) so search haystacks can keep matching the English name in any
    *  session (plans/99 §2e). */
@@ -69,7 +69,7 @@ interface ToolIndex {
 /** The asset catalog index as fetched from /catalog/assets/index.json. */
 interface AssetIndex {
   assets: AssetMetaRecord[];
-  /** Curated asset ids every user starts with favourited (seeded once, on first run —
+  /** Curated asset ids every user starts with favourited (seeded once, on first run - 
    *  see boot() in main.ts). SUSE-specific content, so it's authored here in the catalog
    *  data, not in shell code. */
   defaultFavourites?: string[];
@@ -78,12 +78,12 @@ interface AssetIndex {
 /**
  * Overlay a tool's translated name/description/featured.blurb (the `i18n` block
  * scripts/build-catalog-index.ts folds into each index entry from the tool's own
- * `i18n/<lang>.json` sidecar — see engine/src/loader.ts's applyManifestI18n for
+ * `i18n/<lang>.json` sidecar - see engine/src/loader.ts's applyManifestI18n for
  * the full-manifest counterpart used when a tool is actually opened) onto the
  * flat index entries every tool-listing view reads via window.__toolIndex.
  * Mutates in place. Called at every point that assigns window.__toolIndex (below,
  * and main.ts's synchronous cache-priming path) so gallery/catalog/projects/
- * dashboard/picker all get the active language for free — no per-view changes.
+ * dashboard/picker all get the active language for free - no per-view changes.
  * No-op for English (the index's own fields already are English) and for any
  * tool whose sidecar doesn't cover the active language (English fallback).
  */
@@ -94,8 +94,8 @@ export function localizeToolIndex(index: ToolIndex): void {
     const i18n = tool.i18n as Record<string, { name?: string; description?: string; blurb?: string }> | undefined;
     const overlay = i18n?.[lang];
     if (!overlay) continue;
-    // Stash the pristine English strings BEFORE overlaying — once (the guard keeps
-    // a second localize pass from stashing already-localized strings) — so a search
+    // Stash the pristine English strings BEFORE overlaying - once (the guard keeps
+    // a second localize pass from stashing already-localized strings) - so a search
     // in any language still finds "Compress PDF" by "compress" (plans/99 §2e). The
     // localStorage index cache is unaffected: it stores the pre-localize JSON.
     if (!tool.en) tool.en = { name: tool.name, description: tool.description };
@@ -149,7 +149,7 @@ function setOffline(value: boolean): void {
 
 /**
  * Minimal, self-contained offline chip. Non-interactive (pointer-events:none) so
- * it can never steal focus or intercept clicks — a richer indicator belongs in a
+ * it can never steal focus or intercept clicks - a richer indicator belongs in a
  * view, which can read networkStatus.offline directly.
  */
 function renderOfflineChip(offline: boolean): void {
@@ -179,7 +179,7 @@ function renderOfflineChip(offline: boolean): void {
 // The tool index is the one fetch the whole gallery depends on. A single
 // transient failure on a cold first load would otherwise leave a brand-new user
 // (no localStorage fallback) with an empty gallery and no recovery short of a
-// manual hard refresh — so retry a few times with linear backoff before giving up.
+// manual hard refresh - so retry a few times with linear backoff before giving up.
 const CATALOG_FETCH_ATTEMPTS = 3;
 const CATALOG_RETRY_BASE_MS = 400; // waits ~400ms, ~800ms between attempts
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -244,7 +244,7 @@ async function conditionalFetch(url: string, etagKey: string): Promise<Response 
 async function syncTools(host: SyncHost): Promise<void> {
   // Conditional (ETag) fetch, same as syncAssets. window.__toolIndex is primed
   // from the localStorage copy at boot (main.ts) BEFORE this runs, so a 304 is
-  // safe — the already-loaded index stays and we skip the 116 KB download plus
+  // safe - the already-loaded index stays and we skip the 116 KB download plus
   // the re-stringify + synchronous localStorage rewrite. We keep the localStorage
   // copy (rewritten only on a fresh 200) so the gallery can fall back offline.
   for (let attempt = 0; attempt < CATALOG_FETCH_ATTEMPTS; attempt++) {
@@ -259,7 +259,7 @@ async function syncTools(host: SyncHost): Promise<void> {
       // (catalog/integrity.ts). Throwing lands in the retry/offline path below.
       await assertToolIndexIntegrity(text);
       const index = JSON.parse(text) as ToolIndex;
-      // Cache the PRISTINE (English-keyed, every locale's overlay intact) index —
+      // Cache the PRISTINE (English-keyed, every locale's overlay intact) index - 
       // localizeToolIndex runs after, on the in-memory copy only, so a later
       // language switch (or a different device/session) always re-derives from
       // the untranslated source rather than a copy some other language baked in.
@@ -278,7 +278,7 @@ async function syncTools(host: SyncHost): Promise<void> {
         await delay(CATALOG_RETRY_BASE_MS * (attempt + 1));
         continue;
       }
-      // Every attempt failed — restore from localStorage cache if available.
+      // Every attempt failed - restore from localStorage cache if available.
       setOffline(true);
       const cached = localStorage.getItem('sbt-tool-index');
       if (cached) {
@@ -295,11 +295,11 @@ async function syncTools(host: SyncHost): Promise<void> {
 
 // The catalog's curated default-favourite asset ids, captured from the asset index on
 // the boot that fetches it (a 304 keeps the prior value). boot() reads this to seed a
-// brand-new user's favourites once. Empty until the first non-304 asset sync — which is
+// brand-new user's favourites once. Empty until the first non-304 asset sync - which is
 // guaranteed the first time this ships, since adding the list changes index.json's bytes.
 // True iff the last tool-index sync fetched bytes differing from the cached copy.
 // boot()'s fast-path reads this to decide whether to replay the gallery entrance
-// cascade — false on a 304 or an offline cache-restore (both leave it untouched).
+// cascade - false on a 304 or an offline cache-restore (both leave it untouched).
 let toolIndexDidChange = false;
 /** Whether the most recent tool-index sync actually changed the catalog data. */
 export function toolIndexChanged(): boolean { return toolIndexDidChange; }
@@ -311,7 +311,7 @@ export function defaultFavouriteAssetIds(): readonly string[] { return defaultFa
 
 /**
  * With a remote instance base set, rewrite the index's root-relative format
- * URLs to absolute instance URLs BEFORE they reach the asset-meta store — one
+ * URLs to absolute instance URLs BEFORE they reach the asset-meta store - one
  * chokepoint that makes every downstream consumer (prefetch here, on-demand
  * fetchAndCache, picker thumbnail <img>s, tokens doc reads) follow the instance
  * without further threading. Passthrough (byte-identical) when no base is set.
@@ -342,11 +342,11 @@ async function syncAssets(host: SyncHost): Promise<void> {
   // referenced by any saved session (browsed-but-unsaved fetches don't accumulate).
   const sessionRefs = await host.state._getAssetRefs();
   // Assets referenced by a pinned ("available offline") tool count as referenced
-  // too — a pin must survive the browsed-but-unsaved prune. Same for the
+  // too - a pin must survive the browsed-but-unsaved prune. Same for the
   // profile's downloaded catalog scope (tags or 'all'). These go through the
   // ID-level keep-set, not version-exact refs: version-exact would let a
   // catalog version bump prune the downloaded blobs BEFORE syncCorePrefetch's
-  // re-fetch has succeeded — the old copy must hold until the new one lands
+  // re-fetch has succeeded - the old copy must hold until the new one lands
   // (_pruneStale reclaims it once the current-version blob is on device).
   const keepIds = new Set<string>();
   try {
@@ -377,7 +377,7 @@ async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord, signal?: Abo
     try {
       await verifyAssetChecksum(blob, fmt);
     } catch (e) {
-      // Corrupt/tampered bytes — skip caching rather than storing a bad blob.
+      // Corrupt/tampered bytes - skip caching rather than storing a bad blob.
       host.log('warn', `Skipping prefetch (checksum mismatch): ${fmt.url}`, { error: String(e) });
       continue;
     }
@@ -406,7 +406,7 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
       if (!resp.ok) return;
       index = absolutizeAssetUrls(await resp.json() as AssetIndex);
     }
-    // Pinned tool FILES freshen on this idle path — keyed on a PERSISTED index
+    // Pinned tool FILES freshen on this idle path - keyed on a PERSISTED index
     // watermark, not this session's toolIndexChanged() flag: the flag is only
     // ever true in the one session that fetched fresh bytes, so a tab closed
     // mid-refresh would strand offline pins on the old deploy across every
@@ -419,7 +419,7 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
     }
     // Pinned ("available offline") tools' asset refs ride the core prefetch, so
     // a catalog version bump re-fetches them at the new version each boot.
-    // The profile's downloaded catalog scope rides it too — same freshness
+    // The profile's downloaded catalog scope rides it too - same freshness
     // guarantee for a whole-catalogue (or tag-scoped) download.
     const pinned = await pinnedAssetIds().catch(() => new Set<string>());
     const scoped = await offlineScopeFilter().catch(() => null);
@@ -435,7 +435,7 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
 
 /**
  * Prefetch specific catalog assets (by id) through the same checksum-verified
- * path as the core-tier boot prefetch. Offline pinning calls this at pin time —
+ * path as the core-tier boot prefetch. Offline pinning calls this at pin time - 
  * threaded in by the view, since lib/offline-pins.ts can't import this module
  * without a cycle (syncAssets/syncCorePrefetch read pin state above).
  */
@@ -454,7 +454,7 @@ export async function prefetchAssetsById(host: SyncHost, ids: readonly string[])
 
 /** How the profile's offline section describes the downloadable catalogue
  *  before anything is fetched: per-tag file counts + byte sizes (from the
- *  index's format sizes — no network beyond the index itself), plus the
+ *  index's format sizes - no network beyond the index itself), plus the
  *  whole-catalogue total. */
 export interface CatalogDownloadSummary {
   totalBytes: number;
@@ -462,7 +462,7 @@ export interface CatalogDownloadSummary {
   tags: Array<{ tag: string; assets: number; bytes: number }>;
 }
 
-/** The asset index for the download surfaces. `fresh` forces a re-fetch —
+/** The asset index for the download surfaces. `fresh` forces a re-fetch - 
  *  downloadCatalogScope uses it so a user action prices and fetches against
  *  the CURRENT deploy, not whatever this session's boot cached (a mid-session
  *  deploy would otherwise 404 the old format URLs unrecoverably). The cached
@@ -521,8 +521,8 @@ export async function catalogDownloadSummary(): Promise<CatalogDownloadSummary |
 }
 
 /**
- * Download the catalogue for offline — whole ('all') or scoped to a tag
- * selection — through the same checksum-verified prefetch as everything else,
+ * Download the catalogue for offline - whole ('all') or scoped to a tag
+ * selection - through the same checksum-verified prefetch as everything else,
  * with per-asset byte progress and cancellation. Returns the measured size for
  * the caller to record via offline-manager's recordCatalogDownload (which is
  * what protects the blobs from the prune and refreshes them each boot).
@@ -535,7 +535,7 @@ export async function downloadCatalogScope(
   opts: { signal?: AbortSignal; onProgress?: (p: { loaded: number; total: number; done: number; count: number }) => void } = {},
 ): Promise<{ bytes: number; files: number }> {
   const { signal, onProgress } = opts;
-  // A user action prices and fetches against the current deploy — never a
+  // A user action prices and fetches against the current deploy - never a
   // stale boot-time index (see loadAssetIndex).
   const index = await loadAssetIndex(true);
   if (!index) throw new Error('catalog download: asset index unreachable');
@@ -545,7 +545,7 @@ export async function downloadCatalogScope(
   let done = 0;
   onProgress?.({ loaded, total, done, count: wanted.length });
   let failures = 0;
-  // Sequential like the pin sweep — parallel fetch storms help nobody on the
+  // Sequential like the pin sweep - parallel fetch storms help nobody on the
   // connections this feature exists for, and progress reads better.
   for (const a of wanted) {
     signal?.throwIfAborted();
@@ -553,7 +553,7 @@ export async function downloadCatalogScope(
     try {
       await prefetchAsset(host, a, signal);
       // prefetchAsset degrades quietly (a 404 or checksum mismatch just skips
-      // that file) — right for an idle boot prefetch, but a DOWNLOAD must not
+      // that file) - right for an idle boot prefetch, but a DOWNLOAD must not
       // claim bytes it doesn't hold. Verify every format actually landed.
       landed = true;
       for (const f of a.formats) {
@@ -562,7 +562,7 @@ export async function downloadCatalogScope(
     } catch (e) {
       if (signal?.aborted) throw e;
     }
-    // Only bytes actually held count as loaded — a bar that reaches 100% by
+    // Only bytes actually held count as loaded - a bar that reaches 100% by
     // counting failures would contradict the error it's about to throw.
     if (landed) loaded += assetBytes(a);
     else failures++;

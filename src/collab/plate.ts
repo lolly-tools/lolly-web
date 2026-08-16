@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * plate — the connection plate, a private collab's short authentication string
+ * plate - the connection plate, a private collab's short authentication string
  * (plan 100 §1, §6.1; Andy's decision, 2026-08-10).
  *
  * WHAT THIS IS, AND WHAT IT IS NOT. Plan 100 §1 floated a license-plate code as a third
- * SKIN — six spoken characters standing in for the invite blob, redeemed against a tiny
+ * SKIN - six spoken characters standing in for the invite blob, redeemed against a tiny
  * rendezvous. Andy's call reverses the direction: the plate is the CONFIRMATION, never a
  * carrier. It carries no material, needs no rendezvous, and is derived from the pairing
  * that already exists. The link and the QR stay the only things that move SDP, so the
- * "codes need a server" trade in §1 does not apply to this at all — an airgapped pair
+ * "codes need a server" trade in §1 does not apply to this at all - an airgapped pair
  * gets a plate exactly like everyone else.
  *
  * It is the ZRTP-style SAS (RFC 6189 §7), doing the one job a fingerprint-carrying blob
@@ -16,39 +16,39 @@
  * characters at the moment they connect; the humans compare them out loud. Matching
  * plates mean both devices hashed the SAME PAIR of DTLS certificate fingerprints, which
  * they can only do if each one is holding the other's real certificate. A middleman has
- * to terminate DTLS on both sides — two certificates of its own, which is two
- * fingerprints neither human's device ever saw — and no substitution it can make in the
+ * to terminate DTLS on both sides - two certificates of its own, which is two
+ * fingerprints neither human's device ever saw - and no substitution it can make in the
  * invite or the reply produces two matching plates. It cannot compute a plate for a pair
  * of fingerprints it is not, itself, one half of.
  *
  * THE MATERIAL IS THE THING THE HANDSHAKE ACTUALLY VALIDATED. `rtc-transport.ts` hands
  * over the fingerprint it extracted from its OWN local description and the one it decoded
- * from the peer's blob — the same bytes it reconstructed the remote SDP from, so the same
+ * from the peer's blob - the same bytes it reconstructed the remote SDP from, so the same
  * bytes DTLS checked the certificate against. A plate derived from anything else (a
  * re-read of the SDP text, a fingerprint the UI cached) would be a number that agrees with
  * itself and proves nothing.
  *
  * ── The alphabet: 29 characters, and each exclusion has a reason ──────────────────
  *
- * `23456789ACDEFGHJKMNPQRSTVWXYZ`. Crockford base32 already drops I, L, O and U — I and L
+ * `23456789ACDEFGHJKMNPQRSTVWXYZ`. Crockford base32 already drops I, L, O and U - I and L
  * against the digit 1, O against 0, U so a code cannot spell an accident. Three more go,
  * because this code is SPOKEN and typed from hearing rather than scanned:
  *
  *  - **0 and 1.** Crockford's answer to O/0 and I/L/1 is a tolerant DECODER: it accepts
  *    the letters and folds them onto the digits. A plate has no decoder. The comparator
  *    is two people on a phone, and "oh" against "zero" is precisely the ambiguity the
- *    comparison must not absorb — the one moment the two strings differ is the moment the
+ *    comparison must not absorb - the one moment the two strings differ is the moment the
  *    whole mechanism exists for.
  *  - **B.** 8 stays (the digits earn their place: an all-letter plate reads as a word,
  *    and a word gets remembered and half-recalled instead of compared character by
  *    character), and B against 8 is the last pair in Crockford's set that a condensed
  *    face still blurs.
  *
- * What that leaves is 29 symbols, which is deliberately NOT a power of two — see
+ * What that leaves is 29 symbols, which is deliberately NOT a power of two - see
  * {@link derivePlate} for why the draw is rejection-sampled rather than reduced.
  *
  * Six characters is 29^6 ≈ 5.9 × 10^8, a shade over 29 bits. ZRTP's own SAS is 2^16 over
- * four base32 characters; this is ~8000× that, and an attacker gets exactly one attempt —
+ * four base32 characters; this is ~8000× that, and an attacker gets exactly one attempt - 
  * the plate is compared once, at connect, over a DTLS session whose keys are already
  * fixed. There is no oracle to grind against and nothing to retry.
  *
@@ -65,7 +65,7 @@
  */
 
 /**
- * The 29 symbols a plate is drawn from — see the header for what each exclusion buys.
+ * The 29 symbols a plate is drawn from - see the header for what each exclusion buys.
  * Crockford base32 (no I, L, O, U) minus 0, 1 and B.
  */
 export const PLATE_ALPHABET = '23456789ACDEFGHJKMNPQRSTVWXYZ';
@@ -78,7 +78,7 @@ export const PLATE_GROUP = 3;
 
 /**
  * Domain separation. A digest with no purpose stamped into it is a digest that can be
- * replayed as a different one — this string is what stops a plate ever being confused
+ * replayed as a different one - this string is what stops a plate ever being confused
  * with (or substituted for) some other SHA-256 over the same two fingerprints.
  */
 export const PLATE_DOMAIN = 'lolly/collab/plate/v1';
@@ -104,7 +104,7 @@ export interface PlateMaterial {
 /** A complete-buffer digest. The default is SHA-256; a test injects its own. */
 export type PlateHasher = (bytes: Uint8Array) => Promise<Uint8Array>;
 
-/** Bytes above this are DISCARDED rather than reduced — see {@link derivePlate}. */
+/** Bytes above this are DISCARDED rather than reduced - see {@link derivePlate}. */
 const REJECT_FROM = 256 - (256 % PLATE_ALPHABET.length); // 232 = 8 × 29
 
 /** A fingerprint is length-framed into a single byte, so it must fit in one. */
@@ -128,7 +128,7 @@ export const sha256Bytes: PlateHasher = async (bytes) => {
  *
  * This is the whole reason both devices compute the same plate without agreeing on who
  * is who: the inviter holds (mine, theirs) and the acceptor holds (theirs, mine), and
- * sorting collapses the two into one ordered pair. Nothing role-shaped is hashed —
+ * sorting collapses the two into one ordered pair. Nothing role-shaped is hashed - 
  * putting the role in would make the two sides derive different plates and turn a working
  * pairing into a permanent mismatch.
  */
@@ -146,7 +146,7 @@ export function orderFingerprints(a: Uint8Array, b: Uint8Array): [Uint8Array, Ui
  * `DOMAIN || 0x00 || len(first) || first || len(second) || second || counter`.
  *
  * Every variable-length field is length-framed. Without that, ([1,2], [3]) and ([1],
- * [2,3]) hash the same three bytes and two unrelated pairings share a plate — which for
+ * [2,3]) hash the same three bytes and two unrelated pairings share a plate - which for
  * a check whose entire job is "these two fingerprints, and no others" would be the one
  * defect that matters. The counter is what extends the digest stream when rejection
  * sampling runs a block dry.
@@ -180,7 +180,7 @@ export function formatPlate(symbols: string): string {
  */
 export const PLATE_DOMAIN_NATIVE = 'lolly/collab/plate/native/v1';
 
-/** `DOMAIN || 0x00 || len(value) || value || counter` — the single-value preimage, for a
+/** `DOMAIN || 0x00 || len(value) || value || counter` - the single-value preimage, for a
  *  shared transcript hash both peers compute identically (so no ordering is needed). */
 function preimageSingle(domain: Uint8Array, value: Uint8Array, counter: number): Uint8Array {
   const out = new Uint8Array(domain.length + 1 + 1 + value.length + 1);
@@ -207,7 +207,7 @@ function preimageSingle(domain: Uint8Array, value: Uint8Array, counter: number):
  * CRUCIAL CAVEAT (review finding #1): this holds ONLY because the native transport binds the
  * initiator to its static key BEFORE the handshake (the static-key commitment in
  * `native_transport.rs run_initiator`/`run_responder`). A bare XX handshake hash is NOT a
- * safe 6-char SAS input on its own — the initiator picks its static in the last message, so a
+ * safe 6-char SAS input on its own - the initiator picks its static in the last message, so a
  * MITM could grind it (~2^29) to force a matching plate. The commitment removes that freedom;
  * do not treat `h` as a safe SAS input for any handshake that lacks it.
  *
@@ -243,11 +243,11 @@ export async function derivePlateFromTranscript(
  * to know whether it invited or accepted.
  *
  * **Why rejection sampling.** 29 does not divide 256, so `byte % 29` would draw the first
- * three symbols of the alphabet ~12.5% more often than the rest — a real, if modest,
+ * three symbols of the alphabet ~12.5% more often than the rest - a real, if modest,
  * narrowing of the space a forger has to hit, and a bias that is free to avoid. Bytes at
  * or above {@link REJECT_FROM} (232 = 8 × 29) are discarded instead; each surviving byte
  * is uniform over the 29 symbols. About 9.4% of bytes are thrown away, so a 32-byte
- * digest almost always yields the six symbols in its first block — and when it does not,
+ * digest almost always yields the six symbols in its first block - and when it does not,
  * the counter mints another block rather than reaching for a biased shortcut. Every path
  * is deterministic: the same two fingerprints always produce the same plate.
  *
@@ -272,8 +272,8 @@ export async function derivePlate(
 
   let symbols = '';
   // 256 blocks of rejection-sampled digest without six survivors is not a case that
-  // exists (p < 2^-1000); the bound is here so a broken injected hasher — one that
-  // returns nothing, or nothing but rejected bytes — fails loudly instead of spinning.
+  // exists (p < 2^-1000); the bound is here so a broken injected hasher - one that
+  // returns nothing, or nothing but rejected bytes - fails loudly instead of spinning.
   for (let counter = 0; counter < 256 && symbols.length < PLATE_CHARS; counter++) {
     const block = await hash(preimage(domain, first, second, counter));
     for (const byte of block) {

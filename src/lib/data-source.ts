@@ -25,7 +25,7 @@ export { rowsToCsv };
 
 /**
  * Decode a picked data file to the text a text/longtext field receives. An `.xlsx` is
- * unzipped and serialised to CSV — reading `sheet` (a 0-based index or exact name;
+ * unzipped and serialised to CSV - reading `sheet` (a 0-based index or exact name;
  * default the first sheet); every other file is decoded as UTF-8 text. Throws the
  * engine's message on an unreadable spreadsheet so the caller can surface it.
  */
@@ -98,7 +98,7 @@ const assetLabel = (a: AssetRef): string =>
   (typeof a.meta?.name === 'string' && a.meta.name) || a.id.split('/').pop() || a.id;
 
 /**
- * Offer the applicable sources — a device file always, plus stored library assets when
+ * Offer the applicable sources - a device file always, plus stored library assets when
  * present: text/boilerplate assets (by `tags`) and every `type:'data'` spreadsheet/CSV
  * asset. Resolve the choice to text (an xlsx via the sheet-picker) and hand it to
  * `onText`. With only the file source, opens the file picker directly (no chooser).
@@ -135,7 +135,7 @@ export async function openDataSource(host: DataSourceHost, opts: DataSourceOpts)
   if (!asset?.url) return;
   try {
     if (asset.type === 'data') {
-      // A spreadsheet/CSV asset — read its bytes, xlsx through the sheet-picker.
+      // A spreadsheet/CSV asset - read its bytes, xlsx through the sheet-picker.
       const bytes = new Uint8Array(await (await fetch(asset.url)).arrayBuffer());
       const text = await bytesToFieldTextInteractive(bytes, `data.${asset.format || 'csv'}`);
       if (text != null) opts.onText(text);
@@ -149,7 +149,7 @@ export async function openDataSource(host: DataSourceHost, opts: DataSourceOpts)
 
 /** Open a hidden file input, read the chosen file, return its field-text (or null on
  *  cancel/error). A cancelled OS dialog fires no event, so the promise simply never
- *  resolves — harmless, since callers do not block on it (the established
+ *  resolves - harmless, since callers do not block on it (the established
  *  hidden-input pattern in this codebase). */
 function pickFileText(
   accept: string,

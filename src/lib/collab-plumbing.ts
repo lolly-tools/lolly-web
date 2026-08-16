@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-plumbing — the transport-blind seam between ONE mounted tool's runtime and
+ * collab-plumbing - the transport-blind seam between ONE mounted tool's runtime and
  * a registered collaboration provider (plan 100 §5, wave 0.5).
  *
  * INERTNESS IS THE CONTRACT. `attachCollabPlumbing` asks `getCanvasSyncProvider()`
- * for an adapter and returns `null` when there is none — it does not wrap
+ * for an adapter and returns `null` when there is none - it does not wrap
  * `runtime.setInput`, does not schedule a frame, does not read IndexedDB, does not
- * mint an id. With no provider registered (this repo ships none — plans/99 §1.1)
+ * mint an id. With no provider registered (this repo ships none - plans/99 §1.1)
  * a tool mount is byte-identical to single-player, and its co-located test proves
  * that with a call-count spy rather than by inspection.
  *
  * The two directions, per §5:
  *
- *  - OUTBOUND. mountTool already wraps `runtime.setInput` once for undo history —
+ *  - OUTBOUND. mountTool already wraps `runtime.setInput` once for undo history - 
  *    the one chokepoint every control and every canvas commit flows through. We wrap
  *    that wrapper, so a local edit becomes ops for the adapter. A history REPLAY
  *    (undo/redo) is a local edit and syncs like any other: it is just another LWW
  *    write (§5, §11.15). Only a remote apply is excluded. Deliberately NOT wrapped:
  *    `runtime.setInputNoHistory`, the escape hatch for writes that are not user
- *    edits — deck slide navigation through it is *location*, which is a presence
+ *    edits - deck slide navigation through it is *location*, which is a presence
  *    field (§4.2), not a document write, and forcing every peer to my slide is the
  *    bug that would cause.
  *
  *  - INBOUND. `applyRemotePatch(ops)` coalesces per animation frame and lands the
- *    batch through `runtime.applyPatch` — the engine's atomic multi-input apply
+ *    batch through `runtime.applyPatch` - the engine's atomic multi-input apply
  *    (§5). That path never re-enters `setInput`, so remote values (a) cannot record
  *    an undo step and (b) cannot echo back out as ops. The `applyingRemote` guard is
  *    belt-and-braces for a future refactor that routes it differently, and is held
  *    only across the SYNCHRONOUS part of the apply (see flush()). The VALUES in that
- *    patch come from the adapter's post-apply `state()`, never from `op.value` — the
+ *    patch come from the adapter's post-apply `state()`, never from `op.value` - the
  *    ops say which keys the batch touched, the document says what those keys now
  *    hold. See {@link ConvergedRead} for why reading the payload instead makes two
  *    peers' documents converge while their models permanently diverge.
@@ -48,10 +48,10 @@
  *     a gesture the adapter's own differ never sees. `onLocalChange` takes a row MAP,
  *     so the shell decides which gestures reach it: a pure REORDER changes no row, so
  *     it does not, and the shell mints the `OrderOp`s itself from the runtime's array
- *     (which is the order truth — an adapter's document can lag it). Both kinds are
+ *     (which is the order truth - an adapter's document can lag it). Both kinds are
  *     delivered through `apply()`, the contract's single-op door (`applyRemotePatch`
  *     being explicitly the REMOTE door). An adapter that DOES emit order ops of its
- *     own is honoured instead (the guard in emitCollection) — the contract's
+ *     own is honoured instead (the guard in emitCollection) - the contract's
  *     `damageToOps` now restates order whenever the sequence changed. A future v1.2
  *     may want an explicit `onLocalOps(ops)`.
  *  2. Ops the adapter mints carry ITS Lamport clock, ops we mint carry ours. We
@@ -86,7 +86,7 @@ import { getCanvasSyncProvider } from './canvas-sync-provider.ts';
 // can resolve, so there is exactly one definition and it lives in a DOM-free module.
 import { rowIdField, ulid } from './row-id.ts';
 
-/** The runtime slice this module drives — a structural subset of the web shell's
+/** The runtime slice this module drives - a structural subset of the web shell's
  *  ToolRuntime, so nothing here needs the view, the DOM, or a real engine mount. */
 export interface CollabRuntime {
   getModel(): InputModelItem[];
@@ -100,7 +100,7 @@ export interface CollabPlumbingOpts {
   adapter?: CanvasSyncAdapter;
   /** This device's collab client id. Defaults to the per-device persisted ULID. */
   clientId?: string;
-  /** Frame scheduler — injected so tests need no rAF and a Worker-driven variant
+  /** Frame scheduler - injected so tests need no rAF and a Worker-driven variant
    *  stays possible. Defaults to `requestAnimationFrame`, then a macrotask. */
   raf?: (fn: () => void) => void;
   /** Every op a local edit produced, after the adapter took it. Observability for
@@ -117,7 +117,7 @@ export interface CollabPlumbing {
 
 // ── Per-device identity + the Lamport clock (plan 100 §5) ──────────────────────
 
-/** Key of the collab client id inside the 'profile' KV store — a sibling of the
+/** Key of the collab client id inside the 'profile' KV store - a sibling of the
  *  'me' record, like lib/offline-pins.ts and lib/instance.ts. Never localStorage. */
 const CLIENT_ID_KEY = 'collab-client-id';
 
@@ -125,7 +125,7 @@ let clientId: string | null = null;
 let clientIdInit: Promise<string> | null = null;
 
 /**
- * This device's collab client id — a random ULID with no linkage to the profile,
+ * This device's collab client id - a random ULID with no linkage to the profile,
  * the identity, or anything else (§11.23: "the per-device collab client id is a
  * random ULID with no linkage to anything"). Synchronous, so plumbing never blocks
  * a mount; mints an in-memory id if `initCollabClientId()` has not resolved yet.
@@ -137,7 +137,7 @@ export function getCollabClientId(): string {
 
 /**
  * Load (or mint and persist) the per-device client id. Whoever registers a provider
- * — the private-collab ceremony, or `org/` for a work collab — awaits this BEFORE
+ * - the private-collab ceremony, or `org/` for a work collab - awaits this BEFORE
  * registering, so every mount's synchronous read already sees the durable value.
  * Memoised; never throws (an unreadable DB just means an in-memory id this session).
  */
@@ -150,7 +150,7 @@ export function initCollabClientId(): Promise<string> {
       const db = await openDB();
       const stored = await db.get('profile', CLIENT_ID_KEY);
       const durable = typeof stored === 'string' && stored ? stored : null;
-      // Adopt the stored id only if nothing has been handed out yet — swapping ids
+      // Adopt the stored id only if nothing has been handed out yet - swapping ids
       // mid-session would put two clients on the wire from one device.
       if (durable !== null && clientId === null) {
         clientId = durable;
@@ -158,7 +158,7 @@ export function initCollabClientId(): Promise<string> {
       }
       const id = getCollabClientId();
       // Persist ONLY when there is nothing durable to keep. If a mount beat this
-      // init and minted an in-memory id, that id serves this session — but writing
+      // init and minted an in-memory id, that id serves this session - but writing
       // it over the stored one would destroy this device's identity permanently,
       // which is the opposite of what "per-device, IDB-persisted" means (§5).
       if (durable === null) await db.put('profile', id, CLIENT_ID_KEY);
@@ -174,7 +174,7 @@ export function initCollabClientId(): Promise<string> {
  * One Lamport clock per DEVICE (not per mount): every local op is causally after
  * everything this device has seen, on any tool.
  *
- * NOT persisted, unlike the client id beside it — so a reload restarts at 0 and this
+ * NOT persisted, unlike the client id beside it - so a reload restarts at 0 and this
  * device re-mints `(client, clock)` pairs it has used before. That is safe only
  * because a session is re-entered through a full-state exchange, which is what the
  * transport owes this module: on connect (and on reconnect) the joiner takes the
@@ -183,7 +183,7 @@ export function initCollabClientId(): Promise<string> {
  * WITHOUT that exchange (plan 100 wave 2.3's catch-up path is the one that must not
  * be skipped) would silently lose this device's post-reload writes to a peer's
  * higher-clocked registers. Persisting the counter per op would cost an IDB write on
- * every keystroke; making the exchange load-bearing is the cheaper, stated trade.
+ * every keystroke; making the exchange required for correctness is the cheaper, stated trade.
  */
 let clock = 0;
 
@@ -231,7 +231,7 @@ const GEOM_ROLE_KEYS = ['xField', 'yField', 'wField', 'hField', 'rotationField']
 /**
  * The geometry field NAMES this collection uses. The contract requires the shell to
  * resolve its own config to the roles before crossing the seam, so a tool that
- * renames `x` keeps the geometry lane (a move must never invalidate a raster —
+ * renames `x` keeps the geometry lane (a move must never invalidate a raster - 
  * plans/99 §4.3). Both peers run the same tool, so both resolve the same names.
  */
 function resolveGeomFields(item: Pick<InputModelItem, 'canvas'>): readonly string[] {
@@ -292,7 +292,7 @@ function orderKeyAfter(a: string): string {
   return a + ORDER_MID;
 }
 
-/** `n` lexically ascending order keys — the paint order of a whole collection. */
+/** `n` lexically ascending order keys - the paint order of a whole collection. */
 export function orderKeysFor(n: number): string[] {
   const out: string[] = [];
   let key = '';
@@ -308,7 +308,7 @@ export function orderKeysFor(n: number): string[] {
  *  Spelled through `fromCharCode` so this source stays plain ASCII. */
 const NO_ID = String.fromCharCode(0);
 
-/** Element-wise sequence equality — compares id order without inventing a
+/** Element-wise sequence equality - compares id order without inventing a
  *  delimiter that a tool-chosen id might itself contain. */
 function sameSequence(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -329,15 +329,15 @@ function defaultRaf(fn: () => void): void {
 // ── The merge result, not the wire value (plan 100 §5, §11.15) ─────────────────
 
 /**
- * Reads the value a key holds in the DOCUMENT after a batch has been applied — which
+ * Reads the value a key holds in the DOCUMENT after a batch has been applied - which
  * is not, in general, the value that arrived on the wire.
  *
  * THIS IS THE WHOLE OF THE INBOUND CORRECTNESS ARGUMENT, so it is stated once here.
  * `applyRemotePatch` hands the ops to a CRDT, which arbitrates every per-key write by
  * `(clock, client)` and DISCARDS the loser. If the model is then patched from
  * `op.value`, a remote write that lost the merge still stomps the local value: the
- * two peers' documents converge byte-for-byte while their input models — and their
- * renders — diverge permanently, until somebody writes that key again. Found by
+ * two peers' documents converge byte-for-byte while their input models - and their
+ * renders - diverge permanently, until somebody writes that key again. Found by
  * `collab-loopback.test.ts` with two real runtimes and a partition, which is the only
  * arrangement that separates "raw op value" from "converged value"; every other test
  * delivers an op to a side that has not concurrently written the same key, and there
@@ -347,7 +347,7 @@ function defaultRaf(fn: () => void): void {
  * result is a property of the shared type, never of the op payload, so a shell that
  * reads the payload would be wrong there by construction.
  *
- * The raw value stays the fallback for every key the snapshot does not carry — a
+ * The raw value stays the fallback for every key the snapshot does not carry - a
  * legacy row the adapter never projected, a `remove` that took the box out of the doc
  * this frame, or an adapter whose `state()` failed. Falling back is exactly today's
  * behaviour, so the worst case of a missing snapshot is the bug this fixes, never a
@@ -383,7 +383,7 @@ function convergedRead(state: CanvasDocState | null): ConvergedRead {
 /**
  * Wire one mounted runtime to the registered collaboration provider. Call AFTER
  * mountTool's undo wrapper is installed, so a local edit records an undo step AND
- * syncs. Returns `null` — having touched nothing at all — when no provider is
+ * syncs. Returns `null` - having touched nothing at all - when no provider is
  * registered, which is every build of this repo today.
  */
 export function attachCollabPlumbing(
@@ -479,7 +479,7 @@ export function attachCollabPlumbing(
     if (ops.length) opts.onOps?.(ops);
   }
 
-  // The wrapper mountTool installed for undo history — ours sits outside it, so a
+  // The wrapper mountTool installed for undo history - ours sits outside it, so a
   // local edit records a step AND syncs, and an undo replay syncs like any edit.
   // Kept by REFERENCE (not bound) so detach() can restore the exact function that
   // was there; it is invoked through the runtime so a method-style setter still
@@ -500,7 +500,7 @@ export function attachCollabPlumbing(
    *  Returns null when the ops changed nothing.
    *
    *  MEMBERSHIP merges (add/remove/order are applied as they arrive), because that
-   *  is already convergent here — a row-map rebuild adds, removes and re-sorts rather
+   *  is already convergent here - a row-map rebuild adds, removes and re-sorts rather
    *  than replacing. VALUES do not: every field write is resolved through `merged`,
    *  so a remote write that lost the CRDT's arbitration cannot stomp the newer local
    *  one (see {@link ConvergedRead}). */
@@ -530,7 +530,7 @@ export function attachCollabPlumbing(
     const setField = (id: string, field: string, value: unknown): void => {
       const row = rows.get(id);
       // No resurrection: a field write on an unknown/removed id creates nothing
-      // (plan 100 §3 — "objects cannot be brought into existence by writing a
+      // (plan 100 §3 - "objects cannot be brought into existence by writing a
       // property to an unassigned ID"). The id field itself is never a payload.
       if (!row || field === idField) return;
       if (Object.is(row[field], value)) return;
@@ -607,7 +607,7 @@ export function attachCollabPlumbing(
     const items = model();
     const byId = new Map(items.map(i => [i.id, i]));
     // A `col`-less box op means the default canvas collection (v1.0 shape, and
-    // v1.1's documented default) — the editor-layout tool's `canvas` blocks input.
+    // v1.1's documented default) - the editor-layout tool's `canvas` blocks input.
     const canvasCol = items.find(i => i.type === 'blocks' && i.canvas)?.id;
     const out = new Map<string, unknown>();
     const perCol = new Map<string, CanvasOp[]>();
@@ -661,8 +661,8 @@ export function attachCollabPlumbing(
     try { values = buildPatch(ops, convergedRead(snapshot)); } catch (e) { warn('inbound', e); }
     if (!values) return;
     // The guard is held across the SYNCHRONOUS part of the apply only. That is the
-    // whole re-entrancy window — applyPatch lands every value in the model before
-    // its first await — and releasing it there means a keystroke the user makes
+    // whole re-entrancy window - applyPatch lands every value in the model before
+    // its first await - and releasing it there means a keystroke the user makes
     // while the batch's hooks are still running is still a local edit that syncs.
     let pending: Promise<void>;
     applyingRemote = true;
@@ -678,7 +678,7 @@ export function attachCollabPlumbing(
     applyRemotePatch(ops) {
       if (detached || !ops.length) return;
       // Coalesce per frame (§5): a burst of remote ops is ONE apply, so one hook
-      // pass and one paint. Unbounded by design for now — the hidden-tab queue cap
+      // pass and one paint. Unbounded by design for now - the hidden-tab queue cap
       // + full-state resync is §11.13, and belongs with the transport (wave 2.3).
       // Appended one at a time, not spread: this is untrusted input, and a spread
       // of a hostile-sized array is an argument-count crash rather than a queue.
@@ -694,7 +694,7 @@ export function attachCollabPlumbing(
       if (detached) return;
       detached = true;
       queue = [];
-      // Only if nothing wrapped us since — otherwise we would drop their wrapper.
+      // Only if nothing wrapped us since - otherwise we would drop their wrapper.
       if (runtime.setInput === outer) runtime.setInput = inner;
     },
   };

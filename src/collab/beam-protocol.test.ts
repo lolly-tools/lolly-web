@@ -12,7 +12,7 @@
  *     compare);
  *   - the **consent gate** holds: bytes before `accept` are a typed violation, not
  *     an early start (§11.24);
- *   - **nothing survives a transfer that did not complete** — `discard()` fires
+ *   - **nothing survives a transfer that did not complete** - `discard()` fires
  *     exactly once on decline, violation, cancel, source failure and dispose
  *     (§11.18);
  *   - the sender is **pull-based**: not one frame leaves without a `nextChunk()`,
@@ -53,7 +53,7 @@ import type {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** Deterministic pseudo-random bytes (xorshift32) — same input, same beam, always. */
+/** Deterministic pseudo-random bytes (xorshift32) - same input, same beam, always. */
 function bytesOf(n: number, seed: number): Uint8Array {
   const out = new Uint8Array(n);
   let x = (seed >>> 0) || 1;
@@ -81,7 +81,7 @@ async function itemsFor(blobs: readonly Uint8Array[]): Promise<BeamItem[]> {
   return out;
 }
 
-/** A source that hands back VIEWS over its blobs — so the receiver's copy-before-
+/** A source that hands back VIEWS over its blobs - so the receiver's copy-before-
  *  queue discipline is exercised rather than assumed. */
 function memSource(blobs: readonly Uint8Array[]): BeamSource {
   return {
@@ -368,7 +368,7 @@ test('a pause or cancel landing DURING an in-flight read burns no seq and no byt
   };
 
   // Pause while the read is pending: the bytes in hand are dropped, and the resumed
-  // pull re-reads the SAME offset — no gap, no duplicate, no burnt seq.
+  // pull re-reads the SAME offset - no gap, no duplicate, no burnt seq.
   const a = await rig({ source: gated, blobs });
   a.sender.offer();
   a.receiver.accept();
@@ -850,7 +850,7 @@ test('sriSha256 matches the catalog SRI form', async () => {
 
 // ── The wire is allowed to fail, and the machines are not ────────────────────
 
-/** A wire whose writes throw the way a real `RTCDataChannel` does — closed channel
+/** A wire whose writes throw the way a real `RTCDataChannel` does - closed channel
  *  and full send buffer both raise, and both are ordinary conditions. */
 function deadWire(): BeamWire {
   return {
@@ -904,7 +904,7 @@ test('a receiver whose wire dies still latches terminal and still discards', asy
 test('a queued verify that fails on a dead wire does not poison the staging chain', async () => {
   // The async twin of the case above: the checksum verify runs inside the queue, so
   // a throw there escaped the task, `enqueue`'s catch called `fail` which threw
-  // again, and `chain` became a rejected promise — so the `chain.then(...)` that
+  // again, and `chain` became a rejected promise - so the `chain.then(...)` that
   // `discardOnce` appends never ran, and the corrupt staged bytes stayed behind.
   const blob = BLOBS[0]!;
   const items = await itemsFor([blob]);
@@ -935,7 +935,7 @@ test('a queued verify that fails on a dead wire does not poison the staging chai
 test('a chunk header is never left on the wire without its payload', async () => {
   // A chunk is two frames that must arrive as a pair. If the payload write throws
   // between them, `offset`/`seq` have not advanced, so the next pull re-emits the
-  // SAME header — the receiver sees two headers with no payload between and kills
+  // SAME header - the receiver sees two headers with no payload between and kills
   // the beam, while the sender still believes it is sending. One transient
   // backpressure error would desynchronize the framing permanently.
   const blob = bytesOf(3000, 5);
@@ -1018,7 +1018,7 @@ test('a reused hasher digests what it was actually fed, not a zero-padded ghost'
   // `digest()` cleared `parts` but not `total`, so a second use built a buffer at
   // the FIRST item's length and zero-padded it. `BeamHasher` is exported for a
   // driver to hold, so "no internal caller reuses one" is not something this can
-  // rely on — and a wrong digest here reads as `checksum-mismatch`, or worse
+  // rely on - and a wrong digest here reads as `checksum-mismatch`, or worse
   // matches another zero-padded value.
   const h = sha256Hasher();
   h.update(new Uint8Array([1, 2, 3]));

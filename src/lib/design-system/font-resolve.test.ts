@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * font-resolve.ts — the pure family-name resolver (plan 97 §7.2, gap 3).
+ * font-resolve.ts - the pure family-name resolver (plan 97 §7.2, gap 3).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/font-resolve.test.ts"
@@ -244,7 +244,7 @@ test('chips are exactly one embedding statement, never two and never none', () =
 
 // ── The weight axis a NAME cannot state ──────────────────────────────────────
 // The fixture is the platform's own Outfit[wght].ttf, so the reader runs against
-// a real fvar table rather than a shape we invented — and against the exact file
+// a real fvar table rather than a shape we invented - and against the exact file
 // an upload of the shipped face would carry.
 
 const OUTFIT_TTF = fileURLToPath(new URL('../../../public/fonts/Outfit[wght].ttf', import.meta.url));
@@ -254,7 +254,7 @@ function outfit(): ArrayBuffer {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 }
 
-/** A copy with one table's 4-byte tag rewritten — the cheapest way to hide a
+/** A copy with one table's 4-byte tag rewritten - the cheapest way to hide a
  *  table from a reader that finds it by tag. */
 function renameTable(src: ArrayBuffer, from: string, to: string): ArrayBuffer {
   const out = src.slice(0);

@@ -9,7 +9,7 @@
  *   • translate + scale still map exactly (byte-goldens cover the rest);
  *   • rotate(θ cx cy) lands geometry where the pivot rotation predicts;
  *   • rotation composes through a parent <g> transform.
- * A rect is used (no text shaping / host needed) — the maths is shared with the
+ * A rect is used (no text shaping / host needed) - the maths is shared with the
  * outlined-text path, which maps every glyph point through the same closure.
  */
 import test from 'node:test';

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * start-route.ts — the #/start deep-link table.
+ * start-route.ts - the #/start deep-link table.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/start-route.test.ts"
@@ -9,7 +9,7 @@
  * (the dashboard's "Manage fonts", the docs, bookmarks) must keep opening the
  * room it named, and `?import=0` must keep meaning "leave it shut". Those are
  * promises to links that already exist, so they are pinned case by case rather
- * than left to the shape of the implementation.
+ * than left to the structure of the implementation.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -133,7 +133,7 @@ test('?source=pdf and ?source=url resolve now and open the plain picker (M5/M6 g
     assert.equal(r.source, src, `?source=${src}`);
     assert.equal(r.importOpen, true, `?source=${src}`);
   }
-  // Every declared source resolves — the table and the constant cannot drift.
+  // Every declared source resolves - the table and the constant cannot drift.
   for (const src of START_SOURCES) assert.equal(resolveStartRoute(`source=${src}`).source, src, src);
 });
 
@@ -152,7 +152,7 @@ test('an unknown ?source= is null and opens NOTHING — it falls through like an
 test('LEGACY: ?import=0 still wins over a named source', () => {
   const r = resolveStartRoute('import=0&source=file');
   assert.equal(r.importOpen, false);
-  assert.equal(r.source, 'file'); // resolved, just not opened — the view reads both
+  assert.equal(r.source, 'file'); // resolved, just not opened - the view reads both
 });
 
 test('?import alone opens the picker with no source named', () => {
@@ -181,7 +181,7 @@ test('#/start?area=versions opens the Versions panel (plan 97 SS5 / SS6a)', () =
 test('the rail rooms are the areas minus the foot-pinned panels', () => {
   // START_ROOMS is what the sidebar renders; START_AREAS is what a link may ask
   // for. Every room is an area, and `versions` is the one area that is not a
-  // room — if either half drifts, this says which way.
+  // room - if either half drifts, this says which way.
   for (const room of START_ROOMS) assert.ok((START_AREAS as readonly string[]).includes(room), room);
   assert.deepEqual(
     (START_AREAS as readonly string[]).filter(a => !(START_ROOMS as readonly string[]).includes(a)),

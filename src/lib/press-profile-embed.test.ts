@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Resolving the user's own profile into an embeddable DestOutputProfile — and,
+ * Resolving the user's own profile into an embeddable DestOutputProfile - and,
  * more importantly, into an identity the file may honestly declare.
  *
  * The tests that matter here are the refusals. Embedding bytes is easy; the
  * failure mode worth engineering against is the confidently-wrong file, where a
  * PDF says FOGRA39 and carries somebody else's measurements. So: a registry-name
  * condition never embeds anything, a `desc` that merely LOOKS like a condition
- * proves nothing, and the registry's own SWOP profile — whose data set is CGATS
- * TR003 while an export declares CGATS TR 001 — pairs with nothing.
+ * proves nothing, and the registry's own SWOP profile - whose data set is CGATS
+ * TR003 while an export declares CGATS TR 001 - pairs with nothing.
  *
  * DOM-free, with the same in-memory user-asset host color-profiles.test.ts uses.
  * Run directly:  node --test shells/web/src/lib/press-profile-embed.test.ts
@@ -101,7 +101,7 @@ test('only a prtr CMYK profile is eligible for a CMYK output intent', async () =
 test('a registry-name condition never embeds anything, even with a profile loaded', async () => {
   reset();
   const host = fakeHost();
-  // Loaded, eligible, and its desc says FOGRA39 — the tempting shortcut.
+  // Loaded, eligible, and its desc says FOGRA39 - the tempting shortcut.
   await add(host, pressProfileBytes({ desc: 'Coated FOGRA39 lookalike' }), 'fogra39ish.icc');
   for (const value of ['fogra39', 'fogra51', 'swop', 'gracol', 'srgb', 'none', undefined]) {
     assert.equal(await resolveEmbeddedProfile(host, value, 'CMYK'), null, String(value));
@@ -113,7 +113,7 @@ test('the identity trap: a desc that looks like a condition proves nothing', asy
   reset();
   const host = fakeHost();
   // The real counter-example: SWOP2006_Coated3v2 has "SWOP" in its desc, and is
-  // built from CGATS TR003 — while an export's `swop` condition declares CGATS
+  // built from CGATS TR003 - while an export's `swop` condition declares CGATS
   // TR 001. A desc match would put TR 001 on TR003's numbers.
   const swopish = await add(host, pressProfileBytes({ desc: 'SWOP2006_Coated3v2.icc' }), 'SWOP2006_Coated3v2.icc');
   const r = (await resolveEmbeddedProfile(host, `own:${swopish.digest}`, 'CMYK'))!;
@@ -208,7 +208,7 @@ test('bare own resolves only when there is exactly one answer', async () => {
   // Two: guessing would let storage order decide what a file DECLARES.
   await add(host, pressProfileBytes({ desc: 'Second Press' }), 'two.icc');
   assert.equal(await resolveEmbeddedProfile(host, 'own', 'CMYK'), null);
-  // The explicit digest still resolves — ambiguity is only about the bare form.
+  // The explicit digest still resolves - ambiguity is only about the bare form.
   assert.ok(await resolveEmbeddedProfile(host, `own:${one.digest}`, 'CMYK'));
 });
 
@@ -226,7 +226,7 @@ test('the byte cache serves a second export without a second blob read', async (
     'a 50-row batch must not read 8 MB fifty times');
   assert.equal(first.bytes, second.bytes, 'the same buffer, not a copy per row');
 
-  // A different profile evicts it — never two press profiles in memory at once.
+  // A different profile evicts it - never two press profiles in memory at once.
   const other = await add(host, pressProfileBytes({ desc: 'Other Press' }), 'other.icc');
   await resolveEmbeddedProfile(host, `own:${other.digest}`, 'CMYK');
   await resolveEmbeddedProfile(host, `own:${e.digest}`, 'CMYK');

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Multi-edit — 2–8 saved sessions edited side by side (#/multi?s=slot,slot…).
+ * Multi-edit - 2–8 saved sessions edited side by side (#/multi?s=slot,slot…).
  *
  * The batch grid (/pro) stays the power path for large render queues; this view
  * is the *editing* counterpart for a small, manageable selection: a grid of live
- * canvases (one engine runtime per session — the same createRuntime → hydrate →
+ * canvases (one engine runtime per session - the same createRuntime → hydrate →
  * paint path as the single-tool view) and ONE combined sidebar:
  *
- *   • "Shared" — a collapsible card of every input declared (same id, same type,
- *     same constraints — the /pro column-merge rule) by 2+ of the selected
+ *   • "Shared" - a collapsible card of every input declared (same id, same type,
+ *     same constraints - the /pro column-merge rule) by 2+ of the selected
  *     sessions. Editing a shared control fans the value out to every session
  *     that declares the input, live.
- *   • One collapsed card per session with ALL of its own inputs — rendered by
+ *   • One collapsed card per session with ALL of its own inputs - rendered by
  *     the SAME renderInputs/syncInputs the tool sidebar uses (full fidelity:
- *     asset pickers, blocks, colour fields) — plus a condensed export block
+ *     asset pickers, blocks, colour fields) - plus a condensed export block
  *     (format + width/height/unit/dpi + download; no copy/save/share tiers).
  *   • A search field that filters controls across every card.
  *
@@ -60,7 +60,7 @@ interface Member {
   label: string;
   toolName: string;
   tool: LoadedTool;
-  /** Assigned AFTER the grid paints — see the hydrate loop in mountMultiEdit. */
+  /** Assigned AFTER the grid paints - see the hydrate loop in mountMultiEdit. */
   runtime: Runtime;
   data: SavedStateData;
   /** The session's saved input values, held so the runtime can be created later. */
@@ -122,15 +122,15 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   }
 
   // ── Load sessions + tools (NO runtimes yet) ────────────────────────────────
-  // The web shell's state surface (list() with thumbs, typed load()) — HostV1's
+  // The web shell's state surface (list() with thumbs, typed load()) - HostV1's
   // StateAPI is the narrow portable contract, this view is web-only.
   //
   // Deliberately cheap: this resolves each session's record + tool manifest only.
   // createRuntime is the expensive half (it runs the tool's onInit hook and resolves
-  // its asset refs — real network for photos/logos), so it's deferred until AFTER the
+  // its asset refs - real network for photos/logos), so it's deferred until AFTER the
   // grid is on screen; doing it here left the whole view blank for the length of the
   // loop, which scales with the selection (up to 8). Each session's stored thumbnail
-  // carries first paint instead — see cellHtml + the hydrate loop below.
+  // carries first paint instead - see cellHtml + the hydrate loop below.
   const state = host.state as unknown as WebStateAPI;
   const entries = await state.list();
   const bySlot = new Map(entries.map(e => [e.slot, e]));
@@ -282,11 +282,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   // Deferred to HERE, after the grid markup is in the DOM, so each session's stored
   // thumbnail is the first paint and the live canvas swaps in behind it. createRuntime
   // runs the tool's onInit and resolves its asset refs (real network), so running this
-  // before the markup — as this view used to — left the grid blank for the whole loop,
+  // before the markup - as this view used to - left the grid blank for the whole loop,
   // scaling with the selection (up to 8 sessions). Live canvases are still the point of
   // this view; they're just the enhancement now, not the first frame.
   // Same rule as views/tool.ts: a manifest `network.allowlist` gives that MOUNT a
-  // host clone whose `net` enforces exactly that list — the shared boot host keeps
+  // host clone whose `net` enforces exactly that list - the shared boot host keeps
   // its fail-closed empty allowlist and is never mutated (bridge methods are
   // closures, not `this`-bound, so a shallow spread is safe). Per member, not
   // per view: the grid can mix tools with different (or no) allowlists.
@@ -316,7 +316,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     }
     const w = m.tool.manifest.render?.width ?? 800;
     // Scale the native-size canvas to the cell (transform, so tool layout math
-    // sees its true pixel size — same trick as the single-tool stage fit).
+    // sees its true pixel size - same trick as the single-tool stage fit).
     const scaleHost = viewEl.querySelector<HTMLElement>(`[data-me-scale="${i}"]`)!;
     const stage = scaleHost.parentElement!;
     const ro = new ResizeObserver(() => {
@@ -327,7 +327,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     cleanups.push(() => ro.disconnect());
 
     // The stored thumbnail that carried this cell's first paint (cellHtml), retired
-    // once the live canvas has real content below. Left in place on a paint failure —
+    // once the live canvas has real content below. Left in place on a paint failure - 
     // a pre-rendered still beats an empty cell.
     let thumbEl = viewEl.querySelector<HTMLElement>(`[data-me-thumb="${i}"]`);
 
@@ -358,7 +358,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
 
   // ── The combined sidebar ────────────────────────────────────────────────────
   // Shared card: a fan-out "runtime". renderInputs drives it through setInput,
-  // getModel AND `manifest` — the dense-sections density hint reads
+  // getModel AND `manifest` - the dense-sections density hint reads
   // runtime.manifest.render, and a bare { setInput, getModel } adapter (its original
   // contract) threw "Cannot read properties of undefined (reading 'render')" and took
   // the whole /multi view down whenever 2+ sessions shared an input. Any member's
@@ -369,7 +369,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   const sharedModel = (): InputModelItem[] =>
     shared.flatMap(({ id, lead }) => {
       const item = lead.runtime.getModel().find(it => it.id === id);
-      // showIf deps may live outside the shared set — always show shared items.
+      // showIf deps may live outside the shared set - always show shared items.
       return item ? [{ ...item, showIf: undefined }] : [];
     });
   const fanRuntime = {
@@ -406,7 +406,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   syncSidebar();
   cleanups.push(() => { if (sidebarRaf) cancelAnimationFrame(sidebarRaf); });
   // renderInputs parks document-level capture dismissers (+ any flatpickr calendars)
-  // on EVERY panel it renders — the shared card and each session card. Without these
+  // on EVERY panel it renders - the shared card and each session card. Without these
   // disposer calls every visit to /multi stacked up to three document listeners per
   // panel for the life of the app. Lazily-skipped panels never rendered simply have
   // no disposer to call.
@@ -441,14 +441,14 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   //    ResizeObserver (above) rescales its canvas to whatever width results. ───────
   const gridEl = viewEl.querySelector<HTMLElement>('[data-me-grid]')!;
   const clampZoom = (w: number): number => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(w)));
-  // Native aspect ratio per member — the fit calc needs each card's real height.
+  // Native aspect ratio per member - the fit calc needs each card's real height.
   const aspects = members.map(m => (m.tool.manifest.render?.width ?? 800) / (m.tool.manifest.render?.height ?? 600));
 
   // Live column count (auto-fill resolves 1fr tracks to px, space-separated).
   const gridCols = (): number => getComputedStyle(gridEl).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
 
   /** The largest card width at which every design still clears the viewport height
-   *  — i.e. the fewest columns whose stacked rows fit without scrolling. */
+   * - i.e. the fewest columns whose stacked rows fit without scrolling. */
   function fitCardW(): number {
     const cs = getComputedStyle(gridEl);
     const innerW = gridEl.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
@@ -470,7 +470,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       // rounding a hair down to one FEWER column (which would overflow the fit).
       if (total <= availH) return clampZoom(Math.floor(colW) - 1);
     }
-    // Even at max columns the rows overflow — use the tightest (smallest) width.
+    // Even at max columns the rows overflow - use the tightest (smallest) width.
     return clampZoom(Math.floor((innerW - (members.length - 1) * gap) / members.length) - 1);
   }
 
@@ -478,9 +478,9 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   try { const saved = Number(localStorage.getItem(ZOOM_KEY)); cardW = saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : fitCardW(); }
   catch { cardW = fitCardW(); }
 
-  // The zoom HUD: Fit first, then −/read/+ (multi-edit's long-standing order —
+  // The zoom HUD: Fit first, then −/read/+ (multi-edit's long-standing order - 
   // unlike the tool stage's Fit-last stage-nav). The readout stays a plain,
-  // announced-only span (never a control) — clicking a card's readout to fit
+  // announced-only span (never a control) - clicking a card's readout to fit
   // isn't a gesture anyone's asked for here, so parity keeps it inert.
   const zoomHud = mountZoomHud(viewEl.querySelector<HTMLElement>('[data-me-zoom]')!, {
     ariaLabel: t('Preview size'),
@@ -521,7 +521,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   const searchEl = viewEl.querySelector<HTMLInputElement>('[data-me-search]');
   searchEl?.addEventListener('input', () => {
     const q = searchEl.value.trim();
-    // lib/search matching (plans/99 M3): fold both sides, AND across tokens —
+    // lib/search matching (plans/99 M3): fold both sides, AND across tokens - 
     // "café" finds "cafe", and "logo width" finds a row carrying both words in
     // any order. Tokenized once per keystroke, not per row.
     const tokens = tokenize(q);
@@ -531,7 +531,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       // Ensure lazily-skipped panels exist before filtering them.
       if (q && !card.open) { card.open = true; syncSidebar(); }
       let hits = 0;
-      // Filter whole control ROWS — the label text lives on .input-row; the
+      // Filter whole control ROWS - the label text lives on .input-row; the
       // [data-input-id] attribute rides the control element inside it.
       card.querySelectorAll<HTMLElement>('.me-inputs .input-row').forEach(row => {
         const id = row.querySelector<HTMLElement>('[data-input-id]')?.dataset.inputId ?? '';
@@ -590,7 +590,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     for (let i = 0; i < members.length; i++) await saveOne(i);
   }
 
-  // Progress toast for the render pipeline — the same shared toast the Projects view
+  // Progress toast for the render pipeline - the same shared toast the Projects view
   // floats for its batch exports (components/progress-toast.ts).
   const toasts = new Set<HTMLElement>();
   cleanups.push(() => toasts.forEach(t => t.remove()));
@@ -604,7 +604,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
 
   let exporting = false;
   viewEl.addEventListener('click', async (e) => {
-    const target = e.target as HTMLElement; // not `t` — that's the i18n lookup
+    const target = e.target as HTMLElement; // not `t` - that's the i18n lookup
     const one = target.closest<HTMLElement>('[data-me-download]');
     const all = target.closest<HTMLElement>('[data-me-downloadall]');
     const save = target.closest<HTMLElement>('[data-me-saveall]');
@@ -616,7 +616,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     try {
       if (one) {
         // Save first so the standard session-export path (which reads the SAVED
-        // slot — same code the Projects tile menu runs) renders what's on screen,
+        // slot - same code the Projects tile menu runs) renders what's on screen,
         // with the tool's own filename/format and Content Credentials intact.
         const i = Number(one.dataset.meDownload);
         await saveOne(i);
@@ -627,7 +627,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         });
       } else if (all) {
         // One nested, C2PA-signed zip via the SAME pipeline as the Projects
-        // "Render selection" action — with the optional AES-256 export lock.
+        // "Render selection" action - with the optional AES-256 export lock.
         await saveAll();
         const { askExportLock } = await import('../lib/export-lock.ts');
         const { ok, strongPassword, zipLock } = await askExportLock('these designs', true);

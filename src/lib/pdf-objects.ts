@@ -2,20 +2,20 @@
 /**
  * PDF object access + function / shading / pattern decoding (pure pdf-lib, no DOM).
  *
- * Extracted from views/pdf-import.ts so this — the part that decides whether a fill
- * survives at all — can be unit-tested against real in-memory PDF dictionaries
+ * Extracted from views/pdf-import.ts so this - the part that decides whether a fill
+ * survives at all - can be unit-tested against real in-memory PDF dictionaries
  * without dragging a view module (and its CSS imports) into a node test. The view
  * keeps the browser-only work: canvases, image decoding, storage, dialogs.
  *
  * Everything here answers one question: what colour does this paint resolve to, and
  * in what form can the PURE engine consume it? The engine never evaluates a PDF
- * /Function and never sees a PostScript program — it receives a pre-sampled colour
+ * /Function and never sees a PostScript program - it receives a pre-sampled colour
  * ramp, a flat colour, or an opaque raster-tile key.
  *
  * Soft masks (PDF 32000-1 §11.6.5) are no longer the gap this header used to record:
  * views/pdf-import.ts pre-decodes the mask group and the engine emits a real SVG
  * `<mask>`. What lives here is the part of that decision which is pure object
- * arithmetic and therefore testable — `groupColorSpace` / `backdropLuminosity` (does
+ * arithmetic and therefore testable - `groupColorSpace` / `backdropLuminosity` (does
  * the /BC backdrop hide or reveal?) and `softMaskId` (when are two /SMask dicts the
  * same mask?). Both answer questions the shell must settle before the engine, which
  * never sees a PDF object, can do anything with the mask.
@@ -29,7 +29,7 @@ import {
 } from './pdf-shading.ts';
 import { compilePostScriptCalculator } from './pdf-ps-calc.ts';
 
-/** A pdf-lib lookup key — a value we can hand to `ctx.lookup(...)`. We also let
+/** A pdf-lib lookup key - a value we can hand to `ctx.lookup(...)`. We also let
  *  `null` through (some helpers pass a `dictOf(...) → PDFDict | null` result
  *  straight back in), mirroring `ctx.lookup(null)` simply yielding undefined. */
 export type Ref = PDFObject | null | undefined;
@@ -76,13 +76,13 @@ export function boolArray(ctx: PDFContext, o: Ref): boolean[] {
 }
 
 /** A shading/image colour-space object → a device space NAME.
- *  ICCBased is an embedded profile with no device name — resolved by /N. */
+ *  ICCBased is an embedded profile with no device name - resolved by /N. */
 export function colorSpaceName(ctx: PDFContext, o: Ref): string | null {
   o = ctx.lookup(o as PDFObject | undefined);
   if (o instanceof PDFName) return o.asString().replace(/^\//, '');
   if (o instanceof PDFArray && o.size()) {
     const head = nameOf(ctx, o.get(0));
-    // ICCBased is an embedded profile with no device name — resolve it to a
+    // ICCBased is an embedded profile with no device name - resolve it to a
     // device space by its component count (/N). Chromium encodes EVERY print
     // raster as [/ICCBased <N=3>], so without this every screenshot/photo on a
     // captured page decodes as "unsupported" and drops.
@@ -101,12 +101,12 @@ export function colorSpaceName(ctx: PDFContext, o: Ref): string | null {
 const BARE_SPACES = new Set(['DeviceGray', 'DeviceRGB', 'DeviceCMYK', 'Pattern']);
 
 /**
- * The colour space of a transparency group XObject — its `/Group /CS`, reduced to a
+ * The colour space of a transparency group XObject - its `/Group /CS`, reduced to a
  * device/CIE space NAME (PDF 32000-1 §11.6.6, Table 147).
  *
  * WHY this exists separately from `colorSpaceName`: `/CS` may be written as a bare
  * name that is NOT a device space, in which case §8.6.3 says it names an entry in the
- * *form's own* `/Resources /ColorSpace` dict — Illustrator and InDesign both do this
+ * *form's own* `/Resources /ColorSpace` dict - Illustrator and InDesign both do this
  * (`/CS /CS0`) where Chromium always writes `/DeviceRGB` inline. One level of
  * indirection is resolved; deeper chains and unresolvable names return null so the
  * caller refuses rather than guessing.
@@ -125,7 +125,7 @@ export function groupColorSpace(ctx: PDFContext, gRef: Ref): string | null {
 }
 
 /**
- * The registry behind `softMaskId` — one per page walk.
+ * The registry behind `softMaskId` - one per page walk.
  *
  * `groups` collapses object identity (fifty ExtGStates naming the same shadow group
  * are one group); `ids` collapses full mask identity. Both are plain Maps so the
@@ -142,7 +142,7 @@ export interface SoftMaskIdRegistry {
  *
  * The unit of identity is the MASK, not the group. The engine's memo key is
  * (id, base transform), so two /SMask dictionaries that share one /G form but differ in
- * /S, /TR or /BC must get different ids — otherwise the second is silently served the
+ * /S, /TR or /BC must get different ids - otherwise the second is silently served the
  * first's evaluation, and an /Alpha mask renders with /Luminosity semantics (no
  * `mask-type="alpha"` ever reaches the SVG). Observed with Illustrator files that reuse
  * a single blur group for both an alpha and a luminosity mask.
@@ -172,20 +172,20 @@ export function softMaskId(
  * result: luminosity 0 (the DEFAULT when /BC is absent) hides everything outside the
  * group's /BBox, luminosity 1 reveals it. In an ADDITIVE space (DeviceGray/RGB,
  * CalGray/CalRGB, Lab, and ICCBased resolved to those) all-zero components are BLACK;
- * in a SUBTRACTIVE one (DeviceCMYK) all-zero is WHITE — the exact inversion. Reading
+ * in a SUBTRACTIVE one (DeviceCMYK) all-zero is WHITE - the exact inversion. Reading
  * `/BC` without its space therefore gets print/Illustrator PDFs backwards in the
  * unsafe direction: DeviceCMYK white `[0 0 0 0]` read as black hides live artwork.
  *
  * Formulas are the spec's own: Y = 0.3R + 0.59G + 0.11B (§11.6.5.2), with DeviceCMYK
  * first converted by R = 1 − min(1, C + K) (§10.4.2.1).
  *
- * DELIBERATE LIMITATIONS, all of which return null (= refuse, the safe direction —
+ * DELIBERATE LIMITATIONS, all of which return null (= refuse, the safe direction - 
  * the mask is dropped and content stays visible):
  *   • /Separation and /DeviceN are subtractive but their luminosity needs the tint
  *     transform function evaluated into the alternate space. Their common case, an
  *     all-zero tint, is white = refuse anyway, so evaluating buys almost nothing.
- *   • /Indexed and /Pattern are not legal group spaces (§11.6.6) — refused.
- *   • A component count that disagrees with the space is malformed — refused.
+ *   • /Indexed and /Pattern are not legal group spaces (§11.6.6) - refused.
+ *   • A component count that disagrees with the space is malformed - refused.
  */
 export function backdropLuminosity(cs: string | null, bc: number[]): number | null {
   if (!bc.length || bc.some((v) => !Number.isFinite(v))) return null;
@@ -213,8 +213,8 @@ export function backdropLuminosity(cs: string | null, bc: number[]): number | nu
 
 // ── shadings & gradients ────────────────────────────────────────────────────
 //
-// PDF shadings → a normalized descriptor the engine can emit. The byte work —
-// evaluating the PDF /Function that maps the domain to colour — lives HERE (in the
+// PDF shadings → a normalized descriptor the engine can emit. The byte work - 
+// evaluating the PDF /Function that maps the domain to colour - lives HERE (in the
 // shell), so the pure engine only ever sees a pre-sampled colour ramp, a flat
 // colour, or an opaque raster-tile key.
 //
@@ -222,14 +222,14 @@ export function backdropLuminosity(cs: string | null, bc: number[]): number | nu
 //   • ShadingType 1 (function-based) → classified by lib/pdf-shading.ts down a
 //     three-rung ladder (constant / near-linear / irreducibly 2-D). This is how
 //     Chromium prints CSS `oklch()`, `conic-gradient()` and wide-gamut interpolated
-//     gradients — NOT as an axial shading — so it is the path a colour-heavy app
+//     gradients - NOT as an axial shading - so it is the path a colour-heavy app
 //     screenshot actually takes.
 //   • ShadingTypes 4–7 (free-form / lattice / Coons / tensor meshes) are still
 //     dropped. Chromium does not emit them from the print path; DELIBERATE.
 //
 // Functions: Type 0 (sampled), 2 (exponential), 3 (stitching) and 4 (PostScript
-// calculator, via lib/pdf-ps-calc.ts). Type 4 outside a shading — a transfer
-// function, a /Separation or /DeviceN tint transform in numeric `scn` operands — is
+// calculator, via lib/pdf-ps-calc.ts). Type 4 outside a shading - a transfer
+// function, a /Separation or /DeviceN tint transform in numeric `scn` operands - is
 // NOT wired up; DELIBERATE.
 
 /** A parsed PDF function: input value(s) → colour components (each in [0,1]), or
@@ -242,7 +242,7 @@ export function shadingComps(cs: string | null): number {
 }
 // A shading /Function is one function, or an array of n single-output functions
 // (one per colour component). Return a single inputs → components evaluator either
-// way. The array branch forwards ALL inputs — a function-based shading's component
+// way. The array branch forwards ALL inputs - a function-based shading's component
 // functions are 2-in, and dropping the second would collapse every wheel to a line.
 function parseShadingFunction(ec: ShadingCtx, o: Ref): PdfFn | null {
   const ctx = ec.ctx;
@@ -309,7 +309,7 @@ function parseFunction(ec: ShadingCtx, o: Ref, depth: number): PdfFn | null {
 
   if (type === 0) return parseSampledFunction(ctx, o, d0, d1);
 
-  // Type 4 — a PostScript calculator program. Compiled ONCE here (the classifier
+  // Type 4 - a PostScript calculator program. Compiled ONCE here (the classifier
   // makes ~550 calls per shading), and clipped to /Domain per input per §7.10.2.
   if (type === 4) {
     const src = decodedText(ctx, o);
@@ -392,7 +392,7 @@ export function buildShading(ec: ShadingCtx, o: Ref): PdfShading | null {
 }
 
 /**
- * ShadingType 1 — a colour function over a 2-D domain rectangle (PDF 32000-1
+ * ShadingType 1 - a colour function over a 2-D domain rectangle (PDF 32000-1
  * §8.7.4.5.3, Table 78). Classified into one of three rungs by lib/pdf-shading.ts:
  *
  *   flat      → a `type: 1` shading carrying ONLY `flat`. `buildPattern` unwraps
@@ -440,7 +440,7 @@ function buildFunctionShading(ec: ShadingCtx, d: PDFDict, comps: number): PdfSha
  * PatternType 2 (shading) → { shading, matrix, flat }.
  * PatternType 1 (tiling)  → { tiling, matrix }: the decoded tile stream plus its
  *   own recursively-extracted resources. The shell has no content-stream tokenizer
- *   and must not grow one — the ENGINE re-interprets the tile (its collapse
+ *   and must not grow one - the ENGINE re-interprets the tile (its collapse
  *   pre-pass) and decides what the tile actually paints. This is what makes
  *   Chromium's `/Pattern cs /P5 scn <bbox> re f*` wrapper transparent to us.
  *   A self-referential pattern is cut off by the depth cap in `extractResources`.
@@ -455,7 +455,7 @@ export function buildPattern(ec: ShadingCtx, o: Ref, depth: number): PdfPattern 
   if (ptype === 2) {
     const shading = buildShading(ec, d.get(PDFName.of('Shading')));
     if (!shading) return null;   // buildShading already warned with the reason
-    // A CONSTANT function-based shading is just a colour — say so, rather than
+    // A CONSTANT function-based shading is just a colour - say so, rather than
     // shipping a gradient the serializer can only decline.
     if (shading.type === 1 && !shading.tileKey) return { flat: shading.flat, matrix };
     return { shading, matrix, ...(shading.flat ? { flat: shading.flat } : {}) };

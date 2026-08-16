@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
-// Design Import + asset upload — PDF / Adobe Illustrator (.ai) parser.
+// Design Import + asset upload - PDF / Adobe Illustrator (.ai) parser.
 //
 // The SHELL half of the PDF import path. An Illustrator .ai file saved with PDF
 // compatibility (Illustrator's default) IS a PDF, so .ai and .pdf both land here.
-// This module owns the byte work — it uses pdf-lib to load the document, decode a
+// This module owns the byte work - it uses pdf-lib to load the document, decode a
 // page's content stream(s), and pre-extract resources (fonts → byte→text
 // decoders, XObjects → image markers / nested form streams, ExtGStates → alpha,
 // optional-content groups → layer labels). It hands the decoded content + a plain
 // resource descriptor to the PURE engine interpreter (engine/src/pdf-map.ts), which
-// reconstructs editable DesignNodes. Nothing leaves the device — the whole parse is
+// reconstructs editable DesignNodes. Nothing leaves the device - the whole parse is
 // local. From those SAME interpreted nodes it serves two ingest surfaces:
 //
 //   parsePdfFile          → Design boxes (image/vector placeholders resolved
@@ -17,8 +17,8 @@
 //                           paths: catalog drop area, asset-picker upload), via the
 //                           engine's pdfNodesToSvg with images inlined as data: URIs
 //
-// A multi-page document asks which page(s) with the pickPdfPages dialog — single-
-// select for a canvas import, multi-select (or all) for asset uploads — so the two
+// A multi-page document asks which page(s) with the pickPdfPages dialog - single-
+// select for a canvas import, multi-select (or all) for asset uploads - so the two
 // surfaces stay behaviourally identical.
 //
 // Fidelity: rectangles/ellipses/text/groups come back as editable boxes; arbitrary
@@ -74,7 +74,7 @@ interface ImageDesc {
   colorSpace: string | null;
   bpc: number;
   predictor: number | null;
-  /** Soft mask (/SMask) — a grayscale alpha image composited over the base at
+  /** Soft mask (/SMask) - a grayscale alpha image composited over the base at
    *  decode time. How print engines encode blurred shadows and any alpha raster:
    *  without it the base decodes as an opaque plate. */
   smask?: ImageDesc;
@@ -99,14 +99,14 @@ interface InterpretedPage {
   imageStreams: Map<string, ImageDesc>;
   /** Function-based (ShadingType 1) shadings that need a raster tile, keyed by the
    *  opaque `tileKey` the engine echoes back on each gradient. Nothing is
-   *  rasterised until a caller asks — a page that never paints one pays nothing. */
+   *  rasterised until a caller asks - a page that never paints one pays nothing. */
   tiles: Map<string, TileSource>;
 }
 
 /**
  * Decode + interpret ONE page (0-based) into DesignNodes with unresolved placeholders.
  *
- * `diag` is the DIAGNOSTIC sink — dotted codes from the resource decoders and the
+ * `diag` is the DIAGNOSTIC sink - dotted codes from the resource decoders and the
  * engine interpreter, one per approximated or dropped paint. It is deliberately not
  * the caller's user-facing warn stream: a single app screenshot legitimately emits
  * ~80 `pattern.tiling.collapsed` lines, which is a report, not a notification. The
@@ -139,7 +139,7 @@ function interpretPage(doc: PDFDocument, pageIndex: number, diag: (msg: string) 
     patterns: resources.patterns,
     // The interpreter reports approximations/drops as (code, detail); the shell owns
     // the wording. Without this the whole pattern-and-shading failure mode was
-    // invisible — a blank page with an empty warnings list.
+    // invisible - a blank page with an empty warnings list.
     onWarn: (code, detail) => diag(detail ? `${code} (${detail})` : code),
   }) as ImportNode[];
 
@@ -151,7 +151,7 @@ function interpretPage(doc: PDFDocument, pageIndex: number, diag: (msg: string) 
  *
  * Page choice for a multi-page document: an explicit `page` (0-based) wins; else with
  * `interactive` set the shared pickPdfPages dialog asks (single-select; cancelling
- * throws an 'Import cancelled.' error); else the first page imports with a warn —
+ * throws an 'Import cancelled.' error); else the first page imports with a warn - 
  * the pre-existing headless behaviour, kept for non-UI callers.
  */
 export async function parsePdfFile(
@@ -176,7 +176,7 @@ export async function parsePdfFile(
   }
 
   // Diagnostics are collected, not forwarded: one line per approximated paint would
-  // be dozens of toasts. Summarised below, and only for the genuinely lossy rungs —
+  // be dozens of toasts. Summarised below, and only for the genuinely lossy rungs - 
   // a tiling pattern that collapsed to its inner paint lost nothing.
   const diagnostics: string[] = [];
   const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex, (m) => diagnostics.push(m));
@@ -189,7 +189,7 @@ export async function parsePdfFile(
   // are dropped here. A masked translucent achromatic plate is a print engine's
   // box-shadow: not editable content at all, so it goes rather than importing as a
   // grey rectangle. (This is exactly what the engine's paint-time placeholder
-  // heuristic used to do for EVERY surface — now scoped to the one surface that
+  // heuristic used to do for EVERY surface - now scoped to the one surface that
   // genuinely cannot render a mask.)
   const drawable = nodes.filter((n) => !isShadowPlate(n));
   const vecCache = new Map<string, unknown>();
@@ -242,14 +242,14 @@ function contentString(ctx: PDFContext, pageNode: Ref): string {
 
 /** The shared state one page's resource walk threads through every helper: the
  *  pdf-lib context, the "resolve this later" registries, and the warn sink. Bundled
- *  because all of them now reach every level of the recursion — a tiling pattern's
+ *  because all of them now reach every level of the recursion - a tiling pattern's
  *  resources can hold fonts, images, shadings and further patterns.
  *  `resources` closes the loop for lib/pdf-objects.ts, which must not import this
  *  DOM-touching module back. */
 interface ExtractCtx extends ShadingCtx {
   imageStreams: Map<string, ImageDesc>;
   /** Soft-mask identity: /G object → ordinal, and mask variant → engine-facing id.
-   *  See `softMaskId` — the group alone is NOT the unit of identity. */
+   *  See `softMaskId` - the group alone is NOT the unit of identity. */
   maskIds: SoftMaskIdRegistry;
 }
 
@@ -275,7 +275,7 @@ function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resource
     // A soft mask on the graphics state (/SMask << /S /Luminosity /G <group> >>) is
     // how Chromium prints a BOX-SHADOW: it fills the element's box with a flat
     // translucent paint and lets the mask supply the blur, the offset and the rounded
-    // shape. The mask group /G is a form XObject — a content stream plus resources —
+    // shape. The mask group /G is a form XObject - a content stream plus resources - 
     // so we PRE-DECODE it into exactly the shape the engine's interpreter can `run()`
     // and the engine emits a real SVG `<mask>`. `/None` (the explicit "no mask"
     // value) is a name, not a dict, so dictOf() rejects it and we record `false`.
@@ -284,7 +284,7 @@ function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resource
     // parameters it actually lists, so an ExtGState with no /SMask key must leave
     // whatever mask is in force ALONE. Only `/SMask /None` clears it.
     //   dict, decoded  -> PdfSoftMaskDef (a mask comes into force, evaluable)
-    //   dict, undecodable -> true  (in force but opaque to us — the engine's
+    //   dict, undecodable -> true  (in force but opaque to us - the engine's
     //                              last-resort rung; NEVER `false`, which would
     //                              silently paint the shadow plate)
     //   /None          -> false     (an explicit clear)
@@ -339,7 +339,7 @@ function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resource
 }
 
 /**
- * Pre-decode an ExtGState /SMask into a `PdfSoftMaskDef` — PDF 32000-1 §11.6.5.2.
+ * Pre-decode an ExtGState /SMask into a `PdfSoftMaskDef` - PDF 32000-1 §11.6.5.2.
  *
  * The whole point of this function is the shell/engine split: the mask group /G is a
  * form XObject, so all the shell has to do is decode its stream, pull its /Matrix and
@@ -347,7 +347,7 @@ function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resource
  * uses. That registers the mask's own image XObjects in `ec.imageStreams`, so a
  * blurred-shadow JPEG resolves through the existing DCTDecode pass-through (no decode,
  * no re-encode) with zero new byte code. The engine then runs the content stream with
- * its ordinary interpreter and emits an SVG `<mask>` — it never learns that a mask is
+ * its ordinary interpreter and emits an SVG `<mask>` - it never learns that a mask is
  * usually a raster.
  *
  * Returns `true` (never `false`) on any decode failure: `false` means "no mask", which
@@ -357,7 +357,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
   const ctx = ec.ctx;
   // A mask group's resources can name further masks. extractResources' own depth cap
   // terminates that, but a full resource walk per level is expensive for something
-  // the engine refuses past one level of nesting anyway — so stop early and cheaply.
+  // the engine refuses past one level of nesting anyway - so stop early and cheaply.
   if (depth > 4) return true;
   try {
     const gRef = getKey(ctx, smRef, 'G');
@@ -366,7 +366,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     const content = decodedText(ctx, gRef);
     if (content == null) return true;
 
-    // Table 144's five keys are /Type, /S, /G, /BC and /TR — all five are read here or
+    // Table 144's five keys are /Type, /S, /G, /BC and /TR - all five are read here or
     // are inert (/Type). The two that can silently change the mask's meaning are
     // resolved BEFORE the id is minted, because they are part of its identity.
     const subtype: 'Luminosity' | 'Alpha' = nameOf(ctx, getKey(ctx, smRef, 'S')) === 'Alpha' ? 'Alpha' : 'Luminosity';
@@ -381,7 +381,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     // absent) is expressible: any brighter backdrop reveals content out to infinity
     // and a userSpaceOnUse <mask> region cannot say that, so the engine refuses.
     //
-    // The colour space is not optional context — it decides the sign. `[0 0 0 0]` is
+    // The colour space is not optional context - it decides the sign. `[0 0 0 0]` is
     // BLACK in DeviceRGB but WHITE in DeviceCMYK, and reading the latter as black is
     // the unsafe failure: it hides live artwork outside a bbox instead of revealing
     // it. Illustrator/InDesign print PDFs are exactly where CMYK group spaces occur.
@@ -401,7 +401,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     }
 
     // One id per DISTINCT mask, where "distinct" means the /G group AND every /SMask
-    // key that changes how it is interpreted — keying on /G alone let two dicts sharing
+    // key that changes how it is interpreted - keying on /G alone let two dicts sharing
     // one blur group collide.
     const def: PdfSoftMaskDef = {
       id: softMaskId(ec.maskIds, g as object, subtype, transfer, backdrop),
@@ -419,13 +419,13 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     // changes the result where objects INSIDE the mask group overlap with transparency,
     // and the interpreter's painter model already approximates that everywhere else;
     // refusing every knockout group would cost more fidelity than it buys. /Group /I
-    // (isolated) needs no handling — §11.6.5.2 composites a luminosity group against
+    // (isolated) needs no handling - §11.6.5.2 composites a luminosity group against
     // /BC alone, which is isolated behaviour by definition.
     return def;
   } catch { return true; }
 }
 
-/** Descriptor for one image XObject, including its /SMask (one level — an SMask
+/** Descriptor for one image XObject, including its /SMask (one level - an SMask
  *  never carries an SMask of its own). */
 function makeImageDesc(ctx: PDFContext, ref: Ref, depth = 0): ImageDesc {
   const desc: ImageDesc = {
@@ -473,13 +473,13 @@ function buildFontInfo(ec: ExtractCtx, fontRef: Ref, depth: number): PdfFontInfo
   const info: PdfFontInfo = { twoByte, family: base, weight: weightFromName(base) };
 
   // ToUnicode is the reliable path for embedded / subset fonts. For a Type0 font the
-  // ToUnicode may live on the font or (rarely) its descendant — the top-level one wins.
+  // ToUnicode may live on the font or (rarely) its descendant - the top-level one wins.
   const tuText = decodedText(ctx, getKey(ctx, fontRef, 'ToUnicode'));
   if (tuText) {
     try { info.decode = toUnicodeDecoder(parseToUnicode(tuText), twoByte); } catch { /* Latin-1 fallback */ }
   }
 
-  // Type3 glyphs are content-stream drawing procedures — the interpreter executes
+  // Type3 glyphs are content-stream drawing procedures - the interpreter executes
   // them into real vector paths (engine pdf-map drawType3). This is how Chromium's
   // printToPDF encodes app text, so it's the path every docs screenshot takes.
   if (subtype === 'Type3') {
@@ -537,7 +537,7 @@ async function imageBytes(desc: ImageDesc, warn: (msg: string) => void): Promise
       base = { bytes: desc.stream.getContents(), mime: 'image/jpeg', ext: 'jpg' };
     } else {
       // Flate RGB/Gray at 8bpc. Accept no predictor / TIFF-none (<=1) AND PNG
-      // predictors (>=10) — the latter is what jsPDF's addImage(png,'PNG') writes
+      // predictors (>=10) - the latter is what jsPDF's addImage(png,'PNG') writes
       // (/Predictor 15), so this is how /verify can read Lolly's OWN PDF PNG embeds.
       // TIFF predictor 2 (2..9) stays skipped (flateImageToPng would return null).
       const pred = (desc.predictor as number) ?? 1;
@@ -550,7 +550,7 @@ async function imageBytes(desc: ImageDesc, warn: (msg: string) => void): Promise
       warn(`Skipped an embedded image in an unsupported encoding (${last || 'raw'}).`);
       return null;
     }
-    // A soft mask carries the image's alpha as a separate grayscale plane — how
+    // A soft mask carries the image's alpha as a separate grayscale plane - how
     // print engines encode blurred shadows and any transparent raster. Composite
     // it, or the base renders as an opaque plate.
     if (desc.smask) {
@@ -621,8 +621,8 @@ async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) =
 }
 
 /** Inflate + de-predictor a Flate image stream's raw samples (8bpc only).
- *  PNG predictor (/Predictor >= 10): pdf-lib's FlateStream only inflates — it
- *  never applies predictors — so the samples are still PNG-row-filtered (a 1-byte
+ *  PNG predictor (/Predictor >= 10): pdf-lib's FlateStream only inflates - it
+ *  never applies predictors - so the samples are still PNG-row-filtered (a 1-byte
  *  filter tag + width*comps bytes per row); reverse them to get real pixels.
  *  TIFF predictor 2 (2..9) isn't handled. Shared by the color path and /SMask
  *  alpha planes (comps=1). */
@@ -706,7 +706,7 @@ export interface PdfPageSvg {
   svg: string;
   width: number;
   height: number;
-  /** Drawable nodes the interpreter found — 0 means a blank/unimportable page.
+  /** Drawable nodes the interpreter found - 0 means a blank/unimportable page.
    *  PRE-cull, deliberately: this is the "was the print blank?" signal. */
   elementCount: number;
   /** Crop-cull counters, present only when `cull` was given. */
@@ -715,7 +715,7 @@ export interface PdfPageSvg {
 
 export interface PdfPageSvgOpts {
   warn?: (msg: string) => void;
-  /** Namespace for generated <defs> ids — see PdfSvgOptions.idPrefix. Callers
+  /** Namespace for generated <defs> ids - see PdfSvgOptions.idPrefix. Callers
    *  emitting several SVGs bound for one canvas MUST vary this. */
   idPrefix?: string;
   /** Crop hint in the page's own (point) space: nodes that provably cannot paint
@@ -726,7 +726,7 @@ export interface PdfPageSvgOpts {
    * its geometry in the page's own (point) space and the decoded fallback data:
    * URI (null when the XObject couldn't be decoded); return a data: URI to
    * substitute, or null to keep the fallback. Lets a caller re-source rasters it
-   * knows better than the PDF's re-encode — the docs-screenshot pipeline swaps
+   * knows better than the PDF's re-encode - the docs-screenshot pipeline swaps
    * the app's ORIGINAL webp/canvas pixels back in (lib/pdf-vector-shot.ts).
    */
   resolveImage?: (rect: { x: number; y: number; w: number; h: number }, fallback: string | null) => string | null;
@@ -734,7 +734,7 @@ export interface PdfPageSvgOpts {
    * Outline a text run's glyphs to SVG path `d` strings, one per line (baseline
    * at y=0, pen at x=0). Return null to keep the font-dependent `<text>` (an
    * uncovered glyph, an unresolved font). Lets a caller that can shape text
-   * (HarfBuzz) make the SVG self-contained — the docs-screenshot pipeline outlines
+   * (HarfBuzz) make the SVG self-contained - the docs-screenshot pipeline outlines
    * every run so a shot needs no fonts at render time (lib/pdf-vector-shot.ts).
    */
   outlineText?: (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null>;
@@ -743,14 +743,14 @@ export interface PdfPageSvgOpts {
    * conic gradient) into small `<pattern>` tiles. Default true.
    *
    * Set false when a raster in the middle of otherwise-vector output is worse than
-   * an approximation — every tile shading then paints its area-weighted MEAN colour
+   * an approximation - every tile shading then paints its area-weighted MEAN colour
    * instead, with zero extra branching. The Design boxes path never reaches
    * here at all (it consumes nodes directly), so this only governs the page-SVG
    * surfaces: asset upload and the docs-screenshot pipeline.
    */
   rasterFallback?: boolean;
   /**
-   * Hoist byte-identical `<path>` elements into `<defs>` + `<use>` — see
+   * Hoist byte-identical `<path>` elements into `<defs>` + `<use>` - see
    * PdfSvgOptions.dedupePaths for what it collapses and why the copies exist.
    *
    * Default false, and it must stay false for asset ingest: an ingested page is
@@ -779,7 +779,7 @@ const FONT_FILE_KEYS = [
  * annotation appearance streams, Type3 CharProcs resources and pattern
  * resources, and a resource crawl that misses one silently under-reports.
  *
- * Deduped by the font program's own object ref — the same face referenced from
+ * Deduped by the font program's own object ref - the same face referenced from
  * forty pages is one font, and listing it forty times would be noise.
  */
 function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
@@ -793,7 +793,7 @@ function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
   for (const [, obj] of entries) {
     const d = obj instanceof PDFDict ? obj : null;
     if (!d) continue;
-    // A FontDescriptor is identifiable by /Type, but plenty of writers omit it —
+    // A FontDescriptor is identifiable by /Type, but plenty of writers omit it - 
     // holding a /FontFile* key is the reliable signal.
     for (const { key, ext } of FONT_FILE_KEYS) {
       const ref = d.get(PDFName.of(key));
@@ -839,7 +839,7 @@ function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
 
 // ── vector artwork ────────────────────────────────────────────────────────────
 
-/** Cap on extracted marks — a pathological page must not produce hundreds. */
+/** Cap on extracted marks - a pathological page must not produce hundreds. */
 const MAX_VECTORS = 40;
 /** Breathing room around a mark's bounding box, in points. */
 const VECTOR_PAD = 2;
@@ -852,7 +852,7 @@ export interface ExtractedVector {
   height: number;
   /** 0-based page it was found on. */
   page: number;
-  /** Distinct fill colours, most-used first — a palette preview. */
+  /** Distinct fill colours, most-used first - a palette preview. */
   fills: string[];
   /** How many shapes make up the mark. */
   shapes: number;
@@ -864,7 +864,7 @@ export interface ExtractedVector {
  * Extract each mark on one page as its own SVG.
  *
  * Built on pageToSvg + windowPdfSvg rather than a bespoke serialiser, so a mark
- * inherits every fidelity the page path already has — gradients, clip paths,
+ * inherits every fidelity the page path already has - gradients, clip paths,
  * soft masks, inlined rasters and outlined text. The crop is applied HERE and
  * not later: storeUserUpload's normaliser strips the root width/height, after
  * which windowPdfSvg's regex no longer matches and it silently returns the input
@@ -872,7 +872,7 @@ export interface ExtractedVector {
  *
  * Each mark gets its own `idPrefix`. Def ids are otherwise plain counters
  * (`pgrad0`, `pclip0`, `pmask0`), and stored SVG assets get inlined as nested
- * `<svg>` on export — where ids do NOT scope — so two marks from one page would
+ * `<svg>` on export - where ids do NOT scope - so two marks from one page would
  * quietly cross-reference each other's gradients and masks.
  */
 async function vectorsOnPage(
@@ -892,7 +892,7 @@ async function vectorsOnPage(
 
     try {
       // Cull to the mark first (bytes + decode time), then window to the exact
-      // rect — both derived from ONE crop so they cannot disagree.
+      // rect - both derived from ONE crop so they cannot disagree.
       const page = await handle.pageToSvg(pageIndex, {
         cull: { x, y, width: w, height: h },
         idPrefix: `v${idBase + out.length}`,
@@ -909,7 +909,7 @@ async function vectorsOnPage(
 
 // ── the structure tree (tagged reading order) ─────────────────────────────────
 
-/** Depth cap for the struct-tree walk — the tree is a graph and can cycle. */
+/** Depth cap for the struct-tree walk - the tree is a graph and can cycle. */
 const MAX_STRUCT_DEPTH = 64;
 
 /**
@@ -918,7 +918,7 @@ const MAX_STRUCT_DEPTH = 64;
  * A tagged PDF states its own reading order, which is the thing geometry can
  * only ever guess at: which paragraph follows which, where a block ends, and
  * what is a heading. The tree is walked depth-first because that IS document
- * order — `/K` arrays are ordered, and the order of the walk is the order the
+ * order - `/K` arrays are ordered, and the order of the walk is the order the
  * author intended the content to be read.
  *
  * Only elements belonging to `pageRef` are returned: one structure tree spans
@@ -948,7 +948,7 @@ function readStructOrder(doc: PDFDocument, pageIndex: number): TaggedElement[] {
     const d = dictOf(ctx, v);
     if (!d) return;
     const type = nameOf(ctx, d.get(PDFName.of('Type')));
-    // /MCR — an explicit marked-content reference.
+    // /MCR - an explicit marked-content reference.
     if (type === 'MCR') {
       const n = numOf(ctx, d.get(PDFName.of('MCID')));
       if (n != null) acc.push(n);
@@ -980,7 +980,7 @@ function readStructOrder(doc: PDFDocument, pageIndex: number): TaggedElement[] {
       if (mcids.length) out.push({ mcids, type: structType });
     }
 
-    // Then descend, in array order — depth-first IS document order.
+    // Then descend, in array order - depth-first IS document order.
     const arr = ctx.lookup(kids as PDFObject | undefined);
     if (arr instanceof PDFArray) {
       for (const kid of arr.asArray()) {
@@ -1008,7 +1008,7 @@ function readStructOrder(doc: PDFDocument, pageIndex: number): TaggedElement[] {
 export interface EmbeddedImage {
   bytes: Uint8Array;
   mime: string;
-  /** Stored pixel dimensions — NOT the size it is drawn at on the page. */
+  /** Stored pixel dimensions - NOT the size it is drawn at on the page. */
   width: number;
   height: number;
   colorSpace: string | null;
@@ -1047,7 +1047,7 @@ async function collectEmbeddedImages(doc: PDFDocument, max: number): Promise<Emb
     try {
       const node = doc.getPage(p).node;
       extractResources(makeExtractCtx(ctx, streams, new Map(), () => {}), getKey(ctx, node, 'Resources'), 0);
-    } catch { continue; }  // a malformed page's resources — keep scanning the rest
+    } catch { continue; }  // a malformed page's resources - keep scanning the rest
     for (const desc of streams.values()) {
       if (images.length >= max) break;
       if (seen.has(desc.stream)) continue;
@@ -1062,7 +1062,7 @@ async function collectEmbeddedImages(doc: PDFDocument, max: number): Promise<Emb
 
 // ── attachments ───────────────────────────────────────────────────────────────
 
-/** A file riding inside the PDF — the payload half of the structural scan. */
+/** A file riding inside the PDF - the payload half of the structural scan. */
 export interface EmbeddedAttachment {
   name: string;
   bytes: Uint8Array;
@@ -1081,8 +1081,8 @@ const EXT_MIME: Record<string, string> = {
  *
  * `bridge/pdf-structure.ts` REPORTS these as a finding ("this PDF carries a
  * payload"); this hands over the actual bytes so a reader can look at what it
- * is. Same three places in the graph — the /EmbeddedFiles name tree, /AF
- * associated files, and /FileAttachment annotations — because a document that
+ * is. Same three places in the graph - the /EmbeddedFiles name tree, /AF
+ * associated files, and /FileAttachment annotations - because a document that
  * hides something rarely puts it in the obvious one.
  */
 function collectAttachments(doc: PDFDocument): EmbeddedAttachment[] {
@@ -1164,7 +1164,7 @@ function strOfPdf(ctx: PDFContext, o: Ref): string | null {
 
 /** An embedded font PROGRAM lifted out of a document, with its own caveats. */
 export interface EmbeddedFont {
-  /** /FontName, subset prefix and all — "ABCDEF+Inter-Regular". */
+  /** /FontName, subset prefix and all - "ABCDEF+Inter-Regular". */
   name: string;
   /** The family with any "ABCDEF+" subset prefix removed. */
   family: string;
@@ -1174,7 +1174,7 @@ export interface EmbeddedFont {
   bytes: Uint8Array;
   /**
    * The document embeds only the glyphs it used. A subset font renders the
-   * document it came from and little else — reusing it elsewhere silently drops
+   * document it came from and little else - reusing it elsewhere silently drops
    * every character the original never printed, which is the single most
    * important thing to tell someone about to download it.
    */
@@ -1198,13 +1198,13 @@ export interface PdfHandle {
    *
    * OPTIONAL, and callers must feature-detect it. A .pptx deck borrows this
    * interface to reuse the page picker (views/pptx-import.ts) but has no PDF
-   * node graph behind it, so it simply does not offer the method — which is the
+   * node graph behind it, so it simply does not offer the method - which is the
    * truthful answer, rather than a stub returning empty text that would read as
    * "this deck has no words in it".
    */
   pageToText?(index: number, warn?: (msg: string) => void): PageText;
   /**
-   * Find text the page paints an opaque shape over — the failed-redaction check
+   * Find text the page paints an opaque shape over - the failed-redaction check
    * (engine/src/pdf-redaction.ts). Runs on the same interpreted nodes as
    * everything else, so it is nearly free once a page has been read.
    *
@@ -1228,7 +1228,7 @@ export interface PdfHandle {
   /**
    * Vector artwork (logos, icons, marks) as standalone SVG, cropped to itself.
    *
-   * Most logos in a PDF are vector, not raster — a group of paths — so this is
+   * Most logos in a PDF are vector, not raster - a group of paths - so this is
    * the asset most worth recovering, and the only one that stays useful at any
    * size.
    */
@@ -1288,7 +1288,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const findings: HiddenTextFinding[] = [];
       for (let i = 0; i < scanned; i++) {
         try {
-          // Straight from the interpreter and NOT reordered — the check reads
+          // Straight from the interpreter and NOT reordered - the check reads
           // "painted after" from array position, so a sorted list would be wrong.
           const { nodes } = interpretPage(doc, i);
           for (const f of engineFindHiddenText(nodes, { minCoverage })) findings.push({ ...f, page: i });
@@ -1304,7 +1304,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const culled = cull ? cullPdfNodes(allNodes, cull) : null;
       const nodes = culled ? culled.nodes : allNodes;
       if (culled?.dropped) warn(`cull.dropped ${culled.dropped}/${culled.total} (unbounded kept: ${culled.unbounded})`);
-      // A soft mask's own nodes are drawable too — a /Luminosity box-shadow mask IS a
+      // A soft mask's own nodes are drawable too - a /Luminosity box-shadow mask IS a
       // blurred greyscale JPEG, and it needs inlining exactly like any page raster (a
       // 1-component DCTDecode stream, so `imageBytes` hands the JPEG straight through:
       // no decode, no canvas, no re-encode). The mask objects are SHARED between the
@@ -1323,7 +1323,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       }
       // Function-based shadings that survived to rung 3 get a raster tile, resolved
       // through the SAME `images` record (and the same data:-URI check) as an image
-      // XObject — one sanctioned seam, not two. Lazy and deduped by key: three
+      // XObject - one sanctioned seam, not two. Lazy and deduped by key: three
       // instances of one hue wheel cost one tile. Every tile a node doesn't get
       // simply paints that node's flat back-stop instead.
       if (rasterFallback && tiles.size) {
@@ -1347,7 +1347,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       }
       // Per-NODE substitution: the same XObject can draw at several geometries,
       // so re-sourcing keys the override by node, leaving other uses untouched.
-      // Page nodes ONLY — deliberately not mask nodes: the docs pipeline swaps the
+      // Page nodes ONLY - deliberately not mask nodes: the docs pipeline swaps the
       // app's original screen pixels back in by geometry, and a soft mask's raster has
       // no on-screen counterpart to swap (it is a blur kernel, not a picture).
       if (resolveImage) {
@@ -1392,14 +1392,14 @@ function makeHandle(doc: PDFDocument): PdfHandle {
 const TILE_BYTE_BUDGET = 1_000_000;
 
 /** Tile edge for a shading painted at `dim` points: the next power of two, clamped.
- *  Small on purpose — this is a smooth colour field, not detail. */
+ *  Small on purpose - this is a smooth colour field, not detail. */
 function tileSize(dim: number): number {
   const n = Math.max(1, Math.ceil(dim || 32));
   return Math.min(192, Math.max(32, 2 ** Math.ceil(Math.log2(n))));
 }
 
 /** Rasterise one function-based shading to a PNG data: URI. Returns null where
- *  there is no canvas at all (node/jsdom) — the node's flat back-stop paints. */
+ *  there is no canvas at all (node/jsdom) - the node's flat back-stop paints. */
 function rasterizeTile(src: TileSource, size: number): string | null {
   if (typeof document === 'undefined') return null;
   try {
@@ -1410,7 +1410,7 @@ function rasterizeTile(src: TileSource, size: number): string | null {
     const img = g.createImageData(size, size);
     img.data.set(renderTilePixels(src, size));
     g.putImageData(img, 0, 0);
-    // toDataURL is synchronous on an HTMLCanvasElement — no convertToBlob dance.
+    // toDataURL is synchronous on an HTMLCanvasElement - no convertToBlob dance.
     const uri = canvas.toDataURL('image/png');
     return /^data:image\//i.test(uri) ? uri : null;
   } catch { return null; }
@@ -1425,8 +1425,8 @@ export async function openPdfFile(file: File | Blob): Promise<PdfHandle> {
 
 /** The result of decoding a PDF's embedded raster image XObjects for pixel-domain
  *  inspection. `skipped`/`skippedFilters` count the image XObjects present that
- *  this path can't yet turn into pixels — TIFF-predictor Flate (Predictor 2) and
- *  JPXDecode / CCITTFax / JBIG2 — so a caller can report the coverage gap honestly
+ *  this path can't yet turn into pixels - TIFF-predictor Flate (Predictor 2) and
+ *  JPXDecode / CCITTFax / JBIG2 - so a caller can report the coverage gap honestly
  *  instead of reading "no hit" as "nothing there". jsPDF's own FlateDecode PNG-
  *  predictor rasters (/Predictor 15) ARE decoded now (via unfilterPng), so Lolly's
  *  own PDF PNG embeds are readable by the Lolly-Imprint scan. */
@@ -1442,14 +1442,14 @@ export interface PdfImageScan {
 /**
  * Enumerate + decode a PDF/.ai's raster image XObjects to browser-decodable bytes,
  * for pixel-domain inspection (the Lolly-Imprint check on /verify). Reuses the
- * exact decode `imageBytes` uses — DCTDecode (JPEG) pass-through and Flate
- * RGB/Gray (no predictor OR a PNG predictor, unfiltered via unfilterPng) — at
+ * exact decode `imageBytes` uses: DCTDecode (JPEG) pass-through and Flate
+ * RGB/Gray (no predictor OR a PNG predictor, unfiltered via unfilterPng), at
  * each image's NATIVE stored resolution (NO resize, so the watermark's 8×8 grid
- * stays intact). Walks page + nested-form
- * resources, dedupes image streams shared across pages (a logo reused on every
- * slide decodes once), caps the count, and reports what it couldn't decode.
- * Read-only: never touches storeUserUpload. Never throws for a per-image fault —
- * a bad XObject is counted as skipped and the walk continues.
+ * stays intact). Walks page and nested-form resources, dedupes image streams
+ * shared across pages (a logo reused on every slide decodes once), caps the
+ * count, and reports what it couldn't decode. Read-only: never touches
+ * storeUserUpload. Never throws for a per-image fault: a bad XObject is
+ * counted as skipped and the walk continues.
  */
 export async function extractPdfImageBytes(
   file: File | Blob,
@@ -1467,7 +1467,7 @@ export async function extractPdfImageBytes(
     try {
       const node = doc.getPage(p).node;
       extractResources(makeExtractCtx(ctx, imageStreams, new Map(), () => {}), getKey(ctx, node, 'Resources'), 0);
-    } catch { continue; } // a malformed page's resources — skip it, keep scanning
+    } catch { continue; } // a malformed page's resources - skip it, keep scanning
     for (const desc of imageStreams.values()) {
       if (images.length >= max) break;
       if (seen.has(desc.stream)) continue;
@@ -1480,7 +1480,7 @@ export async function extractPdfImageBytes(
   return { images, skipped, skippedFilters: [...skippedFilters] };
 }
 
-// Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack.
+// Base64 in chunks - String.fromCharCode(...bigArray) overflows the call stack.
 function bytesToBase64(u8: Uint8Array): string {
   let bin = '';
   const CHUNK = 0x8000;
@@ -1502,8 +1502,8 @@ const MAX_PICK_PAGES = 60;
  * handle, so a later ingest of the picked pages costs nothing extra).
  *
  * mode 'single' (canvas import, picker upload): clicking a page resolves [index].
- * mode 'multi'  (catalog upload): pages toggle, everything starts selected — "all of
- * them" is the one-click default — and the Add button resolves the selection.
+ * mode 'multi'  (catalog upload): pages toggle, everything starts selected - "all of
+ * them" is the one-click default - and the Add button resolves the selection.
  * Cancel / Escape / backdrop resolve null.
  */
 export function pickPdfPages(
@@ -1556,7 +1556,7 @@ export function pickPdfPages(
     };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
     document.addEventListener('keydown', onKey);
-    // A route change cancels the dialog exactly like Escape/backdrop (resolve null) —
+    // A route change cancels the dialog exactly like Escape/backdrop (resolve null) - 
     // the body-mounted overlay must not outlive the view that spawned it, and the
     // trap's inert background must be released (NAV_EVENTS contract, utils.ts).
     const onNav = (): void => done(null);
@@ -1603,7 +1603,7 @@ export function pickPdfPages(
 
     // Thumbnails: convert sequentially in the background; the conversions are cached on
     // the handle so confirming costs nothing extra. A page that fails (or holds no
-    // artwork) is disabled and dropped from the selection — it can't become an empty asset.
+    // artwork) is disabled and dropped from the selection - it can't become an empty asset.
     void (async () => {
       for (let i = 0; i < shown; i++) {
         if (!overlay.isConnected) return;
@@ -1635,7 +1635,7 @@ export function pickPdfPages(
  *
  * One page → converted directly. Multi-page → the pickPdfPages dialog asks which
  * (mode 'multi' offers all-of-them; 'single' picks one, for the asset-picker where a
- * single slot is being filled). Returns the stored refs — empty when cancelled or
+ * single slot is being filled). Returns the stored refs - empty when cancelled or
  * nothing converted. Per-page failures warn and continue.
  */
 export async function ingestPdfAsSvgAssets(

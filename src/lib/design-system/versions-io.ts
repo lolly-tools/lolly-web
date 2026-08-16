@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * versions-io.ts — publishing, activating and restoring design-system versions
+ * versions-io.ts - publishing, activating and restoring design-system versions
  * (plans/97 §6a). The Versions panel's whole vocabulary, with no DOM in it.
  *
  * The rules this module exists to hold in one place:
@@ -20,7 +20,7 @@
  *     bytes if and when something would destroy them.
  *
  * Scope: WRITES are always the user's own design system (`user/tokens/brand` and
- * its siblings) — the thing the studio edits and publishes; this module never
+ * its siblings) - the thing the studio edits and publishes; this module never
  * writes a pack's namespace. READS are relative to whatever head the bridge
  * discovered, because a device whose system came from a pack has a
  * `<ns>/tokens/brand` head with its versions beside it, and reading those under
@@ -82,7 +82,7 @@ const tokensOf = (ctx: VersionsIoCtx): WebTokensAPI | undefined =>
  * calls the whole system `added`, and the storage line reports zero bytes.
  *
  * Falls back to the user id when the bridge cannot say (a partial test host, an
- * unreachable store) — that is where this module's own writes go.
+ * unreachable store) - that is where this module's own writes go.
  */
 async function headId(ctx: VersionsIoCtx): Promise<string> {
   try { return (await tokensOf(ctx)?.headId?.()) || USER_TOKENS_ID; }
@@ -115,7 +115,7 @@ async function readVersionBlob(ctx: VersionsIoCtx, slug: string): Promise<Blob |
   return null;
 }
 
-/** A DTCG document is a plain object — the shape installUserTokens accepts. */
+/** A DTCG document is a plain object - the shape installUserTokens accepts. */
 const isDoc = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -141,7 +141,7 @@ export async function readIndex(ctx: VersionsIoCtx): Promise<VersionIndex> {
 /**
  * One published version's stored document, or null.
  *
- * The payload EXACTLY as published — asset tokens still name their original ids,
+ * The payload EXACTLY as published - asset tokens still name their original ids,
  * not the frozen copies. Rendering applies the pins (bridge/tokens.ts forVersion);
  * a caller reading the document is reading history, and rewriting it here would
  * hide what the version actually said.
@@ -156,18 +156,18 @@ export async function readVersionDoc(ctx: VersionsIoCtx, slug: string): Promise<
  * Every asset `doc` names, as the pins a version records: `{id, version, sha256}`.
  *
  * Two rails, one list, and they are NOT worth the same. `$type: 'asset'` leaves
- * give ids directly (today's logos), and those pins are load-bearing: the render
+ * give ids directly (today's logos), and those pins are required: the render
  * path rewrites them to preserved bytes (`applyPinnedAssets`), so the version
  * keeps drawing the image it was published with. `$type: 'fontFamily'` leaves
- * give family NAMES, and every stored face whose `meta.family` matches — case-
- * insensitively, mirroring the font registry's own lookup — contributes a pin
+ * give family NAMES, and every stored face whose `meta.family` matches - case-
+ * insensitively, mirroring the font registry's own lookup - contributes a pin
  * that is a RECORD ONLY: nothing resolves a face through an asset id, so a font
  * pin says what the version used (and lets the compat card name a replacement)
  * but does not freeze it. bridge/version-assets.ts skips fonts for exactly that
  * reason, rather than charging a user's storage for bytes nothing can read; the
  * panel's storage copy says which of the two a version actually guarantees.
  *
- * A token naming an id this device does not have is skipped — a dangling token is
+ * A token naming an id this device does not have is skipped - a dangling token is
  * not a pin, and inventing a checksum for absent bytes would make the manifest
  * lie. A record with no `version` records `0.0.0`: the logo installer writes none
  * today, and recording what is actually there beats inventing a bump.
@@ -210,7 +210,7 @@ export async function buildAssetManifest(ctx: VersionsIoCtx, doc: unknown): Prom
  * Publish the head as a permanent, named version.
  *
  * Throws a sentence a person can read: this is called straight from a button.
- * The version asset lands first, then the head's ledger — see the module header
+ * The version asset lands first, then the head's ledger - see the module header
  * for why that order is the safe one.
  */
 export async function publishVersion(
@@ -260,7 +260,7 @@ export async function publishVersion(
  *
  * `null` means "follow the latest again": the head goes live everywhere, which
  * is the state every system starts in. An unknown slug is refused rather than
- * stored — a dangling active would quietly fall through the ladder and look like
+ * stored - a dangling active would quietly fall through the ladder and look like
  * the setting had not taken.
  */
 export async function setActiveVersion(ctx: VersionsIoCtx, slug: string | null): Promise<void> {
@@ -282,7 +282,7 @@ export async function setActiveVersion(ctx: VersionsIoCtx, slug: string | null):
  * rewriting of history, and a restore that erased the version list would delete
  * the very thing it restored from. Asset tokens keep their original ids (see
  * readVersionDoc), so the restored head references the files the user manages
- * rather than the hidden frozen copies — the version itself still renders its own
+ * rather than the hidden frozen copies - the version itself still renders its own
  * preserved bytes. Undo is the studio's, one step.
  */
 export async function restoreLatestFrom(ctx: VersionsIoCtx, slug: string): Promise<boolean> {
@@ -294,7 +294,7 @@ export async function restoreLatestFrom(ctx: VersionsIoCtx, slug: string): Promi
 }
 
 /**
- * Whether the head has moved on from the active version, and by how much — the
+ * Whether the head has moved on from the active version, and by how much - the
  * "Editing ahead of {label}" banner. With nothing active there is nothing to be
  * ahead OF: the head is live everywhere, so `ahead` is false by definition.
  */
@@ -324,7 +324,7 @@ export async function headAhead(
  * one succeeds, and which pinned assets changed.
  *
  * The baseline is the ACTIVE version, else the most recent one, else nothing at
- * all — a first publish honestly reads as "everything added". `removed` is the
+ * all - a first publish honestly reads as "everything added". `removed` is the
  * breaking set and the panel says so.
  */
 export async function publishPreview(ctx: VersionsIoCtx, label: string): Promise<{
@@ -376,7 +376,7 @@ export async function versionStorage(
   }
   let frozen = 0;
   // The frozen rows are hidden from _listUserAssets on purpose, so the honest
-  // total comes from the backup view — the one listing that still sees them.
+  // total comes from the backup view - the one listing that still sees them.
   for (const rec of await assets._exportUserAssets?.().catch(() => []) ?? []) {
     if (!rec.id.startsWith(FROZEN_PREFIX)) continue;
     frozen++;

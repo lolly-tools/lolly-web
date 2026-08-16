@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The candidate tray's surface (plan 97 §8, M2) — what it renders, and what a
+ * The candidate tray's surface (plan 97 §8, M2) - what it renders, and what a
  * press actually commits.
  *
  * Run directly:
@@ -68,7 +68,7 @@ function candidate(type: CandidateType, value: string, over: Partial<Candidate> 
   };
 }
 
-/** The model's shape without its persistence — the surface only ever reads
+/** The model's shape without its persistence - the surface only ever reads
  *  list() and writes through markAdded/dismiss. */
 function fakeTray(initial: Candidate[] = []): Tray & { calls: string[] } {
   let items = initial.map((c) => ({ ...c }));
@@ -324,7 +324,7 @@ test('an Add keeps focus in the list: on the same row when it survives, on its s
   ui.open();
 
   // Dismiss the middle row from the keyboard: its own button is gone after the
-  // repaint, so focus must land on whatever took that position — never <body>.
+  // repaint, so focus must land on whatever took that position - never <body>.
   const middle = el.querySelector<HTMLElement>('[data-ds-tray-dismiss="color-#222222"]')!;
   middle.focus();
   middle.click();
@@ -378,7 +378,7 @@ test('a scan-driven open never steals focus', () => {
   const ui = mountTrayUi(el, { tray, addColors: () => 1 });
 
   elsewhere.focus();
-  ui.open(); // what keepInTray does — the source dialog may still be open
+  ui.open(); // what keepInTray does - the source dialog may still be open
   assert.equal(document.activeElement, elsewhere, 'the tray opened around the person, not over them');
   ui.teardown();
   elsewhere.remove();

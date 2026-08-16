@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand studio — the ONE place brand primitives are created, edited, saved,
+ * Brand studio - the ONE place brand primitives are created, edited, saved,
  * imported and exported. Mounted exclusively by #/start (the Dashboard's
  * Design-system tab is a read-only rendering of the result; user preferences
- * like the app theme live on #/profile — that separation is the whole point).
+ * like the app theme live on #/profile - that separation is the whole point).
  *
  * The studio renders five tab panels, each wrapped in `[data-be-tab-panel]`;
  * the host view (start.ts) drives visibility by setting `data-active-tab` on
- * the editor root — every panel stays mounted (and wired) whichever tab shows:
+ * the editor root - every panel stays mounted (and wired) whichever tab shows:
  *
- *  1. logos     — the Logos room (plan 97 §7.3). Level 0 is one multi-file drop
+ *  1. logos - the Logos room (plan 97 §7.3). Level 0 is one multi-file drop
  *                 zone: each file is classified (classify-logo.ts), proposes one
  *                 of the eight slots and waits as a confirm chip, and a placed
  *                 colour SVG offers generated mono / reverse siblings. Under it,
@@ -19,15 +19,15 @@
  *                 shared trim-to-content offer first (trim-offer.ts), and an SVG
  *                 feeds the Colours room's "found in the logo" primary
  *                 suggestion, with its other colours going to the tray.
- *  2. color     — the Colours room (plan 97 §7.1). Level 0 leads: "Add a colour"
+ *  2. color - the Colours room (plan 97 §7.1). Level 0 leads: "Add a colour"
  *                 writes exactly one token, and the Roles strip says which
- *                 swatch plays each part. The expert controls — Generate a
- *                 starter palette, Shade curves, Contrast, Print — are folded
+ *                 swatch plays each part. The expert controls - Generate a
+ *                 starter palette, Shade curves, Contrast, Print - are folded
  *                 into four wings below it. The palette (every swatch an
  *                 editable tile + the OKLCH wheel) and optional gradient tokens
  *                 sit in the side pane.
- *  3. type      — the Type room (plan 97 §7.2). Level 0 is four ROLE CARDS
- *                 (Primary, Headings, Code, Italic — brand-vars.ts's FONT_SLOTS),
+ *  3. type - the Type room (plan 97 §7.2). Level 0 is four ROLE CARDS
+ *                 (Primary, Headings, Code, Italic - brand-vars.ts's FONT_SLOTS),
  *                 each showing the face that serves it on a live one-line
  *                 specimen. A card opens the COMPARE STAGE inline
  *                 (design-system/type-compare.ts): Google families by name,
@@ -35,32 +35,32 @@
  *                 the tray all stand side by side on one editable specimen at
  *                 one size, and NOTHING installs until a card is chosen. The
  *                 stage previews faces as session-scoped FontFaces and installs
- *                 nothing itself — `applyTypeChoice` here is the only writer
+ *                 nothing itself - `applyTypeChoice` here is the only writer
  *                 (installGoogleFont / installFontFromBytes, then the role).
  *                 Below it: the management list of installed families (roles,
  *                 delete), the font-file upload panel, and the full four-role
  *                 specimen.
- *  4. tokens    — the corner radius plus every other non-colour primitive
+ *  4. tokens - the corner radius plus every other non-colour primitive
  *                 (spacing, sizing, stroke, opacity, rotation, numbers, shadows
- *                 — lib/token-studio.ts).
- *  5. catalogue — brand asset uploads, sorted the same way the Catalogue view
+ * - lib/token-studio.ts).
+ *  5. catalogue - brand asset uploads, sorted the same way the Catalogue view
  *                 sorts them (vector / image / audio / motion).
  *
  * Everything persists to the one `user/tokens/brand` install via the bridge's
  * single write chokepoint (installUserTokens → bust → the next get()/colors()/
  * resolve() re-reads). ONE save discipline (plan 97 §6): every commit-level
  * action persists immediately and a session undo stack (Ctrl/Cmd+Z, scoped to
- * the Colours room) is the safety net — there is no draft, no dirty flag, and
+ * the Colours room) is the safety net - there is no draft, no dirty flag, and
  * no confirm dialog where an undo suffices.
  * Import/export of the whole brand pack is exposed on the handle
  * (exportPack/importPack) so the host view owns those buttons' placement.
  *
- * A LOCKED build (host.tokens.isLocked()) exposes none of this — the caller
+ * A LOCKED build (host.tokens.isLocked()) exposes none of this - the caller
  * renders a read-only note instead. Everything is best-effort and DOM-guarded:
  * a detached editor (route changed mid-op) never writes to a dead node.
  */
 
-import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
+import '../styles/parts/brand-studio.css'; // every .be-* rule - rides this module's lazy chunk
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
 import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, formatOklch, parseOklch, deserializeCurve, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents, generateAnalogous,
   // `formatColor` is ALIASED: this module already imports a different one from
@@ -164,7 +164,7 @@ const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
   { id: 'mono', label: t('Mono') }, { id: 'complement', label: t('Complement') },
   { id: 'analogous', label: t('Analogous') }, { id: 'triad', label: t('Triad') },
 ];
-// UI intensity — the surface look baked into the brand, collapsed from the old
+// UI intensity - the surface look baked into the brand, collapsed from the old
 // Light / Dark / Deep-primary trio to a single Muted ↔ Deep toggle. Light vs dark
 // is the app THEME's job (the Theme picker), so this axis only carries how RICH the
 // surface reads: `muted` = a neutral surface (light default); `deep` = the
@@ -177,7 +177,7 @@ const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
   { id: 'comfort', label: t('Comfort') }, { id: 'high', label: t('High') },
 ];
 // What sits on top of the brand primary. Auto picks white/black by contrast;
-// Light/Dark force it — the fix for a mid-tone brand colour that "should" wear
+// Light/Dark force it - the fix for a mid-tone brand colour that "should" wear
 // white text but auto-flips to black for the higher ratio (see deriveBrandTokens).
 const FOREGROUNDS: ReadonlyArray<{ id: Fg; label: string }> = [
   { id: 'auto', label: t('Auto') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') },
@@ -185,7 +185,7 @@ const FOREGROUNDS: ReadonlyArray<{ id: Fg; label: string }> = [
 const DEFAULT_PRIMARY = '#4f83cc';
 // The engine's own default for `secondary` (deriveBrandTokens hardcodes ramp
 // step 5); `neutral` has no engine default to match since it's not a slot the
-// engine emits at all — step 5 (the ramp's contrast-anchor step) is this
+// engine emits at all - step 5 (the ramp's contrast-anchor step) is this
 // editor's own sensible starting point for it.
 const DEFAULT_RAMP_STEP = 5;
 
@@ -198,7 +198,7 @@ const ratioOf = (fg: string, bg: string): string => {
   try { const f = colorToHex(fg), b = colorToHex(bg); return f && b ? contrastRatio(f, b).toFixed(1) : ''; }
   catch { return ''; }
 };
-// APCA-W3 Lc, |rounded| — ADVISORY beside the WCAG number (it reads dark-mode
+// APCA-W3 Lc, |rounded| - ADVISORY beside the WCAG number (it reads dark-mode
 // and mid-tone pairs honestly where WCAG 2.1 misjudges); the derive floors
 // stay WCAG-enforced. Rough anchors: 60 body text, 75 small text, 90 thin.
 const apcaOf = (fg: string, bg: string): string => {
@@ -212,12 +212,12 @@ const apcaOf = (fg: string, bg: string): string => {
 /**
  * One ramp's 9 steps. When `selected` is given the cells become buttons the
  * user can pick a step from (data-be-ramp/data-be-step carry which); the
- * chosen one gets `.is-selected` — the same ring treatment `.be-swatch` uses
- * in the Palette panel below. Omitted (the Primary ramp — it's already driven
+ * chosen one gets `.is-selected` - the same ring treatment `.be-swatch` uses
+ * in the Palette panel below. Omitted (the Primary ramp - it's already driven
  * by the colour field above) they stay plain, non-interactive swatches.
  */
 // One-time, informed opt-in before any Google Fonts request. Adding a Google
-// Font sends the family name and — unavoidably — the user's IP address to
+// Font sends the family name and - unavoidably - the user's IP address to
 // Google's servers. That is a third-party transfer the user gets to refuse, so
 // it is gated here rather than only described in docs/privacy.md. Asked once and
 // remembered: consent is per-purpose, not per-font, and re-prompting for every
@@ -239,7 +239,7 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
 
 // ── Type room: the four role cards (plan 97 §7.2, level 0) ───────────────────
 /**
- * The faces the chrome, the tools and every export read — brand-vars.ts's
+ * The faces the chrome, the tools and every export read - brand-vars.ts's
  * FONT_SLOTS, in the order the room shows them. `brand` is the TOKEN id and it
  * is never renamed (§3 rule 9); "Primary" is the word on screen, because nobody
  * calls their body face "the brand face".
@@ -254,7 +254,7 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
 interface TypeRoleDef {
   id: FontRole;
   css: string;
-  /** The role IS the slant — the specimen has to lean or it says nothing. */
+  /** The role IS the slant - the specimen has to lean or it says nothing. */
   slanted?: boolean;
   /** Sized down: a code line is longer and set tighter than display copy. */
   mono?: boolean;
@@ -274,7 +274,7 @@ function typeRoleLabel(role: FontRole): string {
       : role === 'mono' ? t('Code') : t('Italic');
 }
 
-/** One short line per role — long enough to judge a face, short enough to stay
+/** One short line per role - long enough to judge a face, short enough to stay
  *  on one line at any card width. The code line is a real command, not prose:
  *  a mono face is chosen on its digits, its zero and its punctuation. */
 function typeRoleSample(role: FontRole): string {
@@ -289,7 +289,7 @@ function typeRoleSample(role: FontRole): string {
  *
  * The button is icon-free but ROLE-free too: "Change" on its own would be four
  * identical buttons on four cards, so the accessible name names the role. WCAG
- * 2.5.3 (Label in Name) then requires the visible words to be IN that name —
+ * 2.5.3 (Label in Name) then requires the visible words to be IN that name - 
  * speech control says "click Change", and a name of "Change the Headings face"
  * matches while "Choose the Headings face" over a visible "Change" does not.
  * Both strings below are built so the visible label is a literal prefix of the
@@ -364,7 +364,7 @@ function rampRow(
 }
 /**
  * The primary→secondary hue bridge: `rampOklab` through the two semantic
- * anchors, perceptually even (lightness-corrected) — the in-between colours a
+ * anchors, perceptually even (lightness-corrected) - the in-between colours a
  * gradient or chart can safely borrow. Display-only spans, mirroring the
  * non-interactive Primary row's treatment.
  */
@@ -409,7 +409,7 @@ function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secon
     <div class="be-specs">${specCard(t('Light'), light)}${specCard(t('Dark'), dark)}</div>`;
 }
 
-// `segHtml` moved to lib/seg.ts (component audit rec 1 — the one `.view-seg`
+// `segHtml` moved to lib/seg.ts (component audit rec 1 - the one `.view-seg`
 // primitive, shared beyond the brand studio); re-exported here for compat with
 // anything still importing it from this module.
 export { segHtml };
@@ -417,26 +417,26 @@ export { segHtml };
 // ── Shared print-lock control (independent CMYK lock + Spot-colour lock) ─────
 // One control, two mounts: the Colour panel's primary field and the Palette
 // panel's swatch popover (see mountPrintLock's two call sites below). CMYK and
-// spot are independent (see brand-doc.ts's PrintLock doc comment) — a swatch
+// spot are independent (see brand-doc.ts's PrintLock doc comment) - a swatch
 // may carry either, both, or neither: CMYK is the process-colour fallback used
 // for preview / non-PDF export / the PDF Separation tint-transform's alternate
 // space whether or not a spot is also set, so locking a named ink never
 // discards a separately-tuned CMYK build.
 
-/** The auto sRGB→CMYK conversion of a hex (C,M,Y,K 0–100) — the value the CMYK
+/** The auto sRGB→CMYK conversion of a hex (C,M,Y,K 0–100) - the value the CMYK
  *  block seeds from when first locked, and what it shows while auto. */
 const autoCmykOf = (hex: string): [number, number, number, number] => {
   const p = formatColor('cmyk', hex).split(',').map(n => Math.round(parseFloat(n)) || 0);
   return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 0];
 };
 
-/** Same JSON key path — used to tell whether the Palette panel's currently-edited
+/** Same JSON key path - used to tell whether the Palette panel's currently-edited
  *  swatch IS the primary ramp's anchor step, so the two print-lock controls that
  *  can both touch it stay reconciled (see primaryPrintLock's doc comment). */
 const samePath = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((seg, i) => seg === b[i]);
 
-/** The finishes a brand may declare an ink to BE. Ids are stable and canonical —
+/** The finishes a brand may declare an ink to BE. Ids are stable and canonical - 
  *  they become plate names in PDF finish-plate emission, so this is format
  *  vocabulary, not brand data; the brand's *choice* among them is the data, and
  *  it rides `$extensions` (no schema change, see setSwatchSpotLock).
@@ -444,20 +444,20 @@ const samePath = (a: readonly string[], b: readonly string[]): boolean =>
  *  Deliberately not split by foil colour (no `foil-gold`/`foil-silver`): the
  *  spot's own name + colour already say which foil it is, and duplicating that
  *  here would drift. A later slice can prepend brand-declared entries to this
- *  list without any type change — `finish` is an open union. */
+ *  list without any type change - `finish` is an open union. */
 const FINISHES: ReadonlyArray<{ id: string; label: () => string }> = [
   { id: 'foil', label: () => t('Foil') },
   { id: 'emboss', label: () => t('Emboss') },
   { id: 'deboss', label: () => t('Deboss') },
   { id: 'spot-uv', label: () => t('Spot UV') },
   { id: 'soft-touch', label: () => t('Soft touch') },
-  // 'Die cut', not 'Cut' — the bare word is already a chrome string owned by the
+  // 'Die cut', not 'Cut' - the bare word is already a chrome string owned by the
   // timeline panel's video-cut junction kind, and translates as the editing verb.
   { id: 'cut', label: () => t('Die cut') },
   { id: 'crease', label: () => t('Crease') },
   { id: 'perforate', label: () => t('Perforate') },
 ];
-/** A finish id's display label — falls back to the raw id so a brand-declared
+/** A finish id's display label - falls back to the raw id so a brand-declared
  *  finish this build doesn't know still reads as itself, never as blank. */
 const finishLabel = (id: string): string => FINISHES.find(f => f.id === id)?.label() ?? prettify(id);
 
@@ -499,17 +499,17 @@ function printLockHtml(): string {
 // row is a target the swatch can be expressed in; each is either DERIVED from
 // the canonical value or AUTHORED, and an authored one wins at export.
 //
-// The sRGB row is the one that earns this feature. It is the BAKE — what most
-// viewers, most print pipelines and every older browser actually receive — and
-// the automatic §14.2 map picks the nearest colour by ΔE, while a brand will
-// often prefer a DIFFERENT sRGB green: one that reads as the same brand colour
-// to a human even though it is not the closest by measurement. So the row is
-// editable, and the drift from the automatic answer is shown rather than hidden.
+// The sRGB row is the reason for this feature. It is the BAKE: what most
+// viewers, most print pipelines, and every older browser actually receive. The
+// automatic §14.2 map picks the nearest colour by ΔE, but a brand will often
+// prefer a DIFFERENT sRGB green: one that looks like the same brand colour to a
+// human even though it is not the closest by measurement. So the row is
+// editable, and any drift from the automatic answer is shown, not hidden.
 //
 // Press profiles appear as derived rows and are deliberately NOT editable here.
-// Authoring a CMYK build already has a home two rows up (the print lock), and
-// two editors writing the same target is how the two silently disagree. When
-// the press side moves onto this model the lock moves with it, in one change.
+// Authoring a CMYK build already has a home two rows up, in the print lock.
+// Two editors writing the same target would let them disagree without warning.
+// When the press side moves onto this model, the lock moves with it in one change.
 
 /** Screen targets every swatch has, in the order they are keyed elsewhere. */
 const FACE_SPACES: readonly { target: string; label: string }[] = [
@@ -532,7 +532,7 @@ function deriveFace(canonical: string, target: string): string | [number, number
   if (!c) return null;
   if (target === 'srgb') {
     // MAPPED, not clipped. `colorToHexString` alone would clip each channel, and a
-    // clip is not what the platform does to an out-of-gamut colour — CSS Color 4
+    // clip is not what the platform does to an out-of-gamut colour - CSS Color 4
     // §14.2 preserves L and H and reduces C. This row IS that bake, so it has to
     // show the same answer a browser would.
     const rgb = gamutMapSrgb(colorToSrgb(c));
@@ -540,8 +540,8 @@ function deriveFace(canonical: string, target: string): string | [number, number
   }
   if (target === 'display-p3' || target === 'rec2020') {
     // Rounded to 4 decimals. `formatColor` emits full float precision, which wraps
-    // the row onto three lines and — because pressing Set SEEDS the input from this
-    // — would put `0.044335162...` in front of someone about to hand-edit it. Four
+    // the row onto three lines and - because pressing Set SEEDS the input from this
+    // - would put `0.044335162...` in front of someone about to hand-edit it. Four
     // decimals is ~1/10000 of a channel: far finer than any display step, so
     // nothing reachable is lost.
     const cc = convertColor(c, target);
@@ -585,14 +585,14 @@ interface FacesCtx {
  * caller calls when the subject changes underneath it.
  *
  * Rebuilt wholesale on render, which is safe because the only mounted state is
- * the row inputs — and the focused one is left alone, so typing an override does
+ * the row inputs - and the focused one is left alone, so typing an override does
  * not fight the re-render its own commit triggers.
  */
 function mountFaces(mount: HTMLElement, ctx: FacesCtx): { render: () => void } {
   const commit = (target: string, raw: string): void => {
     const v = raw.trim();
     if (!v) return;                       // nothing typed yet; not a clear
-    if (!parseCssColor(v)) return;         // not a colour yet — wait for more typing
+    if (!parseCssColor(v)) return;         // not a colour yet - wait for more typing
     ctx.set(target, { value: v });
     render();
   };
@@ -630,7 +630,7 @@ function mountFaces(mount: HTMLElement, ctx: FacesCtx): { render: () => void } {
       return `<div class="be-face${isSet ? ' is-set' : ''}${absent ? ' is-absent' : ''}">
         <span class="be-face-key">${escape(f.label ?? f.target)}</span>
         <code class="be-face-val">${escape(faceText(f.value))}</code>
-        ${/* ΔEOK, not "ΔE", and three decimals — both deliberate. `deltaEOkColor`
+        ${/* ΔEOK, not "ΔE", and three decimals - both deliberate. `deltaEOkColor`
               is Euclidean distance in OKLab, where a just-noticeable difference is
               around 0.02; labelling it "ΔE" invites reading it as CIE ΔE, on which
               2.3 is a JND, so a genuinely enormous difference reads as "0.5, near
@@ -672,16 +672,16 @@ const cssEscape = (s: string): string =>
   (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s.replace(/[^\w-]/g, '\\$&'));
 
 interface PrintLockCtx {
-  /** The subject's current screen colour — feeds the Auto CMYK conversion. */
+  /** The subject's current screen colour - feeds the Auto CMYK conversion. */
   hex: () => string;
   getCmyk: () => [number, number, number, number] | null;
   setCmyk: (cmyk: [number, number, number, number] | null) => void;
   getSpot: () => SpotColor | null;
   setSpot: (spot: SpotColor | null) => void;
   /** Called after either block re-renders. The primary panel's folded
-   *  "Print & screen" summary chips hang off this so BOTH lock funnels — the
+   *  "Print & screen" summary chips hang off this so BOTH lock funnels - the
    *  control's own toggles AND afterSwatchLockChange → primaryLock.render()
-   *  (the popover editing the primary anchor) — keep them in step. */
+   *  (the popover editing the primary anchor) - keep them in step. */
   onRender?: () => void;
 }
 
@@ -692,7 +692,7 @@ interface PrintLockCtx {
  * readouts/fields resync without re-mounting the control.
  *
  * Call this AFTER any generic `[data-be-seg]` delegate (see the Scheme/Surface/
- * Contrast wiring below) has already run its one-time `querySelectorAll` — the
+ * Contrast wiring below) has already run its one-time `querySelectorAll` - the
  * control's own Auto/Locked and None/Set toggles are built on that same
  * `segHtml` markup, so mounting later keeps them out of that older NodeList.
  */
@@ -720,7 +720,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   const commitCmyk = (): void => { ctx.setCmyk(cmykFromInputs()); renderCmyk(); };
   const commitSpot = (): void => {
     const name = nameInput?.value.trim();
-    if (!name) return; // a spot lock needs a name — nothing to commit yet
+    if (!name) return; // a spot lock needs a name - nothing to commit yet
     const book = bookInput?.value.trim();
     const finish = finishSel?.value.trim();
     ctx.setSpot({ name, ...(book ? { book } : {}), ...(finish ? { finish: finish as FinishKind } : {}) });
@@ -730,7 +730,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   cmykSeg?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
     if (btn.dataset.val === 'auto') { ctx.setCmyk(null); renderCmyk(); return; }
-    // Locking always leaves something pinned, never a limbo state — seed from
+    // Locking always leaves something pinned, never a limbo state - seed from
     // the auto conversion.
     ctx.setCmyk(autoCmykOf(ctx.hex()));
     renderCmyk();
@@ -740,7 +740,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   spotSeg?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
     if (btn.dataset.val === 'none') { ctx.setSpot(null); renderSpot(); return; }
-    // "Set" opens the name field but doesn't commit anything yet — a spot lock
+    // "Set" opens the name field but doesn't commit anything yet - a spot lock
     // needs a name (commitSpot no-ops until one's typed).
     setPressed(spotSeg, 'set');
     if (spotBody) spotBody.hidden = false;
@@ -749,7 +749,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   nameInput?.addEventListener('input', commitSpot);
   bookInput?.addEventListener('input', () => { if (nameInput?.value.trim()) commitSpot(); });
   // A finish is a property OF the spot, so it can only be committed once the
-  // spot has a name — same guard the Book field uses.
+  // spot has a name - same guard the Book field uses.
   finishSel?.addEventListener('change', () => { if (nameInput?.value.trim()) commitSpot(); });
 
   function renderCmyk(): void {
@@ -771,10 +771,10 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
     if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
     if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
     // A brand-declared finish this build has no <option> for would silently
-    // reset the select to '' and then be committed away — keep it addressable.
+    // reset the select to '' and then be committed away - keep it addressable.
     if (finishSel && document.activeElement !== finishSel) {
       const cur = spot?.finish ?? '';
-      // The injected option belongs to THIS render, not to the mount — the swatch
+      // The injected option belongs to THIS render, not to the mount - the swatch
       // popover mounts this control once and drives it for every swatch, so an
       // option left behind would be offered on unrelated swatches.
       Array.from(finishSel.options).filter(o => o.dataset.beAdhoc).forEach(o => o.remove());
@@ -795,7 +795,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
 
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
 // The tile markup itself is the shared factory in swatches.ts (component-audit
-// rec 12 — swatchTile), so the grid, mobile mirror and this file's in-place
+// rec 12 - swatchTile), so the grid, mobile mirror and this file's in-place
 // recolour paths (syncTileMeta) all compose the same accessible-name string.
 
 function tileHtml(s: BrandSwatch, idx: number): string {
@@ -812,7 +812,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
     /spectrum/i.test(g) ? 6 : /custom/i.test(g) ? 7 : /roles/i.test(g) ? 9 : 4;
   const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   const idxOf = new Map(swatches.map((s, i) => [s, i]));
-  // A palette-level Add always shows — a brand with no `custom` group yet has no
+  // A palette-level Add always shows - a brand with no `custom` group yet has no
   // Custom section to hang a per-group Add off, so the first swatch needs this.
   const countLabel = swatches.length === 1
     ? t('{n} colour', { n: swatches.length })
@@ -825,7 +825,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
         <button type="button" class="be-add" data-be-add="custom">${t('+ Add swatch')}</button>
       </span>
     </div>`;
-  // Every section is collapsible (<details>, open by default — no persistence)
+  // Every section is collapsible (<details>, open by default - no persistence)
   // and carries its own "+ Add": Spectrum grows in place, Custom adds a custom
   // swatch, and a derived section (Primary/Neutral/Roles…) adds a custom swatch
   // TAGGED to render under that heading (addSwatch's displayGroup). Tiles stay
@@ -833,7 +833,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
   const body = order.map(g => {
     const items = groups.get(g)!;
     // The displayGroup tag PERSISTS on the token, so store the theme-less base
-    // name ("Roles", not the "Roles · Light" heading) — walkSwatches files a
+    // name ("Roles", not the "Roles · Light" heading) - walkSwatches files a
     // "Roles" tag under whichever theme's Roles section is currently showing,
     // so a theme switch never strands the swatch under a stale heading.
     const addAttrs = /spectrum/i.test(g) ? 'data-be-add="spectrum"'
@@ -857,7 +857,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
  * Render the brand studio into `root` and wire it. Returns a teardown that stops
  * the (font/preview) listeners. Locked builds render a read-only note and no-op.
  */
-/** The five areas the studio renders — the host view drives which one shows by
+/** The five areas the studio renders - the host view drives which one shows by
  *  setting `data-active-tab` on the editor root, and `onChange` names the one an
  *  edit came from.
  *
@@ -867,7 +867,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
 export type BrandTabKey = 'logos' | 'color' | 'type' | 'tokens' | 'catalogue';
 
 export interface BrandEditorOptions {
-  /** Fired after any brand edit lands, with the tab it came from — the host's
+  /** Fired after any brand edit lands, with the tab it came from - the host's
    *  refresh hook. */
   onChange?: (tab: BrandTabKey) => void;
   /** Take a durable, named checkpoint of the design system before a destructive
@@ -882,7 +882,7 @@ export interface BrandEditorOptions {
    * whole candidate list on every write, so two instances over the same storage
    * key each save their own in-memory copy and whichever writes last erases the
    * other's candidates. The Logos room hands a mark's extra colours to a tray;
-   * given one, it uses the host's rather than creating a second — which also
+   * given one, it uses the host's rather than creating a second - which also
    * means those candidates show up in the panel the host already mounted.
    *
    * Must be LOADED by the host before it is passed. Absent, the room creates
@@ -893,16 +893,16 @@ export interface BrandEditorOptions {
 }
 
 /** teardown: unmount. exportPack/importPack: the brand-file share pair, exposed
- *  here so the host view owns the buttons' placement (errors propagate — the
+ *  here so the host view owns the buttons' placement (errors propagate - the
  *  caller shows them). */
 export interface BrandEditorHandle {
   teardown: () => void;
   /** Retained only so an older caller still compiles. Every commit in the studio
    *  persists immediately (plan 97 §6), so there is never a draft to save and
-   *  never a pending state to report — start.ts consulted neither, verified. */
+   *  never a pending state to report - start.ts consulted neither, verified. */
   saveDraft: () => void;
   isDirty: () => boolean;
-  /** Add n colours as n swatches, through the Colours room's own write — one
+  /** Add n colours as n swatches, through the Colours room's own write - one
    *  `addSwatch` each, one persist, no derive and nothing suggested-into (plan
    *  97 §3 principle 1). Returns how many landed.
    *
@@ -913,20 +913,20 @@ export interface BrandEditorHandle {
   addColors?: (entries: ColorEntry[]) => number;
   exportPack: () => Promise<{ filename: string }>;
   importPack: (file: File) => Promise<void>;
-  /** Re-read the installed doc and repaint every panel — for a host that
+  /** Re-read the installed doc and repaint every panel - for a host that
    *  installed tokens through its own path (JSON/SVG import) underneath us. */
   reload: () => Promise<void>;
-  /** Close any floating editor UI (the swatch popover) — the host calls this
+  /** Close any floating editor UI (the swatch popover) - the host calls this
    *  on tab switches, where an open popover would otherwise outlive the tile
    *  it was anchored to (the popover sits outside the tab panels). */
   closeOverlays: () => void;
   /** Subscribe to COMMITTED-palette changes. Fired from both repaintPalette
-   *  and persist() — in-place recolours (wheel drags, popover edits) bypass
+   *  and persist() - in-place recolours (wheel drags, popover edits) bypass
    *  repaintPalette and only funnel through persist(), so a single hook point
    *  would miss one path. Returns an unsubscribe. */
   onPalette: (cb: () => void) => () => void;
   /** Deep-link entry: reveal the folded Colour chart card (the OKLCH wheel) the
-   *  Colours tab opens on click — repaints itself via its own toggle handler.
+   *  Colours tab opens on click - repaints itself via its own toggle handler.
    *  Returns false when the card isn't present (a locked build renders no
    *  studio), so a host can degrade gracefully. */
   openColorChart: () => boolean;
@@ -961,11 +961,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // The document we edit: the installed brand if any, else a fresh derive from
   // the default primary so the palette is never empty on an unbranded install.
   let doc = (await tokens?.raw().catch(() => null)) as Record<string, unknown> | null;
-  const installedDoc = isRec(doc) ? doc : null; // stable snapshot for seeding, below — never reassigned
+  const installedDoc = isRec(doc) ? doc : null; // stable snapshot for seeding, below - never reassigned
   if (!isRec(doc)) doc = deriveBrandTokens({ primary: DEFAULT_PRIMARY, name: 'My brand' }) as Record<string, unknown>;
 
   // Whether installedDoc is something the USER actually saved here, vs just the
-  // catalog's own shipped/placeholder brand — distinct from "is there any doc at
+  // catalog's own shipped/placeholder brand - distinct from "is there any doc at
   // all", since a fresh install still resolves ITS tokens as installedDoc. Only a
   // real user save should seed a control (like Shades below) away from its
   // considered default; the catalog's incidental step count isn't a user choice.
@@ -976,9 +976,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     })._findMetaByType?.('tokens'))?.id === USER_TOKENS_ID;
   } catch { /* discovery unavailable — treat as not user-owned */ }
 
-  // Derive-control state (separate from the edited doc — it RE-SEEDS on install).
+  // Derive-control state (separate from the edited doc - it RE-SEEDS on install).
   // Primary is seeded from the REAL installed brand's current colour, so the
-  // picker opens on what's actually running, not a hardcoded default — only a
+  // picker opens on what's actually running, not a hardcoded default - only a
   // genuinely unbranded install (no real doc yet) falls back to DEFAULT_PRIMARY.
   // Scheme/surface/contrast aren't recoverable (deriveBrandTokens doesn't persist
   // its own input options into the doc), so those stay at their usual defaults.
@@ -989,13 +989,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     } catch { /* malformed/tokenless doc — keep the default seed */ }
   }
   let scheme: Scheme = 'mono', surface: Surface = 'light', contrast: Contrast = 'comfort';
-  // Foreground preference (text on the brand colour). Defaults to 'auto' — the
-  // engine's contrast pick — until the user forces Light or Dark.
+  // Foreground preference (text on the brand colour). Defaults to 'auto' - the
+  // engine's contrast pick - until the user forces Light or Dark.
   let foreground: Fg = 'auto';
   // How many shades each ramp carries. New brands start at 5 (a tight, decisive
   // palette); a brand the USER saved here keeps whatever it shipped (seeded from
   // its primary ramp's step count) so re-opening the editor never silently
-  // reshapes it — but the catalog's own placeholder brand doesn't count as a user
+  // reshapes it - but the catalog's own placeholder brand doesn't count as a user
   // choice, so it doesn't override the 5-step default either.
   const DEFAULT_STEPS = 5;
   const anchorStep = (n: number): number => Math.round((n - 1) / 2) + 1; // mid step = engine at(0.5)
@@ -1006,42 +1006,42 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
     } catch { /* keep the default */ }
   }
-  // Neutral/secondary ramp-step picks — default to the anchor (mid) step for the
+  // Neutral/secondary ramp-step picks - default to the anchor (mid) step for the
   // current division count, so they track the shade count until the user picks.
   let neutralStep = anchorStep(steps), secondaryStep = anchorStep(steps);
-  // The primary's pinned print lock (null = auto-convert at export) — read LIVE
+  // The primary's pinned print lock (null = auto-convert at export) - read LIVE
   // off `doc` rather than cached, since the very same swatch (the primary ramp's
-  // anchor step) is also reachable — and lockable — through the Palette panel's
+  // anchor step) is also reachable - and lockable - through the Palette panel's
   // swatch popover (see mountPrintLock's two call sites below). A cached copy
   // would drift the moment the OTHER surface writes the lock straight to `doc`.
   const primaryPrintLock = (): PrintLock | null => {
     const p = primaryAnchorPath(doc);
     return p ? getSwatchPrintOverride(doc, p) : null;
   };
-  // The colour-harmony the "Build your palette" generator suggests accents from —
+  // The colour-harmony the "Build your palette" generator suggests accents from - 
   // either a fixed SchemeKind (complement/adjacent/triad/tetrad) or the parametric
   // 'analogous' mode (its own count + angle controls, generateAnalogous instead of
   // generateSchemeAccents). One value because the Harmony control is a single
   // mutually-exclusive segmented group. Persisted in panel state like any input.
   type HarmonyKind = SchemeKind | 'analogous';
   let harmonyKind: HarmonyKind = 'adjacent-3';
-  // Parametric-analogous params — only read when harmonyKind === 'analogous'.
+  // Parametric-analogous params - only read when harmonyKind === 'analogous'.
   let analogCount = 3;   // number of accents (2–5)
   let analogAngle = 30;  // hue step in degrees between consecutive accents (10–45)
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
-  // ── Per-ramp tonal curves — the editable master behind each ramp's steps ─────
+  // ── Per-ramp tonal curves - the editable master behind each ramp's steps ─────
   // Loaded from the installed doc's ramp-group $extensions; ABSENT on a curve-less
   // brand, which then stays byte-identical to today's pure derive (overlay is a
   // no-op for a ramp with no curve). Draft-until-"Use this colour", exactly like
-  // the other derive inputs — overlaid onto every derived preview below, and onto
+  // the other derive inputs - overlaid onto every derived preview below, and onto
   // the fresh `next` in the derive handler so a curve survives a re-derive.
   const curves: RampCurves = {};
   for (const ramp of RAMP_IDS) {
     const stored = getRampCurve(doc, ramp);
     if (stored) curves[ramp] = deserializeCurve(stored);
   }
-  // The primary the live curves are currently anchored to — a primary edit shifts
+  // The primary the live curves are currently anchored to - a primary edit shifts
   // them by the per-channel delta from here (see reanchorCurvesTo below).
   let curveAnchorPrimary = primary;
   // Which ramp's curve editor is open (null = none). Its state, plus whether each
@@ -1053,7 +1053,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     secondary: { edited: !!curves.secondary, open: editingCurveRamp === 'secondary' },
   });
 
-  // The brand's resolved surface role — the default background contrast-lock
+  // The brand's resolved surface role - the default background contrast-lock
   // measures against (what a step will actually sit on). Falls back to white on a
   // tokenless / unresolvable doc, exactly like the Palette Lab tool's `bg`.
   const surfaceHex = (): string => {
@@ -1062,7 +1062,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       return colorToHex(v) ?? '#ffffff';
     } catch { return '#ffffff'; }
   };
-  // Contrast-lock presets — labels only; the [low,high] Lc spans live in
+  // Contrast-lock presets - labels only; the [low,high] Lc spans live in
   // brand-doc's contrastTargets (shared verbatim with the Palette Lab tool).
   const CONTRAST_LOCK_PRESETS: ReadonlyArray<{ id: ContrastLockPreset; label: string }> = [
     { id: 'even', label: t('Even') },
@@ -1096,7 +1096,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <div class="be-panel be-logos">
           ${panelHead(t('Logos'), t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'))}
           ${/* Level 0 (plan 97 §7.3): one multi-file drop zone. Each file is
-                read for shape and ink, proposes a slot, and waits for a tap —
+                read for shape and ink, proposes a slot, and waits for a tap - 
                 the matrix below stays exactly as it was, per-slot drops and
                 all. The trim offer mounts between the two. */''}
           <div class="be-logo-intake" data-be-logo-intake>
@@ -1117,21 +1117,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab be-tab--split" data-be-tab-panel="color">
       <div class="be-split-main">
       ${/* ── Level 0: the one control. Adding a colour writes exactly one token
-             (plan 97 §7.1) — nothing is derived, suggested-into, or demanded. */''}
+             (plan 97 §7.1) - nothing is derived, suggested-into, or demanded. */''}
       <div class="be-panel be-addcolor">
         ${panelHead(t('Add a colour'), t('Paste or pick any colour, in any notation. One colour adds one token, nothing else. Paste a list and every colour in it becomes a chip you can add.'))}
         <div data-be-addcolor></div>
         <div class="be-suggest" data-be-suggest hidden></div>
       </div>
 
-      ${/* Roles are an assignment layer over the swatches that already exist —
+      ${/* Roles are an assignment layer over the swatches that already exist - 
             a design system of three loose colours with no roles is valid. */''}
       <div class="be-panel be-roles">
         ${panelHead(t('Roles'), t('Which colour plays each part. Roles are optional, and any swatch can take one. Contrast is measured against the surface, APCA first.'))}
         <div data-be-roles></div>
       </div>
 
-      ${/* ── Level 2: the expert wings. Folded by default, no persistence — the
+      ${/* ── Level 2: the expert wings. Folded by default, no persistence - the
              same discipline the palette's own sections keep. */''}
       <details class="be-wing" data-be-wing="generate">
         <summary class="be-wing-head">
@@ -1170,7 +1170,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <div class="be-field">
           <span class="be-field-label">${t('Harmony')}</span>
           ${/* The shared segmented-control primitive (lib/seg.ts). The free-N kinds
-                are hidden UI-side only — the engine keeps them (stored docs may
+                are hidden UI-side only - the engine keeps them (stored docs may
                 reference them) and the default stays adjacent-3. `data-kind` is
                 this group's own value hook, kept because its click delegate below
                 keys off it; segHtml emits `data-val` alongside either way. */''}
@@ -1205,14 +1205,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       ${/* Replace is the ONLY thing in this wing that writes. It opens a review
-            card first — the card is the review, and undo is the safety net, so
+            card first - the card is the review, and undo is the safety net, so
             no confirm dialog stands here. */''}
       <div class="be-gen-actions">
         <button type="button" class="be-cta" data-be-replace-palette>${t('Replace palette')}</button>
         <span class="be-gen-note">${t('Adds nothing on its own. You see exactly what changes first.')}</span>
       </div>
       ${/* NOT a live region. The card is a confirmation someone has to act on,
-            which is a FOCUS job — renderReview focuses its primary, and a screen
+            which is a FOCUS job - renderReview focuses its primary, and a screen
             reader reads the card as that button's context. Adding aria-live on
             top announced the whole subtree a second time, as a mutation. The
             polite channel is still used here, through announce(), for the things
@@ -1469,18 +1469,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <div class="be-editor-field"><div data-be-editor-color></div></div>
             <div class="be-editor-field be-stored" data-be-stored-row>
               <span class="be-stored-label" id="be-stored-label">${t('Stored as')}</span>
-              ${/* Built from the shared segmented-control primitive (lib/seg.ts) —
+              ${/* Built from the shared segmented-control primitive (lib/seg.ts) - 
                     .be-stored-seg keeps only its delta (a compact joined trough
                     instead of .view-seg-btn's gapped pills; see brand-studio.css).
                     aria-labelledby, not aria-label: the group's name is already on
-                    screen as #be-stored-label. No option starts pressed — every
+                    screen as #be-stored-label. No option starts pressed - every
                     button renders aria-pressed="false" and renderStoredSeg() marks
                     the open swatch's notation once the editor knows it. */''}
               ${segHtml('stored', STORAGE_FORMATS, '', '', {
                 attr: 'data-store-fmt', extraClass: 'be-stored-seg', groupAttr: 'data-be-stored', labelledBy: 'be-stored-label',
               })}
             </div>
-            ${/* Roles are identity, print is output — so "Use as" sits above the
+            ${/* Roles are identity, print is output - so "Use as" sits above the
                   print fold. Hidden for a role's own tile: a role cannot take a
                   role (the alias would chain). */''}
             <div class="be-useas-row" data-be-useas hidden>
@@ -1521,18 +1521,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // The OKLCH channel the palette grid's keyboard nudging steps (huetone-style).
   // A mode that persists across tiles; L by default, re-armed with l/c/h.
   let armedChannel: 'L' | 'C' | 'H' = 'L';
-  // The tile/dot the open swatch popover is anchored to — repositioning on
+  // The tile/dot the open swatch popover is anchored to - repositioning on
   // side-pane scroll needs it (the popover positions in `.be` space, so the
   // sticky pane's own scroll would otherwise drift it off its tile).
   let editorAnchor: HTMLElement | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  // The wheel is a second view of the SAME swatches — assigned once the handlers
+  // The wheel is a second view of the SAME swatches - assigned once the handlers
   // it needs (openEditor/applyEditedHex/addSwatch) exist, and called by every
   // repaintPalette so grid + wheel never drift.
   const wheelMount = $('[data-be-wheel-mount]') as HTMLElement | null;
   let wheelTeardown: (() => void) | undefined;
   let paintWheel: () => void = () => {};
-  // The gamut chart — the same swatches again, on a plane through OKLCH space
+  // The gamut chart - the same swatches again, on a plane through OKLCH space
   // where the sRGB/P3/Rec.2020 boundaries are visible. Only ONE of the two
   // charts is mounted at a time (the hidden one measures 0×0 and would paint
   // nothing anyway), so `chartView` gates both the markup and the repaints.
@@ -1546,11 +1546,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let paintSlices: () => void = () => {};
 
   // Hooks run at the end of every repaintPalette (the generator's candidate
-  // "added" states + applied-previews subscribe here, so any palette change —
-  // add / delete / re-derive — keeps them in sync). Declared as a mutable list
+  // "added" states + applied-previews subscribe here, so any palette change - 
+  // add / delete / re-derive - keeps them in sync). Declared as a mutable list
   // to sidestep the TDZ: the generator functions are defined further below.
   const paletteHooks: Array<() => void> = [];
-  // External observers of the COMMITTED palette (the handle's onPalette — the
+  // External observers of the COMMITTED palette (the handle's onPalette - the
   // mobile mirror, gradient stop chips). Notified from BOTH repaintPalette and
   // persist(): in-place recolours (wheel drags, popover edits) bypass
   // repaintPalette and only reach persist(), so either seam alone would miss
@@ -1561,21 +1561,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   const repaintPalette = (): void => {
     // Roles store `{alias}` refs, so hand the walker a resolver built from the
-    // SAME doc + theme the tiles are describing — otherwise every role renders
+    // SAME doc + theme the tiles are describing - otherwise every role renders
     // as a blank chip.
     let resolve: ((key: string) => unknown) | undefined;
     try {
       const set = createTokenSet(doc, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
       resolve = (key: string) => set.resolve(key);
     } catch { /* a malformed doc still lists its literal swatches */ }
-    // Excluded keys (a "deleted" derived step/role — the token stays, the tile
+    // Excluded keys (a "deleted" derived step/role - the token stays, the tile
     // goes) are filtered here, so the grid, wheel, picker swatches and gradient
     // stop grids all inherit the exclusion from this one seam.
     const excluded = new Set(getExcludedSwatches(doc));
     swatches = walkSwatches(doc, currentTheme, resolve).filter(s => !excluded.has(s.key));
     if (palMount) {
       // Keep user-folded sections folded across the innerHTML replace (every
-      // group renders `open` by default) — the same re-render/state guard the
+      // group renders `open` by default) - the same re-render/state guard the
       // gradients panel's details carries. Session-only; no persistence.
       const closed = new Set(
         [...palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group:not([open])')]
@@ -1597,7 +1597,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // Feed the colour PICKER's swatch grid from the live (draft) brand palette, so
   // the inline primary picker's swatches reflect exactly the colours this brand
-  // carries — and grow/shrink as the user adds or deletes them. Roles (aliases)
+  // carries - and grow/shrink as the user adds or deletes them. Roles (aliases)
   // are skipped (they duplicate the ramp step they point at); transparent leads.
   // refreshSwatches repopulates the already-open inline grid in place.
   const syncPickerSwatches = (): void => {
@@ -1609,9 +1609,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   /** A `{path}` alias (or bare dotted path) → its current hex, or null. Reads
-   *  the `swatches` array first — kept fresh by BOTH repaintPalette and the
+   *  the `swatches` array first - kept fresh by BOTH repaintPalette and the
    *  in-place recolour paths, so gradient chips resolve mid-drag values without
-   *  re-flattening the doc — falling back to a full token-set resolve for refs
+   *  re-flattening the doc - falling back to a full token-set resolve for refs
    *  that aren't palette swatches (hand-authored imports). */
   const resolveTokenRef = (ref: string): string | null => {
     const key = aliasPath(ref) ?? ref;
@@ -1624,15 +1624,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // ── Session undo (plan 97 §6) ───────────────────────────────────────────────
   // The one save discipline means every commit writes straight through, so the
-  // destructive actions need a way back. Snapshots are whole documents — a few
-  // KB of JSON — so the cap is memory-shaped, not a product limit. Checkpoints
+  // destructive actions need a way back. Snapshots are whole documents - a few
+  // KB of JSON - so the cap is memory-shaped, not a product limit. Checkpoints
   // (the durable, cross-reload net) belong to the host and are reached through
   // opts.checkpoint. Six actions push, every one of which REMOVES something the
   // user cannot retype: Replace palette, bulk delete, a single swatch delete,
   // clearing a role from the strip, un-pressing a "Use as" role in the swatch
   // popover, and "Rebuild from colour" (which discards a hand-tuned curve). An
-  // ordinary recolour, rename or curve drag is not destructive — the value is
-  // still on screen — and would only flood the stack.
+  // ordinary recolour, rename or curve drag is not destructive - the value is
+  // still on screen - and would only flood the stack.
   const UNDO_LIMIT = 20;
   const undoStack: Array<{ doc: Record<string, unknown>; label: string }> = [];
   const pushUndo = (label: string): void => {
@@ -1641,21 +1641,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (undoStack.length > UNDO_LIMIT) undoStack.shift();
   };
   /** Take a durable checkpoint through the host, best-effort. A rejection is a
-   *  missing safety net, never a failed edit — the local stack still has it. */
+   *  missing safety net, never a failed edit - the local stack still has it. */
   const ctxCheckpoint = (label: string): void => {
     try { void opts.checkpoint?.(label)?.catch?.(() => {}); } catch { /* host's problem */ }
   };
 
   // "Replace palette" lights up glossy (see .be-cta.is-active) the moment any
-  // derive input changes — colour, scheme, surface, contrast, shades, a ramp step
-  // — signalling there's a fresh proposal waiting. Cleared once it's applied (or
+  // derive input changes - colour, scheme, surface, contrast, shades, a ramp step
+  // - signalling there's a fresh proposal waiting. Cleared once it's applied (or
   // anything persists), so a resting button never nags. Every live change funnels
   // through renderPreview(), so that's the one place we flag it.
   const replaceBtn = $('[data-be-replace-palette]') as HTMLButtonElement | null;
   const setReplaceActive = (v: boolean): void => { replaceBtn?.classList.toggle('is-active', v); };
 
   /** Tell the host view a brand edit just landed on `tab` (Save-&-continue
-   *  appearance + next-tab nudge). Best-effort — a throwing listener must never
+   *  appearance + next-tab nudge). Best-effort - a throwing listener must never
    *  break an edit. */
   const notify = (tab: BrandTabKey): void => { try { opts.onChange?.(tab); } catch { /* host's problem */ } };
 
@@ -1669,8 +1669,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const persist = (immediate = false): void => {
     clearTimeout(saveTimer);
     notify('color');
-    setReplaceActive(false); // installed — nothing pending to apply
-    notifyPaletteObservers(); // the doc is already mutated — mirrors repaint now, not post-debounce
+    setReplaceActive(false); // installed - nothing pending to apply
+    notifyPaletteObservers(); // the doc is already mutated - mirrors repaint now, not post-debounce
     const run = async (): Promise<void> => {
       try {
         await installUserTokens(host as unknown as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
@@ -1716,23 +1716,23 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let dropPendingReplacement: () => void = () => {};
 
   // ── Derive controls (the Generate wing) ─────────────────────────────────────
-  // Nothing here writes. renderPreview paints ONLY the wing's own preview — the
-  // ramps + specimen cards — which is a proposal, not the system: the app's
+  // Nothing here writes. renderPreview paints ONLY the wing's own preview - the
+  // ramps + specimen cards - which is a proposal, not the system: the app's
   // chrome, the palette and the install all keep showing what is actually
   // installed until Replace palette is confirmed (plan 97 §3 principle 1).
   const renderPreview = (): void => {
     const next = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
-    if (!next) return; // a half-typed hex mid-edit — keep the last good preview
+    if (!next) return; // a half-typed hex mid-edit - keep the last good preview
     // The tonal curves are AUTHORITATIVE in the editor: overlay them onto the
     // pure derive (a byte-identical no-op for any ramp without a curve).
     overlayRampCurves(next, curves, steps);
     if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
     setReplaceActive(true); // a derive input changed → invite the user to review it
-    dropPendingReplacement(); // the parked proposal is now stale — see its comment
+    dropPendingReplacement(); // the parked proposal is now stale - see its comment
     // Deliberately NO notify(): a preview-only change has landed nowhere, so
     // telling the host an edit happened would be a lie.
   };
-  // Shades slider — how many divisions each ramp carries. Re-derives live; the
+  // Shades slider - how many divisions each ramp carries. Re-derives live; the
   // neutral/secondary step picks re-centre on the new anchor (and clamp in range).
   const stepsSlider = $('[data-be-steps]') as HTMLInputElement | null;
   const stepsVal = $('[data-be-steps-val]') as HTMLElement | null;
@@ -1758,7 +1758,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   wireColorField(root, { onChange: onPrimaryFieldChange });
   /** Programmatically move the primary (the logo-colour pathway): re-seed the
-   *  visual field (fresh render + wire — no setter exists on the component) and
+   *  visual field (fresh render + wire - no setter exists on the component) and
    *  run the same fan-out a manual pick runs. */
   const setPrimaryTo = (hex: string): void => {
     reanchorCurvesTo(hex); // keep any live curves anchored to the moving primary
@@ -1777,13 +1777,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // ── Level-2 wings ───────────────────────────────────────────────────────────
   // Four folded disclosures under the Add + Roles panels. Closed on mount, no
-  // persistence — the same discipline the palette's own sections keep.
+  // persistence - the same discipline the palette's own sections keep.
   type WingKey = 'generate' | 'curves' | 'contrast' | 'print';
   const wingEl = (k: WingKey): HTMLDetailsElement | null => $(`[data-be-wing="${k}"]`);
   /** Open a wing and bring it into view. False when it is absent (a locked build
    *  renders no studio at all). Scrolls ONLY when the wing was closed: revealing
    *  something is worth moving the page for, re-pointing a control inside a wing
-   *  that is already open is not — that scroll used to yank the viewport away
+   *  that is already open is not - that scroll used to yank the viewport away
    *  from whatever the user was actually using. */
   const openWing = (k: WingKey): boolean => {
     const el = wingEl(k);
@@ -1793,7 +1793,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // Guarded: jsdom (the CLI shell's renderer, and the unit tests) has no
     // scrollIntoView, and this runs on the ordinary curve-glyph path. The glide
     // is JS-driven motion, so it asks the shared read (OS query OR the app pref)
-    // and jumps instead when either says reduce — the wing's own CSS marker
+    // and jumps instead when either says reduce - the wing's own CSS marker
     // rotation is already gated the same way.
     if (!wasOpen) {
       el.scrollIntoView?.({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
@@ -1824,7 +1824,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   /** Re-anchor every live curve by the primary's per-channel delta (old anchor →
    *  new primary), so a primary edit carries an edited palette with it rather
-   *  than dropping it. Cumulative — the anchor tracks each step, so composed
+   *  than dropping it. Cumulative - the anchor tracks each step, so composed
    *  deltas sum. A no-op (bar bookkeeping) when no ramp carries a curve. */
   const reanchorCurvesTo = (nextPrimary: string): void => {
     if (!RAMP_IDS.some(r => curves[r])) { curveAnchorPrimary = nextPrimary; return; }
@@ -1849,8 +1849,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (repaint) renderPreview(); // clear the row's open state (skipped in reload)
   };
   // A curve drag fires per frame. renderPreview is cheap (one re-derive into the
-  // wing's own markup); the palette repaint is not — it rebuilds the grid, the
-  // wheel and the gamut slices — and NEITHER is persist(): it synchronously runs
+  // wing's own markup); the palette repaint is not - it rebuilds the grid, the
+  // wheel and the gamut slices - and NEITHER is persist(): it synchronously runs
   // notify('color') (the host re-reads the whole design system for the Overview)
   // and notifyPaletteObservers() (the mobile sheet rebuilds its markup and
   // re-measures) before its own 300ms install debounce even starts. Both are
@@ -1869,10 +1869,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       persist(true);
     }, CURVE_SETTLE_MS);
   };
-  /** Drop a pending settle — for a path that has just persisted the same doc
+  /** Drop a pending settle - for a path that has just persisted the same doc
    *  itself (the one-shot transforms), so it doesn't install twice. */
   const cancelCurveSave = (): void => { clearTimeout(curveSettleTimer); curveSaveDue = false; };
-  // A teardown mid-drag must not repaint a dead tree — but it must not eat the
+  // A teardown mid-drag must not repaint a dead tree - but it must not eat the
   // last frame either, so a pending save is flushed rather than dropped.
   cleanups.push(() => {
     clearTimeout(curveSettleTimer);
@@ -1882,7 +1882,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const openCurveEditor = (ramp: RampId, opts2: { toggle?: boolean; reveal?: boolean } = {}): void => {
     if (opts2.toggle !== false && editingCurveRamp === ramp) { closeCurveEditor(); return; }
     // The editor lives in the Curves wing now, and a curve glyph clicked on a
-    // preview ramp row sits in the Generate wing — reveal its home first.
+    // preview ramp row sits in the Generate wing - reveal its home first.
     // `reveal: false` is for a control INSIDE another wing re-pointing an editor
     // that is already open: the editor moves, the viewport does not.
     if (opts2.reveal !== false) openWing('curves');
@@ -1891,7 +1891,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     syncRampPick();
     // Seed on first open from the LIVE draft derive (so it matches the visible
     // preview even after an uncommitted primary/scheme/shade change), at full
-    // OKLCH precision — an untouched ramp re-bakes byte-identically until the
+    // OKLCH precision - an untouched ramp re-bakes byte-identically until the
     // user actually drags. Falls back to the committed doc if the derive fails.
     if (!curves[ramp]) {
       const draft = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
@@ -1910,7 +1910,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           curves[editingCurveRamp] = next;
           // A real write: bake the steps + stamp the curve on the doc, repaint
           // the wing's preview per frame, and let the palette + install trail.
-          // The bake counts the DOC's own steps, never the preview slider —
+          // The bake counts the DOC's own steps, never the preview slider - 
           // see docRampSteps.
           overlayRampCurves(doc, { [editingCurveRamp]: next }, bakeSteps(editingCurveRamp));
           renderPreview();
@@ -1920,18 +1920,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     renderPreview(); // reflect the open + edited state on the ramp rows
   };
-  /** Open (never toggle) the curve editor on the wings' currently picked ramp —
+  /** Open (never toggle) the curve editor on the wings' currently picked ramp - 
    *  what the Curves wing does on reveal and what its ramp picker does. */
   const showCurveEditor = (ramp: RampId): void => { openCurveEditor(ramp, { toggle: false }); };
   /** "Rebuild from colour": drop this ramp's curve and re-bake ONLY its steps
    *  from the pure derive (other ramps + manual palette edits untouched). Never
-   *  a silent discard — it's an explicit reset, and it lands immediately. */
+   *  a silent discard - it's an explicit reset, and it lands immediately. */
   const rebuildRampFromColour = (): void => {
     const ramp = editingCurveRamp ?? curveRamp;
     if (!isRec(doc)) return;
     // It DELETES a hand-tuned curve and overwrites the ramp's steps, and a curve
-    // cannot be retyped — so it takes a snapshot, like every other removal.
-    pushUndo(t('Rebuild from colour')); // the button's own label — no new string
+    // cannot be retyped - so it takes a snapshot, like every other removal.
+    pushUndo(t('Rebuild from colour')); // the button's own label - no new string
     cancelCurveSave(); // this path persists itself; no stale settle behind it
     delete curves[ramp];
     setRampCurve(doc, ramp, null); // clear the stored curve on the committed doc
@@ -1980,7 +1980,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const clReadout = $('[data-be-cl-readout]') as HTMLElement | null;
   const applyContrastLock = (): void => {
     // The transform lives in its own wing now, so it acts on the ramp the wings'
-    // picker names — not on whichever curve editor happens to be open.
+    // picker names - not on whichever curve editor happens to be open.
     const ramp = curveRamp;
     if (!isRec(doc)) return;
     const rawPreset = clPresetSel?.value;
@@ -1989,12 +1989,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // A valid picked colour wins; anything unreadable falls back to the resolved
     // surface (never an empty bg, which the solver can't measure against).
     const bg = (clBgInput?.value ? colorToHex(clBgInput.value) : null) ?? surfaceHex();
-    // Every count here is the INSTALLED ramp's, not the preview slider's — this
+    // Every count here is the INSTALLED ramp's, not the preview slider's - this
     // writes the committed doc (see docRampSteps), so the targets, the solve and
     // the bake all have to describe the same ramp.
     const n = bakeSteps(ramp);
     const targets = contrastTargets(preset, n, custom);
-    // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
+    // Seed a curve when this ramp has none yet - from the LIVE draft derive so it
     // matches the visible preview, exactly like openCurveEditor's first-open seed.
     const base = curves[ramp]
       ?? seedRampCurve(deriveSafe({ primary, scheme, surface, contrast, steps, foreground }) ?? doc, ramp, steps);
@@ -2036,8 +2036,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const ramp = curveRamp;
     if (!isRec(doc)) return;
     const degrees = Number(hrDegInput?.value) || 0;
-    if (!degrees) return; // 0° is a no-op — nothing to commit
-    // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
+    if (!degrees) return; // 0° is a no-op - nothing to commit
+    // Seed a curve when this ramp has none yet - from the LIVE draft derive so it
     // matches the visible preview, exactly like applyContrastLock's seed.
     const base = curves[ramp]
       ?? seedRampCurve(deriveSafe({ primary, scheme, surface, contrast, steps, foreground }) ?? doc, ramp, steps);
@@ -2050,7 +2050,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     renderPreview();                        // repaint the wing's ramp rows
     repaintPalette();                       // the Palette panel shows the rotated steps
     persist(true);
-    if (hrDegInput) hrDegInput.value = '0'; // reset — the transform is applied, further turns compose
+    if (hrDegInput) hrDegInput.value = '0'; // reset - the transform is applied, further turns compose
     if (hrDegVal) hrDegVal.textContent = '0°';
     announce(tRaw('{label} ramp hue rotated', { label: RAMP_LABEL[ramp] }));
     playSfx('click');
@@ -2062,7 +2062,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // The Curves wing's own picker OWNS the editor: it opens it on whichever
     // ramp is picked, which is also the way back after the editor's ✕ (the wing
     // would otherwise show a picker that does nothing at all until it is
-    // collapsed and re-expanded). Any other copy — the Contrast wing's — only
+    // collapsed and re-expanded). Any other copy - the Contrast wing's - only
     // re-points an editor that is already showing, and never reveals the Curves
     // wing behind it or scrolls the page there mid-interaction.
     const ownsEditor = !!seg.closest('[data-be-wing="curves"]');
@@ -2082,13 +2082,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (this.open) showCurveEditor(curveRamp);
   });
 
-  /** The last primary that resolved to a real hex — what an unreadable primary
+  /** The last primary that resolved to a real hex - what an unreadable primary
    *  falls back to, so the generator never sees a broken string. */
   let goodPrimaryHex = /^#[0-9a-fA-F]{6,8}$/.test(primary) ? primary.slice(0, 7) : DEFAULT_PRIMARY;
   /** The current primary as a `#`-prefixed hex (shared by the generator + the
    *  screen/print readout below). `primary` is whatever the picker or a token
-   *  resolution handed over — a named colour, `oklch()`, or a wide-gamut
-   *  `color()` all reach here — and generateSchemeAccents throws on anything that
+   *  resolution handed over - a named colour, `oklch()`, or a wide-gamut
+   *  `color()` all reach here - and generateSchemeAccents throws on anything that
    *  is not a hex, which empties the candidate list. So parse it properly:
    *  concatenating a `#` onto `oklch(62% 0.19 260)` produced a string nothing
    *  downstream could read. */
@@ -2107,7 +2107,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // illustrative graphics so the effect of adding/removing colours is felt.
   const candidatesEl = $('[data-be-candidates]') as HTMLElement | null;
   const previewsEl = $('[data-be-previews]') as HTMLElement | null;
-  /** The brand's live palette as hexes (primary first), deduped — feeds the previews. */
+  /** The brand's live palette as hexes (primary first), deduped - feeds the previews. */
   const paletteHexes = (): string[] => {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -2141,7 +2141,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const renderPreviews = (): void => {
     if (!previewsEl) return;
     const scenes = palettePreviewSvgs(paletteHexes(), { steps });
-    // `s.svg` is interpolated RAW, deliberately — it is markup, so escaping it
+    // `s.svg` is interpolated RAW, deliberately - it is markup, so escaping it
     // would render the tags as text. It is safe because lib/palette-preview.ts
     // BUILDS these scenes from developer-authored templates and passes every
     // user-supplied colour through its `col()` whitelist (hex or 'transparent',
@@ -2179,7 +2179,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-add-hex]'); if (!btn || btn.disabled) return;
     const hex = btn.dataset.addHex!, name = btn.dataset.addName || nameColor(hex);
     if (isInPalette(hex)) return;
-    addSwatch(doc, 'spectrum', name, serializeColor(hex, 'lch')); // LCH — the storage default
+    addSwatch(doc, 'spectrum', name, serializeColor(hex, 'lch')); // LCH - the storage default
     repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
     persist(true);          // officiate: the accent is now part of the brand
     playSfx('click');
@@ -2188,7 +2188,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
   renderGenerator();                  // initial paint
 
-  // ── Screen readout — the primary's on-screen (sRGB) form. ───────────────────
+  // ── Screen readout - the primary's on-screen (sRGB) form. ───────────────────
   const screenEl = $('[data-be-screen]') as HTMLElement | null;
   const renderScreen = (): void => {
     const hex = primaryHex();
@@ -2196,7 +2196,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   renderScreen();
   // The four derive segments. Named explicitly because `[data-be-seg]` is the
-  // shared primitive's hook, not this listener's — the Harmony and "Stored as"
+  // shared primitive's hook, not this listener's - the Harmony and "Stored as"
   // segments now render through segHtml() too, and they own their own delegates
   // (renderCandidates / renderStoredSeg). Without this guard they'd be swept in
   // here as well and re-run renderPreview() on every click.
@@ -2215,7 +2215,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     };
     seg.addEventListener('click', on);
   });
-  // The "Print & screen" summary chips — rendered via mountPrintLock's own
+  // The "Print & screen" summary chips - rendered via mountPrintLock's own
   // render (ctx.onRender), never by a caller directly, so both lock funnels
   // (the control's toggles AND afterSwatchLockChange → primaryLock.render())
   // update them without either knowing about the folded summary.
@@ -2228,7 +2228,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (lock?.spot) bits.push(`<span class="be-ps-chip">${escape(lock.spot.name)}${lock.spot.finish ? ` · ${escape(finishLabel(lock.spot.finish))}` : ''}</span>`);
     printChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
-  // The primary's print lock — mounted only now, AFTER the generic [data-be-seg]
+  // The primary's print lock - mounted only now, AFTER the generic [data-be-seg]
   // delegate above has taken its one-time querySelectorAll snapshot, so this
   // control's own Auto/Locked + Process/Spot segments (built on the same
   // segHtml markup) don't get swept into that older Scheme/Surface/Contrast
@@ -2241,7 +2241,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     setCmyk: (cmyk) => {
       const path = primaryAnchorPath(doc);
       if (path) setSwatchCmykLock(doc, path, cmyk);
-      repaintPalette(); // same swatch is a tile in the Palette panel — keep its lock badge in sync
+      repaintPalette(); // same swatch is a tile in the Palette panel - keep its lock badge in sync
       persist();        // the popover's afterSwatchLockChange does exactly this
     },
     getSpot: () => primaryPrintLock()?.spot ?? null,
@@ -2252,7 +2252,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       persist();
     },
   }) : null;
-  // Neutral/secondary ramp-step picks — the Primary ramp stays non-interactive
+  // Neutral/secondary ramp-step picks - the Primary ramp stays non-interactive
   // (it's already driven by the colour field above, not a step choice).
   preview?.addEventListener('click', (e) => {
     const cell = (e.target as HTMLElement).closest<HTMLElement>('[data-be-ramp]');
@@ -2277,7 +2277,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * document was swapped wholesale, so the primary, the shade count, the ramp
    * anchors, the stored curves and the preview all describe the wrong brand
    * until this runs. Reads the steps off the GIVEN doc rather than a fresh
-   * tokens.raw() — an undo has not installed anything yet.
+   * tokens.raw() - an undo has not installed anything yet.
    */
   const reseedFromDoc = (): void => {
     try {
@@ -2291,7 +2291,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (stepsVal) stepsVal.textContent = String(steps);
     // Re-load per-ramp tonal curves from the doc (a pack import may carry them; a
     // plain brand won't, leaving curves empty → pure derive). Any open editor
-    // described the OLD brand, so close it first — without a preview repaint
+    // described the OLD brand, so close it first - without a preview repaint
     // (the fresh preview is painted below).
     closeCurveEditor(false);
     for (const ramp of RAMP_IDS) { delete curves[ramp]; const st = getRampCurve(doc, ramp); if (st) curves[ramp] = deserializeCurve(st); }
@@ -2310,7 +2310,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     primaryLock?.render();
     renderGenerator();
     setReplaceActive(false);
-    dropPendingReplacement(); // the doc was swapped wholesale — any parked proposal is stale
+    dropPendingReplacement(); // the doc was swapped wholesale - any parked proposal is stale
   };
 
   /** Pop the last snapshot and make the room describe it again. Returns false
@@ -2332,10 +2332,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── Replace palette: build a proposal, review it, then swap ─────────────────
   // The old flow derived straight into the doc behind a confirm dialog. Now the
   // derive builds a candidate document, a review card says exactly what changes,
-  // and only its own button swaps it in — with an undo snapshot taken first, so
+  // and only its own button swaps it in - with an undo snapshot taken first, so
   // no confirm dialog stands where an undo suffices (plan 97 §3 principle 3).
 
-  /** What a Replace would do, counted from the two documents. Pure — computed
+  /** What a Replace would do, counted from the two documents. Pure - computed
    *  before anything is swapped, so the card can be honest and then cancelled. */
   interface ReplacePlan {
     steps: number; ramps: number; rebuilt: number; spectrumRebuilt: number;
@@ -2355,14 +2355,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     catch (err) { announce(tRaw("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return null; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
-    // Re-apply any tonal curves onto the fresh derive — this is what makes an
+    // Re-apply any tonal curves onto the fresh derive - this is what makes an
     // edited ramp SURVIVE a re-derive (the curve is regenerated from its control
     // points, and its extension re-stamped on the new doc). A no-op for a ramp
     // with no curve, so a curve-less re-derive is byte-identical to before.
     overlayRampCurves(next, curves, steps);
-    // Read the lock LIVE off the pre-derive `doc` — whichever surface (the print
+    // Read the lock LIVE off the pre-derive `doc` - whichever surface (the print
     // wing or the Palette panel's swatch popover) set it last, since both write
-    // straight to `doc` — so re-deriving never silently drops a lock the other
+    // straight to `doc` - so re-deriving never silently drops a lock the other
     // surface just set (see primaryPrintLock's doc comment above). cmyk and spot
     // are independent, so both are re-pinned onto the freshly derived doc.
     const priorLock = primaryPrintLock();
@@ -2376,7 +2376,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // Count the derive's own spectrum BEFORE the carry below grows it.
     const spectrumRebuilt = countLeaves(isRec(dstBase.color) ? (dstBase.color as Record<string, unknown>).spectrum : null);
 
-    // Deriving only rebuilds COLOUR — everything else the doc carries (the
+    // Deriving only rebuilds COLOUR - everything else the doc carries (the
     // studio's spacing/shadows/gradients, the font roles, the logos' asset
     // tokens, shape.radius) survives it, same precedent as the print lock.
     // deriveBrandTokens never emits these groups, so a straight carry is safe.
@@ -2384,7 +2384,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
     }
 
-    // Colour carry — what makes "added colours kept" true. STUDIO_GROUPS does not
+    // Colour carry - what makes "added colours kept" true. STUDIO_GROUPS does not
     // cover `color`, so before this every custom swatch was silently dropped and
     // the old flow needed a confirm dialog to say so.
     let kept = 0;
@@ -2392,7 +2392,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const srcColor = isRec(srcBase.color) ? srcBase.color as Record<string, unknown> : null;
       const dstColor = isRec(dstBase.color) ? dstBase.color as Record<string, unknown> : null;
       if (srcColor && dstColor) {
-        // `custom` is user-owned outright — nothing derived ever lands there.
+        // `custom` is user-owned outright - nothing derived ever lands there.
         if (isRec(srcColor.custom)) { dstColor.custom = structuredClone(srcColor.custom); kept += countLeaves(srcColor.custom); }
         // `spectrum` is shared: the derive rebuilds its six fixed hues, every OTHER
         // key is an accent the user added from the generator, so it comes across.
@@ -2409,7 +2409,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
     const nextKeys = new Set(walkSwatches(next, currentTheme).map(s => s.key));
 
-    // Role carry — a hand-assigned secondary/surface/text survives the rebuild.
+    // Role carry - a hand-assigned secondary/surface/text survives the rebuild.
     // Deliberately NOT primary or on-primary: the wing's own picker IS the
     // primary, and keeping a hand-assigned one would contradict the ramps this
     // derive just built around it.
@@ -2430,7 +2430,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     const rolesKept = rolesCarried.size;
 
-    // Carry the swatch exclusion list ("deleted" derived steps stay deleted) —
+    // Carry the swatch exclusion list ("deleted" derived steps stay deleted) - 
     // but only entries whose swatch still exists in the fresh derive: a smaller
     // shade count drops its stale ramp-step exclusions, per the delete contract.
     // Runs AFTER the colour + role carries, so a carried swatch keeps its
@@ -2445,7 +2445,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // The carried gradients' stops alias ramp/spectrum/custom keys, and this
     // derive may have rebuilt or dropped their targets (fewer shades; custom
     // swatches go). Resolve every alias against the OLD doc now (`doc` hasn't
-    // swapped yet — resolveTokenRef still answers from it) and pin the ones the
+    // swapped yet - resolveTokenRef still answers from it) and pin the ones the
     // fresh doc can no longer answer, so an exported pack never carries a
     // dangling ref. Aliases that still resolve keep tracking their swatch.
     const nextSet = createTokenSet(next, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
@@ -2465,7 +2465,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   /** Where focus goes when a card that HELD it is taken away: back to the button
-   *  that opens one. Only when the focus really was inside — a card retired
+   *  that opens one. Only when the focus really was inside - a card retired
    *  underneath somebody working elsewhere must not yank them here. */
   const hideReview = (): void => {
     pendingReplacement = null;
@@ -2476,13 +2476,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (hadFocus) $<HTMLElement>('[data-be-replace-palette]')?.focus();
   };
   // A proposal is a snapshot of the derive controls, and the card sits in the
-  // same open wing as the controls that built it — so any later change retires
+  // same open wing as the controls that built it - so any later change retires
   // it rather than leaving a card whose counts, and whose document, describe a
   // panel that has moved on. Only an OPEN proposal is dropped: the "replaced,
   // Undo" card that follows a commit holds no document and stays put.
   dropPendingReplacement = (): void => { if (pendingReplacement) hideReview(); };
   /** Wrap a rendered line. Every string below is a LITERAL at its t()/tRaw()
-   *  call site — the chrome-string process reads these statically, so a
+   *  call site - the chrome-string process reads these statically, so a
    *  plural-picking helper that took the key as an argument would hide them. */
   const li = (text: string): string => `<li>${text}</li>`;
 
@@ -2553,10 +2553,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // ── Palette: click a tile → open the shared swatch editor ───────────────────
   // One way to set a colour, not two: the popover's colour field is the full
-  // picker (`modes` — its value input reads AND writes hex / OKLCH / HSL / RGB /
+  // picker (`modes` - its value input reads AND writes hex / OKLCH / HSL / RGB /
   // CMYK), so the old "Set by value" select+input row it duplicated is gone.
   // Everything funnels through applyEditedHex, which WRITES the doc in the
-  // swatch's storage format (the "Stored as" toggle — LCH by default, or the
+  // swatch's storage format (the "Stored as" toggle - LCH by default, or the
   // notation already in the doc for older edits).
   const editorLockBadge = editorEl?.querySelector<HTMLElement>('[data-be-editor-lockbadge]') ?? null;
   const editorChip = editorEl?.querySelector<HTMLElement>('[data-be-editor-chip]') ?? null;
@@ -2582,7 +2582,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     substChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
 
-  /** Keep a shape-only tile's tooltip + accessible name (name — hex) fresh —
+  /** Keep a shape-only tile's tooltip + accessible name (name - hex) fresh - 
    *  the grid shows no text, so every in-place recolour/rename re-stamps these. */
   const syncTileMeta = (tile: HTMLElement, s: BrandSwatch): void => {
     const label = tileLabel(s.name, s.hex, !!s.lock);
@@ -2590,7 +2590,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     tile.setAttribute('aria-label', label);
   };
 
-  /** Refresh a swatch's tile in place (lock badge + colour), without a full repaint —
+  /** Refresh a swatch's tile in place (lock badge + colour), without a full repaint - 
    *  preserves `.is-selected` (tileHtml doesn't know selection state) so an open
    *  popover's tile doesn't lose its ring the moment its lock changes. */
   const refreshTile = (idx: number): void => {
@@ -2600,12 +2600,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     tile.outerHTML = tileHtml(s, idx);
     if (wasSelected) palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`)?.classList.add('is-selected');
   };
-  // The swatch popover's print substitutes — always read/write whichever swatch
+  // The swatch popover's print substitutes - always read/write whichever swatch
   // is CURRENTLY open (`selected`), so the control is built once and driven
   // dynamically rather than re-mounted per swatch (openEditor calls render()).
   const substMount = editorEl?.querySelector<HTMLElement>('[data-be-subst-mount]') ?? null;
   // Re-syncs the popover's lock badge + folded-row chips + tile + the
-  // primary-panel control (when the edited swatch IS the primary anchor — see
+  // primary-panel control (when the edited swatch IS the primary anchor - see
   // primaryPrintLock's doc comment) after either half of the swatch lock changes.
   const afterSwatchLockChange = (): void => {
     if (selected < 0) return;
@@ -2639,7 +2639,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       // The stored `$value` where it is a literal, NOT the resolved hex: the hex is
       // the sRGB bake, and deriving a wide-gamut face from a bake would clamp the
       // very chroma the face exists to carry. An alias has no literal, so it falls
-      // back to the hex — a role's colour lives on the swatch it points at.
+      // back to the hex - a role's colour lives on the swatch it points at.
       return cur.isAlias ? cur.hex : (cur.raw || cur.hex);
     },
     get: () => (selected >= 0 ? getSwatchFaces(doc, swatches[selected]!.path) : new Map()),
@@ -2651,14 +2651,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     },
   }) : null;
 
-  /** How many faces this swatch has authored — the folded summary. */
+  /** How many faces this swatch has authored - the folded summary. */
   function renderFacesChips(): void {
     if (!facesChips) return;
     const n = selected >= 0 ? [...getSwatchFaces(doc, swatches[selected]!.path).keys()].length : 0;
     facesChips.textContent = n ? tRaw('{n} set', { n: String(n) }) : '';
   }
 
-  // "Stored as" — re-serialise the open swatch's $value in the picked notation.
+  // "Stored as" - re-serialise the open swatch's $value in the picked notation.
   // An alias role has no literal of its own to re-write, so the row hides for
   // those (recolouring detaches the alias first, which re-shows it).
   storedSeg?.addEventListener('click', (e) => {
@@ -2680,7 +2680,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const mountEl = editorEl?.querySelector<HTMLElement>('[data-be-editor-color]'); if (!mountEl) return;
     // The same field the primary gets: inline (it lays out in the card's flow
     // rather than as a popover that would overlap the rows below) and `modes`,
-    // whose value input IS the typed-value entry — hex, OKLCH, HSL, RGB, CMYK.
+    // whose value input IS the typed-value entry - hex, OKLCH, HSL, RGB, CMYK.
     mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true, modes: true });
     wireColorField(mountEl, {
       onChange: (id, value) => {
@@ -2692,7 +2692,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   /**
    * Apply a colour to the selected swatch from EITHER surface: write it to the
-   * doc, repaint the tile + value row, and persist. Alpha is kept — an `#rrggbbaa`
+   * doc, repaint the tile + value row, and persist. Alpha is kept - an `#rrggbbaa`
    * from the field's opacity slider (or an rgba()/oklch(… / a) value) flows
    * through verbatim, so brand swatches can be translucent. `rerenderField`
    * re-seeds the visual field (used when the value row drove the change, so the
@@ -2707,15 +2707,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * The doc-write half of applyEditedHex, parameterised by swatch index + storage
    * format so BOTH the popover (the open `selected` swatch, LCH/hex per its "Stored
    * as" toggle) and the keyboard nudge (any FOCUSED tile, in the swatch's own
-   * notation) land through one path — the tile repaints in place and it persists on
+   * notation) land through one path - the tile repaints in place and it persists on
    * Save exactly like a popover edit. The popover-only touches (chip, value field,
    * the alias-detach row) fire only when `idx` IS the open swatch.
    */
   function writeSwatchHex(idx: number, rawHex: string, fmt: StorageFormat, opts: { rerenderField?: boolean } = {}): void {
     const cur = swatches[idx]; if (!cur) return;
     if (!rawHex || rawHex === 'transparent') return;
-    const hex = rawHex; // keep #rrggbbaa alpha — brand swatches may be translucent
-    // The doc stores the swatch's chosen notation ("Stored as" — LCH default);
+    const hex = rawHex; // keep #rrggbbaa alpha - brand swatches may be translucent
+    // The doc stores the swatch's chosen notation ("Stored as" - LCH default);
     // the tile/UI keep working in resolved hex. Recolouring an alias role
     // detaches it to a literal, which is when the storage toggle starts to bite.
     const stored = serializeColor(colorToHex(hex) ?? hex, fmt);
@@ -2734,8 +2734,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   }
 
   /**
-   * Place the popover against `tile`. The card is allowed to be tall — opening
-   * the print fold, or switching to CMYK's four sliders, grows it — and the
+   * Place the popover against `tile`. The card is allowed to be tall - opening
+   * the print fold, or switching to CMYK's four sliders, grows it - and the
    * answer to that is to MOVE it, not to scroll it: below the tile by default,
    * flipped above when it would overhang and there's room up there, and only
    * pinned to the viewport (letting the card's own max-height start an inner
@@ -2744,7 +2744,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * Coordinates are viewport-space until the last line, which converts into `.be`
    * space (the popover is absolute within it). The left floor (8) must win over
    * the right clamp, so a viewport narrower than the card never pushes it off the
-   * left edge. Needs the popover measurable — openEditor unhides it before calling.
+   * left edge. Needs the popover measurable - openEditor unhides it before calling.
    */
   const MARGIN = 8; // viewport breathing room, and the tile↔card gap
   const positionEditor = (tile: HTMLElement): void => {
@@ -2764,7 +2764,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     top = Math.max(MARGIN, Math.min(top, window.innerHeight - MARGIN - h));
     editorEl.style.top = `${top - pr.top}px`;
   };
-  /** Re-place the open card against its anchor — after anything that resized it. */
+  /** Re-place the open card against its anchor - after anything that resized it. */
   const reposition = (): void => { if (editorAnchor && editorEl && !editorEl.hidden) positionEditor(editorAnchor); };
   const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; editorAnchor = null; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
   const openEditor = (idx: number, tile: HTMLElement): void => {
@@ -2778,32 +2778,32 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (editorChip) editorChip.style.setProperty('--sw', s.hex || 'transparent');
     nameInput.value = s.name;
     // Everything is deletable: real removal for the user's own swatches, an
-    // exclusion (hide) for derived ramp steps + roles — see the Delete handler.
+    // exclusion (hide) for derived ramp steps + roles - see the Delete handler.
     delBtn.hidden = !(s.deletable || s.kind === 'ramp' || s.kind === 'semantic');
     if (editorLockBadge) editorLockBadge.hidden = !s.lock;
     // Storage notation: respect what the doc already holds (an older hex edit
-    // stays hex); the app default for everything else — aliases included, which
-    // start storing the moment a recolour detaches them — is LCH. The row hides
+    // stays hex); the app default for everything else - aliases included, which
+    // start storing the moment a recolour detaches them - is LCH. The row hides
     // while there's no literal to re-write.
     storedFmt = s.isAlias ? 'lch' : storageFormatOf(s.raw);
     renderStoredSeg();
     if (storedRow) storedRow.hidden = s.isAlias;
     renderUseAs();
     renderSubstChips();
-    if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
+    if (substDetails) substDetails.open = false; // folded until asked - the lock chips say enough
     swatchSubst?.render();
     renderFacesChips();
     if (facesDetails) facesDetails.open = false; // folded, like the print section
     swatchFaces?.render();
     editorAnchor = tile;
-    editorEl.hidden = false; // before positioning — the clamp measures offsetHeight
+    editorEl.hidden = false; // before positioning - the clamp measures offsetHeight
     positionEditor(tile);
     nameInput.focus();
   };
 
   /**
    * Select the swatch at a JSON path and open its editor against the best
-   * available anchor. Never "the last one" — key order shifts on repaint — and
+   * available anchor. Never "the last one" - key order shifts on repaint - and
    * never a hidden tile: a folded palette group measures 0×0 and would place
    * the popover at the panel origin, so the caller's own anchor (a wheel dot,
    * a gamut dot) takes over. A no-op when the path did not land.
@@ -2817,9 +2817,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (anchor) openEditor(idx, anchor);
   };
 
-  // The card earns its height back by MOVING. Anything that resizes it — folding
+  // The card earns its height back by MOVING. Anything that resizes it - folding
   // the print section open, switching the picker to CMYK's four sliders, a spot
-  // name field appearing — re-runs positionEditor, which flips the card above the
+  // name field appearing - re-runs positionEditor, which flips the card above the
   // tile when there's room up there. A ResizeObserver catches all of it, including
   // the changes we don't own (the colour field's own internals), so this is one
   // hook rather than a listener per control. Guarded: jsdom (the CLI shell's
@@ -2872,7 +2872,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * Cancel and Delete both hide the bar that holds the button being pressed, so
    * without this the document's focus falls to `<body>` and a keyboard user
    * restarts from the top of the page. Only a bar that HELD focus hands it over
-   * (`was` inside the bar) — plus the `<body>` case, which is both a Safari
+   * (`was` inside the bar) - plus the `<body>` case, which is both a Safari
    * click, where pressing a button never focuses it, and the state left behind
    * when a repaint has already detached whatever was focused. Focus that is
    * demonstrably somewhere else is left alone.
@@ -2910,7 +2910,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     exitPalSelect(); closeEditor(); repaintPalette(); persist(true);
     // The repaint rebuilt the grid, and with it the toggle exitPalSelect had
-    // just focused — so the handoff is repeated against the live one.
+    // just focused - so the handoff is repeated against the live one.
     handBackPalFocus(document.activeElement);
     const gone = removed === 1 ? t('1 swatch removed') : tRaw('{n} swatches removed', { n: removed });
     const stops = refs === 0 ? ''
@@ -2929,13 +2929,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     const add = (e.target as HTMLElement).closest<HTMLElement>('[data-be-add]');
     if (add) {
-      // Group Adds live inside a <summary> — swallow the default toggle so
+      // Group Adds live inside a <summary> - swallow the default toggle so
       // adding a swatch never folds the section it lands in.
       e.preventDefault();
       const group = add.dataset.beAdd === 'spectrum' ? 'spectrum' : 'custom';
       // A derived section's Add files the new custom swatch under ITS heading.
       const displayGroup = add.dataset.beAddGroup;
-      // A neutral new swatch the user immediately recolours — stored LCH, the default.
+      // A neutral new swatch the user immediately recolours - stored LCH, the default.
       const path = addSwatch(doc, group, group === 'spectrum' ? t('New hue') : t('New swatch'), serializeColor('#888888', 'lch'), displayGroup ? { displayGroup } : {});
       repaintPalette(); persist(true);
       openSwatchAt(path);
@@ -2960,11 +2960,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // With a swatch TILE focused (a native <button>, so Tab reaches it and Enter/
   // click still opens the popover), l/c/h ARM an OKLCH channel and Arrow Up/Down
   // nudge it (Shift = coarse). Shift+H copies the hex, Shift+C the oklch() string.
-  // We only ever act when the tile itself is the focused element — a text input in
+  // We only ever act when the tile itself is the focused element - a text input in
   // the popover (a separate element outside palMount) never reaches this listener,
   // so no browser default is hijacked. The one deviation from the brief's "c
   // copies hex": bare `c` ARMS Chroma (keeping the L/C/H channel model whole), so
-  // copy-hex moved to Shift+H (H = Hex) — the model reads "letter arms, Shift+
+  // copy-hex moved to Shift+H (H = Hex) - the model reads "letter arms, Shift+
   // letter copies", and Cmd/Ctrl+C is never touched, which was the real rule.
   const CHANNEL_NAME: Record<'L' | 'C' | 'H', string> = { L: t('Lightness'), C: t('Chroma'), H: t('Hue') };
   const channelValueStr = (ch: 'L' | 'C' | 'H', hex: string): string => {
@@ -2980,22 +2980,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     );
   };
   palMount?.addEventListener('keydown', (e) => {
-    if (palSelecting) return; // tiles are collect-toggles in select mode — no channel nudging
+    if (palSelecting) return; // tiles are collect-toggles in select mode - no channel nudging
     const tile = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-be-tile]') ?? null;
-    // Only when the tile BUTTON itself holds focus — never a nested/other control.
+    // Only when the tile BUTTON itself holds focus - never a nested/other control.
     if (!tile || tile !== (e.target as HTMLElement) || e.altKey || e.metaKey || e.ctrlKey) return;
     const idx = Number(tile.dataset.beTile);
     const s = Number.isInteger(idx) ? swatches[idx] : undefined;
     if (!s || !s.hex) return;
     const k = e.key;
-    // Arm a channel (bare l/c/h) — a live readout via the shared aria-live region.
+    // Arm a channel (bare l/c/h) - a live readout via the shared aria-live region.
     if (!e.shiftKey && (k === 'l' || k === 'c' || k === 'h')) {
       e.preventDefault();
       armedChannel = k.toUpperCase() as 'L' | 'C' | 'H';
       announce(tRaw('{channel} armed · {value}', { channel: CHANNEL_NAME[armedChannel], value: channelValueStr(armedChannel, s.hex) }));
       return;
     }
-    // Copy — Shift+C the oklch() string, Shift+H the hex.
+    // Copy - Shift+C the oklch() string, Shift+H the hex.
     if (e.shiftKey && (k === 'C' || k === 'H')) {
       e.preventDefault();
       const o = hexToOklch(s.hex);
@@ -3019,17 +3019,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const val = (e.target as HTMLInputElement).value;
     setSwatchName(doc, cur.path, val); cur.name = val || cur.name;
     const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`);
-    if (tile) syncTileMeta(tile, cur); // the grid is shape-only — the name lives in title/aria
+    if (tile) syncTileMeta(tile, cur); // the grid is shape-only - the name lives in title/aria
     persist();
   });
   editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', () => {
     if (selected < 0) return;
     const cur = swatches[selected]; if (!cur) return;
     pushUndo(tRaw('Delete {name}', { name: cur.name }));
-    // Derived leaves (ramp steps + the theme roles) are structural — "delete"
+    // Derived leaves (ramp steps + the theme roles) are structural - "delete"
     // HIDES them via the doc's exclusion list: the ramp stays derived and the
     // token keeps resolving (so semantic roles and gradient aliases pointing at
-    // an excluded step never dangle — no materialisation needed), while the
+    // an excluded step never dangle - no materialisation needed), while the
     // tile vanishes from the grid + picker swatches. A re-derive clears entries
     // whose step no longer exists (see the derive flow above).
     if (cur.kind === 'ramp' || cur.kind === 'semantic') {
@@ -3038,8 +3038,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       announce(`${tRaw('{name} removed', { name: cur.name })} ${t('Undo with Control Z.')}`);
       return;
     }
-    if (!cur.deletable) { undoStack.pop(); return; } // nothing happened — drop the snapshot
-    // Gradient stops may wear this swatch by alias — pin them to its current hex
+    if (!cur.deletable) { undoStack.pop(); return; } // nothing happened - drop the snapshot
+    // Gradient stops may wear this swatch by alias - pin them to its current hex
     // before it goes, so the doc and any exported pack never carry a dangling
     // ref. No confirm: the announcement says what happened, and undo restores it.
     const refs = gradientAliasRefCount(doc, cur.key);
@@ -3061,11 +3061,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   // stopImmediatePropagation, not stopPropagation: the host view's own
   // Esc-to-leave handler listens on the SAME document target, and plain
-  // stopPropagation can't stop a sibling listener — Esc on an open popover
+  // stopPropagation can't stop a sibling listener - Esc on an open popover
   // would close it AND kick the user out of the studio. The editor mounts
   // before the host wires its handler, so this one runs first.
   const onKey = (e: KeyboardEvent): void => {
-    // Undo — Colours room only, and never over a text field (a native input owns
+    // Undo - Colours room only, and never over a text field (a native input owns
     // its own undo; hijacking a browser default is not on). With an empty stack
     // the key falls straight through to the page.
     if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
@@ -3092,7 +3092,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const splitTab = $('[data-be-tab-panel="color"]') as HTMLElement | null;
   if (splitTab) cleanups.push(mountStudioSplit(splitTab));
   // The popover positions in `.be` space, but its anchors live inside the side
-  // pane's own scrollport (and below 1100px the page itself still scrolls) —
+  // pane's own scrollport (and below 1100px the page itself still scrolls) - 
   // either scroll drifts an open popover off its tile. Capture-phase scroll
   // catches both: follow the tile while it exists, close when it's gone.
   // refreshTile swaps tiles via outerHTML, so a disconnected anchor is
@@ -3105,7 +3105,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       : (selected >= 0 ? palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`) ?? null : null);
     if (!anchor) { closeEditor(); return; }
     // An anchor inside the side pane's clipped scrollport can scroll out from
-    // under the popover — following it would float the popover over the derive
+    // under the popover - following it would float the popover over the derive
     // panel (and slide it under the sticky action row). Close once it leaves.
     const pane = anchor.closest('.be-split-scroll');
     if (pane) {
@@ -3153,7 +3153,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       },
       onCommit: () => persist(),
       onPick: (idx) => {
-        // The tile can hide inside a folded palette group (display:none —
+        // The tile can hide inside a folded palette group (display:none - 
         // offsetParent null); a hidden anchor would place the popover at the
         // panel origin, so fall back to the wheel dot itself.
         const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`);
@@ -3175,7 +3175,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── The gamut chart ────────────────────────────────────────────────────────
   // A plane through OKLCH space with the sRGB / Display-P3 / Rec.2020 bands
   // drawn on it. The wheel shows what a palette IS; this shows what it can
-  // still become — the sRGB boundary is a curve in lightness×chroma that moves
+  // still become - the sRGB boundary is a curve in lightness×chroma that moves
   // with hue, so it only becomes visible on a plane that has one of those as a
   // real axis. Same swatches, same drag/click/add gestures, same persist path.
 
@@ -3183,7 +3183,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const FIXED_RANGE: Record<SlicePlane, { min: number; max: number; step: number }> = {
     lc: { min: 0, max: 359, step: 1 },        // hue°
     ch: { min: 0, max: 1, step: 0.01 },       // lightness
-    // Chroma — the same ceiling the chart's own axis uses, so the slider cannot
+    // Chroma - the same ceiling the chart's own axis uses, so the slider cannot
     // ask for a slice the plot has no room to show.
     lh: { min: 0, max: sliceCMax(sliceState), step: 0.005 },
   };
@@ -3193,7 +3193,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   /**
    * A swatch's AUTHORED colour, for positioning its dot on the slice charts.
    *
-   * `s.hex` is the resolved sRGB bake — gamut-MAPPED, so for a swatch stored as
+   * `s.hex` is the resolved sRGB bake - gamut-MAPPED, so for a swatch stored as
    * `oklch()` past sRGB it carries a reduced chroma. Positioning from it plots the
    * sRGB ceiling instead of the colour (the same defect just fixed in the Colour
    * Lab), and worse, a drag then reads back that clamped value and ratchets the
@@ -3201,7 +3201,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *
    * `s.raw` is the stored `$value`, which is `oklch()` for anything the wheel wrote.
    * An alias (`{color.x}`) or an unparseable value has no authored colour of its own
-   * — those fall back to the hex, which is what they were always positioned by.
+   * - those fall back to the hex, which is what they were always positioned by.
    */
   const swatchOklch = (s: { raw: string; isAlias: boolean }): { l: number; c: number; h: number } | undefined => {
     if (s.isAlias) return undefined;
@@ -3214,7 +3214,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const sliceDots = (): SliceDot[] =>
     swatches.map((s, idx) => ({ idx, hex: s.hex, label: s.name, oklch: swatchOklch(s) }));
 
-  /** Move every dot to where the CURRENT slice puts it, without a re-render —
+  /** Move every dot to where the CURRENT slice puts it, without a re-render - 
    *  the off-plane fade changes on every tick of the fixed slider. */
   const refreshSliceDots = (): void => {
     if (!sliceMount) return;
@@ -3224,7 +3224,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   // Repaint at most once per frame while the fixed slider is scrubbed, at half
-  // resolution — three engine slices is ~17ms of real work, too much to run
+  // resolution - three engine slices is ~17ms of real work, too much to run
   // synchronously inside a pointermove.
   let sliceFrame = 0;
   const schedulePaint = (quality: 'full' | 'draft'): void => {
@@ -3280,7 +3280,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       onCommit: () => persist(),
       onPick: (idx) => {
         // Clicking an off-plane dot brings the SLICE to the colour rather than
-        // the colour to the slice — the palette is what's being read here, and
+        // the colour to the slice - the palette is what's being read here, and
         // silently rotating a swatch's hue to match the chart would be the
         // chart editing something the user only pointed at.
         const s = swatches[idx];
@@ -3337,7 +3337,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         refreshSliceDots();
         schedulePaint('draft');
       };
-      // `change` fires when the scrub ends (and on a keyboard step) — the moment
+      // `change` fires when the scrub ends (and on a keyboard step) - the moment
       // to spend the full-resolution repaint.
       const onChange = (): void => { onInput(); schedulePaint('full'); };
       fixedInput.addEventListener('input', onInput);
@@ -3362,7 +3362,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   cleanups.push(() => sliceTeardown?.());
 
   // The Colour chart card folds closed by default, and a hidden mount measures
-  // 0×0 — repaint the moment the card opens so the first reveal (and any palette
+  // 0×0 - repaint the moment the card opens so the first reveal (and any palette
   // change that happened while it was folded) renders true.
   const chartDetails = $('[data-be-chart]') as HTMLDetailsElement | null;
   const paintChart = (): void => { paintWheel(); paintSlices(); };
@@ -3397,17 +3397,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // ── Level 0: Add a colour ───────────────────────────────────────────────────
   // The module parses; this callback is the only thing that writes. One colour
-  // in, one addSwatch out — nothing derived, nothing suggested-into (plan 97 §3
+  // in, one addSwatch out - nothing derived, nothing suggested-into (plan 97 §3
   // principle 1). Notation is preserved as typed: storageFormatOf maps `#…`→hex,
   // `rgb(…)`→rgb, `hsl(…)`→hsl and everything else to the app's LCH default.
   /**
-   * The room's write for "here are n colours" — one `addSwatch` each, one
+   * The room's write for "here are n colours" - one `addSwatch` each, one
    * persist for the batch. Returns how many landed.
    *
    * Exposed on the handle as `addColors` (plan 97 §2b) because it writes into
    * the doc THIS editor is holding. A caller that keeps its own snapshot of the
    * installed document and writes into that instead would reinstall the snapshot
-   * — silently reverting every edit made in the room since it was taken. There
+   * - silently reverting every edit made in the room since it was taken. There
    * is one live document; this is the way in.
    *
    * `reveal` is the room's own affordance (open the new swatch, announce it) and
@@ -3486,7 +3486,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   }) : null;
   paletteHooks.push(() => rolesStrip?.render());
 
-  // The swatch popover's "Use as" row — the same assignment, reached from the
+  // The swatch popover's "Use as" row - the same assignment, reached from the
   // colour itself. A pressed button means "this swatch IS that role", so
   // pressing it again clears the role rather than re-writing it.
   const useasRow = editorEl?.querySelector<HTMLElement>('[data-be-useas]') ?? null;
@@ -3532,11 +3532,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   repaintPalette();
 
   // ── Type (the Type room, plan 97 §7.2) ───────────────────────────────────────
-  // Three layers, top to bottom: the four ROLE CARDS (level 0 — what serves each
+  // Three layers, top to bottom: the four ROLE CARDS (level 0 - what serves each
   // role, and the one action that changes it), the COMPARE STAGE they open (six
   // faces at one size on one specimen; nothing installs until a card is chosen),
   // and the MANAGEMENT LIST of everything already on the device (roles, delete).
-  // The stage is presentation only — type-compare.ts installs nothing and this
+  // The stage is presentation only - type-compare.ts installs nothing and this
   // file owns every write, which is why `applyTypeChoice` below is the single
   // place a face becomes an asset and a token.
   const fontErr = $('[data-be-font-err]') as HTMLElement | null;
@@ -3567,7 +3567,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     </li>`;
   };
   // The live specimen (Type roles panel): each role rendered in the face that
-  // actually serves it — --font-brand / --font-mono, whatever set them.
+  // actually serves it - --font-brand / --font-mono, whatever set them.
   const paintSpecimen = async (): Promise<void> => {
     const mount = $('[data-be-specimen]') as HTMLElement | null; if (!mount) return;
     const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || t('Platform default');
@@ -3600,11 +3600,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>`;
   };
   /**
-   * The four role cards (level 0), updated IN PLACE — every dynamic string is
+   * The four role cards (level 0), updated IN PLACE - every dynamic string is
    * written as textContent onto nodes the scaffold already built. Deliberately
    * not a re-render: a repaint that replaced the cards would take the keyboard
    * off the button that caused it, and no family name would then be a step away
-   * from a markup sink. The specimen itself needs no touching at all — it paints
+   * from a markup sink. The specimen itself needs no touching at all - it paints
    * through the role's CSS var, which applyChromeBrandVars has already moved.
    */
   const paintRoleCards = async (): Promise<void> => {
@@ -3631,7 +3631,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             ? tRaw('{family}, the primary', { family: brandFace })
             : t('Follows the primary'));
       }
-      // The label and the accessible name move together — see typeRoleActStrings.
+      // The label and the accessible name move together - see typeRoleActStrings.
       const act = typeRoleActStrings(typeRoleLabel(def.id), !!face);
       const actEl = card.querySelector<HTMLElement>('[data-be-typecard-actlabel]');
       if (actEl) actEl.textContent = act.text;
@@ -3647,7 +3647,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const rows: string[] = [];
     if (!fontFamilies.some(f => f.primary)) {
       const builtin = await primaryFontFamily(fontsHost).catch(() => '');
-      // 'SUSE' is the platform default face (tokens.css --font-brand) — the label
+      // 'SUSE' is the platform default face (tokens.css --font-brand) - the label
       // must name whatever that default actually is, or the Fonts tab reports a
       // face the app is not using. It was 'Outfit' until 2026-08-10.
       rows.push(`<li class="be-font-row is-primary is-builtin"><span class="be-font-aa" style="font-family:'${escape(builtin || 'SUSE')}'" aria-hidden="true">Aa</span>
@@ -3682,7 +3682,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *  "Add a face": the face installs and takes no role beyond the only-font
    *  promotion every install has always done. */
   let stageRole: FontRole | null = null;
-  /** The control the stage was opened from — where the keyboard goes when it
+  /** The control the stage was opened from - where the keyboard goes when it
    *  closes, however it closes. */
   let stageReturn: HTMLElement | null = null;
   /** Lowercased family → the tray candidate that put it on the stage, so a
@@ -3723,7 +3723,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   /**
    * Persist one stage choice. The stage hands over a candidate and this decides
    * the rail: a Google pick through `installGoogleFont`, a file through
-   * `installFontFromBytes` (plan 97 §4 gap 3 — the second entrance into the role
+   * `installFontFromBytes` (plan 97 §4 gap 3 - the second entrance into the role
    * system), then the role that OPENED the stage is assigned through the same
    * withFontRoleToken writers the list rows use.
    *
@@ -3789,13 +3789,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *  provenance. A face discovered in a document arrives spelled its own way
    *  ("ABCDEF+Inter-SemiBold"); font-resolve.ts resolves the whole spelling
    *  first and the parsed family second, which is the order its tests pin. An
-   *  unresolvable family is still offered — the stage says honestly that it has
+   *  unresolvable family is still offered - the stage says honestly that it has
    *  no source for it, which beats hiding a face the person's own file names. */
   const seedStageFromTray = async (): Promise<void> => {
     const open = stage;
     const handle = await trayHandle();
     if (!handle) return;
-    await handle.load().catch(() => {}); // freshest list — see applyTypeChoice
+    await handle.load().catch(() => {}); // freshest list - see applyTypeChoice
     // The stage may have been closed or replaced while that was in flight.
     if (!open || open !== stage) return;
     const pending = handle.list()
@@ -3907,7 +3907,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const logoErr = $('[data-be-logo-err]') as HTMLElement | null;
   const showLogoErr = (m: string): void => { if (logoErr) { logoErr.textContent = m; logoErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let logoUrls: string[] = []; // object URLs to revoke on repaint/teardown
-  // Identities the user added this session that hold no assets yet — an identity
+  // Identities the user added this session that hold no assets yet - an identity
   // only truly exists through its assets, so empty sections live here until the
   // first mark lands (and vanish on reload if none ever does; that's honest).
   const pendingIdentities: string[] = [];
@@ -3923,7 +3923,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // The slot's file input is `visually-hidden`, never `hidden`: a display:none
     // input is not focusable, which made every logo slot mouse-only. The label
     // draws the keyboard ring on its behalf via .be-logo-drop:focus-within
-    // (brand-studio.css) — the same construction the shared dropzone uses.
+    // (brand-studio.css) - the same construction the shared dropzone uses.
     return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${escape(v)}" data-treatment="${treatment ?? 'custom'}">
         <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(name)}</span>
           ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="${escape(tRaw('Remove the {name} mark', { name }))}">&#x2715;</button>` : ''}</div>
@@ -3937,7 +3937,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // Which of the unnamed identity's slots currently hold a mark. Refreshed by
   // every paint and read by the intake queue: a chip says "Replace" instead of
   // "Place" for a taken slot, and a derived variant is only offered for an EMPTY
-  // sibling. The intake files into the unnamed identity only — a named identity's
+  // sibling. The intake files into the unnamed identity only - a named identity's
   // slots are still filled from their own tiles, which is where their context is.
   let filledDefaultSlots = new Set<string>();
   // Repaints the intake queue. Assigned further down (the queue's own render
@@ -4000,7 +4000,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </form>`;
     // A room that went away mid-paint drains NOTHING. `takePendingLogoFiles()`
     // empties the one-shot stash and nothing can re-arm it, so draining into a
-    // torn-down room does not just waste the paint — it destroys the hand-off,
+    // torn-down room does not just waste the paint - it destroys the hand-off,
     // and the marks cannot be sent again without re-opening the document.
     if (!root.isConnected) return;
     mount.innerHTML = sections + addIdentity;
@@ -4021,7 +4021,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // colour. The note lives in the Add hero, where the colour lands.
   const suggestEl = $('[data-be-suggest]') as HTMLElement | null;
   /** Add the colour, give it the primary role, and point the Generate wing's
-   *  picker at it — one motion, persisted immediately (plan 97 §6). */
+   *  picker at it - one motion, persisted immediately (plan 97 §6). */
   const takePrimaryFromLogo = (hex: string): void => {
     const name = nameColor(hex);
     const path = addSwatch(doc, 'custom', name, serializeColor(hex, 'lch'));
@@ -4037,10 +4037,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette();
     persist(true);
   };
-  // The candidate tray (plan 97 §8) — the HOST's, whenever it has one, because
+  // The candidate tray (plan 97 §8) - the HOST's, whenever it has one, because
   // two live trays over one storage key erase each other (see BrandEditorOptions
   // .tray). Only a host that mounts no tray of its own falls through to the
-  // second branch, which creates one lazily — and only when a mark actually has
+  // second branch, which creates one lazily - and only when a mark actually has
   // colours to hand over, so a session that never touches a logo pays nothing.
   // `load()` runs before the first add either way: the tray persists the whole
   // candidate list on every write, so adding to an unloaded one would erase
@@ -4066,7 +4066,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const handle = await trayHandle();
     if (!handle) return;
     // censusFromSvgColors appends an implied white ground when the artwork
-    // carries none — a claim about the PAGE a mark sits on, which is right for
+    // carries none - a claim about the PAGE a mark sits on, which is right for
     // the role proposer and wrong for a shopping list. Candidates are filtered
     // back to the colours the file actually paints with.
     const own = new Set(colors.map(c => censusHex(c)).filter((h): h is string => !!h));
@@ -4088,7 +4088,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     void trayColorsFromLogo(colors.slice(1), file.name);
     if (!first || !suggestEl) return;
     if (!isUserBrand) {
-      // Nothing of the user's to clobber yet — take it, and say what happened.
+      // Nothing of the user's to clobber yet - take it, and say what happened.
       takePrimaryFromLogo(first);
       // ONCE, though. That call just wrote a custom swatch, gave it the primary
       // role and persisted, so from here on there IS something of the user's:
@@ -4140,13 +4140,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *  menu and nothing is one tap away (plan 97 §14.5: an ambiguous file always
    *  gets the confirm chip, never a silent placement). */
   const LOGO_CONFIRM_MIN = 0.6;
-  /** How many files may wait at once — past this a queue stops being a list and
+  /** How many files may wait at once - past this a queue stops being a list and
    *  becomes a backlog. */
   const LOGO_INTAKE_MAX = 12;
   /** Classification decode budget: the readback holds four bytes a pixel, and a
    *  logo is not a hero photo. */
   const CLASSIFY_MAX_PIXELS = 24_000_000;
-  /** At most this many samples feed the colour census — a mark's ink is no more
+  /** At most this many samples feed the colour census - a mark's ink is no more
    *  legible for having counted every pixel of a 4000px export. */
   const CLASSIFY_MAX_SAMPLES = 120_000;
   /** Census bucket size per channel (16 levels), so an anti-aliased edge does not
@@ -4223,7 +4223,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let trimTeardown: (() => void) | null = null;
   let trimAbandon: (() => void) | null = null;
   /** Close whatever offer is open. A placement still waiting on it resolves with
-   *  its ORIGINAL file — the non-destructive answer, the same one Escape gives. */
+   *  its ORIGINAL file - the non-destructive answer, the same one Escape gives. */
   const closeTrimOffer = (): void => {
     const teardown = trimTeardown; trimTeardown = null;
     const abandon = trimAbandon; trimAbandon = null;
@@ -4241,13 +4241,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * resolve with the bytes to ingest. NULL means the user backed out (Escape, or
    * the card's ✕): the placement is abandoned and nothing is installed.
    *
-   * `restore` hands the keyboard back after the card is answered — the card took
+   * `restore` hands the keyboard back after the card is answered - the card took
    * focus on mount and its buttons are about to be removed, so without it every
    * placement drops the user on <body>. Called for a USER answer only; on the
    * abandon path the whole surface is going away.
    *
    * ORDERING (trim-offer.ts's own rule, plan 97 §4 gap 4): this MUST run BEFORE
-   * the store path — storeUserUpload's normaliser strips the root width/height,
+   * the store path - storeUserUpload's normaliser strips the root width/height,
    * after which a viewBox rewrite has nothing left to bite on. A file with no
    * margin worth removing never sees a card at all.
    */
@@ -4306,7 +4306,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const queueEl = $('[data-be-logo-queue]') as HTMLElement | null;
   let intake: LogoCandidateChip[] = [];
   let intakeSeq = 0;
-  /** A selector to focus after the next render — the queue re-renders whole, so
+  /** A selector to focus after the next render - the queue re-renders whole, so
    *  a menu toggle, a placement or a dismissal would otherwise drop the keyboard
    *  where it stood, i.e. on <body>. EVERY path that re-renders says where the
    *  keyboard goes; the only exception is the queue emptying, which is
@@ -4323,7 +4323,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *  own buttons cannot hold focus: while a placement is busy and they are
    *  disabled. */
   const chipSel = (key: string): string => `[data-logo-chip="${key}"]`;
-  /** The chip's first control — Place on a confident chip, Change slot on an
+  /** The chip's first control - Place on a confident chip, Change slot on an
    *  unsure one, the dismiss ✕ when it has neither. */
   const chipActionSel = (key: string): string => `${chipSel(key)} button`;
   /**
@@ -4364,7 +4364,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const lead = c.generated
       ? tRaw('Generated {variant}', { variant: label })
       : sure ? tRaw('Looks like the {variant}', { variant: label }) : t('Not sure which slot this is');
-    // The classifier's own reason fragments, verbatim — they say what was measured.
+    // The classifier's own reason fragments, verbatim - they say what was measured.
     const why = c.reasons.filter(Boolean).join(', ');
     const act = c.generated ? t('Add') : filledDefaultSlots.has(c.variant) ? t('Replace') : t('Place');
     return `<div class="be-logo-chip" data-logo-chip="${escape(c.key)}" tabindex="-1"${c.generated ? ' data-generated="1"' : ''}>
@@ -4447,14 +4447,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   /**
-   * Marks sent over from another view (plan 97 §8, M5 — the PDF exploder's
+   * Marks sent over from another view (plan 97 §8, M5 - the PDF exploder's
    * "Send to the Design System studio"). They go through addLogoFiles, the very
    * same door a multi-file drop uses: classified, chipped, and waiting for a tap.
    * A mark lifted off page 3 of a guidelines PDF is exactly as much of a guess as
    * one dropped by hand, so it is never placed into a slot on arrival.
    *
    * Drained once. `takePendingLogoFiles()` empties the stash, so a second call
-   * would find nothing anyway — the latch says so at the call site rather than
+   * would find nothing anyway - the latch says so at the call site rather than
    * leaving the guarantee to a module the paint cannot see.
    */
   let pendingLogosDrained = false;
@@ -4475,7 +4475,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   /** The ink a generated mono mark is painted in: the design system's own text
-   *  colour, read from the LIGHT theme deliberately — a mono mark is the one that
+   *  colour, read from the LIGHT theme deliberately - a mono mark is the one that
    *  has to read on paper, and a dark theme's text is nearly white, which would
    *  generate an invisible mark. */
   const monoInk = (): string => {
@@ -4491,7 +4491,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * A colour SVG placed in a primary slot can father its own siblings: a
    * single-ink mono and a light-for-dark reverse (recolor-logo.ts, pure). They
    * arrive as chips marked Generated and are placed only on a tap, and only into
-   * an EMPTY sibling — a generated mark never displaces one the user chose. A
+   * an EMPTY sibling - a generated mark never displaces one the user chose. A
    * mark the recolour cannot honestly derive from (a gradient, a pattern) gets no
    * chip at all, never a disabled one.
    */
@@ -4675,7 +4675,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         if (!picked) return;   // backed out of the trim card: nothing is installed
         // installLogoFile, not installLogo: the unnamed identity has to be
         // OMITTED, and the literal 'default' this path used to pass is refused
-        // outright ("default is reserved") — so no custom mark could be added to
+        // outright ("default is reserved") - so no custom mark could be added to
         // the first logo at all.
         await installLogoFile(slug, identity, picked, label);
         playSfx('saveProfile'); await paintLogos(); notify('logos');
@@ -4695,7 +4695,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // same tile's file input on the fresh markup rather than left on <body>.
     const tileSel = `[data-logo-file="${variant}"][data-identity="${identity}"]`;
     try {
-      // The same trim offer the intake chips get — the affordance belongs to
+      // The same trim offer the intake chips get - the affordance belongs to
       // "a user file becomes an asset", not to one control (plan 97 §7.3).
       const picked = await withTrimOffer(file, () => refocus(tileSel));
       if (!root.isConnected) return;
@@ -4710,7 +4710,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
   $('[data-be-logos]')?.addEventListener('submit', (e) => {
     // The custom-mark form has no submit button (its "action" is the file
-    // picker), but Enter in its name field still implicitly submits — swallow
+    // picker), but Enter in its name field still implicitly submits - swallow
     // that and forward the intent to the picker instead of reloading the page.
     const addmark = (e.target as HTMLElement).closest<HTMLElement>('[data-logo-addmark]');
     if (addmark) {
@@ -4761,7 +4761,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
 
   // ── Corner radius (the Tokens tab) ───────────────────────────────────────
-  // Live app-wide preview on every drag tick (set --radius directly — instant,
+  // Live app-wide preview on every drag tick (set --radius directly - instant,
   // no round trip), persisted debounced so a drag doesn't spam writes.
   const radiusSlider = $('[data-be-radius-slider]') as HTMLInputElement | null;
   const radiusPreview = $('[data-be-radius-preview]') as HTMLElement | null;
@@ -4779,7 +4779,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (radiusValueEl) radiusValueEl.textContent = `${rem}rem`;
   })();
   let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
-  let radiusPending: string | null = null; // flushed on teardown — a drag right before leaving must still land
+  let radiusPending: string | null = null; // flushed on teardown - a drag right before leaving must still land
   radiusSlider?.addEventListener('input', () => {
     const css = `${radiusSlider.value}rem`;
     if (radiusPreview) radiusPreview.style.borderRadius = css;
@@ -4801,8 +4801,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
 
   // ── The three studio panels that live outside this file ──────────────────
-  // Token editors, gradients and catalogue uploads (brand-studio-tabs.ts) —
-  // each gets the same narrow context: the live doc (getter — the Colour tab
+  // Token editors, gradients and catalogue uploads (brand-studio-tabs.ts) - 
+  // each gets the same narrow context: the live doc (getter - the Colour tab
   // reassigns it on re-derive/import), the persist funnel, and its tab's notify.
   const studioCtx = {
     host,
@@ -4826,7 +4826,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const gradsMount = $('[data-be-grads-mount]') as HTMLElement | null;
   // The gradient stop picker's view of the palette: the same walkSwatches-fed
   // `swatches` array the grid renders (kept fresh by both repaintPalette and
-  // the in-place recolour paths). Alias roles are excluded — a stop wearing a
+  // the in-place recolour paths). Alias roles are excluded - a stop wearing a
   // role would chain two aliases deep.
   const gradSwatches = (): Array<{ ref: string; hex: string; label: string; group: string }> =>
     swatches.filter(s => s.hex && !s.isAlias && s.kind !== 'semantic')
@@ -4844,7 +4844,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // or pack import must repaint them too.
   paletteHooks.push(() => { tokensPanel?.render(); gradsPanel?.render(); });
 
-  // ── Share (brand pack in/out) — exposed on the handle; the host view owns
+  // ── Share (brand pack in/out) - exposed on the handle; the host view owns
   //    the buttons' placement (its persistent Import/Export action row).
   const exportPack = async (): Promise<{ filename: string }> => {
     const { blob, filename, summary } = await exportBrandPack(transferHost);
@@ -4855,7 +4855,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     return { filename };
   };
   // Something replaced the installed tokens underneath us (a pack import, the
-  // host view's own JSON/SVG install path) — reload the doc and repaint every
+  // host view's own JSON/SVG install path) - reload the doc and repaint every
   // panel so the studio shows what's actually installed. The Generate wing's
   // CONTROLS re-seed too (primary, shade count, ramp anchors, the preview):
   // they were captured from the pre-import doc at mount, and leaving them stale

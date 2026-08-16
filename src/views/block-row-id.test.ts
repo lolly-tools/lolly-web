@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Every `blocks` row is minted in ONE place, and the legacy migration runs in ONE
- * place — a source scan, not a mount.
+ * place - a source scan, not a mount.
  *
  * Plan 100 §3 makes a row's id a property of its birth: `newBlockRow` (tool-inputs.ts)
  * builds the declared defaults AND the stable id together, so a row cannot exist without
  * one. That guarantee is only as good as the number of places that build a row, and the
  * sidebar has four (the "+ Add" button and its typed menu, drop-to-add, Markdown paste,
- * CSV/JSON import) — a fifth written the old way (`for (const f of fields) row[f.id] =
+ * CSV/JSON import) - a fifth written the old way (`for (const f of fields) row[f.id] =
  * blockFieldDefault(f)`) would silently reintroduce id-less rows.
  *
  * The migration of rows saved BEFORE ids existed is the other half, and where it runs is
  * a correctness property, not a preference: `renderInputs` also draws `/multi`'s shared
  * card against a fan-out runtime whose model is the LEAD session's and whose `setInput`
  * writes to every sibling session declaring that id, so a migration from there would
- * overwrite each sibling's rows with the lead's — and mark them dirty — on mount. It
+ * overwrite each sibling's rows with the lead's - and mark them dirty - on mount. It
  * belongs to a mounted session (views/tool.ts), through the engine's `applyPatch`, which
  * records no undo step.
  *
  * A scan because tool-inputs.ts cannot be imported outside Vite (it resolves sibling
- * modules with `.js` specifiers) — the same reason multi-edit-crash-guard.test.ts scans
+ * modules with `.js` specifiers) - the same reason multi-edit-crash-guard.test.ts scans
  * rather than mounts. The migration and ULID behaviour themselves are covered for real in
  * lib/row-id.test.ts and views/free-canvas-ids.test.ts.
  *
@@ -64,11 +64,11 @@ test('the legacy migration runs at MOUNT, never from the panel renderer (/multi 
 
 test('neither migration records an undo step (setInputNoHistory / applyPatch)', () => {
   // In mountTool `runtime.setInput` is the undo-history wrapper, so stamping ids
-  // through it would arm ↶ before the user has made a single edit — and on a canvas
+  // through it would arm ↶ before the user has made a single edit - and on a canvas
   // tool, undoing it restores an id-less array where every row answers to ''.
   assert.match(TOOL_SRC, /runtime\.setInputNoHistory = baseSetInput;/, 'the quiet setter still exists');
   // The migration id-stamps AND (plan 112) assigns spatial frame membership before the
-  // commit — `let next = withIds(loaded)`, then `if (frameCfg) next = assignFrames(...)`,
+  // commit - `let next = withIds(loaded)`, then `if (frameCfg) next = assignFrames(...)`,
   // then commits through `quiet` (the setInputNoHistory alias). Bound the block at the
   // trailing renderChrome() so the assertions don't depend on a fixed char window.
   const mStart = CANVAS_SRC.indexOf('let next = withIds(loaded);');

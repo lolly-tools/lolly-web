@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * audio-peaks.ts — the MEASURED overview waveform of an audio asset, cached.
+ * audio-peaks.ts - the MEASURED overview waveform of an audio asset, cached.
  *
  * THE PROBLEM. The asset picker picks a thumbnail by type: lottie → a lottie
  * frame, video → a poster frame, everything else → `<img src=ref.url>`. For an
@@ -9,8 +9,8 @@
  * catalog is mostly audio (the `lolly-start` profile is 20 audio assets out of
  * 23; SUSE has 52).
  *
- * WHAT THIS MODULE IS. The data half of the fix: `peaks` — `PEAK_BUCKETS`
- * amplitudes, 0..1 — for an asset, read from IndexedDB if we have measured them
+ * WHAT THIS MODULE IS. The data half of the fix: `peaks` - `PEAK_BUCKETS`
+ * amplitudes, 0..1 - for an asset, read from IndexedDB if we have measured them
  * before and derived through `host.audio.analyse` if we have not. The drawing
  * half is lib/audio-thumb.ts.
  *
@@ -22,7 +22,7 @@
  *
  * WHY A BYTE PER BUCKET. Peaks are already normalised 0..1 and are drawn into a
  * thumbnail a few dozen pixels tall, where 1/255 is far finer than one pixel of
- * bar height — so a `Uint8Array` is visually identical to the `Float32Array`
+ * bar height - so a `Uint8Array` is visually identical to the `Float32Array`
  * `host.audio` hands back at a quarter of the bytes (~128 vs ~512 per asset).
  * At 52 assets that is 6.6 kB of database instead of 26 kB, and it survives
  * structured-clone into IndexedDB exactly as well.
@@ -35,12 +35,12 @@
  *     starting a second);
  *   • at most `MAX_CONCURRENT_DERIVES` decodes across all ids;
  *   • a duration ceiling, because `decodeAudioData` expands audio to Float32 PCM
- *     — a 20-minute stereo 48 kHz recording is ~460 MB of RAM to learn 128
+ * - a 20-minute stereo 48 kHz recording is ~460 MB of RAM to learn 128
  *     numbers, which is a tab crash on a phone.
  * A failure is remembered too: a codec this browser lacks must not be re-attempted
  * on every scroll.
  *
- * NEVER THROWS. Every entry point resolves — `null`, or nothing at all. These are
+ * NEVER THROWS. Every entry point resolves - `null`, or nothing at all. These are
  * called from render paths; a missing waveform is a glyph, never an error.
  */
 
@@ -70,7 +70,7 @@ export const PEAK_BUCKETS = 128;
  * decoding one to draw a 100 px thumbnail would be a memory spike far out of
  * proportion to the pixels. Over the ceiling we return null and the tile keeps
  * its honest glyph. (`durationMs` is only known when the asset carries it in
- * `meta` — an asset with no declared duration is attempted, since almost
+ * `meta` - an asset with no declared duration is attempted, since almost
  * everything with a duration to declare is short.)
  */
 export const MAX_PEAK_DURATION_MS = 8 * 60 * 1000;
@@ -87,7 +87,7 @@ export const MAX_CONCURRENT_DERIVES = 2;
 
 /**
  * In-memory rows. Tiny (a Float32Array of 128 plus a number), and this is a
- * scroll path — bounded only so a very long session cannot grow it without end.
+ * scroll path - bounded only so a very long session cannot grow it without end.
  */
 const MEMO_MAX = 400;
 
@@ -104,17 +104,17 @@ export interface PeaksRecord {
   /**
    * The source's content fingerprint (version + checksum) when it was measured.
    *
-   * An asset ID is a PERMANENT CONTRACT — `suse/music/x` is never renamed or reused —
+   * An asset ID is a PERMANENT CONTRACT - `suse/music/x` is never renamed or reused - 
    * but its BYTES can be replaced under that id at an unversioned url, and every
    * catalog asset carries a `version` and a per-format `checksum` for exactly this
    * reason. Without recording it, a re-mastered track keeps rendering the waveform of
    * the audio it replaced, forever, and the picture quietly stops describing the sound.
-   * Absent on rows written before this existed — treated as "unknown", not as a
+   * Absent on rows written before this existed - treated as "unknown", not as a
    * mismatch, so an upgrade re-measures lazily instead of dropping every cached row.
    */
   fp?: string;
   durationMs: number;
-  /** When this was measured (epoch ms) — diagnostics and future eviction. */
+  /** When this was measured (epoch ms) - diagnostics and future eviction. */
   at: number;
 }
 
@@ -123,7 +123,7 @@ export interface PeaksRecord {
 /**
  * The operations this module needs from IndexedDB.
  *
- * A seam, not a second storage abstraction — the default implementation is the
+ * A seam, not a second storage abstraction - the default implementation is the
  * ONE shared `openDB()` connection from bridge/db.ts, like every other derived
  * store in this shell. (No sibling module is named here on purpose: the timeline's
  * scrub-proxy guard fails any file outside its allowlist that so much as mentions
@@ -200,7 +200,7 @@ export function decodePeaks(bytes: Uint8Array): Float32Array {
 /**
  * Is a stored row usable?
  *
- * A row is rejected — not repaired — when it is short, the wrong bucket count, or
+ * A row is rejected - not repaired - when it is short, the wrong bucket count, or
  * carries a nonsense duration. Half a waveform drawn as a whole one is a false
  * claim about the sound, and re-deriving costs one decode; guessing costs
  * credibility. Structured clone can also hand back an ArrayBuffer or a plain
@@ -208,7 +208,7 @@ export function decodePeaks(bytes: Uint8Array): Float32Array {
  * rather than assumed.
  */
 /**
- * The content fingerprint of an asset ref — its `version` plus the checksum of the
+ * The content fingerprint of an asset ref - its `version` plus the checksum of the
  * format actually served. '' when the ref declares neither (a user upload, whose id is
  * already unique per upload, so there is nothing to invalidate against).
  */
@@ -228,7 +228,7 @@ export function readRecord(rec: unknown, want = ''): PeaksResult | null {
   if (r.buckets != null && r.buckets !== PEAK_BUCKETS) return null;
   // A row measured from different bytes is worse than no row: it renders a confident
   // picture of audio that is no longer there. Only compared when BOTH sides know their
-  // fingerprint — see PeaksRecord.fp for why absence is not a mismatch.
+  // fingerprint - see PeaksRecord.fp for why absence is not a mismatch.
   if (want && r.fp && r.fp !== want) return null;
   const durationMs = Number(r.durationMs);
   if (!Number.isFinite(durationMs) || durationMs < 0) return null;
@@ -245,7 +245,7 @@ function toBytes(v: unknown): Uint8Array | null {
 // ── the memo ────────────────────────────────────────────────────────────────
 
 const memo = new Map<string, PeaksResult>();
-/** Assets we have already failed to measure — never retried on the next scroll. */
+/** Assets we have already failed to measure - never retried on the next scroll. */
 const failed = new Set<string>();
 
 function remember(id: string, result: PeaksResult): void {
@@ -280,7 +280,7 @@ export function resetPeaksCache(): void {
  * instant "draw the glyph". Never throws.
  */
 /**
- * Peaks already in memory for this session, or null — SYNCHRONOUS.
+ * Peaks already in memory for this session, or null - SYNCHRONOUS.
  *
  * For a caller that must build markup in one pass and cannot await, like the favourites
  * strip. Deliberately does not touch IndexedDB and never starts a decode: a surface that
@@ -301,7 +301,7 @@ export async function cachedPeaks(assetId: string, want = ''): Promise<PeaksResu
     const raw = await store.get(assetId);
     const result = readRecord(raw, want);
     if (result) { remember(assetId, result); return result; }
-    // A row that EXISTS but was rejected is stale, not missing — drop it so the space
+    // A row that EXISTS but was rejected is stale, not missing - drop it so the space
     // is not held forever by a measurement nothing will ever accept again.
     if (raw) await store.delete(assetId).catch(() => {});
     return null;
@@ -315,7 +315,7 @@ export async function cachedPeaks(assetId: string, want = ''): Promise<PeaksResu
  *
  * The ingest path is the caller that matters: the upload flow has the bytes in
  * hand already, so peaks measured there cost nothing extra at scroll time. Never
- * throws — a failed write just means the asset is derived again later.
+ * throws - a failed write just means the asset is derived again later.
  */
 export async function storePeaks(assetId: string, peaks: Float32Array, durationMs: number, fp = ''): Promise<void> {
   if (!assetId || !peaks?.length) return;
@@ -389,7 +389,7 @@ interface AudioLike {
  * Resolves the peaks, or `null` when there are honestly none to be had: no
  * `host.audio` (an older or headless shell), a clip past the duration ceiling, a
  * container this browser has no codec for, or a decode that failed. Null is a
- * real answer — the caller draws the glyph — and it is REMEMBERED, so a grid does
+ * real answer - the caller draws the glyph - and it is REMEMBERED, so a grid does
  * not re-attempt a failing decode on every scroll.
  *
  * Deduped per asset id and capped at `MAX_CONCURRENT_DERIVES` decodes overall.
@@ -421,7 +421,7 @@ export function derivePeaks(host: unknown, ref: unknown, assetId: string): Promi
 
     const declared = declaredDurationMs(ref);
     if (declared != null && declared > MAX_PEAK_DURATION_MS) {
-      // Not a failure — a deliberate refusal. Remembered so it is decided once.
+      // Not a failure - a deliberate refusal. Remembered so it is decided once.
       failed.add(assetId);
       return null;
     }
@@ -431,7 +431,7 @@ export function derivePeaks(host: unknown, ref: unknown, assetId: string): Promi
       analysis = await withSlot(() => audio.analyse!(ref, {
         // The overview waveform is ALL we want. `fps: 1` is the floor the engine
         // clamps to (audio-analyse.ts) and the analysis cost is linear in
-        // fps × window — a 30 fps frame track for a three-minute song would be
+        // fps × window - a 30 fps frame track for a three-minute song would be
         // 5,400 FFTs computed, transferred and thrown away.
         fps: 1,
         // Likewise the floor: cost is independent of `bands`, but the returned

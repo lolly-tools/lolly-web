@@ -4,12 +4,12 @@
  *
  * The gallery's featured hero row and example-carousel tiles cross-fade each tool through
  * a handful of example LOOKS. Rendering those live on the client is the dominant first-load
- * cost — each look loads the engine, runs the tool off-screen, and fetches its own photos/
- * logos on the main thread (the measured LCP 8.3 s / TBT 730 ms — see featured-row.ts).
+ * cost - each look loads the engine, runs the tool off-screen, and fetches its own photos/
+ * logos on the main thread (the measured LCP 8.3 s / TBT 730 ms - see featured-row.ts).
  *
  * `npm run previews` pre-renders each look to a committed SVGO'd SVG and build:catalog rolls
  * them into ONE catalog/previews/bundle.json. We fetch it ONCE (memoised, HTTP + service-
- * worker cached) and hand renderFeaturedVariant a ready <img> src per look — no engine, no
+ * worker cached) and hand renderFeaturedVariant a ready <img> src per look - no engine, no
  * per-look asset request. A look that isn't in the bundle (not yet generated, or a profile-
  * personalised preview) simply falls through to the existing live render, so this is a pure
  * speed-up that degrades gracefully: an absent/failed bundle changes nothing but the timing.
@@ -34,7 +34,7 @@ export function loadPreviewBundle(): Promise<Record<string, BundleEntry>> {
 }
 
 /**
- * A UTF-8 SVG data-URL — the same shape the app's own captureThumbnail emits
+ * A UTF-8 SVG data-URL - the same shape the app's own captureThumbnail emits
  * (`data:image/svg+xml,<uri-encoded>`), so it drops straight into an <img src>.
  * UTF-8 (not base64) keeps the URL ~25% smaller for text-heavy SVG.
  */
@@ -44,7 +44,7 @@ function svgToDataUrl(svg: string): string {
 
 /**
  * The ready <img> src for a pre-rendered look, or null to fall back to a live render.
- * `sig` is JSON.stringify(look.values) — a mismatch means the bundle predates a manifest
+ * `sig` is JSON.stringify(look.values) - a mismatch means the bundle predates a manifest
  * edit, so we reject it and let the live render (which uses the current values) win.
  */
 export async function bundledLook(

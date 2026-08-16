@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The "Available offline" download manager — the engine behind the profile
+ * The "Available offline" download manager - the engine behind the profile
  * view's offline section.
  *
  * offline-pins.ts makes ONE TOOL a guarantee; this module makes the PROMISE a
@@ -9,26 +9,26 @@
  * bar while it happens. Five downloadable parts, each landing in the
  * service-worker bucket (or store) that actually serves it offline:
  *
- *   app     — the full build payload (dist/precache.json `app` group: every
+ *   app - the full build payload (dist/precache.json `app` group: every
  *             hashed /assets/ chunk incl. lazy views + locale chunks +
  *             HarfBuzz wasm, the bundled UI fonts, icons, share stubs) into
  *             the APP_CACHE bucket. Closes the biggest hole in the offline
  *             story: before this, a lazy chunk cached only if its code path
  *             ran while online.
- *   docs    — the /info site (its manifest.json: the English pages, the
+ *   docs - the /info site (its manifest.json: the English pages, the
  *             shared screenshots, plus the active locale) into INFO_CACHE.
- *   verify  — the deep-scan machinery: the onnxruntime-web runtime
+ *   verify - the deep-scan machinery: the onnxruntime-web runtime
  *             (precache.json `ort` group) into ORT_CACHE, plus the TrustMark /
  *             Content Seal models through their own IndexedDB fetchers
- *             (lib/trustmark.ts, lib/contentseal.ts). ~220 MB — opt-in.
- *   speech  — the on-device voice models (Kokoro — plans/41-tts-stt-programme.md
+ *             (lib/trustmark.ts, lib/contentseal.ts). ~220 MB - opt-in.
+ *   speech - the on-device voice models (Kokoro - plans/41-tts-stt-programme.md
  *             §3): model/config/tokenizer files into transformers.js's OWN
  *             'transformers-cache' bucket under the exact request keys its hub
  *             probes (bridge/speech.ts cached() matches the same shape), voice
- *             style matrices into the worker's 'lolly-speech' bucket — the
+ *             style matrices into the worker's 'lolly-speech' bucket - the
  *             SAME caches the speech runtime reads, so a downloaded part means
  *             zero bytes move on first synthesis. Opt-in, like verify.
- *   catalog — brand/catalog assets beyond the core tier, whole or scoped by
+ *   catalog - brand/catalog assets beyond the core tier, whole or scoped by
  *             tag. The BYTES go through catalog/sync.ts's checksum-verified
  *             prefetch into the IDB blob cache (threaded in by the view, same
  *             cycle-avoidance as offline-pins' PrefetchAssets); this module
@@ -36,7 +36,7 @@
  *             at boot to keep those blobs out of the browsed-but-unsaved prune
  *             and refreshed with the core tier.
  *
- * (Tools stay offline-pins.ts's job — the profile section drives both.)
+ * (Tools stay offline-pins.ts's job - the profile section drives both.)
  *
  * Downloads are resumable and cancellable: every file already present (same
  * URL, and where sizes are known, same byte size) is skipped, so a dropped
@@ -44,7 +44,7 @@
  * re-downloads only the delta (hashed /assets/ names miss the cache only when
  * their content actually changed). An AbortController threads through every
  * fetch. Part state (which parts are downloaded, at which manifest version)
- * persists in IndexedDB next to the pin map — device-local, never in the
+ * persists in IndexedDB next to the pin map - device-local, never in the
  * portable backup.
  *
  * resyncOfflineParts() keeps a downloaded install current: called from the
@@ -59,12 +59,12 @@ import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts'
 
 /** The page-owned, unversioned Cache Storage buckets sw.js serves offline
  *  fallbacks from. Mirrored by sw.js (APP_CACHE / ORT_CACHE / INFO_CACHE
- *  there) — keep the literals in sync, same contract as offline-pins.ts's
+ *  there) - keep the literals in sync, same contract as offline-pins.ts's
  *  PIN_CACHE. */
 export const APP_CACHE = 'lolly-app';
 export const ORT_CACHE = 'lolly-ort';
 /** The transformers.js speech runtime (/ort-hf/<version>/ort-wasm-*), OWNED by the
- *  speech part so pre-downloading Speech is offline-complete — it used to ride in the
+ *  speech part so pre-downloading Speech is offline-complete - it used to ride in the
  *  verify-owned ORT_CACHE. sw.js serves /ort-hf/ from HERE, falling back to ORT_CACHE
  *  for users who pre-downloaded it via Verify before this split. Also in sw.js's
  *  PERSISTENT_CACHES. */
@@ -72,28 +72,28 @@ export const ORT_HF_CACHE = 'lolly-ort-hf';
 export const INFO_CACHE = 'lolly-info';
 
 /** The speech buckets (also in sw.js's PERSISTENT_CACHES). 'transformers-cache'
- *  is transformers.js's own bucket name — not ours to rename; a key mismatch
+ *  is transformers.js's own bucket name - not ours to rename; a key mismatch
  *  here would download ~92 MB the worker then re-downloads, so the speech part
  *  writes the same path-shaped keys lib/speech-kokoro-worker.ts reads. */
 export const TRANSFORMERS_CACHE = 'transformers-cache';
 export const SPEECH_CACHE = 'lolly-speech';
 
 /** Key of the part-state record inside the 'profile' KV store (a sibling of
- *  offline-pins' map — device-local by design, see the module comment). */
+ *  offline-pins' map - device-local by design, see the module comment). */
 const PARTS_KEY = 'offline-parts';
 
 /** One downloadable file as the manifests list it. `hash` (sha256, base64url,
  *  truncated) is present for files whose URL does not already encode their
  *  content (everything except the content-hash-named /assets/ chunks and the
- *  huge, release-versioned /ort/ + /models/ binaries) — it is what lets a
+ *  huge, release-versioned /ort/ + /models/ binaries) - it is what lets a
  *  resume distinguish "current" from "same size, different bytes". */
 export interface ManifestFile { url: string; size: number; hash?: string }
 
-/** dist/precache.json — emitted by the vite build (see vite.config.js's
+/** dist/precache.json - emitted by the vite build (see vite.config.js's
  *  precacheManifest plugin). Absent in dev (the dev server has no dist). */
 export interface PrecacheManifest {
   version: string;
-  /** `models`/`upscale`/`matte` are size metadata only — those bytes download
+  /** `models`/`upscale`/`matte` are size metadata only - those bytes download
    *  through the detectors' / model runners' own IndexedDB path (lib/trustmark.ts,
    *  lib/model-prefetch.ts), never through downloadList. `ortHf`/`speech`/`upscale`/`matte`
    *  are optional: manifests built before those parts existed don't carry the group. */
@@ -103,7 +103,7 @@ export interface PrecacheManifest {
   };
 }
 
-/** /info/manifest.json — emitted by docs/build.ts. `audio` is the docs
+/** /info/manifest.json - emitted by docs/build.ts. `audio` is the docs
  *  narration + its player bundle (plans/40-docs-audio-listen.md §7); optional
  *  because manifests built before it existed don't carry the group. */
 export interface InfoManifest {
@@ -123,7 +123,7 @@ export interface PartRecord {
   files: number;
   /** docs: the locale downloaded alongside English. */
   lang?: string;
-  /** catalog: the scope — 'all' or the selected tag list. */
+  /** catalog: the scope - 'all' or the selected tag list. */
   tags?: 'all' | string[];
 }
 
@@ -218,7 +218,7 @@ export function docsFileList(manifest: InfoManifest, lang: string): ManifestFile
   return [...en, ...shots, ...(lang !== 'en' ? locales[lang] ?? [] : [])];
 }
 
-/** The header a downloaded entry records its manifest identity under — what a
+/** The header a downloaded entry records its manifest identity under - what a
  *  resume compares instead of guessing from transfer headers. */
 const HASH_HEADER = 'x-lolly-manifest-hash';
 const SIZE_HEADER = 'x-lolly-manifest-size';
@@ -227,7 +227,7 @@ const SIZE_HEADER = 'x-lolly-manifest-size';
  *  existence proof enough. Everything else compares the manifest identity the
  *  download stamped onto the stored response: the content hash when the
  *  manifest carries one, else the DECODED byte size (never the wire
- *  Content-Length — that is the compressed transfer size on a br/gzip host
+ *  Content-Length - that is the compressed transfer size on a br/gzip host
  *  and comparing it to the on-disk manifest size would re-download every file
  *  on every resume). A stale or unstamped entry is treated as absent. */
 async function cachedMatches(cache: Cache, file: ManifestFile): Promise<boolean> {
@@ -241,7 +241,7 @@ async function cachedMatches(cache: Cache, file: ManifestFile): Promise<boolean>
 
 /** Store one fetched file. The response is REBUILT around the decoded body:
  *  fetch() transparently decodes br/gzip but leaves the wire headers, so
- *  putting the original headers with a decoded body poisons the entry — the
+ *  putting the original headers with a decoded body poisons the entry - the
  *  browser would try to decode it AGAIN when the SW replays it offline
  *  (net::ERR_CONTENT_DECODING_FAILED on the exact chunk the download existed
  *  to guarantee). Strip the transfer headers, set the true length, and stamp
@@ -316,7 +316,7 @@ export async function downloadList(
   return { bytes: total, files: files.length };
 }
 
-/** Evict every entry in a bucket that a fresh manifest no longer lists —
+/** Evict every entry in a bucket that a fresh manifest no longer lists - 
  *  yesterday's hashed chunks and retired docs pages don't deserve quota. */
 async function pruneList(cacheName: string, files: ManifestFile[]): Promise<void> {
   const cache = await caches.open(cacheName);
@@ -355,7 +355,7 @@ export async function downloadDocs(
 /**
  * Download the /verify deep-scan machinery: the ORT runtime into ORT_CACHE,
  * then the TrustMark + Content Seal models through their own IDB fetchers
- * (lazy-imported — those modules must stay off the boot graph). Model bytes
+ * (lazy-imported - those modules must stay off the boot graph). Model bytes
  * report as a running total on top of the runtime's known size, going
  * null-total (indeterminate) if any model omits Content-Length.
  */
@@ -365,7 +365,7 @@ export async function downloadVerify(
 ): Promise<PartRecord> {
   const { signal, onProgress } = opts;
   const ortTotal = manifest.groups.ort.reduce((n, f) => n + f.size, 0);
-  // Seed the model share of the bar from the manifest's size metadata — the
+  // Seed the model share of the bar from the manifest's size metadata - the
   // fetchers only learn sizes file by file, and a total that grows under the
   // bar makes it jump backwards. The running total takes over only if it ever
   // exceeds the plan (a bigger model shipped than the manifest knew).
@@ -388,7 +388,7 @@ export async function downloadVerify(
   await pruneList(ORT_CACHE, manifest.groups.ort);
 
   // Model downloads are the same fetch-once-into-IDB path the /verify header's
-  // own "enable deep scan" button uses — one copy, shared consent.
+  // own "enable deep scan" button uses - one copy, shared consent.
   signal?.throwIfAborted();
   const [{ prefetchTrustmarkModels }, { prefetchTrustmarkEncoder }, { prefetchContentSealModel }] = await Promise.all([
     import('./trustmark.ts'),
@@ -402,7 +402,7 @@ export async function downloadVerify(
   };
   const okTm = await prefetchTrustmarkModels({ onProgress: p => onModel({ loaded: p.loaded, total: p.total }) });
   signal?.throwIfAborted();
-  // Durable-watermark ENCODER: the one model NO part offered before — it was lazy-only,
+  // Durable-watermark ENCODER: the one model NO part offered before - it was lazy-only,
   // fetched on the first durable export. Best-effort (404s until converted, must not fail
   // the part) and shares the 'trustmark-models' store the decoders use. Its bytes are
   // already reserved in plannedModels (the vite `models` group includes encoder_Q.onnx),
@@ -412,12 +412,12 @@ export async function downloadVerify(
   const modelBase = modelLoaded;
   signal?.throwIfAborted();
   // Best-effort: the Content Seal extractor is usually never vendored at all
-  // (its prefetch returns false on the routine 404) — only the TrustMark
+  // (its prefetch returns false on the routine 404) - only the TrustMark
   // decoder decides whether this part counts as downloaded.
   await prefetchContentSealModel({ onProgress: p => onModel({ loaded: modelBase + p.loaded, total: p.total === null || modelTotal === null ? null : modelBase + p.total }) });
   if (!okTm) throw new Error('offline download: TrustMark model download incomplete');
   // The model fetchers take no AbortSignal (they finish the file in flight),
-  // so a cancel lands HERE at the latest — a cancelled run must never record
+  // so a cancel lands HERE at the latest - a cancelled run must never record
   // itself as a completed part.
   signal?.throwIfAborted();
 
@@ -433,8 +433,8 @@ export async function downloadVerify(
 
 /** Split the manifest's speech group between the two buckets the runtime
  *  reads: voice style matrices go to SPEECH_CACHE (lib/speech-kokoro-worker.ts's
- *  getVoiceData fetch-and-put, keyed by path), everything else — the ONNX
- *  model, config, tokenizer, and Whisper files when they ship — to
+ *  getVoiceData fetch-and-put, keyed by path), everything else - the ONNX
+ *  model, config, tokenizer, and Whisper files when they ship - to
  *  TRANSFORMERS_CACHE under the same path keys transformers.js's hub probes
  *  (the shape bridge/speech.ts's cached() matches). */
 export function speechFileLists(manifest: PrecacheManifest): { model: ManifestFile[]; voices: ManifestFile[] } {
@@ -444,7 +444,7 @@ export function speechFileLists(manifest: PrecacheManifest): { model: ManifestFi
 }
 
 /** Prune a speech bucket to the manifest listing, but ONLY inside the model
- *  directories the listing covers ('/models/kokoro/', …) — a model cached
+ *  directories the listing covers ('/models/kokoro/', …) - a model cached
  *  through its own consent flow before it joins the manifest (Whisper's
  *  staging order) must not be evicted by a Kokoro-only listing. */
 async function pruneSpeechBucket(cacheName: string, files: ManifestFile[]): Promise<void> {
@@ -489,7 +489,7 @@ export async function downloadSpeechFiles(
   return { bytes: a.bytes + b.bytes + c.bytes, files: a.files + b.files + c.files };
 }
 
-/** Download the speech part — the on-device voice models, into the exact
+/** Download the speech part - the on-device voice models, into the exact
  *  caches the speech worker reads (plans/41-tts-stt-programme.md §3). */
 export async function downloadSpeech(
   manifest: PrecacheManifest,
@@ -501,20 +501,20 @@ export async function downloadSpeech(
   return rec;
 }
 
-/** Delete BOTH speech buckets — removePart's cache half, exported for tests.
+/** Delete BOTH speech buckets - removePart's cache half, exported for tests.
  *  The runtime re-downloads (behind its own consent line) on next use. */
 export async function clearSpeechCaches(): Promise<void> {
   if (!('caches' in globalThis)) return;
   await caches.delete(TRANSFORMERS_CACHE);
   await caches.delete(SPEECH_CACHE);
-  // The speech-owned runtime bucket. NOT ORT_CACHE's legacy /ort-hf/ copy — that
+  // The speech-owned runtime bucket. NOT ORT_CACHE's legacy /ort-hf/ copy - that
   // belongs to the verify part; the SW falls back to it if the user has it.
   await caches.delete(ORT_HF_CACHE);
 }
 
 /** Measure the speech buckets for the profile storage meter. Sizes come from
  *  the stamped manifest size (part downloads), else Content-Length (the
- *  worker's own put keeps wire headers), else the body itself — the buckets
+ *  worker's own put keeps wire headers), else the body itself - the buckets
  *  also fill through the Script-audio dialog's consent download, which this
  *  must count without a part record existing. */
 export async function speechCacheBytes(): Promise<{ bytes: number; files: number }> {
@@ -540,14 +540,14 @@ export async function speechCacheBytes(): Promise<{ bytes: number; files: number
 //
 // Pre-download the SAME bytes the upscale/matte dialogs fetch on first use, into
 // the SAME IndexedDB stores their worker runners read (see lib/model-prefetch.ts
-// for why cache parity matters, and why this can't use downloadList — that writes
+// for why cache parity matters, and why this can't use downloadList - that writes
 // an unread SW-cache bucket, but the SW bypasses /models/ so the one true copy is
 // the IDB one). So a user can pull the models down from Profile in anticipation and
 // the dialog then finds them already on-device. Release-versioned like /ort/ + the
 // verify models, so resyncOfflineParts deliberately never re-syncs them (there is
-// no per-deploy delta — a bytes change rides UPSCALE/MATTE_MODEL_CACHE_VERSION).
+// no per-deploy delta - a bytes change rides UPSCALE/MATTE_MODEL_CACHE_VERSION).
 
-/** Download the upscale part — every staged upscaler into the `upscale-models` IDB
+/** Download the upscale part - every staged upscaler into the `upscale-models` IDB
  *  store the dialog reads. Throws (like downloadVerify) if a staged model didn't
  *  land, so a partial run never records itself complete. */
 export async function downloadUpscale(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
@@ -560,7 +560,7 @@ export async function downloadUpscale(opts: { signal?: AbortSignal; onProgress?:
   return rec;
 }
 
-/** Download the background-removal part — every staged matte model into the
+/** Download the background-removal part - every staged matte model into the
  *  `matte-models` IDB store the dialog reads. */
 export async function downloadMatte(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
   const { prefetchMatteModels } = await import('./model-prefetch.ts');
@@ -592,9 +592,9 @@ export async function offlineCatalogScope(): Promise<'all' | string[] | null> {
 }
 
 /** Remove one downloaded part. app/docs/verify delete their buckets (verify
- *  also clears the model stores — the same bytes /verify's own banner offers,
+ *  also clears the model stores - the same bytes /verify's own banner offers,
  *  so removing here re-offers the download there). upscale/matte clear their IDB
- *  model stores — the dialog re-offers the download on next use. catalog only
+ *  model stores - the dialog re-offers the download on next use. catalog only
  *  forgets the SELECTION: the blobs are shared with sessions and pins, so the next
  *  catalog sync's prune reclaims whatever nothing else references. */
 export async function removePart(id: OfflinePartId): Promise<void> {
@@ -619,7 +619,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
 }
 
 /**
- * Re-sync every downloaded part whose manifest watermark moved — called from
+ * Re-sync every downloaded part whose manifest watermark moved - called from
  * the boot idle path (catalog/sync.ts, beside refreshPinnedToolFiles). Cheap
  * when nothing changed (two small manifest fetches); after a deploy it
  * re-downloads only the delta, since unchanged files skip via cachedMatches.
@@ -645,7 +645,7 @@ export async function resyncOfflineParts(): Promise<void> {
   }
   if (parts.docs) {
     const manifest = await fetchInfoManifest();
-    // A language switch re-downloads too — the docs part promises the ACTIVE locale.
+    // A language switch re-downloads too - the docs part promises the ACTIVE locale.
     if (manifest && (parts.docs.version !== manifest.version || parts.docs.lang !== currentLang())) {
       await downloadDocs(manifest).catch(() => {});
     }
@@ -653,7 +653,7 @@ export async function resyncOfflineParts(): Promise<void> {
 }
 
 /** Storage headroom for a planned download. `fits` applies the same safety
- *  fraction the asset store's quota guard uses — a download that would land
+ *  fraction the asset store's quota guard uses - a download that would land
  *  the device on the quota ceiling breaks saves everywhere else. */
 export async function storageHeadroom(plannedBytes: number): Promise<{ fits: boolean; free: number | null }> {
   try {
@@ -666,7 +666,7 @@ export async function storageHeadroom(plannedBytes: number): Promise<{ fits: boo
   }
 }
 
-/** Whether the browser granted persistent storage — surfaced in the offline
+/** Whether the browser granted persistent storage - surfaced in the offline
  *  section because it's the difference between "downloaded" and "downloaded
  *  until the browser feels storage pressure". Requested (silently, once) at
  *  bridge construction; this re-requests on demand from a user gesture, which

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Feature flags — local, per-user toggles that tailor the gallery.
+ * Feature flags - local, per-user toggles that tailor the gallery.
  *
  * Stored on the profile (`profile.featureFlags`, keyed by flag id) so they ride
  * the normal profile persistence and sync. Every flag defaults to ON when unset.
@@ -39,13 +39,13 @@ export const CATEGORY_FLAGS: readonly FeatureFlag[] = [
 
 export const PRO_FLAG: FeatureFlag = { id: 'pro-batch', label: 'Pro', pill: 'batch mode' };
 
-// Standalone feature toggles (not a gallery category, not Pro). Neurospicy Mode —
-// the background focus-music player — is opt-out here (ON by default like every flag).
+// Standalone feature toggles (not a gallery category, not Pro). Neurospicy Mode - 
+// the background focus-music player - is opt-out here (ON by default like every flag).
 export const NEUROSPICY_FLAG: FeatureFlag = { id: 'neurospicy', label: 'Neurospicy Mode', pill: 'focus music' };
 
-// Jelly effects — flag-gated soft-body chrome controls (the vendored Jelly UI web
+// Jelly effects - flag-gated soft-body chrome controls (the vendored Jelly UI web
 // components, see lib/jelly.ts). The default is BRAND-AWARE, resolved at boot by
-// setJellyDefault (main.ts): OFF on a locked brand build (SUSE — its chrome stays
+// setJellyDefault (main.ts): OFF on a locked brand build (SUSE - its chrome stays
 // stock), ON for the customisable start profile (lolly.art). A user's explicit
 // toggle always wins over the default. Turning it off reverts the upgraded
 // controls to the plain CSS primitives and skips loading the bundle.
@@ -63,7 +63,7 @@ export function setJellyDefault(on: boolean): void {
 }
 
 // Opt-IN (default OFF): strip EXIF/XMP/GPS from images uploaded to the catalog. C2PA
-// content credentials are ALWAYS preserved regardless — this only governs other metadata.
+// content credentials are ALWAYS preserved regardless - this only governs other metadata.
 // Read by the upload pipeline (views/picker.ts storeUserUpload).
 export const STRIP_UPLOAD_META_FLAG: FeatureFlag = {
   id: 'strip-upload-metadata',
@@ -88,12 +88,12 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
   info: 'Checks a print export before you download: bleed, resolution, ink coverage and plate counts appear above the Download button. It never blocks an export.',
 };
 
-// ON by default since 2026-08-10: private collab (Track A, plans/100 §6) — the P2P
+// ON by default since 2026-08-10: private collab (Track A, plans/100 §6) - the P2P
 // invite/accept ceremony that lets two devices co-edit a tool session directly, no
 // account/server/CSP change. What this flag gates is the ENTRY POINTS to that
 // ceremony, and only those: the Share-dialog row (lib/collab-share-private.ts), the
 // opener behind it (collab/private-opener.ts), and the #/join + #/join-reply routes
-// (collab/join-route.ts). It does NOT gate the mount that receives a connection —
+// (collab/join-route.ts). It does NOT gate the mount that receives a connection - 
 // installLiveCollabMount() runs unconditionally at module scope in main.ts and reads
 // no flag, deliberately, because that mount is shared with the Track-B org provider
 // (plans/100 §5) and gating it on a Track-A flag would break the other track. The
@@ -101,7 +101,7 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
 // are the whole door.
 //
 // It shipped opt-IN (default false, the PREFLIGHT_FLAG shape above) while the
-// ceremony was being built. The `beta` pill stays — the ceremony IS young — but the
+// ceremony was being built. The `beta` pill stays - the ceremony IS young - but the
 // switch now starts on, because being off cost the one person it was meant to
 // protect: an invite link is received by someone who has never heard of the feature,
 // and a default-off flag met them with "turn this on in your profile, then open the
@@ -111,7 +111,7 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
 // invite (collab/private-opener.ts, collab/join-route.ts).
 //
 // Three reads make the new truth table hold, and none of them changed shape:
-//   - no stored value (fresh profile, fresh device) ⇒ this default, so ON —
+//   - no stored value (fresh profile, fresh device) ⇒ this default, so ON - 
 //     `isFlagOn` and `isFlagOnSync` both resolve a MISSING value to `default`;
 //   - a stored `false` still wins, so anyone who turned it off stays off;
 //   - a control plane still forces the value in either direction (see
@@ -131,7 +131,7 @@ export const PRIVATE_COLLAB_FLAG: FeatureFlag = {
   info: 'Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.',
 };
 
-// ON by default: nearby discovery (plans/110 §3) — advertise/browse for other Lolly
+// ON by default: nearby discovery (plans/110 §3) - advertise/browse for other Lolly
 // devices on the same network so an invite can be handed over by tapping a name instead
 // of scanning a QR. Like PRIVATE_COLLAB_FLAG, this gates the ENTRY POINTS only (the
 // ceremony's Nearby section and any share-sheet nearby rows). Registration of a provider
@@ -154,7 +154,7 @@ export const NEARBY_DISCOVERY_FLAG: FeatureFlag = {
 //
 // All five ids match the control plane's own GOVERNABLE_FLAGS (lolly-work
 // `server/src/policy/feature-flags.ts`), `private-collab` included since it was added
-// there — so an instance really can force this flag on or off fleet-wide, and hide the
+// there - so an instance really can force this flag on or off fleet-wide, and hide the
 // toggle with it (plan 100 §6.3/§11.24). The `builtinDefault` recorded server-side must
 // keep matching each flag's `default` here, or an instance that chose "inherit" would be
 // told the wrong thing; the two moved together on 2026-08-10 for `private-collab`.
@@ -162,12 +162,12 @@ export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_F
 
 /** Whether the control plane has hidden a flag's user-facing toggle (a staged
  *  surprise, or a policy the deployment owns). Dormant ⇒ false. The resolved
- *  state still applies via flagEnabled/isFlagOn — hiding only drops the switch. */
+ *  state still applies via flagEnabled/isFlagOn - hiding only drops the switch. */
 export function flagHidden(id: string): boolean {
   return orgFlagGovernance(id)?.hidden === true;
 }
 
-/** A flag is ON unless it has been explicitly turned off — but a control plane can
+/** A flag is ON unless it has been explicitly turned off - but a control plane can
  *  set the default (applied when the user hasn't chosen) and, for a hidden flag,
  *  force its default regardless of any stored value. Dormant ⇒ historic behaviour. */
 export function flagEnabled(profile: Profile | null | undefined, id: string): boolean {
@@ -180,7 +180,7 @@ export function flagEnabled(profile: Profile | null | undefined, id: string): bo
 
 /** Default-aware read: honours a flag's `default` (opt-in flags start off) when the user
  *  hasn't set it, the control plane's default over that, and the saved value once the
- *  user has chosen — unless the control plane hides the flag, when its default wins. */
+ *  user has chosen - unless the control plane hides the flag, when its default wins. */
 export function isFlagOn(profile: Profile | null | undefined, flag: FeatureFlag): boolean {
   const gov = orgFlagGovernance(flag.id);
   const builtin = flag.default !== false;
@@ -191,13 +191,13 @@ export function isFlagOn(profile: Profile | null | undefined, flag: FeatureFlag)
 }
 
 // A synchronous localStorage mirror of profile.featureFlags, so surfaces that render
-// OUTSIDE the profile-aware views — the Sound control's Neurospicy player, shown in
-// gallery/catalog/projects popovers — can gate on a flag without awaiting the profile.
+// OUTSIDE the profile-aware views - the Sound control's Neurospicy player, shown in
+// gallery/catalog/projects popovers - can gate on a flag without awaiting the profile.
 // Hydrated from the profile at boot; kept in sync on each toggle. Defaults ON (like
 // flagEnabled), so an unhydrated mirror still shows opt-out features.
 const FLAG_MIRROR_KEY = 'lolly:featureFlags';
 
-// In-memory flag overrides — NEVER persisted. The ?neuro demo deep-link
+// In-memory flag overrides - NEVER persisted. The ?neuro demo deep-link
 // (lib/neuro-demo.ts) lights a flag for exactly one page load without touching the
 // localStorage mirror or the profile; consulted BEFORE the mirror, so it also wins
 // over the docs pipeline's capture-neutral pin (which forces the mirror copy off).
@@ -209,7 +209,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // Bake whatever governance is KNOWN at this moment into the mirror: seed an unset
   // governed flag with its instance default, and force a hidden flag to its default.
   // At boot that is usually nothing, because this runs before initOrg resolves the
-  // control plane — which is why the synchronous reads below no longer rely on this
+  // control plane - which is why the synchronous reads below no longer rely on this
   // loop for governance and consult orgFlagGovernance themselves. Kept so the stored
   // key is not actively misleading, and so a later call (after governance is known)
   // writes the resolved values.
@@ -225,7 +225,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // default (setJellyDefault runs before this at boot). flagEnabledSync's own
   // fallback for a missing key stays ON, matching the historic flags. The guard is
   // `default === false`, so a default-ON flag is deliberately left with NO mirror
-  // entry — which is what makes a fresh device read it as on (PRIVATE_COLLAB_FLAG
+  // entry - which is what makes a fresh device read it as on (PRIVATE_COLLAB_FLAG
   // since 2026-08-10; it stays in this list because the list is "every standalone
   // flag", not "every opt-in one").
   for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG]) {
@@ -246,7 +246,7 @@ function readMirror(): Record<string, boolean> {
 // the bake in hydrateFeatureFlags, because the bake cannot be trusted at the moment
 // it runs. Boot calls hydrateFeatureFlags(profile) long before `await initOrg()`
 // resolves the control plane (main.ts), so `orgConfigState` is still null and the
-// loop above writes no governance entry at all — and hydrate runs exactly once per
+// loop above writes no governance entry at all - and hydrate runs exactly once per
 // boot, rewriting the whole mirror from the profile, so nothing an earlier session
 // baked survives either. Without the live read a governed flag whose built-in
 // default is ON (private-collab) would fail OPEN for the entire session on a fleet

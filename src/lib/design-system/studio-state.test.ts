@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * studio-state.ts — immediate persist, session undo, rolling checkpoints.
+ * studio-state.ts - immediate persist, session undo, rolling checkpoints.
  * Run: node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/studio-state.test.ts"
  *
  * DOM-free: the fake host is an in-memory state map plus the two bridge methods

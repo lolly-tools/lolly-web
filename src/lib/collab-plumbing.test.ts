@@ -5,17 +5,17 @@
  * The claims worth pinning, in order of how much a regression would cost:
  *
  *  1. INERTNESS. With no provider registered, attaching must not touch the runtime
- *     at all — proven by a call-count spy on the underlying setInput, not by
+ *     at all - proven by a call-count spy on the underlying setInput, not by
  *     reading the code. This is the single promise the whole seam makes to every
  *     build of this repo (plans/99 §1.1).
  *  2. Echo suppression. A remote batch lands through `applyPatch` and must not come
  *     back out as ops, and must not record an undo step (§5).
  *  3. Coalescing. A burst of remote ops is ONE apply per animation frame.
  *  4. The order-key progression this module mints must match the one the CONTRACT's
- *     own `damageToOps` threads — asserted against its real output, so a change on
+ *     own `damageToOps` threads - asserted against its real output, so a change on
  *     either side fails here rather than silently sorting two peers differently.
  *  5. Hook-derived patches never re-emit (plan 100 §11.9). A hook that writes OTHER
- *     inputs/extras in response to an edit must not turn into ops of its own — only
+ *     inputs/extras in response to an edit must not turn into ops of its own - only
  *     the id the caller actually set does. Mounts the real engine `createRuntime`
  *     (every other test here uses the fake `harness()`, whose setInput never runs a
  *     hook at all, so it can't pin this).
@@ -73,7 +73,7 @@ function same(a: unknown, b: unknown): boolean {
 }
 
 interface Harness extends CollabRuntime {
-  /** Every call that reached the base setter — the byte-identical-behaviour spy. */
+  /** Every call that reached the base setter - the byte-identical-behaviour spy. */
   readonly base: { id: string; value: InputValue }[];
   /** What mountTool's undo wrapper would have recorded. */
   readonly history: { id: string; before: InputValue; after: InputValue }[];
@@ -327,18 +327,18 @@ test('orderKeysFor mirrors the contract\'s own add-time key progression', () => 
 //
 // §11.9: a local edit runs onInput; the hook's OWN patched inputs/extras are
 // derived state each peer computes locally, and must never sync as ops of their
-// own — only falls out naturally if hook patches keep flowing through engine
+// own - only falls out naturally if hook patches keep flowing through engine
 // internals rather than the shell's wrapped setInput. Every other test in this
 // file uses the hand-rolled `harness()`, whose fake setInput/applyPatch never run
-// a hook at all — that would pin nothing here, since the property under test IS
+// a hook at all - that would pin nothing here, since the property under test IS
 // the real engine's hook plumbing (setInput/applyPatch merge a hook's patch into
-// `model`/`extras` directly, never re-entering `runtime.setInput` — see
+// `model`/`extras` directly, never re-entering `runtime.setInput` - see
 // runtime.ts). So this section mounts the real `createRuntime`.
 
 let hookToolSeq = 0;
 
 /** A loadable tool whose onInput hook, on every `title` edit, patches a SECOND
- *  declared input (`mirror`) and an extras-only key (`note`) — the exact "hook
+ *  declared input (`mirror`) and an extras-only key (`note`) - the exact "hook
  *  writes other inputs/extras" shape §11.9 is about. */
 function hookTool(hooksSource: string): any {
   return {
@@ -384,11 +384,11 @@ test('a hook-derived patch to OTHER inputs/extras never crosses the seam as an o
   await rt.setInput('title', 'again');
 
   // Ground truth: the hook actually ran and wrote a DIFFERENT declared input plus
-  // an extras-only key — otherwise this test would pass for having tested nothing.
+  // an extras-only key - otherwise this test would pass for having tested nothing.
   assert.equal(rt.getModel().find(i => i.id === 'mirror')!.value, 'mirror:again', 'hook wrote another declared input');
   assert.equal(rt.getHydrated(), '<b>again</b><i>mirror:again</i><u>note:again</u>', 'and an extras-only key');
 
-  // The seam saw ops ONLY for the id actually passed to setInput — never the
+  // The seam saw ops ONLY for the id actually passed to setInput - never the
   // hook-written 'mirror', and never any op keyed 'note' (it isn't even an input).
   assert.deepEqual(emitted.map(o => (o.k === 'param' ? o.key : o.k)), ['title', 'title']);
   assert.deepEqual(adapter.applied.map(o => (o.k === 'param' ? o.key : o.k)), ['title', 'title']);
@@ -425,7 +425,7 @@ test('a remote batch applies once per frame, never echoes, never records undo', 
 
 test('a remote batch mixing param + geom + add ops produces no outbound op of ANY kind', async () => {
   // Echo suppression, exercised across every op kind this seam knows about at
-  // once — not just the scalar param case the previous test already covers.
+  // once - not just the scalar param case the previous test already covers.
   _clearCanvasSyncProviderForTests();
   _resetCollabDeviceForTests('device-a');
   const adapter = new FakeAdapter();
@@ -606,7 +606,7 @@ test('an inbound value that LOST the merge never reaches the model', async () =>
   // The one arrangement that separates "raw op value" from "converged value": the
   // key already carries a HIGHER-clocked write, so the document discards the op that
   // arrives. Reading `op.value` would stomp the winner and put this peer's model
-  // permanently out of step with its own document — and with every other peer's.
+  // permanently out of step with its own document - and with every other peer's.
   // (collab-loopback.test.ts proves the same thing end to end with two runtimes and
   // a partition; this pins the seam itself.)
   _clearCanvasSyncProviderForTests();
@@ -621,7 +621,7 @@ test('an inbound value that LOST the merge never reaches the model', async () =>
 
   // What a local edit at clock 9 leaves in the document, on both lanes. The row is
   // ADDED first, because a box only enters the snapshot once its `alive` register
-  // says so — a bare field write on an unknown id is not a resurrection (§3).
+  // says so - a bare field write on an unknown id is not a resurrection (§3).
   adapter.doc.apply({ k: 'param', key: 'title', value: 'winner', origin: { client: 'zz', clock: 9 } });
   adapter.doc.apply({
     k: 'add', id: 'AAA', col: 'rows', row: { label: 'winner' }, orderKey: 'i',
@@ -656,14 +656,14 @@ test('a batch whose ops all lose the merge changes nothing, rather than applying
   await sched.frame();
 
   // The patch is still built (the key WAS touched), it just carries the value that
-  // is already there — so applyPatch is a no-op in effect and the render never moves.
+  // is already there - so applyPatch is a no-op in effect and the render never moves.
   assert.deepEqual(rt.patches, [{ title: 'winner' }]);
   assert.equal(rt.valueOf('title'), 'winner');
 });
 
 test('an adapter whose state() throws degrades to the raw op values, never to no patch', async () => {
   // The snapshot is a courtesy the contract asks for, not a precondition. A provider
-  // that cannot produce one must cost the CONVERGENCE guarantee, not the edit — the
+  // that cannot produce one must cost the CONVERGENCE guarantee, not the edit - the
   // fallback is exactly the behaviour that shipped before the snapshot existed.
   _clearCanvasSyncProviderForTests();
   _resetCollabDeviceForTests('device-a');

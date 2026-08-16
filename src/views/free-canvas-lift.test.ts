@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Lift layers" — the SURFACE (plans/104 §7, P3b).
+ * "Lift layers" - the SURFACE (plans/104 §7, P3b).
  *
  * The two halves this file does NOT re-test: the engine's enumeration
  * (`engine/src/svg-layers.ts` owns "which layers, and what markup for each") and the
@@ -8,15 +8,15 @@
  * depth stagger, the shared group and the paint-order distribution). What is pinned
  * here is everything BETWEEN them, i.e. everything a user actually touches:
  *
- *   • WHERE the action is offered — the right-click menu (always present on an
+ *   • WHERE the action is offered - the right-click menu (always present on an
  *     image-capable tool, disabled off an SVG so the menu keeps its height) and the
  *     More panel (present only when it would do something);
- *   • the CONFIRM dialog — the count sentence, one row per layer, no checkboxes;
+ *   • the CONFIRM dialog - the count sentence, one row per layer, no checkboxes;
  *   • and the law that matters most: confirm writes the model exactly ONCE, so the
  *     whole lift is a single undo step.
  *
  * The real `enumerateSvgLayers` runs. The two IO edges are stubbed at the module
- * loader — the fetch+sanitise (`anim-svg-mount`) and the asset store (`picker`) — so
+ * loader - the fetch+sanitise (`anim-svg-mount`) and the asset store (`picker`) - so
  * the test drives the real dialog, the real gating and the real commit without an
  * IndexedDB or a network.
  *
@@ -28,7 +28,7 @@ import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import type { Box } from './free-canvas-math.ts';
 
-/** The uploads the stubbed picker received — the derived per-layer documents. */
+/** The uploads the stubbed picker received - the derived per-layer documents. */
 interface FakeFile { name: string; type: string; text: string }
 const uploads: FakeFile[] = [];
 (globalThis as Record<string, unknown>).__liftUploads = uploads;
@@ -57,7 +57,7 @@ registerHooks({
       return {
         format: 'module', shortCircuit: true,
         // jsdom's File has no .text(), so the source text is read back through the
-        // FileReader it does implement — the stub must not need a newer DOM than the
+        // FileReader it does implement - the stub must not need a newer DOM than the
         // real picker does.
         source: `export async function storeUserUpload(host, file){
           const text = await new Promise((res, rej) => {
@@ -210,7 +210,7 @@ test('…and enabled on a box holding an SVG, whether a library vector or an upl
   for (const ref of [
     svgRef(),
     { source: 'user', id: 'user/upload/logo.svg', type: 'vector', format: 'svg', url: 'blob:abc' },
-    // Neither `type` nor `format` recorded — the URL is the only honest signal left.
+    // Neither `type` nor `format` recorded - the URL is the only honest signal left.
     { source: 'remote', id: 'r', type: '', format: '', url: 'https://x.test/mark.svg?v=2' },
     { source: 'user', id: 'd', type: '', format: '', url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' },
   ]) {
@@ -389,7 +389,7 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
     assert.ok([...groups][0], 'and it is a real id, not the empty string');
     assert.equal(new Set(lifted.map((r) => r.id)).size, 3, 'three distinct ids');
     // P3.2 keeps THIS box full-stage on purpose: it has a background fill and a
-    // caption, which `liftRows` leaves on the bottom and top rows — and a
+    // caption, which `liftRows` leaves on the bottom and top rows - and a
     // background confined to one layer's ink is not a background. `liftCanCrop`
     // says so before the documents are derived, so the documents are uncropped too
     // (asserted below: every one still carries the source's own viewBox).
@@ -427,7 +427,7 @@ test('a plain image box lifts into CONTENT-SIZED rows — the shadow follows the
   uploads.length = 0;
   // No background, no caption: nothing else rides on the bottom or top row, so the
   // engine crops each document to its ink and every row is cut to match (plans/104
-  // P3.2 — a full-stage row makes `shadow: depth` a full-frame gaussian, which is
+  // P3.2 - a full-stage row makes `shadow: depth` a full-frame gaussian, which is
   // what aborted the encoder watchdog at eleven layers).
   const f = mount([box({ image: svgRef() })]);
   try {
@@ -451,7 +451,7 @@ test('a plain image box lifts into CONTENT-SIZED rows — the shadow follows the
         'and every row stays inside the box it came out of',
       );
     }
-    // The document and the row are cut to the SAME rect — that is the whole
+    // The document and the row are cut to the SAME rect - that is the whole
     // correctness argument, and a mismatch renders the layer blown up.
     assert.match(uploads[1]!.text, /viewBox="14 59 67 22"/, 'the document carries the crop');
     assert.match(uploads[1]!.text, /width="67" height="22"/, 'and its intrinsic size matches it');

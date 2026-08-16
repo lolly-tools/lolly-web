@@ -4,8 +4,8 @@
  *
  * Run directly:  node --test shells/web/src/lib/docs-tryit.test.ts
  *
- * Two halves: the pure recovery helpers (slug/route classification/embed URL) — the logic
- * that decides WHICH shots light up and WHERE they point — and the DOM hydration over a
+ * Two halves: the pure recovery helpers (slug/route classification/embed URL) - the logic
+ * that decides WHICH shots light up and WHERE they point - and the DOM hydration over a
  * jsdom fragment shaped like the injected `.docs-content`, with a stubbed manifest fetch.
  *
  * The invariant under test is ADDITIVITY + CONTENT-GATING: only live-tool recipes gain the
@@ -19,7 +19,7 @@ import { JSDOM } from 'jsdom';
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://lolly.tools/' });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
-// The module builds elements with insertAdjacentHTML(icon) — needs the jsdom realm's ctors.
+// The module builds elements with insertAdjacentHTML(icon) - needs the jsdom realm's ctors.
 globalThis.Element = dom.window.Element;
 globalThis.HTMLElement = dom.window.HTMLElement;
 
@@ -40,7 +40,7 @@ test('toolRouteId matches live-tool routes and rejects view captures', () => {
   assert.equal(toolRouteId('/#/tool/qr-code?url=https://suse.com&color=%230c322c'), 'qr-code');
   assert.equal(toolRouteId('#/tool/d3?ct=treemap&full'), 'd3');
   assert.equal(toolRouteId('/t/mesh-gradient?count=3'), 'mesh-gradient');
-  // View captures — the content gate must reject every one.
+  // View captures - the content gate must reject every one.
   assert.equal(toolRouteId('/#/'), null);
   assert.equal(toolRouteId('/#/start'), null);
   assert.equal(toolRouteId('/#/u'), null);
@@ -84,7 +84,7 @@ function buildFragment(): HTMLElement {
 const MANIFEST = {
   recipes: {
     'exp-url-qr-color': { route: '/#/tool/qr-code?url=https://suse.com&color=%230c322c' },
-    gallery: { route: '/#/' }, // a view capture — must NOT be enhanced
+    gallery: { route: '/#/' }, // a view capture - must NOT be enhanced
   },
 };
 
@@ -125,7 +125,7 @@ test('hydrate enhances only the live-tool shot, with a working navigate anchor +
   // The static <img> baseline is never removed.
   assert.ok(toolShot.querySelector('img[src="/info/shots/exp-url-qr-color.svg"]'), 'static img retained');
 
-  // View capture and no-recipe shots are byte-identical — no overlay, no class.
+  // View capture and no-recipe shots are byte-identical - no overlay, no class.
   assert.equal(viewShot.querySelector('.shot-tryit'), null, 'view shot not enhanced');
   assert.ok(!viewShot.classList.contains('shot--tryable'));
   assert.equal(noRecipeShot.querySelector('.shot-tryit'), null, 'no-recipe shot not enhanced');

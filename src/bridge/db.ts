@@ -3,29 +3,29 @@
  * IndexedDB schema for the web shell.
  *
  * Stores:
- *   - profile       — single record, the user's profile
- *   - state         — saved tool states, keyed by slot id
- *   - asset-meta    — catalog metadata (id, version, tags, format list)
- *   - asset-blob    — cached asset bytes, keyed by id+format+version
- *   - user-assets   — user-uploaded assets (headshots, custom images)
- *   - derived-media — DERIVED, evictable bytes computed on device FROM a user
+ *   - profile - single record, the user's profile
+ *   - state - saved tool states, keyed by slot id
+ *   - asset-meta - catalog metadata (id, version, tags, format list)
+ *   - asset-blob - cached asset bytes, keyed by id+format+version
+ *   - user-assets - user-uploaded assets (headshots, custom images)
+ *   - derived-media - DERIVED, evictable bytes computed on device FROM a user
  *                     asset (today: timeline scrub proxies, lib/clip-proxy.ts)
- *   - audio-peaks   — DERIVED overview waveforms for audio assets, ~128 bytes
+ *   - audio-peaks - DERIVED overview waveforms for audio assets, ~128 bytes
  *                     each (lib/audio-peaks.ts)
- *   - audio-cover-bakes — DERIVED MilkDrop cover images, keyed by
+ *   - audio-cover-bakes - DERIVED MilkDrop cover images, keyed by
  *                     (asset|preset|brand) (lib/audio-cover-bake.ts)
- *   - beam-staging  — IN-FLIGHT chunks of a beam transfer, one row per chunk
+ *   - beam-staging - IN-FLIGHT chunks of a beam transfer, one row per chunk
  *                     (lib/beam-sink.ts). Never user data: it is either mid-
  *                     transfer or a crashed session's litter.
  *
  * Why IndexedDB over localStorage: blobs (images), no 5MB ceiling, structured
- * queries. The capability bridge hides this from tools — they call
+ * queries. The capability bridge hides this from tools - they call
  * host.state.save() without knowing what's underneath.
  *
  * DELIBERATELY NOT HERE: the Kokoro speech model (host.speech). transformers.js
  * caches its /models/kokoro/ fetches in the Cache API bucket
  * 'transformers-cache' all by itself (and the voice matrices ride a
- * 'lolly-speech' bucket beside it — see lib/speech-kokoro-worker.ts), so a
+ * 'lolly-speech' bucket beside it - see lib/speech-kokoro-worker.ts), so a
  * trustmark-style IndexedDB store would just double ~92 MB on device. Don't add
  * one.
  */
@@ -42,20 +42,20 @@ const OPEN_TIMEOUT_MS = 8000;
 
 // The functional stores every healthy DB must have. If the DB reports the
 // current version but is missing any of these, it was left half-initialized by
-// an interrupted upgrade and must be rebuilt (see openDB) — a rebuild that wipes
+// an interrupted upgrade and must be rebuilt (see openDB) - a rebuild that wipes
 // the whole DB, so ONLY stores holding irreplaceable user data belong here. Two
 // stores are deliberately excluded: 'catalog-meta' (deprecated/unused) and
-// 'generated-previews' (pure regenerable cache — its absence must never escalate
+// 'generated-previews' (pure regenerable cache - its absence must never escalate
 // into wiping the user's profile/sessions/assets; host.previews degrades to
 // committed previews if it's missing). 'identity' is excluded too: losing it just
-// means enrolling again (see bridge/identity.js) — never worth wiping sessions.
+// means enrolling again (see bridge/identity.js) - never worth wiping sessions.
 const REQUIRED_STORES = ['profile', 'state', 'asset-meta', 'asset-blob', 'user-assets'];
 
 function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
   // Set when the browser tells us our open is queued behind an older connection
   // (a version upgrade blocked by another tab / a bfcache-frozen page). Lets the
   // timeout below mark the error as recoverable so boot() can offer a retry
-  // instead of a dead end — the open succeeds the moment that connection closes.
+  // instead of a dead end - the open succeeds the moment that connection closes.
   let wasBlocked = false;
   const opening = idbOpen(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion) {
@@ -72,7 +72,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         db.createObjectStore('user-assets', { keyPath: 'id' });
       }
       if (oldVersion < 2) {
-        // DEPRECATED / RESERVED — 'catalog-meta' was added in v2 to hold catalog
+        // DEPRECATED / RESERVED - 'catalog-meta' was added in v2 to hold catalog
         // ETags, but those moved to localStorage and no code reads or writes this
         // store anymore. It is intentionally NOT removed: deleting a store requires
         // a further version bump + migration, and leaving it costs nothing. Kept so
@@ -82,19 +82,19 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
       if (oldVersion < 3) {
         // Profile-personalized gallery preview thumbnails, keyed by toolId. Pure
         // regenerable cache (re-rendered from the tool + current profile on demand;
-        // see shells/web/src/personalize-previews.js), so — like asset-blob — it is
+        // see shells/web/src/personalize-previews.js), so - like asset-blob - it is
         // intentionally NOT carried in the portable backup (data-transfer.js).
         db.createObjectStore('generated-previews', { keyPath: 'toolId' });
       }
       if (oldVersion < 4) {
-        // Content Credentials device identity — 'keypair' + 'cert' records (see bridge/identity.js).
+        // Content Credentials device identity - 'keypair' + 'cert' records (see bridge/identity.js).
         db.createObjectStore('identity');
       }
       if (oldVersion < 5) {
-        // Export history — one record per download (id, toolId, filename, format, thumb,
+        // Export history - one record per download (id, toolId, filename, format, thumb,
         // query, at). A convenience log the Dashboard's "Latest exports" reads; capped to
         // a couple dozen. Like 'generated-previews'/'identity' it's regenerable-adjacent
-        // (losing it just forgets the list), so it is NOT in REQUIRED_STORES — its absence
+        // (losing it just forgets the list), so it is NOT in REQUIRED_STORES - its absence
         // must never escalate into wiping the user's real data.
         db.createObjectStore('exports', { keyPath: 'id' });
       }
@@ -102,12 +102,12 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // TrustMark ONNX watermark-decoder model bytes (tens of MB each), fetched
         // once from same-origin /models/trustmark/ on the /verify page's "Deep scan
         // for watermarks" action and cached here so the feature is offline after
-        // first use (see shells/web/src/lib/trustmark.ts) — the Google-Fonts
+        // first use (see shells/web/src/lib/trustmark.ts) - the Google-Fonts
         // fetch-once-then-IndexedDB pattern (lib/google-fonts.ts), applied to a
-        // model file instead of a font file. Keyed by filename, NOT keyPath — a
+        // model file instead of a font file. Keyed by filename, NOT keyPath - a
         // plain get/put store, like 'asset-blob'. Pure regenerable cache (a
-        // missing/corrupt entry just re-fetches), so — like 'generated-previews'/
-        // 'exports' — it is intentionally NOT in REQUIRED_STORES: its absence must
+        // missing/corrupt entry just re-fetches), so - like 'generated-previews'/
+        // 'exports' - it is intentionally NOT in REQUIRED_STORES: its absence must
         // never escalate into wiping the user's real data, and it is NOT part of
         // the portable data-transfer backup (it isn't user data).
         db.createObjectStore('trustmark-models');
@@ -116,36 +116,36 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // Meta Content Seal (Pixel Seal / Video Seal, image mode) ONNX extractor
         // bytes, fetched once from same-origin /models/contentseal/ on the same
         // /verify "Deep scan for watermarks" action and cached here so the feature
-        // is offline after first use (see shells/web/src/lib/contentseal.ts) — the
+        // is offline after first use (see shells/web/src/lib/contentseal.ts) - the
         // identical fetch-once-then-IndexedDB pattern as 'trustmark-models', a
         // different watermark maker. Keyed by filename (plain get/put, no keyPath).
-        // Pure regenerable cache (a missing/corrupt entry just re-fetches), so —
-        // like 'trustmark-models'/'generated-previews'/'exports' — it is
+        // Pure regenerable cache (a missing/corrupt entry just re-fetches), so - 
+        // like 'trustmark-models'/'generated-previews'/'exports' - it is
         // intentionally NOT in REQUIRED_STORES (its absence must never escalate
         // into wiping the user's real data) and NOT part of the portable backup.
         db.createObjectStore('contentseal-models');
       }
       if (oldVersion < 8) {
-        // DERIVED media built on device from a user asset — today just the
+        // DERIVED media built on device from a user asset - today just the
         // keyframe-dense 720p scrub proxies the timeline uses for filmstrips and
         // waveforms (see lib/clip-proxy.ts). Keyed `<assetId>:proxy`, one row per
         // asset, records carry their own `key` so this is a keyPath store.
         // Derived, evictable, regenerable: a missing row just means "scrub the
-        // original", so — like 'asset-blob'/'generated-previews' — it is
+        // original", so - like 'asset-blob'/'generated-previews' - it is
         // intentionally NOT in REQUIRED_STORES (its absence must never escalate
         // into wiping the user's real data) and NOT part of the portable backup
-        // (it isn't user data — it is recomputable from data that IS backed up).
+        // (it isn't user data - it is recomputable from data that IS backed up).
         db.createObjectStore('derived-media', { keyPath: 'key' });
       }
       if (oldVersion < 9) {
-        // Overview waveforms for audio assets — one row per asset id, holding a
+        // Overview waveforms for audio assets - one row per asset id, holding a
         // byte-per-bucket peak array (~128 bytes) plus the measured duration, so
         // the asset picker and catalog can draw a REAL waveform thumbnail instead
         // of a broken <img> pointing at an .mp3 (see lib/audio-peaks.ts).
         // Records carry their own `id`, so this is a keyPath store like
         // 'user-assets'. Derived, evictable, regenerable: a missing row just means
-        // "show the honest glyph and re-derive later", so — like 'derived-media'/
-        // 'generated-previews' — it is intentionally NOT in REQUIRED_STORES (its
+        // "show the honest glyph and re-derive later", so - like 'derived-media'/
+        // 'generated-previews' - it is intentionally NOT in REQUIRED_STORES (its
         // absence must never escalate into wiping the user's real data) and NOT
         // part of the portable backup (it is recomputable from the audio itself,
         // which IS backed up).
@@ -153,7 +153,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
       }
       if (oldVersion < 10) {
         // Baked MilkDrop cover art. The ONLY cover kind that stores pixels, and only
-        // because a live visualiser needs a WebGL2 context — browsers cap those at ~16
+        // because a live visualiser needs a WebGL2 context - browsers cap those at ~16
         // and drop the oldest, so a grid cannot mount one per tile. The user's stored
         // cover is still the PRESET ID; these bytes are a cache keyed by
         // (asset|preset|brand), so a rebrand simply misses and re-bakes, which is how a
@@ -165,7 +165,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
       }
       if (oldVersion < 11) {
         // On-device AI-upscaler model weights (host.upscale, engine 1.101), keyed by
-        // filename — the fetch-once/IndexedDB-forever cache the shared ORT model
+        // filename - the fetch-once/IndexedDB-forever cache the shared ORT model
         // fetcher writes (createModelFetcher store:'upscale-models'). A pure,
         // re-downloadable cache like 'trustmark-models'/'contentseal-models', so it
         // is intentionally NOT in REQUIRED_STORES (its absence must never escalate
@@ -174,22 +174,22 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
       }
       if (oldVersion < 12) {
         // On-device background-removal model weights (host.matte, engine 1.103),
-        // keyed by filename — the SAME fetch-once/IndexedDB-forever cache the shared
+        // keyed by filename - the SAME fetch-once/IndexedDB-forever cache the shared
         // ORT fetcher writes (createModelFetcher store:'matte-models'). Pure and
         // re-downloadable exactly like 'upscale-models', so likewise NOT in
         // REQUIRED_STORES and out of the portable backup.
         db.createObjectStore('matte-models');
       }
       if (oldVersion < 13) {
-        // Receiver-side staging for a beam transfer (plans/100 §11.15a, §11.18) —
+        // Receiver-side staging for a beam transfer (plans/100 §11.15a, §11.18) - 
         // one row per 64 KB chunk so a 38 MB pack streams to disk as it arrives
         // instead of accumulating in renderer RAM. Keyed [beamId, itemIndex, seq],
         // which makes an item's chunks read back in seq order and a whole beam one
         // contiguous range to delete; the `at` index carries the written-at stamp
         // the startup orphan sweep (lib/beam-sink.ts clearStaleBeams) reads key-only.
-        // NOT user data at any moment — a row is either in flight or a crashed
+        // NOT user data at any moment - a row is either in flight or a crashed
         // session's litter, and nothing enters the library until the transfer
-        // verifies — so, like 'derived-media'/'audio-peaks', it is intentionally NOT
+        // verifies - so, like 'derived-media'/'audio-peaks', it is intentionally NOT
         // in REQUIRED_STORES (its absence must never escalate into wiping real data)
         // and NOT part of the portable backup.
         const beamStore = db.createObjectStore('beam-staging', { keyPath: ['beamId', 'itemIndex', 'seq'] });
@@ -214,7 +214,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
   });
 
   // A wedged IndexedDB (e.g. a connection in another tab stuck in a versionchange
-  // transaction) can leave the open pending forever — which would freeze the
+  // transaction) can leave the open pending forever - which would freeze the
   // whole app on the "Loading…" splash with no feedback, since createBridge()
   // awaits this. Time it out so boot() surfaces a real error the user can act on
   // instead of an indefinite hang. The orphaned open (if it ever resolves) is
@@ -235,16 +235,16 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
   });
   return Promise.race([opening, timeout]).finally(() => clearTimeout(timer)).catch((err) => {
     // If the timeout won the race but the real open resolves a moment later, that's an
-    // orphaned LIVE connection — close it, or a retry would leave a handle open that
+    // orphaned LIVE connection - close it, or a retry would leave a handle open that
     // itself blocks the next upgrade (the exact pile-up we're preventing).
-    opening.then((db) => { try { db.close(); } catch { /* already closed */ } }, () => { /* open failed too — nothing to close */ });
+    opening.then((db) => { try { db.close(); } catch { /* already closed */ } }, () => { /* open failed too - nothing to close */ });
     throw err;
   });
 }
 
 // The ONE shared connection for the whole page, memoised so the bridge, export-history,
 // and anything else all reuse it. Opening a fresh connection per caller (export-history
-// used to, per read/write) is not just wasteful — every extra LIVE connection needlessly
+// used to, per read/write) is not just wasteful - every extra LIVE connection needlessly
 // blocks a version upgrade (an upgrade needs all other connections closed first), so a
 // pile-up of un-closed connections was a direct cause of the "Local database is locked"
 // boot hang. A failed open clears this so a later call (e.g. after the blocking tab
@@ -260,7 +260,7 @@ export function openDB(): Promise<IDBPDatabase> {
 
 /** openHealed(), but a BLOCKED open (another tab holding an older version) is retried for
  *  a while before giving up. Our own blocking() closes our connection when a newer version
- *  wants in, and an active sibling tab closes on the versionchange each re-open fires — so
+ *  wants in, and an active sibling tab closes on the versionchange each re-open fires - so
  *  a blocked open usually clears within a second or two. Retrying recovers that common case
  *  automatically; only a genuinely wedged/frozen holder (which a reload can't fix silently)
  *  falls through to the actionable error boot() surfaces. */
@@ -268,7 +268,7 @@ async function openResilient(): Promise<IDBPDatabase> {
   const deadline = Date.now() + 16000;
   for (;;) {
     try {
-      // Short per-attempt timeout while retrying — each re-open re-nudges a stuck sibling
+      // Short per-attempt timeout while retrying - each re-open re-nudges a stuck sibling
       // to close far sooner than one long 8s wait would (a healthy open is near-instant).
       return await openHealed(4000);
     } catch (e) {
@@ -287,7 +287,7 @@ async function openHealed(timeoutMs?: number): Promise<IDBPDatabase> {
 
   // Self-heal a half-initialized DB. An interrupted upgrade (e.g. a tab killed
   // mid-`versionchange`) can leave the DB at the current version yet missing
-  // stores — and because the version already matches, the upgrade callback never
+  // stores - and because the version already matches, the upgrade callback never
   // re-runs to create them, so every transaction throws "object store not found".
   // The only repair is to drop and recreate. This is safe: it triggers solely
   // when a required store is already absent (so there is no data in it to lose),

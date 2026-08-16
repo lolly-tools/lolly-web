@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * export-policy.ts — the generic export-affordance seam.
+ * export-policy.ts - the generic export-affordance seam.
  *
  * Pure, DOM-free: proves the dormant default (undefined ⇒ 'download', byte-identical
  * to today), the download/request/blocked decision truth table, the per-tool chain
@@ -26,7 +26,7 @@ test('exportAffordance truth table (canDownload × canRequestApproval)', () => {
     setExportPolicy({ canDownload, canRequestApproval });
     return exportAffordance(getExportPolicy());
   };
-  // canDownload wins whenever true — byte-identical to today.
+  // canDownload wins whenever true - byte-identical to today.
   assert.equal(mk(true, false), 'download');
   assert.equal(mk(true, true), 'download');
   // Withheld but requestable → the approval CTA.

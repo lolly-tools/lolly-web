@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Mobile profile menu — the avatar in the top-right cluster becomes a single
+ * Mobile profile menu - the avatar in the top-right cluster becomes a single
  * compact button on narrow screens (the standalone history button and the
  * "Profile" wordmark are hidden by CSS), and tapping it opens this popover with
  * everything that was scattered across the bar: the theme switcher, saved
  * sessions (history), and a link to the full Settings page.
  *
- * On desktop the avatar is left alone — it stays a plain link to #/profile — so
+ * On desktop the avatar is left alone - it stays a plain link to #/profile - so
  * this only intercepts the click while the small-screen layout is active.
  *
- * attachProfileMenu(trigger, host, { savedCount, onHistory }) — wires `trigger`
+ * attachProfileMenu(trigger, host, { savedCount, onHistory }) - wires `trigger`
  * (the .profile-link anchor). Returns a cleanup function that detaches listeners
  * and removes any open popover (the views call it on re-render / unmount).
  *
@@ -26,7 +26,7 @@ import { t } from '../i18n.ts';
 const MOBILE = '(max-width: 640px)';
 
 // Same weak slice setTheme takes (an opaque profile record this module only
-// spreads) — see folders.ts FolderProfile for the same no-index-signature pattern.
+// spreads) - see folders.ts FolderProfile for the same no-index-signature pattern.
 type ProfileMenuHost = SetThemeHost;
 
 export function attachProfileMenu(
@@ -62,7 +62,7 @@ export function attachProfileMenu(
     // The theme id rides on data-theme-seg, NOT data-theme: tokens.css scopes every theme
     // variable via the [data-theme="…"] attribute selector, so a data-theme on each button
     // would re-scope the tokens onto it (its --muted-foreground etc. would resolve in the
-    // button's OWN theme) — making the "Light" label render in light theme's dark grey,
+    // button's OWN theme) - making the "Light" label render in light theme's dark grey,
     // near-invisible on a dark menu. Matching the other segments' data-*-seg keeps that off.
     // The theme segments form a radio group: use a roving tabindex so Tab treats the
     // whole group as one stop (landing on the checked segment) and Arrow keys move
@@ -83,7 +83,7 @@ export function attachProfileMenu(
       const next = btn.dataset.themeSeg!;
       segs.forEach(b => b.setAttribute('aria-checked', String(b.dataset.themeSeg === next)));
       rove(btn, false);   // the newly-checked segment becomes the group's single tab stop
-      await setTheme(host, next);   // theme switch always sings — including this mobile profile-menu path
+      await setTheme(host, next);   // theme switch always sings - including this mobile profile-menu path
     });
     // Roving arrow-key navigation between the radio segments (Up/Left ←, Down/Right →), wrapping.
     themeGroup?.addEventListener('keydown', (e) => {
@@ -100,13 +100,13 @@ export function attachProfileMenu(
       onHistory?.();
     });
     // Brand wizard + Settings are plain hash links; just let them navigate,
-    // closing the menu first. The wizard entry shows always — a branded user
+    // closing the menu first. The wizard entry shows always - a branded user
     // re-running it is a supported path (it overwrites the user tokens).
     el.querySelector('[data-act="brand"]')?.addEventListener('click', () => pop.close());
     el.querySelector('[data-act="settings"]')?.addEventListener('click', () => pop.close());
 
     // Contain keyboard focus: wrap Tab/Shift+Tab within the menu, moving initial
-    // focus to the checked theme segment. inertBackground is off — the avatar
+    // focus to the checked theme segment. inertBackground is off - the avatar
     // trigger lives in the branch that would get inerted, and inert cascades with
     // no way for a descendant to opt back out, which would kill the trigger's
     // re-tap-to-close affordance (and looks like the whole page is stuck).
@@ -114,8 +114,8 @@ export function attachProfileMenu(
   }, {
     className: 'profile-menu',
     ariaLabel: escape(t('Profile and settings')),
-    // A viewport resize past the breakpoint (rotate / desktop) makes the menu moot —
-    // the inline buttons take over again — so just dismiss it rather than reflow.
+    // A viewport resize past the breakpoint (rotate / desktop) makes the menu moot - 
+    // the inline buttons take over again - so just dismiss it rather than reflow.
     onResize: (pop) => { if (!window.matchMedia(MOBILE).matches) pop.close(); },
   });
 

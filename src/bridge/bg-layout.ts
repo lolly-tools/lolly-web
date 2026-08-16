@@ -3,7 +3,7 @@
  * Where a CSS background image actually lands.
  *
  * The walker used to place every `background-image: url()` at the element's full
- * border box. That is right for exactly one case — a `cover` hero — and wrong for
+ * border box. That is right for exactly one case - a `cover` hero - and wrong for
  * every other: the select chevron (14px, right-centred) came out stretched across
  * the whole field, and the checkbox tick filled the entire box. Both ship in this
  * app's field primitive, so the defect was on every form control on every page.
@@ -36,7 +36,7 @@ export interface BgPlacement {
  *
  * `intrinsic` is null when the image has no natural size we could discover (an SVG
  * with no width/height, a load failure). CSS then treats it as having the area's
- * dimensions, which is also the old behaviour — so an undiscoverable image degrades
+ * dimensions, which is also the old behaviour - so an undiscoverable image degrades
  * to exactly what the walker did before rather than to nothing.
  */
 export function resolveBgSize(value: string, area: Size, intrinsic: Size | null): Size {
@@ -99,7 +99,7 @@ export function splitTopLevel(value: string): string[] {
 /**
  * One axis of `background-position`.
  *
- * Percentages align the image's own X% with the area's X% — which is why a centred
+ * Percentages align the image's own X% with the area's X% - which is why a centred
  * 14px chevron sits at `(area - 14) / 2` rather than `area / 2`, and why treating a
  * percentage as a plain offset puts every centred icon in the wrong place.
  *
@@ -154,7 +154,7 @@ export function placeBackground(
   const tokens = splitTopLevel((position || '0% 0%').trim().toLowerCase());
 
   // Split the token list into an x-part and a y-part. Either axis may be written
-  // first — `top right` is legal and means x=right, y=top — so the vertical
+  // first - `top right` is legal and means x=right, y=top - so the vertical
   // keywords decide the pairing rather than the token order.
   const VERT = ['top', 'bottom'],
     HORIZ = ['left', 'right'];
@@ -205,7 +205,7 @@ export function placeBackground(
   return { x, y, w: s.w, h: s.h, repeatX, repeatY };
 }
 
-/** Which axes a `background-repeat` tiles on. `round` and `space` tile too — they
+/** Which axes a `background-repeat` tiles on. `round` and `space` tile too - they
  *  only differ in how the remainder is distributed, which at our fidelity is noise. */
 export function repeatAxes(repeat: string): { x: boolean; y: boolean } {
   const t = (repeat || 'repeat').trim().toLowerCase().split(/\s+/).filter(Boolean);

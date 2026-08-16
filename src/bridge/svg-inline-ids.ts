@@ -3,21 +3,21 @@
  * Id-namespacing for SVG subtrees inlined from external files.
  *
  * The walker inlines same-origin SVG images (`inlineSvgFromImg` in export.ts)
- * to keep them vector — but a pre-rendered file carries its own generated ids
+ * to keep them vector - but a pre-rendered file carries its own generated ids
  * (`fcovclip-1`, gradient/filter ids, …), and inlining several files into one
  * document makes same-named ids collide: every reference binds to the FIRST
- * definition. Found 2026-08-10 via the svgo fidelity harness — four filmstrip
+ * definition. Found 2026-08-10 via the svgo fidelity harness - four filmstrip
  * covers each carrying `fcovclip-1` all clipped to the first cover's geometry,
  * silently cutting the other covers' titles to nothing (the optimizer's
  * id-minification "repaired" the binding and the missing titles appeared).
  *
  * The prefix hashes the SOURCE URL rather than counting: repeat exports of the
  * same page stay byte-identical (C2PA hashes depend on that), and the same
- * file inlined twice gets the same prefix — harmless, because identical
+ * file inlined twice gets the same prefix - harmless, because identical
  * content makes every reference resolve to identical geometry.
  */
 
-/** djb2 of the source string, base36 — short, stable, good enough spread. */
+/** djb2 of the source string, base36 - short, stable, good enough spread. */
 const srcHash = (src: string): string => {
   let h = 5381;
   for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) >>> 0;
@@ -25,7 +25,7 @@ const srcHash = (src: string): string => {
 };
 
 /**
- * Prefix every id in `svg` (and every reference to one — `url(#…)` in any
+ * Prefix every id in `svg` (and every reference to one - `url(#…)` in any
  * attribute, `href`/`xlink:href`, and `<style>` text) with a hash of `src`.
  * No-op for subtrees with no ids.
  */

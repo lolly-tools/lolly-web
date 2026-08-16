@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * TrustMark durable-credential EMBED — the neural encode counterpart to the
+ * TrustMark durable-credential EMBED - the neural encode counterpart to the
  * decode-only lib/trustmark.ts. Hides Lolly's own durable identifier
  * (engine buildLollyDurablePayload) into an image's pixels as a TrustMark-format
  * watermark, so a metadata strip can't erase the "made with Lolly" link and any
@@ -11,9 +11,9 @@
  * encoder model stay out of the boot budget. The encoder ONNX is produced by the
  * Andy-run scripts/convert-trustmark-encoder-onnx.py (Adobe ships ONNX for decode
  * only) and fetched once from same-origin /models/trustmark/encoder_<V>.onnx,
- * then cached in IndexedDB — same fetch-once pattern as the decoders.
+ * then cached in IndexedDB - same fetch-once pattern as the decoders.
  *
- * ── Verification ledger — the ALGORITHM IS PROVEN, the browser run is not ─────
+ * ── Verification ledger - the ALGORITHM IS PROVEN, the browser run is not ─────
  * A port of Adobe's `TrustMark.encode` (python/trustmark/trustmark.py):
  *   - resize cover → 256×256 (the reference uses BILINEAR);
  *   - normalize to [-1,1] (ToTensor*2-1 ≡ px/127.5 - 1), NCHW [1,3,256,256];
@@ -28,10 +28,10 @@
  * onnxruntime), round-trips the engine's own buildLollyDurablePayload(0) secret
  * with 0/100 bit errors at ~47 dB, and the recovered bits read back through
  * decodeTrustmarkPayload → readLollyDurable as a Lolly durable mark (a clean
- * image recovers ~random bits — no false mark). The ONNX I/O contract
+ * image recovers ~random bits - no false mark). The ONNX I/O contract
  * (cover[1,3,256,256], secret[1,100] → stego[1,3,256,256]) is confirmed.
  * STILL UNVERIFIED: this code running IN A BROWSER (ORT-web + canvas resize vs
- * Python/PIL). The resize kernel is the one deliberate deviation — a mismatch can
+ * Python/PIL). The resize kernel is the one deliberate deviation - a mismatch can
  * only WEAKEN recovery, never fabricate a mark. Confirm by exporting ?durable=1
  * then deep-scanning in /#/valid.
  *
@@ -48,12 +48,12 @@ import { loadOrt, readResponseWithProgress, type FetchProgress } from './ort.ts'
  *  scan tries first, so a Q-embedded mark reads back on the existing decode path. */
 const ENCODER_FILE = 'encoder_Q.onnx';
 const MODEL_RESOLUTION = 256;
-/** Reference WM_STRENGTH for the Q variant (P would be ×1.25 — not used here). */
+/** Reference WM_STRENGTH for the Q variant (P would be ×1.25 - not used here). */
 const WM_STRENGTH = 1.0;
 /** Below this the mark can't survive; skip (matches the decoder's detection floor
  *  intent + engine canCarryWatermark). */
 const MIN_SIDE = 256;
-/** Bump if the encoder model is replaced (retrained release) — invalidates the
+/** Bump if the encoder model is replaced (retrained release) - invalidates the
  *  IndexedDB cache so stale bytes are never reused. Independent of the decoder's. */
 const ENCODER_CACHE_VERSION = 1;
 const PROVIDERS = ['wasm'] as const;
@@ -61,7 +61,7 @@ const PROVIDERS = ['wasm'] as const;
 export interface DurableEmbedOptions {
   /** The reserved id field for buildLollyDurablePayload (0 until CAI id lands). */
   reservedId?: number;
-  /** Never touch the network (background/opportunistic). Default false — a
+  /** Never touch the network (background/opportunistic). Default false - a
    *  durable export is an explicit opt-in, so the first one may download once. */
   cacheOnly?: boolean;
 }
@@ -73,13 +73,13 @@ async function fetchEncoderBytes(cacheOnly: boolean, onProgress?: (p: FetchProgr
     const db = await openDB();
     const cached = await db.get('trustmark-models', ENCODER_FILE) as CachedModel | undefined;
     if (cached && cached.version === ENCODER_CACHE_VERSION && cached.bytes?.byteLength) return cached.bytes;
-  } catch { /* IDB unavailable — fall through to network */ }
+  } catch { /* IDB unavailable - fall through to network */ }
   if (cacheOnly) return null;
 
   const url = `/models/trustmark/${ENCODER_FILE}`;
   let resp: Response;
   try { resp = await fetch(url); } catch { return null; }
-  if (!resp.ok) return null; // not converted yet (Andy hasn't run the script) — a plain 404
+  if (!resp.ok) return null; // not converted yet (Andy hasn't run the script) - a plain 404
   const bytes = await readResponseWithProgress(resp, onProgress);
   // Same SPA-fallback guard as the decoder fetch: a dev server answers a missing
   // model with index.html (200); an ONNX protobuf never starts with '<'.
@@ -95,10 +95,10 @@ async function fetchEncoderBytes(cacheOnly: boolean, onProgress?: (p: FetchProgr
 
 /**
  * Pre-fetch the durable-watermark ENCODER into IndexedDB so a user can download it
- * IN ADVANCE from the profile's offline section — it is otherwise lazy-only, fetched
+ * IN ADVANCE from the profile's offline section - it is otherwise lazy-only, fetched
  * on the first durable export. Best-effort: returns false on the routine 404 when the
  * encoder has not been converted yet (scripts/convert-trustmark-encoder-onnx.py), so a
- * miss must never fail the offline "Verify" part — exactly like prefetchContentSealModel.
+ * miss must never fail the offline "Verify" part - exactly like prefetchContentSealModel.
  * Shares the 'trustmark-models' IDB store the deep-scan decoders use, so removePart('verify')
  * clears it too.
  */
@@ -124,7 +124,7 @@ async function getEncoderSession(ort: OrtModule, cacheOnly: boolean): Promise<In
     }
   })();
   sessionPromise = p;
-  // Don't make a miss sticky — a later export after the model lands should retry.
+  // Don't make a miss sticky - a later export after the model lands should retry.
   void p.then((s) => { if (!s) sessionPromise = null; }, () => { sessionPromise = null; });
   return p;
 }

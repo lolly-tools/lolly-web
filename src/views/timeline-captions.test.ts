@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * timeline-captions tests — the cue→box transform behind Generate subtitles.
+ * timeline-captions tests - the cue→box transform behind Generate subtitles.
  *
  * The one invariant that matters: a cue is authored in MEDIA seconds and a box
  * lives in TIMELINE seconds, and the mapping between them must be the inverse

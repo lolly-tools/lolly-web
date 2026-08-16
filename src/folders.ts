@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Folders — a user-facing way to organize saved work into named groups.
+ * Folders - a user-facing way to organize saved work into named groups.
  *
  * A "folder" (the user calls it a group, e.g. "my event") holds references to saved
  * sessions and user images, AND can nest inside another folder: each folder carries an
- * optional `parentId` (null / absent = a top-level folder). The tree is single-rooted —
- * a folder has exactly one parent and a session/image belongs to exactly one folder —
+ * optional `parentId` (null / absent = a top-level folder). The tree is single-rooted - 
+ * a folder has exactly one parent and a session/image belongs to exactly one folder - 
  * so it's a strict hierarchy, kept acyclic by `moveFolder` (can't reparent into self or
  * a descendant). A saved *batch* session is itself still a one-directory-deep folder of
  * rows, so a batch under a folder adds one more implicit level inside the zip.
@@ -33,7 +33,7 @@ export interface Folder {
 }
 
 /** The profile record as this module sees it: folders + whatever else rides
- * along (spread untouched via `{ ...profile }` — no index signature needed, so
+ * along (spread untouched via `{ ...profile }` - no index signature needed, so
  * the host's own Profile type satisfies this slice structurally). */
 interface FolderProfile {
   folders?: Folder[];
@@ -50,7 +50,7 @@ export interface FolderHost {
   state: { list(): Promise<ReadonlyArray<{ slot: string }>> };
   assets: {
     _listUserAssets(): Promise<ReadonlyArray<{ id: string }>>;
-    /** Catalog asset base ids — optional so minimal hosts (tests, CLI) still satisfy
+    /** Catalog asset base ids - optional so minimal hosts (tests, CLI) still satisfy
      *  the shape; when absent, a folder can only hold user-owned image refs. Present
      *  on the web host so catalog assets referenced (not copied) into a folder survive
      *  reconciliation. */
@@ -71,8 +71,8 @@ const catalogBaseId = (ref: string): string => ref.split('?')[0]!.split('#')[0]!
 const parentOf = (f: Folder): string | null => f?.parentId ?? null;
 
 /**
- * Direct children of `parentId` (null → top level). An ORPHAN — a folder whose parent
- * no longer exists (e.g. a soft-removed ancestor synced from elsewhere) — surfaces at
+ * Direct children of `parentId` (null → top level). An ORPHAN - a folder whose parent
+ * no longer exists (e.g. a soft-removed ancestor synced from elsewhere) - surfaces at
  * the top level so it can never vanish from the tree.
  */
 export function childFolders(folders: readonly Folder[], parentId: string | null): Folder[] {
@@ -191,7 +191,7 @@ export function createFolderStore(host: FolderHost) {
       });
     },
 
-    /** Hard-delete a folder AND its whole subtree of sub-folders (folder records only —
+    /** Hard-delete a folder AND its whole subtree of sub-folders (folder records only - 
      * the caller deletes the items/previews via host.state/host.assets first). */
     async removeSubtree(folderId: string): Promise<void> {
       await mutate(folders => {
@@ -203,7 +203,7 @@ export function createFolderStore(host: FolderHost) {
     /**
      * Reparent a folder under `newParentId` (null → top level). No-op when it would
      * create a cycle (moving a folder into itself or one of its own descendants) or the
-     * target doesn't exist — the tree stays a strict hierarchy.
+     * target doesn't exist - the tree stays a strict hierarchy.
      */
     async moveFolder(folderId: string, newParentId: string | null): Promise<void> {
       await mutate(folders => {

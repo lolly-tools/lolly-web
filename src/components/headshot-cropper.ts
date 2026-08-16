@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Headshot cropper — a small modal for framing an avatar before it's saved.
+ * Headshot cropper - a small modal for framing an avatar before it's saved.
  *
  * The user pans (drag) and zooms (slider / wheel) the source image inside a 1:1
  * viewport with a circular mask, then we render the framed square region to a
@@ -9,7 +9,7 @@
  *
  * openHeadshotCropper(file) → Promise<{ blob, width, height } | null>
  *   resolves null if the user cancels; throws a clear, coded error if the image
- *   can't be decoded (e.g. HEIC off Safari) or is too large — so the caller can
+ *   can't be decoded (e.g. HEIC off Safari) or is too large - so the caller can
  *   show the reason rather than silently doing nothing.
  */
 import { MAX_SOURCE_PIXELS, describeDecodeFailure } from '../bridge/image-resize.ts';
@@ -100,7 +100,7 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
 
     // Pan via single-pointer drag; pinch-zoom with two pointers. The stage sets
     // touch-action:none (so the page never pans/zooms under the finger), which also
-    // kills the browser's native pinch — so we track the active pointers ourselves
+    // kills the browser's native pinch - so we track the active pointers ourselves
     // and drive the cropper's own zoomTo, mirroring the canvas pinch in tool.js.
     const pointers = new Map<number, { x: number; y: number }>();   // pointerId -> { x, y }
     let startX = 0, startY = 0, baseTx = 0, baseTy = 0, panning = false;
@@ -155,7 +155,7 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
       if (opener instanceof HTMLElement) opener.focus();
       resolve(result);
     };
-    // Keyboard pan/zoom — the accessible peer of drag + wheel/slider (WCAG 2.1.1).
+    // Keyboard pan/zoom - the accessible peer of drag + wheel/slider (WCAG 2.1.1).
     // Arrows nudge the frame; Shift = coarse; + / − zoom about centre. The zoom
     // slider keeps its own native arrow keys when it's the focused element.
     const PAN_STEP = 24;
@@ -197,7 +197,7 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
   });
 }
 
-// Draw a decoded bitmap to a canvas and hand back a WebP object URL — gives the
+// Draw a decoded bitmap to a canvas and hand back a WebP object URL - gives the
 // preview <img> a displayable source when the original (HEIC) can't paint in one.
 async function bitmapToObjectUrl(bitmap: ImageBitmap): Promise<string> {
   const canvas = document.createElement('canvas');

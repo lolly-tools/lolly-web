@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * scrub-registry.ts — the tiny, synchronous, PREVIEW-ONLY half of the scrub
+ * scrub-registry.ts - the tiny, synchronous, PREVIEW-ONLY half of the scrub
  * proxy feature (Fable timeline, phase 4 Track A).
  *
- * WHY IT IS ITS OWN MODULE. Two reasons, and the second is the load-bearing one:
+ * WHY IT IS ITS OWN MODULE. Two reasons, and the second is the essential one:
  *
  *  1. WEIGHT. `bridge/assets.ts` needs exactly one function from the proxy
  *     feature on a hot synchronous path (`noteScrubSource`, called as each user
  *     asset's object URL is minted). assets.ts is in the first-paint graph, so a
- *     static import of `lib/clip-proxy.ts` dragged that whole module — including
- *     its `import('mediabunny')` site and its IndexedDB seam — into boot. This
+ *     static import of `lib/clip-proxy.ts` dragged that whole module - including
+ *     its `import('mediabunny')` site and its IndexedDB seam - into boot. This
  *     file is ~1 kB of maps and has no dependencies at all.
  *  2. OWNERSHIP. Everything here is memory-only and synchronous; everything in
  *     clip-proxy.ts is IO. Keeping the two apart is what lets the caches be
@@ -23,7 +23,7 @@
  * fails if any other module ever imports either half of this feature.
  *
  * BOUNDS. Every map here is capped and oldest-out. A proxy object URL pins its
- * blob in memory for as long as it exists, so eviction REVOKES — a session that
+ * blob in memory for as long as it exists, so eviction REVOKES - a session that
  * touches fifty clips holds at most `PROXY_URL_LIMIT` of them, not fifty.
  */
 
@@ -83,7 +83,7 @@ export function scrubSourceId(mediaUrl: string): string | undefined {
  * every call would cost more than the proxy saves. `primeScrubUrl` warms it.
  *
  * `need.audio` is not a nicety. A proxy is transcoded into whichever container
- * the browser can encode, and an AAC source track cannot ride in WebM — so a
+ * the browser can encode, and an AAC source track cannot ride in WebM - so a
  * proxy may legitimately exist with its audio dropped. A waveform read off such a
  * proxy would be FLAT SILENCE against an export that mixes the real audio, which
  * is a lie in the UI. A caller that needs the audio asks for it and gets the

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pure video-exposure coaching — the DOM-free core behind the record tool's live
+ * Pure video-exposure coaching - the DOM-free core behind the record tool's live
  * exposure warnings. This is the VISUAL counterpart to audio-coach-core.ts: where that
  * turns an `AudioLevel` into a levels/room verdict, this turns a camera frame's luma
- * statistics into a plain-language exposure verdict — too dark, too bright, or
+ * statistics into a plain-language exposure verdict - too dark, too bright, or
  * overexposed (blown highlights / backlit).
  *
  * Two steps, both pure (no DOM, no `announce`) so they can be unit tested directly
@@ -18,9 +18,9 @@ import type { TipCue } from './recording-tips.ts';
 export interface LumaStats {
   /** Mean luma across the sampled pixels, 0..1 (0 = black, 1 = white). */
   mean: number;
-  /** Fraction of sampled pixels at/near pure white — blown highlights, 0..1. */
+  /** Fraction of sampled pixels at/near pure white - blown highlights, 0..1. */
   clipHi: number;
-  /** Fraction of sampled pixels at/near pure black — crushed shadows, 0..1. */
+  /** Fraction of sampled pixels at/near pure black - crushed shadows, 0..1. */
   clipLo: number;
   /** How many pixels were actually sampled (0 = nothing worth judging yet). */
   samples: number;
@@ -71,11 +71,11 @@ const DARK_MEAN = 0.16;    // average this dim = underlit
 const BRIGHT_MEAN = 0.82;  // average this bright = overlit / washed out
 const BLOWN_FRAC = 0.22;   // this share of the frame pure-white = blown highlights / backlit
 const CRUSH_FRAC = 0.55;   // this share pure-black = mostly darkness (reinforces "too dark")
-const MIN_SAMPLES = 64;    // below this we haven't really seen a frame yet — say nothing
+const MIN_SAMPLES = 64;    // below this we haven't really seen a frame yet - say nothing
 
 /**
  * Turn a frame's LumaStats into an exposure verdict. Ordered by how actionable each
- * problem is: blown highlights first (fires even at a moderate mean — a backlit subject
+ * problem is: blown highlights first (fires even at a moderate mean - a backlit subject
  * is a dark face against a bright window), then washed-out bright, then too dark.
  */
 export function coachVideo(stats: LumaStats): VideoCoaching {

@@ -5,7 +5,7 @@
  * `timeline-panel.test.ts` covers the dispatch side (the `+` menu reads the manifest's
  * addKinds, `atMs` is the playhead read at click time). This file covers the receiving
  * side, which had no coverage at all: the listener's validation of an untrusted
- * CustomEvent, and — the part that actually broke — that "this box is being added FROM
+ * CustomEvent, and - the part that actually broke - that "this box is being added FROM
  * the timeline, so time it" is a ONE-SHOT flag which cannot leak into the next box the
  * user draws by hand.
  *
@@ -24,7 +24,7 @@ import type { Box } from './free-canvas-math.ts';
 
 // timeline-panel.ts imports its own stylesheet (the self-registering lazy-view pattern),
 // and free-canvas reaches it through a dynamic import. Node has no idea what a .css
-// module is, so stub it in-thread — Vite is what resolves it for real.
+// module is, so stub it in-thread - Vite is what resolves it for real.
 registerHooks({
   load(url: string, ctx: unknown, next: (u: string, c: unknown) => unknown) {
     if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default {};' };

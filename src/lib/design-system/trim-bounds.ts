@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * trim-bounds.ts — pure content-bounds trim core (plan 97 SS7.3, gap 4 in SS4).
+ * trim-bounds.ts - pure content-bounds trim core (plan 97 SS7.3, gap 4 in SS4).
  *
  * SVG bounds are computed textually, with no DOM: the shells that need this (the
  * upload dropzone, the logo room, catalogue details) run the same computation in
@@ -8,7 +8,7 @@
  * cubic-Bezier path bounds (`pathBounds`) stands in for `getBBox`. A live-mount
  * `getBBox` adapter belongs beside a DOM-owning caller, not here.
  *
- * Raster bounds are a plain RGBA alpha scan — no canvas, no image decode; callers
+ * Raster bounds are a plain RGBA alpha scan - no canvas, no image decode; callers
  * hand over already-decoded pixel bytes.
  */
 
@@ -42,7 +42,7 @@ const TRANSFORM_FN_RE = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)
 
 /**
  * translate/scale/matrix are exact. rotate/skewX/skewY are folded into the same
- * matrix and then applied to a shape's four local corners — for a rotated shape
+ * matrix and then applied to a shape's four local corners - for a rotated shape
  * that yields the tight AABB of the *rotated box*, not necessarily of the shape
  * itself (a rotated thin diagonal line reports a squarer box than its ink). That
  * corner-hull approximation is the documented trade from plan 97 SS7.3.
@@ -154,7 +154,7 @@ function shapeBox(name: string, attrs: Record<string, string>): LocalBox | null 
         const b = pathBounds(pathFromSubPaths(parseSvgPath(d)));
         return b ? { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 } : null;
       } catch {
-        return null; // malformed path data — contribute nothing rather than throw
+        return null; // malformed path data - contribute nothing rather than throw
       }
     }
     default:
@@ -214,7 +214,7 @@ function* tags(svgText: string): Generator<TagEvent> {
 }
 
 /** Definition-only containers: content never renders unless referenced (`<use>`,
- *  a fill paint server, …), so it must not count toward visible content bounds —
+ *  a fill paint server, …), so it must not count toward visible content bounds - 
  *  the same non-render rule the task states for `<defs>` extended to its siblings. */
 const NON_RENDERING = new Set(['defs', 'symbol', 'clippath', 'mask', 'pattern']);
 
@@ -260,7 +260,7 @@ function fmt(n: number): string {
 /**
  * Root `<svg>`'s current extent, for the "trim would not change anything" check:
  * viewBox if present, else width/height treated as a `0 0 w h` box, else null
- * (nothing to compare against — the trim always applies).
+ * (nothing to compare against - the trim always applies).
  */
 function currentRootBox(rootAttrs: Record<string, string>): Box | null {
   if (rootAttrs.viewBox) {
@@ -287,7 +287,7 @@ function sameBox(a: Box, b: Box): boolean {
 /**
  * Runs BEFORE `storeUserUpload` normalisation (the ordering gotcha from plan 97
  * SS7.3), so this must not assume the root `<svg>` already has a viewBox or that
- * width/height are absent — both are handled directly here rather than deferred
+ * width/height are absent - both are handled directly here rather than deferred
  * to a later normalise pass.
  */
 export function trimSvgToContent(svgText: string, opts?: { pad?: number }): { svg: string; box: Box } | null {
@@ -319,7 +319,7 @@ export function trimSvgToContent(svgText: string, opts?: { pad?: number }): { sv
 /**
  * Tight pixel box over premultiplied-agnostic alpha bytes. Edges are found by
  * scanning inward and stopping at the first hit, never allocating a scratch
- * buffer — this runs against full-resolution upload bytes.
+ * buffer - this runs against full-resolution upload bytes.
  */
 export function rasterAlphaBounds(
   data: Uint8Array | Uint8ClampedArray,

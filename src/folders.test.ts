@@ -19,7 +19,7 @@ function makeHost({ slots = [], images = [], catalog }: { slots?: string[]; imag
     state: { async list() { return slots.map(slot => ({ slot })); } },
     assets: {
       async _listUserAssets() { return images.map(id => ({ id })); },
-      // Only present when the test opts in — mirrors the optional web-host method, so
+      // Only present when the test opts in - mirrors the optional web-host method, so
       // a host without it still prunes (catalog references simply aren't recognised).
       ...(catalog ? { async _listCatalogAssetIds() { return catalog; } } : {}),
     },

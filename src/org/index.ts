@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/ — the single seam through which a deployment's OPTIONAL control plane
+ * org/ - the single seam through which a deployment's OPTIONAL control plane
  * talks to this shell.
  *
  * A plain Lolly deployment (e.g. the public lolly.tools) ships no control plane:
  * every endpoint below is absent, `initOrg()` resolves to `null` after one
  * tolerant, time-boxed probe (remembered so later boots skip even that), and the
- * shell behaves byte-identically to a build without this module — no gate, no
+ * shell behaves byte-identically to a build without this module - no gate, no
  * banner, an empty field-policy registry, nothing.
  *
  * When a deployment DOES provide an org-config endpoint, this module is the only
@@ -69,7 +69,7 @@ export type Session =
   | { kind: 'guest'; guest: Record<string, unknown> };
 
 /** One field's policy as the control plane declares it (mapped to a generic
- *  FieldPolicy before it reaches the registry — no product terms leak out). */
+ *  FieldPolicy before it reaches the registry - no product terms leak out). */
 export interface ProfileFieldSpec {
   mode: 'editable' | 'locked' | 'hidden';
   source?: 'idp';
@@ -96,7 +96,7 @@ export interface ToolPolicySpec {
   approvalChain?: string;
   /** The export formats policy binds this tool to (absent = unrestricted). Mapped
    *  onto the export-policy seam; the export panel narrows its format select to
-   *  this set, the same cooperative overlay a choice input gets — the control
+   *  this set, the same cooperative overlay a choice input gets - the control
    *  plane enforces the same set on its own render path. */
   formats?: string[];
 }
@@ -114,7 +114,7 @@ export interface ToolInjectable {
 }
 
 /** A piece of declarative UI chrome the instance injects (control-plane shape).
- *  Pure data — rendered by org/chrome.ts through escape(), never executed. */
+ *  Pure data - rendered by org/chrome.ts through escape(), never executed. */
 export interface ChromeInjectable {
   id: string;
   kind: 'chrome';
@@ -127,7 +127,7 @@ export interface ChromeInjectable {
 
 /** The injectables the control plane projects into org-config. A discriminated
  *  union keyed by `kind`; an unknown kind is ignored (flag-kind rides featureFlags,
- *  resource-kind rides the catalog — neither reaches this list). */
+ *  resource-kind rides the catalog - neither reaches this list). */
 export type Injectable = ToolInjectable | ChromeInjectable;
 
 export interface OrgConfig {
@@ -156,7 +156,7 @@ export interface OrgConfig {
 }
 
 /** What initOrg resolves with when a control plane is present. `null` (dormant)
- *  means no control plane — see initOrg. */
+ *  means no control plane - see initOrg. */
 export interface OrgState {
   auth: AuthConfig;
   session: Session | null;
@@ -185,29 +185,29 @@ let unregisterSessionSource: (() => void) | null = null;
 let unregisterNearbySource: (() => void) | null = null;
 /** Unregister for the work-collab factory (plan 100 wave 3.1), so a re-init replaces
  *  rather than stacks the registration. Null whenever the instance does not grant
- *  `collab.join` — which is every instance until the server ships the bits. */
+ *  `collab.join` - which is every instance until the server ships the bits. */
 let unregisterCollabFactory: (() => void) | null = null;
 /** Unregister for the Share-dialog "Work collab" section (plan 100 §7 item 9,
  *  wave 3.1), so a re-init replaces rather than stacks the registration onto the
- *  generic share-sections registry — same reasoning as unregisterShareSection
+ *  generic share-sections registry - same reasoning as unregisterShareSection
  *  above, kept as its own handle because the two sections are independent rows. */
 let unregisterCollabShareSection: (() => void) | null = null;
-/** Unregister for the `'work'` collab opener (plan 100 §7 item 9, wave 3.3) — the
+/** Unregister for the `'work'` collab opener (plan 100 §7 item 9, wave 3.3) - the
  *  thing that makes the Share row above render at all, since the row is gated on an
  *  opener existing. Same last-wins reasoning as the handles above. */
 let unregisterCollabOpener: (() => void) | null = null;
 
-/** Short probe budget — a hung network must never delay boot by more than this. */
+/** Short probe budget - a hung network must never delay boot by more than this. */
 const PROBE_TIMEOUT_MS = 1500;
 /** localStorage negative-cache TTL (per instance base). Optional acceleration
  *  only: it lets a known-dormant origin skip even the one probe on later boots,
- *  and self-heals — if a deployment later gains a control plane, it is seen once
+ *  and self-heals - if a deployment later gains a control plane, it is seen once
  *  the cached negative expires. Never on the critical path for correctness. */
 const ABSENT_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 const absentKey = (): string => `lolly:org-absent:${getInstanceBase() || 'same-origin'}`;
 
 /** How long a successfully-fetched org-config may stand in for a live one when the
- *  (present) control plane can't be reached on a later boot — a bounded freshness
+ *  (present) control plane can't be reached on a later boot - a bounded freshness
  *  window so a control-plane outage is a non-event, not a fleet-wide policy drop.
  *  Past it, stale policy is discarded and gated actions fail closed rather than
  *  trusting an old copy indefinitely. */
@@ -233,7 +233,7 @@ export function orgFlagGovernance(id: string): { default?: boolean; hidden?: boo
   const gov = orgConfigState?.featureFlags?.[id] ?? null;
   // Legacy bridge: `can['export.preflight']` predates the personal
   // 'export-preflight' flag (2026-08-06). An instance still granting the
-  // capability — with no explicit featureFlags entry for the flag, which wins —
+  // capability - with no explicit featureFlags entry for the flag, which wins - 
   // reads as governance defaulting the flag ON: members keep the card unless
   // they turn it off themselves. (String literal, not an import: flag ids are
   // permanent contracts, and feature-flags.ts imports this module.)
@@ -261,7 +261,7 @@ function emit(): void {
 
 // ── Network helpers (all tolerant; a control-plane hiccup never throws to boot) ─
 
-/** A time-boxed instanceFetch that never rejects — resolves null on any failure
+/** A time-boxed instanceFetch that never rejects - resolves null on any failure
  *  (network error, abort, thrown). */
 async function safeFetch(path: string, init?: RequestInit, timeoutMs?: number): Promise<Response | null> {
   const ctrl = timeoutMs ? new AbortController() : null;
@@ -275,7 +275,7 @@ async function safeFetch(path: string, init?: RequestInit, timeoutMs?: number): 
   }
 }
 
-/** Parse a JSON body only when the response looks like real JSON — a 200 that is
+/** Parse a JSON body only when the response looks like real JSON - a 200 that is
  *  actually an SPA-fallback HTML page (a misrouted /api on a static host) is
  *  rejected, so it can never be mistaken for a control-plane reply. */
 async function jsonBody<T>(res: Response | null): Promise<T | null> {
@@ -316,7 +316,7 @@ type OrgConfigLoad = { ok: true; config: OrgConfig } | { ok: false };
 /**
  * Load the member-only org-config with a conditional request. A fresh 200 is persisted
  * to the resilient cache (see rememberOrgConfig) so a later failed boot can stand on it;
- * a 304 keeps — and re-freshens the cache stamp for — the in-memory copy. Any genuine
+ * a 304 keeps - and re-freshens the cache stamp for - the in-memory copy. Any genuine
  * failure (no response, 5xx, unusable body) resolves `{ ok: false }` so the orchestration
  * can fall back to a still-fresh cached copy or, absent one, fail closed.
  */
@@ -377,7 +377,7 @@ function applyProfilePolicy(config: OrgConfig | null): void {
  * `failClosed` is the governed-but-unreachable-and-un-cached case: policy is known to
  * exist on this instance but couldn't be confirmed this boot. Rather than fall open to
  * a free download, the seam withholds direct download and offers only the (more
- * restrictive) approval path — never fail open. It takes precedence over `config`,
+ * restrictive) approval path - never fail open. It takes precedence over `config`,
  * which is null in that case anyway.
  */
 function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
@@ -391,7 +391,7 @@ function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
   const formats: Record<string, string[]> = {};
   for (const [toolId, spec] of Object.entries(config.tools ?? {})) {
     if (spec?.approvalChain) chains[toolId] = spec.approvalChain;
-    // An empty list is a real (fully restrictive) policy and is passed through —
+    // An empty list is a real (fully restrictive) policy and is passed through - 
     // the view's never-empty rule decides what to render, not this mapper.
     if (Array.isArray(spec?.formats)) formats[toolId] = spec.formats.filter((f): f is string => typeof f === 'string');
   }
@@ -406,7 +406,7 @@ function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
 /**
  * Install (or lift) the global input-policy fail-closed overlay for the governed-but-
  * unreachable-and-un-cached case. When on, every tool input the sidebar renders is
- * treated as locked read-only — the more restrictive state — so a momentarily-unknown
+ * treated as locked read-only - the more restrictive state - so a momentarily-unknown
  * policy can never leave a gated input editable. Off restores the ordinary per-tool
  * behaviour. The overlay outlives applyOrgToolPolicies (which only swaps explicit
  * per-tool entries), so it keeps holding across tool mounts until policy is known again.
@@ -426,7 +426,7 @@ function applyInputFailClosed(on: boolean): void {
  *
  * Always clears the registry first, so this both installs the mounted tool's policy
  * and drops any previous tool's. A dormant no-op when there is no control plane or
- * no declaration for this tool — the sidebar then renders exactly as today. Called
+ * no declaration for this tool - the sidebar then renders exactly as today. Called
  * by the tool view when a tool mounts.
  */
 export function applyOrgToolPolicies(toolId: string): void {
@@ -459,7 +459,7 @@ export function applyOrgToolPolicies(toolId: string): void {
  * the caller (lazy, after emit()). flag/resource kinds ride other rails and are not
  * in this list.
  *
- * Clears the tool registry first, so this both installs and drops a prior set — a
+ * Clears the tool registry first, so this both installs and drops a prior set - a
  * dormant no-op with no control plane (or no tool injectables), leaving the gallery
  * byte-identical to today. Descriptors are data; nothing here is executed.
  */
@@ -509,14 +509,14 @@ function loginUrl(loginPath: string): string {
 function renderGate(auth: AuthConfig, instanceName?: string): boolean {
   const view = document.getElementById('view');
   if (!view) return false;
-  if (!auth.loginPath) return false; // gated but no way in — misconfigured; let boot proceed
+  if (!auth.loginPath) return false; // gated but no way in - misconfigured; let boot proceed
   // loginPath comes from the control plane's /api/auth/config, and instancePath
-  // passes a non-http(s) value straight through when there is no instance base —
+  // passes a non-http(s) value straight through when there is no instance base - 
   // so a javascript: loginPath would otherwise reach an href. Same guard, same
   // reasoning as banner.ts/chrome.ts: escaping is not scheme validation.
   //
   // A rejected href must NOT abandon the gate. Returning false here would mean
-  // "no gate was rendered", and the caller then lets boot proceed — turning a
+  // "no gate was rendered", and the caller then lets boot proceed - turning a
   // hostile loginPath into an authentication BYPASS on a gated instance, which is
   // far worse than the XSS the guard exists to stop. So the gate still renders and
   // still blocks; only the button is dropped, exactly as chrome.ts drops a link
@@ -530,10 +530,10 @@ function renderGate(auth: AuthConfig, instanceName?: string): boolean {
     : t('Sign in to continue');
   document.title = `${t('Sign in')} — Lolly`;
   // Built here rather than inline so the suppression can sit on the sink's own
-  // line — semgrep honours nosemgrep only there or on the line directly above,
+  // line - semgrep honours nosemgrep only there or on the line directly above,
   // and inside a template literal a JS comment would be emitted as page text.
   const action = linkSafe
-    ? `<a class="btn btn--primary" href="${escape(href)}" style="display:inline-flex;align-items:center;justify-content:center;min-width:9rem">${t('Sign in')}</a>` // nosemgrep: lolly-href-escape-is-not-scheme-validation — reached only when safeHref(href) passed; an unsafe loginPath drops the anchor and states why
+    ? `<a class="btn btn--primary" href="${escape(href)}" style="display:inline-flex;align-items:center;justify-content:center;min-width:9rem">${t('Sign in')}</a>` // nosemgrep: lolly-href-escape-is-not-scheme-validation - reached only when safeHref(href) passed; an unsafe loginPath drops the anchor and states why
     : `<p style="margin:0;color:hsl(var(--muted-foreground));font-size:.9rem">${t('This instance did not supply a usable sign-in link. Ask whoever runs it to check its configuration.')}</p>`;
   view.innerHTML = `
     <section class="org-gate" aria-label="${escape(t('Sign in'))}" style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:40px 20px">
@@ -550,9 +550,9 @@ function renderGate(auth: AuthConfig, instanceName?: string): boolean {
 
 /**
  * Initialise the org seam. Resolves:
- *   - `null` — no control plane (dormant): the shell proceeds exactly as today.
- *   - `OrgState` with `gate: true` — a sign-in gate was rendered; STOP boot.
- *   - `OrgState` with `gate: false` — control plane present, proceed to mount the
+ *   - `null` - no control plane (dormant): the shell proceeds exactly as today.
+ *   - `OrgState` with `gate: true` - a sign-in gate was rendered; STOP boot.
+ *   - `OrgState` with `gate: false` - control plane present, proceed to mount the
  *     app; any member profile policy + inbox banner have been applied.
  *
  * Tolerant by construction: any unexpected failure resolves to dormancy so this
@@ -582,8 +582,8 @@ export async function initOrg(): Promise<OrgState | null> {
       const load = await fetchOrgConfig();
       // Resilient-cache resolution. A fresh (or in-session 304) load governs directly.
       // A failed load (the present control plane is unreachable this boot) falls back to
-      // the last good copy while it is still within ORG_CONFIG_TTL_MS; past the TTL — or
-      // with no cached copy at all — we do NOT trust stale policy, and gated surfaces
+      // the last good copy while it is still within ORG_CONFIG_TTL_MS; past the TTL - or
+      // with no cached copy at all - we do NOT trust stale policy, and gated surfaces
       // fail CLOSED instead (never open).
       let failClosed = false;
       if (load.ok) {
@@ -622,7 +622,7 @@ export async function initOrg(): Promise<OrgState | null> {
       // generic lib/share-sections.ts seam (so the dialog stays control-plane-
       // unaware), with the heavy builder module lazy-imported only when a member
       // actually opens the dialog. The builder self-gates on the caller's `can`
-      // bits, so registering for every member is safe — it renders nothing for a
+      // bits, so registering for every member is safe - it renders nothing for a
       // member without link permissions.
       unregisterShareSection?.();
       unregisterShareSection = registerShareSection(async (sctx) => {
@@ -633,7 +633,7 @@ export async function initOrg(): Promise<OrgState | null> {
       });
       // Surface the instance's shared team projects in the Projects view, through
       // the generic lib/session-source.ts seam (so the view stays control-plane-
-      // unaware). Pure data — the view owns opening a team session, reusing its own
+      // unaware). Pure data - the view owns opening a team session, reusing its own
       // engine URL reconstruction, so no engine/DOM concern leaks in here.
       unregisterSessionSource?.();
       unregisterSessionSource = registerSessionSource(
@@ -650,15 +650,15 @@ export async function initOrg(): Promise<OrgState | null> {
       }
       // Offer live co-editing on this instance's sessions (plan 100 §7, wave 3.1),
       // through the factory seam in org/collab-provider.ts. Gated on the caller's
-      // `collab.join` capability bit — read inline here rather than through
+      // `collab.join` capability bit - read inline here rather than through
       // org/collab-config.ts's `canJoinCollab()` (the same test, and the accessor
       // every consumer OUTSIDE this module should use) only because that module
       // imports this one, and the gate belongs beside the state it reads. ABSENT
-      // means NO registration — the
+      // means NO registration - the
       // server ships these bits later, so every instance today reads as absent and
       // the seam stays dormant, byte-identical to a build without this branch.
       // A FACTORY, not a provider: a collab is per-session and nothing here can yet
-      // know a mount came from a team project — that last wire is the wave-1
+      // know a mount came from a team project - that last wire is the wave-1
       // integration, documented in collab-provider.ts's header. Lazy-imported, so
       // the ws client never reaches the boot chunk of an instance without the bit.
       unregisterCollabFactory?.();
@@ -687,7 +687,7 @@ export async function initOrg(): Promise<OrgState | null> {
             // turns the "Work collab" Share row on (the row is gated on an opener
             // existing), and the same module carries the inbox invite affordance that
             // org/banner.ts lazy-loads. The opener re-checks the caller's capability
-            // bits on every press — this registration is an instance fact, not a
+            // bits on every press - this registration is an instance fact, not a
             // per-member grant.
             const opener = await import('./collab-work-opener.ts');
             unregisterCollabOpener?.();
@@ -696,14 +696,14 @@ export async function initOrg(): Promise<OrgState | null> {
           .catch(() => { /* additive; never block or break boot */ });
       }
       // Offer a "Work collab" row in the Share dialog (plan 100 §7 item 9, wave
-      // 3.1 — the row + gating only; the ceremony/join UI that actually starts a
+      // 3.1 - the row + gating only; the ceremony/join UI that actually starts a
       // work collab is a later wave). Registered through the same generic
       // lib/share-sections.ts seam as "On this instance" above, with the row's
       // builder module lazy-imported only when a member opens the dialog on an
-      // instance that grants `collab.join` — the same inline-`can` bail (and the
+      // instance that grants `collab.join` - the same inline-`can` bail (and the
       // same reasoning) as the collab-factory registration just above. The
       // builder itself re-checks canJoinCollab() plus a registered 'work' opener
-      // (lib/collab-launch.ts) — nothing registers one yet, so the row stays
+      // (lib/collab-launch.ts) - nothing registers one yet, so the row stays
       // absent everywhere until a later wave lands the ceremony UI.
       unregisterCollabShareSection?.();
       unregisterCollabShareSection = registerShareSection(async (sctx) => {
@@ -713,13 +713,13 @@ export async function initOrg(): Promise<OrgState | null> {
       });
       emit();
       if ((orgConfigState?.inboxUnread ?? 0) > 0) {
-        // Lazy — the banner (and its modal dep) stay out of the boot chunk, and
+        // Lazy - the banner (and its modal dep) stay out of the boot chunk, and
         // load only for the rare member with unread messages.
         import('./banner.ts')
           .then((m) => m.mountOrgBanner())
           .catch(() => { /* banner is additive; never block or break boot */ });
       }
-      // Array.isArray guards a malformed (non-array) injectables value — a `.some`
+      // Array.isArray guards a malformed (non-array) injectables value - a `.some`
       // on a non-array would throw and abort the branch (never break boot).
       if (Array.isArray(orgConfigState?.injectables) && orgConfigState.injectables.some((d) => d?.kind === 'chrome')) {
         // Lazy, exactly like the banner: the chrome renderer stays out of the boot
@@ -733,7 +733,7 @@ export async function initOrg(): Promise<OrgState | null> {
 
     return { auth, session, config: orgConfigState, gate: false };
   } catch {
-    // Absolute backstop: this seam is additive — a bug here must not break boot.
+    // Absolute backstop: this seam is additive - a bug here must not break boot.
     return null;
   }
 }
@@ -761,7 +761,7 @@ function rememberAbsent(): void {
 interface CachedOrgConfig { at: number; etag: string | null; config: OrgConfig }
 
 /** Persist a successfully-fetched org-config (and its ETag) so a later boot whose
- *  refetch fails can stand on it within ORG_CONFIG_TTL_MS. Best-effort — a storage
+ *  refetch fails can stand on it within ORG_CONFIG_TTL_MS. Best-effort - a storage
  *  error is swallowed (the live copy still governs this session). */
 function rememberOrgConfig(config: OrgConfig, etag: string | null): void {
   try {
@@ -771,7 +771,7 @@ function rememberOrgConfig(config: OrgConfig, etag: string | null): void {
 }
 
 /** The cached org-config when one is stored, well-formed, and still within the freshness
- *  TTL — else null (stale or past-TTL copies are never served, and an expired one is
+ *  TTL - else null (stale or past-TTL copies are never served, and an expired one is
  *  evicted). Restores the ETag alongside, so a subsequent conditional request is warm. */
 function readCachedOrgConfig(): OrgConfig | null {
   try {
@@ -780,7 +780,7 @@ function readCachedOrgConfig(): OrgConfig | null {
     const rec = JSON.parse(raw) as Partial<CachedOrgConfig>;
     const at = Number(rec?.at);
     if (!Number.isFinite(at) || Date.now() - at >= ORG_CONFIG_TTL_MS) {
-      localStorage.removeItem(orgConfigKey());          // past the TTL — drop, never serve stale
+      localStorage.removeItem(orgConfigKey());          // past the TTL - drop, never serve stale
       return null;
     }
     const config = rec.config;
@@ -788,7 +788,7 @@ function readCachedOrgConfig(): OrgConfig | null {
     orgConfigEtag = rec.etag ?? orgConfigEtag;
     return config;
   } catch {
-    return null; // unreadable / malformed cache — behave as if there were none
+    return null; // unreadable / malformed cache - behave as if there were none
   }
 }
 

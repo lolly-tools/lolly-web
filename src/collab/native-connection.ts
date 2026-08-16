@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-connection — a live native session as a `CollabConnection` (plans/110 §4).
+ * native-connection - a live native session as a `CollabConnection` (plans/110 §4).
  *
  * The mirror of `collab/rtc-connection.ts` for the native LAN transport. It adapts a
  * `NativeTransportHandle` (byte lanes over the Tauri commands, `native-transport.ts`) into
- * the surfaces the collab mount consumes, REUSING `createRtcCollabHandle` — so the op
+ * the surfaces the collab mount consumes, REUSING `createRtcCollabHandle` - so the op
  * ordering, the presence roster, the §6.2 divergence backstop, and the §11.21 op validation
  * (which runs in the handle, not the transport) are all shared, not reimplemented.
  *
@@ -13,7 +13,7 @@
  * 1. `sendOp`/`sendPresence` are SYNCHRONOUS in the `RtcHandleTransport` contract, but
  *    `native_send` is async (a Tauri invoke). They fire-and-forget and return `'sent'`;
  *    a send that rejects flips the transport to `closed` and emits a `state` event, since a
- *    dead native socket is terminal (no ICE reconnect — a fresh pairing is needed). Marked
+ *    dead native socket is terminal (no ICE reconnect - a fresh pairing is needed). Marked
  *    ⟨SEND-SEAM⟩ below.
  * 2. The beam lane has no `bufferedamountlow`. Backpressure is TCP: the Rust reader stops
  *    reading when its reliable queue is full, so `native_send` awaits. We drive the beam's
@@ -42,7 +42,7 @@ import { encodeOps, encodePresence, encodeBeam, decodeFrame } from './native-wir
 
 /** A native session is connected the moment the handle exists (Rust did the handshake),
  *  so its transport state is a constant "live, no ICE" until it closes. `diagnosis` carries
- *  the value the real transport reports once everConnected — meaningful only on failure. */
+ *  the value the real transport reports once everConnected - meaningful only on failure. */
 function nativeState(open: boolean): RtcTransportState {
   const laneState = open ? 'open' : 'closed';
   return {
@@ -144,7 +144,7 @@ export function nativeAsRtcTransport(
     on<K extends keyof RtcTransportEventMap>(type: K, fn: (value: RtcTransportEventMap[K]) => void): () => void {
       if (type === 'message') return bus.onMessage(fn as (m: RtcInboundMessage) => void);
       if (type === 'state') return bus.onState(fn as (s: RtcTransportState) => void);
-      // 'channel-open' — native lanes are open from birth and the handle never subscribes
+      // 'channel-open' - native lanes are open from birth and the handle never subscribes
       // to it (it uses message + state only); a no-op teardown satisfies the type.
       return () => {};
     },
@@ -171,7 +171,7 @@ function nativeBeamLane(handle: NativeTransportHandle, bus: NativeBus): RtcBeamL
     binary(bytes: Uint8Array): void { send(encodeBeam({ bytes })); },
     onDrain(pull: () => void): () => void {
       drains.add(pull);
-      // Kick the sender once — the lane is already open.
+      // Kick the sender once - the lane is already open.
       if (bus.isOpen()) queueMicrotask(pull);
       return () => { drains.delete(pull); };
     },
@@ -213,7 +213,7 @@ export interface NativeConnectionInput {
  *
  * The inviter sends the ops-lane hello (with its packed seed) once the handle is up; the
  * acceptor receives it through the handle's own ops path, exactly as on the WebRTC track.
- * The plate is already established (Rust `h` → `derivePlateFromTranscript`) — there is no
+ * The plate is already established (Rust `h` → `derivePlateFromTranscript`) - there is no
  * offer/answer here, only the plate compare, which the ceremony did before this call.
  */
 export function nativeCollabConnection(input: NativeConnectionInput): CollabConnection & CollabBeamCapable {

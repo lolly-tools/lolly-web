@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * #/data — an offline spreadsheet viewer/editor (plan 89).
+ * #/data - an offline spreadsheet viewer/editor (plan 89).
  *
  * For someone with no internet, no Excel and no LibreOffice who still needs to open,
  * read and lightly edit a spreadsheet. Drop an .xlsx/.csv/.tsv/.json → it renders in
  * the virtualized data-grid (millions of cells stay responsive), with a sheet-tab bar
  * for a multi-sheet workbook and a download-as menu. Everything runs on-device.
  *
- * Honest about its limits (Andy's ask — "knowing what they can and can't change"): it
+ * Honest about its limits (Andy's ask - "knowing what they can and can't change"): it
  * shows VALUES. Formulas appear as their computed result; styles, merged cells, charts
  * and multiple sheets do not survive a save. The banner says so plainly, because
  * pretending otherwise would lose a user's work silently.
@@ -26,7 +26,7 @@ import { mountThemeFab } from '../components/theme-toggle.ts';
 import '../styles/parts/platform.css';
 import '../styles/parts/data-view.css';
 
-/** A generous read cap for the viewer — the engine bounds it internally by MAX_CELLS
+/** A generous read cap for the viewer - the engine bounds it internally by MAX_CELLS
  *  (2M), so a pathological book can't blow memory; we note truncation when it bites. */
 const VIEW_ROW_LIMIT = 200_000;
 
@@ -63,7 +63,7 @@ export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params =
       </div>
     </div>`;
 
-  // Reached as a tile OR a deep link — carry the full escape chrome (back pill +
+  // Reached as a tile OR a deep link - carry the full escape chrome (back pill +
   // always-home) plus the language + theme FABs, so nobody sent straight to the
   // spreadsheet is stranded with no way out.
   mountBackPill(viewEl);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * NetAPI — controlled fetch for tools that declared the 'network' capability.
+ * NetAPI - controlled fetch for tools that declared the 'network' capability.
  *
  * The implementation MOVED to packages/node-shell/src/net.ts: it is entirely
  * DOM-free (global `fetch` + `TransformStream`), and the CLI and TUI shells build

@@ -20,7 +20,7 @@ function memoryHost(): BrandTransferHost & { store: Map<string, any> } {
       async _deleteUserAsset(id: string) { store.delete(id); },
       async _exportUserAssets() { return [...store.values()]; },
       async _getBlob(id: string) { return store.get(id)?.blob ?? null; },
-      // Brand discovery fallback — these tests always install user tokens.
+      // Brand discovery fallback - these tests always install user tokens.
       async _findMetaByType() { return null; },
     } as BrandTransferHost['assets'],
     profile: { async get() { return { firstname: 'Bilbo' }; } },
@@ -176,7 +176,7 @@ test('a corrupted part fails its integrity check loudly', async () => {
   const src = await seededHost();
   const { blob } = await exportBrandPack({ host: src, storage: memoryStorage() });
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  // Flip one byte inside a STORED (level 0) font entry — the woff2 payload.
+  // Flip one byte inside a STORED (level 0) font entry - the woff2 payload.
   const marker = new TextEncoder().encode('fonts/inter-0.woff2');
   const at = bytes.findIndex((_, i) => marker.every((b, j) => bytes[i + j] === b));
   assert.ok(at > 0, 'font entry present in the zip');

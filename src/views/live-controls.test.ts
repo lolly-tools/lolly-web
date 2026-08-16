@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * live-controls contract tests — the Play (animated asset) + Go live (camera)
+ * live-controls contract tests - the Play (animated asset) + Go live (camera)
  * state machine and its SIDEBAR placement beside the asset picker.
  *
  * Driven through the REAL createLiveControls/mountSidebarLiveControls against a
  * jsdom panel that mirrors renderInputs' documented asset-picker markup
- * (.asset-picker-row + slot-actions — tool-inputs.ts controlHtml). The runtime
+ * (.asset-picker-row + slot-actions - tool-inputs.ts controlHtml). The runtime
  * and host are stubs recording what the controller drives: which frame source is
- * armed (media.armAnimSource) and how the runtime loop is started — including
+ * armed (media.armAnimSource) and how the runtime loop is started - including
  * the provenance-critical `{ source: 'asset' }` for replayed assets.
  *
  * NOT covered here (needs a browser): the media bridge's actual frame sampling

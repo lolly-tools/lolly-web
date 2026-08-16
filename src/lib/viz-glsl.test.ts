@@ -3,14 +3,14 @@
  * Covers the generated GLSL (lib/viz-glsl.ts).
  *
  * A shader can only really be validated by compiling it, which needs a WebGL2 context
- * this suite doesn't have — so these assert the properties that are checkable as text
+ * this suite doesn't have - so these assert the properties that are checkable as text
  * AND that have actually bitten:
  *
  *  - a WARP shader must apply `decay`, or the feedback loop never fades and the field
  *    saturates to white within a second (butterchurn's built-in body does this, and a
  *    custom shader replaces it);
  *  - a glow must NAME `sampler_blurN`, because that's how `Renderer.getHighestBlur`
- *    decides to allocate blur passes at all — no mention, no bloom;
+ *    decides to allocate blur passes at all - no mention, no bloom;
  *  - every numeric literal needs a decimal point, since `1` is an int in GLSL and
  *    won't implicitly convert where a float is wanted;
  *  - the brand palette has to actually be baked in, or the whole point is lost.
@@ -212,7 +212,7 @@ test('the ramp lookup has one mix per segment', () => {
 });
 
 test('a degenerate palette still yields compilable-looking source', () => {
-  // A brand with nothing usable falls back, but must never emit an empty ramp — that
+  // A brand with nothing usable falls back, but must never emit an empty ramp - that
   // would leave `vec3 c = ;` in the header.
   const empty = buildVizPalette([]);
   const h = brandGlslHeader(empty);

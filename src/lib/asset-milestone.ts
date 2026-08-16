@@ -2,14 +2,14 @@
 /**
  * Friendly, one-shot nudges as a user's device image library grows.
  *
- * There is no cap on uploads (see bridge/assets.ts) — the library is the user's
+ * There is no cap on uploads (see bridge/assets.ts) - the library is the user's
  * to fill. But device images are exactly that: on THIS device. They're never
  * uploaded and don't travel inside share links, so an image only reaches someone
- * else once it's rendered into a file — and images everyone should always have
+ * else once it's rendered into a file - and images everyone should always have
  * belong in the catalog. As the library crosses each milestone we surface that
  * once, informationally, so nobody is surprised later.
  *
- * Called (fire-and-forget) after every successful upload — storeUserUpload() is
+ * Called (fire-and-forget) after every successful upload - storeUserUpload() is
  * the single choke point for every add path (picker, profile, tool, imports,
  * webcam), so one call there covers them all.
  */
@@ -20,7 +20,7 @@ import { noticeDialog } from '../components/confirm-dialog.ts';
 // bulk import that jumps past several never nags for each one on the way up.
 const SEEN_KEY = 'lolly-asset-milestones-seen';
 
-/** The bridge surface the nudge needs — a lightweight count of stored user assets. */
+/** The bridge surface the nudge needs - a lightweight count of stored user assets. */
 interface CountHost {
   assets: { _userAssetsCount(): Promise<number> };
 }
@@ -30,7 +30,7 @@ function readSeen(): number[] {
     const raw = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]');
     return Array.isArray(raw) ? raw.filter((n): n is number => typeof n === 'number') : [];
   } catch {
-    return []; // storage off / private mode — treat as "nothing seen yet"
+    return []; // storage off / private mode - treat as "nothing seen yet"
   }
 }
 
@@ -39,7 +39,7 @@ export async function maybeNudgeAssetMilestone(host: CountHost): Promise<void> {
   try {
     count = await host.assets._userAssetsCount();
   } catch {
-    return; // count unavailable — never let a nudge break an upload
+    return; // count unavailable - never let a nudge break an upload
   }
   // _userAssetsCount() includes the reserved profile headshot; the ±1 is immaterial
   // at these milestones, so we don't special-case it.
@@ -48,11 +48,11 @@ export async function maybeNudgeAssetMilestone(host: CountHost): Promise<void> {
   const crossed = USER_ASSET_MILESTONES.filter(m => count >= m && !seen.includes(m));
   if (!crossed.length) return;
 
-  // Mark every crossed milestone seen at once — a jump past several fires only the
+  // Mark every crossed milestone seen at once - a jump past several fires only the
   // highest, and none of them re-nags later.
   try {
     localStorage.setItem(SEEN_KEY, JSON.stringify([...new Set([...seen, ...crossed])]));
-  } catch { /* storage off — worst case the nudge repeats next session */ }
+  } catch { /* storage off - worst case the nudge repeats next session */ }
 
   const top = Math.max(...crossed);
   await noticeDialog({

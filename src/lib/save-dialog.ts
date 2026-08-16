@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Save dialog — the "Save to your library" button opens THIS instead of a silent one-shot
+ * The Save dialog - the "Save to your library" button opens THIS instead of a silent one-shot
  * save, so a creative can choose WHERE the work lands:
  *
- *   1. Add to a project — file the saved session into a project (folder), or leave it at the
+ *   1. Add to a project - file the saved session into a project (folder), or leave it at the
  *      library root. This is the everyday save, plus a home.
- *   2. Save as a template — the current doc becomes a reusable STARTING POINT for this tool,
+ *   2. Save as a template - the current doc becomes a reusable STARTING POINT for this tool,
  *      shown in its "New from template" chooser (and, later, the Projects add-picker).
- *   3. Save as a variation — the same, tagged as a variation OF an existing template so the
+ *   3. Save as a variation - the same, tagged as a variation OF an existing template so the
  *      chooser can group it under its parent.
  *
  * A saved template/variation is an ordinary session seed, so the existing Share modal's
- * `.lolly` path carries it unchanged — "make variations → share a .lolly for anyone to import
+ * `.lolly` path carries it unchanged - "make variations → share a .lolly for anyone to import
  * / submit to the catalog" (the footer points at it). This module owns only the DOM + wiring;
  * every side effect (save, folder create/file, template persist, share) is INJECTED, so it is
  * headless-testable and knows nothing about the host bridge, the runtime, or the store shapes.
@@ -36,7 +36,15 @@ export interface SaveDialogDeps {
   saveToLibrary: (folderId: string | null) => Promise<boolean>;
   /** Persist the current doc as a user template (variationOf set → a variation). */
   saveTemplate: (name: string, variationOf?: string) => Promise<void>;
-  /** Open the Share modal (its `.lolly` File panel) — the "share for anyone to import" path. */
+  /** Show the "Create a tool" card - true when saving from a tool that can be a user tool's
+   *  base (the Design tool). Needs `createTool` to actually do anything. */
+  canCreateTool?: boolean;
+  /** The base tool's export formats, offered as the new tool's formats (all pre-selected). */
+  toolFormats?: readonly string[];
+  /** Persist the current doc as a NEW user tool (its own listing entry). `formats` is the
+   *  user's selected subset; `icon` is an optional emoji/glyph (empty → the base tool's own). */
+  createTool?: (meta: { title: string; description: string; icon: string; formats: string[] }) => Promise<void>;
+  /** Open the Share modal (its `.lolly` File panel) - the "share for anyone to import" path. */
   shareLolly?: () => void;
   announce?: (msg: string) => void;
   t?: (s: string) => string;
@@ -48,6 +56,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
   const t = deps.t ?? ((s: string) => s);
   const showTemplates = deps.hasTemplates;
   const showVariation = showTemplates && deps.bases.length > 0;
+  const showCreateTool = Boolean(deps.canCreateTool && deps.createTool);
 
   const baseOptions = deps.bases
     .map(b => `<option value="${escape(b.id)}">${escape(b.name)}</option>`)
@@ -76,6 +85,27 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
       <p class="save-card-err" data-err="variation" hidden></p>
     </section>` : '';
 
+  // "Create a tool": turn the current doc into the user's own listed tool. Format options are
+  // built from the base tool's formats (all pre-selected); title is required, description +
+  // icon are optional. Formats render as DOM checkboxes below (never an HTML string sink).
+  const createToolCard = showCreateTool ? `
+    <section class="save-card" data-card="tool">
+      <h3 class="save-card-title">${escape(t('Create a tool'))}</h3>
+      <p class="save-card-desc">${escape(t('Turn this into your own tool - it joins your tool list and opens preconfigured like this.'))}</p>
+      <div class="save-card-row">
+        <input type="text" class="save-input" data-tool-title maxlength="60" placeholder="${escape(t('Tool name'))}" aria-label="${escape(t('Tool name'))}">
+        <input type="text" class="save-input save-tool-icon" data-tool-icon maxlength="4" placeholder="${escape(t('Icon'))}" aria-label="${escape(t('Icon (an emoji)'))}">
+      </div>
+      <div class="save-card-row">
+        <input type="text" class="save-input" data-tool-desc maxlength="120" placeholder="${escape(t('Short description (optional)'))}" aria-label="${escape(t('Description'))}">
+      </div>
+      <fieldset class="save-tool-formats" data-tool-formats></fieldset>
+      <div class="save-card-row">
+        <button type="button" class="btn" data-act="create-tool">${escape(t('Create tool'))}</button>
+      </div>
+      <p class="save-card-err" data-err="tool" hidden></p>
+    </section>` : '';
+
   const shareFoot = deps.shareLolly ? `
     <div class="save-dialog-foot">
       <span>${escape(t('Made a variation worth sharing? Send it as a .lolly file for anyone to import.'))}</span>
@@ -102,6 +132,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
       </section>
       ${templateCard}
       ${variationCard}
+      ${createToolCard}
     </div>
     ${shareFoot}`;
 
@@ -135,7 +166,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
 
   // ── Project select: fill async, reveal a name field when "New project" is chosen ──
   // Options are built as DOM (textContent), never an HTML string, so a folder name can never
-  // be markup — no raw-HTML sink, no escaping to get wrong.
+  // be markup - no raw-HTML sink, no escaping to get wrong.
   const projectSel = q<HTMLSelectElement>('[data-project]');
   const newProjectInput = q<HTMLInputElement>('[data-new-project]');
   const opt = (value: string, label: string): HTMLOptionElement => {
@@ -156,6 +187,24 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
     const isNew = projectSel.value === NEW_PROJECT;
     if (newProjectInput) { newProjectInput.hidden = !isNew; if (isNew) newProjectInput.focus(); }
   });
+
+  // ── Create-a-tool: format checkboxes, built as DOM (a format id is catalog data, but this
+  // keeps the same no-HTML-string-sink discipline as the project select above) ──
+  if (showCreateTool) {
+    const fmtBox = q<HTMLFieldSetElement>('[data-tool-formats]');
+    const formats = (deps.toolFormats ?? []).slice();
+    if (fmtBox) {
+      if (!formats.length) { fmtBox.hidden = true; }
+      else for (const f of formats) {
+        const label = document.createElement('label');
+        label.className = 'save-tool-format';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = f; cb.checked = true; cb.setAttribute('data-tool-format', '');
+        label.append(cb, document.createTextNode(' ' + f.toUpperCase()));
+        fmtBox.appendChild(label);
+      }
+    }
+  }
 
   // ── Actions ──
   root.addEventListener('click', (e) => {
@@ -204,6 +253,20 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
       });
       return;
     }
+
+    if (act === 'create-tool') {
+      const title = (q<HTMLInputElement>('[data-tool-title]')?.value || '').trim();
+      const description = (q<HTMLInputElement>('[data-tool-desc]')?.value || '').trim();
+      const icon = (q<HTMLInputElement>('[data-tool-icon]')?.value || '').trim();
+      const formats = Array.from(root.querySelectorAll<HTMLInputElement>('[data-tool-format]:checked')).map(c => c.value);
+      void withButton(btn, 'tool', async () => {
+        if (!title) throw new Error(t('Name the tool first.'));
+        await deps.createTool!({ title, description, icon, formats });
+        announce(t('Tool created'));
+        modal.close();
+      });
+      return;
+    }
   });
 
   // Enter in a text field triggers that card's primary action.
@@ -213,6 +276,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
     if (!(tgt instanceof HTMLInputElement)) return;
     e.preventDefault();
     const card = tgt.closest<HTMLElement>('.save-card');
-    card?.querySelector<HTMLButtonElement>('[data-act^="save-"]')?.click();
+    // The primary action for each card: a save-* button, or the Create-a-tool button.
+    card?.querySelector<HTMLButtonElement>('[data-act^="save-"], [data-act="create-tool"]')?.click();
   });
 }

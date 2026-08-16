@@ -10,7 +10,7 @@
  * handles over an in-memory pair and never sees an SDP; `collab-session.test.ts`
  * drives one session against a fake handle; `lib/collab-loopback.test.ts` drives two
  * REAL runtimes over a hand-written wire that is not a transport at all. Not one of
- * them can fail if the SEAMS between them are wrong — an invite whose token the
+ * them can fail if the SEAMS between them are wrong - an invite whose token the
  * acceptor cannot read, a hello that lands before anyone is listening for it, a
  * handle whose `opsIn` nobody joined to the session's `applyRemotePatch`, a guard
  * that refuses every real frame. This file is the composition, end to end:
@@ -27,7 +27,7 @@
  * mounted on the same fixture tool.
  *
  * WHAT IS FAKE: `RTCPeerConnection` (scripted, as `rtc-transport.test.ts` scripts
- * it — the SDP it hands out is built by the REAL codec, so every round trip here is
+ * it - the SDP it hands out is built by the REAL codec, so every round trip here is
  * a genuine one), the clock, the outbound coalescing microtask, and the frame
  * scheduler. Nothing sleeps; a lost packet is a counter, not a race.
  *
@@ -43,16 +43,16 @@
  *     and `order` ops this shell mints get globally increasing clocks even when the
  *     edits are causally concurrent. Convergence still means what it means; a
  *     same-clock tie broken by client id is simply not exercised on those two lanes
- *     (the blocks lanes DO have two clocks — each side's ops are minted by its own
+ *     (the blocks lanes DO have two clocks - each side's ops are minted by its own
  *     `ReferenceCanvasDoc`). Inherited verbatim from `lib/collab-loopback.test.ts`,
  *     which found it.
  *  2. The presence JOIN handshake (§4.7's "full set to a new joiner, minus their own
  *     entry") is performed here by `join()`. It is the wiring layer's job in the
- *     shipped shell, and the presence engine is silent while alone by design — so
+ *     shipped shell, and the presence engine is silent while alone by design - so
  *     without it neither peer would ever learn the other exists, which is a property
  *     of the design and not a gap in it.
  *
- * Run only this file (no css stub needed — nothing in this chain imports a stylesheet):
+ * Run only this file (no css stub needed - nothing in this chain imports a stylesheet):
  *   node --test shells/web/src/collab/track-a-chain.test.ts
  */
 
@@ -108,7 +108,7 @@ import type {
 // ── Time ───────────────────────────────────────────────────────────────────────────
 
 /**
- * ONE clock for the whole chain — the ceremonies, both transports, both handles'
+ * ONE clock for the whole chain - the ceremonies, both transports, both handles'
  * backstops and both presence engines. That is what makes "close everything, zero
  * pending timers" a single honest assertion instead of four hopeful ones.
  */
@@ -185,7 +185,7 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; reason: string 
   return result.value;
 }
 
-/** RFC 5245's `ice-char` set — exactly 64 characters (see the codec's header). */
+/** RFC 5245's `ice-char` set - exactly 64 characters (see the codec's header). */
 const ICE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function iceString(length: number, salt: number): string {
@@ -194,7 +194,7 @@ function iceString(length: number, salt: number): string {
   return out;
 }
 
-/** Distinct credentials AND a distinct DTLS fingerprint per side — the fingerprint
+/** Distinct credentials AND a distinct DTLS fingerprint per side - the fingerprint
  *  is the pairing's trust root (§6.1), so the two ends must not share one. */
 function material(salt: number): SdpMaterial {
   const bytes = new Uint8Array(32);
@@ -226,7 +226,7 @@ class FakeChannel implements RtcDataChannelLike {
   bufferedAmountLowThreshold = 0;
   readonly sent: (string | ArrayBufferLike | ArrayBufferView)[] = [];
   readonly listeners: FakeListenerEntry[] = [];
-  /** Installed by {@link link} — what this channel writes, the peer's channel reads. */
+  /** Installed by {@link link} - what this channel writes, the peer's channel reads. */
   onSend: ((data: string | ArrayBufferLike | ArrayBufferView) => void) | null = null;
 
   readonly label: string;
@@ -385,7 +385,7 @@ function harness(salt: number): Harness {
   };
 }
 
-/** Every listener still attached to a side's stack — the honest teardown measure. */
+/** Every listener still attached to a side's stack - the honest teardown measure. */
 function liveListeners(h: Harness): number {
   let total = 0;
   for (const pc of h.created) {
@@ -398,7 +398,7 @@ function liveListeners(h: Harness): number {
 // ── One directional lane, with a switch for the packet that never arrived ─────────
 
 /**
- * The ops lane is reliable and ordered — which is not the same as infallible, and
+ * The ops lane is reliable and ordered - which is not the same as infallible, and
  * §6.2's backstop exists precisely for the case where "nearly always" is not always.
  * So this link can swallow a frame the sender believes it sent (`drop`), or hold
  * frames back so two edits are genuinely concurrent (`hold`/`release`). Presence and
@@ -445,13 +445,13 @@ function pipe(a: FakeChannel, b: FakeChannel): void {
 // ── The tool fixture ──────────────────────────────────────────────────────────────
 
 /**
- * Three scalar lanes plus one generic `blocks` collection — the minimum that
+ * Three scalar lanes plus one generic `blocks` collection - the minimum that
  * exercises both op families (`param` and the box lanes) through the real input
  * model, the real constraints (`count` is clamped at 10) and the real guard
  * whitelist (`items` declares `label`/`note` and nothing else).
  *
  * `formats: ['png']` keeps the engine from synthesising the `convertPaths` input
- * that vector formats add, so the model IS what the manifest declares — which is
+ * that vector formats add, so the model IS what the manifest declares - which is
  * what the guard's whitelist is built from.
  */
 let toolSeq = 0;
@@ -517,7 +517,7 @@ interface Side {
   readonly frames: CanvasOp[][];
   /** Every structural refusal the SESSION raised (§11.21). */
   readonly abuse: CollabAbuseEvent[];
-  /** Every line the HANDLE logged — refusals included. */
+  /** Every line the HANDLE logged - refusals included. */
   readonly logs: { message: string; detail?: unknown }[];
   readonly raf: Queue;
   /** Edit through the full wrapper stack, exactly as a sidebar control does. */
@@ -538,7 +538,7 @@ interface Chain {
   readonly ab: Link;
   readonly ba: Link;
   /** Inject a raw ops-lane frame straight at B's transport, as a hostile peer would
-   *  put it on the wire. Bypasses A entirely — A never minted it. */
+   *  put it on the wire. Bypasses A entirely - A never minted it. */
   injectOpsAtB(payload: unknown): void;
   /** §4.7's join handshake, which the wiring layer owns in the shipped shell. */
   join(): void;
@@ -558,16 +558,16 @@ const row = (label: string, note = ''): Row => ({ [ROW_ID_FIELD]: ulid(), label,
  * scripted `RTCPeerConnection` pair, then two handles and two sessions over two real
  * engine runtimes.
  *
- * The ORDER below is the shipped order and it is load-bearing in one place: the
+ * The ORDER below is the shipped order and order matters here in one place: the
  * handles are built when the CEREMONY reaches `connected` (ICE), which is strictly
- * before the data channels open — and the ops lane's first frame is the hello that
+ * before the data channels open - and the ops lane's first frame is the hello that
  * carries the peer's client id and op version (§11.19). A handle built after the
  * lanes opened would miss it, and the acceptor would never learn who the host is.
  *
- * `guardB: false` builds B's handle with NO handle-level guard at all — the shape
+ * `guardB: false` builds B's handle with NO handle-level guard at all - the shape
  * `org/collab-provider.ts` is actually in (a transport with no tool model, so no
  * whitelist to build). §4's dedicated test uses it to prove the SESSION's own guard
- * is load-bearing rather than merely redundant with the handle's, which is
+ * is required rather than merely redundant with the handle's, which is
  * otherwise unreachable here: both are built from the SAME `runtime.getModel()`, so
  * anything that would trip the session's whitelist trips the handle's identically,
  * first.
@@ -654,9 +654,9 @@ async function chain(opts: { guardB?: boolean } = {}): Promise<Chain> {
     rtc: Harness,
     name?: string,
     // Omit the handle-level guard (default: build one). §4 below drives a chain
-    // with this false on B — the shape `org/collab-provider.ts` is actually in
-    // (no model, so no whitelist to build) — to prove the SESSION's own guard is
-    // load-bearing rather than merely redundant with the handle's.
+    // with this false on B - the shape `org/collab-provider.ts` is actually in
+    // (no model, so no whitelist to build) - to prove the SESSION's own guard is
+    // required rather than merely redundant with the handle's.
     withHandleGuard = true,
   ): Promise<Side> {
     const runtime = await createRuntime(chainTool(toolId), engineHost(), {});
@@ -677,7 +677,7 @@ async function chain(opts: { guardB?: boolean } = {}): Promise<Chain> {
     // ── THE MOUNT WIRING: three statements, and that is the whole of it ───────
     // A connected transport becomes a handle, the handle becomes a session, and the
     // handle's inbound op stream is joined to the session's one inbound door. There
-    // is no fourth step — `presenceIn`, `sendPresence`, `events` and the adapter are
+    // is no fourth step - `presenceIn`, `sendPresence`, `events` and the adapter are
     // all read by `createCollabSession` off the handle it was given.
     const handle = createRtcCollabHandle({
       transport,
@@ -766,7 +766,7 @@ async function chain(opts: { guardB?: boolean } = {}): Promise<Chain> {
     },
     join() {
       // §4.7: the full presence set to a new joiner, MINUS their own entry (tldraw's
-      // orphan bug). One frame each is enough — the receiving engine answers, because
+      // orphan bug). One frame each is enough - the receiving engine answers, because
       // a client that has been dutifully silent is otherwise invisible.
       for (const frame of a.session.presence.snapshot(b.id)) a.handle.sendPresence(frame);
       for (const frame of b.session.presence.snapshot(a.id)) b.handle.sendPresence(frame);
@@ -784,7 +784,7 @@ async function chain(opts: { guardB?: boolean } = {}): Promise<Chain> {
 
 // ── Comparison helpers ────────────────────────────────────────────────────────────
 
-/** FNV-1a over the hydrated template — the render-hash proxy §10 asks for. The
+/** FNV-1a over the hydrated template - the render-hash proxy §10 asks for. The
  *  hydrated string IS what the shell builds the DOM (and the export) from. */
 function renderHash(s: string): string {
   let h = 0x811c9dc5;
@@ -837,7 +837,7 @@ test('the whole ceremony runs: invite → probe → answer → connected, on bot
   assert.equal(c.a.ceremony.state.observerOnly, false, 'matching op contract, both writers');
   assert.equal(c.b.ceremony.state.observerOnly, false);
 
-  // The probe GATED the answer leg — the acceptor cannot reach `awaiting-connection`
+  // The probe GATED the answer leg - the acceptor cannot reach `awaiting-connection`
   // without it, and a `missing` verdict would have ended the ceremony instead
   // (§6.1: "an honest refusal at accept time, never a broken join"). It ran exactly
   // once, on the acceptor only, against the ids the invite blob carried.
@@ -883,7 +883,7 @@ test('the whole ceremony runs: invite → probe → answer → connected, on bot
 });
 
 test('a real transport satisfies the five-member subset a session asks of it', () => {
-  // A bare conditional type alias proves nothing on its own — nothing reads it, so
+  // A bare conditional type alias proves nothing on its own - nothing reads it, so
   // nothing checks it. Assigning `true` to it is what makes `tsc` the assertion:
   // narrow `RtcHandleTransport` and this line stops compiling, which is exactly the
   // day the §11.29 native-LAN transport would otherwise silently stop qualifying.
@@ -924,7 +924,7 @@ test('interleaved edits on both sides converge to one model, one render, one doc
 
   // ── THE CONCURRENT CASE §10 asks for: an INSERT on A while B edits the
   //    neighbouring row. Held rather than sequenced, so neither side has seen the
-  //    other's op when it makes its own — the only arrangement in which a lost
+  //    other's op when it makes its own - the only arrangement in which a lost
   //    insert or a stomped field is observable at all.
   const deliveredBefore = { ab: c.ab.delivered, ba: c.ba.delivered };
   c.ab.held = true;
@@ -967,7 +967,7 @@ test('interleaved edits on both sides converge to one model, one render, one doc
   //
   // The strong claim is the FRAME count: ONE frame per gesture, in both directions,
   // and not one frame more. It is worth pinning because a blocks gesture mints an
-  // `order` op PER ROW — a 200-row reorder written one `apply()` at a time would be
+  // `order` op PER ROW - a 200-row reorder written one `apply()` at a time would be
   // 200 frames, which §11.21's ~200/s inbound ceiling turns from "chatty" into
   // "disconnected for flooding".
   //
@@ -984,7 +984,7 @@ test('interleaved edits on both sides converge to one model, one render, one doc
   // The op totals INSIDE those frames are a measurement of the contract's own differ
   // (a blocks gesture restates the order keys its insert invalidated, and a two-field
   // row edit is two `field` ops), not a promise this file is making. If `damageToOps`
-  // ever changes shape these move — which is worth being told about rather than
+  // ever changes shape these move - which is worth being told about rather than
   // absorbed by an inequality.
   assert.equal(c.b.inbound.length, 8, "eight ops carried the host's five gestures");
   assert.equal(c.a.inbound.length, 6, "six carried the guest's four");
@@ -998,7 +998,7 @@ test('presence crosses the real lane: focus, cursor, the Host/Invitee roster, an
   _resetCollabDeviceForTests('track-a');
   const c = await chain();
 
-  // Silent while alone (§4.7) — nothing to say, nobody to hear.
+  // Silent while alone (§4.7) - nothing to say, nobody to hear.
   c.a.session.setFocus('title');
   c.clock.advance(PRESENCE_THROTTLE_MS * 4);
   assert.equal(c.a.session.state().peers.length, 0);
@@ -1035,7 +1035,7 @@ test('presence crosses the real lane: focus, cursor, the Host/Invitee roster, an
   const focusToken = `items:${ulid()}`;
   c.a.session.setFocus(focusToken);
   c.a.session.setFocus('title');
-  c.a.session.setFocus(focusToken);                 // a burst — the LAST one lands
+  c.a.session.setFocus(focusToken);                 // a burst - the LAST one lands
   c.clock.advance(PRESENCE_THROTTLE_MS);
   assert.equal(
     c.b.session.state().peers[0]?.focus, focusToken,
@@ -1063,7 +1063,7 @@ test('presence crosses the real lane: focus, cursor, the Host/Invitee roster, an
   // ── MEASURED ────────────────────────────────────────────────────────────────
   //
   // Presence rode its OWN lane throughout and the ops lane carried nothing but the
-  // hello — §6.2's lane split is not decorative, and a cursor sample queued behind a
+  // hello - §6.2's lane split is not decorative, and a cursor sample queued behind a
   // reliable retransmit is the head-of-line block §11.5's sequence numbers replace.
   assert.equal(opFrames(c.ab), 0, 'not one op frame for all of that presence');
   assert.equal(opFrames(c.ba), 0);
@@ -1095,7 +1095,7 @@ test('a hostile ops frame injected on the wire is refused, and the pair keeps co
   // Hand-crafted, and none of it is anything this codebase can emit: an input id the
   // manifest does not declare, a `param` aimed at the BLOCKS lane, a sub-field the
   // collection never declared, and a bare object that is not an op at all. Every one
-  // is a §11.11 DROP rather than a §11.21 abuse — a stale or newer peer genuinely
+  // is a §11.11 DROP rather than a §11.21 abuse - a stale or newer peer genuinely
   // produces these, so the session must survive them.
   c.injectOpsAtB([
     { k: 'param', key: 'undeclared', value: 'x', origin: { client: HOST_ID, clock: 900 } },
@@ -1105,7 +1105,7 @@ test('a hostile ops frame injected on the wire is refused, and the pair keeps co
   ]);
   await c.settle();
 
-  // Refused at the handle — the first boundary a peer's bytes meet — with the typed
+  // Refused at the handle - the first boundary a peer's bytes meet - with the typed
   // reasons §11.26's copy keys off, and nothing reached the session at all.
   const reasons = c.b.logs
     .filter((l) => l.message === 'rtc-handle: op refused')
@@ -1138,7 +1138,7 @@ test('a prototype key on the wire disconnects the peer and pollutes nothing (§1
   await c.settle();
   const converged = serializeDoc(c.b.handle.docState());
 
-  // A prototype key has no innocent sender — nothing in this codebase can emit one —
+  // A prototype key has no innocent sender - nothing in this codebase can emit one - 
   // so §11.21 is explicit that the peer is DISCONNECTED, not silently throttled.
   // `JSON.parse` gives `__proto__` as an OWN property, which is the whole point:
   // this is the frame that would re-seat a prototype if anything downstream spread it.
@@ -1171,7 +1171,7 @@ test(
   'inbound flood (§11.21)',
   async () => {
     _resetCollabDeviceForTests('track-a');
-    // B's handle is built with NO guard at all — `org/collab-provider.ts`'s actual
+    // B's handle is built with NO guard at all - `org/collab-provider.ts`'s actual
     // shape, since that transport has no tool model to build a whitelist from. Every
     // OTHER guard test in this file builds the handle's guard from the SAME
     // `runtime.getModel()` `createCollabSession` uses internally, which makes the
@@ -1190,11 +1190,11 @@ test(
       }));
 
     // Two batches, each safely under the handle's own per-message cap (200) and
-    // each individually legitimate — every op here is exactly what this codebase
+    // each individually legitimate - every op here is exactly what this codebase
     // emits. Only their SUM, inside the same one-second window, is the problem
     // (§11.21's ~200 ops/s). With no guard at the handle, `onOpsFrame` never calls
     // `recordAndCheckRate` at all (`rtc-handle.ts`: `if (guard && !guard
-    // .recordAndCheckRate(...))`) — so nothing there can be the source of a refusal
+    // .recordAndCheckRate(...))`) - so nothing there can be the source of a refusal
     // below, structurally.
     c.injectOpsAtB(flood(1000, 150));
     await c.settle();
@@ -1204,7 +1204,7 @@ test(
     c.injectOpsAtB(flood(2000, 150));
     await c.settle();
 
-    // Nothing was refused at the handle (there was no guard there to refuse it) —
+    // Nothing was refused at the handle (there was no guard there to refuse it) - 
     // so the session is the only place left that could have produced this.
     assert.equal(
       c.b.logs.filter((l) => l.message === 'rtc-handle: op refused').length, 0,
@@ -1213,7 +1213,7 @@ test(
     assert.equal(c.b.abuse.length, 1, "the session's own admitOps caught the flood");
     assert.equal(c.b.abuse[0]?.lane, 'ops');
     assert.equal(c.b.abuse[0]?.reason, 'rate-limited');
-    // The second batch never reached the model — the rate refusal took the whole
+    // The second batch never reached the model - the rate refusal took the whole
     // batch, per `checkOps`'s own contract, not just the ops past the ceiling.
     assert.equal(c.b.values().title, 'flood-1149', 'the second batch never landed');
 
@@ -1228,7 +1228,7 @@ test('a dropped op frame is repaired by the 20 s dirty state exchange', async ()
   const c = await chain();
   c.join();
 
-  // Two converged edits first — one from each side — so the exchange below has
+  // Two converged edits first - one from each side - so the exchange below has
   // something to be idempotent about, and the repair is provably a MERGE and not an
   // overwrite of the guest's own writes.
   await c.a.set('title', 'agreed');
@@ -1239,7 +1239,7 @@ test('a dropped op frame is repaired by the 20 s dirty state exchange', async ()
   const inboundBefore = c.b.inbound.length;
   const framesBefore = c.ab.delivered;
 
-  // The ops lane is reliable and ordered — and "nearly always arrives" is not a
+  // The ops lane is reliable and ordered - and "nearly always arrives" is not a
   // convergence proof. Swallow one frame the sender believes it sent.
   c.ab.drop = 1;
   await c.a.set('count', 5);
@@ -1255,7 +1255,7 @@ test('a dropped op frame is repaired by the 20 s dirty state exchange', async ()
   );
 
   // §6.2: every 20 s, WHEN this side has emitted anything since the last exchange,
-  // the whole of its state goes out again — as ops, replayed verbatim with their
+  // the whole of its state goes out again - as ops, replayed verbatim with their
   // ORIGINAL origins, so the receiver arbitrates each register exactly as it would
   // have for the live op.
   c.clock.advance(BACKSTOP_INTERVAL_MS);

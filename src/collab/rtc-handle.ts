@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * rtc-handle — a connected `rtc-transport` as a `CollabSessionHandle`
+ * rtc-handle - a connected `rtc-transport` as a `CollabSessionHandle`
  * (plan 100 §5, §6.2, §6.2a, §11.19, §11.21; wave 2.3, Track A).
  *
  * `lib/collab-session.ts` is the composition every collab reduces to, and its header
- * names the two producers that have to reduce to it. This is Track A's — the one
+ * names the two producers that have to reduce to it. This is Track A's - the one
  * place where "a WebRTC pair is up" becomes "a session can be mounted on it". It owns
  * the pair's LOCAL convergence document and nothing else about the network: the
  * `RTCPeerConnection`, the three lanes, ICE's vocabulary and the ceremony all stay
  * behind `rtc-transport.ts`, which this module only ever talks to through
- * {@link RtcHandleTransport} — the five-method subset a transport owes a session.
+ * {@link RtcHandleTransport} - the five-method subset a transport owes a session.
  *
  * It is deliberately the mirror of `org/collab-provider.ts` MINUS everything a server
- * implies. Both wrap `ReferenceCanvasDoc` (no yjs in the browser, ever — §7's last
+ * implies. Both wrap `ReferenceCanvasDoc` (no yjs in the browser, ever - §7's last
  * paragraph), both put what the LOCAL doors produce on the wire and send nothing from
  * the remote door. What is absent here is the whole point of Track A:
  *
  *   - **no outbox.** A pair has no server to be authoritative, so there is nothing to
- *     replay INTO on rejoin — a dropped connection needs a fresh ceremony (§6.1), and
+ *     replay INTO on rejoin - a dropped connection needs a fresh ceremony (§6.1), and
  *     the catch-up is the peer's own state, not a durable journal. Persisting ops for
  *     a session whose only other participant is a laptop on the same table would buy
  *     nothing and cost an IDB write per keystroke.
@@ -31,12 +31,12 @@
  * ── The divergence backstop (§6.2, Excalidraw's pattern) ──────────────────────────
  *
  * Two peers converge by LWW while every op arrives. The ops lane is reliable and
- * ordered, so "every op arrives" is nearly always true — but nearly is not a
+ * ordered, so "every op arrives" is nearly always true - but nearly is not a
  * convergence proof, and there is no server holding the answer when it is not. So
  * every {@link BACKSTOP_INTERVAL_MS} milliseconds, WHEN this side has emitted
  * anything since the last exchange, the whole of our state goes out again.
  *
- * WHAT A STATE EXCHANGE IS, precisely: the op log compacted to its LWW winners — for
+ * WHAT A STATE EXCHANGE IS, precisely: the op log compacted to its LWW winners - for
  * every register (`registerKeys`) the one op that currently owns it, replayed
  * VERBATIM with its original `(client, clock)` origin. That is what makes receiving
  * one a merge and not an overwrite: the receiver's document arbitrates each register
@@ -44,32 +44,32 @@
  * a peer already holds changes nothing (idempotent), and a register the peer holds
  * NEWER survives our restatement untouched.
  *
- * The alternative — serialising `doc.state()` and restating it under one invented
- * origin — was rejected: a snapshot carries no per-register origins, so any single
+ * The alternative - serialising `doc.state()` and restating it under one invented
+ * origin - was rejected: a snapshot carries no per-register origins, so any single
  * watermark is wrong in one direction or the other (low enough not to clobber the
  * peer's newer writes is also low enough to lose to the stale ones it exists to
  * repair), and two peers both restating under their own watermark would ping-pong a
  * contested key forever. `org/collab-protocol.ts`'s `withoutHeldKeys` documents the
  * same reasoning for the join-ack seed, which is the same problem with a server in it.
  *
- * The index costs O(registers), not O(edits) — §11.20's "op-log unboundedness is a
+ * The index costs O(registers), not O(edits) - §11.20's "op-log unboundedness is a
  * non-issue in Track A by construction", made true rather than assumed.
  *
  * Order inside an exchange is NOT arbitrary: adds, then order keys, then field/geom/
  * param writes, then removes. The document does not care (membership is its own LWW
  * register, `ensure()` materialises a box whatever arrives first), but
- * `collab-plumbing.ts`'s model rebuild does — it refuses to resurrect a row a
+ * `collab-plumbing.ts`'s model rebuild does - it refuses to resurrect a row a
  * `remove` took out and refuses to write a field on a row that does not exist yet
  * ("no resurrection"), so a batch that stated them in the other order would leave the
  * two peers' DOCUMENTS converged and their input MODELS diverged.
  *
  * ── Rate discipline: why the wire shape is a batch ────────────────────────────────
  *
- * The ops-lane payload is ALWAYS an array of ops, live edits and exchanges alike —
+ * The ops-lane payload is ALWAYS an array of ops, live edits and exchanges alike - 
  * `rtc-transport`'s `d` is opaque, so one shape beats two, and one gesture is one
  * frame. It matters: §11.21 caps a peer at ~200 ops/s and disconnects rather than
  * throttles, and `collab-plumbing.ts` mints one `OrderOp` PER ROW when a blocks array
- * is reordered — 200 rows would be 200 frames if each `apply()` wrote its own. Local
+ * is reordered - 200 rows would be 200 frames if each `apply()` wrote its own. Local
  * ops are therefore coalesced to one frame per microtask, and a state exchange is
  * PACED ({@link STATE_CHUNK_OPS} per {@link STATE_CHUNK_GAP_MS}) so a large repair
  * cannot make a healthy peer disconnect us for flooding.
@@ -79,20 +79,20 @@
  * `op-guard.ts` is the boundary, and a caller that has a mounted tool SHOULD pass one
  * (`guard`): only the guard can run the manifest whitelist, because only the caller
  * knows the tool's declared inputs. With no guard this module still refuses to apply
- * anything unchecked — the canonical ajv `validateCanvasOp` (the same compiled schema
+ * anything unchecked - the canonical ajv `validateCanvasOp` (the same compiled schema
  * lolly-work's gateway runs), a safe-integer clock, finite numbers, and the
- * `__proto__`/`constructor`/`prototype` refusal — but that is the FLOOR, not the
+ * `__proto__`/`constructor`/`prototype` refusal - but that is the FLOOR, not the
  * boundary: it cannot tell a declared input id from an undeclared one.
  *
  * A cap breach disconnects the peer (§11.21 is explicit that it is not silently
  * throttled); a merely unrecognised op is dropped and the session continues (§11.11,
- * §11.19 — PWA staleness makes version skew routine).
+ * §11.19 - PWA staleness makes version skew routine).
  *
  * Presence frames are rate-capped here and otherwise forwarded verbatim, because
  * `rtc-transport.parsePresenceFrame` has already checked the envelope and the roster
  * rules are `lib/collab-presence.ts`'s. `guard.checkPresence` is deliberately NOT
  * wired: it requires `cursor` and `selection`, which the engine's own `PresenceState`
- * makes optional and which every sidebar-only tool omits (§4.1 — focus, not a cursor,
+ * makes optional and which every sidebar-only tool omits (§4.1 - focus, not a cursor,
  * is the presence primitive that generalises), so wiring it here would drop every
  * real frame. That mismatch is op-guard's to resolve, not something to work around
  * with a shape sniff at this seam.
@@ -100,7 +100,7 @@
  * ── No wall clock in convergence (§11.7) ────────────────────────────────────────
  *
  * Ordering is `(clock, client)` only. The one `now()` in this file feeds op-guard's
- * per-second RATE window, never a merge, and it is monotonic by default — an
+ * per-second RATE window, never a merge, and it is monotonic by default - an
  * airgapped device with a wrong system clock behaves identically.
  *
  * Everything time-shaped is injected ({@link RtcCollabHandleOptions.timers},
@@ -149,7 +149,7 @@ import type {
 export const BACKSTOP_INTERVAL_MS = 20_000;
 
 /** Ops per frame in a paced state exchange. With {@link STATE_CHUNK_GAP_MS} this is
- *  100 ops/s — comfortably inside §11.21's ~200/s inbound ceiling, leaving room for
+ *  100 ops/s - comfortably inside §11.21's ~200/s inbound ceiling, leaving room for
  *  the live edits still flowing alongside the repair. */
 export const STATE_CHUNK_OPS = 100;
 
@@ -163,14 +163,14 @@ export const MAX_OPS_PER_MESSAGE = 200;
 
 /**
  * How many distinct peer ids this handle will remember for {@link RtcCollabHandle
- * .peerRole}. A pair has exactly one, and every frame's `from` is peer-supplied — so
+ * .peerRole}. A pair has exactly one, and every frame's `from` is peer-supplied - so
  * the set is bounded rather than trusted. Beyond the cap new ids are simply not
  * learned (they still reach the presence engine, which has its own roster rules).
  */
 const MAX_KNOWN_PEERS = 8;
 
 /** Keys that are never data, whatever a manifest says. Mirrors `op-guard.ts`'s
- *  private `FORBIDDEN_KEYS` — three literals, the enum/prototype-key discipline
+ *  private `FORBIDDEN_KEYS` - three literals, the enum/prototype-key discipline
  *  `engine/src/url-mode.ts` applies to untrusted URL text. */
 const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -181,7 +181,7 @@ const REAL_TIMERS: CeremonyTimers = {
   },
 };
 
-/** Monotonic where it exists. Feeds op-guard's rate window ONLY — never a merge
+/** Monotonic where it exists. Feeds op-guard's rate window ONLY - never a merge
  *  (§11.7), which is why a device with a wrong system clock converges identically. */
 function defaultNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -197,7 +197,7 @@ function defaultSchedule(fn: () => void): void {
 // ── The transport subset a session needs ──────────────────────────────────────────
 
 /**
- * What this module asks of a transport — narrower than {@link RtcTransport} on
+ * What this module asks of a transport - narrower than {@link RtcTransport} on
  * purpose, so a test needs an in-memory wire rather than a fake `RTCPeerConnection`,
  * and so a future native LAN transport (§11.29's Tauri Linux rung) can satisfy the
  * same five members without inheriting WebRTC's shape.
@@ -213,7 +213,7 @@ export interface RtcHandleTransport {
   close(): void;
 }
 
-/** Compile-time proof that a real transport still satisfies the subset above — no
+/** Compile-time proof that a real transport still satisfies the subset above - no
  *  cast, so a change to either side fails `tsc` rather than production. */
 export type RtcTransportSatisfiesHandleTransport = RtcTransport extends RtcHandleTransport ? true : never;
 
@@ -223,13 +223,13 @@ export interface RtcCollabHandleOptions {
   /** A CONNECTED transport (the ceremony has reached `phase: 'connected'`). */
   readonly transport: RtcHandleTransport;
   /** Which end of the ceremony this is. It decides one thing and one thing only:
-   *  who the session's host is (§6.2a) — both peers are writers. */
+   *  who the session's host is (§6.2a) - both peers are writers. */
   readonly role: CeremonyRole;
   /** This client's chosen identity (§11.23). `clientId` is the per-device ULID. */
   readonly self: CollabSelf;
   /**
    * The inbound boundary (§11.21). Build it from the mounted tool's declared inputs
-   * (`createOpGuard({ inputs: runtime.getModel() })`) — only the caller knows them.
+   * (`createOpGuard({ inputs: runtime.getModel() })`) - only the caller knows them.
    * Omitted, this module falls back to schema + finiteness + forbidden-key checks,
    * which is a floor and not a whitelist (see the header).
    */
@@ -254,17 +254,17 @@ export interface RtcCollabHandleOptions {
  */
 export interface RtcCollabHandle extends CollabSessionHandle {
   readonly transport: RtcHandleTransport;
-  /** Always present on this track — a pair learns its peer's role from the hello, so
+  /** Always present on this track - a pair learns its peer's role from the hello, so
    *  the session contract's optional member is narrowed to required here. */
   peerRole(clientId: string): CollabRole | undefined;
   /**
-   * Inbound ops — validated, applied to this side's document, and handed on for
+   * Inbound ops - validated, applied to this side's document, and handed on for
    * `CollabSession.applyRemotePatch` (which coalesces them per frame and lands them
    * atomically). The session contract has no inbound-op stream of its own because
    * Track B's provider emits ops through its own event union; this is Track A's.
    */
   readonly opsIn: CollabStream<readonly CanvasOp[]>;
-  /** Role changes — i.e. the §11.19 observer downgrade. Replays the current role on
+  /** Role changes - i.e. the §11.19 observer downgrade. Replays the current role on
    *  subscribe, so a late subscriber cannot miss a demotion that already happened. */
   readonly roleIn: CollabStream<CollabRole>;
   /** The peer's client id, once its hello (or a presence frame) has landed. */
@@ -274,7 +274,7 @@ export interface RtcCollabHandle extends CollabSessionHandle {
   /** Why this side degraded or ended the session, when this module decided it
    *  ('op-version', an op-guard reason, …). Undefined for a healthy session. */
   reason(): string | undefined;
-  /** Restate the whole document to the peer now — the catch-up path a rejoining
+  /** Restate the whole document to the peer now - the catch-up path a rejoining
    *  acceptor needs (§6.2a), and what the backstop calls on a timer. */
   exchangeState(): void;
   /** The converged document (diagnostics, tests, and the "Save a copy" exit). */
@@ -284,7 +284,7 @@ export interface RtcCollabHandle extends CollabSessionHandle {
 // ── Registers ─────────────────────────────────────────────────────────────────────
 
 /** The register-key delimiter. A NUL is not a character a box id, a collection id or
- *  a field name can carry, so it is a separator no peer-supplied name can forge —
+ *  a field name can carry, so it is a separator no peer-supplied name can forge - 
  *  with any printable delimiter, a field called `"b c"` and a field called `"c"` on a
  *  box called `"b"` would collide. Spelled through `fromCharCode` so this source stays
  *  plain ASCII (`lib/collab-plumbing.ts`'s `NO_ID` does the same). */
@@ -300,7 +300,7 @@ const SEP = String.fromCharCode(0);
  * Exported because the backstop's whole correctness argument is "one op per
  * register": the co-located test pins this against `org/collab-protocol.ts`'s
  * `opKeys`, which is the same grammar for the join-ack's held keys. The two are
- * pinned by a drift test rather than an import — Track A does not depend on the
+ * pinned by a drift test rather than an import - Track A does not depend on the
  * control-plane seam, and that seam's copy is a gateway contract that may move for
  * gateway reasons.
  */
@@ -326,7 +326,7 @@ export function registerKeys(op: CanvasOp): string[] {
 }
 
 /** Does origin `a` beat origin `b`? Higher clock wins; on a tie the higher client id
- *  wins. Strict, so an identical op never displaces itself — which is what makes a
+ *  wins. Strict, so an identical op never displaces itself - which is what makes a
  *  restatement idempotent. MIRRORS `ReferenceCanvasDoc`'s own private rule; the
  *  co-located test pins the two together through the real document. */
 function beatsOrigin(a: OpOrigin, b: OpOrigin): boolean {
@@ -396,7 +396,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   const chunkGapMs = Math.max(0, opts.stateChunkGapMs ?? STATE_CHUNK_GAP_MS);
   const opsPerMessage = Math.max(1, opts.opsPerMessage ?? MAX_OPS_PER_MESSAGE);
 
-  /** The pair's local convergence document (§6.2 — no yjs in the browser, ever). */
+  /** The pair's local convergence document (§6.2 - no yjs in the browser, ever). */
   const doc = new ReferenceCanvasDoc(selfId);
   /** Register → the op that currently owns it. The state exchange, compacted. */
   const registers = new Map<string, CanvasOp>();
@@ -407,17 +407,17 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   let connection: CollabConnectionState = transport.state().connection;
   /** Local ops emitted since the last completed state exchange (§6.2's "only when
    *  dirty"). Set by an emission, cleared only by an exchange that fully landed AND
-   *  has covered every emission — see `dirtyGen`. */
+   *  has covered every emission - see `dirtyGen`. */
   let dirty = false;
   /**
    * Bumped on every local emission (`queueLocal`), never reset. `stateOps()` is
-   * snapshotted once, up front, in `exchangeState()` — but the exchange it feeds is
+   * snapshotted once, up front, in `exchangeState()` - but the exchange it feeds is
    * PACED (`pumpChunks`, `STATE_CHUNK_GAP_MS` apart), so a local edit made mid-pace
    * is not in that snapshot; it left only as its own live frame via
    * `queueLocal`→`flushOutbound`, and if THAT frame is the one the lane drops, the
    * backstop is its only remaining repair path. `exchangeGen` (below) pins the
    * generation an in-flight exchange was snapshotted at, so its completion clears
-   * `dirty` only when nothing has set it again since — never "cleared by an exchange
+   * `dirty` only when nothing has set it again since - never "cleared by an exchange
    * that fully landed" alone, which is not the same claim.
    */
   let dirtyGen = 0;
@@ -458,8 +458,8 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
    * already held by an op it does not beat.
    *
    * This is what "our own ops are never echoed back into the doc twice" is, done
-   * precisely. A peer's backstop legitimately restates ops that ORIGINATED here — it
-   * holds the whole converged document, not just its own writes — so filtering by
+   * precisely. A peer's backstop legitimately restates ops that ORIGINATED here - it
+   * holds the whole converged document, not just its own writes - so filtering by
    * client id would be wrong in the one case it matters: a reload keeps this device's
    * client id but loses its Lamport clock and its document, and the peer's
    * restatement of our own older ops is exactly the catch-up that repairs it. Holding
@@ -477,7 +477,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   // ── outbound ────────────────────────────────────────────────────────────────────
 
   /** Write one batch as a single ops-lane frame, halving on the SCTP ceiling (§11.6)
-   *  rather than accounting bytes ourselves — the transport already knows the limit
+   *  rather than accounting bytes ourselves - the transport already knows the limit
    *  and refuses without sending. Returns whether every op reached the wire. */
   function sendBatch(ops: readonly CanvasOp[]): boolean {
     if (ops.length === 0) return true;
@@ -491,7 +491,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
     }
     // Nothing is requeued: the ops are in the register index, `dirty` stays true, and
     // the backstop restates them. A single op over 64 KB will never fit and is the
-    // one genuinely lost write — logged rather than retried forever.
+    // one genuinely lost write - logged rather than retried forever.
     log('rtc-handle: ops frame not sent', { result, ops: ops.length });
     return false;
   }
@@ -529,8 +529,8 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   /**
    * The document as ops: one per register, deduplicated, ordered so a receiver's
    * MODEL rebuild agrees with its document (see the header). `latest` holds whole ops
-   * under several keys — an `add` owns membership, paint order and every field it
-   * carried — so identity dedup is what keeps the batch minimal.
+   * under several keys - an `add` owns membership, paint order and every field it
+   * carried - so identity dedup is what keeps the batch minimal.
    */
   function stateOps(): CanvasOp[] {
     const seen = new Set<CanvasOp>();
@@ -550,7 +550,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   }
 
   /** True when nothing has set `dirty` again since THIS exchange's snapshot was
-   *  taken — the second half of "fully landed" that `exchangeLanded` alone cannot
+   *  taken - the second half of "fully landed" that `exchangeLanded` alone cannot
    *  say (see `dirtyGen`'s comment). */
   function exchangeCoversLatest(): boolean {
     return dirtyGen === exchangeGen;
@@ -567,7 +567,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
     if (chunkQueue.length === 0) {
       // Only a fully-delivered exchange that also covers every edit made since it
       // was snapshotted clears the flag: a partial one has to be repeated, and so
-      // does one a local edit outran mid-pace — staying dirty is how the next tick
+      // does one a local edit outran mid-pace - staying dirty is how the next tick
       // (or the backstop) knows either way.
       if (exchangeLanded && exchangeCoversLatest()) dirty = false;
       return;
@@ -590,7 +590,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
     if (ops.length === 0) {
       // Nothing to restate NOW, but only clear `dirty` if nothing has arrived since
       // this read either (compared against `gen`, not the stale `exchangeGen` of
-      // whatever exchange ran before this one) — an edit racing this exact check
+      // whatever exchange ran before this one) - an edit racing this exact check
       // must not be swallowed.
       if (dirtyGen === gen) dirty = false;
       return;
@@ -635,8 +635,8 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
       if (!everLive) {
         everLive = true;
         // §6.2's "late joiner gets the full state from the peer": whatever this side
-        // already holds goes out the moment the lane opens. Usually nothing — the
-        // document is born empty and the seed rides the hello — but a caller that
+        // already holds goes out the moment the lane opens. Usually nothing - the
+        // document is born empty and the seed rides the hello - but a caller that
         // projected the mounted tool into the doc before connecting gets the catch-up
         // for free, and an empty index sends no frame at all.
         if (registers.size > 0) exchangeState();
@@ -665,7 +665,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   }
 
   /** §11.19 / contract §9: an incompatible op-contract major makes this side
-   *  observer-only. Sticky — a session that has seen a mismatch never re-upgrades. */
+   *  observer-only. Sticky - a session that has seen a mismatch never re-upgrades. */
   function downgrade(why: string): void {
     noteReason(why);
     if (role === 'observer') return;
@@ -721,7 +721,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
         continue;
       }
       const op = entry as CanvasOp;
-      // A clock outside the safe-integer band poisons every future merge — `++` stops
+      // A clock outside the safe-integer band poisons every future merge - `++` stops
       // incrementing above MAX_SAFE_INTEGER, so it is a cap breach, not a stale op.
       if (!Number.isSafeInteger(op.origin.clock) || op.origin.clock < 0) {
         disconnect('op-clock-out-of-range');
@@ -769,7 +769,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
     const checked = guard ? checkWithGuard(guard, raw) : checkWithoutGuard(raw);
     if (checked === null || checked.length === 0) return;
     // Nothing that cannot change the document is applied or surfaced (see
-    // `redundant`) — a peer's backstop restating what we already hold is the normal
+    // `redundant`) - a peer's backstop restating what we already hold is the normal
     // case, not an error, and re-emitting it would cost a render for no change.
     const fresh = checked.filter((op) => !redundant(op));
     if (fresh.length === 0) return;
@@ -799,7 +799,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
   function onPresenceFrame(frame: PresenceFrame): void {
     if (closed) return;
     // Our own frame relayed back is never our own roster entry (the presence engine
-    // drops it too — this saves the round trip through it).
+    // drops it too - this saves the round trip through it).
     if (frame.from === selfId) return;
     if (guard && !guard.recordAndCheckRate('presence', 1, now())) {
       disconnect('presence-rate-limited');
@@ -828,14 +828,14 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
 
   /**
    * `onLocalChange` and `apply` are the LOCAL doors and put what they produce on the
-   * wire; `applyRemotePatch` is the REMOTE door and sends nothing — blurring the two
+   * wire; `applyRemotePatch` is the REMOTE door and sends nothing - blurring the two
    * is where an echo storm would come from.
    *
    * An observer's local doors are inert (contract §9's observer-only join, and
    * `collab-session.ts`'s `observerAdapter`, which wraps this the same way when the
    * demotion is known at construction). It is enforced HERE as well because the §11.19
    * downgrade arrives in band, on the hello, which can land after the session has
-   * already wrapped the adapter — at which point the session's wrapper is the writer
+   * already wrapped the adapter - at which point the session's wrapper is the writer
    * one forever.
    */
   const adapter: CanvasSyncAdapter = {
@@ -851,8 +851,8 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
       queueLocal([op]);
     },
     applyRemotePatch(ops: readonly CanvasOp[]): Damage {
-      // Indexed as well as applied, so "the register index mirrors the document" —
-      // the invariant the whole backstop rests on — holds even for ops that reached
+      // Indexed as well as applied, so "the register index mirrors the document" - 
+      // the invariant the whole backstop rests on - holds even for ops that reached
       // the document through a caller rather than through our own inbound path (a
       // catch-up seed, the loopback harness). Idempotent for the ordinary case, where
       // these are the very ops `onOpsFrame` has already indexed.

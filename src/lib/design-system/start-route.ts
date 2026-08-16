@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * start-route.ts — what a `#/start` link asks for, resolved once (plan 97 §5).
+ * start-route.ts - what a `#/start` link asks for, resolved once (plan 97 §5).
  *
  * The studio is a set of independent rooms, so the only routing question is
  * "which room, and is anything asked to be open on arrival". Three read-only
@@ -8,7 +8,7 @@
  * never propagates them into a generated link (plans/43).
  *
  * Pure and DOM-free: the resolution table is the part worth testing, and it is
- * the part that carries the back-compatibility promise — `?tab=` was the step
+ * the part that carries the back-compatibility promise - `?tab=` was the step
  * param for the whole life of the stepped flow, and links to it exist in the
  * dashboard, in the docs and in whatever people bookmarked.
  */
@@ -23,7 +23,7 @@ export type StartRoom = (typeof START_ROOMS)[number];
  * Every routable area: the rooms, plus the panels pinned to the rail's FOOT.
  *
  * The split is not cosmetic. A room is a peer in the sidebar list and one of the
- * brand editor's own panel keys; `versions` (plan 97 §6a) is neither — it acts on
+ * brand editor's own panel keys; `versions` (plan 97 §6a) is neither - it acts on
  * the whole design system rather than on one part of it, it hides itself until
  * there is something to publish, and it has no editor panel behind it. It is
  * still an AREA, because `#/start?area=versions` is a deep link the plan's own
@@ -55,7 +55,7 @@ export type StartFocus = (typeof START_FOCUS)[number];
 const FOCUSES = new Set<string>(START_FOCUS);
 
 /** The sources the picker can open on (plan 97 §8). `pdf` and `url` are
- *  RECOGNISED but have no tile yet — they resolve, and the picker opens on its
+ *  RECOGNISED but have no tile yet - they resolve, and the picker opens on its
  *  plain source list, so a link written today keeps working when M5/M6 give them
  *  one. An unknown value is not a source and opens nothing. */
 export const START_SOURCES = ['file', 'image', 'font', 'pdf', 'url'] as const;
@@ -67,13 +67,13 @@ const SOURCES = new Set<string>(START_SOURCES);
 export interface StartRoute {
   /** Always one of START_AREAS. */
   area: string;
-  /** `?wheel` — open the colour chart once the colour room is showing. */
+  /** `?wheel` - open the colour chart once the colour room is showing. */
   wheel: boolean;
-  /** `?import` — open the source modal on arrival (`?import=0` means shut). */
+  /** `?import` - open the source modal on arrival (`?import=0` means shut). */
   importOpen: boolean;
-  /** `?focus=<wing>` — open that wing of the colour room (plan 97 §5). */
+  /** `?focus=<wing>` - open that wing of the colour room (plan 97 §5). */
   focus: StartFocus | null;
-  /** `?source=<kind>` — which source the picker opens on. Naming one IMPLIES the
+  /** `?source=<kind>` - which source the picker opens on. Naming one IMPLIES the
    *  picker opens (see `importOpen`); it never fetches or reads anything by
    *  itself, so the link is a signpost, not an action. */
   source: StartSource | null;
@@ -86,7 +86,7 @@ export interface StartRoute {
  * either falls through rather than dead-ending, so `?area=typo&tab=type` still
  * opens Type and anything unresolvable opens Overview.
  *
- * `?source=` implies `?import` — a link that names a source is asking for the
+ * `?source=` implies `?import` - a link that names a source is asking for the
  * picker, and making people write both would be a trap. `?import=0` still wins
  * over it: that is the historic "leave it shut" form and links carry it.
  */

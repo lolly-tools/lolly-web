@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-config.ts — the collab capability-bit accessors (plans/100 §7.7).
+ * org/collab-config.ts - the collab capability-bit accessors (plans/100 §7.7).
  *
  * Covers the contract that matters: absent (no control plane, or a control plane
- * that never mentions these bits) always reads false — never assume yes — and an
+ * that never mentions these bits) always reads false - never assume yes - and an
  * explicit `can['collab.join']`/`can['collab.edit']` grant is read faithfully, with
  * join and edit tracked independently (an observer-only member can join without
- * being able to edit — plans/100 §7.5's writer/observer split).
+ * being able to edit - plans/100 §7.5's writer/observer split).
  *
  * jsdom + a Map-backed localStorage + a stubbed fetch drive a real initOrg() pass,
  * same harness shape as org/index.test.ts, kept local to this file so it doesn't
@@ -72,7 +72,7 @@ async function memberWithCan(can?: Record<string, boolean>): Promise<void> {
 
 test('no control plane at all: both accessors read false', async () => {
   reset();
-  await initOrg(); // dormant — 404 on the probe
+  await initOrg(); // dormant - 404 on the probe
   assert.equal(canJoinCollab(), false);
   assert.equal(canEditCollab(), false);
 });

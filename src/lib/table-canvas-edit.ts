@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * On-canvas editing for paginated table tools (render.paginate) — the canvas as
+ * On-canvas editing for paginated table tools (render.paginate) - the canvas as
  * a rich editor over the table input, which stays the single source of truth.
  *
  * A paginated tool's template opts a rendered cell into editing by stamping it
@@ -23,8 +23,8 @@
  *                               APPENDED to the table if absent
  *     data-pick-tag="icon"      optional catalog tag filter for the picker
  *
- * Commits ride runtime.setInput on the paginate source input — the exact path a
- * sidebar keystroke takes — so URL sync, undo history, dirty state and session
+ * Commits ride runtime.setInput on the paginate source input - the exact path a
+ * sidebar keystroke takes - so URL sync, undo history, dirty state and session
  * save all come for free, and the sidebar grid updates live. Commits happen on
  * blur (or Enter in a plain cell), never per keystroke: every commit repaints
  * the canvas, and a mid-edit repaint would eat the caret.
@@ -32,17 +32,17 @@
  * WHY EDITS BAKE TO MARKDOWN IMMEDIATELY: there is deliberately no parallel
  * rich-text state. The table cell's markdown is what the sidebar shows, what
  * URL mode encodes, what the CLI renders, and what the table's Copy button
- * hands back to a spreadsheet — the canvas is only a friendlier way to write it.
+ * hands back to a spreadsheet - the canvas is only a friendlier way to write it.
  *
  * The serialiser is DOM-agnostic (nodeType/nodeName/nodeValue/childNodes/
- * getAttribute only), so node:test feeds it plain object trees — same pattern
+ * getAttribute only), so node:test feeds it plain object trees - same pattern
  * as views/rich-text.ts.
  */
 import type { TableValue } from '../../../../engine/src/inputs.js';
 
 // ── HTML → markdown (the engine {{markdown}} helper's subset, inverted) ───────
 
-/** The minimal node surface the serialiser touches — satisfied by DOM nodes and
+/** The minimal node surface the serialiser touches - satisfied by DOM nodes and
  *  by the plain object trees the tests feed in. */
 export interface CellNode {
   nodeType: number;
@@ -189,7 +189,7 @@ export function cellPlainText(root: CellNode): string {
 export interface TableEditOpts {
   /** Current (normalized) value of the paginate source table. */
   getTable(): TableValue;
-  /** Commit a new table value — must ride the runtime's setInput path. */
+  /** Commit a new table value - must ride the runtime's setInput path. */
   commit(next: TableValue): void;
   /** Open the asset picker (optionally tag-filtered); resolve a markdown-ready
    *  URL + alt text, or null on cancel. */
@@ -204,7 +204,7 @@ const cloneTable = (t: TableValue): TableValue =>
 /**
  * Make a picked asset URL safe to bake into a markdown cell. A blob: URL dies
  * with the session, so small blobs are inlined as data: (which the engine's
- * image allowlist accepts); anything else — catalog paths, https, data: — is
+ * image allowlist accepts); anything else - catalog paths, https, data: - is
  * already durable and passes through untouched. Oversized blobs pass through
  * too: a broken-after-reload ref beats megabytes of base64 in the table param.
  */
@@ -222,7 +222,7 @@ export async function markdownSafeUrl(url: string, maxInlineBytes = 512 * 1024):
   } catch { return url; }
 }
 
-/** The cell the pointer last went down in — so when a blur-commit repaints the
+/** The cell the pointer last went down in - so when a blur-commit repaints the
  *  canvas out from under a click into the NEXT cell, focus can be restored to
  *  where the user was headed. Module scope: the repaint replaces every node. */
 let lastPointer: { addr: string; at: number } | null = null;
@@ -239,7 +239,7 @@ function caretToEnd(el: HTMLElement): void {
 
 /**
  * Wire the current paint's editable cells and pick slots. Call once per canvas
- * repaint — the innerHTML swap discards previous wiring, same as every other
+ * repaint - the innerHTML swap discards previous wiring, same as every other
  * canvas enhancer.
  */
 export function mountTableCellEditing(root: HTMLElement, opts: TableEditOpts): void {

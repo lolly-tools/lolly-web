@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Catalogue summary — a shared, read-only overview of what ships in this build:
+ * Catalogue summary - a shared, read-only overview of what ships in this build:
  * the tools (grouped by category, tagged by status) and the brand-asset library
  * (grouped by type). Rendered on BOTH the Dashboard (#/d) and at the foot of the
  * Profile page (#/profile) from ONE source so the two can't drift.
  *
- * Every item type — tool category, tool status, and asset type — carries a
+ * Every item type - tool category, tool status, and asset type - carries a
  * Lucide-house icon so the grid reads at a glance. The tools half is known
  * synchronously from window.__toolIndex; the brand-asset counts are filled in
  * after first paint by hydrateCatalogAssets() (a fetch of the asset index), so a
  * caller can paint immediately and the counts fade in when they land.
  *
- * Icon path data lives in lib/icons.ts (the shared registry — see
+ * Icon path data lives in lib/icons.ts (the shared registry - see
  * plans/76-component-audit.md recommendation 5); 'palette', 'filmStrip' (lottie),
  * 'shapes' (vector) and 'grid' (categoryOther) are deduped there against
  * lib/category-icons.ts's near-identical glyphs.
@@ -22,7 +22,7 @@ import { icon } from './icons.ts';
 import { instanceFetch, instancePath } from './instance.ts';
 
 /** The slice of a catalogue-index tool entry this summary reads (the index shape
- *  is a build artifact, not a domain type the engine owns — see PlatformTool /
+ *  is a build artifact, not a domain type the engine owns - see PlatformTool /
  *  GalleryTool for the same local-projection precedent). */
 export interface CatalogTool {
   id: string;
@@ -83,7 +83,7 @@ function countBy<T>(items: readonly T[], key: (t: T) => string): Array<[string, 
 }
 
 // One icon tile: big count, glyph, label. Used for tool categories & asset types.
-// Named .cat-stat-tile (component audit rec 10 follow-up) — .cat-tile alone
+// Named .cat-stat-tile (component audit rec 10 follow-up) - .cat-tile alone
 // collided with catalog.ts's unrelated asset card of the same name.
 function tile(icon: string, count: number, name: string): string {
   return `
@@ -95,7 +95,7 @@ function tile(icon: string, count: number, name: string): string {
 }
 
 // A compact icon chip for the secondary "by status" row.
-// Named .cat-stat-tag (component audit M1.2 follow-up) — .cat-tag alone
+// Named .cat-stat-tag (component audit M1.2 follow-up) - .cat-tag alone
 // collided with catalog.ts's unrelated details-modal tag of the same name.
 function tag(icon: string, count: number, name: string): string {
   return `<span class="cat-stat-tag"><span class="cat-stat-tag-icon">${icon}</span><strong>${count}</strong>${escape(name)}</span>`;
@@ -132,7 +132,7 @@ interface AssetSummary {
   byType: Array<[string, number]>;
 }
 
-// Brand-asset catalogue summary — best-effort; absent offline is fine. No
+// Brand-asset catalogue summary - best-effort; absent offline is fine. No
 // `cache: 'no-store'` so a repeat visit reuses the HTTP cache (these figures only
 // feed the read-only counts).
 async function fetchAssetSummary(): Promise<AssetSummary | null> {

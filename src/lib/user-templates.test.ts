@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createUserTemplateStore, type UserTemplateHost } from './user-templates.ts';
 
-// A memory-backed profile host — the same read-modify-write surface folders.ts uses. Carries
+// A memory-backed profile host - the same read-modify-write surface folders.ts uses. Carries
 // a sibling field so the tests can prove the store never clobbers the rest of the profile.
 function memHost(seed: Record<string, unknown> = {}): { host: UserTemplateHost; raw: () => Record<string, unknown> } {
   let profile: Record<string, unknown> = { headshot: 'keep-me', ...seed };

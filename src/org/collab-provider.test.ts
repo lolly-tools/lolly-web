@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-provider.ts + org/collab-protocol.ts — the work-collab client
+ * org/collab-provider.ts + org/collab-protocol.ts - the work-collab client
  * (plan 100 §7, wave 3.1).
  *
  * Everything is driven through injected seams: a fake WebSocket constructor, a
  * Map-backed outbox store, a captured timer, and a deterministic jitter source. No
- * network, no IndexedDB, no DOM — so this suite proves the transport's behaviour
+ * network, no IndexedDB, no DOM - so this suite proves the transport's behaviour
  * rather than the platform's.
  *
  * Run directly:  node --test shells/web/src/org/collab-provider.test.ts
@@ -112,7 +112,7 @@ interface HarnessOptions {
   principal?: string;
 }
 
-/** The scoped IDB key the harness's provider writes under — every test's session is
+/** The scoped IDB key the harness's provider writes under - every test's session is
  *  'sess-1' on the explicit `url`'s origin (see `collabOutboxKey`). */
 const KEY = (principal?: string): string =>
   collabOutboxKey('sess-1', { base: 'wss://example.test', principal });
@@ -194,7 +194,7 @@ test('join is sent on open, and join-ack takes the session live as a writer', as
   assert.equal(state.status, 'live');
   assert.equal(state.role, 'writer');
   assert.deepEqual([...state.roster], [{ id: 'c1', userId: 'u1', name: 'Priya' }]);
-  // The joiner's own seat is `you` — the roster deliberately excludes it.
+  // The joiner's own seat is `you` - the roster deliberately excludes it.
   assert.deepEqual(state.self, { id: 'c9', userId: 'me', name: 'Me', role: 'writer' });
   // Inputs the gateway cannot sync are carried, not discarded.
   assert.deepEqual([...state.unsynced], ['legacy-table']);
@@ -295,7 +295,7 @@ test('our own ops echoed back are an ack, never a second apply', async () => {
 
   h.socket().deliver({ t: 'ops', from: 'me', ops: [mine] });
   assert.deepEqual(h.handle.outbox(), []);
-  // No inbound `ops` event for our own echo — a local edit must not round-trip.
+  // No inbound `ops` event for our own echo - a local edit must not round-trip.
   assert.equal(h.events.filter((e) => e.kind === 'ops').length, 0);
   h.handle.close();
 });
@@ -305,7 +305,7 @@ test('the presence lane is opaque and ephemeral in both directions', async () =>
   joinNow(h);
   h.socket().sent.length = 0;
 
-  // The wave-1 engine's frame shape (from/seq/state) — no `userId` at the top
+  // The wave-1 engine's frame shape (from/seq/state) - no `userId` at the top
   // level. It must ride out verbatim and arrive back verbatim.
   const wire = { from: 'dev-b', seq: 12, state: { userId: 'u2', name: 'Sam', focus: 'headline' } };
   h.handle.sendPresence(wire);
@@ -325,7 +325,7 @@ test('the presence lane is opaque and ephemeral in both directions', async () =>
 test("a sender-only error frame carries every input the gateway's veto named", async () => {
   const h = await harness();
   joinNow(h);
-  // The gateway's shape: {code, message, inputs[]} — a veto groups a batch's
+  // The gateway's shape: {code, message, inputs[]} - a veto groups a batch's
   // rejections by code, so it can name more than one input.
   h.socket().deliver({
     t: 'error', code: 'INPUT_LOCKED', message: 'this input is not writable in this room',
@@ -428,7 +428,7 @@ test('the seed never overwrites a key an unacked local op still owns', async () 
     docState: { params: { title: 'Stale server value', subtitle: 'Theirs' } },
   });
 
-  // Ours survives — the snapshot governs only keys we are not holding.
+  // Ours survives - the snapshot governs only keys we are not holding.
   assert.equal(h.handle.adapter.state().params.get('title'), 'Mine');
   assert.equal(h.handle.adapter.state().params.get('subtitle'), 'Theirs');
   const seeded = h.events.filter((e) => e.kind === 'ops').flatMap((e) => [...e.ops]);
@@ -487,7 +487,7 @@ test('an entry never yet written to a socket survives its first replay', async (
   h.timers[0]!.fire();
   await Promise.resolve();
   joinNow(h);
-  // First delivery — kept, because a first write to a socket is not a receipt.
+  // First delivery - kept, because a first write to a socket is not a receipt.
   assert.deepEqual(h.handle.outbox(), [mine]);
   assert.equal(h.handle.state().pending, 0);
 
@@ -579,7 +579,7 @@ test('serverClock is a room-wide maximum and can never retire an entry', async (
 
 test('a rebuilt document never re-mints a clock this device has already used', async () => {
   // The gateway's replay dedup is strictly monotonic per client, so a re-minted
-  // (client, clock) pair is DISCARDED — in a quiet room, silently and forever.
+  // (client, clock) pair is DISCARDED - in a quiet room, silently and forever.
   const h = await harness();
   joinNow(h);
   const first = h.handle.adapter.onLocalChange(
@@ -590,7 +590,7 @@ test('a rebuilt document never re-mints a clock this device has already used', a
   const usedClock = first[0]!.origin.clock;
   assert.ok(usedClock > 0);
 
-  // Drop, reconnect, and join an EMPTY room at serverClock 0 — the case where the
+  // Drop, reconnect, and join an EMPTY room at serverClock 0 - the case where the
   // seed carries nothing to lift the rebuilt doc's clock back over the high-water.
   h.socket().dropped(1006);
   h.timers[0]!.fire();
@@ -679,7 +679,7 @@ test('a terminal close ends the session; everything else reconnects', async () =
     assert.equal(h.timers.length, 0, `code ${code} armed a timer`);
     h.handle.close();
   }
-  // A transport blip, a rate burst, a join timeout, and — the one that matters —
+  // A transport blip, a rate burst, a join timeout, and - the one that matters - 
   // the gateway's own restart all get the backoff. A blanket "the whole private
   // range is terminal" rule turned every redeploy into a fleet-wide kill.
   for (const code of [1012, 1006, COLLAB_CLOSE.GOING_AWAY, COLLAB_CLOSE.OPS_RATE, COLLAB_CLOSE.PRESENCE_RATE, COLLAB_CLOSE.JOIN_TIMEOUT, 4321]) {
@@ -711,7 +711,7 @@ test('after a terminal close the provider stops queuing and stops persisting', a
 
 test('a cross-origin instance endpoint is refused with a reason, not retried', async () => {
   // The gateway authenticates from a SameSite=Lax cookie, which a browser will not
-  // attach to a cross-site upgrade — so this can never succeed, and a reconnect loop
+  // attach to a cross-site upgrade - so this can never succeed, and a reconnect loop
   // would only hide that.
   FakeSocket.made = [];
   const timers: Array<{ ms: number; fire: () => void }> = [];
@@ -768,7 +768,7 @@ test('close() sends leave and closes with the normal code while live', async () 
 
 test('overlapping connect() calls open exactly one socket', async () => {
   // `connect()` yields twice (the store load, then endpoint derivation). Two
-  // callers used to each reach `new Ctor(url)`, and the loser was orphaned — its
+  // callers used to each reach `new Ctor(url)`, and the loser was orphaned - its
   // handlers detached by the `sock === s` guards, but nothing ever closed it.
   FakeSocket.made = [];
   const handle = createWorkCollabProvider('sess-1', {

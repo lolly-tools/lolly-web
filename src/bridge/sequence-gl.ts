@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-gl.ts — a hand-rolled WebGL2 quad compositor for the TILT export tier
+ * sequence-gl.ts - a hand-rolled WebGL2 quad compositor for the TILT export tier
  * (plans/104 §6.4, P2b; plan 98 §9.1 Phase C).
  *
  * THE PROBLEM IT SOLVES. A tilted camera projects each screen-parallel layer through
  * a HOMOGRAPHY (`KfProjection.m`, the element-local 3×3 the engine already computes),
- * and `CanvasRenderingContext2D.setTransform` is affine by definition — six numbers,
+ * and `CanvasRenderingContext2D.setTransform` is affine by definition - six numbers,
  * no perspective divide. So `drawItem` (sequence-render.worker.ts) cannot draw tilt at
  * all, and the shipped fallback (P2a) photographs the live artboard once per frame with
  * dom-to-image: 127 independent full-frame rasters that flicker, because each is a
  * separate serialise → SVG → raster pass with its own sub-pixel rounding.
  *
  * P2b's answer: capture each layer's CLEAN plate ONCE (the existing plate pipeline in
- * sequence-render.ts already does this — the tilt gate sits BEFORE it, so plates were
+ * sequence-render.ts already does this - the tilt gate sits BEFORE it, so plates were
  * simply never built under tilt), upload each plate as a GL texture, and resample every
  * plate coherently on the GPU through its per-quad homography. One texture per layer,
- * one draw per layer per frame, sampled with a single consistent filter — no flicker.
+ * one draw per layer per frame, sampled with a single consistent filter - no flicker.
  *
  * WHAT THIS MODULE IS, AND IS NOT. It is a THIN quad rasteriser: it knows how to place
  * one textured quad through the composed transform `[m3 | translate] · rotate · scale`
  * about the box centre, and how to blend it premultiplied over what is already on the
  * framebuffer. It knows NOTHING about the timeline, the plan, cameras, plates, DOF, or
- * the mux — sequence-render.ts's `renderGlComposite` owns all of that and drives this.
+ * the mux - sequence-render.ts's `renderGlComposite` owns all of that and drives this.
  * The engine supplies the projection MATH (`projectLayer` → `m3`); this file is pure
  * shell-side rendering, zero new dependencies, and imports only the `KfMatrix3` TYPE
- * from the engine (a row-major 3×3). Engine purity is unaffected — the guard scans
+ * from the engine (a row-major 3×3). Engine purity is unaffected - the guard scans
  * engine/src only, and nothing here reaches back into it.
  *
  * ── THE PER-QUAD TRANSFORM (the one thing that must be exactly right) ──────────
@@ -37,7 +37,7 @@
  * `drawItem` folds `authored`'s rotation into `rot` (`item.rot = rect.rot + fold.rot`)
  * and applies `translate → rotate → scale` about the box centre. This shader does the
  * same, with the homography spliced in where the translate sat. For a box-local point
- * `p` (unscaled px, relative to the box centre — the quad's own coordinate), the
+ * `p` (unscaled px, relative to the box centre - the quad's own coordinate), the
  * pipeline is:
  *
  *     pk        = R(rot) · S(scale) · p              // rotate+scale, INSIDE the matrix
@@ -47,21 +47,21 @@
  * At `m3 = null` we set `M = translate(dx, dy)` (unscaled), whose `W ≡ 1` collapses the
  * divide to the affine case and reproduces `drawItem`'s `translate(boxCentre·S + dx·S) ·
  * rotate · scale` byte-for-byte in ℝ. At `m3 ≠ null` the same expression IS the
- * homography. One code path, two behaviours, no branch in the hot loop — and the engine
+ * homography. One code path, two behaviours, no branch in the hot loop - and the engine
  * already divided the centre magnification out of `m3` (see `localMatrix` in
  * keyframes.ts) so `scale` still carries `eff` and composes exactly as it does affine.
  *
  * PERSPECTIVE-CORRECT UVs, FOR FREE. Rather than divide by W ourselves and hand the
  * rasteriser a flat `gl_Position.w = 1` (which would interpolate the texture affinely
- * across a warped quad — the classic wrong-texture-on-a-tilt artefact), we emit the
+ * across a warped quad - the classic wrong-texture-on-a-tilt artefact), we emit the
  * homogeneous clip position with `gl_Position.w = W`. The GPU then interpolates the UV
- * varying divided by W and multiplies back per-fragment — exactly the `q = 1/w`
+ * varying divided by W and multiplies back per-fragment - exactly the `q = 1/w`
  * perspective correction, done in hardware, and identical to sampling the plate as a
  * texture mapped onto the tilted plane. For the affine case W ≡ 1, so it is inert.
  *
  * ROW-MAJOR → COLUMN-MAJOR. `KfMatrix3` is ROW-MAJOR (`[a,b,c, d,e,f, g,h,i]` maps
  * `[x,y,1]ᵀ → [X,Y,W]ᵀ`); a GLSL `mat3` is COLUMN-MAJOR. `m3ColMajor` transposes once
- * in JS before `uniformMatrix3fv(loc, false, …)` — getting this wrong silently
+ * in JS before `uniformMatrix3fv(loc, false, …)` - getting this wrong silently
  * mirrors/shears every tilted quad, so it is the reference reordering, mirrored from
  * `kfMatrix3dCss` (keyframes.ts), and asserted in the unit test.
  *
@@ -72,7 +72,7 @@
  * the 2D paths' `clearRect` preserves it. Plate textures are uploaded with
  * `UNPACK_PREMULTIPLY_ALPHA_WEBGL = true` (so the sampled texel is PREMULTIPLIED), the
  * fragment shader scales that premultiplied texel by the layer alpha, and the blend
- * func is premultiplied source-over `(ONE, ONE_MINUS_SRC_ALPHA)` — the only blend that
+ * func is premultiplied source-over `(ONE, ONE_MINUS_SRC_ALPHA)` - the only blend that
  * does NOT fringe a blurred/anti-aliased cut-out at its edge. `preserveDrawingBuffer`
  * is mandatory: the readback (`readInto`) happens in the SAME synchronous tick as the
  * draw, but the frame sink that consumes it (`mux.addFrame`) is async, and a cleared
@@ -86,12 +86,12 @@
 
 import type { KfMatrix3 } from '@lolly/engine';
 
-/** The per-quad animation state a draw needs — the `PlanItem` fields that place it. */
+/** The per-quad animation state a draw needs - the `PlanItem` fields that place it. */
 export interface GlQuadTransform {
   /** Projected centre offset from the authored centre, stage-native px (`item.dx/dy`). */
   dx: number;
   dy: number;
-  /** Transition × keyframe × eff magnification (`item.scale`) — carries the depth eff. */
+  /** Transition × keyframe × eff magnification (`item.scale`) - carries the depth eff. */
   scale: number;
   /** Authored + transition + keyframe rotation, DEGREES (`item.rot`). */
   rot: number;
@@ -99,13 +99,13 @@ export interface GlQuadTransform {
   alpha: number;
   /**
    * The layer's blend mode. HONOURED only for `''`/`source-over`/`normal` in this cut;
-   * any other value composes as source-over (a documented first-cut limitation — the
+   * any other value composes as source-over (a documented first-cut limitation - the
    * caller notes it, and the epic shots use none).
    */
   blend: string;
   /**
    * The element-local homography (row-major `KfMatrix3`) a TILTED camera produced, or
-   * null for an untilted frame/layer — in which case the draw is the affine
+   * null for an untilted frame/layer - in which case the draw is the affine
    * `translate(dx, dy)` the divide collapses to.
    */
   m3: KfMatrix3 | null;
@@ -129,7 +129,7 @@ export interface GlQuadDraw {
   platePad: number;
   /**
    * The resolution the plate was captured at, over `S` (`SeqJobLayer.plateEff`).
-   * INFORMATIONAL to the draw — the quad is placed at `S` regardless and the GPU
+   * INFORMATIONAL to the draw - the quad is placed at `S` regardless and the GPU
    * minifies the higher-resolution texture down to it; the caller uses `plateEff` to
    * bake the DOF blur at the plate's own resolution so the scaling law holds.
    */
@@ -144,8 +144,8 @@ export interface GlQuadCompositor {
    */
   uploadPlate(idx: number, source: CanvasImageSource): WebGLTexture | null;
   /**
-   * Upload a PER-FRAME variant texture for `idx` — a DOF-blurred plate, or a live
-   * (Lottie/size-tween) re-raster — re-uploaded every frame into a texture reserved for
+   * Upload a PER-FRAME variant texture for `idx` - a DOF-blurred plate, or a live
+   * (Lottie/size-tween) re-raster - re-uploaded every frame into a texture reserved for
    * this layer. The source is consumed synchronously, so a POOLED scratch (e.g.
    * `renderFx`'s output) is safe to `releaseStage` the instant this returns.
    */
@@ -158,7 +158,7 @@ export interface GlQuadCompositor {
   readInto(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D): void;
   /** Drop every texture and the GL context (`WEBGL_lose_context`). Idempotent. */
   dispose(): void;
-  /** The GL canvas — a valid `drawImage` source for `readInto`. */
+  /** The GL canvas - a valid `drawImage` source for `readInto`. */
   readonly canvas: HTMLCanvasElement | OffscreenCanvas;
   /** `MAX_TEXTURE_SIZE`, exposed so a caller can reason about a plate it must fit. */
   readonly maxTextureSize: number;
@@ -205,7 +205,7 @@ void main() {
 /**
  * Sample the premultiplied plate and scale by the layer alpha. Multiplying a
  * premultiplied colour by a scalar alpha scales both its RGB and its A, which is exactly
- * the layer opacity applied premultiplied — no un-premultiply, no fringe.
+ * the layer opacity applied premultiplied - no un-premultiply, no fringe.
  */
 const FRAG = `#version 300 es
 precision highp float;
@@ -274,7 +274,7 @@ function makeCanvas(w: number, h: number): GlCanvas | null {
  * The context attributes P2b needs (see the ALPHA MODEL note). NOT
  * `failIfMajorPerformanceCaveat`: an export is a surface the user explicitly asked for
  * (behind the opt-in flag), and a slow correct render on a software rasteriser beats
- * refusing it — the same "strict where ambient, lax where asked for" reasoning
+ * refusing it - the same "strict where ambient, lax where asked for" reasoning
  * `vizPossible` (viz-support.ts) uses for a tapped visualiser.
  */
 const GL_ATTRS: WebGLContextAttributes = {
@@ -289,7 +289,7 @@ const GL_ATTRS: WebGLContextAttributes = {
 let supportCache: boolean | null = null;
 
 /**
- * Can this realm create the WebGL2 quad compositor at all? Cheap, cached — the answer
+ * Can this realm create the WebGL2 quad compositor at all? Cheap, cached - the answer
  * cannot change within a session. Mirrors `viz-support.ts`'s probe shape.
  */
 export function glQuadCompositorSupported(): boolean {

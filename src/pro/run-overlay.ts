@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — the batch-run progress shell, made mount-agnostic.
+ * Pro / Batch mode - the batch-run progress shell, made mount-agnostic.
  *
  * This is the rotating-quip + progress-head + Cancel + live-log UI plus the
  * runBatch call and the zip/sequential delivery, extracted from runBatchFlow so
@@ -10,7 +10,7 @@
  *     the shared overlay, with no /pro grid mounted).
  *
  * It owns its own cancel flag and quip rotator. It deliberately does NOT touch
- * any /pro grid state (state.running / renderGrid) — the docked caller passes an
+ * any /pro grid state (state.running / renderGrid) - the docked caller passes an
  * `onRendered` hook to flip those once the renders finish, before delivery.
  */
 import './run-overlay.css';
@@ -44,13 +44,13 @@ interface RunBatchProgressOpts<F = unknown> {
   /**
    * Rows dropped before the run (planBatch's `skipped`). Widened additively to carry
    * the row + its source position/identity, because a skipped row has NO queue
-   * position — it is shown by its SOURCE row number (`srcIndex`, the number the grid
+   * position - it is shown by its SOURCE row number (`srcIndex`, the number the grid
    * shows) plus `manifest.ts`'s label, and by nothing else. `uid` is carried for the
    * machine sidecar; it never reaches the UI.
    */
   skipped?: Array<{ reason: string; row?: BatchRow; srcIndex?: number; uid?: string }>;
   /**
-   * `srcIndex[k]` is the 0-based SOURCE position of `rows[k]` — `planBatch`'s own
+   * `srcIndex[k]` is the 0-based SOURCE position of `rows[k]` - `planBatch`'s own
    * output, threaded through so a row number shown to a person survives compaction.
    * Absent → runner space is assumed to BE source space (a run of unplanned rows).
    */
@@ -63,36 +63,36 @@ interface RunBatchProgressOpts<F = unknown> {
   /**
    * SEAM (Phase 1): flatten one opaque note to a display line. The default reads
    * `.message` off an object (or takes a string as-is), which is exactly the shape
-   * `Finding` will have — so Phase 1 can land with no wiring here at all, and a
+   * `Finding` will have - so Phase 1 can land with no wiring here at all, and a
    * caller with a different payload overrides it.
    */
   noteText?: (note: F) => string;
   /**
    * SEAM (Phase 1): the chip's tone. Default reads `.severity`, mapping `warn`/`error`
-   * to `'warn'` and everything else — including `info`, the common state — to `'info'`.
+   * to `'warn'` and everything else - including `info`, the common state - to `'info'`.
    * `info` must never render as a warning.
    */
   noteTone?: (note: F) => 'info' | 'warn';
   /**
-   * Findings for the rows `planBatch` DROPPED, keyed by identity — they have no queue
+   * Findings for the rows `planBatch` DROPPED, keyed by identity - they have no queue
    * position, so `notes` (which is parallel to `rows`) structurally cannot carry them.
    * `preflight-rows.ts` `skippedFindings(plan)` builds this.
    */
   skippedFindings?: ReadonlyArray<{ uid?: string; srcIndex: number; items: F[] }>;
   /**
-   * Findings about the RUN rather than any row — the platform refusals and the brand
+   * Findings about the RUN rather than any row - the platform refusals and the brand
    * palette. Shown once, in the report envelope and above the zip's per-file notes,
    * never as a chip on 500 cards.
    */
   runFindings?: readonly F[];
   /**
    * Set on the retry run only: the original package name, so the two zips are readable
-   * as one job. Callers never set this — the Retry button does.
+   * as one job. Callers never set this - the Retry button does.
    */
   retryOf?: string;
   /**
    * RUN-LEVEL print settings (press profile / bleed / marks), forwarded verbatim
-   * to runBatch, where a row carrying its own value overrides them — see
+   * to runBatch, where a row carrying its own value overrides them - see
    * `resolvePrintSettings` in ./batch.ts for the one statement of that rule.
    * Ignored by every non-print format, so callers may pass them unconditionally.
    */
@@ -119,7 +119,7 @@ const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, c => (
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]!
 ));
 
-// Per-format glyphs for the preview cards — Lucide line icons (matching the app's iconography),
+// Per-format glyphs for the preview cards - Lucide line icons (matching the app's iconography),
 // grouped by kind: a vector PEN for svg/eps/…, a document for pdf, film for video, and the
 // IMAGE frame for every raster (png/jpg/webp/gif/…). `fmtIcon()` picks one from the render format.
 const ICON_ATTRS = 'viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
@@ -136,14 +136,14 @@ const fmtIcon = (fmt: string): string => {
 };
 
 /**
- * SEAM (Phase 1) — the two readers of the opaque per-row payload, and the ONLY code
+ * SEAM (Phase 1) - the two readers of the opaque per-row payload, and the ONLY code
  * in this module that touches a note's insides. They are written against the shape
  * `Finding` is specified to have (`packages/core/src/preflight.ts`, §3 of
  * plans/65-preflight-and-cost.md: `{ severity, message, … }`) so Phase 1 lands as an
  * `import type` plus `runBatchWithProgress<Finding>(…)` and nothing here changes. A
  * caller carrying a different payload overrides them per run.
  *
- * `severity: 'info'` is a real, common state — a count with no rate — so anything that
+ * `severity: 'info'` is a real, common state - a count with no rate - so anything that
  * is not explicitly warn/error tones as info and MUST NOT render as a warning.
  */
 /**
@@ -153,8 +153,8 @@ const fmtIcon = (fmt: string): string => {
  * full-size offscreen tool canvas and tools touch window globals), but nothing enforced
  * it BETWEEN runs: the Retry button starts a second run after the first has already
  * cleared /pro's `state.running`, so a user could have a retry and a fresh grid run
- * writing to the same mount — the second run rebuilding the shell detaches the first's
- * head, log, card wall and Cancel button — and two zips saved with no explanation.
+ * writing to the same mount - the second run rebuilding the shell detaches the first's
+ * head, log, card wall and Cancel button - and two zips saved with no explanation.
  *
  * The flag is set immediately before the run's own try/finally and cleared in it, so a
  * throw anywhere inside cannot strand it. {@link isBatchRunActive} lets a caller (see
@@ -188,7 +188,7 @@ const defaultNoteTone = (note: unknown): 'info' | 'warn' => {
  * @param {object|null} [opts.author]          profile for the zip credit block
  * @param {string} [opts.csv]                  re-importable batch CSV manifest
  * @param {Array<{reason:string, row?:object, srcIndex?:number, uid?:string}>} [opts.skipped]
- *        rows dropped before the run (planBatch's `skipped` — listed by name, never by
+ *        rows dropped before the run (planBatch's `skipped` - listed by name, never by
  *        a queue position they do not have)
  * @param {string} [opts.profile]              run-level CMYK press condition
  * @param {string} [opts.bleed]                run-level bleed, e.g. "3mm"
@@ -214,7 +214,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   const total = rows.length;
   let cancelRequested = false;
 
-  // A row is named to a human by something it CARRIES — its filename or its tool. The
+  // A row is named to a human by something it CARRIES - its filename or its tool. The
   // labeller is `manifest.ts`'s, imported rather than restated, so the overlay and
   // lolly.txt / preflight.json can never call the same row two different things. The
   // grid's internal `uid` is deliberately NOT in the chain: it is a per-page-load
@@ -242,7 +242,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   // Each skipped row listed by name when it can be named; the old one-line summary is
   // kept as the <summary>, so a run with nothing skipped is byte-identical (empty).
   // A skipped row has no queue position, but planBatch captured its SOURCE position at
-  // drop time — that is the number the grid shows and the number lolly.txt prints, so
+  // drop time - that is the number the grid shows and the number lolly.txt prints, so
   // it leads here too. Absent → the name alone, never a fabricated number.
   const skipItems = skipped.map(s => {
     const n = s.srcIndex == null ? '' : `row ${s.srcIndex + 1} — `;
@@ -280,7 +280,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   const draw = (head: string) => { headEl.innerHTML = head; };
   const appendLog = (li: string) => logEl.insertAdjacentHTML('beforeend', li);
 
-  // A live wall of preview cards — each finished export pops in as a thumbnail so the
+  // A live wall of preview cards - each finished export pops in as a thumbnail so the
   // job reads as a visual build-up, not a wall of text. Newest first; capped so the DOM
   // (and the live object URLs) stay bounded on a big batch (the evicted card's URL is
   // revoked). Image-like formats show the render; pdf/video show a format badge.
@@ -293,7 +293,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   const addCard = (name: string, blob: Blob, fmt: string, ms: number, lines: readonly string[] = [], tone: 'info' | 'warn' = 'info'): void => {
     const card = document.createElement('figure');
     card.className = 'pro-card';
-    // A per-format glyph in the corner — a vector pen for svg, the image frame for png, etc.
+    // A per-format glyph in the corner - a vector pen for svg, the image frame for png, etc.
     const fi = document.createElement('span');
     fi.className = 'pro-card-fmticon';
     fi.title = (fmt || 'file').toUpperCase();
@@ -311,7 +311,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       badge.className = 'pro-card-fmt'; badge.textContent = (fmt || 'file').toUpperCase();
       card.appendChild(badge);
     }
-    // Render-time brag — a small ⚡ pill under the preview showing how fast it rendered.
+    // Render-time brag - a small ⚡ pill under the preview showing how fast it rendered.
     const time = document.createElement('span');
     time.className = 'pro-card-time';
     time.textContent = `⚡ ${fmtDuration(ms)}`;
@@ -319,7 +319,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     const cap = document.createElement('figcaption');
     cap.className = 'pro-card-name'; cap.textContent = name.split('/').pop() || name;
     card.appendChild(cap);
-    // A row that rendered fine but carries findings gets a CHIP on its card — never a
+    // A row that rendered fine but carries findings gets a CHIP on its card - never a
     // line in .pro-log, which is where ✕ and "Cancelled" live and therefore reads as a
     // run that went wrong. Tone is --primary (the same accent the ⚡ render-time pill
     // uses for "an extra fact about a successful render"); --destructive is the log's
@@ -344,7 +344,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     }
   };
 
-  // Per-asset render timings — kept for EVERY item (not capped like the card wall), so the
+  // Per-asset render timings - kept for EVERY item (not capped like the card wall), so the
   // completion chart can plot the whole batch. Rendered when the queue finishes.
   const timings: Array<{ name: string; ms: number }> = [];
   // A horizontal bar chart of render time per asset, shortest → longest, so the slow ones
@@ -377,7 +377,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   const order = QUIPS.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j]!, order[i]!]; }
   let qi = 0;
-  // `done` counts completed renders — hoisted so the quip painter can show how many are
+  // `done` counts completed renders - hoisted so the quip painter can show how many are
   // still to go ([Remaining]) alongside the total ([Count]).
   let done = 0;
   const paintQuip = () => {
@@ -398,7 +398,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       isCancelled: () => cancelRequested,
       onProgress: (p) => {
         if (p.status === 'rendering') { draw(`<strong>Rendering ${done + 1} / ${total}…</strong>`); return; }
-        // A cancel renders NOTHING — counting it as done over-reported "Rendered n / total"
+        // A cancel renders NOTHING - counting it as done over-reported "Rendered n / total"
         // by one and over-filled the bar on every cancelled run.
         if (p.status === 'cancelled') { appendLog(`<li class="pro-log-skip">Cancelled</li>`); draw(`<strong>Rendered ${done} / ${total}</strong>`); return; }
         if (p.status === 'done') {
@@ -433,12 +433,12 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     quipEl.remove();   // the job's done talking
     cancelBtn.remove(); // …and there's nothing left to cancel
 
-    // The queue is done rendering — plot every asset's render time, shortest → longest,
+    // The queue is done rendering - plot every asset's render time, shortest → longest,
     // so the whole batch's timing reads at a glance (independent of the zip step below).
     chartMount.innerHTML = renderTimeChart(timings);
 
-    // Rows that errored mid-run still produce no file — surface the count so a
-    // "Done — 480 files" can't quietly hide 20 failures.
+    // Rows that errored mid-run still produce no file - surface the count so a
+    // "Done - 480 files" can't quietly hide 20 failures.
     const failedResults = results.filter(r => !r.ok);
     const failed = failedResults.length;
     const failNote = failed ? `, ${failed} failed` : '';
@@ -449,7 +449,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     const noteNote = notedCount ? `, ${notedCount} with note${notedCount === 1 ? '' : 's'}` : '';
     const tail = `${failNote}${noteNote}`;
 
-    // Every row of the job that produced no file — skipped, failed, or never attempted
+    // Every row of the job that produced no file - skipped, failed, or never attempted
     // because the run was cancelled. This is the record that leaves the building: the
     // counts above are UI chrome and evaporate the moment the zip is mailed on.
     const report = {
@@ -482,7 +482,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       btn.className = 'pro-btn';
       btn.dataset.action = 'pro-retry';
       btn.textContent = `Retry ${failedResults.length} failed row${failedResults.length === 1 ? '' : 's'}`;
-      // cancelBtn.remove() vacated this slot in .pro-progress-head — no new layout.
+      // cancelBtn.remove() vacated this slot in .pro-progress-head - no new layout.
       headEl.parentElement?.appendChild(btn);
       btn.addEventListener('click', () => {
         // A retry is a second run: it must not start while another one holds the stage
@@ -502,7 +502,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
           zipBaseName: `${zipBaseName}-retry`,
           retryOf: `${zipBaseName}.zip`,
           // SOURCE row numbers are preserved, so a retried row is still "row 7", not
-          // "row 1" — the concrete reason index identity had to land before retry.
+          // "row 1" - the concrete reason index identity had to land before retry.
           srcIndex: failedResults.map(r => srcIndex?.[r.index] ?? r.index),
           notes: failedResults.map(r => r.notes),
           // The skipped rows were reported by the first run; re-listing them would
@@ -520,7 +520,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         }).catch(err => {
           btn.disabled = false;
           // The retry rebuilds `mount`, so this run's captured `logEl` may already be
-          // detached — write into whatever log is live, and fall back to the mount.
+          // detached - write into whatever log is live, and fall back to the mount.
           const li = `<li class="pro-log-err">Retry failed: ${esc(String((err as { message?: unknown })?.message ?? err))}</li>`;
           const live = mount.querySelector('.pro-log');
           if (live) live.insertAdjacentHTML('beforeend', li);
@@ -544,13 +544,13 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       saveBlob(zip, `${zipBaseName}.zip`);
       draw(`<strong>Done — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
       announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);
-      // The whole queue finished — celebrate: the big trumpet for a real batch, the subtle
+      // The whole queue finished - celebrate: the big trumpet for a real batch, the subtle
       // "ta-da" for a lone render (matching the single-session download path).
       if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory');
     } catch (zipErr) {
       const msg = esc(String((zipErr as { message?: unknown }).message ?? zipErr));
       if (zipLock && strongPassword) {
-        // A lock was requested — NEVER fall back to unencrypted sequential downloads,
+        // A lock was requested - NEVER fall back to unencrypted sequential downloads,
         // which would silently ship the non-PDF members (and the lolly.txt manifest
         // with author details) in cleartext. Fail loudly and save nothing.
         appendLog(`<li class="pro-log-err">Couldn't build the password-protected zip (${msg}) — nothing was downloaded. Try again, or export fewer files at once.</li>`);
@@ -565,7 +565,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         });
         draw(`<strong>Done — ${files.length} files downloaded${tail}.</strong>`);
         announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} downloaded${tail}.`);
-        if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) — big trumpet for a batch, subtle "ta-da" for one
+        if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) - big trumpet for a batch, subtle "ta-da" for one
       }
     }
     offerRetry();

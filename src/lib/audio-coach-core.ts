@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pure audio-coaching logic — the DOM-free core behind `audio-coaching.ts`.
+ * Pure audio-coaching logic - the DOM-free core behind `audio-coaching.ts`.
  *
  * Turns a live `AudioLevel` (host.recorder meter / record session) into a compact
  * `Coaching` verdict: a level bar fill + a plain-language warning about levels
@@ -9,7 +9,7 @@
  *   - 'check'  (arming / sound-check, mic raw): silence is expected, so judge the room.
  *   - 'record' (the take): coach the speaking level; only flag a genuinely bad floor.
  *
- * This module imports NOTHING but types — no DOM, no `announce` — so it can be unit
+ * This module imports NOTHING but types - no DOM, no `announce` - so it can be unit
  * tested directly (see tests/audio-coaching.test.ts). The DOM HUD lives in
  * `audio-coaching.ts`, which re-exports everything here.
  */
@@ -76,12 +76,12 @@ export function coachAudio(level: AudioLevel, opts: { target?: CoachTarget; phas
     else if (noisy) { tone = 'low'; warning = 'Noisy room — a quieter spot will sound cleaner.'; }
   } else {
     // Speaking (or recording): coach the LEVEL only. Room noise is a pre-record
-    // (sound-check) concern — and the recording session suppresses it, so the raw
+    // (sound-check) concern - and the recording session suppresses it, so the raw
     // meter's hum/hiss here wouldn't match the saved file. Don't flag it mid-take.
     if (tooQuiet) { tone = 'low'; warning = 'Too quiet — move closer or speak up.'; }
   }
 
-  // Which recording-tip cue (if any) this level argues for — the stage's tips panel
+  // Which recording-tip cue (if any) this level argues for - the stage's tips panel
   // flashes it. Mirrors the warning branches above: clipping/too-loud → the meter tip in
   // either phase; a silent sound-check judges the ROOM (hum→room, hiss→wind, noisy→room);
   // otherwise (speaking / recording) a low level → mic distance, and speaking over a noisy

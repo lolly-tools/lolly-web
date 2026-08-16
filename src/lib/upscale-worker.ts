@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * On-device AI upscaler WORKER. A run is multi-second per tile on a phone, so it
- * must never touch the thread a tool is being typed into — everything heavy
+ * must never touch the thread a tool is being typed into - everything heavy
  * (onnxruntime-web, the ONNX weights, the tiling/compose maths in lib/upscaler.ts)
  * loads and runs HERE, dynamically, so none of it reaches the boot chunk. Same
  * id-keyed request/reply protocol as lib/speech-kokoro-worker.ts, plus per-run
- * progress messages and a cooperative abort (checked between tiles — a tile
+ * progress messages and a cooperative abort (checked between tiles - a tile
  * mid-inference can't be preempted in-wasm/gpu).
  *
  * IndexedDB (the model cache) and OffscreenCanvas both work in a worker, so the
@@ -20,7 +20,7 @@ import type {
 } from '@lolly-tools/core/host-v1';
 import { abortError, canRun, currentBackend, modelCached, probeBackend, runUpscale, type RunContext } from './upscaler.ts';
 
-/** Options that survive structured clone — no `signal`/`onProgress` (the bridge
+/** Options that survive structured clone - no `signal`/`onProgress` (the bridge
  *  keeps those main-thread and translates them into abort messages + progress
  *  replies). */
 export type SerializableUpscaleOpts = Omit<UpscaleOpts, 'signal' | 'onProgress'>;
@@ -36,15 +36,15 @@ export interface UpscaleWorkerReply {
   /** The resolved execution backend, echoed so the bridge can latch it. */
   backend?: 'webgpu' | 'wasm';
   progress?: UpscaleProgress;
-  /** Terminal — a run result (its buffer is transferred). */
+  /** Terminal - a run result (its buffer is transferred). */
   frame?: UpscaleFrame;
-  /** Terminal — a canRun result. */
+  /** Terminal - a canRun result. */
   feasibility?: UpscaleFeasibility;
-  /** Terminal — a cached() result. */
+  /** Terminal - a cached() result. */
   cached?: boolean;
-  /** Terminal — a real failure. */
+  /** Terminal - a real failure. */
   error?: string;
-  /** Terminal — the run was aborted (bridge rejects with AbortError). */
+  /** Terminal - the run was aborted (bridge rejects with AbortError). */
   aborted?: boolean;
 }
 
@@ -53,7 +53,7 @@ const post = postMessage as (message: UpscaleWorkerReply, transfer?: Transferabl
 
 /** Requests the main thread has aborted; the run loop checks between tiles. */
 const aborted = new Set<number>();
-/** Requests currently running — an abort for an id not in here is stale. */
+/** Requests currently running - an abort for an id not in here is stale. */
 const inFlight = new Set<number>();
 
 function checkAbort(id: number): void {

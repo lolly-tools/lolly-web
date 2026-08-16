@@ -3,9 +3,9 @@
  * Unit tests for the pure screencap crop arithmetic.
  * Run directly:  node --test shells/web/src/views/screen-capture-crop.test.ts
  *
- * DOM-free — the interactive overlay + export-size push in screen-capture-control.ts
+ * DOM-free - the interactive overlay + export-size push in screen-capture-control.ts
  * are verified manually in real Chromium (jsdom has no layout/rasteriser). These lock
- * down the load-bearing math: crop composition in shot-space and fraction→pixel size.
+ * down the essential math: crop composition in shot-space and fraction→pixel size.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

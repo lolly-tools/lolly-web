@@ -2,7 +2,7 @@
 /**
  * SVG reader for Unpack (#/unpack).
  *
- * An SVG is a design container too — often the richest one, since everything in it
+ * An SVG is a design container too - often the richest one, since everything in it
  * is already text: the colours it paints with, the words it sets, the rasters it
  * embeds as data: URIs, the @font-face files it carries, and its reusable symbols.
  * This module pulls each of those out as the same `PdfHandle` shape the PDF reader
@@ -12,7 +12,7 @@
  *
  *  - NAMES, NEVER BYTES for anything linked. A `<image href="photo.png">` or an
  *    `@font-face` that names a family with no embedded source is COUNTED and named,
- *    never fetched — Unpack takes a file apart, it does not go and get the pieces
+ *    never fetched - Unpack takes a file apart, it does not go and get the pieces
  *    that live elsewhere. Absence of bytes is also not a licence: a names-only font
  *    row states nothing about reuse.
  *
@@ -59,7 +59,7 @@ export function parseDataUri(uri: string): { mime: string; bytes: Uint8Array } |
 }
 
 /**
- * Stored pixel dimensions from a raster's own header — PNG, GIF and JPEG, the
+ * Stored pixel dimensions from a raster's own header - PNG, GIF and JPEG, the
  * formats a design SVG actually embeds. Returns null when the bytes carry no size
  * we can read without a decoder, so the caller falls back to the `<image>` attrs.
  */
@@ -107,7 +107,7 @@ function numAttr(el: Element, name: string): number {
 
 // ── palette ──────────────────────────────────────────────────────────────────────
 
-/** The distinct colours the SVG paints with — a thin pass-through to the engine's
+/** The distinct colours the SVG paints with - a thin pass-through to the engine's
  *  DOM-free extractor, which reads presentation attributes AND CSS declarations. */
 export function svgPalette(svgText: string): string[] {
   return extractSvgColors(svgText);
@@ -138,7 +138,7 @@ export function svgImages(doc: Document): EmbeddedImageScan {
         page: 0,
       });
     } else {
-      // Linked from elsewhere (http(s):, a file path, a #symbol) — named by its
+      // Linked from elsewhere (http(s):, a file path, a #symbol) - named by its
       // presence, its bytes left where they live.
       skipped++;
     }
@@ -149,7 +149,7 @@ export function svgImages(doc: Document): EmbeddedImageScan {
 // ── text ─────────────────────────────────────────────────────────────────────────
 
 /**
- * Every `<text>` element's content, one block each, in document order — the honest
+ * Every `<text>` element's content, one block each, in document order - the honest
  * answer for an SVG. One whose text was outlined to `<path>` yields nothing, which
  * is the truth (same as a PDF whose text was converted to curves).
  */
@@ -192,7 +192,7 @@ function familyName(decl: string): string {
  * A `src: url(data:…)` face becomes downloadable bytes, its real format read from
  * the bytes themselves (not the possibly-lying `format()` hint) and its embedding
  * statement read from OS/2 where the bytes carry one. A family with no embedded
- * source becomes a names-only row: `installable: false`, embedding `unknown` — the
+ * source becomes a names-only row: `installable: false`, embedding `unknown` - the
  * absence of a file is not a licence to go and find one.
  */
 export function svgFonts(doc: Document): EmbeddedFont[] {
@@ -243,7 +243,7 @@ export function svgFonts(doc: Document): EmbeddedFont[] {
 const DRAWABLE = 'path,rect,circle,ellipse,polygon,polyline,line,text';
 
 /**
- * Reusable marks as standalone SVGs — `<symbol>`s and nested `<svg>`s, the only
+ * Reusable marks as standalone SVGs - `<symbol>`s and nested `<svg>`s, the only
  * elements that carry their own frame (a `viewBox`, or width/height) so they can
  * be cropped to themselves WITHOUT a layout pass. A `<g>` has no viewBox and cannot
  * be framed by attribute math alone, so it is left for a later, layout-aware pass
@@ -269,7 +269,7 @@ export function svgVectors(doc: Document): ExtractedVector[] {
     const inner = el.innerHTML;
     if (!inner.trim()) continue;
     // The shared defs ride along so a mark that paints with a common gradient or
-    // clip still resolves when rendered — but the fill SWATCHES come from the
+    // clip still resolves when rendered - but the fill SWATCHES come from the
     // mark's OWN content, or every mark would advertise the whole document's
     // palette (a gradient the mark never references and all).
     const svg = `<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}" viewBox="${viewBox}" width="${w}" height="${h}">${defs}${inner}</svg>`;

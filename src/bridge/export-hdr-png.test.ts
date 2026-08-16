@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * bridge/export-hdr-png.ts — HDR PNG at 16 bits per channel
+ * bridge/export-hdr-png.ts - HDR PNG at 16 bits per channel
  * (plans/61-deeprichpixels.md §10 item 2, Phase B1 wiring).
  *
- * The seam under test is deliberately DOM-free — `Uint8ClampedArray` in, PNG
- * bytes out — so the whole HDR raster path is driven here with no canvas and no
+ * The seam under test is deliberately DOM-free - `Uint8ClampedArray` in, PNG
+ * bytes out - so the whole HDR raster path is driven here with no canvas and no
  * jsdom. What is NOT covered: `renderRaster`'s canvas plumbing around it
  * (`getImageData` -> `encodeHdrPng16` -> Blob), which needs a real browser and
  * is the same browser-tier gap the rest of the export path carries.
  *
  * Everything asserted here is decoded back out of the produced file with
  * node:zlib + the engine's own `unfilterPng` (written years earlier for PDF
- * /Predictor embeds — genuinely independent of the encoder), never trusted from
+ * /Predictor embeds - genuinely independent of the encoder), never trusted from
  * the in-memory buffer.
  *
  * Run: node --test shells/web/src/bridge/export-hdr-png.test.ts
@@ -70,7 +70,7 @@ function decode16(png: Uint8Array): Decoded {
   return { width, height, depth, colorType, samples };
 }
 
-/** The high byte of each 16-bit sample — the 8-bit view a legacy reader sees. */
+/** The high byte of each 16-bit sample - the 8-bit view a legacy reader sees. */
 function highBytes(d: Decoded): Uint8ClampedArray {
   const out = new Uint8ClampedArray(d.samples.length);
   for (let i = 0; i < out.length; i++) out[i] = d.samples[i]! >> 8;
@@ -86,7 +86,7 @@ function solid(w: number, h: number, r: number, g: number, b: number, a = 255): 
   return px;
 }
 
-/** A textured, deterministic image (mulberry32) — enough block activity to mark. */
+/** A textured, deterministic image (mulberry32) - enough block activity to mark. */
 function noisy(w: number, h: number): Uint8ClampedArray {
   let s = 0x2f6e2b1 >>> 0;
   const rnd = (): number => {
@@ -205,7 +205,7 @@ test('the low byte carries generated signal — not a v*257 replication of 8 bit
   // 257 with a low byte equal to the high byte. Assert the opposite, loudly.
   // (A padded buffer trips BOTH: v*257 is divisible by 257 and has low === high.
   // A padded buffer would still show many distinct low bytes, which is why the
-  // divisibility/echo pair — not the low-byte variety alone — is the control.)
+  // divisibility/echo pair - not the low-byte variety alone - is the control.)
   let padded = 0, echoed = 0;
   const lowSet = new Set<number>();
   for (let x = 0; x < w; x++) {
@@ -293,7 +293,7 @@ test('a 16-bit HDR PNG takes a C2PA store and still decodes', async () => {
   assert.equal(back!.format, 'png');
   assert.deepEqual([...back!.store], [...store]);
 
-  // The pixels are untouched by the stamp — decode the stamped file and compare.
+  // The pixels are untouched by the stamp - decode the stamped file and compare.
   const before = decode16(png), after = decode16(stamped);
   assert.deepEqual([...after.samples], [...before.samples]);
   assert.equal(after.depth, 16);
@@ -303,7 +303,7 @@ test('a 16-bit HDR PNG takes a C2PA store and still decodes', async () => {
 });
 
 // ── the deflate ceiling (plan §9b): big images REFUSE so the caller can fall
-// back to the legacy 8-bit path — a stored 16-bit IDAT would ship a ~60 MB 4K
+// back to the legacy 8-bit path - a stored 16-bit IDAT would ship a ~60 MB 4K
 // file from an existing link, which is a regression, not an upgrade.
 
 test('past the compressor ceiling the encode refuses (caller falls back to legacy)', async () => {
@@ -312,7 +312,7 @@ test('past the compressor ceiling the encode refuses (caller falls back to legac
     () => encodeHdrPng16(noisy(64, 64), { width: 64, height: 64, hdr: NO_BOOST, maxDeflateBytes: 4096 }),
     /size ceiling/,
   );
-  // Under the cap the encode still works — the refusal is the ceiling, not a
+  // Under the cap the encode still works - the refusal is the ceiling, not a
   // general failure (negative control).
   const small = decode16(await encodeHdrPng16(noisy(64, 64), { width: 64, height: 64, hdr: NO_BOOST }));
   assert.equal(small.depth, 16);

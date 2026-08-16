@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-protocol — the WORK-COLLAB wire protocol (plan 100 §7, wave 3.1).
+ * org/collab-protocol - the WORK-COLLAB wire protocol (plan 100 §7, wave 3.1).
  *
  * Types + pure helpers only: no socket, no DOM, no module state. This file is the
  * shell's written-down copy of the gateway contract implemented in lolly-work
  * (`server/src/collab/gateway.ts` + `rooms.ts`, its plans/14). Every frame shape,
- * close code and cap below has been RECONCILED against that implementation — where
- * a field name or a number is load-bearing, the server file and symbol that owns it
+ * close code and cap below has been RECONCILED against that implementation - where
+ * a field name or a number is essential, the server file and symbol that owns it
  * is named beside it, so the next drift is a diff rather than a rediscovery.
  *
  * The endpoint: `wss://<instance-base>/ws/collab/<sessionId>`.
@@ -31,7 +31,7 @@
  * the upgrade request and refuses before the handshake (gateway.ts's `readPrincipal`
  * + `refuse(socket, 401)`). That cookie is `SameSite=Lax` (lolly-work
  * `server/src/iam/sessions.ts`), and a browser does NOT attach a Lax cookie to a
- * CROSS-SITE WebSocket handshake — so a shell pointed at a remote instance base
+ * CROSS-SITE WebSocket handshake - so a shell pointed at a remote instance base
  * (lib/instance.ts) cannot authenticate at all, and the failure arrives as a bare
  * abnormal close with nothing to diagnose it by. Adding the origin to CSP
  * `connect-src` does not fix that; nothing on the client can.
@@ -40,11 +40,11 @@
  * below, applied in org/collab-provider.ts's `endpoint()`), and the session ends
  * with a stated reason instead of an unexplained reconnect loop. A hosted work
  * collab on a remote base needs a server-side answer first (a same-site cookie
- * attribute the deployment can actually set, or a one-time ticket in the URL) —
+ * attribute the deployment can actually set, or a one-time ticket in the URL) - 
  * plan 100 §7 gains that line before the remote case ships.
  *
  * CSP (plan 100 §11.8 records that WebRTC is invisible to CSP; a WebSocket is NOT).
- * `connect-src 'self'` — what vercel.json and deploy/docker/nginx.conf both ship —
+ * `connect-src 'self'` - what vercel.json and deploy/docker/nginx.conf both ship - 
  * covers the same-origin `wss:` upgrade this module allows, because 'self' matches
  * the page's own origin across the http→ws scheme pair. Nothing else is reachable,
  * which is also why the CSP egress inventory gains no new host for this feature.
@@ -52,7 +52,7 @@
  * SERVER FRAMES ARE UNTRUSTED INPUT. Every field on a `server → client` frame is
  * declared optional here on purpose: the parser (`parseServerFrame`) proves only
  * that a frame is a JSON object with a known `t`, and each handler validates what it
- * actually reads. Ops get a structural gate (`isCanvasOp`) — deliberately NOT the
+ * actually reads. Ops get a structural gate (`isCanvasOp`) - deliberately NOT the
  * deep one: the ajv `validateCanvasOp` + shared op guard is separate concurrent work
  * (plan 100 §11.21), and the integration must route inbound ops through it once it
  * lands. See the concerns note in org/collab-provider.ts.
@@ -81,17 +81,17 @@ export const COLLAB_OP_VERSION = CANVAS_OP_VERSION;
 
 /** A joiner is either allowed to write ops or is present read-only. A version-major
  *  mismatch, or a principal without `session.edit`, resolves to 'observer' (plan 100
- *  §7.6 / plans/99 §9) — never to a refused join. */
+ *  §7.6 / plans/99 §9) - never to a refused join. */
 export type CollabRole = 'writer' | 'observer';
 
 /** One participant as the gateway lists them (lolly-work rooms.ts `RosterEntry`).
- *  Identity comes from the org session (SSO), so names are real names — plan 100
+ *  Identity comes from the org session (SSO), so names are real names - plan 100
  *  §4.5.
  *
  *  `id` is the CONNECTION id and is what `peer-leave` names; `userId` is the
  *  principal, and one principal can hold several connections (two tabs, a phone).
  *  Roster identity is therefore `id` when the gateway sent one, `userId` only as
- *  the fallback for a gateway that does not — keying on `userId` alone would drop
+ *  the fallback for a gateway that does not - keying on `userId` alone would drop
  *  a user's second device from the roster the moment their first one left. */
 export interface RosterEntry {
   readonly id?: string;
@@ -104,7 +104,7 @@ export interface RosterEntry {
 // ── The document snapshot, in its JSON form ───────────────────────────────────
 
 /**
- * `CanvasDocState` uses `Map`s, which do not survive `JSON.stringify` — so the wire
+ * `CanvasDocState` uses `Map`s, which do not survive `JSON.stringify` - so the wire
  * form of a snapshot is plain objects. This is the shape `join-ack.docState` carries.
  * Every field is optional: an empty room sends an empty (or absent) snapshot.
  */
@@ -115,14 +115,14 @@ export interface WireBoxes {
 
 export interface WireDocState extends WireBoxes {
   readonly params?: Readonly<Record<string, ParamValue>>;
-  /** v1.1 collections — one boxes-shaped doc per `blocks` input id. */
+  /** v1.1 collections - one boxes-shaped doc per `blocks` input id. */
   readonly collections?: Readonly<Record<string, WireBoxes>>;
 }
 
 // ── Frames: client → server ───────────────────────────────────────────────────
 
 /**
- * The presence lane's payload is deliberately OPAQUE to this module — it is never
+ * The presence lane's payload is deliberately OPAQUE to this module - it is never
  * read here, only forwarded. Two shapes legitimately ride it and the choice is not
  * this file's to make: the contract's own `Presence`/`Awareness` (what
  * `CanvasSyncAdapter.presence` takes), and the shell's richer `PresenceFrame`
@@ -140,13 +140,13 @@ export interface LeaveFrame { readonly t: 'leave' }
 
 export type ClientFrame = JoinFrame | ClientOpsFrame | ClientPresenceFrame | LeaveFrame;
 
-// ── Frames: server → client (all fields optional — untrusted) ─────────────────
+// ── Frames: server → client (all fields optional - untrusted) ─────────────────
 
 export interface JoinAckFrame {
   readonly t: 'join-ack';
   /** The OTHER members. The gateway excludes the joiner deliberately (rooms.ts
    *  `join()`: "a new arrival that sees itself in the roster renders an orphan
-   *  ghost of itself") — self is `you`. */
+   *  ghost of itself") - self is `you`. */
   readonly roster?: readonly RosterEntry[];
   readonly docState?: WireDocState | null;
   /**
@@ -158,7 +158,7 @@ export interface JoinAckFrame {
    * used as an ack watermark: a peer's clock alone can carry it past everything
    * this device ever minted, which would retire outbox entries the gateway never
    * received. The per-client `highestClock` map the gateway dedups replays against
-   * is not published, so there is no watermark ack on this wire at all — see the
+   * is not published, so there is no watermark ack on this wire at all - see the
    * ack rules in org/collab-provider.ts.
    *
    * What it IS good for: a Lamport floor. This device's next minted clock must
@@ -167,7 +167,7 @@ export interface JoinAckFrame {
    */
   readonly serverClock?: number;
   readonly opVersion?: string;
-  /** THE joiner's own seat, as the gateway assigned it — `you.role` is the
+  /** THE joiner's own seat, as the gateway assigned it - `you.role` is the
    *  authoritative role (gateway.ts `doJoin` → `ack.you`). A top-level `role` is
    *  accepted as a fallback for a gateway that publishes it that way; absent from
    *  BOTH, the client seats itself as an observer (fail closed). */
@@ -185,14 +185,14 @@ export interface JoinAckFrame {
 
 export interface ServerOpsFrame {
   readonly t: 'ops';
-  /** The originating CONNECTION id — NOT the device client id that stamps
+  /** The originating CONNECTION id - NOT the device client id that stamps
    *  `op.origin.client`, and not a user id either (rooms.ts `applyOps` broadcasts
    *  `from: from.id`). Acking matches on the origin pair, never on this.
    *
    *  This frame reaches PEERS ONLY: `applyOps` skips the sender (`if (peer.id ===
    *  from.id) continue`), so a writer never sees its own ops come back. The echo
    *  ack rule in org/collab-provider.ts therefore never fires against this gateway
-   *  — it is kept because it costs nothing and is exact where it does apply. */
+   * - it is kept because it costs nothing and is exact where it does apply. */
   readonly from?: string;
   readonly ops?: readonly CanvasOp[];
 }
@@ -216,14 +216,14 @@ export interface PeerJoinFrame {
 
 export interface PeerLeaveFrame {
   readonly t: 'peer-leave';
-  /** The departing CONNECTION id (rooms.ts: `{t:'peer-leave', id}`) — matched
+  /** The departing CONNECTION id (rooms.ts: `{t:'peer-leave', id}`) - matched
    *  against `RosterEntry.id`, falling back to `userId`. */
   readonly id?: string;
   readonly from?: string;
   readonly roster?: readonly RosterEntry[];
 }
 
-/** A per-sender error. Input-locked vetoes go to the SENDER only — never broadcast —
+/** A per-sender error. Input-locked vetoes go to the SENDER only - never broadcast - 
  *  so `inputs` names the inputs the gateway refused to write (gateway.ts groups a
  *  batch's rejections by code and sends one frame per code). `inputId` is the
  *  single-input alias. */
@@ -247,7 +247,7 @@ const SERVER_FRAME_TYPES = new Set(['join-ack', 'ops', 'presence', 'peer-join', 
 
 /**
  * Parse one inbound message. Returns null for anything that is not a JSON object
- * carrying a known `t` — a binary frame, a truncated payload, a hostile string. The
+ * carrying a known `t` - a binary frame, a truncated payload, a hostile string. The
  * caller ignores nulls rather than closing: a gateway minor may add frame types this
  * build does not know, and an unknown frame must be inert, not fatal.
  */
@@ -274,15 +274,15 @@ export function parseServerFrame(data: unknown): ServerFrame | null {
  *
  * There is deliberately no NOT_FOUND / ROOM_FULL / UNSUPPORTED_VERSION here: the
  * gateway refuses an unknown or unreadable session with a plain HTTP 401/404 on the
- * upgrade (no socket is ever created — the browser reports that as 1006), and a
+ * upgrade (no socket is ever created - the browser reports that as 1006), and a
  * full room or an incompatible op major seats the joiner as an OBSERVER rather than
  * closing (rooms.ts `JoinNotice`). Inventing codes for those cases is how the
  * previous table came to disagree with the gateway on what 4003 and 4004 mean.
  */
 export const COLLAB_CLOSE = {
-  /** Clean shutdown — either side. */
+  /** Clean shutdown - either side. */
   NORMAL: 1000,
-  /** The caller stopped being a live member while the socket was open — disabled,
+  /** The caller stopped being a live member while the socket was open - disabled,
    *  session-epoch bumped, or the cookie expired. */
   UNAUTHORIZED: 4001,
   /** No `join` frame within the gateway's join timeout. */
@@ -298,7 +298,7 @@ export const COLLAB_CLOSE = {
 } as const;
 
 /**
- * Which closes are ANSWERS rather than blips — the ones where reconnecting would
+ * Which closes are ANSWERS rather than blips - the ones where reconnecting would
  * only repeat the same refusal:
  *
  *   1000 normal, 1008 policy violation, 4001 unauthorized, 4004 protocol.
@@ -306,13 +306,13 @@ export const COLLAB_CLOSE = {
  * Everything else gets the backoff, INCLUDING the rest of the private range. That
  * default is the important half. `GOING_AWAY` (4010) is how the gateway signals its
  * own restart, and a blanket "4000-4999 is terminal" rule turned every redeploy into
- * a permanent kill for every live collab in the fleet — the exact opposite of what a
+ * a permanent kill for every live collab in the fleet - the exact opposite of what a
  * restart should mean. A code this build does not recognise is far more likely to be
  * a newer gateway's transient condition than a permanent verdict, and the cost of
  * guessing wrong is bounded by the backoff: jittered, capped at 30 s.
  *
- * 4009 OPS_RATE and 4008 PRESENCE_RATE are retryable for the same reason — a burst
- * is a moment, not a verdict — and the client no longer produces the op-rate one at
+ * 4009 OPS_RATE and 4008 PRESENCE_RATE are retryable for the same reason - a burst
+ * is a moment, not a verdict - and the client no longer produces the op-rate one at
  * all now that every `ops` frame is chunked to MAX_OPS_PER_FRAME.
  */
 const TERMINAL_CLOSE_CODES: ReadonlySet<number> = new Set([
@@ -358,7 +358,7 @@ export const SOCKET_OPEN = 1;
  * Turn an instance-resolved gateway PATH into a socket URL. `resolved` is whatever
  * `instancePath()` returned: a root-relative path in the ordinary same-origin case,
  * or an absolute `https://…` URL when the shell is pointed at a remote instance
- * base. Both are handled by resolving against the page URL and swapping the scheme —
+ * base. Both are handled by resolving against the page URL and swapping the scheme - 
  * `http:` → `ws:` (a dev server on localhost), everything else → `wss:`, which keeps
  * a mixed-content downgrade unreachable from an https page.
  */
@@ -391,7 +391,7 @@ export function isCrossOriginSocket(socketUrl: string, pageHref: string): boolea
 // ── Outbound framing caps (the gateway's, mirrored) ───────────────────────────
 
 /**
- * Ops the gateway accepts in ONE `ops` message — lolly-work rooms.ts
+ * Ops the gateway accepts in ONE `ops` message - lolly-work rooms.ts
  * `MAX_OPS_PER_MESSAGE`. Exceeding it is not an error frame: gateway.ts closes the
  * socket with `CLOSE.OPS_RATE`. Every outbound batch (a live gesture as much as an
  * outbox replay) is chunked to this, so the client cannot trip it.
@@ -401,7 +401,7 @@ export const MAX_OPS_PER_FRAME = 200;
 /**
  * Byte budget for one serialized frame. The gateway's `WebSocketServer` runs with
  * `maxPayload: MAX_MESSAGE_BYTES` (256 KiB) and a browser answers an oversize frame
- * by closing (1009), so the op-count cap alone is not enough — 200 ops carrying long
+ * by closing (1009), so the op-count cap alone is not enough - 200 ops carrying long
  * text scalars pass the count and blow the payload. 192 KiB leaves headroom for
  * multi-byte UTF-8 the estimate below cannot see.
  */
@@ -420,7 +420,7 @@ function jsonByteLength(value: unknown): number {
 
 /**
  * Split ops into frames that satisfy BOTH caps, order preserved. A single op larger
- * than the byte budget is sent alone rather than dropped — the gateway will refuse
+ * than the byte budget is sent alone rather than dropped - the gateway will refuse
  * it, which is a visible answer, whereas dropping it here would be a silent one.
  */
 export function chunkOps(
@@ -475,7 +475,7 @@ export function isParamValue(v: unknown): v is ParamValue {
 /**
  * Structural gate for one inbound op: the discriminant, the origin stamp, and the
  * fields that op kind cannot work without. Enough that nothing downstream reads
- * `undefined` off a hostile frame — NOT enough to be the security boundary, which is
+ * `undefined` off a hostile frame - NOT enough to be the security boundary, which is
  * the ajv validator plus the manifest own-property whitelist (plan 100 §11.21).
  */
 export function isCanvasOp(v: unknown): v is CanvasOp {
@@ -501,7 +501,7 @@ export function isCanvasOp(v: unknown): v is CanvasOp {
     case 'order':
       return typeof op.orderKey === 'string';
     default:
-      return true; // remove — id + origin is the whole payload
+      return true; // remove - id + origin is the whole payload
   }
 }
 
@@ -539,7 +539,7 @@ function boxesToOps(
     const row = boxes[id];
     if (!isBoxRow(row)) return;
     // Membership + paint order first, with an EMPTY row, then the fields as their
-    // own ops — so `withoutHeldKeys` can drop exactly one field of one box without
+    // own ops - so `withoutHeldKeys` can drop exactly one field of one box without
     // having to take apart an `add`, and so the geometry lane stays a `geom` op
     // (plans/99 §4.3: a move must never invalidate a raster).
     out.push({ k: 'add', id, row: {}, orderKey: keys[i]!, origin, ...scope });
@@ -559,7 +559,7 @@ function boxesToOps(
 }
 
 /**
- * A `join-ack` snapshot expressed as the op list that reproduces it — the one form
+ * A `join-ack` snapshot expressed as the op list that reproduces it - the one form
  * both the local convergence doc and the runtime plumbing already consume, so a seed
  * needs no second apply path of its own.
  *
@@ -591,7 +591,7 @@ export function docStateToOps(state: WireDocState | null | undefined, origin: Op
 
 /**
  * The register keys one op writes. Used to answer "does the snapshot I just received
- * overwrite an edit of mine the gateway has not accepted yet?" — geometry and content
+ * overwrite an edit of mine the gateway has not accepted yet?" - geometry and content
  * share the `f` namespace deliberately, because a `geom` op and a `field` op on `x`
  * write the SAME register.
  */
@@ -624,7 +624,7 @@ export function heldKeyIndex(ops: readonly CanvasOp[]): Map<string, CanvasOp> {
  * when nothing of it survives.
  *
  * Why this exists rather than a clock trick: the seed's invented origin is a single
- * watermark, and any single watermark is wrong in one direction or the other — high
+ * watermark, and any single watermark is wrong in one direction or the other - high
  * enough to carry a peer's edits made while we were away is also high enough to
  * clobber our own unacked edit, which would make the user's typing visibly revert
  * and never come back (their replayed op keeps its original, lower, clock). Filtering
@@ -653,7 +653,7 @@ export function withoutHeldKeys(op: CanvasOp, held: ReadonlyMap<string, CanvasOp
       return kept ? { ...op, fields } : null;
     }
     default: {
-      // `add`: membership is all-or-nothing — an unacked add/remove of ours owns
+      // `add`: membership is all-or-nothing - an unacked add/remove of ours owns
       // whether the row exists at all, so the seed must not restate it. Otherwise
       // the seed keeps membership but yields the paint-order key to a pending
       // order/add of ours, which would otherwise lose to the watermark forever.
@@ -673,7 +673,7 @@ export function withoutHeldKeys(op: CanvasOp, held: ReadonlyMap<string, CanvasOp
   }
 }
 
-/** The `(client, clock)` pair the gateway dedups on — one gesture's ops all share it,
+/** The `(client, clock)` pair the gateway dedups on - one gesture's ops all share it,
  *  so it identifies a BATCH, which is exactly the granularity an ack arrives at. */
 export function originKey(origin: OpOrigin): string {
   return `${origin.client} ${origin.clock}`;

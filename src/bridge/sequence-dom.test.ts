@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-dom tests — the applier that puts a timed composition's LIVE DOM at a time.
+ * sequence-dom tests - the applier that puts a timed composition's LIVE DOM at a time.
  *
  * This module is the one copy of the "which box is on screen at t, and what does its
  * transition compose on top of the authored styles" logic. views/sequence-clock.ts
@@ -8,20 +8,20 @@
  * advance the playhead itself while a MediaRecorder films the page) both go through
  * it, so the three things asserted here are the ones a drift would silently break:
  *
- *   • the AUTHORED transform survives — a box the user rotated stays rotated while an
+ *   • the AUTHORED transform survives - a box the user rotated stays rotated while an
  *     entrance animation plays over it (the composition bug this module exists for);
  *   • `seq-off` toggles on the half-open window boundaries, not a frame either side;
  *   • restore() leaves the DOM exactly as it was found, attribute string included.
  *
  * The pure readers (readTiming/isActiveAt/transitionAt/compose*) and applyTimeToElements
  * are already covered against jsdom in views/sequence-clock.test.ts, which imports them
- * through the clock's re-export — that suite is the parity check that the move did not
+ * through the clock's re-export - that suite is the parity check that the move did not
  * change behaviour, so it is not duplicated here.
  *
  * NOT covered (browser-only, stated plainly): the actual live capture. renderLive needs
  * getDisplayMedia + MediaRecorder + a compositor, so "the recorded webm contains motion"
  * can only be verified by exporting from a real browser. What is testable headlessly is
- * that the driver advances the DOM over wall-clock time and restores it — below.
+ * that the driver advances the DOM over wall-clock time and restores it - below.
  *
  * Run directly:  node --test shells/web/src/bridge/sequence-dom.test.ts
  */
@@ -96,7 +96,7 @@ test('seq-off follows the HALF-OPEN window, on both boundaries', () => {
   assert.equal(off(a), false, 'a is still on one ms before its end');
   assert.equal(off(b), true);
 
-  // The frame at exactly start+dur belongs to the NEXT clip — this is what makes a
+  // The frame at exactly start+dur belongs to the NEXT clip - this is what makes a
   // gapless row cut cleanly instead of flashing both clips for one frame.
   applySequenceTime(root, 1000);
   assert.equal(off(a), true, 'a is off at exactly start+dur');
@@ -171,7 +171,7 @@ test('releaseShotBorrow un-parks the BOX when the borrow was taken on a descenda
   releaseShotBorrow(kid);
   assert.equal(a.classList.contains(SHOT_CLASS), false, 'the park is on the box, the lease on the child');
   assert.equal(kid.hasAttribute(BORROW_ATTR), false);
-  // Nothing borrowed, nothing to do — and no throw on a box that was never parked.
+  // Nothing borrowed, nothing to do - and no throw on a box that was never parked.
   releaseShotBorrow(box(root, 'b'));
 });
 
@@ -187,7 +187,7 @@ test('an enter transition composes with the AUTHORED rotation instead of clobber
   assert.match(tr, /^translate\(/, 'the animation translate goes OUTSIDE the authored transform');
   assert.ok(tr.indexOf('translate(') < tr.indexOf('rotate(-4deg)'),
     'order is translate -> authored -> anim, matching the compositor\'s matrix order');
-  // Authored opacity 0.8 × the transition's alpha — never replaced by the alpha alone.
+  // Authored opacity 0.8 × the transition's alpha - never replaced by the alpha alone.
   const mid = parseFloat(a.style.opacity);
   assert.ok(mid > 0 && mid < 0.8, `authored 0.8 is multiplied down mid-transition, got ${a.style.opacity}`);
 
@@ -310,7 +310,7 @@ function easedStage(ease: string | null): HTMLElement {
   return root;
 }
 
-/** `a`'s inline transform 100 ms into its 400 ms rise — a quarter of the way in. */
+/** `a`'s inline transform 100 ms into its 400 ms rise - a quarter of the way in. */
 function riseTransform(ease: string | null): string {
   const root = easedStage(ease);
   applySequenceTime(root, 100);
@@ -357,10 +357,10 @@ test('the ease reaches the driver too — a live take is eased like the preview'
 });
 
 // ── frames AS scenes: the applier gates [data-pdf-page] frame pages too (plan 92) ──────
-// A sequenced Design frame doc has NO `.lolly-box` on the seq lane — its scenes are
+// A sequenced Design frame doc has NO `.lolly-box` on the seq lane - its scenes are
 // [data-pdf-page] frame pages carrying data-t-start/data-t-dur. The SAME generic
 // [data-t-start] applier gates them: the page whose [start,start+dur) holds t stays
-// visible, the others get `.seq-off` — a slide at a time. There is no [data-sequence]
+// visible, the others get `.seq-off` - a slide at a time. There is no [data-sequence]
 // stage in a frames doc, so this also exercises the sequenceStageOf → root fallback.
 
 function framesStage(): HTMLElement {

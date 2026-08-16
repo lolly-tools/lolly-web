@@ -4,7 +4,7 @@
  * decoder (parseUrlState), plus the layer-stack tool's wire-contract pins:
  * field order is the format, so the fields list is append-only forever, and a
  * 20-layer document must stay far under the 8000-char address-bar cap (the
- * whole reason the tool's rows are 8 lean fields — the governing constraint
+ * whole reason the tool's rows are 8 lean fields - the governing constraint
  * from the PSD/XCF import design).
  */
 import { test } from 'node:test';
@@ -47,7 +47,7 @@ test('layer-stack wire contract: field order is pinned (append-only forever)', (
   // The compact form is POSITIONAL: changing this order (or removing a field)
   // silently corrupts every shared/bookmarked layer-stack URL in existence.
   // New fields go at the END. If this test fails, you have broken the wire
-  // format — revert; do not update the expectation.
+  // format - revert; do not update the expectation.
   assert.deepEqual(FIELDS.map((f) => f.id), ['img', 'x', 'y', 'o', 'v', 'b', 'n', 'g']);
   assert.equal(layersInput.urlKey, 'l');
 });
@@ -81,7 +81,7 @@ test('user/ ids: kept in the address-bar variant, empty in the share variant', (
 test('a raw comma or tilde in any value bails to null (JSON fallback), so import must scrub', () => {
   assert.equal(enc([row(1, { n: 'Shadow, base' })], FIELDS), null);
   assert.equal(enc([row(1, { g: 'a~b' })], FIELDS), null);
-  // The import-side scrub (psd-import's `scrub`) maps both to spaces — encodable.
+  // The import-side scrub (psd-import's `scrub`) maps both to spaces - encodable.
   assert.ok(enc([row(1, { n: 'Shadow  base' })], FIELDS));
 });
 
@@ -102,6 +102,6 @@ test('empty defaults cost nothing: an all-default tail row is just separators', 
     [{ img: null, x: 0, y: 0, o: 100, v: true, b: '', n: '', g: '' }],
     FIELDS,
   )!;
-  // ",0,0,100,true,,," — no field name overhead, no quoting.
+  // ",0,0,100,true,,," - no field name overhead, no quoting.
   assert.ok(compact.length <= 16, `minimal row should be tiny, got "${compact}"`);
 });

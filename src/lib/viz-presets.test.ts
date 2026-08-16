@@ -2,7 +2,7 @@
 /**
  * Covers the visualizer's PURE half: brand-palette derivation (viz-palette.ts) and
  * preset construction (viz-presets.ts). The GL/audio half (butterchurn-viz.ts) needs
- * a real WebGL2 context and an AudioContext, so it isn't exercised here — it's
+ * a real WebGL2 context and an AudioContext, so it isn't exercised here - it's
  * verified by opening the visualizer in a browser.
  *
  * The preset assertions matter more than they look: butterchurn calls a preset's
@@ -21,7 +21,7 @@ import {
   VIZ_PRESETS, accentAt, defaultVizPresetId, rampAt, vizPresetById, type MdVars,
 } from './viz-presets.ts';
 
-/** A brand with a dark base, two chromatic mids, and a pale tip — the shape the
+/** A brand with a dark base, two chromatic mids, and a pale tip - the shape the
  *  anchor picker is designed around. */
 const SUSE_ISH = ['#0c322c', '#008878', '#30ba78', '#90ebcd', '#efefef'];
 
@@ -90,7 +90,7 @@ test('a monochrome brand keeps its own blacks and whites', () => {
 });
 
 test('only a brand with NOTHING usable gets the synthesised neutral', () => {
-  // The invented palette is a last resort, not a preference — it must not pre-empt a
+  // The invented palette is a last resort, not a preference - it must not pre-empt a
   // brand that does ship colours, however few or however dark.
   const empty = buildVizPalette([]);
   const midEmpty = empty.ramp[Math.floor(RAMP_STEPS / 2)]!;
@@ -105,7 +105,7 @@ test('a dark, desaturated brand primary is still honoured as the hero', () => {
   // chroma 0.0437, a hair under the 0.045 gate that keeps greys OUT OF THE RAMP. The
   // gate was also applied to the accent hint, so the brand's own declared primary was
   // dismissed as grey, the code fell through to most-chromatic, picked Waterhole blue
-  // (0.2576) — and the entire visualizer rendered navy.
+  // (0.2576) - and the entire visualizer rendered navy.
   const p = buildVizPalette(SUSE_FULL, '#0c322c');
   const pineHue = hexToOklch('#0c322c')!.h;
   assert.ok(hueGap(hueOf(p.hero), pineHue) < 20, `hero was ${JSON.stringify(p.hero)}, expected Pine's hue`);
@@ -127,7 +127,7 @@ function hueGap(a: number, b: number): number {
   return Math.min(d, 360 - d);
 }
 
-/** The full SUSE token set — deliberately spanning three distant hue families, which
+/** The full SUSE token set - deliberately spanning three distant hue families, which
  *  is what broke the first implementation. */
 const SUSE_FULL = [
   '#0c322c', '#01564a', '#008878', '#30ba78', '#38d5b4', '#90ebcd', '#efefef',
@@ -153,7 +153,7 @@ test('the hero is the brand accent, not merely the most chromatic swatch', () =>
   // "most chromatic" heuristic picked blue and turned the whole visualizer blue.
   const p = buildVizPalette(SUSE_FULL, '#30ba78');
   assert.ok(hueGap(hueOf(p.hero), hueOf([0.19, 0.73, 0.47])) < 25, `hero was ${JSON.stringify(p.hero)}`);
-  // With no hint it may fall back to chroma — but a hint must always win.
+  // With no hint it may fall back to chroma - but a hint must always win.
   const hinted = buildVizPalette(SUSE_FULL, '#2453ff');
   assert.ok(hueGap(hueOf(hinted.hero), hueOf([0.14, 0.33, 1])) < 25, 'an explicit hint must be honoured');
 });
@@ -165,7 +165,7 @@ test('core accents are the brand family; off-family hues are demoted to support'
   for (const c of p.accents) {
     assert.ok(hueGap(hueOf(c), heroHue) <= 60, `accent ${JSON.stringify(c)} is off-family`);
   }
-  // Persimmon and waterhole must still be REACHABLE — just not as effect fills.
+  // Persimmon and waterhole must still be REACHABLE - just not as effect fills.
   assert.ok(p.support.length >= 1, 'SUSE has off-family hues to support with');
   for (const c of p.support) {
     assert.ok(hueGap(hueOf(c), heroHue) > 45, `support ${JSON.stringify(c)} should be off-family`);
@@ -183,9 +183,9 @@ test('core accents are separated by lightness, not repeated', () => {
 
 test('the palette serves brands other than SUSE', () => {
   // This ships in the public, brand-agnostic web shell, so the derivation has to hold
-  // up for any pack — not just the one it was developed against.
+  // up for any pack - not just the one it was developed against.
   // `hued` says whether this brand ships any real colour. A greyscale brand SHOULD get
-  // a greyscale ramp — see the monochrome test — so only hued brands are asserted to
+  // a greyscale ramp - see the monochrome test - so only hued brands are asserted to
   // produce a hued ramp.
   const brands: Array<[string, string[], string | null, boolean]> = [
     ['purple, single hue', ['#1a0033', '#7b2ff7', '#c9a7ff'], '#7b2ff7', true],
@@ -217,7 +217,7 @@ test('the palette serves brands other than SUSE', () => {
 test('a single-hue brand still gets accents, and an empty support list', () => {
   const p = buildVizPalette(['#0c322c', '#30ba78', '#90ebcd'], '#30ba78');
   assert.ok(p.accents.length >= 2);
-  // Nothing off-family to offer — every consumer must cope with support being empty.
+  // Nothing off-family to offer - every consumer must cope with support being empty.
   assert.equal(p.support.length, 0);
 });
 
@@ -266,7 +266,7 @@ test('rampAt is continuous across the wrap seam', () => {
   const p = buildVizPalette(SUSE_ISH);
   const before = rampAt(p, 0.999);
   const after = rampAt(p, 0.001);
-  // Not equal — but the step must be small, or the colour walk would visibly snap
+  // Not equal - but the step must be small, or the colour walk would visibly snap
   // once per cycle.
   const jump = Math.max(...before.map((v, i) => Math.abs(v - after[i]!)));
   assert.ok(jump < 0.35, `seam jump ${jump} too large`);
@@ -317,7 +317,7 @@ test('presets are built as real functions, never equation source strings', () =>
     const preset = def.build(p);
     assert.equal(typeof preset.init_eqs, 'function', `${def.id} init_eqs`);
     assert.equal(typeof preset.frame_eqs, 'function', `${def.id} frame_eqs`);
-    // pixel_eqs must be a function or the empty string — butterchurn tests for ''.
+    // pixel_eqs must be a function or the empty string - butterchurn tests for ''.
     assert.ok(typeof preset.pixel_eqs === 'function' || preset.pixel_eqs === '', `${def.id} pixel_eqs`);
     for (const key of ['init_eqs_str', 'frame_eqs_str', 'pixel_eqs_str']) {
       assert.ok(!(key in preset), `${def.id} must not carry ${key}`);
@@ -328,7 +328,7 @@ test('presets are built as real functions, never equation source strings', () =>
 test('every preset carries real warp/comp GLSL', () => {
   // Regression: butterchurn's renderer does a bare `preset.warp.trim()` /
   // `preset.comp.trim()` with no guard, so a preset that omits either key throws inside
-  // loadPreset before the first frame — a black canvas with no error near the cause.
+  // loadPreset before the first frame - a black canvas with no error near the cause.
   //
   // And they must be NON-EMPTY: '' selects butterchurn's built-in shader path, which is
   // the limited look this whole shader layer exists to get past.
@@ -345,7 +345,7 @@ test('every preset carries real warp/comp GLSL', () => {
     assert.ok(preset.comp.includes('shader_body'), `${def.id} comp is not a real shader`);
     // A custom warp REPLACES the built-in `* decay`, so every one must reapply it.
     assert.match(preset.warp, /\*\s*decay/, `${def.id} warp drops decay`);
-    // The composite must re-derive colour through the brand ramp — that's what keeps
+    // The composite must re-derive colour through the brand ramp - that's what keeps
     // the picture on-brand whatever the feedback loop mixed.
     assert.ok(preset.comp.includes('brandTone('), `${def.id} comp is not brand-toned`);
   }
@@ -415,7 +415,7 @@ test('presets differ in TECHNIQUE, not merely in parameters', () => {
   for (const [key, names] of counts) {
     assert.ok(names.length <= 3, `${names.length} presets share ${key}: ${names.join(', ')}`);
   }
-  // At least one preset must invert, and at least one solarize — the tonal curves are a
+  // At least one preset must invert, and at least one solarize - the tonal curves are a
   // whole axis of variety and it should not quietly go unused.
   assert.ok([...counts.keys()].some((k) => k.includes('+inv')), 'no preset inverts');
   assert.ok([...counts.keys()].some((k) => k.includes('+sol')), 'no preset solarizes');
@@ -425,7 +425,7 @@ test('every preset declares exactly four shape and four wave slots', () => {
   // Regression: the renderer allocates `range(4)` custom shapes/waveforms ONCE and
   // then iterates those, indexing `preset.shapes[i]` / `preset.waves[i]`. Declare
   // fewer and it hands `undefined` to the draw call and throws mid-frame, killing
-  // the render loop — another silent black screen. Unused slots are `enabled: 0`.
+  // the render loop - another silent black screen. Unused slots are `enabled: 0`.
   const p = buildVizPalette(SUSE_ISH);
   for (const def of VIZ_PRESETS) {
     const preset = def.build(p);
@@ -465,7 +465,7 @@ test('authored slots survive padding and padded ones stay inert', () => {
 
 test('every preset paints a brand ground so the field is not black', () => {
   // The complaint that started this: MilkDrop's field is black unless geometry puts
-  // colour in it, and shapes draw under the waveform — so slot 0 is a full-bleed
+  // colour in it, and shapes draw under the waveform - so slot 0 is a full-bleed
   // brand gradient. Assert every preset has one, and that it actually covers the
   // frame (a radius that only reaches ~0.71 would leave visible corners).
   const p = buildVizPalette(SUSE_ISH);
@@ -493,7 +493,7 @@ test('presets fill the screen: real feedback, no dark centre', () => {
     assert.ok((b.decay ?? 0) >= 0.94, `${def.id} decay ${String(b.decay)} kills trails too fast`);
     assert.notEqual(b.darken_center, 1, `${def.id} darken_center punches a hole in the middle`);
     const m = preset.frame_eqs({ ...vars(), ...b } as MdVars);
-    // Something has to move the field every frame — zoom off 1, or rotation.
+    // Something has to move the field every frame - zoom off 1, or rotation.
     const zoom = (m.zoom ?? b.zoom ?? 1) as number;
     const rot = Math.abs((m.rot ?? b.rot ?? 0) as number);
     assert.ok(Math.abs(zoom - 1) > 0.0005 || rot > 0.0005, `${def.id} field is static`);
@@ -537,7 +537,7 @@ test('frame equations return the variable bag and keep colours in 0-1', () => {
         assert.ok(Number.isFinite(v as number) && (v as number) >= 0 && (v as number) <= 1,
           `${def.id}/${label} ${k} = ${String(v)} out of 0-1`);
       }
-      // Alpha and the geometry knobs must stay finite too — a NaN zoom blanks the
+      // Alpha and the geometry knobs must stay finite too - a NaN zoom blanks the
       // render silently rather than throwing.
       for (const k of ['zoom', 'warp', 'rot', 'wave_a', 'wave_scale', 'decay', 'mv_a', 'dx', 'dy']) {
         if (k in m) assert.ok(Number.isFinite(m[k] as number), `${def.id}/${label} ${k} not finite`);

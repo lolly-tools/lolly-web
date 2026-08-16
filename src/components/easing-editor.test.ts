@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * easing-editor tests — the curve editor driven through its real DOM under jsdom.
+ * easing-editor tests - the curve editor driven through its real DOM under jsdom.
  *
  * What is pinned here is the CONTRACT the timeline depends on, not the drawing:
  *
@@ -106,7 +106,7 @@ test('the readout round-trips a typed curve through easingToWire, and a preset N
     assert.deepEqual(r.commits, ['cubic-bezier(0.1,0.9,0.2,1.4)'], 'canonicalised, exactly once');
     assert.equal(r.read.value, easingToWire('cubic-bezier(0.1,0.9,0.2,1.4)'));
 
-    // A preset name is legal input — easingPoints answers for both spellings, so
+    // A preset name is legal input - easingPoints answers for both spellings, so
     // refusing one here would be a second vocabulary. It resolves to its points.
     type(r.read, 'ease-in');
     assert.equal(r.commits.length, 2);
@@ -124,7 +124,7 @@ test('junk in the readout reverts and writes nothing', () => {
     assert.equal(r.read.value, easingToWire(`cubic-bezier(${easingPoints('ease-out')!.join(',')})`), 'and the box shows the real value again');
 
     // x is TIME: a bezier whose control point leaves the unit interval is not a
-    // function of progress, and easingPoints — not this module — is what says so.
+    // function of progress, and easingPoints - not this module - is what says so.
     type(r.read, 'cubic-bezier(1.4,0,0.5,1)');
     assert.equal(r.commits.length, 0, 'an out-of-range x is refused, not clamped behind the user\'s back');
   } finally { r.teardown(); }

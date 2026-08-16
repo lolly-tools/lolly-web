@@ -2,7 +2,7 @@
 /**
  * The memory-backed `host.state` for an ephemeral collab acceptor (plan 100 §11.17).
  *
- * What matters here is not that a Map can hold records — it is that this is the SAME
+ * What matters here is not that a Map can hold records - it is that this is the SAME
  * StateAPI the web shell persists with, only over a different driver. So the tests
  * exercise the surface a tool and the shell actually call (save/load/list/delete,
  * plus `sizes()`/`_getAssetRefs()`, which the storage meter and the sync pruner

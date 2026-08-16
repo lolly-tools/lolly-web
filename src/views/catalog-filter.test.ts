@@ -2,7 +2,7 @@
 /**
  * The Catalogue view's selection model (views/catalog-filter.ts).
  *
- * views/catalog.ts was the largest fully-untested view in the shell — 3,563
+ * views/catalog.ts was the largest fully-untested view in the shell - 3,563
  * lines, one 3,078-line mountCatalog, zero tests (maintainability-2026-07-29.md
  * item 2). These are the rules that decide what a user can see, search and bulk
  * DELETE, so the consequential cases here are the ones about a selection
@@ -39,7 +39,7 @@ test('each bucket admits exactly its own types', () => {
   assert.equal(matchesType(A('a', { type: 'raster' }), 'image'), true);
   assert.equal(matchesType(A('a', { type: 'vector' }), 'image'), false);
   assert.equal(matchesType(A('a', { type: 'vector' }), 'vector'), true);
-  // motion is the one bucket with two members — a regression that dropped either
+  // motion is the one bucket with two members - a regression that dropped either
   // would hide half the animated catalogue behind a filter that looks correct.
   assert.equal(matchesType(A('a', { type: 'video' }), 'motion'), true);
   assert.equal(matchesType(A('a', { type: 'lottie' }), 'motion'), true);
@@ -100,7 +100,7 @@ test('an asset missing from the index simply does not match, rather than throwin
   assert.equal(matchesQuery(A('never-indexed'), 'x', new Map()), false);
 });
 
-// The lib/search migration (plans/99 M3) — the two semantic changes, pinned:
+// The lib/search migration (plans/99 M3) - the two semantic changes, pinned:
 // multi-word queries AND across tokens (order-free), and both sides fold
 // diacritics. Before this the query was one literal substring of the haystack.
 
@@ -108,10 +108,10 @@ test('multi-word queries AND across tokens, in any order', () => {
   const a = A('brand/mark', { meta: { name: 'Primary Mark', tags: ['hero'] } } as Partial<AssetRef>);
   const hay = buildSearchHaystack([a], cat);
   // Both terms present (name + tag) → match, even though "primary hero" is not
-  // a contiguous substring of the haystack — and word order does not matter.
+  // a contiguous substring of the haystack - and word order does not matter.
   assert.equal(matchesQuery(a, 'primary hero', hay), true);
   assert.equal(matchesQuery(a, 'hero primary', hay), true);
-  // One term missing zeroes the whole match — adding a word narrows.
+  // One term missing zeroes the whole match - adding a word narrows.
   assert.equal(matchesQuery(a, 'primary missing', hay), false);
 });
 
@@ -137,7 +137,7 @@ test('an asset with no meta at all still indexes without throwing', () => {
 // ── favourites ───────────────────────────────────────────────────────────────
 
 test('favourites dedupe by base id, keeping the FIRST (catalog beats user)', () => {
-  // The view passes catalog assets first, so the catalog copy must win — otherwise
+  // The view passes catalog assets first, so the catalog copy must win - otherwise
   // a user upload sharing a base id shows the mark twice in the favourites strip.
   const visible = [
     A('logo/primary', { source: 'library' }),
@@ -175,7 +175,7 @@ test("scope 'all' admits catalog assets too — every tile selects; destructive 
   const hay = buildSearchHaystack(visible, cat);
   const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all', scope: 'all' });
   assert.deepEqual([...ids].sort(), ['c1', 'u1']);
-  // The search still narrows the widened scope — invisibility safety is scope-independent.
+  // The search still narrows the widened scope - invisibility safety is scope-independent.
   const narrowed = selectableIds(visible, { query: 'c1', haystack: hay, typeFilter: 'all', scope: 'all' });
   assert.deepEqual([...narrowed], ['c1']);
 });

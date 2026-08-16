@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * OKLCH gamut charts — a 2D plane through colour space, painted as real pixels,
+ * OKLCH gamut charts - a 2D plane through colour space, painted as real pixels,
  * with the sRGB / Display-P3 / Rec.2020 boundaries visible on it.
  *
  * This is the companion to palette-wheel.ts, not a replacement. The wheel is an
  * instrument dial: it shows a palette's spread of hue and chroma at a glance.
  * What it structurally cannot show is where the gamut ends, because the sRGB
  * boundary is a curve in lightness×chroma that moves with hue, and the wheel has
- * no lightness axis. That curve is the thing a brand decision turns on — it is
+ * no lightness axis. That curve is the thing a brand decision turns on - it is
  * why a yellow can be twice as chromatic as a blue, why an evenly-stepped ramp
  * goes lopsided across hues, and why a colour "changes" when exported.
  *
@@ -15,20 +15,20 @@
  *
  * A single pass of the engine primitive (`host.color.slice` / `oklchSlice`) at
  * the widest gamut being charted, painted at FULL strength, with each narrower
- * gamut's boundary stroked over it as a thin contour — the way oklch.com reads,
+ * gamut's boundary stroked over it as a thin contour - the way oklch.com reads,
  * and the way a topographic map reads.
  *
  * An earlier version drained chroma from the wide-gamut bands to mark them as
  * unshowable. It was defensible but wrong in practice: going outward past a line
  * made the colour look DULLER, which is backwards from what the axis says, and it
- * cost three slice passes instead of one — the bulk of the lag while dragging.
+ * cost three slice passes instead of one - the bulk of the lag while dragging.
  * The contour carries the same information without editing the colour.
  *
- * Honesty note, and it matters: the fill is encoded in the DISPLAY's own space —
+ * Honesty note, and it matters: the fill is encoded in the DISPLAY's own space - 
  * `display-p3` on a wide-gamut screen, sRGB otherwise (see lib/display-gamut.ts,
  * which acquires the context and reports the space actually granted). Colour up to
  * THAT space's boundary is the real thing; only pixels past it are painted
- * GAMUT-MAPPED — the nearest colour the surface can hold, not the real one. So on
+ * GAMUT-MAPPED - the nearest colour the surface can hold, not the real one. So on
  * a P3 display the P3 band is true colour, while a Rec.2020-limited chart is still
  * approximate past P3, and that boundary is the contour drawn with the heavier
  * weight. The contours are the facts; the colour past the outermost one is not.
@@ -38,8 +38,8 @@
 // no CSS loader, so a module that imports a stylesheet cannot be exercised under
 // `node --test` at all (which is why palette-wheel had to split its geometry
 // into a second file to get any coverage). Mounting surfaces import
-// `lib/oklch-slice.css` themselves — brand-editor.ts does, alongside the rest of
-// the studio's sheet — and this module stays testable as a whole.
+// `lib/oklch-slice.css` themselves - brand-editor.ts does, alongside the rest of
+// the studio's sheet - and this module stays testable as a whole.
 import {
   hexToOklch, oklchSlice, sliceGamutRegion, gamutSourceId, chromaAxisMax, resolveGamutSource,
 } from '@lolly/engine';
@@ -56,7 +56,7 @@ export { SLICE_C_MAX, SLICE_AXES, sliceFixedOf } from './oklch-slice-geom.ts';
 /** One palette swatch plotted on a chart. `idx` indexes the editor's swatch list. */
 export interface SliceDot {
   idx: number;
-  /** The dot's PAINT — only a displayable colour can be put in `--dot:` or read as a
+  /** The dot's PAINT - only a displayable colour can be put in `--dot:` or read as a
    *  label, so this stays a hex even when the subject is outside sRGB. */
   hex: string;
   label: string;
@@ -65,7 +65,7 @@ export interface SliceDot {
    *
    * Its POSITION comes from here. Deriving the position from `hex` instead means
    * deriving it from a gamut-MAPPED bake whenever the subject sits outside sRGB, and
-   * mapping preserves lightness and hue while reducing chroma — so the dot lands on
+   * mapping preserves lightness and hue while reducing chroma - so the dot lands on
    * the sRGB contour on every plane with a chroma axis (L×C, C×H) while the L×H
    * plane, whose two axes both survive the clamp, correctly shows it outside. The
    * chart then contradicts the readout, the 3D solid and its own third view.
@@ -86,13 +86,13 @@ export interface SliceChartState {
    *  spikes a flat 0.4 used to cut flat tops across. */
   cMax?: number;
   /**
-   * The gamut to chart. Default 'rec2020' — everything we can classify by name.
+   * The gamut to chart. Default 'rec2020' - everything we can classify by name.
    * Narrowing it stops the fill (and the legend, and the P3 edge) at that gamut,
    * for a caller that wants the chart to answer one display's question.
    *
    * Any {@link GamutLimit}, so an ICC press profile charts here exactly as a
-   * display gamut does. It is NOT a superset of sRGB or P3 — a press sits inside
-   * them in the cyans and outside in the yellows — which is why both contours are
+   * display gamut does. It is NOT a superset of sRGB or P3 - a press sits inside
+   * them in the cyans and outside in the yellows - which is why both contours are
    * drawn against one (see `legendHtml`).
    */
   limit?: GamutLimit;
@@ -101,7 +101,7 @@ export interface SliceChartState {
 /**
  * The chroma ceiling a chart is drawn to: explicit if the caller set one, else
  * derived from the gamut being charted. Exported because every surface that
- * SHARES a chart's scale — its slider, its typed input, its axis labels — has to
+ * SHARES a chart's scale - its slider, its typed input, its axis labels - has to
  * ask the same question and get the same answer.
  */
 export const sliceCMax = (state: Pick<SliceChartState, 'cMax' | 'limit'>): number =>
@@ -130,7 +130,7 @@ export function formatFixed(plane: SlicePlane, fixed: number): string {
 
 function ticksHtml(ch: 'l' | 'c' | 'h', axis: 'x' | 'y', cMax: number): string {
   const ticks = sliceTicks(ch, cMax);
-  // Which labels a narrow chart drops, and which two are its ends — both are
+  // Which labels a narrow chart drops, and which two are its ends - both are
   // stated as classes rather than left to CSS `nth-of-type`, which counted the
   // axis NAME as one of the spans and could not tell a first tick from a last.
   const thin = tickThinned(ticks.length);
@@ -161,7 +161,7 @@ function dotHtml(d: SliceDot, plane: SlicePlane, fixed: number, cMax: number): s
 }
 
 /**
- * The chart's markup — canvas fill, boundary overlay, axis ticks and the palette
+ * The chart's markup - canvas fill, boundary overlay, axis ticks and the palette
  * dots. Call {@link paintSliceChart} after it is in the document (the canvas
  * needs a measured box) and {@link wireSliceChart} to make it interactive.
  */
@@ -204,7 +204,7 @@ export function renderSliceChart(
  * The keys are LINE WEIGHTS, not colour chips, because that is what distinguishes
  * the boundaries on the chart: every contour is the same white line and they are
  * told apart by thickness. A coloured dot would be describing a rendering the
- * chart no longer uses. The limit itself gets no line key — its boundary is where
+ * chart no longer uses. The limit itself gets no line key - its boundary is where
  * the colour stops, so the checkerboard key is the one that names it.
  *
  * Which contours those are is decided by {@link contourGamuts}, the SAME rule
@@ -217,8 +217,8 @@ function legendHtml(limit: GamutLimit): string {
   const keys = contourGamuts(limit).map(g =>
     `<span class="okls-key okls-key--line okls-key--${g}">${GAMUT_KEY_LABEL[g]}</span>`);
   // 'no display' is only true of a DISPLAY gamut. Past a press profile's boundary
-  // the colour exists and your screen very likely shows it — the press just cannot
-  // put it down — so the clause is dropped rather than restated.
+  // the colour exists and your screen very likely shows it - the press just cannot
+  // put it down - so the clause is dropped rather than restated.
   const builtin = typeof limit === 'string';
   keys.push(`<span class="okls-key okls-key--none">past ${escapeHtml(limitTitle(limit))}`
     + `${builtin ? ' — no display' : ''}</span>`);
@@ -237,13 +237,13 @@ const limitTitle = (limit: GamutLimit): string =>
  * Which of the two contour gamuts are actually drawn over a fill of `limit`.
  *
  * A contour is skipped when it IS the limit (the fill's own edge is that
- * boundary) or when the fill stops short of it — a P3 contour on an sRGB chart
+ * boundary) or when the fill stops short of it - a P3 contour on an sRGB chart
  * would float in empty space. Everything else is drawn, which for a profile
  * limit means BOTH, because a press gamut contains neither.
  *
  * Exported because the Lab's 3D solid draws its comparison cages by the SAME
  * rule. Two views of one colour cannot be allowed to disagree about which
- * boundaries are worth showing — and the 3D view is where "FOGRA39 is inside
+ * boundaries are worth showing - and the 3D view is where "FOGRA39 is inside
  * sRGB in the cyans and outside it in the yellows" stops being a sentence.
  */
 export function contourGamuts(limit: GamutLimit): ('srgb' | 'p3')[] {
@@ -261,7 +261,7 @@ const PAINTED = new WeakMap<HTMLCanvasElement, string>();
  * frame of a drag: it no-ops when nothing that affects the pixels has changed,
  * and `quality: 'draft'` halves the resolution for the duration of a scrub.
  *
- * Cost at full quality is three engine slices — about 17ms for a 320×200 plot on
+ * Cost at full quality is three engine slices - about 17ms for a 320×200 plot on
  * a laptop, so this belongs inside a rAF, not in a pointermove handler.
  */
 export function paintSliceChart(
@@ -281,7 +281,7 @@ export function paintSliceChart(
   // is invisible on a gradient field but the paint cost is real.
   // 0.75 rather than 0.5: at half resolution the draft was visibly blocky while
   // dragging, and the engine's hoisted membership test made the finer draft cheap
-  // — 5.4ms a chart against 13.9ms before it, for 2.25x the pixels.
+  // - 5.4ms a chart against 13.9ms before it, for 2.25x the pixels.
   const scale = draft ? 0.75 : Math.min(2, window.devicePixelRatio || 1);
   const w = Math.max(1, Math.round(box.width * scale));
   const h = Math.max(1, Math.round(box.height * scale));
@@ -296,12 +296,12 @@ export function paintSliceChart(
   //
   // The display's GAMUT is in the key too, and separately: a context keeps the space
   // it was created with, so a window moved between monitors can leave the encode
-  // unchanged while the boundary marked as "yours" has to move — and the marking
+  // unchanged while the boundary marked as "yours" has to move - and the marking
   // happens inside the paint.
   const keyFor = (encode: EncodeSpace): string =>
     `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${encode}|${displayAnchorGamut()}|${w}x${h}`;
 
-  // The context, the ImageData and the engine's `encode` MUST name the same space —
+  // The context, the ImageData and the engine's `encode` MUST name the same space - 
   // mismatching them shifts every pixel with nothing on screen to say so. They are
   // kept in lockstep by asking the platform first and deriving the other two from
   // its answer, in this order, so there is no path on which they can differ.
@@ -310,7 +310,7 @@ export function paintSliceChart(
   const ctx = acquired.ctx;
   // The canvas acquire2d actually drew a context on. It is a NEW node when the
   // display changed under us, because a 2D context cannot change colour space after
-  // creation — so everything below (the size, putImageData, the repaint key) must
+  // creation - so everything below (the size, putImageData, the repaint key) must
   // follow this one. The old node is gone from the document, and being a fresh key it
   // carries no stale PAINTED entry either.
   canvas = acquired.canvas;
@@ -355,12 +355,12 @@ export function paintSliceChart(
  * Stroke each narrower gamut's boundary as a contour over the fill.
  *
  * Built from `sliceGamutRegion` (closed rings) rather than the open-curve
- * `sliceGamutEdge`, because rings exist for ALL THREE planes — 'lh' has no
+ * `sliceGamutEdge`, because rings exist for ALL THREE planes - 'lh' has no
  * single-valued boundary curve, and it used to be left with no contour at all.
  * The ring also runs along the achromatic edge, which lands on the plot border
  * where it reads as part of the frame.
  *
- * One of the contours is also THE DISPLAY'S — when the chart reaches wider than the
+ * One of the contours is also THE DISPLAY'S - when the chart reaches wider than the
  * screen does, the boundary of what you are actually seeing is already on the plot,
  * so it is given the heavier weight (`data-display="1"`, and the same marker on its
  * legend key) rather than being explained in new prose. No extra wash, no second
@@ -385,7 +385,7 @@ function paintEdges(
       `${ring.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(5)} ${p.y.toFixed(5)}`).join(' ')} Z`,
     ).join(' '));
     // Mark it (and its legend key) as the display's boundary only when it is
-    // actually drawn — `skip` already covers "the chart stops here anyway", which is
+    // actually drawn - `skip` already covers "the chart stops here anyway", which is
     // the case where the fill's own edge IS the display's edge and needs no line.
     const mine = !skip && edge === displayGamut;
     if (mine) marked = edge;
@@ -444,26 +444,26 @@ export function updateSliceDot(
 export interface SliceChartHandlers {
   /** Live during a drag: the dot moved to this position on the plane. */
   onRecolor(idx: number, oklch: { l: number; c: number; h: number; alpha?: number }): void;
-  /** The drag ended — a good moment to persist. */
+  /** The drag ended - a good moment to persist. */
   onCommit(idx: number): void;
-  /** A dot was clicked, not dragged — open its editor. */
+  /** A dot was clicked, not dragged - open its editor. */
   onPick(idx: number): void;
-  /** Empty space was clicked — drop a new swatch at this colour. */
+  /** Empty space was clicked - drop a new swatch at this colour. */
   onAdd(seed: { l: number; c: number; h: number }): void;
   /** Current hex of a dot, so a drag can keep the channels the plane doesn't move.
-   *  Lossy for anything outside sRGB — see `oklchOf`, which supersedes it. */
+   *  Lossy for anything outside sRGB - see `oklchOf`, which supersedes it. */
   hexOf(idx: number): string;
   /**
    * The dot's colour as OKLCH, when the caller has one that is not a hex.
    *
-   * A drag holds the plane's FIXED channel — lightness while you move around the
-   * chroma × hue plane, and so on — and that value has to come from the colour
+   * A drag holds the plane's FIXED channel - lightness while you move around the
+   * chroma × hue plane, and so on - and that value has to come from the colour
    * itself. Recovering it from `hexOf` means recovering it from a **gamut-mapped**
    * bake whenever the subject sits outside sRGB, which is a feedback loop and not a
    * subtle one: each frame re-derives the plane from a colour that is not the
    * subject, the dot lands somewhere the pointer is not, and the next frame
    * re-derives it again from the new bake. It shakes, and it only shakes past the
-   * gamut boundary — which is exactly where a wide-gamut pick lives.
+   * gamut boundary - which is exactly where a wide-gamut pick lives.
    *
    * Optional so a caller whose colours genuinely ARE hex (the brand editor's
    * swatches) needs no change; when present it wins.
@@ -478,13 +478,13 @@ export interface SliceChartHandlers {
  * empty space to add. Returns a teardown.
  *
  * A drag moves ONLY the two channels the plane has axes for. The swatch keeps
- * its own value on the fixed channel — dragging a dot on the L×C plane at hue
+ * its own value on the fixed channel - dragging a dot on the L×C plane at hue
  * 145 does not rotate a blue swatch to green. That is why an off-plane dot stays
  * off-plane (and stays faded) while you drag it: the projection is telling the
  * truth about where the colour is, and quietly snapping its hue to the plane's
  * would be the chart editing something the user did not point at.
  */
-/** How far from a dot's centre a TOUCH still counts as that dot, in CSS px —
+/** How far from a dot's centre a TOUCH still counts as that dot, in CSS px - 
  *  half a 44px target. See `dotNear`. */
 export const TOUCH_SLOP = 22;
 
@@ -493,7 +493,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
   if (!plot) return () => {};
 
   let dragIdx = -1;
-  /** True while `dragIdx` came from the near-miss slop rather than a direct hit — a
+  /** True while `dragIdx` came from the near-miss slop rather than a direct hit - a
    *  guess awaiting the axis lock in `onMove`. */
   let adopted = false;
   let moved = false;
@@ -534,7 +534,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
    * The dot a touch MEANT, when it did not land on one.
    *
    * The dot is 20px across on a coarse pointer against the 44px target floor, so a
-   * thumb misses it routinely — and a miss used to do nothing whatsoever: the drag
+   * thumb misses it routinely - and a miss used to do nothing whatsoever: the drag
    * was not a recolour, and the release was not a click either, so the gesture was
    * silently inert while the caption said "drag the chart to pick". Adopt the
    * nearest dot within a thumb's width of the press instead.
@@ -562,7 +562,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
    * the hit region by the touch radius and RETARGETS the pointerdown onto a small
    * button up to ~24px from its centre, so a pure vertical scroll swipe beside the
    * 20px dot arrived as `target === dot`, took the direct-hit exemption below,
-   * skipped the axis lock and drove lightness to 100% with the page frozen —
+   * skipped the axis lock and drove lightness to 100% with the page frozen - 
    * exactly the defect the lock exists to prevent, at every offset a thumb can
    * realistically land on (measured 0–24px at 390×844, radiusX 18 / radiusY 22).
    *
@@ -583,7 +583,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
    * Normally nothing has to: the plot is `touch-action: pan-y`, so abandoning the
    * adoption is enough and the browser pans. But a RETARGETED press is hit-tested
    * against the dot, which is `touch-action: none` for its own 2D drag, and the
-   * browser decides that before our first `pointermove` ever runs — so for those
+   * browser decides that before our first `pointermove` ever runs - so for those
    * gestures there is no native pan waiting to be handed anything, and letting go
    * simply left the page dead under the finger. Carry it ourselves instead: nearest
    * scrollable ancestor, else the window.
@@ -614,7 +614,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     panY = -1;
     moved = false; startX = e.clientX; startY = e.clientY; pointerId = e.pointerId;
     // Capture only for a real drag on a dot we are SURE about. Pressing bare plot is a
-    // tap (or, on touch, the start of a page scroll — the plot is `touch-action:
+    // tap (or, on touch, the start of a page scroll - the plot is `touch-action:
     // pan-y`), and capturing that pointer would be claiming a gesture we are not
     // going to use.
     if (dragIdx >= 0 && !adopted) plot.setPointerCapture(e.pointerId);
@@ -638,13 +638,13 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     //
     // So the FIRST movement decides. Mostly sideways: the guess was right, take the
     // gesture. Mostly vertical: the user is scrolling past the chart, so abandon the
-    // adoption entirely and let the page have it. A DIRECT hit on the dot is exempt —
+    // adoption entirely and let the page have it. A DIRECT hit on the dot is exempt - 
     // pressing the dot itself is unambiguous, and dragging it up to change lightness
     // is the whole point of the control.
     if (adopted) {
       if (Math.abs(dy) >= Math.abs(dx)) {
         dragIdx = -1; adopted = false; moved = true;
-        // Give the page the travel it already spent deciding, then carry the rest —
+        // Give the page the travel it already spent deciding, then carry the rest - 
         // but only where the browser has been shut out (see `panFor`). Where it has
         // not, it is already panning and doing this too would scroll twice.
         if (panBlocked) { panFor()?.by(startY - e.clientY); panY = e.clientY; }
@@ -664,7 +664,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     const wasAdopted = adopted;
     adopted = false; panBlocked = false; panY = -1;
     if (moved) { if (dragIdx >= 0) h.onCommit(dragIdx); }
-    // An adoption that never travelled is a TAP near a dot — pick it, which is what
+    // An adoption that never travelled is a TAP near a dot - pick it, which is what
     // the slop is for. One that was abandoned by the axis lock has already cleared
     // dragIdx and set moved, so it lands in neither branch and nothing happens,
     // which is correct: the page scrolled, the user did not ask for a colour.
@@ -673,7 +673,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     dragIdx = -1;
   };
   /**
-   * The gesture was taken away from us — on a phone that means the page started
+   * The gesture was taken away from us - on a phone that means the page started
    * scrolling under the press, which the plot now allows (`touch-action: pan-y`).
    *
    * NOT the same as a release: a cancelled press must never be read as a click,

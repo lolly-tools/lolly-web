@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-// Design Import — Adobe InDesign IDML parser.
+// Design Import - Adobe InDesign IDML parser.
 //
 // A raw .indd is a proprietary binary database with no open parser, so this path takes
-// IDML — InDesign's documented, ZIP-of-XML interchange format (File → Export → InDesign
+// IDML - InDesign's documented, ZIP-of-XML interchange format (File → Export → InDesign
 // Markup). That maps cleanly to editable free-canvas boxes, exactly like Figma/Penpot's
 // open exports: each spread's rectangles/ovals/text-frames become boxes with real
 // coordinates, groups and fills. Runs entirely on-device (DOMParser + the pure engine
@@ -216,7 +216,7 @@ function parseSwatches(doc: Document | null): Record<string, string> {
     const hex = colorValueToHex(c.getAttribute('Space'), c.getAttribute('ColorValue'));
     if (hex) map[self] = hex;
   }
-  // Tints reference a base colour at a % — approximate as the base colour.
+  // Tints reference a base colour at a % - approximate as the base colour.
   for (const t of Array.from(doc.getElementsByTagName('Tint'))) {
     const self = t.getAttribute('Self'); const base = t.getAttribute('BaseColor');
     if (self && base && map[base]) map[self] = map[base]!;
@@ -301,7 +301,7 @@ function directChild(el: Element, localName: string): Element | null {
   for (const c of Array.from(el.children)) if (c.localName === localName) return c;
   return null;
 }
-// The first element whose localName matches AND that actually holds page items — skips the
+// The first element whose localName matches AND that actually holds page items - skips the
 // idPkg wrapper element that shares the local name (e.g. <idPkg:Spread><Spread>…).
 function innerElement(doc: Document, localName: string): Element | null {
   const all = Array.from(doc.getElementsByTagName('*')).filter((el) => el.localName === localName);
@@ -317,7 +317,7 @@ function hasPlacedContent(el: Element): boolean {
 
 // ── Unpack reader (idml → PdfHandle) ────────────────────────────────────────────
 
-/** A referenced-but-not-embedded font row — IDML links its fonts, so no bytes. */
+/** A referenced-but-not-embedded font row - IDML links its fonts, so no bytes. */
 function namesOnlyFont(family: string): EmbeddedFont {
   return {
     name: family, family, ext: 'ttf', bytes: new Uint8Array(0),
@@ -329,7 +329,7 @@ function namesOnlyFont(family: string): EmbeddedFont {
 const XML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 const xmlEsc = (s: string): string => String(s).replace(/[&<>"]/g, (c) => XML_ESC[c]!);
 
-/** A spread's page items as a plain preview SVG — rects/ellipses for shapes, text
+/** A spread's page items as a plain preview SVG - rects/ellipses for shapes, text
  *  for frames. Not a faithful render (no wrapping or kerning), just enough to
  *  recognise the page beside its extracted prose. */
 function idmlNodesToSvg(nodes: IdmlNode[], width: number, height: number): string {
@@ -357,7 +357,7 @@ const emptyPage = (): PageText =>
   ({ blocks: [], text: '', markdown: '', columns: 1, scanned: false, rotated: 0, order: 'geometric' });
 
 /**
- * Open an IDML package for Unpack — one page per spread, in designmap order (which
+ * Open an IDML package for Unpack - one page per spread, in designmap order (which
  * IS reading order, so it is never re-sorted). Text comes from the stories the
  * spread's frames reference; the palette from the document swatches; fonts are
  * REFERENCED, never embedded, so they come back as names-only rows; and linked
@@ -388,7 +388,7 @@ export async function openIdmlFile(files: Record<string, Uint8Array>): Promise<U
   const stories: Record<string, StoryStyle> = {};
   for (const src of pkgSrcs('Story')) { const d = xml(src); if (d) parseStories(d, swatches, stories); }
 
-  // Referenced font families — Fonts.xml is the authoritative list; fall back to
+  // Referenced font families - Fonts.xml is the authoritative list; fall back to
   // the families the stories actually applied.
   const fontFamilies: string[] = [];
   const seenFont = new Set<string>();
@@ -400,7 +400,7 @@ export async function openIdmlFile(files: Record<string, Uint8Array>): Promise<U
   if (fontsDoc) for (const ff of Array.from(fontsDoc.getElementsByTagName('FontFamily'))) addFont(ff.getAttribute('Name') || '');
   if (!fontFamilies.length) for (const s of Object.values(stories)) addFont(s.font);
 
-  // Linked images — count distinct linked resources across every spread (an .idml
+  // Linked images - count distinct linked resources across every spread (an .idml
   // stores their URIs, never the bytes).
   const linkedUris = new Set<string>();
   for (const src of spreadSrcs) {

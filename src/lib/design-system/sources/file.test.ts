@@ -10,7 +10,7 @@
  * `__MACOSX` shadow tree, a manifest that routes elsewhere), and a fixture you
  * can read is a fixture that can be argued with.
  *
- * `createTokenSet` and `withRoleAliases` are imported on purpose — the assertion
+ * `createTokenSet` and `withRoleAliases` are imported on purpose - the assertion
  * that matters is not "we wrote an alias string" but "the alias resolves", which
  * only the real engine + the real proposer can answer.
  *
@@ -255,7 +255,7 @@ test('docNeedsMappingReview is false once any semantic role resolves', () => {
 });
 
 test('docNeedsMappingReview reads a layered doc as one merged set, not set by set', () => {
-  // Roles in their own set, palette in another — complete, so no card.
+  // Roles in their own set, palette in another - complete, so no card.
   const layeredWithRoles = {
     ...STUDIO_LAYERED,
     Roles: { color: { semantic: { primary: { $value: '{color.blue}', $type: 'color' } } } },
@@ -281,7 +281,7 @@ test('colorTokenRows ranks every resolvable colour token, most colourful first',
 });
 
 test('chooserRows caps the list but never drops the seeded primary', () => {
-  // Thirteen tokens, and the seed is the LEAST colourful of them — the shape
+  // Thirteen tokens, and the seed is the LEAST colourful of them - the shape
   // proposeRolesFromTokens produces whenever nothing clears its accent floor and
   // it falls back to declaration order.
   const rows = Array.from({ length: 13 }, (_, i) => ({

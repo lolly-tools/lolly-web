@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared tile context menu — right-click, press-and-hold (touch), and an explicit
- * `openAt()` for kebab buttons — over one body-mounted popover.
+ * Shared tile context menu - right-click, press-and-hold (touch), and an explicit
+ * `openAt()` for kebab buttons - over one body-mounted popover.
  *
  * Extracted from views/projects.ts, which grew the reference implementation
  * (pointAnchor + edge-clamped positioning + "right-click inside a multi-selection
@@ -11,7 +11,7 @@
  * this module owns only what sits above it:
  *
  *  - `contextmenu` delegation on the persistent host element: resolve the tile,
- *    ask the view for its ref, and open the single-tile menu at the cursor — or
+ *    ask the view for its ref, and open the single-tile menu at the cursor - or
  *    the bulk menu when the tile is part of the current multi-selection. A tile
  *    the view declines (refOf → null) falls through to the NATIVE menu.
  *  - The touch bridge: press-and-hold on a tile opens the same menu. Android
@@ -20,7 +20,7 @@
  *    hold is armed manually per free-canvas's toolBtn pattern: HOLD_MS timer,
  *    travel-slop cancel (a press that moves is a scroll), and the click that the
  *    ending pointerup still delivers is swallowed so the tile doesn't ALSO
- *    activate. Bare `setTimeout`/`clearTimeout` on purpose — pairing
+ *    activate. Bare `setTimeout`/`clearTimeout` on purpose - pairing
  *    `window.setTimeout` with a bare `clearTimeout` cancels nothing under jsdom.
  *    Touch/pen pointers only: on a mouse a >420ms press is a hesitation or an
  *    HTML5 drag (projects tiles are draggable), never a menu request.
@@ -34,7 +34,7 @@
  * so its role="menu" must live on an inner wrapper (the caller's bulkHtml owns
  * that) and the outer div demotes to a plain group.
  *
- * `destroy()` is mandatory in the view's `_cleanup` — the host listeners survive
+ * `destroy()` is mandatory in the view's `_cleanup` - the host listeners survive
  * the view's own re-renders by design (that's why they bind to the persistent
  * viewEl), so only teardown removes them.
  */
@@ -43,7 +43,7 @@ import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components
 import { escape } from '../utils.ts';
 
 /** How long a press has to be held to count as "show me this tile's menu" rather
- *  than "open this tile" — same feel as free-canvas's rail buttons. */
+ *  than "open this tile" - same feel as free-canvas's rail buttons. */
 const HOLD_MS = 420;
 /** Pointer travel that turns a hold into a scroll/drag and cancels the menu, screen px. */
 const HOLD_SLOP = 8;
@@ -73,7 +73,7 @@ export interface TileContextMenuOptions {
   host: HTMLElement;
   /** closest() selector for a tile that owns a menu. */
   tileSelector: string;
-  /** The tile's ref — return null to decline (native menu / no hold armed). */
+  /** The tile's ref - return null to decline (native menu / no hold armed). */
   refOf(tile: HTMLElement): string | null;
   /** True when the ref is part of the current multi-selection → open the bulk menu. */
   isBulkTarget?(ref: string): boolean;
@@ -97,7 +97,7 @@ export interface TileContextMenuHandle {
   destroy(): void;
 }
 
-/** Clamped to stay on-screen (flips up near the bottom edge) — the popover is
+/** Clamped to stay on-screen (flips up near the bottom edge) - the popover is
  *  position:fixed, so viewport coordinates are the whole story. */
 function clampedPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
   const r = anchor.getBoundingClientRect();
@@ -123,7 +123,7 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
 
   function onMenuClick(e: MouseEvent): void {
     const item = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
-    const p = pending; // snapshot — close() below is what makes a stale click impossible
+    const p = pending; // snapshot - close() below is what makes a stale click impossible
     if (!item || !p) return;
     const act = item.dataset.act!;
     popover.close();
@@ -155,7 +155,7 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
     const tile = (e.target as HTMLElement).closest<HTMLElement>(opts.tileSelector);
     if (!tile || !opts.host.contains(tile)) return;
     // An Android long-press already opened the menu via the hold below and the OS
-    // follows up with a contextmenu — swallow it instead of flickering a re-open.
+    // follows up with a contextmenu - swallow it instead of flickering a re-open.
     if (holdFired) { e.preventDefault(); return; }
     const ref = opts.refOf(tile);
     if (ref == null) return;   // declined → the native menu shows
@@ -199,7 +199,7 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
   };
   const onPointerEnd = (): void => cancelHold();
   // Capture phase: the pointerup that ends a hold still delivers a click to the
-  // tile (whose whole body is often a link/button) — eat exactly that one so a
+  // tile (whose whole body is often a link/button) - eat exactly that one so a
   // menu request never ALSO opens the tile.
   const onClickCapture = (e: MouseEvent): void => {
     if (!holdFired) return;

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The ambient URL-budget gauge (plan 115 P1). A small SVG ring in the tool chrome that
- * shows how much of a shareable link the current edit costs — green → amber → red vs the
- * active target — updating live as you edit. It READS the P0 cost model (costUrlState),
+ * shows how much of a shareable link the current edit costs - green → amber → red vs the
+ * active target - updating live as you edit. It READS the P0 cost model (costUrlState),
  * never the raw address bar, so its number is the link you'd actually copy.
  *
  * Two jobs:
  *  - render a UrlCostModel to the ring synchronously every edit (cheap, never blocks);
  *  - for a BROWSER-target link that will auto-pack (readableLen >= AUTO_PACK_MIN), refine
- *    the verdict with a debounced, seq-guarded real packQuery — because a 2500-char link
+ *    the verdict with a debounced, seq-guarded real packQuery - because a 2500-char link
  *    that deflates to 700 is fine, and showing red for it would be dishonest. QR/SMS never
  *    consult packing (a `z=` blob defeats a scannable/textable link), so they always show
  *    their readable band.
@@ -38,7 +38,7 @@ export function bandForLength(
   };
 }
 
-/** The share query the gauge packs — the kept rows' emits joined by '&'. This reproduces
+/** The share query the gauge packs - the kept rows' emits joined by '&'. This reproduces
  *  costUrlState's own readable query (the buildShareParams serialization), NOT the address
  *  bar's (a deliberately different byte stream), so the packed number stays honest. */
 export function shareQueryOf(model: UrlCostModel): string {
@@ -59,11 +59,11 @@ export interface UrlGauge {
   /** Render a fresh cost model. `base` is the full-URL base (origin + '/t/<id>?') so the
    *  packed length is measured against the same absolute ceiling as readableLen. */
   update(model: UrlCostModel, base: string): void;
-  /** Cancel timers + listeners — call on tool unmount so nothing fires after teardown. */
+  /** Cancel timers + listeners - call on tool unmount so nothing fires after teardown. */
   dispose(): void;
 }
 
-/** localStorage key for the gauge's dragged position — a chrome pref (device-local, like
+/** localStorage key for the gauge's dragged position - a chrome pref (device-local, like
  *  the theme), NOT tool state. */
 const POS_KEY = 'lolly-url-gauge-pos';
 /** Pointer travel (px) past which a press is a drag, not a click. */
@@ -72,7 +72,7 @@ const DRAG_THRESHOLD = 4;
 /**
  * Wire a gauge to a chrome element that has `[data-gauge-fill]` (the fill) and takes
  * `--gauge-frac` (0..1) + `data-band` / `data-state`. Also makes it DRAGGABLE (the user
- * repositions it instead of it hiding — position persists across sessions) and calls
+ * repositions it instead of it hiding - position persists across sessions) and calls
  * `onActivate` on a click that wasn't a drag (opens the Share dialog). `prefersReducedMotion`
  * is accepted for API symmetry; the CSS gates the actual transitions.
  */
@@ -169,7 +169,7 @@ export function createUrlGauge(
   };
 
   const setCompressing = (): void => {
-    // Don't flash the readable band first — a >=1800-char readable is already ~90% of the
+    // Don't flash the readable band first - a >=1800-char readable is already ~90% of the
     // 2000 warn, so it would snap amber→green when the pack lands. Show a neutral interim.
     el.dataset.state = 'compressing';
     el.setAttribute('aria-label', labels.compressing);

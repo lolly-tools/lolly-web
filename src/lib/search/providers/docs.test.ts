@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Docs spotlight provider (plans/99 M3) — lazy fetch of the /info
+ * The Docs spotlight provider (plans/99 M3) - lazy fetch of the /info
  * search index, lib/search scoring, sidebar-identical hrefs.
  *
  * Run directly:  node --test shells/web/src/lib/search/providers/docs.test.ts
  *
  * What these pin: nothing is fetched until the first search; the record shape
- * ({p,t,h,a,x} — docs/build.ts indexSections) parses into hits whose href is the
+ * ({p,t,h,a,x} - docs/build.ts indexSections) parses into hits whose href is the
  * IN-APP reader route (#/docs/<slug>, the heading anchor carried as ?h=<anchor>,
  * omitted for the page-intro record); the heading>title>body weight ladder orders
  * results; the locale still selects the fetched index (/info/<lang>/search-index)
  * though the in-app href drops the lang prefix; any fetch failure resolves to []
  * forever (offline is normal, never an error); the limit caps, best score first.
  *
- * fetch is stubbed globally — the provider is the only fetcher here, and the
+ * fetch is stubbed globally - the provider is the only fetcher here, and the
  * stub records every URL so laziness and the cached-failure invariants are
  * observable.
  */
@@ -42,7 +42,7 @@ const { tokenize } = await import('../match.ts');
 const { icon } = await import('../../icons.ts');
 const { setActiveLang } = await import('../../../i18n.ts');
 
-/** Fixture — the exact record shape docs/build.ts's indexSections writes. */
+/** Fixture - the exact record shape docs/build.ts's indexSections writes. */
 const RECORDS = [
   // The page-intro record: no heading, no anchor.
   { p: 'url-mode', t: 'URL mode', h: '', a: '', x: 'every input is expressible as URL params' },
@@ -52,7 +52,7 @@ const RECORDS = [
   { p: 'colour-heading', t: 'Alpha', h: 'Colour maths', a: 'colour-maths', x: 'plain prose' },
   { p: 'colour-title', t: 'Colour Lab', h: 'Panels', a: 'panels', x: 'plain prose' },
   { p: 'colour-body', t: 'Gamma', h: 'Extras', a: 'extras', x: 'notes about colour here' },
-  // Diacritics in the source — fold() must let "creme" find it.
+  // Diacritics in the source - fold() must let "creme" find it.
   { p: 'recipes', t: 'Recipes', h: 'Crème brûlée', a: 'creme-brulee', x: '' },
 ];
 
@@ -88,7 +88,7 @@ test('parses the record shape and builds in-app reader hrefs', async () => {
   assert.equal(intro[0]!.subtitle, undefined);
   assert.equal(intro[0]!.href, '#/docs/url-mode');
 
-  // One fetch served both searches — the index promise is cached.
+  // One fetch served both searches - the index promise is cached.
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0], '/info/search-index.json');
 });
@@ -106,7 +106,7 @@ test('per-page icon: the record sidebar-icon key selects the row glyph', async (
   assert.equal(convertHit.icon, icon('convert'));
   assert.equal(userHit.icon, icon('userCheck')); // 'usercheck' → shell's userCheck
   assert.equal(fallbackHit.icon, icon('document'));
-  assert.notEqual(convertHit.icon, userHit.icon); // distinguishable — the whole point
+  assert.notEqual(convertHit.icon, userHit.icon); // distinguishable - the whole point
 });
 
 test('weight ladder: heading beats page title beats body, and the limit caps best-first', async () => {
@@ -115,7 +115,7 @@ test('weight ladder: heading beats page title beats body, and the limit caps bes
   const hits = await provider.search(tokenize('colour'), 5);
   assert.deepEqual(hits.map((h) => h.title), ['Colour maths', 'Panels', 'Extras']);
   assert.ok(hits[0]!.score > hits[1]!.score && hits[1]!.score > hits[2]!.score);
-  // limit slices AFTER the sort — the best survive.
+  // limit slices AFTER the sort - the best survive.
   const capped = await provider.search(tokenize('colour'), 2);
   assert.deepEqual(capped.map((h) => h.title), ['Colour maths', 'Panels']);
 });
@@ -135,13 +135,13 @@ test('multi-word queries AND across the whole record; diacritics fold', async ()
 
 test('locale base path: a non-English session fetches under /info/<lang>/ but links to the app route', async () => {
   serveRecords();
-  await setActiveLang('fr'); // catalog load failure falls back to {} — fine here
+  await setActiveLang('fr'); // catalog load failure falls back to {} - fine here
   try {
     fetchCalls.length = 0;
     const provider = createDocsProvider();
     const hits = await provider.search(tokenize('declaring'), 5);
     assert.equal(fetchCalls[0], '/info/fr/search-index.json');
-    // The in-app reader route drops the lang prefix — it renders in the app's
+    // The in-app reader route drops the lang prefix - it renders in the app's
     // current locale (fr here), so the href is the same as an English session's.
     assert.equal(hits[0]!.href, '#/docs/authoring-tools?h=declaring-inputs');
   } finally {

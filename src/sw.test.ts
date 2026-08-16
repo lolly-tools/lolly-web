@@ -5,7 +5,7 @@
  * `public/sw.js` ships as a classic (non-module) worker script, so it cannot be
  * imported: it registers `self.addEventListener` at top level and has no exports.
  * Instead the real file is read from disk and evaluated in a `node:vm` context
- * holding a minimal worker environment — a fake `self`, an in-memory Cache
+ * holding a minimal worker environment - a fake `self`, an in-memory Cache
  * Storage, and a `fetch` the test drives. The handlers under test are therefore
  * the SHIPPING ones, not a transcription of them.
  *
@@ -156,7 +156,7 @@ describe('service worker: the app shell key', () => {
     await navigate(h, 'https://lolly.tools/');
     assert.equal(shellEntry(h), 'APP_SHELL');
 
-    // Reading the privacy policy — the exact reproduction of the bug.
+    // Reading the privacy policy - the exact reproduction of the bug.
     await navigate(h, 'https://lolly.tools/info/privacy.html');
     assert.equal(shellEntry(h), 'APP_SHELL',
       'visiting an /info page must leave the cached app shell untouched');
@@ -215,8 +215,8 @@ describe('service worker: the app shell key', () => {
   test('activate keeps every page-owned offline-download bucket', async () => {
     // The "Available offline" buckets (lib/offline-manager.ts) hold what the
     // user explicitly downloaded, and the speech buckets hold the ~92 MB
-    // Kokoro model ('transformers-cache' — transformers.js's OWN bucket name)
-    // plus the voice bins ('lolly-speech', lib/speech-kokoro-worker.ts) — a SW
+    // Kokoro model ('transformers-cache' - transformers.js's OWN bucket name)
+    // plus the voice bins ('lolly-speech', lib/speech-kokoro-worker.ts) - a SW
     // deploy must never take any of them back. Before v14 the generation sweep
     // deleted the two speech buckets on every update.
     const KEEP = ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info', 'transformers-cache', 'lolly-speech'];
@@ -280,7 +280,7 @@ describe('service worker: the offline-download buckets', () => {
   });
 
   test('/ort-hf (the speech worker\'s pinned transformers.js runtime) serves offline from its own bucket', async () => {
-    // The served path is versioned (/ort-hf/<onnxruntime-web version>/ —
+    // The served path is versioned (/ort-hf/<onnxruntime-web version>/ - 
     // scripts/copy-transformers-ort.ts), so a transformers.js upgrade is a cache
     // MISS instead of a stale wasm pinned forever. The speech part OWNS this runtime
     // now (lolly-ort-hf); a network fetch fills that bucket and serves it offline.
@@ -311,7 +311,7 @@ describe('service worker: the offline-download buckets', () => {
   test('the whole app group serves offline — not just /assets/: voice, viz-presets, share stubs', async () => {
     // Regression pin for the review finding that downloadApp filled lolly-app
     // with /voice/, /viz-presets/, /t/ etc. but no fetch-handler rule ever
-    // read the bucket for those paths — "downloaded" yet unservable.
+    // read the bucket for those paths - "downloaded" yet unservable.
     const h = loadServiceWorker();
     const app = new FakeCache();
     app.entries.set('/voice/welcome.mp3', 'MP3_BYTES');
@@ -376,7 +376,7 @@ describe('precache.json grouping (vite.config.js)', () => {
   // buckets, so their routing is SW behaviour by proxy: a file in the wrong
   // group lands in a bucket no fetch rule ever reads back. Regression pins for
   // the review findings that /ort-hf/ rode the `app` group (lolly-app can
-  // never serve it — ORT_PATTERN routes /ort-hf/ to lolly-ort) and that
+  // never serve it - ORT_PATTERN routes /ort-hf/ to lolly-ort) and that
   // /models/kokoro/ inflated the verify part's models size by ~95 MB.
   const urls = [
     '/index.html',

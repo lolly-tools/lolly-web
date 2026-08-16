@@ -6,11 +6,11 @@
  * styles/parts/tool.css owns that). This layers four capabilities on top, without
  * touching the panel's open/close/modality wiring in views/tool.ts:
  *
- *   • drag the header to move it — the first drag lifts it off the dock into a
+ *   • drag the header to move it - the first drag lifts it off the dock into a
  *     free-floating `position:fixed` box (this is the "not docked to the sidebar"
  *     case: canvas / chromeless layouts start floated so the panel can be moved
  *     out of the way of the stage);
- *   • eight grips to resize it — the SAME primitive the neurospicy player uses
+ *   • eight grips to resize it - the SAME primitive the neurospicy player uses
  *     (lib/panel-grips.ts), so every shapeable panel in the app behaves alike;
  *   • a maximise toggle that grows it to the full height of the screen ("expand to
  *     the top"), keeping its left edge + width;
@@ -39,7 +39,7 @@ export interface ExportFloatOpts {
   popup: HTMLElement;        // .export-popup
   head: HTMLElement;         // .export-popup-head (drag handle)
   isMobile: () => boolean;   // never float on the mobile bottom sheet
-  freeLayout: boolean;       // canvas/chromeless — no sidebar to dock under; start floated
+  freeLayout: boolean;       // canvas/chromeless - no sidebar to dock under; start floated
 }
 
 export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
@@ -72,7 +72,7 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
     return { x, y, w, h };
   };
   // Pull the box FULLY inside the viewport. Used when the viewport itself changes
-  // (resize) or on (re)open — a panel left hanging off an edge there reads as broken,
+  // (resize) or on (re)open - a panel left hanging off an edge there reads as broken,
   // and the user can't always drag it back. Distinct from clamp(), which is lenient
   // by design so a user CAN tuck the panel to a KEEP_VISIBLE sliver while dragging.
   const clampFully = (b: Box): Box => {
@@ -137,7 +137,7 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = `export-popup-tool ${cls}`;
-    b.innerHTML = glyph;   // glyph is a constant icon() string — no interpolation (R10)
+    b.innerHTML = glyph;   // glyph is a constant icon() string - no interpolation (R10)
     b.setAttribute('aria-label', label);
     b.title = label;
     return b;
@@ -209,7 +209,7 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
   // ── init: restore saved state, or start floated in a free layout ─────────
   const saved = loadSaved();
   if (saved && saved.mode !== 'docked' && saved.box) {
-    // Reopen fully on-screen — the saved box may be from a larger window/monitor.
+    // Reopen fully on-screen - the saved box may be from a larger window/monitor.
     mode = saved.mode; box = clampFully(saved.box); render();
   } else if (freeLayout && !saved) {
     // No sidebar to dock under → open floated, bottom-left over the stage.

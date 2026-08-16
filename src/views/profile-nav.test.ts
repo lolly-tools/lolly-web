@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * NAV_SECTIONS — the profile settings index the spotlight settings provider
+ * NAV_SECTIONS - the profile settings index the spotlight settings provider
  * federates (plans/99 §2b). Guards:
  *
  *  1. Every exported section id exists as a real `id="…"` in the view's markup
@@ -8,7 +8,7 @@
  *  2. The ?focus= deep link honours ANY NAV_SECTIONS id (widened from the old
  *     five-collapsible list for the provider), while the two legacy aliases
  *     (feature-flags, use-details) keep working.
- *  3. The rail matcher runs on lib/search (M3) — no private `.includes()` copy.
+ *  3. The rail matcher runs on lib/search (M3) - no private `.includes()` copy.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test shells/web/src/views/profile-nav.test.ts
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 // jsdom globals BEFORE the dynamic import (profile.ts's import graph expects a
-// window) — the search-bar.test.ts convention.
+// window) - the search-bar.test.ts convention.
 const dom = new JSDOM('<!doctype html><html><body><main id="view"></main></body></html>', { url: 'https://lolly.tools/' });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;

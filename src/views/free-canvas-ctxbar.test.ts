@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Where the editor's contextual bar lands — the pure geometry of `ctxTopBand` +
+ * Where the editor's contextual bar lands - the pure geometry of `ctxTopBand` +
  * `centreCtxBar`, plus the CSS contracts the placement leans on.
  *
  * The bar used to float ABOVE (or inside) the selection, which put it right over the very
- * artwork being dragged or resized. It is pinned to the TOP chrome row now — on the line
- * with the back pill (top-left) and the zoom HUD (top-right) — centred in the band between
+ * artwork being dragged or resized. It is pinned to the TOP chrome row now - on the line
+ * with the back pill (top-left) and the zoom HUD (top-right) - centred in the band between
  * them so all three read as one row and none can overlap another. On a narrow phone the
  * bar is capped to that band and scrolls its controls into reach (see the `.fc-ctxbar`
  * overflow) rather than dropping down over the canvas. Every assertion below is one half
@@ -34,7 +34,7 @@ const overlaps = (a: { left: number; right: number; top: number; bottom: number 
                   b: { left: number; right: number; top: number; bottom: number }): boolean =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 /** The bar as it actually paints: `max-width` caps it to the band, so a too-wide bar shows
- *  band-width and scrolls the rest — its painted right edge is never past `hi`. */
+ *  band-width and scrolls the rest - its painted right edge is never past `hi`. */
 const paintedBox = (bw: number, band: { lo: number; hi: number; top: number }, h = 40) => {
   const pos = centreCtxBar(bw, band);
   return { left: pos.left, right: pos.left + Math.min(bw, band.hi - band.lo), top: pos.top, bottom: pos.top + h };
@@ -84,7 +84,7 @@ test('a bar too wide for the band pins to its left edge and scrolls the rest', (
   const pos = centreCtxBar(900, band);
   assert.equal(pos.left, band.lo, 'left never intrudes the back pill');
   // Capped to the band by max-width, so the painted right edge lands on `hi`, never past
-  // it into the zoom HUD — the overflow is what scrolls, not the bar's footprint.
+  // it into the zoom HUD - the overflow is what scrolls, not the bar's footprint.
   assert.ok(paintedBox(900, band).right <= band.hi, 'painted footprint stays clear of the HUD');
 });
 
@@ -127,7 +127,7 @@ test('the bar scrolls its controls into reach — the one-row overflow the top-p
 
 test('the entrance animation fills BACKWARDS, never forwards', () => {
   // A transform that survives the animation makes the bar the containing block for its
-  // colour popover's position:fixed and throws the swatches off-screen — a bug already
+  // colour popover's position:fixed and throws the swatches off-screen - a bug already
   // fixed once in this file, which is why the bar is centred with `left` and not a
   // translateX. `backwards` fills only the delay; the computed transform is `none` again
   // the moment the run ends.
@@ -160,7 +160,7 @@ test('both bars reveal instantly and fade out on a delay (the anti-flicker hyste
 test('the rail does NOT try to keep a `[hidden]` button laid out', () => {
   // This test used to assert the opposite. The rail's vertical jump (a gated button
   // appearing re-centres the whole palette) was "fixed" by collapsing the button to
-  // zero height instead of removing it — which cannot work and must not:
+  // zero height instead of removing it - which cannot work and must not:
   //   • `[hidden] { display: none !important }` in parts/a11y.css out-ranks any
   //     `display` a sheet asks for, so the collapse never applied in a browser at all;
   //   • `hidden` means "not rendered AND not in the accessibility tree", which a

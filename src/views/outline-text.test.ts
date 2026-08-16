@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Outline-text conversion (shells/web/src/views/outline-text.ts) — the DOM-free
+ * Outline-text conversion (shells/web/src/views/outline-text.ts) - the DOM-free
  * seams. collectTextLines/outlineBoxText need a laid-out browser DOM (Range
  * client rects; jsdom has no layout) and are exercised in the browser, like the
  * export walk they mirror; everything below runs the real module against
@@ -111,7 +111,7 @@ test('shapeCollectedLines emits one glyph box per run in reading order (no merge
   const res = await shapeCollectedLines(
     [line(), line({ top: 100, style: red }), line({ top: 180 })], api as never, DEPS);
   assert.ok(res.ok);
-  // Per glyph now: each single-square run is its OWN box, in reading order — the two dark
+  // Per glyph now: each single-square run is its OWN box, in reading order - the two dark
   // runs no longer merge, so the letters stay independently selectable/editable.
   assert.deepEqual(res.groups.map((g) => g.fill), ['#11141f', '#ff0000', '#11141f']);
   assert.ok(res.groups.every((g) => g.path.length === 1), 'each glyph is its own single-contour box');
@@ -184,7 +184,7 @@ test('shapeCollectedLines keeps decoration bars in a separate group from the gly
   const res = await shapeCollectedLines([line({ deco: { u: true, s: true } })], api as never, DEPS);
   assert.ok(res.ok);
   // glyph box (1 contour) + a distinct deco box (underline + strike = 2 contours),
-  // same fill — separated so the bars never nonzero-cancel against glyph contours.
+  // same fill - separated so the bars never nonzero-cancel against glyph contours.
   assert.equal(res.groups.length, 2);
   assert.equal(res.groups[0]!.path.length, 1, 'glyph group holds only the glyph square');
   assert.equal(res.groups[1]!.path.length, 2, 'deco group holds both bars');

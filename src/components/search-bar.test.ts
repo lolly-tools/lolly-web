@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The persistent search bar singleton — the plans/99 M1 contract.
+ * The persistent search bar singleton - the plans/99 M1 contract.
  *
  * Run directly:  node --test shells/web/src/components/search-bar.test.ts
  *
@@ -13,7 +13,7 @@
  *     the Escape ladder (text → clear keeping focus; empty → blur) behave; a
  *     handled Escape stops propagating, an unhandled one falls through.
  *  2. The route table, as a static scan of main.ts (the file boots the whole
- *     app on import, so it cannot be imported here — the a11y contract test's
+ *     app on import, so it cannot be imported here - the a11y contract test's
  *     read-the-source pattern): every route declares `footer:` explicitly, the
  *     six browse routes are 'search', and the editing/utility routes are 'none'.
  *
@@ -23,7 +23,7 @@
  * combobox upgrade), the ⌘/⌃Space chord, and the ⌃␣ hint chip. The overlay
  * itself is covered by spotlight.test.ts.
  *
- * The jelly path (<jelly-input> swap) is NOT exercised here — the vendored
+ * The jelly path (<jelly-input> swap) is NOT exercised here - the vendored
  * bundle never loads in jsdom, so jellyActive() is always false; the jelly bar
  * is covered by the same manual pass that covers all jelly chrome.
  */
@@ -93,7 +93,7 @@ test('claim writes placeholder + value, ✕ visibility tracks the value, autoFoc
 test('a stale release cannot clobber the next view\'s claim', () => {
   const releaseA = claimSearchBar({ placeholder: 'A…', value: 'aaa' });
   const releaseB = claimSearchBar({ placeholder: 'B…', value: 'bbb' });
-  releaseA(); // stale — B claimed after A
+  releaseA(); // stale - B claimed after A
   assert.equal(input().placeholder, 'B…');
   assert.equal(input().value, 'bbb');
   releaseB();
@@ -106,7 +106,7 @@ test('typing reaches onQuery with the RAW value, once, after the debounce', asyn
   type('QR '); // two keystrokes inside one debounce window
   assert.deepEqual(calls, []);
   await settle();
-  assert.deepEqual(calls, ['QR ']); // raw — no trim, no lowercase (views normalise)
+  assert.deepEqual(calls, ['QR ']); // raw - no trim, no lowercase (views normalise)
   release();
 });
 
@@ -183,7 +183,7 @@ test('the kbd hint chip advertises ⌃␣, and hides the moment the field has te
   const chip = (): HTMLElement => document.querySelector<HTMLElement>('.gallery-search-kbd')!;
   const release = claimSearchBar({ placeholder: 'T…' });
   assert.ok(chip(), 'the chip renders inside the search box');
-  assert.equal(chip().textContent, '⌃␣'); // ⌃ only — ⌘ is never advertised (plans/99 §2f)
+  assert.equal(chip().textContent, '⌃␣'); // ⌃ only - ⌘ is never advertised (plans/99 §2f)
   assert.equal(chip().hidden, false);
   type('q');
   assert.equal(chip().hidden, true);  // text → the ✕ takes the corner
@@ -225,10 +225,10 @@ test('a consumed hook keydown short-circuits the Escape ladder', () => {
   const release = claimSearchBar({ placeholder: 'T…', value: 'abc' });
   hookLog.length = 0;
   const esc = () => input().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-  consumeKeys = true; // "overlay open" — the hook consumes
+  consumeKeys = true; // "overlay open" - the hook consumes
   esc();
   assert.equal(input().value, 'abc'); // ladder skipped: the text survives
-  consumeKeys = false; // "overlay closed" — falls through to the ladder
+  consumeKeys = false; // "overlay closed" - falls through to the ladder
   esc();
   assert.equal(input().value, '');    // ladder ran: text cleared
   assert.deepEqual(hookLog.filter((x) => x.startsWith('k:')), ['k:Escape', 'k:Escape']); // hook saw both
@@ -263,7 +263,7 @@ test('the chord (⌃Space or ⌘Space) focuses the field and pings the hook, onl
   assert.equal(handled.defaultPrevented, true);
   assert.equal(document.activeElement, input());
   assert.deepEqual(hookLog, ['q:qr']); // current text handed over so the overlay can open
-  // ⌘Space is bound too (silently — the chip never advertises it).
+  // ⌘Space is bound too (silently - the chip never advertises it).
   input().blur();
   hookLog.length = 0;
   chord({ metaKey: true });
@@ -278,7 +278,7 @@ test('the chord (⌃Space or ⌘Space) focuses the field and pings the hook, onl
   release();
 });
 
-// ── The route table (static scan of main.ts — see the header) ────────────────
+// ── The route table (static scan of main.ts - see the header) ────────────────
 
 const MAIN_SRC = readFileSync(fileURLToPath(new URL('../main.ts', import.meta.url)), 'utf8');
 

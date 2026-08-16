@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * celebrateBurst — a one-shot confetti blast of little rounded "chips" flung out across the whole
+ * celebrateBurst - a one-shot confetti blast of little rounded "chips" flung out across the whole
  * screen from a point. Modelled on the /info hero's click-burst (docs/build.ts): each chip is a
  * baked offscreen sprite (rounded fill + label) that flies out with drag + gravity, then fades on
  * a squared tail so its solid fill stays crisp until it snaps out. Draws onto a transient
  * full-viewport canvas overlay (pointer-events:none, top of the z-stack) that removes itself once
- * every chip is gone — so it's fire-and-forget from wherever a control lives.
+ * every chip is gone - so it's fire-and-forget from wherever a control lives.
  *
- * Used to visually celebrate a moment — e.g. turning ON Neurospicy Mode — from the toggle's spot.
- * Skipped under reduced motion — the OS preference or the app's own (lib/a11y-prefs.ts):
+ * Used to visually celebrate a moment - e.g. turning ON Neurospicy Mode - from the toggle's spot.
+ * Skipped under reduced motion - the OS preference or the app's own (lib/a11y-prefs.ts):
  * a screen-filling blast is exactly the motion a calm-mode user asked NOT to have (and this
  * control's audience especially).
  */
@@ -19,7 +19,7 @@ import { prefersReducedMotion } from './a11y-prefs.ts';
 
 /** The chip palette: [box-fill, ink] pairs. Brand-derived when tokens are
  * loaded (see brandChipPairs); this SUSE set is the fallback for a tokenless
- * catalog — and the shape reference: every pair is a strong light/dark
+ * catalog - and the shape reference: every pair is a strong light/dark
  * contrast so the label stays legible. */
 const FALLBACK_CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
   ['#0c322c', '#42d29f'], // dark Jungle → Jungle 5
@@ -36,10 +36,10 @@ const FALLBACK_CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
   ['#2453ff', '#c8dafc'], // Waterhole → pale blue
   ['#0c322c', '#90ebcd'], // Pine → Mint
 ];
-// Plain words only — a brand font may have no glyphs for symbols like ♪/★, which render as tofu.
+// Plain words only - a brand font may have no glyphs for symbols like ♪/★, which render as tofu.
 const LABELS = ['JUNGLE', 'FOCUS', 'FLOW', 'CALM', 'BEAT', 'RHYTHM', 'DRUM', 'BASS', 'TEMPO', 'SPEED', 'FAST', 'QUICK', 'GENIUS'];
 
-// The live brand face — same `--font-brand` custom property applyBrandFonts (brand-vars.ts)
+// The live brand face - same `--font-brand` custom property applyBrandFonts (brand-vars.ts)
 // sets inline on <html> (or the tokens.css platform default when no brand font is loaded).
 // Read once per burst rather than per-chip since it can't change mid-blast.
 const DEFAULT_FONT_STACK = "'SUSE', ui-sans-serif, system-ui, sans-serif";
@@ -54,12 +54,12 @@ const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 // ── Brand-derived chip palette ────────────────────────────────────────────────
 // Build the [fill, ink] pairs from the LOADED brand's tokens: bucket every
 // resolved colour by OKLCH lightness into lights and darks (the mid-tones are
-// skipped — a mid-on-mid chip reads as mud), then keep light/dark combinations
+// skipped - a mid-on-mid chip reads as mud), then keep light/dark combinations
 // with real label contrast, in both orientations like the fallback set. The
 // result is cached for the session; too few usable pairs (a sparse or
 // monochrome brand) falls back to the SUSE set rather than a drab burst.
 
-/** The host slice this needs — the same optional tokens resolver the brand-var
+/** The host slice this needs - the same optional tokens resolver the brand-var
  * modules use; swatch values may be hex OR raw oklch() ramp strings. */
 export interface ChipPairsHost {
   tokens?: { colors(): Promise<Array<{ value: string }>> };
@@ -81,7 +81,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 async function buildBrandChipPairs(host: ChipPairsHost): Promise<ReadonlyArray<readonly [string, string]>> {
   let swatches: Array<{ value: string }> = [];
-  try { swatches = (await host.tokens?.colors()) ?? []; } catch { /* tokenless — fallback below */ }
+  try { swatches = (await host.tokens?.colors()) ?? []; } catch { /* tokenless - fallback below */ }
   const seen = new Set<string>();
   const lights: string[] = [];
   const darks: string[] = [];
@@ -114,7 +114,7 @@ async function buildBrandChipPairs(host: ChipPairsHost): Promise<ReadonlyArray<r
   return pairs.length >= MIN_PAIRS ? pairs : FALLBACK_CHIP_COLORS;
 }
 
-/** The session's chip palette — brand pairs once tokens resolve, cached. */
+/** The session's chip palette - brand pairs once tokens resolve, cached. */
 function chipPairs(host?: ChipPairsHost): Promise<ReadonlyArray<readonly [string, string]>> {
   if (!host?.tokens) return Promise.resolve(FALLBACK_CHIP_COLORS);
   if (!chipPairsPromise) {
@@ -172,14 +172,14 @@ function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, st
 }
 
 /**
- * Blast a one-shot confetti burst out from (`x`, `y`) — viewport coordinates — across the whole
+ * Blast a one-shot confetti burst out from (`x`, `y`) - viewport coordinates - across the whole
  * screen. Fire-and-forget: it paints a transient overlay canvas that cleans itself up.
  * Pass the host and the chips take the LOADED brand's light/dark pairs (cached after the
  * first resolve); without one they use the fallback set.
  */
 export function celebrateBurst(x: number, y: number, host?: ChipPairsHost): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
-  if (prefersReducedMotion()) return; // calm mode — no blast
+  if (prefersReducedMotion()) return; // calm mode - no blast
   void chipPairs(host).then(palette => burstWith(x, y, palette));
 }
 

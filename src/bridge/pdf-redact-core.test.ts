@@ -3,13 +3,13 @@
  * The DOM-free core of PDF redaction, asserted in node.
  * Run directly:  node --test shells/web/src/bridge/pdf-redact-core.test.ts
  *
- * Covers the point→pixel bar mapping, the DPI clamp, the grayscale math, and —
- * structurally — buildImagePdf: the rebuilt document is saved and RE-OPENED
+ * Covers the point→pixel bar mapping, the DPI clamp, the grayscale math, and - 
+ * structurally - buildImagePdf: the rebuilt document is saved and RE-OPENED
  * (the pdf-structure.test.ts discipline; a graph asserted only in the memory
  * that built it proves nothing about what survives serialisation) and its raw
  * bytes are grepped. The canvas half of redaction (render page SVG → burn bars
  * → encode JPEG, in pdf.ts redactPdf) needs a real browser canvas and cannot
- * run under node — it is exercised manually in the web shell.
+ * run under node - it is exercised manually in the web shell.
  *
  * The JPEG fixtures are hand-built: pdf-lib's JpegEmbedder reads only the SOF
  * header for dimensions/channels, so SOI + SOF0 + EOI embeds fine with no scan
@@ -92,7 +92,7 @@ test('clampMaxPages: whole numbers of at least 1 pass, everything else gets the 
   assert.equal(clampMaxPages(1), 1);
   assert.equal(clampMaxPages(7.9), 7);   // floors, never rounds up past the ask
   assert.equal(clampMaxPages('12'), 12);
-  assert.equal(clampMaxPages(500), 500); // no upper clamp — the caller owns big asks
+  assert.equal(clampMaxPages(500), 500); // no upper clamp - the caller owns big asks
 });
 
 test('collectPages renders in order and reports truncation against the cap', async () => {
@@ -104,7 +104,7 @@ test('collectPages renders in order and reports truncation against the cap', asy
   const capped = await collectPages(5, 2, async (i) => i);
   assert.deepEqual(capped, { pages: [0, 1], truncated: true, failed: [] });
 
-  // count == maxPages is NOT truncated — nothing was left behind.
+  // count == maxPages is NOT truncated - nothing was left behind.
   const exact = await collectPages(2, 2, async (i) => i);
   assert.deepEqual(exact, { pages: [0, 1], truncated: false, failed: [] });
 });
@@ -144,7 +144,7 @@ test('grayscaleInPlace applies Rec. 709 luminance and preserves alpha', () => {
 
 // ─── the rebuilt document ─────────────────────────────────────────────────────
 
-/** SOI + SOF0 (baseline, 8-bit, 3 channels) + EOI — enough for pdf-lib's embedder. */
+/** SOI + SOF0 (baseline, 8-bit, 3 channels) + EOI - enough for pdf-lib's embedder. */
 function fakeJpeg(w: number, h: number): Uint8Array {
   return new Uint8Array([
     0xff, 0xd8, // SOI
@@ -162,7 +162,7 @@ test('buildImagePdf: page count and MediaBox preserved, one %%EOF, nothing else 
     { jpeg: fakeJpeg(1700, 2200), widthPt: 612, heightPt: 792 },       // US Letter
   ]);
 
-  // Exactly one %%EOF — no prior revisions to roll back to.
+  // Exactly one %%EOF - no prior revisions to roll back to.
   const text = new TextDecoder('latin1').decode(out);
   assert.equal(text.split('%%EOF').length - 1, 1);
 
@@ -171,14 +171,14 @@ test('buildImagePdf: page count and MediaBox preserved, one %%EOF, nothing else 
   for (const name of ['/EmbeddedFiles', '/JavaScript', '/OCProperties', '/Annots', '/AcroForm', '/Metadata']) {
     assert.ok(!text.includes(name), `rebuilt document must not contain ${name}`);
   }
-  // The Info dictionary was emptied — pdf-lib's default Producer/Creator are gone,
+  // The Info dictionary was emptied - pdf-lib's default Producer/Creator are gone,
   // and save() does not re-stamp them (the keys are absent, not just blank).
   assert.ok(!text.includes('pdf-lib'), 'rebuilt document must carry no Info values');
   for (const key of ['/Producer', '/Creator', '/CreationDate', '/ModDate']) {
     assert.ok(!text.includes(key), `rebuilt document must not contain ${key}`);
   }
 
-  // Re-open the bytes — what a READER of the file finds.
+  // Re-open the bytes - what a READER of the file finds.
   const { PDFDocument } = await import('pdf-lib');
   const doc = await PDFDocument.load(out, { ignoreEncryption: true, updateMetadata: false });
   assert.equal(doc.getPageCount(), 2);
@@ -214,8 +214,8 @@ test('buildImagePdf refuses an empty page list', async () => {
 // ─── the branded mark (v1.90 additive opts) ──────────────────────────────────
 
 test('normaliseInk: colour is neutral, translucency is not', () => {
-  // Colour is security-neutral — any fully opaque fill destroys the pixels under
-  // it equally — which is what lets a bar carry a brand. Alpha is NOT neutral,
+  // Colour is security-neutral - any fully opaque fill destroys the pixels under
+  // it equally - which is what lets a bar carry a brand. Alpha is NOT neutral,
   // and neither is an unreadable string: assigning one to a canvas fillStyle is
   // a silent no-op, and the previous fill in the page rebuild is the opaque
   // white background, so an unvalidated colour would paint white-on-white bars

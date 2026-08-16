@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The run overlay's ROW IDENTITY — the number it puts in front of a person.
+ * The run overlay's ROW IDENTITY - the number it puts in front of a person.
  * Run directly:  node --test --import ./tests/css-stub.mjs shells/web/src/pro/run-overlay.test.ts
  *
  * `planBatch` compacts, so three index spaces exist for one row (see pro/manifest.ts).
@@ -8,7 +8,7 @@
  * happening, and it used to be the one that disagreed: it named a failed row by its
  * queue position ("2 of 4") while lolly.txt called the same row "row 3" and
  * preflight.json called it `{"row":3,"runIndex":1}`. These cases pin the overlay to the
- * SOURCE number — the same one `collectUnmade` produces — for both a failed row and a
+ * SOURCE number - the same one `collectUnmade` produces - for both a failed row and a
  * skipped one.
  *
  * jsdom supplies the DOM. No catalog and no tool loader is wired, so every render fails,
@@ -52,7 +52,7 @@ test('a failed row is logged by its SOURCE number, and the queue position is lab
   });
   const log = mount.querySelector('.pro-log')!.textContent!;
 
-  // Runner index 1 is grid row 3 — the number the user counted to.
+  // Runner index 1 is grid row 3 - the number the user counted to.
   assert.match(log, /✕ row 3 qr-code:/);
   // …and the queue position survives only as labelled context, never bare.
   assert.match(log, /\[queued 2\/4\]/);

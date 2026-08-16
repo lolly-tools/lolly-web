@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * classify-logo.ts — the pure logo classification heuristics (plan 97 §7.3).
+ * classify-logo.ts - the pure logo classification heuristics (plan 97 §7.3).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/classify-logo.test.ts"
  *
  * Fixtures are hand-authored SVGs whose artwork fills the artboard, so the
- * content bounds trim-bounds.ts measures and the viewBox agree — the point of
+ * content bounds trim-bounds.ts measures and the viewBox agree - the point of
  * each fixture is the classification, not the bounds maths (which has its own
  * suite next door).
  */
@@ -50,7 +50,7 @@ const TALL_ONE_INK = svg('0 0 120 200',
 const WHITE_INK = svg('0 0 300 100',
   '<rect x="0" y="0" width="300" height="100" fill="#ffffff"/>');
 
-// 1.4:1 — inside the band between the two orientation thresholds.
+// 1.4:1 - inside the band between the two orientation thresholds.
 const AMBIGUOUS = svg('0 0 140 100',
   '<rect x="0" y="0" width="140" height="100" fill="#1b5e20"/>');
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The cost panel's chrome strings — the minimum set (plans/65-preflight-and-cost.md §6
+ * The cost panel's chrome strings - the minimum set (plans/65-preflight-and-cost.md §6
  * "Minimum chrome string set"), defined once as `t()` call sites so the surfaces
  * that render money import them from here rather than re-spelling them.
  *
@@ -9,7 +9,7 @@
  * English is the key (see i18n.ts). Two things are BUGS in a translation of any
  * string below:
  *
- *   1. A currency symbol. `$`, `€`, `£`, `¥` — none of these belong in a translated
+ *   1. A currency symbol. `$`, `€`, `£`, `¥` - none of these belong in a translated
  *      string. Every figure is formatted by `Intl.NumberFormat` from the card's own
  *      currency and interpolated as `{total}` / `{amount}` AFTER formatting. A
  *      symbol typed into a string would override the reader's currency with a wrong

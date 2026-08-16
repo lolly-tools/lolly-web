@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Ask Lolly (#/ask) — the in-app help surface (plans/103 M0).
+ * Ask Lolly (#/ask) - the in-app help surface (plans/103 M0).
  *
  * A routed utility view like the Colour Lab or Script Audio: no tab, the shared
  * back pill, and its OWN composer rather than the shell search bar. You type a
  * question; the answer is a VERBATIM documentation section (extracted full text,
  * not the search snippet) with a citation and an open-in-docs link, followed by
  * any in-app places the same query matches (tools, settings, projects…) as
- * navigate-only buttons. Nothing is generated — the words are the docs' own.
+ * navigate-only buttons. Nothing is generated - the words are the docs' own.
  *
  * The transcript is session memory (lib/ask/session.ts): it survives a spotlight
  * → #/ask re-ask and a Back into the view, and dies on reload. A #/ask?q= seed
  * (from the spotlight "Ask Lolly:" row) is asked once on mount; the composer then
- * answers in place without touching the URL — the hash is the entry seed only.
+ * answers in place without touching the URL - the hash is the entry seed only.
  */
 import '../styles/parts/ask.css';
 import { escape, safeHref } from '../utils.ts';
@@ -37,7 +37,7 @@ type AskHost = HostV1;
 /** A question long enough to be worth answering (mirrors MIN_QUERY_LENGTH). */
 const MIN_LEN = 2;
 
-/** The answer HTML for one turn — reused for the live "thinking" placeholder. */
+/** The answer HTML for one turn - reused for the live "thinking" placeholder. */
 function answerCardHtml(answer: AskAnswer): string {
   const parts: string[] = [];
 
@@ -47,7 +47,7 @@ function answerCardHtml(answer: AskAnswer): string {
       ? `${escape(citation.pageTitle)} › ${escape(citation.heading)}`
       : escape(citation.pageTitle);
     const openDocs = safeHref(href)
-      // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated above; an unsafe doc href drops the link and keeps the bare citation
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated above; an unsafe doc href drops the link and keeps the bare citation
       ? ` · <a href="${escape(href)}" class="ask-cite-link">${t('Open in docs')}</a>`
       : '';
     parts.push(`<div class="ask-answer-body${fromSnippet ? ' is-snippet' : ''}">
@@ -57,7 +57,7 @@ function answerCardHtml(answer: AskAnswer): string {
       </div>`);
   }
 
-  // The page the answer already came from — related sections ON that page don't
+  // The page the answer already came from - related sections ON that page don't
   // need the page-title subtitle (it just repeats), and its bare page-intro row
   // is redundant with the "Open in docs" link above. The page name is kept only
   // where a related section lives on a DIFFERENT page, where it is real context.
@@ -68,10 +68,10 @@ function answerCardHtml(answer: AskAnswer): string {
       const label = rec.h || rec.t;
       const samePage = rec.p === primaryPage;
       const sub = rec.h && !samePage ? ` <span class="ask-related-sub">${escape(rec.t)}</span>` : '';
-      // Route to the in-app reader (#/docs/<slug>?h=<anchor>) — same-app hash nav,
+      // Route to the in-app reader (#/docs/<slug>?h=<anchor>) - same-app hash nav,
       // not the /info share page; the anchor rides ?h= (a second '#' can't).
       const href = docsAppHrefFor(rec);
-      // nosemgrep: lolly-href-escape-is-not-scheme-validation — fixed-prefix in-app route ('#/docs/…'); escape() here only neutralises attribute quotes
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation - fixed-prefix in-app route ('#/docs/…'); escape() here only neutralises attribute quotes
       return `<li><a href="${escape(href)}" class="ask-related-link"><span class="ask-related-icon" aria-hidden="true">${icon(docsIconName(rec.i))}</span><span>${escape(label)}${sub}</span></a></li>`;
     }).join('');
     parts.push(`<div class="ask-related"><p class="ask-group-label">${t('More in the docs')}</p><ul>${rows}</ul></div>`);
@@ -81,7 +81,7 @@ function answerCardHtml(answer: AskAnswer): string {
     const label = t(GROUP_LABELS[group.group as SearchGroupId]);
     const rows = group.hits.filter((hit) => safeHref(hit.href)).map((hit) => {
       const sub = hit.subtitle ? `<span class="ask-hit-sub">${escape(hit.subtitle)}</span>` : '';
-      // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated by the .filter() above; an unsafe hit href is dropped, never painted
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated by the .filter() above; an unsafe hit href is dropped, never painted
       return `<a href="${escape(hit.href)}" class="ask-hit" data-sfx="navigate">
           <span class="ask-hit-icon" aria-hidden="true">${hit.icon}</span>
           <span class="ask-hit-text"><span class="ask-hit-title">${escape(hit.title)}</span>${sub}</span>
@@ -110,7 +110,7 @@ function turnHtml(turn: AskTurn): string {
 export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: string): Promise<void> {
   document.title = tRaw('{name} — Lolly', { name: t('Ask Lolly') });
 
-  // Ensure the spotlight providers are registered — the overlay registers them
+  // Ensure the spotlight providers are registered - the overlay registers them
   // lazily on its first query, which may not have happened if the user came
   // straight to #/ask. registerProvider is id-idempotent, so this is safe even
   // when the overlay already did it.
@@ -148,7 +148,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   // The theme switcher (icon-only cycle: light → dark → brand), styled locally as
-  // .ask-top-btn — the profile link sits beside it (both top-right).
+  // .ask-top-btn - the profile link sits beside it (both top-right).
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'ask-top-btn ask-theme-btn' }));
 
   const transcriptEl = viewEl.querySelector<HTMLElement>('[data-transcript]')!;
@@ -201,7 +201,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
     void ask(q);
   });
 
-  // "Show more" toggles a section open (event delegation — the transcript is
+  // "Show more" toggles a section open (event delegation - the transcript is
   // re-rendered wholesale, so per-button listeners would leak).
   transcriptEl.addEventListener('click', (e) => {
     const more = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-more]');
@@ -211,7 +211,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
     more.hidden = true;
   });
 
-  // Seed from #/ask?q= — asked once. A seed already present in the transcript
+  // Seed from #/ask?q= - asked once. A seed already present in the transcript
   // (a Back into the view, a same-question re-mount) never re-fires.
   const seed = new URLSearchParams(params).get('q')?.trim() ?? '';
   const alreadyAsked = askSession().some((turn) => turn.role === 'user' && turn.q === seed);

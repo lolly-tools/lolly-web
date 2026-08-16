@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * field-policy — a tiny, generic per-field display-policy registry.
+ * field-policy - a tiny, generic per-field display-policy registry.
  *
  * A neutral seam any view can consult when rendering a form field: is this
  * field editable as usual, locked to a read-only value, or hidden entirely?
  * The registry is EMPTY by default, so `getFieldPolicy` returns `undefined` and
- * every consulting view renders exactly as it does today — this primitive is
+ * every consulting view renders exactly as it does today - this primitive is
  * dormant until something calls a setter.
  *
  * It intentionally knows nothing about WHERE a policy comes from: a deployment's
  * optional org-config module populates it (see src/org/), but the registry is a
- * standalone primitive with no dependency on that — a test, a future feature, or
+ * standalone primitive with no dependency on that - a test, a future feature, or
  * a different host can drive it just the same. The human-readable `note` is
  * supplied by whoever sets the policy (already localised), so this file needs no
  * i18n and no product vocabulary.
@@ -31,7 +31,7 @@ export interface FieldPolicy {
 const registry = new Map<string, FieldPolicy>();
 
 /**
- * The policy for a field, or `undefined` when none is registered (the default —
+ * The policy for a field, or `undefined` when none is registered (the default - 
  * the view then behaves exactly as it would with no policy layer at all).
  */
 export function getFieldPolicy(fieldId: string): FieldPolicy | undefined {
@@ -46,7 +46,7 @@ export function setFieldPolicy(fieldId: string, policy: FieldPolicy | undefined)
 
 /**
  * Replace the ENTIRE registry with the given map (host-side setter). Passing an
- * empty map — or omitting it — clears every policy, restoring the dormant
+ * empty map - or omitting it - clears every policy, restoring the dormant
  * default. A whole-registry swap keeps the source of truth authoritative: a
  * field dropped from a fresh policy set is unlocked again, never left stale.
  */

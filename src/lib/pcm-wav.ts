@@ -2,7 +2,7 @@
 /**
  * Encode rendered stereo PCM to a 16-bit WAV Blob. The video exporter is URL-driven
  * (every muxer path does `fetch(url)` + `decodeAudioData`), so a synthesized/decoded
- * track — a ZzFXM song (zzfxm-render.ts) or a tracker module (mod-render.ts) — is
+ * track - a ZzFXM song (zzfxm-render.ts) or a tracker module (mod-render.ts) - is
  * rendered to WAV and handed in as a blob URL: no export-bridge change, and CD-quality
  * PCM is transparent under the lossy AAC/Opus mux. Shared by both render paths.
  */

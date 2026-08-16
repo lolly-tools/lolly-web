@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — wait-time quips.
+ * Pro / Batch mode - wait-time quips.
  *
  * Short, cheeky two-line lines shown while a batch renders, to entertain during
  * a big job. `[Count]` is replaced with the TOTAL number of renders in the job;
  * `[Remaining]` with how many are still to go (for lines phrased "N to go"). The
- * two lines are split on the newline. Pure data + one formatter — the run loop in
+ * two lines are split on the newline. Pure data + one formatter - the run loop in
  * index.js shuffles and rotates them. Delete this file + its call sites to drop
  * the whole bit.
  *
- * Voice: first-person, confident, self-deprecating. Themes to keep hitting —
+ * Voice: first-person, confident, self-deprecating. Themes to keep hitting - 
  * local compute / privacy, free vs. an agency, open-source ribbing, raw speed,
  * "this is the most powerful way", and the sheer busywork of a batch.
  */

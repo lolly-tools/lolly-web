@@ -33,7 +33,7 @@ test('parseTemplates: keeps well-formed entries and their full values seed', () 
   assert.deepEqual(parsed.map(t => t.id), ['poster', 'carousel']);
   assert.equal(parsed[0]!.name, 'Poster');
   assert.equal(parsed[0]!.category, 'Poster');
-  // values passes through verbatim — any size, read directly into the fresh session.
+  // values passes through verbatim - any size, read directly into the fresh session.
   const boxes = (parsed[1]!.values.boxes as unknown[]);
   assert.equal(boxes.length, 3);
 });
@@ -55,7 +55,7 @@ test('parseTemplates: drops malformed entries rather than throwing', () => {
 });
 
 test('parseTemplates: metadata-only entries (from the synced index, NO values) parse with an empty seed', () => {
-  // The index now carries id/name/category/description/thumb only — the heavy `values`
+  // The index now carries id/name/category/description/thumb only - the heavy `values`
   // is fetched on demand. Such entries must still populate the chooser grid.
   const parsed = parseTemplates([
     { id: 'poster', name: 'Poster', category: 'Poster', description: 'A poster.' },
@@ -90,7 +90,7 @@ test('templateValuesById: resolves the reserved ?template=<id> seed, null on mis
 //
 // No module mocking (the harness runs without --experimental-test-module-mocks): the
 // REAL renderFeaturedVariant runs, driven down its cache-HIT branch by a stub
-// host.previews.get that returns a matching entry — so it returns a thumbnail instantly
+// host.previews.get that returns a matching entry - so it returns a thumbnail instantly
 // without loading the engine, and this also exercises the real keyPrefix='template'
 // cache-key + fall-through (no early null return). Spying on get() proves each template
 // was enqueued: renderVariantAt calls get exactly once per drained template.
@@ -98,7 +98,7 @@ test('templateValuesById: resolves the reserved ?template=<id> seed, null on mis
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
-// finish() restores focus to the opener via an `instanceof HTMLElement` check — only the
+// finish() restores focus to the opener via an `instanceof HTMLElement` check - only the
 // tests that actually settle the chooser (close/select) reach it.
 globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
@@ -156,14 +156,14 @@ test('openTemplateChooser: eagerly renders a preview for every non-blank templat
   // Drain is serial + async (dynamic import of featured-render, then per-template render).
   for (let i = 0; i < 200 && getKeys.length < 2; i++) await new Promise(r => setTimeout(r, 0));
 
-  // Both templates were drained (get probed once each) — vector-first svg key, 'template'
-  // namespace — and none for the Blank tile.
+  // Both templates were drained (get probed once each) - vector-first svg key, 'template'
+  // namespace - and none for the Blank tile.
   assert.deepEqual(
     getKeys.slice().sort(),
     ['template:design:carousel:svg', 'template:design:poster:svg'],
     'both non-blank templates were enqueued + drained (get probed per template)',
   );
-  // The IO was still wired for off-screen prioritisation, but it never fired — so the
+  // The IO was still wired for off-screen prioritisation, but it never fired - so the
   // previews above are attributable solely to the eager enqueue.
   assert.ok(observed.includes('poster') && observed.includes('carousel'), 'tiles are still observed');
   assert.ok(!observed.includes('__blank__'), 'the Blank tile is never observed');
@@ -179,7 +179,7 @@ test('openTemplateChooser: eagerly renders a preview for every non-blank templat
 
 // ── The drain shares the main thread with a live mount ───────────────────────
 // views/tool.ts no longer awaits this chooser: the tool mounts UNDERNEATH the modal.
-// So each preview — a real off-screen mount + walker export, ~1 s apiece — must yield
+// So each preview - a real off-screen mount + walker export, ~1 s apiece - must yield
 // before it runs, or it starves exactly the first paint the change exists to let through
 // and holds a tile click behind however many renders are still queued.
 
@@ -226,7 +226,7 @@ test('openTemplateChooser: yields to idle before the render chunk and between re
 });
 
 test('openTemplateChooser: settling cancels the rest of the preview queue', async () => {
-  // Picking a tile (or closing) hands the mount its seed — every preview still queued is
+  // Picking a tile (or closing) hands the mount its seed - every preview still queued is
   // now work nobody will see, competing with the render that seed is about to trigger.
   const inline: Record<string, Record<string, unknown>> = { a: { boxes: [] }, b: { boxes: [] }, c: { boxes: [] } };
   const templates = parseTemplates(
@@ -237,7 +237,7 @@ test('openTemplateChooser: settling cancels the rest of the preview queue', asyn
     previews: {
       get: async (key: string) => {
         getKeys.push(key);
-        // Close the chooser DURING the first render — deterministic, no timing race.
+        // Close the chooser DURING the first render - deterministic, no timing race.
         if (getKeys.length === 1) document.querySelector<HTMLElement>('.tmpl-chooser-close')!.click();
         const id = key.match(/^template:t2:(.+):svg$/)?.[1];
         const values = id ? inline[id] : undefined;
@@ -256,7 +256,7 @@ test('openTemplateChooser: settling cancels the rest of the preview queue', asyn
 
 // ── onOpen: the navigate-away close handle ───────────────────────────────────
 // views/tool.ts never awaits this chooser, so it is the only thing that can reach
-// back into an already-open modal when the view underneath is torn down first — see
+// back into an already-open modal when the view underneath is torn down first - see
 // tool-template-mount.test.ts for the wiring on the caller's side.
 
 test('openTemplateChooser: onOpen hands back a close that removes the modal and resolves blank', async () => {
@@ -279,7 +279,7 @@ test('openTemplateChooser: onOpen hands back a close that removes the modal and 
   assert.equal(document.querySelector('.tmpl-chooser-modal'), null, 'and takes the modal out of the document');
 
   // Idempotent both ways: calling close again, or a tile click racing in afterward,
-  // must not double-resolve or throw — the same guarantee a stray Escape already had.
+  // must not double-resolve or throw - the same guarantee a stray Escape already had.
   assert.doesNotThrow(() => close!());
   opener.remove();
 });
@@ -293,7 +293,7 @@ test('openTemplateChooser: a pick that lands first makes a later close a no-op',
   const pick = openTemplateChooser({ toolName: 'T', toolId: 't4', templates, onOpen: c => { close = c; } });
   document.querySelector<HTMLElement>('.tmpl-chooser-close')!.click();   // settles it blank, for real
   assert.deepEqual(await pick, {});
-  assert.doesNotThrow(() => close!());   // arriving after settle — must not throw or re-resolve
+  assert.doesNotThrow(() => close!());   // arriving after settle - must not throw or re-resolve
 });
 
 test('openTemplateChooser: with no host it renders glyph tiles and requests NO previews', async () => {
@@ -305,5 +305,40 @@ test('openTemplateChooser: with no host it renders glyph tiles and requests NO p
   assert.equal(getKeys.length, 0, 'offline (no host) never renders a live preview');
   const tile = document.querySelector('.tmpl-chooser-tile[data-template-id="poster"] .tmpl-chooser-tile-icon');
   assert.ok(tile, 'a glyph icon is shown as the fallback media');
+  document.querySelector('.tmpl-chooser-modal')?.remove();
+});
+
+// ── Surface 1: user-template-only tools populate the chooser ──────────────────
+// views/tool.ts merges each saved UserTemplate as a TemplateVariant under the
+// "Your templates" category (their values ride inline). The chooser must render those
+// tiles like any other, so a tool whose ONLY starting points are user-saved is reachable.
+
+test('openTemplateChooser: renders a user template (category "Your templates") as an ordinary tile', async () => {
+  // Zero built-in templates, one user-saved one - exactly what a user-template-only tool
+  // hands the chooser. No host, so the glyph-tile fallback stands in for a live preview.
+  const templates = parseTemplates([
+    { id: 'ut-1', name: 'My saved deck', category: 'Your templates', values: { boxes: [{ id: 'a' }] } },
+  ]);
+  void openTemplateChooser({ toolName: 'Design', toolId: 'design', templates });
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(document.querySelector('.tmpl-chooser-modal'), 'the chooser opened for a user-template-only set');
+  const tile = document.querySelector<HTMLElement>('.tmpl-chooser-tile[data-template-id="ut-1"]');
+  assert.ok(tile, 'the user template renders as a tile');
+  assert.equal(tile!.dataset.category, 'Your templates', 'grouped under the Your templates category');
+  assert.match(tile!.textContent ?? '', /My saved deck/, 'shows the saved template name');
+  document.querySelector('.tmpl-chooser-modal')?.remove();
+});
+
+test('openTemplateChooser: "Your templates" shows as a filter chip beside built-in categories', async () => {
+  // Built-in + user templates → more than one category → the filter chip bar renders, with
+  // "Your templates" among the chips (a single-category set has nothing to filter, so no bar).
+  const templates = parseTemplates([
+    { id: 'poster', name: 'Poster', category: 'Poster', values: { boxes: [] } },
+    { id: 'ut-1', name: 'My saved deck', category: 'Your templates', values: { boxes: [] } },
+  ]);
+  void openTemplateChooser({ toolName: 'Design', toolId: 'design', templates });
+  await new Promise(r => setTimeout(r, 0));
+  const chips = Array.from(document.querySelectorAll<HTMLElement>('.tmpl-chooser-filter')).map(c => c.dataset.filter);
+  assert.ok(chips.includes('Your templates'), 'a Your templates filter chip is present alongside the built-in one');
   document.querySelector('.tmpl-chooser-modal')?.remove();
 });

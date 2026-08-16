@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/placed-image.ts — the pure decisions the preflight stage collector makes
+ * lib/placed-image.ts - the pure decisions the preflight stage collector makes
  * about each placed <img>. Both were bugs found in the export-preflight modal:
  * a data-URI src rendered as a wall of base64 in a finding, and a vector logo was
  * measured as a low-DPI raster ("will look soft") when it carries through export
@@ -44,7 +44,7 @@ test('isVectorImageSrc treats rasters and unknowable blobs as non-vector', () =>
   assert.equal(isVectorImageSrc('data:image/png;base64,AAAA'), false);
   assert.equal(isVectorImageSrc('https://x/photo.jpg'), false);
   assert.equal(isVectorImageSrc('/assets/svg-icon-set.png'), false, 'a .png with "svg" in the stem is raster');
-  // A blob: object URL carries no type — reported non-vector, so the caller still
+  // A blob: object URL carries no type - reported non-vector, so the caller still
   // measures it (pre-existing behaviour), never worse than before.
   assert.equal(isVectorImageSrc('blob:https://app.lolly/abc-123'), false);
 });

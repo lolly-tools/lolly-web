@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * /valid's text-payload logic — the C2PA 2.4 carrier copy, the paste plumbing
+ * /valid's text-payload logic - the C2PA 2.4 carrier copy, the paste plumbing
  * and the ONE url gate that decides what this page will fetch (plans/105 M2).
  *
  * Run directly: node --test shells/web/src/views/valid-text.test.ts
@@ -18,7 +18,7 @@
  *    there" from "the bytes changed" from "your exclusions are wrong", and the
  *    whole point of that work is lost if the page renders them all as red. These
  *    tests assert the mapping, not the prose: which notice id fires, what tone
- *    it carries, and — for the two shapes that MUST NOT read as an accusation —
+ *    it carries, and - for the two shapes that MUST NOT read as an accusation - 
  *    that the tone stays informational.
  */
 import { test } from 'node:test';
@@ -33,7 +33,7 @@ import type { VerifyReport, Check } from './valid-verdict.ts';
 // Deep import, the beam-pack.ts:125 precedent: the engine barrel does not
 // re-export this yet (another session owns engine/src/index.ts), and the point
 // of the drift guard below is to read the ENGINE's vocabulary rather than a
-// copy of it — a copy would drift in exactly the direction being guarded.
+// copy of it - a copy would drift in exactly the direction being guarded.
 import { C2PA_TEXT_STATUS } from '../../../../engine/src/c2pa-extract.ts';
 
 const ORIGIN = 'https://lolly.example';
@@ -62,7 +62,7 @@ const byId = (list: VerifyNotice[], id: string): VerifyNotice | undefined => lis
 test('formatLabel says what the sniffer actually established, and nothing more', () => {
   assert.equal(formatLabel('html'), 'HTML document');
   assert.equal(formatLabel('text'), 'plain text');
-  // 'code' means "an §A.9 manifest DELIMITER is in this text" — NOT a language
+  // 'code' means "an §A.9 manifest DELIMITER is in this text" - NOT a language
   // claim, and NOT a claim that a whole armour block is present: the sniffer
   // sets it on one delimiter, which is the case the engine reports as "no
   // credential here". The label must over-claim neither the language nor the
@@ -95,7 +95,7 @@ test('textSnippet caps, reports what it left out, and never splits a surrogate p
   const cut = textSnippet(long, 100);
   assert.equal(cut.body.length, 100);
   assert.equal(cut.omitted, 2900);
-  // A lone high surrogate renders as U+FFFD — damage the file does not have.
+  // A lone high surrogate renders as U+FFFD - damage the file does not have.
   const astral = `${'a'.repeat(99)}😀tail`;
   const s = textSnippet(astral, 100);
   assert.equal(s.body.length, 99, 'backed off the pair rather than cutting through it');
@@ -142,7 +142,7 @@ test('classifyUrl: schemes this page will not follow, and userinfo look-alikes',
   ]) {
     assert.deepEqual(classifyUrl(raw, ORIGIN), { kind: 'unresolvable' }, raw);
   }
-  // `https://lolly.example@evil.test/` IS evil.test — caught by origin anyway.
+  // `https://lolly.example@evil.test/` IS evil.test - caught by origin anyway.
   assert.deepEqual(classifyUrl('https://lolly.example@evil.test/x', ORIGIN), { kind: 'elsewhere', host: 'evil.test' });
   // The reverse resolves same-origin, and is still refused: a credential
   // reference has no business carrying credentials.
@@ -164,12 +164,12 @@ test('classifyUrl: whitespace, control characters and absurd length are refused 
 });
 
 test('classifyUrl: a relative reference is resolved ONLY against the address the file came from', () => {
-  // No base — a file on your device no longer records where it was served from,
+  // No base - a file on your device no longer records where it was served from,
   // and guessing this site's origin would invent a location. Its OWN kind: this
   // is the one case where "it is a relative address" is the true explanation,
   // and every other refusal above is an absolute address this page declines.
   assert.deepEqual(classifyUrl('doc.c2pa', ORIGIN), { kind: 'no-base' });
-  // With a base (the ?src= path), it resolves — and stays inside the origin.
+  // With a base (the ?src= path), it resolves - and stays inside the origin.
   assert.deepEqual(classifyUrl('doc.c2pa', ORIGIN, '/docs/page.html'), { kind: 'same-origin', path: '/docs/doc.c2pa' });
   assert.deepEqual(classifyUrl('../c/doc.c2pa', ORIGIN, '/docs/deep/page.html'), { kind: 'same-origin', path: '/docs/c/doc.c2pa' });
   // A cross-origin base cannot launder a relative reference into a fetch.
@@ -194,7 +194,7 @@ test('classifyPastedUrl: text is PAYLOAD unless it is unmistakably an address', 
 
 test('manifest.inaccessible NEVER renders as a broken credential', () => {
   // The exact field M1's report flags for this: state 'invalid' + the
-  // manifest.inaccessible row, because no integrity check could run — which is
+  // manifest.inaccessible row, because no integrity check could run - which is
   // the one case where the state word is not the sentence to show.
   const r = report({
     state: 'invalid',
@@ -255,12 +255,12 @@ test('a fetched external credential says so — a valid verdict must not read as
 
 // Driven from the ENGINE's own frozen vocabulary, not a hand-written copy of
 // it. `verifyTextNotices` looks the status up in a table and pushes nothing at
-// all on a miss, so an unmapped status is silent — the hero stands with no note
+// all on a miss, so an unmapped status is silent - the hero stands with no note
 // under it, which is the exact failure this wave exists to prevent. A literal
 // list cannot catch that: M1 §6.4 already plans to change one of these strings
 // (`lolly.manifest.unsupportedReference` → the spec code), and a list of ten
 // literals would have gone on passing while the note disappeared.
-// `textMultipleWrappers` is the one status STATUS_NOTICE deliberately excludes —
+// `textMultipleWrappers` is the one status STATUS_NOTICE deliberately excludes - 
 // wrapperNotice() words it from what the assertion selected instead.
 const NOTICE_ID_FOR_STATUS: Record<string, string> = {
   htmlMultipleManifests: 'multiple-manifests',
@@ -315,7 +315,7 @@ test('the §A.9.5 "one delimiter only" case stays honest about quoted prose', ()
 
 test('multiple wrappers: a notice when one was selected, a refusal only when more than one MATCHED', () => {
   // Extraction-time multiplicity is a NOTICE (§A.8.4.1 gives selection to the
-  // exclusions) — and here the assertion picked one cleanly, so the text is fine.
+  // exclusions) - and here the assertion picked one cleanly, so the text is fine.
   const picked = byId(verifyTextNotices(report({
     state: 'valid',
     textBinding: { kind: 'text', status: 'manifest.text.multipleWrappers', wrappers: 3, matchedWrappers: 1, selectedWrapper: 2 },
@@ -385,7 +385,7 @@ test('a pasted, re-serialized carrier is explained rather than accused — and o
 
   // NOT offered for a DROPPED file: nothing there says a serializer touched it.
   assert.equal(reserializedNotice(pastedHtml, { origin: ORIGIN, pasted: false }), null);
-  // NOT offered when the credential itself is damaged — the innocent explanation
+  // NOT offered when the credential itself is damaged - the innocent explanation
   // needs the claim signature to have verified.
   const badSig = report({
     state: 'invalid', format: 'html',
@@ -395,7 +395,7 @@ test('a pasted, re-serialized carrier is explained rather than accused — and o
   // NOT offered when the bytes actually matched.
   const fine = report({ format: 'html', checks: [ok('claimSignature.validated'), ok('assertion.dataHash.match')] });
   assert.equal(reserializedNotice(fine, { origin: ORIGIN, pasted: true }), null);
-  // NOT offered for a binary format — a re-serialized PNG is not a thing the
+  // NOT offered for a binary format - a re-serialized PNG is not a thing the
   // clipboard does, and this must not become a general excuse for a mismatch.
   const png = report({
     state: 'invalid', format: 'png',
@@ -434,7 +434,7 @@ test('aiDisclosureRows: the model is named from whichever field the claim used',
   assert.deepEqual(aiDisclosureRows(report({ aiDisclosure: { modelIdentifier: 'urn:model:x' } })), [{ model: 'urn:model:x' }]);
   // A name wins over an identifier when both are there.
   assert.equal(aiDisclosureRows(report({ aiDisclosure: { modelName: 'Veo', modelIdentifier: 'urn:x' } }))[0]!.model, 'Veo');
-  // A disclosure with neither is still a disclosure — the panel says so rather
+  // A disclosure with neither is still a disclosure - the panel says so rather
   // than inventing a name or hiding the declaration.
   assert.deepEqual(aiDisclosureRows(report({ aiDisclosure: { oversight: 'humanInTheLoop' } })), [{ model: null, oversight: 'humanInTheLoop' }]);
   assert.deepEqual(aiDisclosureRows(report()), []);
@@ -454,7 +454,7 @@ test('aiDisclosureRows: every disclosure is listed when a claim made more than o
 //
 // `unresolvable` covers four gate outcomes and used to be worded for one of
 // them. Every case below is an ABSOLUTE reference the engine was willing to
-// hand up and this page declines to follow — printing "it is a relative
+// hand up and this page declines to follow - printing "it is a relative
 // address" above the absolute address, in a <code> block the reader can see, is
 // a sentence the page can be caught in. The `//evil.test` one stings most: it
 // is refused for a real security reason and the copy attributed it to

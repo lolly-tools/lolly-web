@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * archive-ingest — explode a plain .zip / .tar / .tar.gz to member files, and REFUSE
+ * archive-ingest - explode a plain .zip / .tar / .tar.gz to member files, and REFUSE
  * to shred an OOXML/OCF package that merely shares the PK magic. Fixtures are built
  * by the engine's own writers so the read side is proven against real bytes.
  */
@@ -87,7 +87,7 @@ test('expandArchiveFiles explodes archives, passes non-archives and office files
 });
 
 test('expandArchiveFiles keeps a broken/renamed archive as-is (byte guard refuses it)', async () => {
-  // A .zip-named file that is actually an XLSX must NOT be exploded — it passes
+  // A .zip-named file that is actually an XLSX must NOT be exploded - it passes
   // through so the normal ingest path handles/reports it.
   const xlsx = writeXlsx({ rows: [['x']] });
   const out = await expandArchiveFiles([new File([xlsx as BlobPart], 'sneaky.zip')]);
@@ -98,7 +98,7 @@ test('expandArchiveFiles keeps a broken/renamed archive as-is (byte guard refuse
 test('a macOS-made zip drops its __MACOSX/._ AppleDouble stubs and .DS_Store', () => {
   // Finder / `zip` on macOS puts a `__MACOSX/` tree of `._name` resource-fork stubs
   // beside every real file, plus a `.DS_Store`. Left in, each became its own blank
-  // "VECTOR .bin" upload — an `._foo.svg` matches the .svg name test but holds
+  // "VECTOR .bin" upload - an `._foo.svg` matches the .svg name test but holds
   // AppleDouble binary. Only the real files should survive the explode.
   const zip = storeZip([
     { name: 'hlc-color-atlas-01.svg', bytes: enc.encode('<svg viewBox="0 0 1 1"></svg>') },

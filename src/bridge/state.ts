@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * StateAPI — saved tool states.
+ * StateAPI - saved tool states.
  *
  * Stored per-slot in IndexedDB. The slot key is user-facing (they name their
- * saves); the toolId/version are recorded for forward compatibility — when a
+ * saves); the toolId/version are recorded for forward compatibility - when a
  * tool bumps a major version, the runtime can decide whether to migrate or
  * warn the user.
  */
@@ -31,7 +31,7 @@ interface StateRecord {
   thumb: string | null;
   updatedAt: string;
   /** First-save time, preserved across re-saves (save() rewrites updatedAt but
-   *  carries this forward) — the "Date added" sort key. Optional: rows written
+   *  carries this forward) - the "Date added" sort key. Optional: rows written
    *  before it existed have none; readers fall back to the slot's minted
    *  timestamp (`<toolId>:<Date.now()>`) and then updatedAt. */
   createdAt?: string;
@@ -61,7 +61,7 @@ export interface WebStateAPI extends StateAPI {
   list(): Promise<(StateEntry & { filename: string | null; thumb: string | null; createdAt?: string })[]>;
   /** Bytes used per slot (rough: the JSON-serialised record size). */
   sizes(): Promise<Record<string, number>>;
-  /** Blob keys (id:format:version) referenced across all saved sessions —
+  /** Blob keys (id:format:version) referenced across all saved sessions - 
    *  used by sync to avoid evicting on-demand blobs a session still needs. */
   _getAssetRefs(): Promise<Set<string>>;
 }
@@ -70,7 +70,7 @@ export function createStateAPI(db: StateDb): WebStateAPI {
   return {
     async save(slot, data, thumb = null) {
       // Re-saves reuse the slot, so the original creation time only survives by
-      // carrying it forward off the existing record (one extra read per save —
+      // carrying it forward off the existing record (one extra read per save - 
       // saves are user actions, never a hot path).
       const prior = await db.get('state', slot).catch(() => undefined);
       const now = new Date().toISOString();
@@ -92,7 +92,7 @@ export function createStateAPI(db: StateDb): WebStateAPI {
       const record = await db.get('state', slot);
       // Read the record's version stamps through the shared migrate-or-warn
       // branch (engine/session-record.ts) rather than reaching for `.data`
-      // directly — records predating versioning migrate as v0 (a no-op today),
+      // directly - records predating versioning migrate as v0 (a no-op today),
       // and a record written by a newer app is read as-is but reported.
       return migrateSessionRecord(record, stateLog) as SavedStateData | null;
     },
@@ -144,7 +144,7 @@ function collectAssetRefs(value: unknown, refs: Set<string>): void {
   const record = value as Record<string, unknown>;
   if (record.source === 'library' && record.id && record.format && record.version != null) {
     // A derived ref (`<baseId>?theme=<t>` icon, `<baseId>?treatment=<t>` photo) is
-    // backed by the BASE blob — that's the key the cache holds and the one pruning
+    // backed by the BASE blob - that's the key the cache holds and the one pruning
     // must protect. Both derived refs record the base format, so this reconstructs
     // the base blob key exactly.
     const baseId = stripAssetModifiers(String(record.id));

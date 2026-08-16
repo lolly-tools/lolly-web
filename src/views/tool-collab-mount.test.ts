@@ -3,13 +3,13 @@
  * INERTNESS: mounting a tool must cost a single-player user nothing to be a collab
  * (plan 100 §4.6, §5, §11.14).
  *
- * `views/tool.ts` now contains one block that can build an entire presence stack — a
+ * `views/tool.ts` now contains one block that can build an entire presence stack - a
  * session, an op wrapper, an overlay layer, two frame-driven components, a stage pill
  * and a document-level listener set. Nothing in this repo registers a session source,
  * so that block is dead code, and the whole value of this task rests on it STAYING
  * dead in a way you can check rather than a way you can assert in prose.
  *
- * WHY A SOURCE SCAN. mountTool cannot be imported outside Vite — it imports
+ * WHY A SOURCE SCAN. mountTool cannot be imported outside Vite - it imports
  * stylesheets and reaches `tool-inputs.ts`, whose sibling imports use the `.js`
  * specifier convention Node cannot resolve (the reason `views/block-row-id.test.ts`
  * and `views/multi-edit-crash-guard.test.ts` scan rather than mount). So the proof is
@@ -116,7 +116,7 @@ test('nothing but the seam is statically imported from the collab stack', () => 
       // collab costs a single-player build nothing", and this import costs it nothing:
       // `main.ts` already imports the SAME module on the boot path for
       // `installLiveCollabMount()`, so it is in the entry chunk with or without this line
-      // — and it pulls in nothing but `collab-mount.ts` + the registry, no pill, no
+      // - and it pulls in nothing but `collab-mount.ts` + the registry, no pill, no
       // session, no presence engine. What the rule is actually protecting is the
       // composition (`./tool-collab.ts`), and the two tests around this one still pin
       // that to a single dynamic import.
@@ -223,7 +223,7 @@ test('the composition is handed the stage to mount in and the canvas to measure'
 test('the library host is captured BEFORE the acceptor swap, and used by nothing else', () => {
   // The ordering IS the property: `views/tool.ts` replaces `host.state` with a memory
   // bridge for an acceptor (§11.17), so a reference taken after that line is the
-  // ephemeral store wearing the library's name — and a beam the human accepted would
+  // ephemeral store wearing the library's name - and a beam the human accepted would
   // land in a store that dies with the mount.
   const capture = CODE.indexOf('const libraryHost = host;');
   const swap = CODE.indexOf('if (ephemeralState) host = { ...host, state: ephemeralState };');

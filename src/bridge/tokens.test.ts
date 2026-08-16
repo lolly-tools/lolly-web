@@ -6,7 +6,7 @@
  *
  * These live next to the bridge (not the repo-root tests/ suite) because they
  * cover shell-side loading, not engine token semantics. DOM-free: the bridge
- * touches only the injected host slice and global fetch — both stubbed here
+ * touches only the injected host slice and global fetch - both stubbed here
  * with plain objects (Node ≥18 supplies Blob/Response natively). The user-
  * tokens tests further down compose the REAL assets bridge over an in-memory
  * idb stand-in, so the user-beats-catalog discovery order is exercised
@@ -19,7 +19,7 @@ import { createAssetsAPI } from './assets.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { TOKEN_EXT } from '../../../../engine/src/tokens.ts';
 
-// Minimal DTCG doc — one colour token, enough for a non-empty set.
+// Minimal DTCG doc - one colour token, enough for a non-empty set.
 const DOC  = { color: { brand: { jungle: { $type: 'color', $value: '#30ba78' } } } };
 const DOC2 = { color: { brand: { jungle: { $type: 'color', $value: '#123456' } } } };
 
@@ -71,7 +71,7 @@ test('falls back to the catalog index, then the asset file, when nothing is sync
 
 test('fresh boot (IDB open, asset-meta empty → resolves NULL) still reaches the index fallback', async () => {
   // The true pre-sync state is _findMetaByType RESOLVING null (getAll → [] →
-  // find → undefined ?? null), not throwing — a refactor that only falls back
+  // find → undefined ?? null), not throwing - a refactor that only falls back
   // on throw would silently lose tokens on every online cold boot.
   const fetchLog: string[] = [];
   stubFetch({
@@ -114,9 +114,9 @@ test('bust() drops the memoised document and per-theme sets', async () => {
   assert.equal(await api.resolve('color.brand.jungle'), '#123456'); // re-discovered + reloaded
 });
 
-// ── User tokens (the runtime brand) — real assets bridge over an in-memory db ──
+// ── User tokens (the runtime brand) - real assets bridge over an in-memory db ──
 
-/** Minimal in-memory stand-in for the idb slice bridge/assets.ts consumes —
+/** Minimal in-memory stand-in for the idb slice bridge/assets.ts consumes - 
  *  just the user-assets / asset-meta / asset-blob reads and writes these tests
  *  exercise (the transaction form is only needed by sync/prune, unused here). */
 function memDb(seed: {
@@ -167,7 +167,7 @@ test('installUserTokens writes + busts — the very next resolve() sees the new 
   const host = { assets, tokens };
   assert.equal(await tokens.resolve('color.brand.jungle'), '#30ba78'); // shipped brand, now memoised
   await installUserTokens(host, DOC2, { label: 'Acme brand' });
-  assert.equal(await tokens.resolve('color.brand.jungle'), '#123456'); // no manual bust() — install did it
+  assert.equal(await tokens.resolve('color.brand.jungle'), '#123456'); // no manual bust() - install did it
 });
 
 test('installUserTokens rejects a non-object document without touching the store', async () => {
@@ -369,7 +369,7 @@ test('a published version resolves its OWN document, and bust() drops the versio
 // Every render on this shell reads host.tokens: the tool canvas's brand vars, the
 // picker swatches, the engine's token-bound inputs, the export palette. So the
 // ladder has to be applied HERE, or the app chrome paints one design system while
-// the tools it frames paint another — the drift versioning exists to remove.
+// the tools it frames paint another - the drift versioning exists to remove.
 
 /** A user head carrying one published version, and that version's own document. */
 function versionedDb(active: string | null) {
@@ -403,7 +403,7 @@ test('nothing active ⇒ the default reads are the head, byte-identically to bef
 
 /** Point the bridge's `?designv=` read at a route. The bridge reads the LIVE hash
  *  (it outlives any one route), so this is the whole of what a navigation means to
- *  it — and `''` is the DOM-free default every other test in this file runs under. */
+ *  it - and `''` is the DOM-free default every other test in this file runs under. */
 function at(hash: string): void {
   if (!hash) { delete (globalThis as { location?: unknown }).location; return; }
   (globalThis as { location?: unknown }).location = { hash };
@@ -482,7 +482,7 @@ test('an unlabelled head write keeps the name the design system already had', as
 
 // ── Brand lock (an authoritative, non-overridable catalog brand) ──────────────
 
-/** A synced catalog whose tokens asset declares brandLock — the app must resolve
+/** A synced catalog whose tokens asset declares brandLock - the app must resolve
  *  ITS doc and ignore any user install (the SUSE profile's stance). */
 const LOCKED_CATALOG_TOKENS = () => ({
   meta: [{
@@ -504,7 +504,7 @@ test('a locked brand IGNORES a pre-existing user tokens asset — the catalog do
   stubFetch({});
   const assets = createAssetsAPI(memDb({
     ...LOCKED_CATALOG_TOKENS(),
-    // A leftover from an earlier, unlocked profile — user-first discovery would normally serve it.
+    // A leftover from an earlier, unlocked profile - user-first discovery would normally serve it.
     users: [{ id: 'user/tokens/brand', type: 'tokens', format: 'json', blob: docBlob(DOC2), version: '1.0.0' }],
   }));
   const api = createTokensAPI({ assets });
@@ -521,12 +521,12 @@ test('installUserTokens refuses on a locked brand (BrandLockedError) and writes 
   const assets = createAssetsAPI(memDb(LOCKED_CATALOG_TOKENS()));
   const tokens = createTokensAPI({ assets });
   await assert.rejects(installUserTokens({ assets, tokens }, DOC2, { label: 'Nope' }), BrandLockedError);
-  // No user asset was written — the shipped brand still stands.
+  // No user asset was written - the shipped brand still stands.
   assert.equal((await assets._findMetaByType('tokens'))?.id, 'suse/tokens/brand');
   assert.equal(await tokens.resolve('{color.brand.jungle}'), '#30ba78');
 });
 
-// ── applyBrandVars (brand-vars.ts) — the contract-§3 injection rules ───────────
+// ── applyBrandVars (brand-vars.ts) - the contract-§3 injection rules ───────────
 // DOM-free like the rest of this file: applyBrandVars only touches
 // el.style.setProperty/removeProperty, so a recording stand-in suffices.
 
@@ -558,7 +558,7 @@ test('applyBrandVars sets the seven slots under the --brand-* namespace, never t
     '--brand-secondary', '--brand-surface', '--brand-text',
   ]);
   // Bare --primary/--muted/… are the SHELL's shadcn HSL-triple vocabulary
-  // (styles/tokens.css) that community tools consume via hsl(var(--primary)) —
+  // (styles/tokens.css) that community tools consume via hsl(var(--primary)) - 
   // injecting full colours under those names would break them (contract §3).
   assert.equal(props.has('--primary'), false);
 });

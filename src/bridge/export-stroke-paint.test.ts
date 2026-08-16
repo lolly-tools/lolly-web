@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stroke resolution for the PDF vector walker — guarded in a REAL browser, against the
+ * Stroke resolution for the PDF vector walker - guarded in a REAL browser, against the
  * REAL catalog artwork, through the REAL exported helpers.
  *
  * ## Why this test exists
@@ -8,7 +8,7 @@
  * Every SUSE catalog illustration is an Illustrator export: it carries all of its paint in
  * a `<style>` block of generated classes (`.cls-7{stroke:#003e37;stroke-width:4px}`) and
  * puts NO stroke/stroke-width attribute on any node. `drawSvgVectorsInRegion` used to read
- * stroke as `getAttribute('stroke') ?? resolveStyleProp(e,'stroke') ?? 'none'` — attribute,
+ * stroke as `getAttribute('stroke') ?? resolveStyleProp(e,'stroke') ?? 'none'` - attribute,
  * then the inline `style=""` attribute, then give up. Neither read can see a class rule, so
  * every stroke resolved to 'none' and the artwork exported to PDF as flat fills with EVERY
  * outline missing. Fill was unaffected the whole time, because resolveColor() had always
@@ -17,13 +17,13 @@
  * ## Why it needs a real browser (and is therefore gated)
  *
  * The fix hinges on getComputedStyle applying a CSS *class* rule to an SVG node. jsdom does
- * not implement SVG presentation properties in its cascade at all — it returns '' for stroke,
- * stroke-width AND fill — so a jsdom run cannot tell a working resolver from a broken one, and
+ * not implement SVG presentation properties in its cascade at all - it returns '' for stroke,
+ * stroke-width AND fill - so a jsdom run cannot tell a working resolver from a broken one, and
  * hand-feeding a fake computed style would only test the fake. A real Chromium is the only
  * honest oracle here, so this suite self-skips when one isn't installed, per the gated-test
  * convention in tests/README.md. To exercise it: `npx playwright install chromium`.
  *
- * The helpers are imported by BUNDLING the real module for the browser (esbuild, a devDep) —
+ * The helpers are imported by BUNDLING the real module for the browser (esbuild, a devDep) - 
  * node never imports export.ts, which is browser-only at runtime.
  */
 import test from 'node:test';
@@ -38,7 +38,7 @@ const REPO = join(HERE, '../../../..');
 const EXPORT_MODULE = join(HERE, 'export.ts');
 
 // The reference artwork: 103 shapes, 84 of them stroked ONLY by a class. Lives in the
-// private SUSE brand pack, so it is absent under lolly-start / public CI — skip cleanly,
+// private SUSE brand pack, so it is absent under lolly-start / public CI - skip cleanly,
 // exactly as tests/color-block.test.ts does for its tool.
 const ART = join(REPO, 'catalog/assets/suse/credentials/illustration-cybersecurity-pine.svg');
 
@@ -102,7 +102,7 @@ test('strokeOf: a class-declared stroke on the real catalog artwork resolves (PD
         total: els.length,
         // The premise: NOTHING declares stroke the old code could see. If a future
         // re-export of this artwork adds attributes, this drops and the test below
-        // stops proving anything — so assert it rather than trust it.
+        // stops proving anything - so assert it rather than trust it.
         withStrokeAttr: els.filter(e => e.getAttribute('stroke')).length,
         withStrokeWidthAttr: els.filter(e => e.getAttribute('stroke-width')).length,
         // What the walker now actually gets.
@@ -146,7 +146,7 @@ test('strokeOf/strokeWidthOf: attribute > inline style > CSS class, and SVG defa
 
     // The class rule is the ONLY declaration → must come from the computed fallback.
     assert.deepEqual(r.cls, ['rgb(0, 62, 55)', 4]);
-    // An inline style and an attribute each still win over the class — the fallback is a
+    // An inline style and an attribute each still win over the class - the fallback is a
     // fallback, not an override. (Both also beat the class in the real cascade, so a
     // computed-only implementation would pass this too; the point is we didn't regress it.)
     assert.deepEqual(r.inline, ['#ff0000', 9]);

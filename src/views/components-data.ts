@@ -2,14 +2,14 @@
 // Specimen data for the browsable component library (#/components). Originally
 // GENERATED from plans/76-component-audit.md's pre-refactor inventory; a multi-wave
 // refactor has since executed the audit's 13 recommendations (see that file's
-// per-recommendation status lines), so this is now HAND-MAINTAINED from here —
+// per-recommendation status lines), so this is now HAND-MAINTAINED from here - 
 // it tracks the shipped primitive layer (buttons.css, chips.css, lib/seg.ts,
 // lib/icons.ts, components/modal.ts, components/zoom-hud.ts, components/
 // view-topbar.ts, lib/swatches.ts's swatchTile, lib/set-theme.ts, lib/tabs.ts,
 // folder-tiles.ts's sessionRow, components/body-popover.ts, disclosure.css's
 // .section-card, .note/.field-input) as well as the per-view specimens that
-// still show a real, documented divergence. The "Primitives" section leads —
-// the target atoms a design-system library shows first — followed by the
+// still show a real, documented divergence. The "Primitives" section leads - 
+// the target atoms a design-system library shows first - followed by the
 // remaining common-primitive families, then per-view. The VIEW
 // (views/components.ts) supplies the live renderers keyed by `live`.
 export interface Specimen {

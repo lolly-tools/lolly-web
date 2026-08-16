@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The dashboard destination registry — drift guards in BOTH directions
+ * The dashboard destination registry - drift guards in BOTH directions
  * (plans/99 M2):
  *
  *  1. Registry ⇄ views/dashboard.ts: the view must render every data-flag via
- *     registry interpolation (dashFlag) — a hand-rolled `data-flag="…"` literal
+ *     registry interpolation (dashFlag) - a hand-rolled `data-flag="…"` literal
  *     or a `flag: '…'` option re-introduces the pre-registry drift and fails
  *     here, whatever mechanical form it takes.
  *  2. Registry ⇄ lib/capabilities-data.ts: the capability-group rows are a
  *     deliberate distilled COPY (that module is lazy-loaded by design, so the
- *     registry cannot import it) — this is the two-copies guard that keeps the
+ *     registry cannot import it) - this is the two-copies guard that keeps the
  *     copy honest.
  *
  * Run directly:
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 // jsdom globals BEFORE the dynamic imports (capabilities-data's import graph
-// expects a window) — the search-bar.test.ts convention.
+// expects a window) - the search-bar.test.ts convention.
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://lolly.tools/' });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
@@ -46,7 +46,7 @@ test('registry invariants: unique ids, tab rows are exactly the flagless ones', 
 
 test('dashFlag answers every registered id (appending the id as its unique token) and is inert on unknowns', () => {
   // The id rides along as a flag token so dashHref's `#/d?<id>` resolves to
-  // exactly this section — keyword tokens collide across sections ('print',
+  // exactly this section - keyword tokens collide across sections ('print',
   // 'color') and applyDeepLink takes the first DOM-order owner.
   assert.equal(dashFlag('dash-storage'), 'storage dash-storage');
   assert.equal(dashFlag('nope'), '');
@@ -61,7 +61,7 @@ test('dashHref: sections by their unique id, tabs by ?tab=', () => {
 
 test('dashboard.ts imports the registry and interpolates every data-flag', () => {
   assert.ok(DASHBOARD_SRC.includes("from './dashboard-registry.ts'"), 'imports the registry');
-  // Every data-flag attribute in the source is template interpolation — a NEW
+  // Every data-flag attribute in the source is template interpolation - a NEW
   // hand-rolled `data-flag="lock brand …"` literal fails this scan.
   const literal = DASHBOARD_SRC.match(/data-flag="(?!\$\{)[^"]*"/);
   assert.equal(literal, null, `literal data-flag found: ${literal?.[0] ?? ''}`);

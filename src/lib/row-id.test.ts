@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stable row ids (plan 100 §3) — the ULID itself and the lazy `ensureRowIds` migration.
+ * Stable row ids (plan 100 §3) - the ULID itself and the lazy `ensureRowIds` migration.
  *
  * The claims that matter for a collab are uniqueness (two devices minting rows with no
  * chance to coordinate must not collide), sort-by-creation (the time prefix), and the
@@ -116,8 +116,8 @@ test('stripHiddenRowIds takes the hidden id off a link, and only that', () => {
   assert.notEqual(stripped, rows, 'the caller\'s value is never mutated');
   assert.ok(rows[0]![ROW_ID_FIELD], 'the model keeps its ids');
 
-  // A canvas collection's DECLARED id is content — connector endpoints, frame
-  // membership and masks reference it by name — so it must survive.
+  // A canvas collection's DECLARED id is content - connector endpoints, frame
+  // membership and masks reference it by name - so it must survive.
   const boxes = [{ id: 'b1', x: 0 }];
   assert.equal(stripHiddenRowIds(boxes), boxes, 'nothing to strip → the same array');
   assert.deepEqual(stripHiddenRowIds(boxes), [{ id: 'b1', x: 0 }]);

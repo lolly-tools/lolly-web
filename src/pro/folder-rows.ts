@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — pure row assembly for folder (group) exports.
+ * Pro / Batch mode - pure row assembly for folder (group) exports.
  *
  * Converts saved sessions into batch rows with nested export paths. Kept free of
  * any render/zip/DOM/CSS imports so it stays unit-testable and so pro/index.js can
@@ -12,11 +12,11 @@ import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
 /** An assembled batch row with an optional nested export path. */
 export interface ExportRow {
   /**
-   * Stable, opaque identity — see `pro/batch.ts` `BatchRow.uid`. Stamped by
+   * Stable, opaque identity - see `pro/batch.ts` `BatchRow.uid`. Stamped by
    * {@link rowsForFolder} from the SOURCE (folder path :: session ref # ordinal), so
    * it is deterministic and survives `planBatch`'s compaction. NEVER an index: the
    * numbers the runner emits are queue positions in the compacted array.
-   * The pure `rowFrom*` helpers do not stamp it — assembly does.
+   * The pure `rowFrom*` helpers do not stamp it - assembly does.
    */
   uid?: string;
   toolId: string | undefined;
@@ -31,7 +31,7 @@ export interface ExportRow {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
@@ -52,7 +52,7 @@ interface BatchSessionRow {
 }
 
 /**
- * The RUN-LEVEL print settings a batch snapshot carries — the /pro toolbar
+ * The RUN-LEVEL print settings a batch snapshot carries - the /pro toolbar
  * defaults its rows inherit. A row that names its own value wins; this is the
  * fallback, and the two are merged when the snapshot is flattened into export
  * rows so a folder export reproduces what the saved batch would have rendered.
@@ -64,7 +64,7 @@ export interface PrintDefaults {
 }
 
 /**
- * An untrusted session record loaded from host.state — either a single-tool
+ * An untrusted session record loaded from host.state - either a single-tool
  * session (flat input values + `__`-prefixed export meta) or a batch snapshot.
  */
 interface StoredSession {
@@ -82,7 +82,7 @@ interface StoredSession {
   __export_marks?: string;
   rows?: BatchSessionRow[];
   /**
-   * A BATCH snapshot's run-level print settings (unprefixed — the `__export_*`
+   * A BATCH snapshot's run-level print settings (unprefixed - the `__export_*`
    * names above are the single-tool record's). Read only when `__batch` is set;
    * on a single-tool record these keys would be ordinary input values, which is
    * why nothing reads them outside the `__batch` branch of `rowsForFolder`.
@@ -122,7 +122,7 @@ export function stemOf(filename: string | undefined, toolId: string | undefined)
 /** Filesystem-safe-ish path segment for zip names (batch.js sanitizes again). */
 export const slug = (s: unknown): string => String(s ?? '').trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '');
 
-// Motion export formats — a live clip captured in REAL TIME (rAF-driven), not a single
+// Motion export formats - a live clip captured in REAL TIME (rAF-driven), not a single
 // frame. They pause when the tab isn't visible, so a batch that includes them needs the
 // tab kept active. Single source of truth (render-export imports this too).
 export const MOTION_EXPORT_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng']);
@@ -135,7 +135,7 @@ const posNum = (v: string | undefined): number | undefined => { const n = parseF
  * Convert a saved single-tool session's `data` into one batch row.
  *
  * A tool session stores its input values alongside `__`-prefixed export meta; the
- * row's `values` is exactly the inputs (every non-`__` key — render-export seeds
+ * row's `values` is exactly the inputs (every non-`__` key - render-export seeds
  * those straight into the runtime), and `__export_*` maps 1:1 onto the row's
  * format/filename/size fields. With `pathParts`, the filename becomes the nested
  * export path (`group/.../stem`).
@@ -153,7 +153,7 @@ export function rowFromToolSession(data: StoredSession, pathParts: string[] = []
     unit: data.__export_unit || 'px',
     dpi: posNum(data.__export_dpi),
     // Print settings ride the row too. Without these a folder of print-ready PDFs
-    // rendered out trim-sized with no crop marks and no press profile — settings
+    // rendered out trim-sized with no crop marks and no press profile - settings
     // the user had explicitly set and that the session record had faithfully kept.
     profile: data.__export_profile || undefined,
     bleed: data.__export_bleed || undefined,
@@ -166,14 +166,14 @@ export function rowFromToolSession(data: StoredSession, pathParts: string[] = []
  *
  * `runDefaults` is the SNAPSHOT's run-level print block; a row that names its own
  * value wins, matching `runBatch`'s precedence for format/unit/dpi (the single
- * statement of the rule is `resolvePrintSettings` in ./batch.ts — this module is
+ * statement of the rule is `resolvePrintSettings` in ./batch.ts - this module is
  * deliberately import-free, so it restates the merge rather than importing it, and
  * `pro/folder-rows.test.ts` pins the two to the same answer).
  *
  * Before this, a batch snapshot's rows reached the folder exporter with all three
  * fields `undefined`: a folder of 40 rows the user had set to 3mm CMYK rendered
  * trim-sized, unmarked and profile-less. An absent field is a genuine "unset", not
- * an asserted zero — which is why `''` resolves to `undefined`, not to "no bleed".
+ * an asserted zero - which is why `''` resolves to `undefined`, not to "no bleed".
  */
 export function rowFromBatchRow(r: BatchSessionRow, pathParts: string[], runDefaults: PrintDefaults = {}): ExportRow {
   const leaf = stemOf(r.filename, r.toolId);
@@ -215,7 +215,7 @@ export async function rowsForFolder(host: FolderHost, folder: Folder, allFolders
     if (data.__batch || isBatchSlot(item.ref)) {
       const sub = data.__label || item.ref.slice(BATCH_SLOT_PREFIX.length);
       // uid is stamped HERE, from the source, not by the pure helpers: `<path>::<ref>#<k>`.
-      // The path prefix is required — exportSelectionAsBatch concatenates subtrees, so the
+      // The path prefix is required - exportSelectionAsBatch concatenates subtrees, so the
       // same session ref can legitimately appear under two selected folders, and uniqueness
       // is a property of the path, not the ref. No counter, no random: deterministic.
       const srcRows = data.rows ?? [];
@@ -223,7 +223,7 @@ export async function rowsForFolder(host: FolderHost, folder: Folder, allFolders
       const runPrint: PrintDefaults = { profile: data.profile, bleed: data.bleed, marks: data.marks };
       // Pushed UNCONDITIONALLY, template or not. A pre-filter here shifted the source
       // position of every row after a template-less one and dropped it from the run
-      // report entirely — a zip that lists only the rows it could render is not an
+      // report entirely - a zip that lists only the rows it could render is not an
       // honest record of the job. `planBatch` drops these with the reason
       // 'No template selected', recording the source position and the uid stamped
       // below, so `#k` and the reported row number stay the same number.
@@ -244,17 +244,17 @@ export async function rowsForFolder(host: FolderHost, folder: Folder, allFolders
 }
 
 /**
- * Assemble grid rows from an EXPLICIT list of session refs — the Projects
+ * Assemble grid rows from an EXPLICIT list of session refs - the Projects
  * multi-selection "Edit as sheet" path (`#/pro?s=slot,slot…`).
  *
  * Deliberately NOT {@link rowsForFolder}: a folder export skips non-tool items
  * because it can't render an image, but a sheet is an editing surface, and the
- * user asked for a selection to open verbatim — every item they picked becomes a
+ * user asked for a selection to open verbatim - every item they picked becomes a
  * row. So a single-tool session is a row, a batch snapshot flattens to its rows,
  * and anything else (an uploaded image/asset with no inputs, or a record that
  * won't load) becomes a TOOL-LESS row: present in the grid with an empty tool
  * picker and no input cells, rather than silently dropped. Nothing here recurses
- * or nests paths — the selection is already the flat set the user chose.
+ * or nests paths - the selection is already the flat set the user chose.
  */
 export async function rowsFromRefs(host: FolderHost, refs: string[]): Promise<ExportRow[]> {
   const rows: ExportRow[] = [];

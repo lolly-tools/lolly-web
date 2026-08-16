@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the music bed's in-point (opts.audio.start) — the clamp and the
+ * Unit tests for the music bed's in-point (opts.audio.start) - the clamp and the
  * loop-window wiring in export.ts's connectMusic. The real Web Audio graph runs only
  * in a browser, so the context is faked down to the three calls connectMusic makes;
  * what's pinned is the scheduling (start offset, loopStart/loopEnd), which is where a
@@ -71,12 +71,12 @@ test('connectMusic: an out-of-range in-point falls back to the whole track', () 
 });
 
 test('connectMusic: loop:false plays the source once (a narration over a mix-in bed)', () => {
-  // §6.1 — with a bed underneath, the primary must END so the bed's full-gain
+  // §6.1 - with a bed underneath, the primary must END so the bed's full-gain
   // tail can happen; looping it would hold the duck forever.
   const { ctx, src } = fakeCtx();
   connectMusic(ctx as BaseAudioContext, buffer(30), {} as AudioNode, { clipSec: 25, loop: false }).start();
   assert.equal(src.loop, false);
-  // The default stays looped — no caller changes without opting in.
+  // The default stays looped - no caller changes without opting in.
   const plain = fakeCtx();
   connectMusic(plain.ctx as BaseAudioContext, buffer(30), {} as AudioNode, { clipSec: 25 }).start();
   assert.equal(plain.src.loop, true);

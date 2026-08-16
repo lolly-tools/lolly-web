@@ -4,11 +4,11 @@
  *
  * These matter more than a normal unit test: Projects and the Catalogue are required to
  * behave IDENTICALLY here, and the only thing making that true is that they both drive
- * this one module. So this suite is the uniformity guarantee — it pins the gestures once,
+ * this one module. So this suite is the uniformity guarantee - it pins the gestures once,
  * on a synthetic grid, and both views inherit whatever it asserts.
  *
  * jsdom gives us a real DOM (closest(), event capture/bubble, dispatch) but stubs
- * getBoundingClientRect to all-zeros, so each tile is handed an explicit rect — the
+ * getBoundingClientRect to all-zeros, so each tile is handed an explicit rect - the
  * marquee hit test is pure geometry against those rects, which is exactly what we want
  * to exercise.
  */
@@ -19,7 +19,7 @@ import { JSDOM } from 'jsdom';
 import { wireTileSelect } from './tile-select.ts';
 import type { TileSelect } from './tile-select.ts';
 
-// Four tiles in a row, 100×100, with 10px gaps — the "gaps between cards" the user drags in.
+// Four tiles in a row, 100×100, with 10px gaps - the "gaps between cards" the user drags in.
 const RECTS: Record<string, { left: number; top: number; right: number; bottom: number }> = {
   a: { left: 0,   top: 0, right: 100, bottom: 100 },
   b: { left: 110, top: 0, right: 210, bottom: 100 },
@@ -46,12 +46,12 @@ function harness(): Harness {
   (globalThis as Record<string, unknown>).window = w;
   (globalThis as Record<string, unknown>).document = w.document;
   (globalThis as Record<string, unknown>).HTMLElement = w.HTMLElement;
-  // Fine pointer — the marquee is desktop-only, so without this it never wires at all.
+  // Fine pointer - the marquee is desktop-only, so without this it never wires at all.
   (w as unknown as { matchMedia: unknown }).matchMedia = () => ({ matches: true });
 
   const doc = w.document;
   const host = doc.createElement('div');            // stands in for viewEl (the persistent mount)
-  const gap = doc.createElement('div');             // the grid container — the "gap between cards"
+  const gap = doc.createElement('div');             // the grid container - the "gap between cards"
   gap.className = 'grid';
   host.appendChild(gap);
   doc.body.appendChild(host);
@@ -122,7 +122,7 @@ test('a plain marquee REPLACES the selection', () => {
   h.clickDot('d');
   assert.deepEqual(got(h), ['d']);
   h.drag([105, 10], [325, 50]);
-  assert.deepEqual(got(h), ['b', 'c']);    // d is gone — a plain drag is not additive
+  assert.deepEqual(got(h), ['b', 'c']);    // d is gone - a plain drag is not additive
 });
 
 test('Shift/Cmd/Ctrl makes the marquee ADD to the selection', () => {
@@ -135,7 +135,7 @@ test('Shift/Cmd/Ctrl makes the marquee ADD to the selection', () => {
 test('a press that never travels far enough is a click, not a drag', () => {
   const h = harness();
   h.clickDot('a');
-  h.drag([105, 10], [107, 12]);            // 2px — under DRAG_SLOP
+  h.drag([105, 10], [107, 12]);            // 2px - under DRAG_SLOP
   // No box was drawn, so this is a plain click on empty canvas: it clears, and does NOT
   // fall through to a hit test that would have selected nothing anyway.
   assert.equal(h.cleared, 1);
@@ -153,7 +153,7 @@ test('a plain click on empty canvas clears the selection', () => {
 test('a marquee never STARTS on a card or a control', () => {
   const h = harness();
   h.clickDot('d');
-  // Press begins on tile "a" itself, not in a gap — the gesture must not engage at all,
+  // Press begins on tile "a" itself, not in a gap - the gesture must not engage at all,
   // so the existing selection survives untouched and nothing is cleared.
   h.drag([10, 10], [325, 50], { on: h.dot('a') });
   assert.deepEqual(got(h), ['d']);
@@ -195,7 +195,7 @@ test('the anchor stays put, so a second Shift-click re-reaches from the same ori
   h.clickDot('a');
   h.clickDot('d', true);
   assert.deepEqual(got(h), ['a', 'b', 'c', 'd']);
-  h.clickDot('b', true);                    // still anchored at a — not at d
+  h.clickDot('b', true);                    // still anchored at a - not at d
   assert.deepEqual(got(h), ['a', 'b', 'c', 'd']);
 });
 
@@ -215,7 +215,7 @@ test('clearing the selection drops the anchor, so the next Shift-click cannot sw
   h.gestures.resetAnchor();                 // what both views call when they empty the selection
   h.sel.clear();
   h.clickDot('d', true);
-  assert.deepEqual(got(h), ['d']);          // a plain toggle — NOT the a…d range
+  assert.deepEqual(got(h), ['d']);          // a plain toggle - NOT the a…d range
 });
 
 test('a marquee that catches nothing leaves no anchor behind', () => {
@@ -230,7 +230,7 @@ test('a marquee that catches nothing leaves no anchor behind', () => {
 // ── hidden tiles (a collapsed group) ──────────────────────────────────────────
 // The Catalogue keeps a folded-up group's cards in the DOM under `display: none`, so they
 // measure {0,0,0,0}. A zero rect at the origin passes a naive overlap test for ANY box
-// dragged out to the top-left corner — which would arm a bulk Delete over cards that are
+// dragged out to the top-left corner - which would arm a bulk Delete over cards that are
 // nowhere on screen. Neither gesture may reach them.
 
 /** Collapse a tile the way `display: none` does: a zero-area rect. */
@@ -243,7 +243,7 @@ test('a box dragged to the viewport origin cannot sweep up hidden tiles', () => 
   const h = harness();
   hide(h, 'a');
   hide(h, 'b');
-  h.drag([300, 60], [0, 0]);                // out to the top-left corner — over the zero rects
+  h.drag([300, 60], [0, 0]);                // out to the top-left corner - over the zero rects
   assert.deepEqual(got(h), ['c']);          // only the genuinely on-screen tile it crossed
 });
 
@@ -258,7 +258,7 @@ test('a Shift-range steps over hidden tiles instead of selecting them', () => {
 // ── teardown ──────────────────────────────────────────────────────────────────
 // The router hands every route the SAME persistent #view element (it only empties it),
 // so a gesture left bound to it outlives its view. These two pin the teardown that stops
-// a navigation stacking a second marquee — and a dead view's store being written to.
+// a navigation stacking a second marquee - and a dead view's store being written to.
 
 test('Escape backs a live drag out and puts the selection back', () => {
   const h = harness();
@@ -286,7 +286,7 @@ test('Escape backs a live drag out and puts the selection back', () => {
 test('destroy() unbinds the marquee, so a re-mounted view cannot stack a second one', () => {
   const h = harness();
   h.gestures.destroy();
-  h.drag([105, 10], [325, 50]);             // the gesture is gone — the drag does nothing
+  h.drag([105, 10], [325, 50]);             // the gesture is gone - the drag does nothing
   assert.deepEqual(got(h), []);
   assert.equal(h.cleared, 0);               // and it must not reach the dead view's clear()
 });
@@ -308,7 +308,7 @@ test('destroy() mid-drag bins the box and releases the document listeners', () =
 
   h.gestures.destroy();                     // user navigates away mid-drag
 
-  // The box lives in document.body, NOT in the view — replaceChildren() could never reach it.
+  // The box lives in document.body, NOT in the view - replaceChildren() could never reach it.
   assert.equal(doc.querySelectorAll('.tile-marquee').length, 0);
   assert.equal(h.host.classList.contains('is-marqueeing'), false);
 

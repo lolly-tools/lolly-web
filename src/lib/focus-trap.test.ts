@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * focus-trap.ts — the background `inert` sweep, specifically its interaction with
+ * focus-trap.ts - the background `inert` sweep, specifically its interaction with
  * the shared screen-reader live regions that a11y.ts mounts as <body> children.
  *
  * Run directly:  node --test shells/web/src/lib/focus-trap.test.ts
@@ -8,7 +8,7 @@
  * These drive the REAL a11y.ts and the REAL trapFocus against a jsdom document, so
  * the marker contract is tested end-to-end: rename the attribute on either side and
  * these fail. jsdom implements no layout, so offsetParent is null for every element
- * and the Tab-wrap boundary can't be exercised here — that's a browser concern. The
+ * and the Tab-wrap boundary can't be exercised here - that's a browser concern. The
  * inert sweep is pure DOM walking, which jsdom models faithfully.
  */
 import test from 'node:test';

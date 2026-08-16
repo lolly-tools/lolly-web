@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The motion path's OPEN GATE (plans/104 §8) — free-canvas's half of the overlay.
+ * The motion path's OPEN GATE (plans/104 §8) - free-canvas's half of the overlay.
  *
  * `motion-path.test.ts` owns the module: its export contract, its geometry, its
  * reduced-motion branch. What it cannot see is the sentence free-canvas writes above
@@ -13,18 +13,18 @@
  *   1. closed panel → the chunk is never even fetched (the gate is cheap, and it is
  *      first, so an ordinary selection of ordinary boxes costs nothing);
  *   2. CLOSING an already-mounted panel takes the path down. The panel is not destroyed
- *      on that path — only its open state flips — so nothing tears the overlay down;
+ *      on that path - only its open state flips - so nothing tears the overlay down;
  *      something has to re-ASK the gate. `ensureTimeline` now does, on the toggle
  *      itself. It is not the only route (measured: `setOpen` → `reserve()` → the
  *      stage's inline `--stage-reserve-bottom` changes → the stage MutationObserver →
  *      scheduleSync → paintChrome), but that one is made of three other decisions and
  *      is nobody's stated contract; this test pins the OUTCOME, so either route
  *      satisfies it and losing both does not;
- *   3. re-opening brings it back — the gate is a state, not a one-way door;
+ *   3. re-opening brings it back - the gate is a state, not a one-way door;
  *   4. and a drag in flight does not move the path, because it cannot: the samples are
  *      the model's, no gesture writes the model while the pointer is down, and the memo
  *      is on the model array's identity. paintChrome's live-path skip is a saving, not
- *      a compromise — the commit at pointerup is what lets the line follow.
+ *      a compromise - the commit at pointerup is what lets the line follow.
  *
  * The harness is free-canvas-kf-commit.test.ts's, unchanged: the real `initFreeCanvas`,
  * the real lazily-imported `timeline-panel.ts` and the real `motion-path.ts`, over an
@@ -77,7 +77,7 @@ function pointerEvent(type: string, x: number, y: number): MouseEvent {
   return e;
 }
 
-/** A keyframable time-capable canvas block — kf-commit's cfg, verbatim. */
+/** A keyframable time-capable canvas block - kf-commit's cfg, verbatim. */
 function canvasCfg(): Record<string, unknown> {
   return {
     idField: 'id', xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot',
@@ -91,7 +91,7 @@ function canvasCfg(): Record<string, unknown> {
   };
 }
 
-/** On screen 0…4s, animated, 200×100 at (100, 100) — so it travels, and has diamonds. */
+/** On screen 0…4s, animated, 200×100 at (100, 100) - so it travels, and has diamonds. */
 const ANIMATED = (): Box => ({
   id: 'a', x: 100, y: 100, w: 200, h: 100, rot: 0,
   start: 0, dur: 4, clipIn: 0, speed: 1, lane: '',
@@ -110,7 +110,7 @@ interface Fixture {
   /** The overlay layer, if the lazy chunk has mounted one at all. */
   layer(): HTMLElement | null;
   lines(): Element[];
-  /** Model writes so far — a commit is the only thing that moves a path. */
+  /** Model writes so far - a commit is the only thing that moves a path. */
   writes(): number;
   destroy(): void;
 }
@@ -166,7 +166,7 @@ async function select(f: Fixture, x: number, y: number): Promise<void> {
   await settle();
 }
 
-/** The rail's timeline button — the same toggle the user presses. */
+/** The rail's timeline button - the same toggle the user presses. */
 function timelineBtn(f: Fixture): HTMLButtonElement {
   const b = f.stageEl.querySelector<HTMLButtonElement>('.fc-btn-timeline');
   assert.ok(b, 'a time-capable tool gets a timeline button on the rail');
@@ -220,7 +220,7 @@ test('opening the timeline draws the selected box’s path; closing it takes it 
     assert.equal(path?.getAttribute('data-box-id'), 'a', 'and it is THIS box’s path');
 
     // The whole point of this file: the panel stays MOUNTED (destroyTimeline, which
-    // calls motionOff() outright, is a different path and would prove nothing here) —
+    // calls motionOff() outright, is a different path and would prove nothing here) - 
     // only its open state flips, and the overlay has to answer for it.
     await setPanel(f, false);
     assert.ok(f.stageEl.querySelector('.tl-panel'), 'the panel is still mounted, just closed');
@@ -239,7 +239,7 @@ test('a drag in flight leaves the path where it was authored; the COMMIT is what
   // paintChrome skips the motion path on the live path (`liveRects` non-null), and the
   // comment there says this is not a compromise: no gesture writes the model while the
   // pointer is down, `getBoxes()` hands back the input's own array and `samplePaths`
-  // memoises on that array's IDENTITY — so a paint per pointermove would redraw the
+  // memoises on that array's IDENTITY - so a paint per pointermove would redraw the
   // same polyline anyway. This is that claim, from the outside: mid-drag the line has
   // not moved a unit, and one pointerup later it has.
   const f = mount([ANIMATED()]);

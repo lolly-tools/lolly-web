@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of `host.audio` (v1.71) — decode a clip, then hand the PCM to
+ * Web implementation of `host.audio` (v1.71) - decode a clip, then hand the PCM to
  * the engine's `analysePcm` for the per-frame reactivity track.
  *
  * The division of labour is the point of the API: the SHELL owns the decoder
@@ -14,7 +14,7 @@
  *    context is subject to autoplay policy and starts suspended until a gesture;
  *    `decodeAudioData` on an offline one works on page load, which matters because a
  *    tool analyses its audio while rendering, not in response to a click.
- *  - **Results are cached, and that is load-bearing rather than an optimisation.** A
+ *  - **Results are cached, and that is required rather than an optimisation.** A
  *    tool's template re-runs on every keystroke. Without a cache, typing a title
  *    would re-fetch and re-analyse a multi-megabyte track per character.
  */
@@ -36,7 +36,7 @@ interface WorkerReply {
  * Cache depth. Each entry can be tens of megabytes once sample windows are asked
  * for, so this is deliberately shallow: enough that switching a style or nudging a
  * title reuses the analysis, not enough to hold a session's worth of tracks in
- * memory. Least-recently-USED eviction, not insertion order — the track being
+ * memory. Least-recently-USED eviction, not insertion order - the track being
  * actively edited must not be evicted by a preview of three others.
  */
 const CACHE_MAX = 4;
@@ -103,20 +103,20 @@ function isRef(src: AudioSource): src is AssetRef {
  * Source → decoded channel data.
  *
  * Two source kinds are SONG DATA rather than encoded audio, and both would fail at
- * `decodeAudioData` — no browser has a decoder for either. They are rendered instead,
+ * `decodeAudioData` - no browser has a decoder for either. They are rendered instead,
  * which yields Float32 PCM directly, so encoding it to WAV just to hand it back to a
  * decoder would be pure waste:
  *
- *   ZzFXM — our own synthesised songs. Two shapes: a catalog `.zzfxm.json` asset
+ *   ZzFXM - our own synthesised songs. Two shapes: a catalog `.zzfxm.json` asset
  *   (fetch the JSON) and the procedural `zzfxm:<seed>` scheme, which names a song no
  *   file stores and whose composer is imported lazily because it is a large module
  *   that most analyses never touch.
  *
- *   TRACKER MODULES (.mod/.xm/.s3m/.it/…) — sample-based song data, decoded by the
+ *   TRACKER MODULES (.mod/.xm/.s3m/.it/…) - sample-based song data, decoded by the
  *   libopenmpt worker the Neurospicy player and the video exporter already share
  *   (lib/mod-render.ts). Worth stating plainly because it is what makes the result
  *   honest: libopenmpt is a REAL decoder, so a module's waveform is that module's
- *   actual audio — not a lossy re-synthesis that would look like a measurement while
+ *   actual audio - not a lossy re-synthesis that would look like a measurement while
  *   being a guess. Without this branch a .mod reached decodeAudioData, threw, and the
  *   asset fell back to a music-note glyph forever.
  */
@@ -138,7 +138,7 @@ async function toPcm(src: AudioSource): Promise<{ channels: Float32Array[]; samp
   // (mod/xm/s3m/…) precisely so the badge and filename stay honest.
   if (isRef(src) && isModuleFormat(src.format)) {
     // `.slice()` because renderMod TRANSFERS the buffer to its worker, and `toBytes` may
-    // hand back the caller's own ArrayBuffer — transferring that would detach a buffer
+    // hand back the caller's own ArrayBuffer - transferring that would detach a buffer
     // the caller still holds. A copy of a tracker module is cheap; they are tiny by
     // construction (sample-based song data, which is why they are kept verbatim).
     const raw = await toBytes(src);
@@ -148,8 +148,8 @@ async function toPcm(src: AudioSource): Promise<{ channels: Float32Array[]; samp
   }
 
   const bytes = await toBytes(src);
-  // A 1-frame context: the rate and channel count here don't constrain the decode —
-  // decodeAudioData reports the file's own — this context exists only to own the call.
+  // A 1-frame context: the rate and channel count here don't constrain the decode - 
+  // decodeAudioData reports the file's own - this context exists only to own the call.
   const OAC = window.OfflineAudioContext ?? (window as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
   if (!OAC) throw new Error('no audio decoder in this browser');
   const buf = await new OAC(1, 1, 44100).decodeAudioData(bytes);
@@ -162,7 +162,7 @@ async function toBytes(src: AudioSource): Promise<ArrayBuffer> {
   if (src instanceof ArrayBuffer) return src;
   if (src instanceof Uint8Array) {
     // decodeAudioData wants an ArrayBuffer it can detach, and it will detach whatever
-    // it is given — so hand it a COPY of the caller's view rather than the buffer the
+    // it is given - so hand it a COPY of the caller's view rather than the buffer the
     // caller still holds (a `file` input's bytes may be read again for the export).
     return src.slice().buffer as ArrayBuffer;
   }

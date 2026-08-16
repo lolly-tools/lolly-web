@@ -32,7 +32,7 @@ test('estimateListenSeconds is the honest wpm math', () => {
 });
 
 test('formatListenEstimate picks the right whole-sentence shape', () => {
-  // Sub-minute: seconds only. Never claims zero — the floor is one second.
+  // Sub-minute: seconds only. Never claims zero - the floor is one second.
   assert.equal(formatListenEstimate(0), 'About 1 sec to listen, an estimate');
   assert.equal(formatListenEstimate(42), 'About 42 sec to listen, an estimate');
   // Exact minutes drop the seconds clause entirely.

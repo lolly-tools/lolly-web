@@ -1,4 +1,4 @@
-// host.codec (engine 1.100) — deep image encoders for tools that compute their
+// host.codec (engine 1.100) - deep image encoders for tools that compute their
 // own float pixels. Thin: the maths is the engine's deep-encode (packExr /
 // packRadiance / packPng + dither), imported deep-relative to keep those writers
 // off the boot barrel (this module is a lazy facade, loaded only when a tool

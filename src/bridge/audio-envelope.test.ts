@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * audio-envelope — the shared bed-duck gain math behind §6.1's export mixing
+ * audio-envelope - the shared bed-duck gain math behind §6.1's export mixing
  * (tool audio + a mix-in bed). The real graphs run only in a browser, so the
  * envelope is proven headlessly the way an OfflineAudioContext would evaluate
  * it: bedDuckEnvelope's events are rendered to samples via envelopeGainAt (a
  * faithful set/linear-ramp evaluator) and the RMS of the head, centre and tail
- * windows is asserted against the configured levels — full at the top and tail,
+ * windows is asserted against the configured levels - full at the top and tail,
  * the centre level under the primary span, ramps (never steps) between.
  *
  * Run directly:  node --test shells/web/src/bridge/audio-envelope.test.ts
@@ -17,7 +17,7 @@ import {
   MIX_RAMP_SEC, CENTRE_LOW, type GainEvent,
 } from './audio-envelope.ts';
 
-/** RMS of the envelope over [from, to), sampled at 1 kHz — the "tiny mix" render. */
+/** RMS of the envelope over [from, to), sampled at 1 kHz - the "tiny mix" render. */
 function rms(events: GainEvent[], from: number, to: number): number {
   const rate = 1000;
   let sum = 0, n = 0;
@@ -32,9 +32,9 @@ test('top/tail: bed full at head and tail, centre level under the primary span',
   // A 20 s clip whose primary (narration) plays 3 s → 12 s, centre = low.
   const events = bedDuckEnvelope({ clipSec: 20, centre: CENTRE_LOW, spans: [{ from: 3, to: 12 }] });
   // Windows chosen clear of the 0.8 s boundary ramps.
-  near(rms(events, 0, 2.9), 1);                    // head — full
-  near(rms(events, 3 + MIX_RAMP_SEC, 12 - MIX_RAMP_SEC), CENTRE_LOW);   // centre — low
-  near(rms(events, 12.1, 20), 1);                  // tail — full
+  near(rms(events, 0, 2.9), 1);                    // head - full
+  near(rms(events, 3 + MIX_RAMP_SEC, 12 - MIX_RAMP_SEC), CENTRE_LOW);   // centre - low
+  near(rms(events, 12.1, 20), 1);                  // tail - full
   // The three windows genuinely differ the way the levels say they must.
   assert.ok(rms(events, 0, 2.9) > 4 * rms(events, 4, 11));
 });
@@ -78,7 +78,7 @@ test('spans merge when the gap is too short for the bed to come back up', () => 
   const events = bedDuckEnvelope({
     clipSec: 30, centre: 0.2, spans: [{ from: 3, to: 10 }, { from: 10.5, to: 20 }],
   });
-  // The 0.5 s gap (< 2 ramps) never returns to full — one continuous duck.
+  // The 0.5 s gap (< 2 ramps) never returns to full - one continuous duck.
   near(rms(events, 10, 10.6), 0.2, 0.05);
   // A generous gap does return to full between spans.
   const apart = bedDuckEnvelope({
@@ -118,7 +118,7 @@ test('scheduleGainEvents maps events onto setValueAtTime / linearRampToValueAtTi
 test('tiny mix render: bed + primary reads as the §6.1 use case', () => {
   // Bed (constant 1.0 source through the envelope) mixed with a primary
   // narration over its span. What the user hears: music at the top, voice over
-  // a low bed through the middle, music again at the tail — and with centre off,
+  // a low bed through the middle, music again at the tail - and with centre off,
   // the middle is the voice alone.
   const span = { from: 3, to: 12 };
   const low = bedDuckEnvelope({ clipSec: 20, centre: CENTRE_LOW, spans: [span] });

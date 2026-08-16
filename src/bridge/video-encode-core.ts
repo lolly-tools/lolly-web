@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * DOM-free WebCodecs encode + mux core — the compute half of the video export's fast
+ * DOM-free WebCodecs encode + mux core - the compute half of the video export's fast
  * path, extracted from bridge/export.ts so it runs UNCHANGED in either context:
  *   • the main thread (export.ts encodeVideoWithWebCodecs wraps it + adds provenance);
  *   • a Web Worker (video-encode.worker.ts), fed transferred ImageBitmaps + planar PCM,
@@ -11,7 +11,7 @@
  * pure-JS + lazily imported. Audio arrives as PLANAR channel Float32Arrays (not an
  * AudioBuffer, which isn't transferable) so the worker path can transfer it. Returns the
  * muxed bytes + container type; the CALLER wraps them in a Blob and embeds provenance
- * (withVideoMeta) — kept on the main thread where the metadata writers already live.
+ * (withVideoMeta) - kept on the main thread where the metadata writers already live.
  *
  * The per-frame timing + keyframe cadence and the audio chunking come from the pure
  * schedules in video-mime.ts, so the ordering is unit-tested and identical to before.
@@ -54,7 +54,7 @@ export interface MuxerLike {
 /** A built muxer + the ArrayBufferTarget it writes into + the container MIME. */
 export interface BuiltMuxer { muxer: MuxerLike; target: { buffer: ArrayBuffer }; type: string }
 
-/** Factory for the muxer — swappable so the encode paths are testable without a real muxer. */
+/** Factory for the muxer - swappable so the encode paths are testable without a real muxer. */
 export type MuxerFactory = (pick: EncodePick, o: EncodeOpts) => Promise<BuiltMuxer>;
 
 /** Lazily import the right muxer and construct it for `pick`/`o`. */
@@ -139,7 +139,7 @@ export async function encodeMuxWebCodecs(
 // ── Streaming encode + mux ────────────────────────────────────────────────────
 // encodeMuxWebCodecs above needs EVERY frame up front as an ImageBitmap, which is
 // why the callers cap a clip at maxVideoFrames(): memory grows with duration. A
-// sequence export can't work that way — it draws one frame, hands it over, and
+// sequence export can't work that way - it draws one frame, hands it over, and
 // reuses the same canvas. createStreamingMux is that shape: push a frame, push
 // audio, finalize. Memory is O(1) in duration because at most HIGH_WATER + 1
 // VideoFrames are ever alive, each closed in the same tick it was encoded.
@@ -218,7 +218,7 @@ async function drain(enc: any): Promise<void> {
  *
  * `opts.audio` DECLARES the audio track (codec / sampleRate / numberOfChannels /
  * bitrate) so the muxer can be constructed with it; its `channels` payload is
- * ignored here — PCM arrives incrementally through addAudio().
+ * ignored here - PCM arrives incrementally through addAudio().
  */
 export async function createStreamingMux(
   pick: EncodePick, opts: EncodeOpts, deps: StreamingDeps = {},
@@ -239,12 +239,12 @@ export async function createStreamingMux(
   const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e ?? 'encoder error')));
 
   // Deterministic interleave. The two encoders' output callbacks fire on their
-  // own schedule, and an audio chunk lands every 100000µs — a timestamp every
-  // third 30fps video frame TIES exactly — so feeding the muxer in arrival
+  // own schedule, and an audio chunk lands every 100000µs - a timestamp every
+  // third 30fps video frame TIES exactly - so feeding the muxer in arrival
   // order made the interleave (and therefore the file's bytes) depend on
   // scheduler load: same render, same pixels, same size, different sha. The
   // callbacks queue per stream instead, and finalize() drains both queues in
-  // one canonical order (ascending timestamp, video first on a tie — the same
+  // one canonical order (ascending timestamp, video first on a tie - the same
   // rule webm-muxer's own video-queue drain applies). Memory is unchanged:
   // both muxers already accumulate the whole encoded stream (see the MEMORY
   // note in sequence-render.ts).
@@ -319,7 +319,7 @@ export async function createStreamingMux(
         }
         const audioData = new AData({
           format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels,
-          // Timestamps continue from everything already pushed — the spans are
+          // Timestamps continue from everything already pushed - the spans are
           // buffer-relative, the session's clock is not.
           timestamp: Math.round(((audioFrames + span.offsetFrames) / Math.max(1, sampleRate)) * 1e6),
           data: planar.subarray(0, n * numberOfChannels),
@@ -343,7 +343,7 @@ export async function createStreamingMux(
         throw asError(e);
       }
       if (encErr) throw asError(encErr);
-      // Canonical drain — the only place chunks meet the muxer. Per-stream
+      // Canonical drain - the only place chunks meet the muxer. Per-stream
       // order is each encoder's emit order (monotonic; neither codec path
       // produces B-frames); only the interleave between streams is decided
       // here, so it is decided the same way every run.

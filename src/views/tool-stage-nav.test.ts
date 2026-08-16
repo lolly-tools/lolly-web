@@ -2,11 +2,11 @@
 /**
  * Zoom HUD placement (.stage-nav, styles/parts/editor.css).
  *
- * The HUD's position is pure CSS — jsdom applies no stylesheet, so the rule text
+ * The HUD's position is pure CSS - jsdom applies no stylesheet, so the rule text
  * itself is what gets asserted, exactly as free-canvas-rail.test.ts does for the
  * rail's [hidden] restatement. What's being guarded is a real regression pair:
  *   · the HUD must not go back to the stage's BOTTOM edge, which is the docked
- *     timeline band's lane (.tl-panel, z-index 22) — there it is unreachable
+ *     timeline band's lane (.tl-panel, z-index 22) - there it is unreachable
  *     whenever the timeline is open;
  *   · its top/right offsets must stay expressed in the shared top-row tokens
  *     (tokens.css --chrome-top / --chrome-h / --chrome-inset) rather than a
@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 
 const css = readFileSync(new URL('../styles/parts/editor.css', import.meta.url), 'utf8');
 
-/** The base `.stage-nav { … }` block (the first one — the mobile override follows). */
+/** The base `.stage-nav { … }` block (the first one - the mobile override follows). */
 function baseRule(): string {
   const m = css.match(/\n\.stage-nav\s*\{([^}]*)\}/);
   assert.ok(m, 'editor.css must declare a base .stage-nav rule');
@@ -48,7 +48,7 @@ test('the zoom HUD sizes and insets itself off the shared top-row tokens', () =>
 
 test('the mobile stacked capsule keeps the top anchor (no bottom offset comes back)', () => {
   // The ≤640px block turns the HUD into a vertical capsule; it must hang DOWN from the
-  // same corner. A `bottom:` here would put a 7-item column back over the timeline —
+  // same corner. A `bottom:` here would put a 7-item column back over the timeline - 
   // and, on the fixed mobile stage, off the foot of the viewport.
   const m = css.match(/@media\s*\(max-width:\s*640px\)\s*\{\s*\n\s*\.stage-nav\s*\{([^}]*)\}/);
   assert.ok(m, 'editor.css must keep the mobile .stage-nav override');

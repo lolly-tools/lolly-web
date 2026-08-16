@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * timeline-captions.ts — the pure maths behind the timeline panel's "Generate
+ * timeline-captions.ts - the pure maths behind the timeline panel's "Generate
  * subtitles" action (plans/41-tts-stt-programme.md §5).
  *
- * Word timings arrive from one of two sources — a TTS asset's own `meta.tts`
+ * Word timings arrive from one of two sources - a TTS asset's own `meta.tts`
  * block (exact by construction, see script-audio.ts's buildTtsRecord) or an
- * on-device Whisper transcription (`host.speech.transcribe`, v1.99) — and the
+ * on-device Whisper transcription (`host.speech.transcribe`, v1.99) - and the
  * engine's `groupWordsToCues` turns either into readable cues. Those cues are
  * in MEDIA time: seconds into the audio file. A timeline box shows a WINDOW of
  * that media (`clipIn` onward, at `speed`), so mapping a cue onto the timeline
@@ -22,7 +22,7 @@ import { MIN_DUR } from './timeline-math.ts';
 
 /**
  * Caption boxes belong to their source clip through the tool's own `group`
- * field: `captions:<source box id>`. The prefix is the whole contract — it is
+ * field: `captions:<source box id>`. The prefix is the whole contract - it is
  * what lets a re-run replace the previous set instead of duplicating it, and
  * what the panel's lane collapse reads to label the row.
  */
@@ -39,7 +39,7 @@ export function isCaptionGroup(group: unknown): boolean {
 }
 
 /**
- * The source box's placement, in timeline seconds — exactly the fields
+ * The source box's placement, in timeline seconds - exactly the fields
  * `boxTiming` resolves. `dur` is the RESOLVED span (an open-ended clip's
  * caller passes the derived length, the way the panel's `span()` does).
  */
@@ -60,12 +60,12 @@ const round3 = (v: number): number => Math.round(v * 1000) / 1000;
 /**
  * Map media-time cues onto the timeline through one source box's window.
  *
- * Media second `m` renders at timeline second `start + (m - clipIn) / speed` —
+ * Media second `m` renders at timeline second `start + (m - clipIn) / speed` - 
  * the inverse of the trim maths (trimClip moves clipIn by `d * speed` when the
  * bar edge moves by `d`). Cues the trim cut out entirely are dropped; cues that
  * straddle an edge are clamped to it; a surviving cue is floored to MIN_DUR so
  * every emitted box stays grabbable and trimmable in the panel (the floor may
- * overhang the source's tail by a fraction of a second — an editable box beats
+ * overhang the source's tail by a fraction of a second - an editable box beats
  * a sub-minimum one the model would clamp anyway).
  */
 export function cueSpansOnTimeline(cues: readonly CaptionCue[], src: CueSourceTiming): CaptionCue[] {
@@ -91,7 +91,7 @@ export function cueSpansOnTimeline(cues: readonly CaptionCue[], src: CueSourceTi
 }
 
 /**
- * The word timings off an asset's `meta.tts` block, shape-validated — the
+ * The word timings off an asset's `meta.tts` block, shape-validated - the
  * record is model data that crossed a storage boundary, so nothing about it is
  * trusted. Returns null when there is nothing usable, which is the caller's
  * cue to fall through to transcription.

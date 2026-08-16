@@ -5,9 +5,9 @@
  * WRITERS (storeZip / packTar); this is the read side that makes ZIP and tar
  * round-trip in the shell.
  *
- * The load-bearing guard: a zip is only exploded once `classifyZipBytes` confirms it
+ * The essential guard: a zip is only exploded once `classifyZipBytes` confirms it
  * is a PLAIN archive. An OOXML/OCF package (.xlsx/.docx/.pptx/.epub/.odt) shares the
- * PK magic, so shredding one into raw XML parts would be a data-loss bug — those get
+ * PK magic, so shredding one into raw XML parts would be a data-loss bug - those get
  * a clear "route it to its own reader" error instead. Members are bounded by a count
  * and an aggregate-byte cap (zip-bomb defence), mirroring xlsx-import's budget.
  */
@@ -97,7 +97,7 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
 }
 
 /**
- * True when this file is a plain archive we can explode, decided by NAME only — the
+ * True when this file is a plain archive we can explode, decided by NAME only - the
  * cheap rung for the drop chooser (the authoritative byte check happens in
  * `readArchiveMembers` when the user commits). `.penpot`/`.fig`/`.idml`/`.indd` are
  * design bundles routed elsewhere, so they are excluded even though they are zips.
@@ -109,7 +109,7 @@ export function looksLikePlainArchiveName(name: string): boolean {
 
 /**
  * Expand any plain-archive files (by name) in `files` into their member files,
- * leaving every other file untouched — the shared pre-pass for the auto-ingest
+ * leaving every other file untouched - the shared pre-pass for the auto-ingest
  * paths (the catalogue/#start dropzone, the picker file-input) that have no chooser.
  * A file that looks like an archive by name but is not a plain archive (a renamed
  * office package, a corrupt or encrypted zip) is kept as-is so the normal ingest
@@ -129,7 +129,7 @@ export async function expandArchiveFiles(files: File[]): Promise<File[]> {
         out.push(new File([m.bytes as BlobPart], m.name.split('/').pop() || m.name));
       }
     } catch {
-      out.push(file); // not a plain archive after all — let the caller's path deal with it
+      out.push(file); // not a plain archive after all - let the caller's path deal with it
     }
   }
   return out;

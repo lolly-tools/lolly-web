@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// rich-text.js — the tiny per-character rich-text model behind Design's
+// rich-text.js - the tiny per-character rich-text model behind Design's
 // WYSIWYG inline text editing (free-canvas.js).
 //
 // The contenteditable shows the RENDERED rich text (what hooks.js richText emits:
@@ -9,12 +9,12 @@
 // characters, mutate flags over a [start, end) character range, and re-render to
 // HTML. On commit the same model serialises back to the tool's stored markdown-subset
 // source (**bold**, *italic*, "- " bullets, "1. " numbers, {#hex|…} colour runs and
-// {w600|…} weight runs) — the storage format, the URL encoding, and the engine render
+// {w600|…} weight runs) - the storage format, the URL encoding, and the engine render
 // path are unchanged; only the editing UX is.
 //
 // Each char carries an OPTIONAL numeric font-weight `w` (per-selection weight, e.g.
 // 300 or 800). It is mutually exclusive with the `b` bold flag: setting an explicit
-// weight clears bold, and vice versa — so a weight span never wraps a <strong> (which
+// weight clears bold, and vice versa - so a weight span never wraps a <strong> (which
 // would win the CSS cascade and defeat the chosen weight). Runs with no `w` inherit
 // the box's weight.
 //
@@ -24,12 +24,12 @@
 //
 // DOM-agnostic on purpose: charsFromDom only touches nodeType/nodeName/
 // childNodes/nodeValue (plus getAttribute/style for colour+weight), so node:test can
-// feed it plain object trees (see rich-text.test.js) — no jsdom needed.
+// feed it plain object trees (see rich-text.test.js) - no jsdom needed.
 
 // Per-run font face. A CLOSED enum, never a free font-family string: 'mono' forces
 // the monospace face, 'suse' forces the sans face (so a run can opt BACK to sans inside
 // a mono block), null inherits the block/document font. rich-text.ts stays brand-neutral
-// — it only emits the semantic token + a `fc-ff-*` class; the real family lives in CSS
+// - it only emits the semantic token + a `fc-ff-*` class; the real family lives in CSS
 // (the editable) and the tool's hooks FONTS map (the render/export).
 export type FontId = 'mono' | 'suse' | null;
 
@@ -88,7 +88,7 @@ interface DomNodeLike {
 }
 
 const BLOCK_TAGS = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE']);
-// Never emit these as text (their content isn't copy — matters for pasted HTML).
+// Never emit these as text (their content isn't copy - matters for pasted HTML).
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'HEAD', 'TITLE', 'TEMPLATE']);
 
 // Ordered-list marker: up to 3 digits so a numbered list (1–999) is recognised but
@@ -107,7 +107,7 @@ export function charsFromDom(root: DomNodeLike): Char[] {
       if (child.nodeType === 3) {
         const text = String(child.nodeValue || '').replace(/\u00a0/g, ' ');
         // An explicit numeric weight wins over an inherited bold flag (they're the
-        // same axis) — so ingested runs keep the mutual-exclusion invariant.
+        // same axis) - so ingested runs keep the mutual-exclusion invariant.
         for (const ch of text) out.push({ ch, b: f.weight != null ? false : f.b, i: f.i, c: f.color || null, w: f.weight ?? null, u: f.u, s: f.s, f: f.font });
         continue;
       }
@@ -175,7 +175,7 @@ function nodeWeight(el: DomNodeLike): number | null {
 }
 // An element's own per-run font face, as the closed 'mono'|'suse' token (or null).
 // htmlFromChars stamps a canonical `data-fc-font` so our own re-renders round-trip
-// exactly; pasted markup falls back to sniffing the inline `style.fontFamily` — a
+// exactly; pasted markup falls back to sniffing the inline `style.fontFamily` - a
 // family naming "mono" maps to 'mono', anything else is left to inherit (we never
 // force 'suse' off arbitrary pasted copy, only off our own data-fc-font stamp).
 function nodeFont(el: DomNodeLike): FontId {
@@ -255,7 +255,7 @@ function lineToMarkdown(line: Char[]): string {
   let cur: RunFormat | null = null;
   const flush = () => {
     if (cur == null || run === '') { run = ''; return; }
-    // Formatting on whitespace is invisible — keep leading/trailing whitespace
+    // Formatting on whitespace is invisible - keep leading/trailing whitespace
     // outside the markers so the source stays clean for the render-side regexes.
     const mm = run.match(/^(\s*)([\s\S]*?)(\s*)$/)!;
     const lead = mm[1]!, core = mm[2]!, tail = mm[3]!;
@@ -342,8 +342,8 @@ export function setColor(chars: Char[], a: number, b: number, color: string | nu
 }
 
 /**
- * Return a copy with all inline character formatting — bold, italic, underline,
- * strike, explicit weight, per-run font and text colour — stripped over [a, b).
+ * Return a copy with all inline character formatting - bold, italic, underline,
+ * strike, explicit weight, per-run font and text colour - stripped over [a, b).
  * Paragraph structure (bullets / numbers) is left untouched; those have their own
  * toggles. Newlines untouched.
  */

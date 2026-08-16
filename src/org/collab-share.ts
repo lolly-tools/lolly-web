@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-share.ts — the "Work collab" section of the Share dialog
+ * org/collab-share.ts - the "Work collab" section of the Share dialog
  * (plans/100 §0/§7, Track B: org rooms on the optional control plane).
  *
  * Loaded lazily by src/org/index.ts's member branch, mirroring org/share-links.ts
  * one section over: registered through the generic lib/share-sections.ts seam so
  * the dialog itself stays control-plane-unaware, with the heavy work kept out of
- * the boot chunk. This wave (plans/100 §13 wave 3.1) lands the row + gating ONLY —
+ * the boot chunk. This wave (plans/100 §13 wave 3.1) lands the row + gating ONLY - 
  * the ceremony/join UI that actually starts a work collab is a later wave, so the
  * row renders nothing anywhere today.
  *
  * Two independent gates, both required:
- *   - `canJoinCollab()` (org/collab-config.ts) — this instance's control plane must
+ *   - `canJoinCollab()` (org/collab-config.ts) - this instance's control plane must
  *     grant the caller `collab.join`. Absent on every instance until the server
  *     ships the bits (plans/100 §7.3), which is where org/index.ts's own inline
  *     bail (its own `can['collab.join']` check, ahead of even loading this module)
  *     does the same test for the common "no control plane" case cheaply.
- *   - a `'work'` opener registered in lib/collab-launch.ts — the actual ceremony/
+ *   - a `'work'` opener registered in lib/collab-launch.ts - the actual ceremony/
  *     join dialog, which arrives with the invite UX (plans/100 §7 item 9). Nothing
  *     registers one yet, so today this gate alone is enough to keep the row absent
  *     even on an instance that DOES grant `collab.join`.
  *
  * Row copy follows plans/100 §0's naming: "Work collab" heading, "Start a collab"
- * verb — never "rooms"/"multiplayer". `announce()` on a successful open, exactly
+ * verb - never "rooms"/"multiplayer". `announce()` on a successful open, exactly
  * like org/share-links.ts's rows; a missing/throwing opener degrades to silence
- * (openCollabLaunch's own tolerance — see lib/collab-launch.ts).
+ * (openCollabLaunch's own tolerance - see lib/collab-launch.ts).
  *
  * ── The session id (the one thing this row adds to the context) ────────────────
  *
  * A work collab is a room keyed by the id the INSTANCE holds for the session, and
  * the tool view has no such id: the Team-projects open rewrites to `#/tool/<id>?…`,
  * a working copy that has forgotten where it came from. `org/team-session-origin.ts`
- * carries that fact beside the navigation, and this row is its only reader — which
+ * carries that fact beside the navigation, and this row is its only reader - which
  * is why the id enters the `CollabLaunchContext` HERE, in the one builder that is
  * already control-plane-aware, rather than in the generic `ShareSectionContext` the
  * dialog hands every section. The neutral seam stays neutral; a plain deployment,
@@ -80,7 +80,7 @@ export function buildWorkCollabShareSection(ctx: ShareSectionContext): HTMLEleme
   section.append(heading, row, btn);
 
   btn.addEventListener('click', () => {
-    // Read at PRESS time, not build time — the same rule as canJoinCollab() above, and
+    // Read at PRESS time, not build time - the same rule as canJoinCollab() above, and
     // it matters here for a different reason: the origin belongs to the live mount, and
     // pressing is the moment we can still be sure there is one. It answers only for the
     // tool this dialog is sharing (`activeTeamSessionOrigin` requires the id), and the

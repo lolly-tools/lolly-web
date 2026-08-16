@@ -3,7 +3,7 @@
  * Which asset types have a PICTURE, and which are engine data wearing an asset's
  * clothes.
  *
- * A user asset is the shell's universal storage rail — fonts, the installed
+ * A user asset is the shell's universal storage rail - fonts, the installed
  * tokens doc, saved palettes and (since 1.73) ICC profiles all live in the same
  * store as uploaded images, so they all come back from `_listUserAssets()`. Any
  * surface that TILES that list has to filter, or it renders a woff2 as a broken

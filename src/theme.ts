@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Theme management — light / dark / brand.
+ * Theme management - light / dark / brand.
  *
  * Applied via [data-theme] on <html>. An inline script in index.html applies
  * the saved preference from localStorage before CSS loads to prevent FOUC.
@@ -36,7 +36,7 @@ export function nextTheme(theme: string): Theme {
   return THEMES[(i + 1) % THEMES.length] ?? THEMES[0]!;
 }
 
-/** The active theme — from the applied [data-theme], falling back to storage. */
+/** The active theme - from the applied [data-theme], falling back to storage. */
 export function currentTheme(): string {
   return document.documentElement.dataset.theme || localStorage.getItem('theme') || 'light';
 }
@@ -62,7 +62,7 @@ let themeTransitionTimer: ReturnType<typeof setTimeout> | undefined;
 export function applyTheme(theme: string, animate = true): void {
   const html = document.documentElement;
   // Migrate the retired theme name wherever it's still stored (old profiles,
-  // old localStorage) — the CSS block and the cycle only know 'brand' now.
+  // old localStorage) - the CSS block and the cycle only know 'brand' now.
   if (theme === 'suse') theme = 'brand';
 
   if (animate) {
@@ -87,17 +87,17 @@ export function applyTheme(theme: string, animate = true): void {
 
   // Keep the Jelly effects controls (lib/jelly.ts) in step: pin their light/dark
   // token defaults to the app theme rather than the OS scheme, and wake settled
-  // canvases — an idle jelly control only repaints on this event, so a theme swap
+  // canvases - an idle jelly control only repaints on this event, so a theme swap
   // would otherwise leave it painted in the old palette. Both are inert no-ops
   // while the jelly bundle isn't loaded (attribute + unheard event).
   syncJellyMode(theme);
   window.dispatchEvent(new CustomEvent('jelly-theme-change'));
 }
 
-/** Called at module boot — applies the localStorage value before the profile loads. */
+/** Called at module boot - applies the localStorage value before the profile loads. */
 export function initTheme(): void {
   // No saved preference yet: seed from the OS colour scheme so a dark-OS visitor
-  // doesn't get a light flash. (A full "System" theme option is out of scope —
+  // doesn't get a light flash. (A full "System" theme option is out of scope - 
   // this only sets the initial value.) The inline FOUC script in index.html
   // mirrors this seed so there's no flash before this module runs.
   const saved = localStorage.getItem('theme')

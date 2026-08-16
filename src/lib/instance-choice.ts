@@ -4,10 +4,10 @@
  *
  * WHY THIS IS ITS OWN MODULE
  * main.ts must ask, on every boot, "is this a Tauri shell that has never
- * settled the instance question?" — two cheap probes. It used to ask by
+ * settled the instance question?" - two cheap probes. It used to ask by
  * importing components/instance-sheet.ts directly, which put the whole sheet
  * (mountModal chrome, the connect/probe flow, and via data-transfer.ts the
- * backup importer plus fflate) on the boot path of every shell — including the
+ * backup importer plus fflate) on the boot path of every shell - including the
  * web PWA, which never shows the sheet at all. Keeping the two probes and the
  * storage key here lets main.ts answer the question for ~0 bytes and
  * dynamic-import the sheet only in the rare case it is actually shown.
@@ -19,13 +19,13 @@
 import { openDB } from '../bridge/db.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
-/** Key of the "user has been asked" flag inside the 'profile' KV store — same
+/** Key of the "user has been asked" flag inside the 'profile' KV store - same
  *  store lib/instance.ts keeps its own 'instance-base' key in. Distinct from
  *  the base itself: choosing "bundled" also settles the question (base stays
  *  '') without it, so this needs its own marker. */
 export const CHOICE_KEY = 'instance-choice-made';
 
-/** True inside any Tauri shell (desktop or mobile) — same feature-detect
+/** True inside any Tauri shell (desktop or mobile) - same feature-detect
  *  lib/instance.ts's own (unexported) hasTauriInternals() uses. */
 export function isTauriShell(): boolean {
   return typeof window !== 'undefined'
@@ -33,7 +33,7 @@ export function isTauriShell(): boolean {
 }
 
 /** Has the user ever settled the first-run instance choice? Unreadable
- *  storage counts as "yes" — same reasoning as welcome-dialog's
+ *  storage counts as "yes" - same reasoning as welcome-dialog's
  *  isWelcomeDismissed: re-prompting every single boot would be worse than
  *  never prompting. */
 export async function hasMadeInstanceChoice(): Promise<boolean> {
@@ -54,7 +54,7 @@ export async function markInstanceChoiceMade(): Promise<void> {
  * recorded. A no-op (one fast IndexedDB read) on every later boot and on
  * every non-Tauri shell (the web PWA never gates on this).
  *
- * The `await` on the dynamic import is load-bearing for ordering: main.ts
+ * The `await` on the dynamic import matters for ordering: main.ts
  * awaits this call BEFORE the first syncCatalog(), so a chosen instance is
  * honoured by that first sync. It must not become fire-and-forget.
  */

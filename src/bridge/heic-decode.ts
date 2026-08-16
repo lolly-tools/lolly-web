@@ -2,11 +2,11 @@
 /**
  * HEIC/HEIF decode fallback for user uploads (web shell).
  *
- * iPhones shoot HEIC by default, but only Safari's `createImageBitmap` decodes it —
+ * iPhones shoot HEIC by default, but only Safari's `createImageBitmap` decodes it - 
  * Chrome and Firefox can't. When a native decode fails on a HEIC-looking file, we
  * fall back to a bundled libheif (via `heic-to`) so the photo still comes in.
  *
- * The decoder is HEAVY (~3 MB of inlined WASM), so it's DYNAMICALLY imported — pulled
+ * The decoder is HEAVY (~3 MB of inlined WASM), so it's DYNAMICALLY imported - pulled
  * only the first time someone actually uploads a HEIC, never in the initial bundle.
  * We use heic-to's CSP-safe build (WASM inlined, no `eval`, no CDN fetch) so the app
  * stays self-contained.
@@ -23,7 +23,7 @@ function loadHeicTo(): Promise<typeof import('heic-to/csp')> {
 
 /**
  * Cheap, dependency-free sniff: is this a HEIC/HEIF file? Runs on the decode-error
- * path only, to decide whether pulling the 3 MB decoder is worthwhile — so it must
+ * path only, to decide whether pulling the 3 MB decoder is worthwhile - so it must
  * NOT load heic-to. Checks name/MIME first, then the ISOBMFF 'ftyp' brand in the
  * header bytes (authoritative when the OS drops the extension/MIME).
  *

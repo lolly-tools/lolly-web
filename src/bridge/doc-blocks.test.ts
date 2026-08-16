@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * doc-blocks — DOM → heading/paragraph block model, and an integration check that
+ * doc-blocks - DOM → heading/paragraph block model, and an integration check that
  * the model feeds the real engine writers into an editable .docx (w:t runs carry
  * the text, headings map to Heading styles). Mirrors pptx-deck.test.ts's shape.
  */

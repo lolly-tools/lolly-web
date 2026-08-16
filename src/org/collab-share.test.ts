@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-share.ts — the "Work collab" Share-dialog section.
+ * org/collab-share.ts - the "Work collab" Share-dialog section.
  *
  * Proves both gates are independently required (canJoinCollab() from a real
  * initOrg() pass, AND a registered 'work' opener), that the row is absent by
@@ -28,7 +28,7 @@ globalThis.document = dom.window.document;
 globalThis.location = dom.window.location as unknown as Location;
 // a11y.ts's announce() (invoked on a successful open) schedules via rAF; jsdom's
 // pretendToBeVisual only exposes it on dom.window, not the bare global this file
-// runs in — shim it, mirroring org/approval-dialog.test.ts's harness.
+// runs in - shim it, mirroring org/approval-dialog.test.ts's harness.
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => { setTimeout(() => cb(0), 0); return 0; }) as unknown as typeof requestAnimationFrame;
 
 const store = new Map<string, string>();
@@ -81,7 +81,7 @@ const ctx = { toolId: 'qr-code', baseParts: ['url=https%3A%2F%2Fsuse.com'], curr
 
 test('no control plane at all: section is absent even with a registered opener', async () => {
   reset();
-  await initOrg(); // dormant — 404 on the probe
+  await initOrg(); // dormant - 404 on the probe
   registerCollabOpener('work', () => {});
   assert.equal(buildWorkCollabShareSection(ctx), null);
 });
@@ -122,7 +122,7 @@ test('both gates hold: the section renders with plan-0 naming and a working acti
   assert.equal(btn!.textContent, 'Start a collab');
 
   btn!.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
-  // The opener sees the CollabLaunchContext shape — toolId/baseParts/currentFormat
+  // The opener sees the CollabLaunchContext shape - toolId/baseParts/currentFormat
   // only, never the dialog's `copy` helper (that's a ShareSectionContext concern).
   assert.deepEqual(seen, [{ toolId: ctx.toolId, baseParts: ctx.baseParts, currentFormat: ctx.currentFormat }], 'opener invoked with the session-context shape');
 });

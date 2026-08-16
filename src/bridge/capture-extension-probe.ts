@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Is the Lolly Chrome extension here, and what can it do?" — the synchronous
+ * "Is the Lolly Chrome extension here, and what can it do?" - the synchronous
  * announcement half of `bridge/capture-extension.ts`, split into its own leaf.
  *
  * WHY IT IS A SEPARATE FILE. The extension sets `window.__lollyCapture` at
@@ -8,8 +8,8 @@
  * DECISION is made at boot (`bridge/index.ts` picks the extension impl vs the
  * stub before the lazy `host.capture` facade exists, and the Design System studio
  * decides whether the Website source tile exists at all), while the TRANSPORT it
- * gates — the postMessage relay, the request/reply plumbing, the site-read
- * decoder — is only ever used behind a user gesture. Importing the probe from the
+ * gates - the postMessage relay, the request/reply plumbing, the site-read
+ * decoder - is only ever used behind a user gesture. Importing the probe from the
  * transport module put the whole ~2.5 KB of transport in the boot chunk to answer
  * a boolean. Same leaf-import discipline as `lib/viz-support.ts` (host.viz's sync
  * `isAvailable` beside a lazy impl) and `engine/src/speech-model-bytes.ts`.
@@ -26,7 +26,7 @@ export interface LollyCaptureFlag {
   version?: string;
   /**
    * Version of the site-read request/reply shape this extension speaks. Absent on
-   * copies older than 0.2.0, which answer screenshots but not site reads — hence a
+   * copies older than 0.2.0, which answer screenshots but not site reads - hence a
    * separate announcement rather than one version number for both.
    */
   siteProtocol?: number;
@@ -42,7 +42,7 @@ declare global {
 /** The site-read shape this build speaks. Bump in lockstep with inpage.js. */
 export const SITE_PROTOCOL = 1;
 
-/** Synchronous, zero-cost detection — the extension sets this at document_start. */
+/** Synchronous, zero-cost detection - the extension sets this at document_start. */
 export function hasCaptureExtension(): boolean {
   return typeof window !== 'undefined' && !!window.__lollyCapture;
 }
@@ -52,7 +52,7 @@ export function hasCaptureExtension(): boolean {
  *
  * Separate from `hasCaptureExtension()` because an installed-but-older extension
  * has the flag and cannot do this, and because the studio decides whether the
- * Website source exists at all before it renders — showing a source that cannot
+ * Website source exists at all before it renders - showing a source that cannot
  * run is the thing plan 97 §9 forbids.
  */
 export function hasSiteCapture(): boolean {

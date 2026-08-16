@@ -10,8 +10,8 @@
  * different file than the one they were looking at, with no indication anything
  * had been lost.
  *
- * A unit test is impractical here — `buildShareParams` is private to a 3k-line
- * DOM-coupled view — so this scans the real source, in the house style of
+ * A unit test is impractical here - `buildShareParams` is private to a 3k-line
+ * DOM-coupled view - so this scans the real source, in the house style of
  * `a11y-prefs-contract.test.ts` (which scans real stylesheets) and
  * `docs-shots-vector.test.ts` (which scans real recipes). It cannot prove the two
  * agree at RUNTIME; it proves neither one grew a parameter the other never heard
@@ -32,7 +32,7 @@ import type { InputManifest, InputSpec } from '../../../../engine/src/inputs.ts'
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOL_TS = readFileSync(join(HERE, 'tool.ts'), 'utf8');
 
-/** The source body of a top-level `function <name>(` — from its declaration to the
+/** The source body of a top-level `function <name>(` - from its declaration to the
  *  first column-0 `\n}` (its own closing brace, since every nested closer is indented).
  *  One helper so the scans below stay in step across the export-param extraction. */
 function fnBody(name: string): string {
@@ -47,7 +47,7 @@ function fnBody(name: string): string {
  * Params the address bar writes but a shared link deliberately must NOT carry.
  * Each needs a reason. Empty today: everything syncUrl writes is shareable, and
  * `password` is intentionally shared (a standard-tier PDF lock travels with the
- * link by design — documented at its call site).
+ * link by design - documented at its call site).
  */
 const SHARE_EXEMPT: Record<string, string> = {};
 
@@ -108,7 +108,7 @@ test('each toggle the Share link reads is guarded on the control existing', () =
   const body = fnBody('collectExportParams'); // the imprint guard moved here with the export block
   // The per-format toggles are rendered only for formats that support them. Reading
   // `.checked` off a missing control yields undefined, which for an ON-BY-DEFAULT
-  // setting like imprint looks like a deliberate opt-out — and would stamp
+  // setting like imprint looks like a deliberate opt-out - and would stamp
   // `imprint=0` onto every link from a format that has no imprint at all.
   assert.match(body, /const imprintEl = [^;]+;\s*\n\s*if \(imprintEl && !imprintEl\.checked\)/,
     'the imprint opt-out must check the control EXISTS before treating it as unchecked');
@@ -116,7 +116,7 @@ test('each toggle the Share link reads is guarded on the control existing', () =
 
 // ─── fidelity: every content drop is RECORDED, never silent ────────────────────
 //
-// buildShareParams deliberately drops what a URL can't carry — device-local
+// buildShareParams deliberately drops what a URL can't carry - device-local
 // (user/*) images, scalars past the 150-char cap, and blocks past the 8000-char
 // cap. Before Wave 1 those drops were SILENT: a design "after many edits" shared a
 // link that opened with its content missing and no warning. The Share dialog now
@@ -144,7 +144,7 @@ test('buildShareParams returns the parts array alongside the fidelity report', (
 // dropped), and the engine's `parseUrlState` reads them back keyed by EITHER the id
 // or the urlKey. Palette Lab's Contrast-mode inputs (mode→m, bg→b, contrastCurve→cc,
 // lcTargets→lc) are new URL surface, so pin that they encode under the 150-char cap
-// and decode back to the same model through both key forms — the CLI/web parity the
+// and decode back to the same model through both key forms - the CLI/web parity the
 // url-mode contract exists to guarantee.
 
 const PALETTE_JSON = join(HERE, '../../../../community/color-palette/tool.json');

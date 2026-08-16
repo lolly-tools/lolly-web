@@ -8,13 +8,13 @@
  * fires a failing network request), and `hydrateEmbeds` then renders the named
  * tool LOCALLY via host.compose and swaps in the resulting blob URL. Because the
  * resolved value is a blob: URL in the live DOM, every existing export seam
- * (blob→data, SVG-inline-as-vector) handles it unchanged — exactly like the
- * declarative {{asset}} path — so the export pipeline needs no embed-specific code.
+ * (blob→data, SVG-inline-as-vector) handles it unchanged - exactly like the
+ * declarative {{asset}} path - so the export pipeline needs no embed-specific code.
  *
  * Security: parseEmbedUrl is the strict gate (engine/src/embed.js). A tool is
  * only rendered if its id resolves to a real local tool (getTool fetches from our
  * own /tools/<id>/ and 404s otherwise). An unrecognised or unrenderable URL
- * resolves to null and the neutral placeholder stays — no arbitrary URL is ever
+ * resolves to null and the neutral placeholder stays - no arbitrary URL is ever
  * fetched as a "tool", and the editor never reaches out to the network.
  */
 
@@ -22,7 +22,7 @@ import { parseEmbedUrl, parseUrlState } from '@lolly/engine';
 import type { HostV1, ExportFormat } from '@lolly-tools/core/host-v1';
 import { getTool } from './tool-loader.ts';
 
-// 1×1 transparent GIF — the placeholder a neutralised embed shows until (and if)
+// 1×1 transparent GIF - the placeholder a neutralised embed shows until (and if)
 // it resolves. Inert and self-contained, so no request is ever made.
 export const TRANSPARENT_PX =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -109,7 +109,7 @@ export async function hydrateEmbeds(
   const els = [...node.querySelectorAll('[data-lolly-embed]')];
   if (!els.length) return;
   await Promise.all(els.map(async (el) => {
-    // Bail BEFORE the (expensive) compose render if the preview already moved on —
+    // Bail BEFORE the (expensive) compose render if the preview already moved on - 
     // a mid-render input change makes this hydration stale, so don't waste the work.
     // The post-await gate below still guards a change that lands during the render.
     if (isCurrent && !isCurrent()) return;

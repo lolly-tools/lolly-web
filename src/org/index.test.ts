@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/index.ts — the control-plane seam.
+ * org/index.ts - the control-plane seam.
  *
  * Covers the three things that MUST hold:
  *   - dormancy: no control plane ⇒ initOrg resolves null fast, the field-policy

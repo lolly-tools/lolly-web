@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * display-gamut.ts — what the DISPLAY can show, and how a canvas is acquired so
+ * display-gamut.ts - what the DISPLAY can show, and how a canvas is acquired so
  * the pixels we write land in that space instead of being flattened to sRGB.
  *
  * Two questions, kept apart on purpose because they have different answers:
  *
- *   - `displayGamutClaim()` — what the display SAYS it covers, from
+ *   - `displayGamutClaim()` - what the display SAYS it covers, from
  *     `(color-gamut: …)`. A diagnostics fact, and the seed for the Lab's initial
  *     comparison target. Can be 'rec2020'.
- *   - `displayAnchor()` — what we can actually PUT ON SCREEN: 'srgb' or
+ *   - `displayAnchor()` - what we can actually PUT ON SCREEN: 'srgb' or
  *     'display-p3', because those are the only two values a 2D canvas context (and
  *     therefore the engine's `EncodeSpace`) accepts. A rec2020 claim clamps to
  *     'display-p3' here: anchoring anything to rec2020 would promise pixels no
@@ -43,7 +43,7 @@ const CLAIM_ORDER: readonly Exclude<GamutClaim, 'unknown'>[] = ['rec2020', 'p3',
 let lists: MediaQueryList[] | null = null;
 let claimCache: GamutClaim | null = null;
 /** One-way latch: a surface refused the wide-gamut option, so stop asking for it.
- *  Cleared only by a real display change — see {@link onDisplayGamutChange}. */
+ *  Cleared only by a real display change - see {@link onDisplayGamutChange}. */
 let downgraded = false;
 const subscribers = new Set<() => void>();
 
@@ -91,14 +91,14 @@ export function displayAnchor(): EncodeSpace {
   return claim === 'p3' || claim === 'rec2020' ? 'display-p3' : 'srgb';
 }
 
-/** The gamut name that {@link displayAnchor}'s space corresponds to — what the
+/** The gamut name that {@link displayAnchor}'s space corresponds to - what the
  *  charts stroke as the display's own boundary. */
 export function displayAnchorGamut(): 'srgb' | 'p3' {
   return displayAnchor() === 'display-p3' ? 'p3' : 'srgb';
 }
 
 /**
- * Record that a surface gave us a NARROWER space than we asked for — an engine
+ * Record that a surface gave us a NARROWER space than we asked for - an engine
  * that accepts the options bag and ignores `colorSpace`, or one that predates it.
  * Latches (never back to 'display-p3' without a display change) and notifies once,
  * so every consumer repaints in agreement rather than in different frames.
@@ -110,7 +110,7 @@ export function noteEncodeDowngrade(actual: EncodeSpace): void {
 }
 
 /** Subscribe to "the display, or what we can encode for it, changed". Returns a
- *  real teardown — mounts must push it onto their cleanups. */
+ *  real teardown - mounts must push it onto their cleanups. */
 export function onDisplayGamutChange(fn: () => void): () => void {
   ensureLists();
   subscribers.add(fn);
@@ -121,7 +121,7 @@ export function onDisplayGamutChange(fn: () => void): () => void {
  * The space each canvas's existing context was granted.
  *
  * Needed because a 2D context KEEPS the `colorSpace` it was created with and a
- * second `getContext` ignores the options bag entirely — so "ask again and read
+ * second `getContext` ignores the options bag entirely - so "ask again and read
  * `getContextAttributes()`" cannot tell "the platform refused the wide option" apart
  * from "this canvas already has a context from when the display was different".
  * Weak, so a canvas that leaves the document is not held alive by this.
@@ -132,8 +132,8 @@ const GRANTED = new WeakMap<HTMLCanvasElement, EncodeSpace>();
  * Acquire a 2D context in the display's space and report the space it ACTUALLY
  * granted, plus the canvas the context belongs to.
  *
- * The three settings that must agree — the context's `colorSpace`, the
- * ImageData's, and the engine's `encode` — are kept in lockstep by deriving the
+ * The three settings that must agree - the context's `colorSpace`, the
+ * ImageData's, and the engine's `encode` - are kept in lockstep by deriving the
  * other two from what this returns. `getContextAttributes()` reflects the real
  * space per spec; a browser with no such accessor almost certainly has no
  * `colorSpace` support either, so 'srgb' is the safe assumption.
@@ -142,10 +142,10 @@ const GRANTED = new WeakMap<HTMLCanvasElement, EncodeSpace>();
  * already has a context. Since the space is fixed for that context's lifetime, the
  * only way to honour the change is a NEW drawing surface, so the canvas is replaced
  * with a shallow clone (every class and data attribute the caller looks it up by
- * survives; nothing in this codebase listens on a chart canvas — the pointer handlers
+ * survives; nothing in this codebase listens on a chart canvas - the pointer handlers
  * live on the plot). Callers must therefore use the RETURNED canvas, not the one they
  * passed. Without this the fill kept the old space while the "your display" contour
- * moved, which is exactly the disagreement this module exists to prevent — and in the
+ * moved, which is exactly the disagreement this module exists to prevent - and in the
  * sRGB→P3 direction it also latched a downgrade that was never real.
  */
 export function acquire2d(
@@ -174,7 +174,7 @@ export function acquire2d(
 
 
 /**
- * Drop all detection state — the cached claim, the latch, the retained
+ * Drop all detection state - the cached claim, the latch, the retained
  * MediaQueryLists and their listeners.
  *
  * For tests, which swap the `matchMedia` global between cases. Nothing in the app

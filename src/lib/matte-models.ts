@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * On-device background remover — the PURE catalogue half of `host.matte`
+ * On-device background remover - the PURE catalogue half of `host.matte`
  * (v1.103), the structural twin of lib/upscale-models.ts.
  *
  * Constants only: the model list surfaced to the picker/consent UI, their
  * on-disk file names, the IndexedDB cache coordinates, the per-model TENSOR
  * DESCRIPTOR the runner needs, and a couple of lookup helpers. NO onnxruntime,
- * NO DOM, NO IndexedDB — safe to import from either the main thread
+ * NO DOM, NO IndexedDB - safe to import from either the main thread
  * (bridge/matte.ts, for the synchronous models()/modelBytes()/isAvailable()
  * answers) or the worker (lib/matte-worker.ts → lib/matter.ts) without dragging
  * the multi-MB runtime into the boot budget.
  *
  * The file NAMES and cache coordinates below are a PINNED CONTRACT shared
  * verbatim with the model fetch script (scripts/fetch-matte-models.ts, Andy-run
- * — this repo never vendors the weights): the runner reads whatever that script
+ * - this repo never vendors the weights): the runner reads whatever that script
  * writes to `/models/matte/<file>` and caches in the 'matte-models' IndexedDB
  * store. Change a name here and you must change it there too, or a cache miss
  * goes silent.
@@ -22,7 +22,7 @@
  * genuinely DIFFERS per model (MODNet uses mean 0.5 / std 0.5; u2netp/BiRefNet use
  * ImageNet), and the output activation differs too (min-max for the bounded heads,
  * sigmoid for BiRefNet's logit head). A wrong mean/std or activation does not
- * crash — it silently degrades the matte. Every value here MUST be confirmed
+ * crash - it silently degrades the matte. Every value here MUST be confirmed
  * against the real ONNX graph before a model is staged (see the human-verification
  * gates in the fetch script header).
  */
@@ -36,7 +36,7 @@ export const MATTE_MODEL_STORE = 'matte-models';
 /** URL directory under `/models/` the bytes are fetched from. */
 export const MATTE_MODEL_DIR = 'matte';
 /** Bump to invalidate every cached entry (a reconverted model, or a poisoned
- *  cache — the HTML-response guard in createModelFetcher). */
+ *  cache - the HTML-response guard in createModelFetcher). */
 export const MATTE_MODEL_CACHE_VERSION = 1;
 
 // ── Model files on disk (`/models/matte/<file>`) ─────────────────────────────
@@ -49,17 +49,17 @@ export const MATTE_MODEL_FILES: Record<MatteModelId, string> = {
   'modnet': 'modnet.onnx',
 };
 
-/** The default when `opts.model` is omitted: BiRefNet-lite — the transformer that
+/** The default when `opts.model` is omitted: BiRefNet-lite - the transformer that
  *  handles dark / low-contrast subjects the fast saliency net can't. */
 export const MATTE_DEFAULT_MODEL: MatteModelId = 'birefnet-lite';
 
 // ── The catalogue ────────────────────────────────────────────────────────────
 //
 // `approxBytes` is the one-time consent size the picker + offline manager show.
-// The licence + attribution lines are a real obligation, not decoration — the
+// The licence + attribution lines are a real obligation, not decoration - the
 // shell carries them in its credits (a "Larger Work" under Apache-2.0 / MIT), and
 // `version` lands verbatim in the C2PA edit step. Every size below is
-// RESEARCH-SOURCED and LOW CONFIDENCE — the fetch script records the real byte
+// RESEARCH-SOURCED and LOW CONFIDENCE - the fetch script records the real byte
 // length from the downloaded file and this must be reconciled before staging.
 
 // Order here IS the picker order (models() filters to the staged set, preserving it):
@@ -119,10 +119,10 @@ export const MATTE_MODEL_BYTES: Record<MatteModelId, number> = MATTE_MODELS.redu
 // The runner is per-model parameterized on purpose: normalization + activation
 // differ. All models: pixel/255 → (x − mean)/std, RGB, NCHW, single-channel mask
 // out. `activation` decides how the mask is turned into 0..1 alpha:
-//   'minmax'  — the head is already bounded (rembg saliency nets): (x−min)/(max−min).
-//   'sigmoid' — the head is a logit (BiRefNet): 1/(1+e^-x), used directly.
+//   'minmax' - the head is already bounded (rembg saliency nets): (x−min)/(max−min).
+//   'sigmoid' - the head is a logit (BiRefNet): 1/(1+e^-x), used directly.
 // Getting these backwards (sigmoid on a bounded head, min-max on a logit) washes
-// or over-contrasts the matte with NO crash — verify empirically before staging.
+// or over-contrasts the matte with NO crash - verify empirically before staging.
 
 export interface MatteModelSpec {
   /** Fixed model input [height, width]; the source is letterbox-padded to it. */
@@ -161,7 +161,7 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
     activation: 'sigmoid',
   },
   'birefnet': {
-    // The FULL BiRefNet — same contract as the lite (same exporter/family):
+    // The FULL BiRefNet - same contract as the lite (same exporter/family):
     // input_image f32 [1,3,1024,1024], LOGIT head → sigmoid. CONFIRMED against
     // the real ONNX graph in onnxruntime-node (2026-08-06): ran clean in 18 s on
     // CPU, output range [−78,+31] (unbounded logits, so sigmoid, NOT minmax).
@@ -186,18 +186,18 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
  *  graph inspected in onnxruntime (input/output shape+dtype, and the per-model
  *  normalization + activation in MATTE_MODEL_SPEC CONFIRMED against the real graph),
  *  a permissive licence (Apache-2.0/MIT, MPL-compatible), and a clean run on the
- *  CPU/WASM path — matte is WASM-only, so no WebGPU gate applies. */
+ *  CPU/WASM path - matte is WASM-only, so no WebGPU gate applies. */
 export const MATTE_STAGED: Record<MatteModelId, boolean> = {
   'u2netp': true,          // fast preview (saliency, minmax)
-  'birefnet-lite': true,   // DEFAULT — transformer, fixes dark/low-contrast (logit → sigmoid)
-  'birefnet': true,        // MAX quality — full Swin-L BiRefNet, ~490 MB fp16 (logit → sigmoid); graph inspected + ran clean on CPU 2026-08-06
-  'modnet': true,          // portrait specialist — soft hair ([-1,1] norm, bounded alpha → minmax)
+  'birefnet-lite': true,   // DEFAULT - transformer, fixes dark/low-contrast (logit → sigmoid)
+  'birefnet': true,        // MAX quality - full Swin-L BiRefNet, ~490 MB fp16 (logit → sigmoid); graph inspected + ran clean on CPU 2026-08-06
+  'modnet': true,          // portrait specialist - soft hair ([-1,1] norm, bounded alpha → minmax)
 };
 
-/** The models actually runnable in this build — what the picker should OFFER.
+/** The models actually runnable in this build - what the picker should OFFER.
  *  Unstaged models are withheld rather than shown as a download that can never
  *  complete (an honest-availability gate). CAN be empty today: no matte model is
- *  staged until its licence + pin are verified — the picker then reports the
+ *  staged until its licence + pin are verified - the picker then reports the
  *  capability as unavailable, which is honest. */
 export function stagedMatteModels(): MatteModelInfo[] {
   return MATTE_MODELS.filter((m) => MATTE_STAGED[m.id]);
@@ -209,7 +209,7 @@ export function stagedMatteModels(): MatteModelInfo[] {
 // fact. The full BiRefNet is a Swin-L transformer that runs at a fixed 1024²: its
 // upcast fp32 weights (~490 MB fp16 → ~980 MB) plus a Swin-L's activations blow
 // past the ~4 GB ceiling of the single-thread wasm32 heap the web/CLI runner uses
-// (ort.ts numThreads=1), so `session.run()` aborts with std::bad_alloc — on
+// (ort.ts numThreads=1), so `session.run()` aborts with std::bad_alloc - on
 // EFFECTIVELY ANY DEVICE, since it's an ADDRESS-SPACE limit, not a RAM one. It ran
 // clean under onnxruntime-node (native, 64-bit) in ~18 s, so it is offered ONLY
 // where a native ORT backend exists (Tauri desktop, via bridge-overrides/matte.ts).
@@ -217,7 +217,7 @@ export function stagedMatteModels(): MatteModelInfo[] {
 export const MATTE_NATIVE_ONLY: Record<MatteModelId, boolean> = {
   'u2netp': false,
   'birefnet-lite': false,
-  'birefnet': true,   // full Swin-L @1024² — wasm32 OOMs; native-only
+  'birefnet': true,   // full Swin-L @1024² - wasm32 OOMs; native-only
   'modnet': false,
 };
 

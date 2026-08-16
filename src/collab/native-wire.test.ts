@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-wire — the native lanes' byte codec (collab/native-wire.ts): every lane/kind
+ * native-wire - the native lanes' byte codec (collab/native-wire.ts): every lane/kind
  * round-trips to the same RtcInboundMessage shape the WebRTC transport produces, presence
  * goes through the shipped parser, and malformed bytes decode to null (never throw).
  *
@@ -42,7 +42,7 @@ test('presence round-trips through the shipped parser', () => {
 });
 
 test('an invalid presence frame decodes to null (not throw)', () => {
-  // Missing `from` — parsePresenceFrame rejects it.
+  // Missing `from` - parsePresenceFrame rejects it.
   const bad = new TextEncoder().encode(JSON.stringify({ seq: 1, state: null }));
   assert.equal(decodeFrame('presence', bad), null);
 });

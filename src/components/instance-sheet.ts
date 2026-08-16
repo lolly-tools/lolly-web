@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Instance sheet — point this installed shell at a remote Lolly deployment
+ * Instance sheet - point this installed shell at a remote Lolly deployment
  * (or back to what's bundled), and optionally pull your data across from a
  * portable backup at the same time. Built on mountModal (components/modal.ts
- * — Escape/backdrop dismissal, focus containment, teardown) with the shared
+ * - Escape/backdrop dismissal, focus containment, teardown) with the shared
  * `.modal-*` / `.btn--*` / `.field-input` / `.note` chrome already global
- * (dialogs.css / buttons.css / components.css) — only the sheet's own layout
+ * (dialogs.css / buttons.css / components.css) - only the sheet's own layout
  * (choice cards, field rows, probe/summary lines) gets its own small sheet
  * (styles/parts/instance-sheet.css, imported below like welcome.css).
  *
  * Two callers:
  *  - main.ts's boot(), first run only, via maybeShowFirstRunInstanceSheet:
  *    Tauri shells, gated on no persisted choice yet (hasMadeInstanceChoice)
- *    — awaited before the first catalog sync so a chosen instance is
+ * - awaited before the first catalog sync so a chosen instance is
  *    honoured immediately, and a no-op (one IndexedDB read) everywhere else.
  *  - views/profile.ts's "Change" button, calling openInstanceSheet directly,
  *    any time, to switch instances later (the "asked" flag is already set by
- *    then, so it's not re-marked — see `firstRun` below).
+ *    then, so it's not re-marked - see `firstRun` below).
  *
  * The instance base itself (getInstanceBase/setInstanceBase/instanceFetch/
  * normalizeInstanceBase) lives in lib/instance.ts, a fixed contract from the
- * parallel core package — this module only adds the UI, plus the "has the
+ * parallel core package - this module only adds the UI, plus the "has the
  * user been asked yet" flag, persisted the exact same way that module
  * persists the base itself: the IndexedDB 'profile' KV store, never
- * localStorage (house rule — no localStorage for state).
+ * localStorage (house rule - no localStorage for state).
  *
  * Connecting to another instance is a trust decision, not just a URL field:
  * a connected instance's tool code runs exactly like a bundled tool's (same
- * hooks.js execution model — see runtime.ts's own header on that). The sheet
+ * hooks.js execution model - see runtime.ts's own header on that). The sheet
  * says so plainly rather than burying it; there is no technical sandbox
  * behind that sentence yet.
  */
@@ -46,16 +46,16 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 
 // validateInstanceUrl / shapeProbeResult (the pure URL-validation and probe-
-// shaping logic) live in lib/instance-probe.ts — unit-tested there, in
+// shaping logic) live in lib/instance-probe.ts - unit-tested there, in
 // instance-sheet.test.ts, with no DOM/CSS dependency (see that file's header).
 
 /**
- * Read a fetched backup's body capped at `MAX_RESTORE_TOTAL_BYTES` — the same
+ * Read a fetched backup's body capped at `MAX_RESTORE_TOTAL_BYTES` - the same
  * ceiling data-transfer.ts's own zip-bomb guard applies to the INFLATED
  * contents, applied here to the raw (still-compressed) download too, so a
  * hostile/oversized/never-ending response can't be buffered into memory before
  * that guard ever gets a chance to run. Aborts mid-stream once the cap is
- * exceeded (never buffer-then-check) — same discipline as the Android share
+ * exceeded (never buffer-then-check) - same discipline as the Android share
  * intake's readShareCapped. Falls back to a plain arrayBuffer() read when the
  * response has no body stream to read incrementally (defensive; every real
  * fetch/instanceFetch response has one).
@@ -99,16 +99,16 @@ type Step =
   | { kind: 'import'; url: string; busy: boolean; error?: string; summary?: string };
 
 /**
- * Open the instance sheet. Resolves once the user is done — any way (Escape,
+ * Open the instance sheet. Resolves once the user is done - any way (Escape,
  * backdrop, or reaching the end of the flow). Callers that show a status
  * (profile.ts) should just re-render afterwards, reading getInstanceBase()
  * fresh; nothing here reports which path the user took beyond that.
  *
- * `firstRun` marks the "asked" flag on close (any close counts as settled —
+ * `firstRun` marks the "asked" flag on close (any close counts as settled - 
  * same convention as showWelcomeDialog: a dismissal is still an answer) and
  * swaps in slightly different framing copy for the very first sheet a user
  * ever sees. Omit it (the profile "Change"/first re-open case) to leave the
- * flag alone — it's already set.
+ * flag alone - it's already set.
  */
 export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {}): Promise<void> {
   const firstRun = !!opts.firstRun;
@@ -279,7 +279,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
         void (async () => {
           await setInstanceBase(base);
           try {
-            // "sync's public resync/bust entry" — the same exported function
+            // "sync's public resync/bust entry" - the same exported function
             // gallery.ts's own empty-catalog retry button calls.
             await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
           } catch { /* offline — sync falls back to cache; the instance is still set */ }

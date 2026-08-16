@@ -11,12 +11,12 @@
  * actually go before you drag, while still reading as one continuous axis.
  *
  * On a hue track the effect is the most useful: at a fixed lightness and chroma
- * you get several solid arcs with real gaps between them — the hues that can
+ * you get several solid arcs with real gaps between them - the hues that can
  * hold that much chroma, and the ones that cannot.
  *
  * Companion to the 2D charts in oklch-slice.ts: same engine primitives
  * (`inGamut`, `maxChroma`), one axis instead of two. Kept free of a CSS import so
- * it stays testable under `node --test` — see the note in oklch-slice.ts.
+ * it stays testable under `node --test` - see the note in oklch-slice.ts.
  */
 
 import { inGamut, clipToGamut, oklchToHex, gamutTierProbe, BEYOND_TIER, chromaAxisMax } from '@lolly/engine';
@@ -30,13 +30,13 @@ export interface GamutSliderState {
   channel: GamutChannel;
   /** The colour the OTHER two channels are held at. */
   base: { l: number; c: number; h: number };
-  /** The gamut a value must reach to count as reproducible — a display gamut by
+  /** The gamut a value must reach to count as reproducible - a display gamut by
    *  name, or any {@link GamutLimit}, so a press profile breaks the track the same
    *  way a narrow screen does. */
   limit: GamutLimit;
   /** Ceiling of the chroma axis. Defaults to the ceiling `limit` itself implies
    *  (`chromaAxisMax`), so a chroma track never runs past the gamut it is drawn
-   *  for — nor stops short of it. */
+   *  for - nor stops short of it. */
   cMax?: number;
 }
 
@@ -50,8 +50,8 @@ const cMaxOf = (state: GamutSliderState): number => state.cMax ?? chromaAxisMax(
 /**
  * The ceiling to actually draw against, given the value the thumb has to sit on.
  *
- * A chroma axis maximum is a CHOICE, not a bound — OKLCH will name c = 0.7 quite
- * happily — and a range input cannot express a value above its own `max`. So a value
+ * A chroma axis maximum is a CHOICE, not a bound - OKLCH will name c = 0.7 quite
+ * happily - and a range input cannot express a value above its own `max`. So a value
  * past the ceiling stretches the axis rather than being pulled back to the end of the
  * track: the alternative is the control quietly editing the colour it is reporting.
  * The runs are built from the same number, so the track and the thumb stay in
@@ -96,7 +96,7 @@ export interface GamutRun {
 }
 
 /**
- * Every run along the axis — reachable AND not — as `{ from, to }` fractions of
+ * Every run along the axis - reachable AND not - as `{ from, to }` fractions of
  * the track with the colours to paint across each.
  *
  * The unreachable runs are returned too, so the caller can render them as a faint
@@ -107,11 +107,11 @@ export interface GamutRun {
  * to read as one continuous 0–360.
  *
  * Each unreachable run carries HOW FAR out it is rather than a bare boolean, so a
- * stretch a wider screen could show reads brighter than one nothing can — the same
+ * stretch a wider screen could show reads brighter than one nothing can - the same
  * onion rings the picker paints, from the same classifier.
  *
  * `samples` is the resolution of the tier test. 180 puts a run's edges within half
- * a percent of the track — finer than the eye reads on a slider, and cheap: each
+ * a percent of the track - finer than the eye reads on a slider, and cheap: each
  * sample is a handful of matrix multiplies, not a bisection.
  */
 export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
@@ -126,7 +126,7 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
     const from = start / n;
     const to = endIdx / n;
     if (to <= from) return;
-    // A handful of stops across the run is plenty — the ramp is smooth, and one
+    // A handful of stops across the run is plenty - the ramp is smooth, and one
     // stop per sample would put 180 colour stops in a style attribute.
     const stops: string[] = [];
     const steps = Math.max(1, Math.min(12, Math.round((to - from) * 24)));
@@ -158,8 +158,8 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
  * The slider's markup. Paint it with {@link paintGamutSlider} once it is in the
  * document and wire it with {@link wireGamutSlider}.
  *
- * The real `<input type="range">` carries the interaction — keyboard, touch and
- * assistive tech all work without any of it being reimplemented — and the
+ * The real `<input type="range">` carries the interaction - keyboard, touch and
+ * assistive tech all work without any of it being reimplemented - and the
  * segments are decoration behind it.
  */
 export function renderGamutSlider(id: string, state: GamutSliderState, value: number): string {
@@ -181,12 +181,12 @@ export function renderGamutSlider(id: string, state: GamutSliderState, value: nu
 /**
  * Paint (or repaint) the broken track and the readout.
  *
- * `outOfBounds` marks the thumb when the current value sits in one of the gaps —
+ * `outOfBounds` marks the thumb when the current value sits in one of the gaps - 
  * the small indicator that makes free dragging honest. It is a mark, not a
  * refusal: leaving the gamut is frequently the intent.
  */
 export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, value: number): void {
-  // One ceiling for the whole repaint — the runs, the range's bounds and the thumb
+  // One ceiling for the whole repaint - the runs, the range's bounds and the thumb
   // all read it, so they cannot land on different scales.
   const drawn: GamutSliderState = { ...state, cMax: drawCMax(state, value) };
   const track = root.querySelector<HTMLElement>('[data-gsl-track]');
@@ -200,7 +200,7 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
       // A wash keeps the axis readable as a whole while staying clearly a hint, and
       // the ring it belongs to says how far out it is. The opacity is a CSS token
       // (--track-tier-*, styles/tokens.css) so it is tunable without touching this,
-      // and it is the SAME scale the picker's color-mix stops read — one scale, two
+      // and it is the SAME scale the picker's color-mix stops read - one scale, two
       // mechanisms (here an element really can carry an `opacity`).
       const alpha = run.tier === 0
         ? ''
@@ -214,7 +214,7 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
   if (input) {
     // The chroma axis ceiling can move between repaints (a caller changed its scale,
     // or the value itself stretched it), so keep the range's bounds in step here as
-    // well as at render time — otherwise the thumb sits on the old scale while the
+    // well as at render time - otherwise the thumb sits on the old scale while the
     // track behind it shows the new one.
     //
     // Set before the value. `drawn` guarantees max >= value, which is what makes the
@@ -230,7 +230,7 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
   // because a hue is only "out" in combination with the chroma and lightness held.
   //
   // The flag goes on the COMPONENT root (.gsl), not on whatever container the
-  // caller handed us — the CSS targets `.gsl.is-out`, and putting it on a mount
+  // caller handed us - the CSS targets `.gsl.is-out`, and putting it on a mount
   // wrapper instead means the styling silently never applies.
   const o = colorAt(state, value);
   const el = root.classList.contains('gsl') ? root : root.querySelector<HTMLElement>('.gsl');
@@ -241,11 +241,11 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
  * The nearest reachable colour when bounds are ON: keep the channel the user is
  * dragging, and let CHROMA give.
  *
- * The obvious alternative — refuse a value that leaves the gamut — behaves badly
+ * The obvious alternative - refuse a value that leaves the gamut - behaves badly
  * on a broken track, because it traps the thumb inside whichever segment it
  * started in and makes most of the hue circle unreachable. Yielding chroma
  * instead matches how the request is actually meant: *this hue, as vivid as it
- * can be*. Lightness is preserved for the same reason — it is the axis a designer
+ * can be*. Lightness is preserved for the same reason - it is the axis a designer
  * is usually holding fixed on purpose.
  */
 export function clampIntoGamut(
@@ -258,9 +258,9 @@ export function clampIntoGamut(
 }
 
 export interface GamutSliderHandlers {
-  /** Continuous, on every movement — cheap work only. */
+  /** Continuous, on every movement - cheap work only. */
   onInput(value: number): void;
-  /** The gesture ended (or a keyboard step landed) — spend the expensive work here. */
+  /** The gesture ended (or a keyboard step landed) - spend the expensive work here. */
   onChange(value: number): void;
 }
 

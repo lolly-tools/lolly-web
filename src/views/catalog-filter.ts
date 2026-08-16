@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Catalogue view's selection model — pure, DOM-free, testable.
+ * The Catalogue view's selection model - pure, DOM-free, testable.
  *
  * Extracted from views/catalog.ts (3,563 lines, one 3,078-line `mountCatalog`)
  * for maintainability-2026-07-29.md item 2: 33 of 45 views have no test, and the
@@ -10,7 +10,7 @@
  * that, applied to the largest fully-untested view.
  *
  * WHY THIS CLUSTER FIRST. These six functions decide which assets a user can see,
- * search, favourite and bulk-select — and `pruneSelection` is what keeps the
+ * search, favourite and bulk-select - and `pruneSelection` is what keeps the
  * "N selected" counter honest when a search hides something that is still ticked.
  * Getting that wrong deletes the wrong files, or reports a count that does not
  * match what a delete will actually touch. It is the highest-consequence pure
@@ -43,7 +43,7 @@ export function matchesType(asset: AssetRef, filter: TypeFilter): boolean {
 /**
  * Assets the user has not hidden. Hidden-ness is keyed by BASE id, so hiding an
  * asset hides every modified variant of it (`<id>?theme=…`, `<id>?treatment=…`)
- * rather than leaving orphans behind — which is why the caller passes a
+ * rather than leaving orphans behind - which is why the caller passes a
  * base-id-extracting function rather than this module guessing at the format.
  */
 export function visibleAssets(
@@ -55,14 +55,14 @@ export function visibleAssets(
 }
 
 /**
- * The search index: asset id → one FOLDED haystack string (lib/search fold —
+ * The search index: asset id → one FOLDED haystack string (lib/search fold - 
  * lowercase + diacritics stripped, so "café" and "cafe" index identically).
  * Built once and reused across keystrokes (the view memoises it and drops it
  * when the asset list changes), because rebuilding per keystroke is O(assets)
  * per character.
  *
  * `categoryOf` is injected so this module needs neither the category registry nor
- * the user's overrides — it is the only part of the haystack that is not intrinsic
+ * the user's overrides - it is the only part of the haystack that is not intrinsic
  * to the asset.
  */
 export function buildSearchHaystack(
@@ -94,14 +94,14 @@ function queryTokens(query: string): string[] {
 }
 
 /**
- * Search predicate — lib/search semantics (plans/99 M3, principle 1): the query
+ * Search predicate - lib/search semantics (plans/99 M3, principle 1): the query
  * is folded + tokenized, and every token must appear in the asset's haystack
  * (AND across terms, so "logo dark" narrows rather than widens; word order is
- * free). An empty query passes everything — the search box is a filter, not a
+ * free). An empty query passes everything - the search box is a filter, not a
  * mode, so clearing it must restore the full list.
  *
  * `query` may arrive lowercased and trimmed by the caller (the view still does,
- * harmlessly — fold is idempotent); an asset the index has never seen simply
+ * harmlessly - fold is idempotent); an asset the index has never seen simply
  * does not match, rather than throwing.
  */
 export function matchesQuery(
@@ -116,7 +116,7 @@ export function matchesQuery(
 }
 
 /**
- * Favourited, visible assets — deduped by base id, in catalog-then-user order.
+ * Favourited, visible assets - deduped by base id, in catalog-then-user order.
  *
  * The dedupe matters: a user upload can shadow a catalog asset at the same base
  * id, and without this the favourites strip shows the same mark twice. Input
@@ -143,9 +143,9 @@ export function favItems(
  * same reason: a bulk action must only ever touch what the user can actually
  * SEE. Anything else acts invisibly.
  *
- * `scope` — 'uploads' restricts to user-owned assets; 'all' admits shared
- * catalog assets too (2026-08-09: every tile is selectable now — people expect
- * a grid to marquee — and the DESTRUCTIVE actions gate per-kind instead:
+ * `scope` - 'uploads' restricts to user-owned assets; 'all' admits shared
+ * catalog assets too (2026-08-09: every tile is selectable now - people expect
+ * a grid to marquee - and the DESTRUCTIVE actions gate per-kind instead:
  * Duplicate/Download/Delete only light up when the whole selection is uploads,
  * since catalog assets are a permanent contract that can only be favourited or
  * hidden). The uploads section's own "Select all" button stays 'uploads'.
@@ -170,8 +170,8 @@ export function selectableIds(
 }
 
 /**
- * Drop selected ids that are no longer selectable — deleted, or filtered out by a
- * search — so the "N selected" count matches what an action would actually touch.
+ * Drop selected ids that are no longer selectable - deleted, or filtered out by a
+ * search - so the "N selected" count matches what an action would actually touch.
  * Mutates `selected` in place (the view holds it across renders) and returns the
  * number removed, so a caller can tell whether anything changed without diffing.
  */

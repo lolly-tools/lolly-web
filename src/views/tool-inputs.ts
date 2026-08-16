@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tool view — input subsystem.
+ * Tool view - input subsystem.
  *
  * The sidebar input controls and the in-place embed editor, split out of tool.ts
  * (which keeps mountTool + the mount-only helpers). renderInputs builds the control
@@ -8,7 +8,7 @@
  * openEmbedEditor drives a throwaway child runtime through the SAME render path.
  *
  * This module never value-imports from ./tool.ts (that would create a runtime
- * cycle) — it only `import type`s the shell-side aliases it needs from there.
+ * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
 import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable, readXlsx } from '@lolly/engine';
 import type { TableValue } from '@lolly/engine';
@@ -29,7 +29,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { rowIdField, ulid } from '../lib/row-id.ts';
 import { icon, hasIcon } from '../lib/icons.ts';
 // Generic per-input display policy (empty/no-op unless a deployment's control plane
-// has populated it via src/org/) — a rendering overlay only; the engine input model
+// has populated it via src/org/) - a rendering overlay only; the engine input model
 // stays the single source of truth.
 import { getInputPolicy } from '../lib/input-policy.ts';
 import type { InputPolicy } from '../lib/input-policy.ts';
@@ -50,14 +50,14 @@ import type { Runtime } from '../../../../engine/src/runtime.js';
 
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint } from '../lib/audio-peaks.ts';
-// The same enhancer the picker and catalog grids use — an audio slot starts as an
+// The same enhancer the picker and catalog grids use - an audio slot starts as an
 // honest glyph and upgrades in place once its peaks are measured.
 import { mountAudioThumbs } from './picker.ts';
 import { asRow, type BlockRow } from './tool-types.ts';
 import type { WebToolHost, PanelEl, EmbedDescribe, FlatpickrHost } from './tool.ts';
 
 // ── Per-slot media affordances (opt-in fit/match/preview) ────────────────────
-// Write the export-size channel the export bar owns — the same [data-action]
+// Write the export-size channel the export bar owns - the same [data-action]
 // inputs the filter-* auto-fit scripts and the manual Width/Height fields drive,
 // so "snap the canvas to this image" flows through the one size pipeline.
 function setExportSize(w: number, h: number): void {
@@ -83,7 +83,7 @@ function setExportDuration(sec: number): void {
 }
 // One in-tool sound preview at a time. Plays the placed clip via a DETACHED <audio>
 // (a video URL plays its audio track too) so a person can hear a bed/clip while
-// editing — the audiogram no longer needs an export to be heard. Exported so the
+// editing - the audiogram no longer needs an export to be heard. Exported so the
 // tool view can stop it on navigation, like the export popup's own audition.
 let slotPreview: { audio: HTMLAudioElement; btn: HTMLElement } | null = null;
 export function stopSlotPreview(): void {
@@ -106,7 +106,7 @@ function toggleSlotPreview(btn: HTMLElement): void {
     btn.classList.add('is-playing');
     btn.textContent = '⏸ Stop';
     slotPreview = { audio, btn };
-  }).catch(() => { /* autoplay blocked or an undecodable container — leave the label */ });
+  }).catch(() => { /* autoplay blocked or an undecodable container - leave the label */ });
 }
 
 /** Row copy/paste buffer for blocks with `rowActions`. Module-scoped so it survives the
@@ -135,7 +135,7 @@ let _blockDrag: BlockDrag | null = null;
 
 /**
  * Read a picked / dropped File into the in-memory FileRef the input model carries
- * (bytes + metadata). The bytes live only in memory and are never uploaded — the
+ * (bytes + metadata). The bytes live only in memory and are never uploaded - the
  * url is a local object URL for previews. Shared by the sidebar file-picker and
  * the canvas drop zone so both produce an identical model value.
  */
@@ -153,7 +153,7 @@ async function fileToRef(file: File): Promise<InputFile> {
 // The JS-driven scroll/reveal below is gated on lib/a11y-prefs.ts's shared read
 // (the OS setting OR the app's own preference). The global CSS reset zeroes CSS
 // animations + scroll-behavior, but it can't reach an explicit JS
-// scrollIntoView({behavior:'smooth'}) or a WAAPI tween — those have to be gated in JS.
+// scrollIntoView({behavior:'smooth'}) or a WAAPI tween - those have to be gated in JS.
 
 // Bring a sidebar control into view and flash a one-shot "you are here" pulse on
 // its row. The single entry point for every canvas-click and block-expand scroll,
@@ -175,14 +175,14 @@ function scrollToControl(control: Element | null | undefined, { pulse = true }: 
 
 // Reveal a block's fields with a brief height tween when it expands. The resting
 // collapsed state stays `display:none` (so folded fields keep out of the Tab order
-// and the a11y tree) — only the open is animated, and only when motion is allowed.
+// and the a11y tree) - only the open is animated, and only when motion is allowed.
 function revealBlockFields(item: Element): void {
   if (prefersReducedMotion()) return;
   const fields = item.querySelector<HTMLElement>('.block-fields');
   if (!fields || typeof fields.animate !== 'function') return;
-  // Compositor-only fade — NO height tween. The old height animation forced a full
+  // Compositor-only fade - NO height tween. The old height animation forced a full
   // sidebar reflow every frame and slid every block below for 180ms, while the card
-  // chrome (padding/border-radius/background) snapped instantly — the visible shake.
+  // chrome (padding/border-radius/background) snapped instantly - the visible shake.
   // The fields are display:none when collapsed, so they land in their FINAL position
   // in a single reflow the moment they un-hide; only opacity/transform (which never
   // affect layout) animate, so nothing moves a pixel after settle.
@@ -209,7 +209,7 @@ function toggleBlock(item: Element, collapsed: boolean): void {
 // block and fold every other typed block to a pill, then drop the caret in its
 // text field and scroll it into view. Folding mirrors the manual collapse
 // toggle's button state so renderInputs re-applies it across model rebuilds.
-// Triggered when a rendered canvas block is clicked — an "edit one at a time"
+// Triggered when a rendered canvas block is clicked - an "edit one at a time"
 // focus mode. Blocks with no text field (headshot, blank) just expand + scroll.
 function focusSidebarBlock(blocksEl: Element, index: number | string): void {
   const items = [...blocksEl.querySelectorAll<HTMLElement>('.block-item.is-typed')];
@@ -221,7 +221,7 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
   // Reveal the block if it sits inside a closed section, then bring it into view.
   target.closest('details.input-section')?.setAttribute('open', '');
   // Defer the scroll one frame: the bulk collapse above relocated every block, so
-  // scrolling now would chase a layout that's about to settle (a double-motion lurch).
+  // scrolling now would chase a layout that's still settling and cause a visible double jump.
   requestAnimationFrame(() => scrollToControl(target));
 
   const field = target.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -235,7 +235,7 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
 }
 
 /**
- * Drop the caret in a block's first editable field — used right after "+ Add" so a
+ * Drop the caret in a block's first editable field - used right after "+ Add" so a
  * new row is ready to type into. Text and textarea only: a new block's first field
  * being a colour swatch or an image button is not somewhere a caret belongs, and
  * silently focusing a button would swallow the next keypress as a click. Silent
@@ -244,7 +244,7 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
  */
 function focusBlockFirstField(panel: PanelEl, blockId: string, index: number): void {
   const wrap = panel.querySelector(`.blocks-input[data-input-id="${CSS.escape(blockId)}"]`);
-  // The index is an integer we produced — no escaping (CSS.escape would turn "0"
+  // The index is an integer we produced - no escaping (CSS.escape would turn "0"
   // into the "\30 " identifier escape, which is a needless round-trip here).
   const item = wrap?.querySelector(`.block-item[data-block-index="${index}"]`);
   const field = item?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -258,7 +258,7 @@ function focusBlockFirstField(panel: PanelEl, blockId: string, index: number): v
 /**
  * Reflect a model change in the sidebar with the least work. renderInputs()
  * rebuilds the whole panel's innerHTML and re-wires every listener (and
- * destroys/recreates each flatpickr) — necessary on first render or a structural
+ * destroys/recreates each flatpickr) - necessary on first render or a structural
  * change, but pure waste on a keystroke, where the only change is a value the
  * edited field already shows. In that case (canSkipInputsRebuild) the rebuild is
  * skipped entirely. Returns the model to remember as the new baseline.
@@ -271,7 +271,7 @@ function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelI
 
 /**
  * Keep the collapsed-pill preview of the block being typed into up to date without
- * rebuilding the panel — the one thing the skipped rebuild used to refresh (see
+ * rebuilding the panel - the one thing the skipped rebuild used to refresh (see
  * isEditingBlockField). Reads the LIVE fields rather than the model: the focused
  * control is the authoritative value mid-keystroke, and the rendered field order
  * already mirrors the manifest's `fields` order with showFor/showIf applied, so
@@ -280,7 +280,7 @@ function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelI
  *
  * One accepted divergence: `previewOf` also counts an `optionsFrom` field that
  * declares no type (it renders as a <select>, which this can't read). That block's
- * pill can lag by a keystroke until the next full render corrects it — cosmetic,
+ * pill can lag by a keystroke until the next full render corrects it - cosmetic,
  * and only while typing.
  */
 function patchEditedBlockPreview(panel: PanelEl): void {
@@ -299,9 +299,9 @@ function patchEditedBlockPreview(panel: PanelEl): void {
 /**
  * Whether an input's control should render fully LOCKED (inert + read-only) under a
  * given policy. `locked` always locks; a `choice` locks every control EXCEPT a
- * select — a select narrows its options instead, but a non-enumerable control
+ * select - a select narrows its options instead, but a non-enumerable control
  * (text, slider, colour…) has no in-UI "restrict to a set", so it locks to its
- * value and the server enforces the allow-set. Pure — exported for tests.
+ * value and the server enforces the allow-set. Pure - exported for tests.
  */
 export function policyLocksControl(control: InputModelItem['control'], policy: InputPolicy | undefined): boolean {
   if (!policy) return false;
@@ -319,7 +319,7 @@ const _dropChains = new Map<string, Promise<void>>();
 // Builds the "upload each file → append one block per file" committer for a blocks
 // input that declares `dropToAdd`. Shared by the sidebar blocks list (renderInputs)
 // and the canvas drop zone (setupCanvasBlocksDrop, e.g. logo-wall) so both surfaces
-// accept a pile of files identically and serialise through _dropChains — a drop onto
+// accept a pile of files identically and serialise through _dropChains - a drop onto
 // the canvas and one onto the sidebar can't read the same base array and clobber.
 function makeBlocksDropper({ runtime, host, input, onDirty }: {
   runtime: Runtime; host: WebToolHost; input: InputSpec; onDirty?: (id: string) => void;
@@ -330,7 +330,7 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   // Accept filter: "image/*" (default) matches any image; a trailing /* matches a
   // whole MIME group; an exact type matches itself. Files with no MIME type (some
   // OS drag sources report none) are allowed when accept has a wildcard group, so
-  // they're not silently dropped — the upload path validates bytes.
+  // they're not silently dropped - the upload path validates bytes.
   const accept = (input.dropToAdd!.accept || 'image/*').trim();
   const accepted = (file: File): boolean => {
     const t = (file.type || '').toLowerCase();
@@ -343,7 +343,7 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   };
 
   // The noun for prompts/announcements comes from the input label, so this stays
-  // generic — a future "Documents"/"Videos" blocks input reads correctly.
+  // generic - a future "Documents"/"Videos" blocks input reads correctly.
   const plural = (input.label || 'files').toLowerCase();
   const singular = plural.replace(/s$/, '');
 
@@ -375,7 +375,7 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   };
 
   // Chain commits for this input so concurrent drops/selections (from either the
-  // sidebar or the canvas) serialise — each reads the live array only after the
+  // sidebar or the canvas) serialise - each reads the live array only after the
   // previous one has committed. Snapshot the files NOW: commit runs a microtask
   // later, by which time a change handler's `value = ''` may have emptied the list.
   const addFiles = (fileList: FileList | File[] | null | undefined): Promise<void> => {
@@ -395,7 +395,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const panelModel = model.filter(i => {
     if (i.group === 'export') return false;
     // A control-plane "hidden" input drops from the sidebar entirely (never
-    // rendered). This is a rendering overlay — the model still carries the input.
+    // rendered). This is a rendering overlay - the model still carries the input.
     if (policyFor(i.id)?.mode === 'hidden') return false;
     if (!i.showIf) return true;
     // A showIf value may be a single value or an array of accepted values
@@ -405,7 +405,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   });
 
   // `attachTo` (schema): an input whose control rides INSIDE a sibling's row
-  // rather than taking its own labelled row — a compact modifier that belongs to
+  // rather than taking its own labelled row - a compact modifier that belongs to
   // another control (e.g. a fit toggle on an asset slot). Resolved against
   // panelModel, not model, so a target hidden by its own showIf releases its
   // attachments back into ordinary rows rather than silently swallowing them.
@@ -438,11 +438,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const focusFloating = !!active?.closest?.('.floatp .table-input');
 
   // A vector that carries the SAME trailing index as the colour right above it is
-  // that colour's sub-control, not its sibling — mesh-gradient's `color3` → `pos3`.
+  // that colour's sub-control, not its sibling - mesh-gradient's `color3` → `pos3`.
   // Marked here (the row markup is the only place that can see both) so the sidebar
   // can tuck the pair together; the shell CSS can't correlate two ids on its own.
   // Deliberately narrow: filter-duotone's `colorBg` → `imageFraming` shares no index
-  // and stays an ordinary sibling, which is correct — its framing isn't the colour's.
+  // and stays an ordinary sibling, which is correct - its framing isn't the colour's.
   const indexOf = (id: string): string | null => id.match(/(\d+)$/)?.[1] ?? null;
   const isSubControl = (input: InputModelItem, prev: InputModelItem | null): boolean =>
     !!prev
@@ -459,7 +459,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // wrapped .input-pillbar by the section loop below.
     const isPill = isCheckbox && input.display === 'pill';
     // The datetime field is a flatpickr (altInput) control, and the whole panel
-    // re-renders on every keystroke — a floating label would re-animate from its
+    // re-renders on every keystroke - a floating label would re-animate from its
     // resting to floating position each time the value re-populates and visibly
     // wobble. Pin it to a static label above the field instead.
     // Jelly text fields carry their own placeholder inside a filled capsule and
@@ -473,7 +473,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // the floating-label offset math (tool.css) cannot account for.
     const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField || Boolean(input.notice);
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
-    // browser forward any dead-space click to the label's first labelable descendant —
+    // browser forward any dead-space click to the label's first labelable descendant - 
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
     // collapse chevron (the reported "clicking the 2nd scene expands the 1st"), and a
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
@@ -509,7 +509,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ? `<button type="button" class="input-data-src" data-data-source="${escape(input.id)}" title="Add data from a file or your library" aria-label="Add data">${icon('filePlus', { size: 13, strokeWidth: 2 })}</button>`
       : '';
     const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}${dataSrcBtn}</span>`;
-    // Always-visible fine print between label and control — the consent-gate
+    // Always-visible fine print between label and control - the consent-gate
     // disclosure slot (unlike help, which hides behind the info button).
     // aria-hidden keeps it out of the wrapping <label>'s accessible NAME;
     // linkHelpDescriptions points the control's aria-describedby at it, so
@@ -518,13 +518,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ? `<span class="input-notice" id="inotice-${escape(input.id)}" aria-hidden="true">${escape(input.notice)}</span>`
       : '';
     // A locked input displays the policy VALUE (when one is given) in place of the
-    // model's stored value — a render-only substitution, so the model is untouched.
+    // model's stored value - a render-only substitution, so the model is untouched.
     const renderInput: InputModelItem = (pol?.mode === 'locked' && pol.value !== undefined)
       ? { ...input, value: pol.value as InputValue }
       : input;
     // Anything attached to this input leads its control, wrapped in a flex row.
     // Wrapping (rather than splicing markup into the target's own control) keeps
-    // this agnostic about what the target control IS — no asset-picker internals
+    // this agnostic about what the target control IS - no asset-picker internals
     // here, so any control can host an attachment.
     const lead = (attachments.get(input.id) ?? []).map(attachedControlHtml).join('');
     const rawControl = lead
@@ -532,7 +532,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       : controlHtml(renderInput, modelValues, pol);
     // A locked control renders inert + dimmed: `inert` drops it from focus + events,
     // `pointer-events:none` covers pointer input for controls that don't honour
-    // inert. Cooperative only — the server is the hard gate (locked values 422).
+    // inert. Cooperative only - the server is the hard gate (locked values 422).
     const control = locks
       ? `<span class="input-locked" inert aria-disabled="true" style="display:block;opacity:.6;pointer-events:none">${rawControl}</span>`
       : rawControl;
@@ -596,7 +596,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Destroy flatpickr instances on the outgoing markup so their body-level calendars +
   // document/window listeners don't orphan. Deferred to a microtask because this
   // re-render is reachable from flatpickr's own onClose (onClose→setInput→emit→syncInputs
-  // →renderInputs); destroying the closing instance synchronously nukes its config
+  // →renderInputs); destroying the closing instance synchronously corrupts its config
   // mid-callback and throws. The new instances are distinct elements, so the deferred
   // destroy of the old ones never touches them.
   const staleFps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
@@ -610,7 +610,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn?.setAttribute('title', 'Expand');
   };
   // On the first render of a freshly-mounted tool, fold every typed block so the
-  // sidebar opens as a clean, scannable list — the user expands the ones they
+  // sidebar opens as a clean, scannable list - the user expands the ones they
   // want to edit. On later re-renders, preserve whatever the user had folded
   // (captured above); newly-added blocks stay open.
   const firstRender = !el.dataset.blocksDefaulted;
@@ -680,7 +680,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     if (input?.control === 'asset-picker') {
       control.addEventListener('click', async () => {
         // Returning to a slot that already holds a live Lolly render: most such
-        // visits mean "tweak the render", not "replace it" — so offer the edit
+        // visits mean "tweak the render", not "replace it" - so offer the edit
         // path first (same flow as the ✦ Edit badge) before opening the picker.
         const curVal = input.value as AssetRef | null;
         const curToolUrl = asStr(asRow(curVal?.meta as InputValue | undefined).toolUrl);
@@ -697,7 +697,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
           title:       `Choose ${input.label ?? input.id}`,
           type:        input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
           // Capability-driven widening, not a per-tool special case: an `image`
-          // slot on a tool that can CONSUME moving pictures (an onFrame hook —
+          // slot on a tool that can CONSUME moving pictures (an onFrame hook - 
           // the live frame loop plays a video pick through the effect) also
           // offers video uploads. A still-image tool's slot is unchanged.
           motion:      runtime.hasFrameHook === true,
@@ -780,7 +780,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       };
       const loadFile = async (file: File | null | undefined): Promise<void> => {
         if (!file) return;
-        // Manifest cap when declared, engine backstop otherwise — a pick is a
+        // Manifest cap when declared, engine backstop otherwise - a pick is a
         // full read into memory, so it is never unbounded.
         const ref = await toRef(file);
         if (native) native.value = '';
@@ -818,7 +818,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     }
 
     // Jelly-mode boolean rows: <jelly-switch> emits `change` on its host (never
-    // `input`) and has no `.type` — wire it straight to the runtime and skip the
+    // `input`) and has no `.type` - wire it straight to the runtime and skip the
     // generic listener below. Undo/redo needs nothing extra: history hooks at
     // runtime.setInput, and replay repaints the panel from the model (the host's
     // live `.checked` getter keeps inputs-sync's domReflectsValue honest).
@@ -831,7 +831,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
     // Jelly text field / textarea: the host re-dispatches only `change`, and the
     // inner control's `input` event is composed:false so it never bubbles out to
-    // the host — bind the shadow control directly for live-as-you-type updates
+    // the host - bind the shadow control directly for live-as-you-type updates
     // (value pipeline is otherwise identical to the native path). shadowRoot is
     // open and the element upgraded synchronously (jellyActive ⇒ bundle loaded).
     // maxlength isn't observed by jelly, so it's applied here from data-maxlength.
@@ -851,7 +851,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     if (control.tagName === 'TEXTAREA') installTablePaste(control as HTMLTextAreaElement);
 
     control.addEventListener('input', (e) => {
-      if (e.target !== control) return; // block fields bubble up — ignore them here
+      if (e.target !== control) return; // block fields bubble up - ignore them here
       const ctl = control as HTMLInputElement;
       const value = ctl.type === 'checkbox' ? ctl.checked : ctl.value;
       runtime.setInput(id, value);
@@ -894,10 +894,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  // A re-render orphans the slot buttons but a detached <audio> keeps playing — stop
+  // A re-render orphans the slot buttons but a detached <audio> keeps playing - stop
   // any in-tool preview on every (re)bind so it never outlives its slot.
   stopSlotPreview();
-  // Opt-in "fit canvas to the placed image/video" — writes the export-size channel
+  // Opt-in "fit canvas to the placed image/video" - writes the export-size channel
   // (the same [data-action="export-*"] inputs the filter-* auto-fit scripts and the
   // manual Width/Height fields drive).
   el.querySelectorAll<HTMLElement>('[data-fit-id]').forEach(btn => {
@@ -975,7 +975,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // A BAKED slot (meta.baked, no toolUrl) is inert by design; its ❄ row offers
   // two ways back to the source when meta.bakedFrom survived baking: Edit re-opens
-  // the source tool's inputs (rebake: true — the apply re-freezes, never un-bakes),
+  // the source tool's inputs (rebake: true - the apply re-freezes, never un-bakes),
   // Re-bake re-renders the same URL and freezes it again in one click.
   el.querySelectorAll<HTMLElement>('[data-baked-edit-id]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1006,9 +1006,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // ONE shared colour picker for every colour surface (OKLCH sliders, hex, alpha,
   // swatches, popover toggle). Top-level inputs commit via setInput(id); a block
-  // field's composite id ("blockId:idx:fieldId" — ':' never appears in a real
+  // field's composite id ("blockId:idx:fieldId" - ':' never appears in a real
   // input id) routes into its block row instead. Block rows store plain strings,
-  // so a token-linked swatch pick is flattened to its hex there — the {ref,value}
+  // so a token-linked swatch pick is flattened to its hex there - the {ref,value}
   // shape is a top-level-input contract (resolveTokenRefs), not a row value.
   wireColorField(el, {
     onChange: (inputId: string, value: InputValue) => {
@@ -1039,11 +1039,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // restoration; their value path is the table wiring below, not blocks.
     if (field.closest('.table-input')) return;
     // A jelly-switch block boolean (flag) emits `change` (never `input`), has no
-    // `.type`/`.validity`, and reports its state on `.checked` — so it needs its
+    // `.type`/`.validity`, and reports its state on `.checked` - so it needs its
     // own event + value path. Everything else stays on the native `input` path.
     const isJellySwitch = field.tagName === 'JELLY-SWITCH';
     field.addEventListener(isJellySwitch ? 'change' : 'input', () => {
-      // A number field mid-decimal — "1." or just "." — reports value="" with
+      // A number field mid-decimal - "1." or just "." - reports value="" with
       // validity.badInput. Committing that empties the model, which re-renders
       // the panel (blocks always take the full rebuild path) and wipes the
       // trailing "." the user is about to complete, so "1.2" lands as "12".
@@ -1073,7 +1073,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  // Table inputs — the whole grid is visible DOM, so every commit re-reads it
+  // Table inputs - the whole grid is visible DOM, so every commit re-reads it
   // from the cell inputs rather than trusting `panelModel`: cell typing defers
   // the panel rebuild (like block fields), so the closure's model snapshot can
   // lag behind edits made since the last repaint.
@@ -1090,7 +1090,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const read = (): TableValue => gridHandle
       ? gridHandle.getValue()
       : vgrid
-        ? modelValue()                          // grid not mounted yet — never read the empty DOM
+        ? modelValue()                          // grid not mounted yet - never read the empty DOM
         : ({
             columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
             rows: [...wrap.querySelectorAll('tbody tr')].map(tr =>
@@ -1155,7 +1155,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       }));
 
     // Paste anywhere in the grid: a multi-cell clipboard replaces the WHOLE
-    // table — the spreadsheet is the batch editor, a paste is "here's the new
+    // table - the spreadsheet is the batch editor, a paste is "here's the new
     // data". A spreadsheet's text/html <table> flavour is preferred (explicit
     // grid, no delimiter guessing); a single plain value falls through to the
     // focused cell like any text input.
@@ -1203,7 +1203,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         if (geom) Object.assign(panel.root.style, geom);
         tablePops.set(tid, panel);
         // The caret was in the panel this run replaced, so put it back in the
-        // equivalent cell of the fresh one — the sidebar restore deliberately
+        // equivalent cell of the fresh one - the sidebar restore deliberately
         // skipped it (focusFloating), and without this the rebuild that cost the
         // user their panel would cost them their place in it too.
         if (refocus) {
@@ -1262,7 +1262,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       // Focus is not restorable across the rebuild here: the pressed control is the
       // "+ Add" button, which the new panel recreates as a *different* button (and
       // renderInputs only restores [data-input-id] / [data-field-id] controls). So
-      // land the caret in the new block's first editable field — you asked for a
+      // land the caret in the new block's first editable field - you asked for a
       // row, you get somewhere to type. rAF, because the rebuild happens in the
       // model subscriber and the new markup has to exist first.
       void runtime.setInput(blockId, [...arr, block])
@@ -1303,7 +1303,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const sections = splitMarkdownIntoBlocks(md);
     if (!sections.length) return 'empty';
     const has = (fid: string): boolean => (inp.fields ?? []).some(f => f.id === fid);
-    // The block must have somewhere to put the prose — a `body` (or at least a `heading`).
+    // The block must have somewhere to put the prose - a `body` (or at least a `heading`).
     if (!has('body') && !has('heading')) return 'empty';
     const made = sections.map(sec => {
       const block = newBlockRow(inp);
@@ -1390,7 +1390,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     return parts.join(',');
   };
 
-  // "Paste" — read the clipboard, detect its format, route it.
+  // "Paste" - read the clipboard, detect its format, route it.
   el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-paste]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const inp = panelModel.find(i => i.id === btn.dataset.blocksIoPaste);
@@ -1400,7 +1400,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ioFlash(btn, await routeImport(text, inp));
     });
   });
-  // "Upload" — pick a Markdown / CSV / JSON file, detect its format, route it.
+  // "Upload" - pick a Markdown / CSV / JSON file, detect its format, route it.
   el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-upload]').forEach(btn => {
     const inp = panelModel.find(i => i.id === btn.dataset.blocksIoUpload);
     if (!inp) return;
@@ -1414,7 +1414,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const file = native.files?.[0];
       native.value = '';
       if (!file) return;
-      // .xlsx isn't text — unzip its first sheet to a grid, serialise to CSV, and route
+      // .xlsx isn't text - unzip its first sheet to a grid, serialise to CSV, and route
       // it through the SAME importer (parseDataRows). One importer, two spreadsheet formats.
       if (/\.xlsx$/i.test(file.name)) {
         try {
@@ -1435,7 +1435,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Unified "Add data" affordance (plan 87): a text/longtext input with `dataSource`
   // fills its field from a picked file (csv/json/txt/md/xlsx) or a catalog text asset.
   // The value is written through the control's own `input` event, so it syncs to the
-  // runtime exactly like typing (no direct model poke). Lazy chunk — the picker loads
+  // runtime exactly like typing (no direct model poke). Lazy chunk - the picker loads
   // only on first use.
   el.querySelectorAll<HTMLButtonElement>('[data-data-source]').forEach(btn => {
     const id = btn.dataset.dataSource!;
@@ -1453,7 +1453,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
           (ctl as unknown as { value: string }).value = text;
           // The runtime listener binds to the INNER shadow control for a jelly field
           // (its `input` is composed:false and never bubbles to the host) and to the
-          // control itself for a native field — fire `input` where the listener is.
+          // control itself for a native field - fire `input` where the listener is.
           // Line 812 reads the HOST value, which we set above, so either target works.
           const inner = ctl.shadowRoot?.querySelector<HTMLElement>('input, textarea');
           (inner ?? ctl).dispatchEvent(new Event('input', { bubbles: true }));
@@ -1464,7 +1464,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   });
 
   // Drop-to-add: a blocks input that declares `dropToAdd` turns its list into a
-  // drop zone — dragging or selecting several image files at once uploads each
+  // drop zone - dragging or selecting several image files at once uploads each
   // and appends one block per file (the image in the named asset field, every
   // other field at its default). It reuses the picker's upload path, so SVGs are
   // sanitised and big rasters downscaled exactly like a single "+ Add" upload.
@@ -1482,7 +1482,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // and serialise through _dropChains.
     const { accept, plural, addFiles } = makeBlocksDropper({ runtime, host, input, onDirty });
 
-    // Hidden multi-file input, opened by the drop hint — so "select several files"
+    // Hidden multi-file input, opened by the drop hint - so "select several files"
     // works alongside drag-and-drop.
     const native = document.createElement('input');
     native.type = 'file';
@@ -1492,7 +1492,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     wrap.appendChild(native);
     native.addEventListener('change', () => { addFiles(native.files); native.value = ''; });
 
-    // A persistent drop hint that doubles as a "choose files" button — it stays
+    // A persistent drop hint that doubles as a "choose files" button - it stays
     // put once blocks exist (just with shorter text) so adding more is always one
     // drop or click away, alongside the per-row "+ Add".
     const hasItems = !!list.querySelector('.block-item');
@@ -1677,7 +1677,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Remove is a two-step confirm so a stray click can't drop a block: the first
   // click arms the button ("Delete?"); a second click within 3s (or while armed)
-  // commits. Clicking elsewhere — or the timeout — disarms it.
+  // commits. Clicking elsewhere - or the timeout - disarms it.
   el.querySelectorAll<ConfirmButton>('[data-block-remove]').forEach(btn => {
     // Confirm only for typed (card) blocks; compact name/value rows keep their
     // immediate delete (a "Delete?" label would stretch their tight grid cells).
@@ -1740,7 +1740,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (!inp || !Array.isArray(inp.value)) return;
       const arr = [...inp.value];
       const cur = (arr[idx] && typeof arr[idx] === 'object') ? { ...(arr[idx] as Record<string, InputValue>) } : {};
-      // Only paste values for fields THIS input declares — never inject a key from a copy
+      // Only paste values for fields THIS input declares - never inject a key from a copy
       // taken in a differently-shaped block.
       for (const f of inp.fields ?? []) {
         if (f.id in blockRowClipboard) cur[f.id] = blockRowClipboard[f.id]!;
@@ -1756,7 +1756,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const { blockId, idx, inp } = rowOf(btn);
       if (!inp || !Array.isArray(inp.value)) return;
       const arr = [...inp.value];
-      // Clearing a row replaces it with a fresh default row — minted through
+      // Clearing a row replaces it with a fresh default row - minted through
       // newBlockRow so it is born with its stable id (never a hand-rolled, id-less row).
       arr[idx] = newBlockRow(inp);
       runtime.setInput(blockId, arr);
@@ -1764,7 +1764,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  // Drag a block's header to reorder. Native HTML5 DnD — the header is the handle.
+  // Drag a block's header to reorder. Native HTML5 DnD - the header is the handle.
   // For a plain blocks input the array is spliced into the new order. For a TREE
   // input (input.nesting active) the drop zone splits into before / after / inside,
   // so a card can be moved, re-nested or reordered in one gesture; the dragged
@@ -1841,7 +1841,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       onDirty?.(blockId);
     });
 
-    // Icon button folds this block to a pill — pure DOM toggle, no re-render
+    // Icon button folds this block to a pill - pure DOM toggle, no re-render
     // (renderInputs re-applies the collapsed state across rebuilds). toggleBlock
     // keeps the chevron's aria/title and the open animation in lockstep.
     const collapse = item.querySelector('[data-block-collapse]');
@@ -1855,7 +1855,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (!folded) scrollToControl(item, { pulse: false });
     });
 
-    // The whole pill is the expand target while collapsed — clicking its body (preview,
+    // The whole pill is the expand target while collapsed - clicking its body (preview,
     // swatch, grip, dead space) opens it, not just the 22px chevron. Only acts while
     // collapsed; ignores the chevron/remove buttons (they handle themselves) and the
     // click that ends a drag-reorder. Expanded cards are untouched (fields stay editable).
@@ -1870,7 +1870,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   });
 
   // "Collapse all / Expand all" pill: fold or unfold every block in its group at
-  // once — pure DOM toggle like the per-block chevron (renderInputs re-applies the
+  // once - pure DOM toggle like the per-block chevron (renderInputs re-applies the
   // fold state across rebuilds), so no model change and no re-render.
   el.querySelectorAll<HTMLElement>('[data-blocks-collapse-all]').forEach(pill => {
     pill.addEventListener('click', (e) => {
@@ -1910,7 +1910,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   };
   document.addEventListener('click', el._blockMenuDismiss, true);
 
-  // Aggregate disposer — the ONE teardown call for everything this render parked
+  // Aggregate disposer - the ONE teardown call for everything this render parked
   // outside the panel's own subtree: the document-level capture dismissers above
   // (colour popover, block add-menu, help tips) and the body-mounted flatpickr
   // calendars. Consumers (tool view teardown, the embed editor, multi-edit) call
@@ -1926,7 +1926,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     el,
     host,
     // The slot already HAS its resolved ref (the runtime's resolveAssetRefs ran before
-    // this render), so the ref comes straight off the model — the enhancer never has to
+    // this render), so the ref comes straight off the model - the enhancer never has to
     // reach a catalog this panel has no access to. Blocks nest their own asset fields,
     // so the walk covers array values too.
     (id) => {
@@ -1947,7 +1947,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   );
 
   // NOTE: legacy rows are given their stable ids at MOUNT (lib/row-id.ts's
-  // migrateBlockRowIds, called from views/tool.ts) — deliberately not from here.
+  // migrateBlockRowIds, called from views/tool.ts) - deliberately not from here.
   // This function also renders `/multi`'s shared card against a FAN-OUT runtime,
   // whose model is the lead session's and whose setInput writes to every sibling,
   // so a migration written here would overwrite each sibling's rows with the
@@ -1960,9 +1960,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     if (el._blockMenuDismiss)    document.removeEventListener('click', el._blockMenuDismiss, true);
     if (el._helpTipDismiss)      document.removeEventListener('click', el._helpTipDismiss, true);
     // flatpickr appends its calendar to <body> and registers document/window
-    // listeners released only by destroy(). Deferred to a microtask (same nuance
+    // listeners released only by destroy(). Deferred to a microtask (same reasoning
     // as the re-render path above): a dispose reachable from flatpickr's own
-    // onClose must not nuke the closing instance mid-callback.
+    // onClose must not destroy the closing instance mid-callback.
     const fps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
     if (fps.length) queueMicrotask(() => fps.forEach(fp => fp!.destroy()));
   };
@@ -1970,7 +1970,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Live frame-source controls (Play + Go live) for an onFrame tool: re-inject
   // them into the source asset input's slot-actions row after this rebuild wiped
   // the panel. A no-op unless the mounted tool registered a controller
-  // (live-controls.ts) — /multi's fanRuntime never does.
+  // (live-controls.ts) - /multi's fanRuntime never does.
   mountSidebarLiveControls(el, runtime);
 }
 
@@ -1989,7 +1989,7 @@ function blockFieldDefault(f: BlockFieldSpec): InputValue {
 }
 
 /** A freshly created `blocks` row: every declared sub-field at its default, plus the
- *  stable id a row now carries from birth (`rowIdField` — one definition, in
+ *  stable id a row now carries from birth (`rowIdField` - one definition, in
  *  lib/row-id.ts, shared with the canvas and the collab projection). */
 function newBlockRow(inp: { fields?: BlockFieldSpec[]; canvas?: Record<string, unknown> }): Record<string, InputValue> {
   const row: Record<string, InputValue> = {};
@@ -2008,7 +2008,7 @@ function fmtBytes(n: number): string {
 }
 
 /**
- * The control for an `attachTo` input — one compact button riding inside its
+ * The control for an `attachTo` input - one compact button riding inside its
  * target's row (see renderInputs). Only `display: 'icon-toggle'` has a compact
  * form; anything else falls back to its normal control, which still reads fine
  * inline because the wrapper is just a flex row.
@@ -2034,12 +2034,12 @@ function attachedControlHtml(input: InputModelItem): string {
   return `<button type="button" class="icon-toggle" data-toggle-id="${escape(input.id)}" title="${escape(title)}" aria-label="${escape(title)}">${glyph}</button>`;
 }
 
-// Open table-input float panels, keyed by input id — module scope so a panel
+// Open table-input float panels, keyed by input id - module scope so a panel
 // survives the sidebar rebuilds that replace its wrapper (see the table wiring).
 const tablePops = new Map<string, import('../lib/float-panel.ts').FloatPanel>();
 
 // Past this row count a `table` input renders the VIRTUALIZED data-grid instead of a
-// full <table> of live cells — the plain-text-cell case the shared grid is built for
+// full <table> of live cells - the plain-text-cell case the shared grid is built for
 // (plan 89). Below it, the existing <table> is byte-identical (battlecards is 5×4, so
 // every hand-authored table stays on the old path). The threshold is generous: real
 // pasted data crosses it, hand-entered tables don't.
@@ -2087,18 +2087,18 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // extra text input read as the field itself (an empty box wearing the row's
       // label, because `.input-row:has(input…)` switches the row to the floating
       // label meant for text fields) while only narrowing a dropdown you had to open
-      // first. It sat above every 11-16 option select — blend mode, language,
-      // transition, motion — where there was nothing to filter.
+      // first. It sat above every 11-16 option select - blend mode, language,
+      // transition, motion - where there was nothing to filter.
       // brandFonts: append every font the user added to their brand as extra options
       // (de-duped against the manifest's own), so a font picker lists the whole brand
-      // type kit — mirrors the same flag on a `blocks` select sub-field.
+      // type kit - mirrors the same flag on a `blocks` select sub-field.
       let selOpts = (input.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value), badge: (o as { badge?: string }).badge ? String((o as { badge?: string }).badge) : '' }));
       if (input.brandFonts) {
         const seen = new Set(selOpts.map(o => o.value));
         for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam, badge: '' }); seen.add(fam); }
       }
       // Control-plane `choice`: narrow the options to the allowed set (a rendering
-      // overlay — the model is untouched; the server enforces the same set). Only
+      // overlay - the model is untouched; the server enforces the same set). Only
       // applied when at least one declared option survives, so a stale/empty allow
       // list never renders an unusable empty select.
       if (policy?.mode === 'choice' && policy.allow?.length) {
@@ -2111,10 +2111,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // is visible while choosing rather than hidden inside a closed dropdown. Roving
       // tabindex on the checked option; data-input-id rides the checked button so the
       // panel's by-id focus restore lands back on it after the rebuild a change triggers.
-      // A radiogroup selects on arrow, so each move re-renders — the reveal of an
+      // A radiogroup selects on arrow, so each move re-renders - the reveal of an
       // effect's inputs (showIf) is exactly why that rebuild is wanted.
       // `display:'segmented'` uses the SAME radiogroup (and wiring) laid out as a row
-      // of side-by-side tabs, minus the badge pills — for a small mode switch
+      // of side-by-side tabs, minus the badge pills - for a small mode switch
       // (Hue/Saturation/Luminance). The badge pill is already per-option-conditional,
       // so a badge-less segmented select renders as plain labelled tabs.
       const segmented = input.display === 'segmented';
@@ -2137,7 +2137,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
     }
     case 'checkbox':
       // Jelly effects: plain boolean rows render the soft-body switch. Pill-display
-      // booleans keep the native checkbox — their chip look is CSS reshaping the
+      // booleans keep the native checkbox - their chip look is CSS reshaping the
       // checkbox row, not a switch. Block-field checkboxes (blocks editor) are
       // separate markup below and stay native too.
       return jellyActive() && input.display !== 'pill'
@@ -2154,13 +2154,13 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const currentLabel = asRow(v?.meta as InputValue | undefined).name ?? v?.id ?? 'Choose asset…';
       const hasValue = Boolean(input.value);
       // A selected asset carries a resolved blob: URL (see runtime resolveAssetRefs)
-      // — show it as a small preview so the picked image is visible at a glance.
+      // - show it as a small preview so the picked image is visible at a glance.
       // A lottie ref's URL is the animation JSON (unrenderable in <img>), so it
       // gets a play-glyph stub instead.
       const thumbUrl = v?.url;
       const thumb = v?.type === 'lottie'
         ? `<span class="asset-picker-thumb-inline asset-picker-thumb-lottie" aria-hidden="true">&#9654;</span>`
-        // An audio ref's URL is an .mp3/.opus/.xm — an <img> at it can only ever
+        // An audio ref's URL is an .mp3/.opus/.xm - an <img> at it can only ever
         // render the browser's broken-image icon. Same trap the picker and catalog
         // grids had; this is the THIRD renderer, so the audio branch has to be added
         // wherever a thumbnail is chosen by type, not just where it was first noticed.
@@ -2174,14 +2174,14 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           : thumbUrl
             ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
             : '';
-      // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl —
+      // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl - 
       // the canonical, re-renderable embed URL (see compose.renderUrl). Surface that
       // provenance and an Edit affordance that re-opens the source tool's own inputs
       // (openEmbedEditor) so the editor can tweak it and re-apply. Plain library /
       // uploaded assets have no toolUrl, so they show no badge.
       const metaRow = asRow(v?.meta as InputValue | undefined);
       const fromTool = metaRow.toolUrl ? (metaRow.name ?? 'a Lolly tool') : null;
-      // A BAKED ref (meta.baked — engine bakeAssetRef) is a frozen copy of a tool
+      // A BAKED ref (meta.baked - engine bakeAssetRef) is a frozen copy of a tool
       // render: no meta.toolUrl, so the live ✦ path above ignores it by design.
       // It gets its own ❄ provenance row instead; Edit (re-bakes on apply) and
       // Re-bake appear only when the source URL (meta.bakedFrom) survived baking.
@@ -2190,8 +2190,8 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // Opt-in per-slot affordances (NOT automatic): fit the canvas to a placed
       // image/video's pixel size, match the export length to an audio/video clip, and
       // PREVIEW the sound in-tool. Ingest already stamps ref.meta.{width,height,
-      // durationMs} (picker.ts), so no re-probe. They reuse existing channels — the
-      // export size/length inputs and a detached <audio> — see the handlers below.
+      // durationMs} (picker.ts), so no re-probe. They reuse existing channels - the
+      // export size/length inputs and a detached <audio> - see the handlers below.
       const sW = Number(metaRow.width), sH = Number(metaRow.height), sDur = Number(metaRow.durationMs);
       const at = input.assetType;
       const isImgSlot = at === 'raster' || at === 'image' || at === 'vector';
@@ -2207,7 +2207,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const slotActions = slotBtns.length ? `<div class="slot-actions">${slotBtns.join('')}</div>` : '';
       // A Lolly-backed slot reads differently at a glance (is-lolly: brand-tinted
       // border + a ✦ spark on the trigger) so "this image is live, not a file"
-      // is visible before clicking — the click then offers edit-or-replace.
+      // is visible before clicking - the click then offers edit-or-replace.
       return `<div class="asset-picker-row${fromTool ? ' is-lolly' : ''}">
         ${thumb}
         <button type="button" class="asset-picker-trigger" data-input-id="${id}">${fromTool ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> ' : ''}${escape(currentLabel)}</button>
@@ -2272,7 +2272,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           `<td><textarea class="table-cell" rows="1" ${cellAttrs(ri, ci)} aria-label="${escape(t.columns[ci] || `Column ${ci + 1}`)}, row ${ri + 1}">${escape(cell)}</textarea></td>`).join('')
         }<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`).join('');
       // Past the threshold, a big table renders the virtualized data-grid (mounted in
-      // the wiring pass below) instead of a full <table> of live cells — same
+      // the wiring pass below) instead of a full <table> of live cells - same
       // TableValue contract, so the toolbar/paste/copy/pop all keep working. Small
       // tables keep the exact existing <table> (per-cell textareas, del-row/col ×).
       const grid = !t.columns.length
@@ -2284,7 +2284,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // The pop-out sits at the grid's top-right corner, not in the toolbar
       // below: it acts on the TABLE, and in a sidebar that toolbar can be a long
       // scroll away from the header you were reading when you decided the grid
-      // was too cramped. Its own bar rather than an overlay on the corner cell —
+      // was too cramped. Its own bar rather than an overlay on the corner cell - 
       // the last column's remove-× already lives there.
       return `<div class="table-input" data-table-id="${id}">
         <div class="table-headbar">
@@ -2313,7 +2313,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const typeLabel = (v: InputValue | null | undefined): unknown => typeOpts.find(o => o.value === v)?.label ?? (v ?? '');
 
       // Stack a label above a control inside a typed block; plain controls
-      // (untyped blocks) render bare to keep the legacy compact row layout —
+      // (untyped blocks) render bare to keep the legacy compact row layout - 
       // unless the input opts in with `labelledFields` (e.g. logo-wall, whose
       // optional per-logo controls aren't self-evident).
       const labelEach = !!(addMenu || input.labelledFields);
@@ -2321,7 +2321,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         if (!labelEach) return inner;
         const name = escape(f.label ?? f.id);
         // A field with an `icon` renders it INLINE to the left of the control instead of a
-        // stacked text label — so a dense grid of sliders (e.g. flythrough poses) stays
+        // stacked text label - so a dense grid of sliders (e.g. flythrough poses) stays
         // identifiable. When the field has help, the ICON itself is the tooltip trigger (no
         // separate "i" button): hover / tap / focus reveals the wrapping pop, which leads
         // with the field name (an icon alone can be ambiguous) then the help.
@@ -2340,7 +2340,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       };
 
       // A sub-field's `showIf` is matched first against sibling fields of the same
-      // block, then against top-level input values (modelValues) — so a per-block
+      // block, then against top-level input values (modelValues) - so a per-block
       // control can depend on both another block field and a global toggle.
       const blockShowIf = (f: BlockFieldSpec, item: BlockRow): boolean => {
         if (!f.showIf) return true;
@@ -2356,7 +2356,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
 
         // A reference picker: choices come from the rows of another blocks input
         // (e.g. "parent" lists the other cards). The value stored is each target
-        // row's derived id, which the tool's hook resolves — so this replaces the
+        // row's derived id, which the tool's hook resolves - so this replaces the
         // old "type the matching ID by hand" text boxes without any data change.
         if (f.optionsFrom) {
           const cur = String(item[f.id] ?? f.default ?? '');
@@ -2368,7 +2368,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             ownerNestingCfg: input.nesting ? nestingConfig(input) : null,
           });
           if (freeText) {
-            // Combobox — pick an existing target or type a new id (kanban columns).
+            // Combobox - pick an existing target or type a new id (kanban columns).
             const listId = `dl-${id}-${idx}-${escape(f.id)}`;
             const dlOpts = options.map(o => `<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('');
             return labelled(f, `<input class="block-field block-field--ref" list="${listId}" data-field-id="${fieldId}"
@@ -2376,7 +2376,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
               aria-label="${escape(f.label ?? f.id)}"><datalist id="${listId}">${dlOpts}</datalist>`);
           }
           // Strict select. A stored value matching no current row is surfaced as a
-          // selected "(unknown)" option rather than silently dropped — so a stale or
+          // selected "(unknown)" option rather than silently dropped - so a stale or
           // mistyped reference is visible instead of just "the link didn't work".
           const known = options.some(o => o.value === cur);
           const empty = `<option value=""${cur === '' ? ' selected' : ''}>${escape(emptyLabel ?? '— none —')}</option>`;
@@ -2390,10 +2390,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         if (f.type === 'boolean') {
           const on = !!item[f.id];
           const ht = f.help ? helpTip(f.help) : null;
-          // Checkbox + inline label (always labelled — a bare checkbox is opaque),
+          // Checkbox + inline label (always labelled - a bare checkbox is opaque),
           // spanning the full row so it reads as its own line. Under the jelly
           // flag it becomes a soft-body switch (its `label` is aria-only, so the
-          // visible .block-control-label span stays the label — no double). Only
+          // visible .block-control-label span stays the label - no double). Only
           // booleans jellify inside blocks: block text/number/select stay native
           // because the block editor rebuilds on every keystroke and relies on
           // native caret restoration, which a shadow-DOM jelly field can't offer.
@@ -2409,7 +2409,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
 
         if (f.type === 'color') {
           // The SAME picker as top-level colour inputs (OKLCH sliders, hex, alpha,
-          // lazy token-aware swatches) — `block` spans the popover across the
+          // lazy token-aware swatches) - `block` spans the popover across the
           // sidebar and wireColorField's onChange routes the composite id back
           // into this block's row (see the ':' route in the wiring below).
           return labelled(f, colorFieldHtml(fieldId, String(item[f.id] ?? '').trim(), { block: true }));
@@ -2451,12 +2451,12 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // top-level asset-picker case): a ✦ Edit button keyed on the same field id
           // the picker/clear handlers use re-opens the source tool (openEmbedEditor).
           const fromTool = asRow(ref.meta).toolUrl ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
-          // A BAKED block image (meta.baked, no toolUrl — mirrors the top-level ❄
+          // A BAKED block image (meta.baked, no toolUrl - mirrors the top-level ❄
           // row): ❄ Edit re-opens the source tool (re-baking on apply) and ↻
           // Re-bake re-renders + freezes in place. Only when meta.bakedFrom survived.
           const bakedName = asRow(ref.meta).baked === true ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
           const canRebake = bakedName !== null && typeof asRow(ref.meta).bakedFrom === 'string';
-          // A lottie ref's URL is JSON — show a play-glyph + name, not a dead <img>.
+          // A lottie ref's URL is JSON - show a play-glyph + name, not a dead <img>.
           const trigger = !has ? `<span>&#43; ${escape(f.label ?? 'Image')}</span>`
             : ref.type === 'lottie' ? `<span class="block-asset-lottie"><span aria-hidden="true">&#9654;</span> ${escape(asRow(ref.meta).name ?? ref.id)}</span>`
             : `<img src="${escape(ref.url)}" alt="">`;
@@ -2492,20 +2492,20 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         data-block-remove data-block-input="${id}" data-block-index="${idx}"
         aria-label="Remove ${escape(label || 'block')}" title="Remove">&#x2715;</button>`;
 
-      // Six-dot grip — signals the header is a drag handle for reordering.
+      // Six-dot grip - signals the header is a drag handle for reordering.
       const grip = `<svg class="block-grip" viewBox="0 0 10 16" width="10" height="16" aria-hidden="true">
         <circle cx="2.5" cy="3" r="1.2"/><circle cx="7.5" cy="3" r="1.2"/>
         <circle cx="2.5" cy="8" r="1.2"/><circle cx="7.5" cy="8" r="1.2"/>
         <circle cx="2.5" cy="13" r="1.2"/><circle cx="7.5" cy="13" r="1.2"/></svg>`;
 
-      // Icon-only collapse toggle in the header — folds the block to a pill. The
+      // Icon-only collapse toggle in the header - folds the block to a pill. The
       // chevron rotates to indicate state (CSS). State carries no model value, so
       // it's a pure DOM toggle here and re-applied after re-render by renderInputs.
       const collapseBtn = `<button type="button" class="block-collapse" data-block-collapse draggable="false" aria-label="Collapse block" title="Collapse">
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>`;
 
-      // Opt-in per-row copy / paste / clear (schema `rowActions`) — sits next to collapse +
+      // Opt-in per-row copy / paste / clear (schema `rowActions`) - sits next to collapse +
       // remove. Copy buffers this row's values; Paste writes the buffer onto another row (so
       // two rows can be made identical); Clear resets the row to its field defaults.
       const COPY_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
@@ -2517,7 +2517,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         + `<button type="button" class="block-act" data-block-clear data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Clear to defaults" title="Clear (reset to defaults)">${CLEAR_SVG}</button>`;
 
       // Collapsed-pill summary: the first non-empty text field, plus the first
-      // valid colour field as a dot — so a folded block stays identifiable.
+      // valid colour field as a dot - so a folded block stays identifiable.
       // Both respect the active type's showFor visibility.
       const visibleFor = (f: BlockFieldSpec, typeVal: InputValue | null | undefined, item: BlockRow): boolean =>
         !(Array.isArray(f.showFor) && !f.showFor.includes(typeVal as string)) && blockShowIf(f, item);
@@ -2526,7 +2526,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           if (addMenu && f.id === addMenu.field) continue;
           if (!visibleFor(f, typeVal, item)) continue;
           // A field with no declared type renders as a text input, so treat it as
-          // text here too — otherwise compact name/value blocks (whose fields omit
+          // text here too - otherwise compact name/value blocks (whose fields omit
           // `type`) would collapse to a blank pill.
           const ty = f.type || 'text';
           if (ty === 'text' || ty === 'longtext') {
@@ -2555,7 +2555,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // current model (e.g. diagramType ∈ org|mindmap), render the flat array as an
       // indented outline in pre-order, and let the header drag drop above / below /
       // inside another card (see the drag handlers in renderInputs). The DATA stays
-      // a flat reference-by-id array — only the presentation is tree-shaped.
+      // a flat reference-by-id array - only the presentation is tree-shaped.
       const nesting = nestingActive(input, modelValues);
       const nestCfg = nesting ? nestingConfig(input) : null;
 
@@ -2615,9 +2615,9 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         adder = `<button type="button" class="block-add" data-block-add="${id}">+ Add</button>`;
       }
 
-      // Quick-start group: "Paste" + "Upload" — the fast ways to fill the whole list, so
+      // Quick-start group: "Paste" + "Upload" - the fast ways to fill the whole list, so
       // they lead as the first, most prominent offer (before hand-adding blocks). Each
-      // DETECTS what it's given — Markdown (mdPaste) or CSV/JSON (importData) — and routes
+      // DETECTS what it's given - Markdown (mdPaste) or CSV/JSON (importData) - and routes
       // accordingly (see the paste/upload handlers). Shown when the input enables either.
       // The "Collapse all" pill is a quiet tidy-up affordance and stays right.
       const canMd = input.mdPaste === true;
@@ -2672,7 +2672,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
 }
 
 // Re-render a baked ref's source URL (meta.bakedFrom) and freeze the result
-// again — the one-click "Re-bake" path. Null on ANY failure (render or bake) so
+// again - the one-click "Re-bake" path. Null on ANY failure (render or bake) so
 // the caller keeps the existing baked bytes and shows the inline error instead
 // of half-updating the slot.
 async function rebakeFromUrl(host: WebToolHost, bakedFrom: string): Promise<AssetRef | null> {
@@ -2684,7 +2684,7 @@ async function rebakeFromUrl(host: WebToolHost, bakedFrom: string): Promise<Asse
   }
 }
 
-// Inline re-bake failure notice — the same error style the embed editor's
+// Inline re-bake failure notice - the same error style the embed editor's
 // preview uses. Injected after the row that owns the button (top-level ❄ row or
 // block-asset), replaced on retry, cleared by the next successful rebuild.
 function showRebakeError(btn: HTMLElement): void {
@@ -2698,7 +2698,7 @@ function showRebakeError(btn: HTMLElement): void {
  * Edit a Lolly-sourced image in place → Promise<AssetRef | null>.
  *
  * An asset minted from a pasted Lolly link records its origin as a canonical,
- * re-renderable embed URL (meta.toolUrl — see compose.renderUrl). This overlay
+ * re-renderable embed URL (meta.toolUrl - see compose.renderUrl). This overlay
  * re-opens the SOURCE tool's own inputs, pre-filled from that URL, so an editor can
  * make minor changes (and adjust format/size), preview live, and re-apply the new
  * render to the same slot. Resolves to a fresh tool-sourced AssetRef (a new
@@ -2706,7 +2706,7 @@ function showRebakeError(btn: HTMLElement): void {
  *
  * Reuse, not reinvention: the source tool's controls are driven by a throwaway
  * runtime via the SAME renderInputs/syncInputs the main sidebar uses, and every
- * preview + the final commit go through host.compose.renderUrl(buildEmbedUrl(…)) —
+ * preview + the final commit go through host.compose.renderUrl(buildEmbedUrl(…)) - 
  * the SAME minting the paste flow uses. So the re-applied asset round-trips through
  * URL mode + saved sessions exactly like the original; provenance is just the URL
  * we already persist, nothing new is stored.
@@ -2766,7 +2766,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
           </div>
         </div>
       </div>`;
-    // Return focus to whatever opened the editor (the Edit button) when it closes —
+    // Return focus to whatever opened the editor (the Edit button) when it closes - 
     // matches the picker / export-panel convention so keyboard + AT users keep their
     // place rather than being dropped on <body> behind the (now-removed) scrim.
     const opener = document.activeElement;
@@ -2789,7 +2789,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
 
     // Re-serialise the child's inputs to a canonical embed URL and re-render the
     // preview. width/height/unit/dpi ride in opts (not the query). We use the engine's
-    // LOSSLESS serializeUrlState — NOT buildShareParams, which is the share-LINK
+    // LOSSLESS serializeUrlState - NOT buildShareParams, which is the share-LINK
     // serialiser and silently drops scalars >150 chars, user/ assets and big block
     // arrays. The original paste keeps the query verbatim, so the edit flow must too,
     // or a long input (e.g. a QR `url`) would revert to default on re-apply and corrupt
@@ -2836,8 +2836,8 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       renderSeq++; // invalidate any in-flight preview render so it can't write to the detached overlay
       document.removeEventListener('keydown', onKey);
       NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
-      // Everything renderInputs parked outside the panel's subtree — the document-
-      // level capture dismissers + the child flatpickrs' body-level calendars —
+      // Everything renderInputs parked outside the panel's subtree - the document-
+      // level capture dismissers + the child flatpickrs' body-level calendars - 
       // in one aggregate call (mirrors mountTool's _cleanup).
       inputsEl._inputsDispose?.();
       overlay.remove();
@@ -2846,7 +2846,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
     document.addEventListener('keydown', onKey);
-    // A route change under the open editor (browser Back, an in-app link) cancels it —
+    // A route change under the open editor (browser Back, an in-app link) cancels it - 
     // the body-mounted overlay must never outlive the view that spawned it, and the
     // trap's inert background must be released (NAV_EVENTS contract, utils.ts).
     const onNav = (): void => close(null);
@@ -2860,7 +2860,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       if (!rebake) { close(pending); return; }
       // A baked slot keeps its baked-ness: freeze the fresh render before
       // committing. A render the engine refuses to bake (grown past the size
-      // ceiling) keeps the dialog open with the failed-preview error style —
+      // ceiling) keeps the dialog open with the failed-preview error style - 
       // shrink it and re-apply, or cancel to keep the current bytes.
       try { close(bakeAssetRef(pending)); }
       catch {
@@ -2898,7 +2898,7 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
 
   nums.forEach(el => el.addEventListener('input', commit));
 
-  // The whole field is the scrub surface, not just the symbol — drag anywhere on
+  // The whole field is the scrub surface, not just the symbol - drag anywhere on
   // a value to change it (Figma-style); the symbol is only a visual cue. A plain
   // click (no movement past the threshold) falls through to focus the <input> for
   // typing. Pointer Lock kicks in once dragging starts so the cursor wraps at
@@ -2926,7 +2926,7 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
 
       function onMove(ev: PointerEvent): void {
         if (!dragging) {
-          // Below the threshold this is still a potential click — leave it alone
+          // Below the threshold this is still a potential click - leave it alone
           // so the field stays typeable.
           if (Math.abs(ev.clientX - startX) < 4) return;
           dragging = true;
@@ -2960,7 +2960,7 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
       }
 
       function onLockChange(): void {
-        // Escape key or other external release — stop dragging cleanly.
+        // Escape key or other external release - stop dragging cleanly.
         if (document.pointerLockElement !== fieldEl) onUp();
       }
 
@@ -2990,12 +2990,12 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
     onCommit(v) {
       // Keep the readout fresh here too, not just in onInput: a keyboard step
       // commits WITHOUT an onInput, and the panel rebuild that used to refresh the
-      // label is now skipped (domReflectsValue reads aria-valuenow) — so update it.
+      // label is now skipped (domReflectsValue reads aria-valuenow) - so update it.
       if (valueOut) valueOut.textContent = String(v);
       onDirty?.(id);
       runtime.setInput(id, v);
     },
-    // The panel must not rebuild under a drag — it would replace the element the
+    // The panel must not rebuild under a drag - it would replace the element the
     // pointer is captured on.
     onDragStart() { _sliderDragging = true; },
     onDragEnd() { _sliderDragging = false; },

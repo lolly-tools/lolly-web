@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — packaging of rendered blobs for delivery.
+ * Pro / Batch mode - packaging of rendered blobs for delivery.
  *
  * Primary path: bundle everything into a single .zip (fflate, all in-browser,
  * no network). Fallback path: if zipping fails (or the caller chooses), trigger
  * the downloads one at a time with a delay so the browser reliably accepts a
- * burst of saves — some browsers drop rapid-fire programmatic downloads.
+ * burst of saves - some browsers drop rapid-fire programmatic downloads.
  */
 import { deflateSync, strToU8, type Zippable } from 'fflate';
 import { buildEncryptedZip, crc32, type ZipTier, type ZipEntryInput } from '@lolly/engine';
@@ -44,7 +44,7 @@ export interface ZipMeta {
   /**
    * Rows that produced no file: skipped before the run, failed during it, or never
    * attempted because the run was cancelled. Recorded because a zip that lists only
-   * its successes is not an honest record of the job — the overlay's ", 3 failed"
+   * its successes is not an honest record of the job - the overlay's ", 3 failed"
    * is UI chrome that evaporates the second the zip is mailed on, and a recipient
    * cannot otherwise tell 480-of-480 from 480-of-500.
    */
@@ -57,7 +57,7 @@ export interface ZipMeta {
   /**
    * Findings about the RUN, not about a file: the platform's own refusals ("Lolly
    * cannot predict the output file size") and the brand palette. They lead the
-   * `[ Notes ]` block, once, instead of being repeated under every filename — which
+   * `[ Notes ]` block, once, instead of being repeated under every filename - which
    * is what made a clean 500-row batch ship a thousand-line note block.
    */
   runNotes?: readonly string[];
@@ -116,7 +116,7 @@ const UNMADE_STATE_LABEL: Record<UnmadeRow['state'], string> = {
 /**
  * The rows that produced no file, one line each, in the file's existing voice and
  * reusing `fileLines`' own `   |  ` / `  ·  ` separators. The row number is a padded
- * FIELD, never baked into a sentence — a number that can be wrong inside a string is
+ * FIELD, never baked into a sentence - a number that can be wrong inside a string is
  * the defect this whole channel exists to remove.
  */
 function unmadeLines(unmade: readonly UnmadeRow[]): string[] {
@@ -126,7 +126,7 @@ function unmadeLines(unmade: readonly UnmadeRow[]): string[] {
   return unmade.flatMap(u => {
     const num = String(u.row ?? '?').padStart(rowW);
     const head = `⚠️ row ${num}  ${u.label.padEnd(labelW)}   |  ${UNMADE_STATE_LABEL[u.state].padEnd(stateW)}  ·  ${u.reason}`;
-    // A note on an unmade row rides underneath it, indented — one row is still one
+    // A note on an unmade row rides underneath it, indented - one row is still one
     // entry, and the count in the heading stays the count of rows.
     return [head, ...(u.notes ?? []).map(n => `${' '.repeat(3)}ℹ ${n}`)];
   });
@@ -149,11 +149,11 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
   const n = files.length;
   const pkg = (zipName || 'lolly-batch.zip').trim();
 
-  // Author line — name / email / phone from the profile, when present.
+  // Author line - name / email / phone from the profile, when present.
   const name = [author?.firstname, author?.lastname].filter(Boolean).join(' ');
   const authorLine = [name, author?.email, author?.phone].filter(Boolean).join(' | ');
 
-  // One scannable line per file: "icon name | FORMAT · render time". No link here —
+  // One scannable line per file: "icon name | FORMAT · render time". No link here - 
   // the reopen links live in their own list at the end (see below).
   const fileLines = files.map(f => {
     const secs = f.ms != null ? `${(f.ms / 1000).toFixed(2)}s to render` : '';
@@ -174,7 +174,7 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
     `[[ 📦 ${pkg} ]]`,
   ];
 
-  // A retry is a second package for one job — say so here, at the top, so the two
+  // A retry is a second package for one job - say so here, at the top, so the two
   // zips are readable as one job rather than as two unrelated runs.
   if (retryOf) {
     lines.push('', '[ This is a retry ]', '', `These are the rows that failed in ${retryOf} and were rendered again.`);
@@ -204,7 +204,7 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
   );
 
   // The rows that are part of this job and not in this zip. Count-first heading,
-  // mirroring the file block. The caveat is a sibling of the list, not UI chrome —
+  // mirroring the file block. The caveat is a sibling of the list, not UI chrome - 
   // the overlay's summary line is not in the zip.
   if (unmade.length) {
     lines.push(
@@ -267,9 +267,9 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
  */
 export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Blob> {
   // Whole-zip encryption: compress each member with fflate, then hand the bytes to the
-  // engine's encrypting framer (fflate can't encrypt). Every member is locked — incl.
+  // engine's encrypting framer (fflate can't encrypt). Every member is locked - incl.
   // the lolly.txt manifest + the reproduce CSV. PDF members are already STORE (they're
-  // incompressible; and when a batch password is set they're ALSO R6-locked inside —
+  // incompressible; and when a batch password is set they're ALSO R6-locked inside - 
   // defense in depth). Non-PDF members are protected only by this container layer.
   if (meta.zipLock && meta.password) {
     const encEntries: ZipEntryInput[] = [];
@@ -288,7 +288,7 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
     if (meta.csv) add('lolly-batch.csv', strToU8(meta.csv));
     // The machine copy of the same facts, inside the encryption envelope where a row
     // naming a session path belongs. `preflight.json` breaks the `lolly-` prefix the
-    // other two members share — deliberately: the name is fixed before consumers
+    // other two members share - deliberately: the name is fixed before consumers
     // parse it, and renaming it afterwards is exactly what cannot be done later.
     if (meta.preflight) add('preflight.json', strToU8(preflightJson(meta.preflight)));
     const zipped = await buildEncryptedZip(encEntries, { tier: meta.zipLock, password: meta.password });
@@ -302,7 +302,7 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
     entries[f.name] = [bytes, { level }];
   }
   entries['lolly.txt'] = [strToU8(creditText(files, meta)), { level: 6 }];
-  // The settings that produced this batch — re-importable via Sessions ▸ Upload CSV.
+  // The settings that produced this batch - re-importable via Sessions ▸ Upload CSV.
   if (meta.csv) entries['lolly-batch.csv'] = [strToU8(meta.csv), { level: 6 }];
   if (meta.preflight) entries['preflight.json'] = [strToU8(preflightJson(meta.preflight)), { level: 6 }];
   const zipped = await zipAsync(entries);

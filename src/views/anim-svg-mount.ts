@@ -3,32 +3,32 @@
  * Shell-side enhancer for `[data-anim-src]` markers: fetch an SVG, sanitise it,
  * and INLINE it as a live `<svg>` so its animation actually plays AND is
  * frame-addressable (seekable via dom-frame's scrubAnimations). This is the
- * animated-SVG analogue of lottie-mount.ts — a first-class media citizen so any
+ * animated-SVG analogue of lottie-mount.ts - a first-class media citizen so any
  * CSS/SMIL-animated SVG (catalog OR a user upload) behaves like a Lottie: it
  * plays in the preview, samples through `onFrame` (filter's live source), and
  * exports frame-accurately in the sequence compositor.
  *
  * Why inline (not `<img>`): an `<img src=…svg>` is an opaque, script-inert
  * document whose animation the browser will play but which `getAnimations()`
- * cannot see and no canvas can seek — so it freezes on rasterisation. Inlining
+ * cannot see and no canvas can seek - so it freezes on rasterisation. Inlining
  * makes it live and seekable; the cost is that inline SVG executes what it
  * carries, so every source goes through the SVG sanitiser first (scripts, `on*`
- * handlers, `javascript:` refs, `<foreignObject>` stripped — animation CSS/SMIL
+ * handlers, `javascript:` refs, `<foreignObject>` stripped - animation CSS/SMIL
  * preserved). Same treatment an upload gets at ingest; belt-and-braces here.
  *
  * Marker attributes:
- *   data-anim-src   required — URL of the SVG (blob:/https/relative)
+ *   data-anim-src   required - URL of the SVG (blob:/https/relative)
  *   data-anim-fit   'cover' → preserveAspectRatio 'xMidYMid slice' (default 'meet')
  *
  * No global animation loop to leak (unlike lottie-web's shared rAF), so there is
- * no player registry to reap — a CSS/SMIL SVG removed by the innerHTML rebuild is
+ * no player registry to reap - a CSS/SMIL SVG removed by the innerHTML rebuild is
  * simply gone. The only shared state is a per-URL cache of the sanitised markup so
  * a repaint re-inlines from memory instead of re-fetching + re-sanitising.
  */
 
 import { sanitizeSvgToString } from '../bridge/svg-sanitize.ts';
 
-/** Sanitised `<svg>` markup per URL — one fetch + sanitise per asset across paints. */
+/** Sanitised `<svg>` markup per URL - one fetch + sanitise per asset across paints. */
 const markupCache = new Map<string, Promise<string>>();
 
 /** Fetch + sanitise an SVG, cached by URL. Rejections are dropped from the cache so a
@@ -82,7 +82,7 @@ async function mountOne(el: Element, isCurrent: () => boolean): Promise<void> {
  * Post-paint enhancer: inline a live `<svg>` on every `[data-anim-src]` marker
  * under `rootEl` that is not already mounted. Resolves after all mounts settle
  * (immediately when there is nothing to mount). Per-marker failures are warned
- * and swallowed — one bad asset must not break the paint. Mirrors the
+ * and swallowed - one bad asset must not break the paint. Mirrors the
  * `mountLottiePlayers` contract so `tool.ts`'s paint pass drives both the same way.
  */
 export async function mountAnimSvgPlayers(

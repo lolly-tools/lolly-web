@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Pop an in-flow element out into a floating panel you can move, resize from any
- * edge or corner, and take fullscreen — then put it back exactly where it was.
+ * edge or corner, and take fullscreen - then put it back exactly where it was.
  *
  * The visualizer's panel (components/viz-overlay.ts) does something similar with
  * the native CSS `resize` corner, which is one corner and gives no events. This
@@ -15,7 +15,7 @@
  * the page under the reader's cursor and move everything they were looking at.
  * So popping out leaves a PLACEHOLDER pinned to the exact measured box the
  * element occupied, carrying the button that puts it back. Nothing reflows on
- * the way out and nothing reflows on the way back — the panel is the only thing
+ * the way out and nothing reflows on the way back - the panel is the only thing
  * that moved.
  *
  * That is also why the placeholder's size is captured in pixels rather than left
@@ -35,7 +35,7 @@ const KEEP_VISIBLE = 64;
 export interface FloatPanelOpts {
   /** Panel title, shown in the drag bar. */
   title: string;
-  /** Called after any move, resize or fullscreen change — repaint here. */
+  /** Called after any move, resize or fullscreen change - repaint here. */
   onResize?: () => void;
   /** Called when the panel closes and the element is back in place. */
   onClose?: () => void;
@@ -47,11 +47,11 @@ export interface FloatPanelOpts {
    * Worth passing, and the reason is a bug this cost: a view that queries its own
    * DOM through a scoped root (`view.querySelector`, which is the pattern in this
    * codebase) STOPS FINDING the popped-out element the moment it lands on the
-   * body — so its repaints, its labels and its controls all silently address
+   * body - so its repaints, its labels and its controls all silently address
    * nothing, while the panel sits there looking fine. Mounting inside the view
    * keeps one root. `position: fixed` still lifts it out of the flow wherever it
    * lives, PROVIDED no ancestor creates a containing block for fixed (a
-   * transform, filter, backdrop-filter, contain or container-type) — check that
+   * transform, filter, backdrop-filter, contain or container-type) - check that
    * before choosing a container, because the failure is a panel that scrolls with
    * the page instead of floating over it.
    */
@@ -65,7 +65,7 @@ export interface FloatPanel {
 }
 
 /**
- * Lift `el` into a floating panel. Returns null if it is already floating — the
+ * Lift `el` into a floating panel. Returns null if it is already floating - the
  * caller can treat that as "already open" rather than having to track state.
  */
 export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null {
@@ -74,7 +74,7 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
   const box = el.getBoundingClientRect();
 
   // The placeholder goes in FIRST, at the measured size, so the document's height
-  // never changes — insert-then-move, not move-then-insert. The other order drops
+  // never changes - insert-then-move, not move-then-insert. The other order drops
   // the page by the figure's height for one frame, and on a phone that is a
   // visible jump of most of a screen.
   const slot = doc.createElement('div');
@@ -107,11 +107,11 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
   //
   // Opening at the measured box was the obvious thing and it is wrong: you pop a
   // figure out because it is too small, so a panel that reproduces its size at the
-  // same place does nothing you can see. On a phone this is the whole feature —
+  // same place does nothing you can see. On a phone this is the whole feature - 
   // the target is the viewport less a margin, which is effectively fullscreen, and
   // that is the point rather than an accident of the clamp.
   //
-  // The element's own aspect is kept where it fits, so a chart drawn 8:5 does not
+  // The element's own aspect is preserved to fit, so a chart drawn 8:5 does not
   // arrive letterboxed inside a panel of some other shape.
   const vw = doc.documentElement.clientWidth;
   const vh = doc.documentElement.clientHeight;
@@ -143,7 +143,7 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
     for (const c of cleanups) c();
     if (doc.fullscreenElement === root) void doc.exitFullscreen?.().catch(() => { /* already gone */ });
     delete el.dataset.floating;
-    // Back before the placeholder, then remove it — again so the height is never
+    // Back before the placeholder, then remove it - again so the height is never
     // momentarily wrong.
     slot.before(el);
     slot.remove();

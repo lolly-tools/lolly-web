@@ -3,14 +3,13 @@
  * Lazy filmstrips + waveforms + stills + node rasters for timeline clip bars
  * (phase 2, §4 of plans/53-fable-timeline-phase-2.md).
  *
- * A timeline shows one bar per clip and each bar wants a picture painted into a
+ * A timeline shows one bar per clip, and each bar wants a picture painted into a
  * <canvas>: a strip of frames (video), a peak envelope (audio), or ONE tile-able
- * still (`stillFrames` — an image box, a Lottie's mounted <svg>, or a tool clip's
+ * still (`stillFrames` - an image box, a Lottie's mounted <svg>, or a tool clip's
  * compose render, which all reach the DOM as something an <img> can hold). Doing
- * the video case naively — one
- * <video> per bar, seeks fired in parallel — melts a browser: every element
- * holds its own decoder, and Safari/iOS silently CANCEL a seek that is issued
- * while another is in flight, so the frames you get back are a lottery.
+ * the video case naively (one <video> per bar, seeks fired in parallel) melts a
+ * browser: every element holds its own decoder, and Safari/iOS silently CANCEL a
+ * seek that is issued while another is in flight, so the frames you get back are random.
  *
  * The contract this module enforces instead:
  *
@@ -20,7 +19,7 @@
  *     after an idle period (and by `releaseClipThumbs()`) so a parked editor
  *     holds no decoder.
  *   • ONE pooled decode context for peaks (OfflineAudioContext where available,
- *     plain AudioContext otherwise) — never one per call.
+ *     plain AudioContext otherwise) - never one per call.
  *   • Seeks go through a queue that never has two in flight. Each landed frame
  *     is confirmed with requestVideoFrameCallback where it exists (its metadata
  *     `mediaTime` is the authoritative presented-frame time, unlike
@@ -30,7 +29,7 @@
  *   • Every await point is abort-aware. Aborting settles the caller's promise
  *     promptly and, once the last caller of a shared run has aborted, tears the
  *     run down and frees anything it had produced.
- *   • ONE dom-to-image shot at a time for `nodeStill` — the photograph a bar with
+ *   • ONE dom-to-image shot at a time for `nodeStill` - the photograph a bar with
  *     NO media of its own (a frame, a card, a pen shape) paints. That library keeps
  *     module-global state and clears it on every teardown, so overlapping shots
  *     corrupt each other; exports bracket themselves with `suspendNodeRasters()`
@@ -45,32 +44,32 @@
  * callback.
  *
  * OWNERSHIP: returned ImageBitmaps and Float32Arrays are owned by the cache.
- * Callers must NOT `close()` or mutate them — the same instances are handed to
+ * Callers must NOT `close()` or mutate them - the same instances are handed to
  * the next caller for the same key. `clearClipThumbCache()` / `releaseClipThumbs()`
  * are the only things that close them.
  *
- * AUDIO SIZE CEILING (phase-1 lesson): `decodeAudioData` expands to raw f32 PCM —
- * ~97× for opus (a 30 MB opus ≈ 2.9 GB of PCM), ~11× for mp3. There is no
+ * AUDIO SIZE CEILING (phase-1 lesson): `decodeAudioData` expands to raw f32 PCM,
+ * about 97x for opus (a 30 MB opus file becomes about 2.9 GB of PCM), about 11x for mp3. There is no
  * streaming decode in the platform API, so the only defence is refusing to start.
  * Anything whose Content-Length exceeds `MAX_AUDIO_DECODE_BYTES` is refused before
- * the body is read, and a response that declares no length is read through a bounded
- * reader that abandons it at the same ceiling — the fetch is never allowed to buffer
+ * the body is read. A response that declares no length is read through a bounded
+ * reader that abandons it at the same ceiling: the fetch is never allowed to buffer
  * an unlabelled 500 MB asset just to refuse it afterwards. 6 MiB covers a
- * ~6-minute 128 kbps mp3 with a worst case around 0.5 GB of transient PCM.
+ * roughly 6-minute 128 kbps mp3, with a worst case around 0.5 GB of transient PCM.
  *
- * SCHEDULING: this module never schedules itself. Callers own *when* — the panel
+ * SCHEDULING: this module never schedules itself. Callers own *when* - the panel
  * is expected to call `onIdle()` (exported here) to defer capture until the main
  * thread is free, and to abort in-flight work the moment a drag/zoom starts.
  *
  * SCRUB PROXIES (phase 4 Track A): both entry points read through
  * `peekScrubUrl()` (lib/clip-proxy.ts), so an uploaded clip that has a
- * keyframe-dense 720p proxy is decoded from the proxy instead of the original —
- * a filmstrip is 24 random seeks, which is precisely the workload a long GOP
+ * keyframe-dense 720p proxy is decoded from the proxy instead of the original.
+ * A filmstrip needs 24 random seeks, which is exactly the workload a long GOP
  * punishes. The lookup is SYNCHRONOUS and falls back to the original URL, so a
- * missing/unbuilt proxy costs one map miss; `primeScrubUrl()` is kicked off (not
+ * missing/unbuilt proxy costs one map miss. `primeScrubUrl()` is kicked off (not
  * awaited) on the miss so the next call can use it. The cache key follows
  * whichever URL was chosen, so proxy and original results never collide.
- * This is a PREVIEW-ONLY substitution — nothing here is on an export path.
+ * This is a PREVIEW-ONLY substitution: nothing here is on an export path.
  */
 
 import { peekScrubUrl, primeScrubUrl } from './clip-proxy.ts';
@@ -79,17 +78,17 @@ import { peekScrubUrl, primeScrubUrl } from './clip-proxy.ts';
 
 /**
  * Decoded results kept alive (filmstrips, stills, peak arrays and node rasters all
- * share ONE budget — a second cache would be a second thing to forget to free).
+ * share ONE budget - a second cache would be a second thing to forget to free).
  *
  * Raised from 32 when node rasters landed, deliberately: a 20-frame sequence with a
  * couple of video clips now wants ~22 entries of its own, and at 32 the frames
  * evicted each other on every pass, so the same dom-to-image shot was retaken over
- * and over — the exact cost the cache exists to remove.
+ * and over - the exact cost the cache exists to remove.
  */
 export const CACHE_LIMIT = 48;
 /** Compressed bytes above which `peaks()` refuses to decode. See the header. */
 export const MAX_AUDIO_DECODE_BYTES = 6 * 1024 * 1024;
-/** Frames per filmstrip is clamped to this — a bar is a few hundred px wide. */
+/** Frames per filmstrip is clamped to this - a bar is a few hundred px wide. */
 export const MAX_FRAMES = 48;
 /** Per-seek confirmation budget. Longer than a healthy seek, shorter than a stall. */
 export const SEEK_TIMEOUT_MS = 700;
@@ -105,7 +104,7 @@ export const MAX_STILL_W = 1024;
 export const STILL_TIMEOUT_MS = 4000;
 /**
  * Serialised-SVG ceiling. A Lottie's live <svg> is rasterised by round-tripping its
- * markup through a data: URL, and a complex animation's DOM can be megabytes — past
+ * markup through a data: URL, and a complex animation's DOM can be megabytes - past
  * this we decline rather than build the string, because the string itself is the cost.
  */
 export const MAX_SVG_MARKUP = 512 * 1024;
@@ -123,7 +122,7 @@ export const MAX_NODE_H = 120;
 
 const EMPTY_PEAKS = new Float32Array(0);
 
-// ── pure helpers (DOM-free — these are what the unit tests can reach) ────────
+// ── pure helpers (DOM-free - these are what the unit tests can reach) ────────
 
 const clampInt = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, Math.round(Number.isFinite(v) ? v : lo)));
@@ -157,7 +156,7 @@ export function filmstripKey(url: string, opts: FilmstripOpts): string {
  *
  * `h` is the bar's DEVICE-pixel height, not its CSS height: the bar canvas is
  * scaled by devicePixelRatio, so a 2× display wants a 2× bitmap and must not be
- * handed the 1× one that a previous display drew. Width is deliberately absent —
+ * handed the 1× one that a previous display drew. Width is deliberately absent - 
  * a still is captured at its own aspect ratio and TILED across the bar, so the
  * same bitmap serves a 40px bar and a 4000px one, and re-keying on width would
  * re-decode the same picture on every zoom step.
@@ -167,7 +166,7 @@ export function stillKey(url: string, h: number): string {
 }
 
 /**
- * FNV-1a, 32 bit, hex. Not a checksum and not security — an appearance signature is a
+ * FNV-1a, 32 bit, hex. Not a checksum and not security - an appearance signature is a
  * few hundred characters of `key=value` pairs, hashed once per bar per pass, so what
  * is wanted is "cheap and well spread". `Math.imul` keeps the multiply exact in 32
  * bits (a plain `*` loses the low word to float rounding well before the loop ends).
@@ -185,7 +184,7 @@ function hash32(s: string): string {
  * Cache key for a NODE raster (the photograph of a box that has no media of its own).
  *
  * `sig` is the box's APPEARANCE signature, which the CALLER derives from the model row
- * (see `appearanceSig` in views/timeline-panel.ts) — deliberately not derived from the
+ * (see `appearanceSig` in views/timeline-panel.ts) - deliberately not derived from the
  * DOM here: hashing `outerHTML` would cost an O(subtree) serialise per bar per pass,
  * which is precisely the work this cache exists to avoid, and it would also change on
  * every drag (the bar's inline left/width live on a different element, but the box's
@@ -207,7 +206,7 @@ export function peaksKey(url: string): string {
 }
 
 /** How finely a track is sampled ONCE. A waveform bar is a few hundred pixels, so
- *  4096 buckets (~24 ms on a 97 s loop) is well past what any bar can show — which
+ *  4096 buckets (~24 ms on a 97 s loop) is well past what any bar can show - which
  *  is what lets an arbitrary trim window be re-derived from it for free. */
 export const MASTER_BUCKETS = 4096;
 
@@ -217,7 +216,7 @@ export const MASTER_BUCKETS = 4096;
  *
  * This is the fix for a real bug: the waveform used to be computed over the WHOLE
  * file and then stretched across the bar, so trimming a clip squeezed the same
- * picture instead of showing the part that actually plays — and two halves of a
+ * picture instead of showing the part that actually plays - and two halves of a
  * split clip drew identical waveforms.
  *
  * Pure and total: a nonsensical window, a zero-length track or an empty master all
@@ -287,14 +286,14 @@ export function frameTimes(
 }
 
 /**
- * Peak envelope for decoded PCM — the audiogram tool's computation, deliberately
+ * Peak envelope for decoded PCM - the audiogram tool's computation, deliberately
  * unchanged (community/audiogram/template.html): bucket the samples, take the
  * max |sample| of a stride-32 sparse scan per bucket, normalise so the loudest
  * bucket is 1.0 with a 0.04 visual floor so quiet passages still draw a sliver.
  *
  * Channels are mixed to mono as (L+R)/2 using at most the first two channels.
  * Digital silence returns all zeros (the caller draws its plain fill rather than
- * a synthetic placeholder — that is the one deliberate difference from the tool,
+ * a synthetic placeholder - that is the one deliberate difference from the tool,
  * which fabricates `synthPeaks` because it must always show something).
  */
 export function bucketPeaks(channels: Float32Array[], buckets: number): Float32Array {
@@ -343,7 +342,7 @@ export interface Lru<T> {
 
 /**
  * Insertion-ordered LRU over a Map. `dispose` runs for every value that leaves
- * the cache (eviction, overwrite, or `clear()`) — that is where ImageBitmaps get
+ * the cache (eviction, overwrite, or `clear()`) - that is where ImageBitmaps get
  * closed, so GPU memory is bounded by CACHE_LIMIT rather than by session length.
  */
 export function createLru<T>(limit: number, dispose?: (value: T) => void): Lru<T> {
@@ -426,16 +425,16 @@ const inflight = new Map<string, Job<unknown>>();
 function share<T>(key: string, run: (signal: AbortSignal) => Promise<T>, signal: AbortSignal | undefined, empty: T): Promise<T> {
   let job = inflight.get(key) as Job<T> | undefined;
   // A job whose last subscriber just left is already aborted but may not have
-  // reached its `finally` yet — never join a corpse, start a fresh run.
+  // reached its `finally` yet. Never join a dead job; start a fresh run instead.
   if (job?.ctrl.signal.aborted) job = undefined;
   if (!job) {
     const ctrl = new AbortController();
     const created: Job<T> = { refs: 0, ctrl, promise: Promise.resolve(empty) };
-    // Deferred by a MICROTASK, deliberately — every capture's first act is a
+    // Deferred by a MICROTASK, deliberately. Every capture's first act is a
     // `signal.aborted` bail, and that check is worthless if the run body has already
     // executed synchronously inside this call. Subscribing below is what can abort it:
     // a caller whose signal is already aborted (the prescribed abort-on-drag/zoom
-    // pattern) detaches before the run starts, so the probe <video>, the <img> and the
+    // pattern) detaches before the run starts, so the probe <video>, the <img>, and the
     // media request they would have fired never happen at all.
     created.promise = Promise.resolve().then(() => run(ctrl.signal)).finally(() => {
       if ((inflight.get(key) as Job<T> | undefined) === created) inflight.delete(key);
@@ -476,7 +475,7 @@ function share<T>(key: string, run: (signal: AbortSignal) => Promise<T>, signal:
 
 // ── seek queue ──────────────────────────────────────────────────────────────
 
-/** The slice of HTMLVideoElement the queue needs — duck-typed so it is testable. */
+/** The slice of HTMLVideoElement the queue needs - duck-typed so it is testable. */
 export interface SeekableEl {
   currentTime: number;
 }
@@ -485,7 +484,7 @@ export interface SeekQueue {
   /**
    * Queue a seek. Resolves with the landed presentation time, or null if the
    * seek failed, timed out, was aborted, or was superseded.
-   * `supersede: true` is latest-wins scrub behaviour — any earlier *queued*
+   * `supersede: true` is latest-wins scrub behaviour - any earlier *queued*
    * supersede request is dropped (resolving null). A seek already in flight is
    * never interrupted; that is the whole point.
    */
@@ -650,7 +649,7 @@ export function releaseClipThumbs(): void {
 
 /**
  * Await confirmation that a seek actually presented a frame.
- * rVFC is authoritative (`meta.mediaTime` is the time of the frame on screen —
+ * rVFC is authoritative (`meta.mediaTime` is the time of the frame on screen - 
  * `video.currentTime` only reflects what we *asked* for), but not every engine
  * fires it for a paused seek, so `seeked` races alongside it and a timeout
  * guarantees the queue drains.
@@ -795,7 +794,7 @@ async function captureFilmstrip(url: string, opts: FilmstripOpts, signal: AbortS
     if (signal.aborted) return bail();
     // Re-arm the idle reaper on every frame, not just at the two ends of the run: a
     // 24-frame strip on a stalling asset can spend longer than PROBE_IDLE_MS inside
-    // this loop, and a teardown mid-run strips the probe's src underneath us — every
+    // this loop, and a teardown mid-run strips the probe's src underneath us - every
     // remaining seek then times out and the whole strip is discarded.
     touchProbeIdle();
     const landed = await queue.seek(t, { signal });
@@ -819,7 +818,7 @@ async function captureFilmstrip(url: string, opts: FilmstripOpts, signal: AbortS
 /**
  * Frames from a video (or any seekable media) asset, for a clip bar's filmstrip.
  *
- * Resolves an EMPTY array — never throws — when the asset can't be decoded, the
+ * Resolves an EMPTY array - never throws - when the asset can't be decoded, the
  * signal aborts, CORS taints the canvas, or there is no DOM (headless).
  * The returned bitmaps are owned by this module's cache: do not close them.
  */
@@ -843,7 +842,7 @@ export function filmstrip(assetUrl: string, opts: FilmstripOpts, signal?: AbortS
 
 // ── stills (image / lottie / tool-render bars) ──────────────────────────────
 //
-// Everything that is not video and not audio still has A PICTURE — an uploaded
+// Everything that is not video and not audio still has A PICTURE - an uploaded
 // image, a Lottie's live <svg>, or a tool clip whose compose render lands in the
 // DOM as an ordinary <img>. One bitmap is enough for all of them: the bar TILES
 // it, so a long bar reads as a strip rather than one stretched frame.
@@ -883,10 +882,10 @@ function liveSvg(el: StillSource): Element | null {
  * The subtree is cloned and given the explicit pixel size a standalone SVG document
  * needs (a Lottie's root carries `width:100%`, which is meaningless with no containing
  * block). Kept separate from the data: URL encoding because callers that want to INLINE
- * the vector — an SVG export embedding it as an element rather than an <img> — need the
+ * the vector - an SVG export embedding it as an element rather than an <img> - need the
  * markup itself, and must get it under exactly the same size/serialiser rules.
  *
- * Returns null — never throws — when there is no serialiser, no usable size, or the
+ * Returns null - never throws - when there is no serialiser, no usable size, or the
  * markup is past MAX_SVG_MARKUP.
  */
 export function svgMarkup(svg: Element): string | null {
@@ -896,7 +895,7 @@ export function svgMarkup(svg: Element): string | null {
     const clone = svg.cloneNode(true) as Element;
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     // A percentage width/height in `style` beats the width/height attributes and
-    // resolves to zero in a standalone document — drop it, keep everything else.
+    // resolves to zero in a standalone document - drop it, keep everything else.
     clone.removeAttribute('style');
     const vb = (clone.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
     const vw = vb.length === 4 && Number.isFinite(vb[2]) && (vb[2] as number) > 0 ? (vb[2] as number) : 0;
@@ -919,7 +918,7 @@ export function svgMarkup(svg: Element): string | null {
 /**
  * A live `<svg>` as something an `<img>` can load.
  *
- * Canvas cannot draw an SVG *element* — only an image — so the serialised document is
+ * Canvas cannot draw an SVG *element* - only an image - so the serialised document is
  * inlined as a data: URL. A data URL rather than a blob: URL because there is no revoke
  * to forget, and a data: SVG taints no canvas.
  */
@@ -958,7 +957,7 @@ function loadImage(src: string, signal: AbortSignal, cors: boolean): Promise<HTM
 async function captureStill(url: string, opts: StillOpts, signal: AbortSignal, live: StillSource): Promise<ImageBitmap[]> {
   if (!hasDom() || typeof createImageBitmap !== 'function') return [];
   // Same rule as captureFilmstrip: `share()` defers the run by a microtask, so a
-  // caller that aborted in the same tick must cost nothing at all — no <img>, no
+  // caller that aborted in the same tick must cost nothing at all - no <img>, no
   // request, no serialisation.
   if (signal.aborted) return [];
 
@@ -995,7 +994,7 @@ async function captureStill(url: string, opts: StillOpts, signal: AbortSignal, l
     return [];
   }
   if (signal.aborted) {
-    // Not cached, so nobody else owns it — this is the one place a caller closes.
+    // Not cached, so nobody else owns it - this is the one place a caller closes.
     try { (bmp as { close?: () => void }).close?.(); } catch { /* already gone */ }
     return [];
   }
@@ -1005,7 +1004,7 @@ async function captureStill(url: string, opts: StillOpts, signal: AbortSignal, l
 /**
  * The single tile-able bitmap for a non-video, non-audio clip bar.
  *
- * Resolves an array of 0 or 1 bitmaps — never throws — and an EMPTY array when the
+ * Resolves an array of 0 or 1 bitmaps - never throws - and an EMPTY array when the
  * picture is undecodable, cross-origin-tainted, aborted, or there is no DOM. Pass
  * `live` (the `<img>` already on the canvas, or a Lottie's mounted `<svg>`) to skip
  * the network entirely; `assetUrl` is always the cache identity regardless.
@@ -1034,7 +1033,7 @@ export function stillFrames(assetUrl: string, opts: StillOpts, signal?: AbortSig
 //
 // The gap this closes: `stillFrames` needs something an <img> can hold, and a text
 // card, a pen shape, a coloured frame or a composed group has nothing of the sort.
-// Those bars fell back to one flat fillRect of the box's own background — and a
+// Those bars fell back to one flat fillRect of the box's own background - and a
 // TRANSPARENT one (a plain text box, and every `kind:'path'` box, whose fill the tool
 // hook forces to transparent) painted literally nothing. A timeline of frames was
 // therefore a row of near-identical rectangles, or of blanks.
@@ -1046,30 +1045,30 @@ export function stillFrames(assetUrl: string, opts: StillOpts, signal?: AbortSig
 //     boxes that would actually show something (see canRasterBox in timeline-panel);
 //   • the caller also enforces a per-PASS budget, so twenty frames cannot queue
 //     twenty shots in one idle callback;
-//   • at most ONE shot is in flight process-wide (see `nodeLock`) — dom-to-image-more
+//   • at most ONE shot is in flight process-wide (see `nodeLock`) - dom-to-image-more
 //     keeps MODULE-GLOBAL mutable state (its options, its url cache, its sandbox
 //     iframe) and the teardown at the end of ANY call clears it, including out from
 //     under a call still running. The lock is held until the library call REALLY
 //     settles, not until the caller stops waiting for it (see below);
 //   • every shot is time-boxed by `NODE_RASTER_TIMEOUT_MS`. The library call itself is
 //     uncancellable, so the race is the containment: a late result is abandoned by the
-//     CALLER while the LOCK stays held — releasing it on the timeout would let the next
+//     CALLER while the LOCK stays held - releasing it on the timeout would let the next
 //     shot run concurrently with the one that timed out, which is exactly the overlap
 //     the lock exists to prevent;
 //   • a shot that produced nothing is REMEMBERED (`nodeFailed`), so a box that cannot
-//     be photographed — tainted image, pathological cost, a timeout — costs one attempt
+//     be photographed - tainted image, pathological cost, a timeout - costs one attempt
 //     rather than one attempt per pass forever, starving every bar behind it.
 //
 // And because those globals are shared with the EXPORT path, `suspendNodeRasters()`
 // brackets any export that rasterises: a thumbnail shot overlapping an export would
 // corrupt both pictures. Suspending only stops NEW shots, so an export must also
-// `await drainNodeRasters()` — a shot already inside the library cannot be cancelled,
+// `await drainNodeRasters()` - a shot already inside the library cannot be cancelled,
 // only waited out.
 //
 // The result is ONE bitmap, tiled by the bar exactly like a still. A node-mode box
-// cannot animate by construction — the moment it contains a <video>, an <img>, a
+// cannot animate by construction - the moment it contains a <video>, an <img>, a
 // Lottie marker or an audio marker the caller classifies it as media and takes one of
-// the branches above — so N distinct rasters would cost N times as much to produce N
+// the branches above - so N distinct rasters would cost N times as much to produce N
 // identical pictures.
 
 /**
@@ -1097,7 +1096,7 @@ const SHOT_CLASS = 'tl-shot';
 
 /**
  * The lease a shot stamps on every element whose `seq-off` it borrowed (see
- * `borrowVisibility`) — `bridge/sequence-dom.ts`'s `BORROW_ATTR`. Its applier reads the
+ * `borrowVisibility`) - `bridge/sequence-dom.ts`'s `BORROW_ATTR`. Its applier reads the
  * attribute to decide whether it may leave a mid-shot box hidden, and CLEARS it to take
  * a box the playhead has moved onto back off us.
  */
@@ -1110,7 +1109,7 @@ let borrowToken = 0;
  * Called after a shot has put the classes it borrowed back.
  *
  * The rasterer's restore only re-hides what still holds its lease (see
- * `borrowVisibility`), so a box the clock claimed mid-shot is left alone — but the shot
+ * `borrowVisibility`), so a box the clock claimed mid-shot is left alone - but the shot
  * spent up to NODE_RASTER_TIMEOUT_MS on a live stage, and every OTHER box's state has
  * moved on too. So the panel registers the clock's `reapply()` here and the
  * authoritative state is re-asserted wholesale, one tick later.
@@ -1143,7 +1142,7 @@ let nodeRasterer: NodeRasterer | null = null;
 /**
  * Test-only: swap the dom-to-image shot for a fake (mirrors the injected `waitFrame`
  * of `createSeekQueue`). Without this seam there is no way to exercise node mode in
- * node — jsdom has no rasteriser — and the whole branch would be untestable above the
+ * node - jsdom has no rasteriser - and the whole branch would be untestable above the
  * key level. Pass null to restore the real one.
  */
 export function _setNodeRasterer(f: NodeRasterer | null): void {
@@ -1179,11 +1178,11 @@ export function nodeRastersSuspended(): boolean {
  * `suspendNodeRasters()` is a gate, not a barrier: it stops the NEXT shot, and can do
  * nothing about the uncancellable library call already running. An export that starts
  * mid-pass would otherwise overwrite that call's module-global options and clear its
- * url cache + sandbox iframe out from under it — corrupting the EXPORT, which is the
+ * url cache + sandbox iframe out from under it - corrupting the EXPORT, which is the
  * expensive half. So every suspend site follows with `await drainNodeRasters()`.
  *
  * Bounded, and deliberately so: a wedged library call must delay an export by a beat,
- * never hold it hostage. Resolves — never rejects.
+ * never hold it hostage. Resolves - never rejects.
  */
 export function drainNodeRasters(timeoutMs: number = NODE_RASTER_TIMEOUT_MS + 500): Promise<void> {
   const settled = nodeChain.then(() => undefined, () => undefined);
@@ -1197,14 +1196,14 @@ export function drainNodeRasters(timeoutMs: number = NODE_RASTER_TIMEOUT_MS + 50
 /**
  * Keys whose shot produced no picture, so no pass ever spends its budget on them again.
  *
- * Without this a box that CANNOT be photographed — a cross-origin image with no CORS
+ * Without this a box that CANNOT be photographed - a cross-origin image with no CORS
  * headers taints the canvas, a subtree under the element ceiling but past the time
- * budget times out — is retried by every pass of every scheduling, forever, and because
+ * budget times out - is retried by every pass of every scheduling, forever, and because
  * the budget is spent in bar order the bars behind it are never reached at all. Bounded
  * FIFO: the set is a hint, and forgetting the oldest hint only costs one more attempt.
  *
  * Only DEFINITIVE non-results are recorded. An abort, a suspended export and a detached
- * box are all "ask again later" and leave no mark — see `NodeShot.retry`.
+ * box are all "ask again later" and leave no mark - see `NodeShot.retry`.
  */
 const MAX_NODE_FAILURES = 64;
 const nodeFailed = new Set<string>();
@@ -1228,8 +1227,8 @@ export function nodeRasterFailed(key: string): boolean {
  *
  * The budget is per PASS but the shots are serialised, so a continuation pass fires
  * long before its predecessor's six shots have landed in the cache. Without this the
- * retry pass spends its whole budget re-requesting bars that are already in flight —
- * `share()` dedups them into no new work — and the bars it was queued to reach are
+ * retry pass spends its whole budget re-requesting bars that are already in flight - 
+ * `share()` dedups them into no new work - and the bars it was queued to reach are
  * skipped again. A pending bar still calls through: it JOINS the running shot and
  * paints when it lands. It simply must not cost a budget slot to do so.
  */
@@ -1241,7 +1240,7 @@ export function nodeRasterPending(key: string): boolean {
 /**
  * Is this raster already decoded and in the cache?
  *
- * Lets the caller spend its per-pass budget on MISSES only — a hit paints
+ * Lets the caller spend its per-pass budget on MISSES only - a hit paints
  * synchronously and costs nothing, so a scrolled-back-into-view frame must not
  * consume one of the six shots a pass is allowed. `cache.get` bumps recency, which is
  * exactly right: a bar still on screen is still hot.
@@ -1263,7 +1262,7 @@ async function getDomToImage(): Promise<DomToImageLib | null> {
       const mod = await import('dom-to-image-more') as { default?: DomToImageLib } & DomToImageLib;
       domToImageMore = mod.default ?? mod;
     } catch {
-      return null; // no bundler resolution (a node test run) — the bar keeps its fill
+      return null; // no bundler resolution (a node test run) - the bar keeps its fill
     }
   }
   return domToImageMore;
@@ -1272,7 +1271,7 @@ async function getDomToImage(): Promise<DomToImageLib | null> {
 // ── the authored-pose seam (plans/104 §6.5) ────────────────────────────────
 //
 // A thumbnail always shows the box's AUTHORED pose. It is a picture of the clip, not a
-// picture of the frame the playhead happens to be parked on — and once keyframes are in
+// picture of the frame the playhead happens to be parked on - and once keyframes are in
 // play "the frame the playhead is parked on" can be a box lifted, scaled, faded and
 // blurred half way through a move, which is a bar that changes every time the user
 // scrubs past it.
@@ -1280,8 +1279,8 @@ async function getDomToImage(): Promise<DomToImageLib | null> {
 // The authored values live in the applier's AuthoredStore (bridge/sequence-dom.ts), and
 // they arrive here INJECTED rather than imported for exactly the reason OFF_CLASS is
 // copied above: `bridge/sequence-dom.ts` drags sequence-plan → @lolly/engine behind it,
-// and this module is imported by picker.ts for `onIdle` alone. The timeline panel — the
-// one module that already owns both — wires the seam; with nothing wired every path
+// and this module is imported by picker.ts for `onIdle` alone. The timeline panel - the
+// one module that already owns both - wires the seam; with nothing wired every path
 // below behaves exactly as it did before plans/104.
 
 /** One element's authored inline styles. `''` means "no declaration", not "neutral". */
@@ -1291,10 +1290,10 @@ export interface AuthoredPose {
   filter: string;
   zIndex: string;
   /**
-   * The AUTHORED inline `width`/`height` — '' when the box sizes itself.
+   * The AUTHORED inline `width`/`height` - '' when the box sizes itself.
    *
    * The applier writes these per frame for a `w`/`h` keyframe tween (plans/104 §5.2,
-   * P1 — the one deliberate layout write), so a shot taken mid-tween would otherwise be
+   * P1 - the one deliberate layout write), so a shot taken mid-tween would otherwise be
    * framed at the stretched size and re-wrap its text. Optional so a seam wired by an
    * older caller still type-checks; absent falls back to the live inline value.
    */
@@ -1305,7 +1304,7 @@ export interface AuthoredPose {
 export interface AuthoredPoseSeam {
   /**
    * The authored styles a live writer is composing over `el`, or null when nobody is
-   * writing on it — in which case the DOM already IS authored and nothing may change.
+   * writing on it - in which case the DOM already IS authored and nothing may change.
    */
   read(el: HTMLElement): AuthoredPose | null;
   /**
@@ -1336,7 +1335,7 @@ export function setAuthoredPoseSeam(seam: AuthoredPoseSeam | null): () => void {
  *
  * `transform` is the fit scale, never the box's own: a thumbnail is the clip
  * unrotated, at bar height. `opacity`/`filter` appear only when a live writer is
- * composing over this box, and then they carry its AUTHORED values — an empty string
+ * composing over this box, and then they carry its AUTHORED values - an empty string
  * would REMOVE the clone's declaration and drop it back onto the composed value
  * dom-to-image copied out of getComputedStyle, which is the opposite of the point.
  */
@@ -1353,7 +1352,7 @@ export function nodeShotStyle(
 
 /**
  * The real shot. Modelled line for line on `rasterBox` in bridge/sequence-render.ts,
- * which is already hardened against this exact live stage — deliberately NOT on
+ * which is already hardened against this exact live stage - deliberately NOT on
  * export.ts's `rasterizeNodeToDataUrl`, which returns null for any `display:none`
  * node (i.e. most bars most of the time), sizes off getBoundingClientRect (so a zoomed
  * stage re-wraps text into the capture), rewrites live <img> srcs per call, and
@@ -1364,27 +1363,27 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   if (!lib || signal.aborted) return null;
   // LAYOUT size, not the rendered rect: the stage carries the editor's zoom
   // transform, and sizing off the rect would photograph the box at whatever
-  // magnification the user happens to be at — re-wrapping its text every time.
+  // magnification the user happens to be at - re-wrapping its text every time.
   // AUTHORED size first (plans/104 §5.2): the applier writes `width`/`height` per frame
   // for a size tween, and a thumbnail must be the clip at rest. Falls back to the live
-  // inline value, then to layout — which is what it always was, and what a box with no
+  // inline value, then to layout - which is what it always was, and what a box with no
   // inline size still resolves to. (A box with NO authored width that is mid-tween is
   // the one case this cannot recover; design boxes always carry one.)
   const authored = poseSeam?.read(el) ?? null;
   const bw = Math.max(1, parseFloat(authored?.width ?? '') || parseFloat(el.style.width) || el.offsetWidth || 1);
   const bh = Math.max(1, parseFloat(authored?.height ?? '') || parseFloat(el.style.height) || el.offsetHeight || 1);
   // FIT, don't crop. Height alone used to set the scale and the width was then clamped
-  // to MAX_STILL_W independently — so a 1600×100 divider was photographed as its left
+  // to MAX_STILL_W independently - so a 1600×100 divider was photographed as its left
   // 84%, and the bar tiled that crop at an aspect the bitmap no longer had. Both limits
   // choose the scale together; the bitmap is then exactly bw:bh, whatever its size.
   const S = Math.min(clampInt(targetH, 8, MAX_NODE_H) / bh, MAX_STILL_W / bw);
   // NOTE: the `.seq-off` borrow that makes an off-playhead box photographable at all
-  // does NOT live here — `captureNode` owns it, so it brackets any rasterer (including
+  // does NOT live here - `captureNode` owns it, so it brackets any rasterer (including
   // an injected one) and, more importantly, so it is released when the library call
   // REALLY settles rather than when the caller stops waiting for it.
   //
-  // The AUTHORED pose (plans/104 §6.5) is neutralised on the CLONE — see
-  // `nodeShotStyle` — because the library's `style` option is applied to the clone
+  // The AUTHORED pose (plans/104 §6.5) is neutralised on the CLONE - see
+  // `nodeShotStyle` - because the library's `style` option is applied to the clone
   // after its computed styles are copied across, which is how the fit transform
   // already beats both the editor's zoom and the `tl-shot` park. Nothing on the live
   // stage moves, so a shot of the box the user is currently looking at cannot flicker
@@ -1395,7 +1394,7 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
       width: clampInt(bw * S, 1, MAX_STILL_W),
       height: clampInt(bh * S, 1, MAX_NODE_H),
       // Font inlining is the largest per-call cost, and the library wipes its own url
-      // cache on every teardown — so it re-fetches and re-base64s every face on EVERY
+      // cache on every teardown - so it re-fetches and re-base64s every face on EVERY
       // call. At a 34px bar the substituted platform face is indistinguishable.
       // Image inlining stays ON: that is the picture.
       disableEmbedFonts: true,
@@ -1412,23 +1411,23 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
  * THE STAGE IS LIVE, AND THE CLOCK HAS BEEN ON IT. Every box outside the playhead
  * window carries `.seq-off` → `display:none !important`, and dom-to-image copies the
  * computed cssText wholesale into its clone, so a box that is merely "not under the
- * playhead" photographs BLANK — which is most of the timeline, most of the time. The
+ * playhead" photographs BLANK - which is most of the timeline, most of the time. The
  * class comes off for the duration of the shot and goes back on every path, including
  * a thrown serialisation. That line is borrowed from `rasterBox` in sequence-render.
  *
  * What is NOT borrowed, because that stage is an export's and this one is the user's:
  *
  *   • the box is PARKED OFFSCREEN (SHOT_CLASS) for as long as it is un-hidden. Without
- *     it the artboard strobes through every off-playhead frame it photographs — six
+ *     it the artboard strobes through every off-playhead frame it photographs - six
  *     shots of ~100-300ms each after every drag, zoom and fit.
  *   • the borrow is a LEASE, not a swap. The restore lands up to NODE_RASTER_TIMEOUT_MS
- *     later and the user may have scrubbed onto this box meanwhile — and then the park is
+ *     later and the user may have scrubbed onto this box meanwhile - and then the park is
  *     the damage, not the class: the applier removed `.seq-off`, believed the scene live,
  *     and `translate(-200vw,-200vw)` held the ACTIVE frame off the viewport until the shot
  *     settled, at which point it popped in. So every borrowed element is stamped with
  *     BORROW_ATTR and the applier owns the handover: it clears the stamp AND the park the
  *     moment it wants the box on screen, and the restore below re-hides only what still
- *     carries its own token. `announceShotSettled` stays as the belt to that braces —
+ *     carries its own token. `announceShotSettled` stays as the belt to that braces - 
  *     the clock re-asserting everything else it believes, one tick later.
  */
 function borrowVisibility(el: HTMLElement): () => void {
@@ -1461,15 +1460,15 @@ function borrowVisibility(el: HTMLElement): () => void {
 
 /**
  * `borrowVisibility` as a scope: run `fn` with the box photographable, restore on every
- * path including a throw. For callers that own the whole read — the vector twin walks the
+ * path including a throw. For callers that own the whole read - the vector twin walks the
  * live subtree synchronously-ish and returns markup, with no separate "the shot REALLY
  * ended" moment to hand the lease to, unlike `captureNode`'s raster which restores when
  * the library settles rather than when its own caller stops waiting.
  */
 export async function withBorrowedVisibility<T>(el: HTMLElement, fn: () => Promise<T>): Promise<T> {
   const restore = borrowVisibility(el);
-  // The vector twin reads the LIVE subtree — there is no clone to neutralise the
-  // applier's pose on, the way `defaultNodeRasterer` does — so the authored values go
+  // The vector twin reads the LIVE subtree - there is no clone to neutralise the
+  // applier's pose on, the way `defaultNodeRasterer` does - so the authored values go
   // back on the element itself for the walk (plans/104 §6.5). A no-op, closure and all,
   // when nothing was composed on this box; and while the box is parked by
   // `borrowVisibility` the park's `!important` transform still wins, so what this
@@ -1485,7 +1484,7 @@ export async function withBorrowedVisibility<T>(el: HTMLElement, fn: () => Promi
 
 // One shot at a time, process-wide (see the section header: the library's globals are
 // module-level and its teardown clears them). Same shape as the probe <video>'s
-// `withProbe` lock — one uncancellable device operation at a time.
+// `withProbe` lock - one uncancellable device operation at a time.
 //
 // The lock is acquired and released EXPLICITLY rather than by chaining on the caller's
 // promise, because the caller gives up at NODE_RASTER_TIMEOUT_MS and the library call
@@ -1523,7 +1522,7 @@ async function captureNode(el: HTMLElement, opts: NodeOpts, signal: AbortSignal)
   // Same rule as captureFilmstrip/captureStill, and it matters MORE here: `share()`
   // defers this run by a microtask and the lock may defer it much further, so an
   // aborted caller (drag/zoom started) or an export that began in the meantime must
-  // cost nothing at all — no shot, no font fetch, no clone.
+  // cost nothing at all - no shot, no font fetch, no clone.
   if (signal.aborted || nodeSuspend > 0) return RETRY;
 
   const targetH = clampInt(opts.h, 8, MAX_NODE_H);
@@ -1539,7 +1538,7 @@ async function captureNode(el: HTMLElement, opts: NodeOpts, signal: AbortSignal)
     // detached node yields an unstyled blank that would then be CACHED as its picture.
     if (signal.aborted || nodeSuspend > 0) return RETRY;
     if (el.isConnected === false) return RETRY;
-    // Un-hidden for the shot, put back when the shot REALLY ends — not when this
+    // Un-hidden for the shot, put back when the shot REALLY ends - not when this
     // caller stops waiting for it. A restore on the timeout would re-hide the box
     // while the library is still reading its computed styles, i.e. photograph the
     // blank it exists to prevent.
@@ -1566,10 +1565,10 @@ async function captureNode(el: HTMLElement, opts: NodeOpts, signal: AbortSignal)
   try {
     bmp = await createImageBitmap(canvas);
   } catch {
-    return FAILED;                      // a tainted canvas — it will taint next time too
+    return FAILED;                      // a tainted canvas - it will taint next time too
   }
   if (signal.aborted) {
-    // Not cached, so nobody else owns it — this is the one place a caller closes.
+    // Not cached, so nobody else owns it - this is the one place a caller closes.
     try { (bmp as { close?: () => void }).close?.(); } catch { /* already gone */ }
     return RETRY;
   }
@@ -1579,14 +1578,14 @@ async function captureNode(el: HTMLElement, opts: NodeOpts, signal: AbortSignal)
 /**
  * The single tile-able bitmap for a box with no media: a photograph of the box itself.
  *
- * `sig` is the APPEARANCE signature that identifies the picture (see `nodeKey`) — two
+ * `sig` is the APPEARANCE signature that identifies the picture (see `nodeKey`) - two
  * boxes that look identical legitimately share one raster, and `share()` then collapses
  * them into a single shot as well. `el` is the live `.lolly-box`.
  *
  * Resolves an array of 0 or 1 bitmaps and NEVER throws: an aborted pass, a suspended
  * export, a headless run, a serialisation failure and a timeout all resolve empty, and
  * the bar simply keeps whatever underlay it already painted. A DEFINITIVE non-result
- * (as opposed to an abort or a suspended export) is remembered — see `nodeFailed` —
+ * (as opposed to an abort or a suspended export) is remembered - see `nodeFailed` - 
  * so the same hopeless box is not re-shot on every pass for the rest of the session.
  *
  * The returned bitmap is owned by this module's cache: draw it synchronously and do not
@@ -1602,8 +1601,8 @@ export function nodeStill(sig: string, el: HTMLElement | null | undefined, opts:
   // leave an inflight entry that a later caller would join and inherit the empty from.
   if (nodeSuspend > 0) return Promise.resolve([]);
   // Already tried, already came back with nothing. Retrying costs a full uncancellable
-  // shot to learn the same thing, and — because the caller's budget is spent in bar
-  // order — it costs every bar behind this one their turn. The bar keeps its underlay.
+  // shot to learn the same thing, and - because the caller's budget is spent in bar
+  // order - it costs every bar behind this one their turn. The bar keeps its underlay.
   if (nodeFailed.has(key)) return Promise.resolve([]);
   return share<ImageBitmap[]>(
     key,
@@ -1656,7 +1655,7 @@ function getDecodeCtx(): DecodeCtx | null {
 function decode(ctx: DecodeCtx, buf: ArrayBuffer): Promise<AudioBuffer> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    // Callback form as well as the promise form — old Safari only has the former.
+    // Callback form as well as the promise form - old Safari only has the former.
     const maybe = ctx.decodeAudioData(
       buf,
       (b) => { if (!settled) { settled = true; resolve(b); } },
@@ -1673,12 +1672,12 @@ function decode(ctx: DecodeCtx, buf: ArrayBuffer): Promise<AudioBuffer> {
 
 /**
  * Read a response body into memory, abandoning it the instant it exceeds `max`
- * bytes. `arrayBuffer()` cannot do this — it buffers the WHOLE body first, so a
+ * bytes. `arrayBuffer()` cannot do this - it buffers the WHOLE body first, so a
  * chunked/CDN response with no Content-Length would allocate a 500 MB asset in full
  * before the size check downstream could refuse it, which is the larger allocation of
  * the two this module is defending against. Returns null when the body is oversized,
  * aborted, or unreadable. Falls back to `arrayBuffer()` only where streams are
- * unavailable (no `body` — e.g. a polyfilled/test fetch).
+ * unavailable (no `body` - e.g. a polyfilled/test fetch).
  */
 export interface BoundedBody {
   body?: { getReader?: () => ReadableStreamDefaultReader<Uint8Array> } | null;
@@ -1735,15 +1734,15 @@ async function computePeaks(url: string, signal: AbortSignal): Promise<MasterPea
     if (audio.numberOfChannels > 1) channels.push(audio.getChannelData(1));
     return { peaks: bucketPeaks(channels, MASTER_BUCKETS), durationSec: audio.duration };
   } catch {
-    return null; // undecodable / offline / aborted — the bar keeps its plain fill
+    return null; // undecodable / offline / aborted - the bar keeps its plain fill
   }
 }
 
 /**
  * Peak envelope (0..1 per bucket) for a pure-audio asset, for a waveform bar.
  *
- * Video-clip audio is phase 3 (it needs AudioBufferSink) — pass audio files only.
- * Resolves an EMPTY Float32Array — never throws — when the asset is undecodable,
+ * Video-clip audio is phase 3 (it needs AudioBufferSink) - pass audio files only.
+ * Resolves an EMPTY Float32Array - never throws - when the asset is undecodable,
  * larger than MAX_AUDIO_DECODE_BYTES, aborted, or Web Audio is unavailable.
  * The returned array is owned by this module's cache: do not mutate it.
  */
@@ -1755,7 +1754,7 @@ export function peaks(
 ): Promise<Float32Array> {
   if (!audioUrl) return Promise.resolve(EMPTY_PEAKS);
   // A proxy is smaller, which also means a clip that was over
-  // MAX_AUDIO_DECODE_BYTES as an original may be decodable as a proxy — but ONLY
+  // MAX_AUDIO_DECODE_BYTES as an original may be decodable as a proxy - but ONLY
   // if the transcode kept the audio. It may not have: a proxy is re-containered
   // into whatever the browser can encode, and an AAC track cannot ride in WebM,
   // in which case mediabunny discards it and the conversion is still valid. A

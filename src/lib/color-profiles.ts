@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Press profiles the user supplied — an `.icc` on this device, parsed into a
+ * Press profiles the user supplied - an `.icc` on this device, parsed into a
  * gamut the whole colour stack can already ask questions of.
  *
  * The engine has read ICC profiles since 1.70 (`parseIccProfile` →
- * `iccGamutSource`) and every gamut surface — the slice charts, the broken
- * tracks, the 3D solid, Colour Lab's ceilings — takes a `GamutSource` wherever it
+ * `iccGamutSource`) and every gamut surface - the slice charts, the broken
+ * tracks, the 3D solid, Colour Lab's ceilings - takes a `GamutSource` wherever it
  * takes a gamut name. Nothing in the shell ever handed it one. This module is
  * that hand-off, and nothing more: bytes in, a mounted comparison target out.
  *
@@ -15,8 +15,8 @@
  * restores them and clear-all wipes them. No parallel object store, no second
  * source of truth.
  *
- * The id is CONTENT-ADDRESSED — `<digest>` is the same 16-hex SHA-256 prefix
- * `icc.ts` puts in `GamutSource.id` — so re-dropping the same file overwrites
+ * The id is CONTENT-ADDRESSED - `<digest>` is the same 16-hex SHA-256 prefix
+ * `icc.ts` puts in `GamutSource.id` - so re-dropping the same file overwrites
  * rather than duplicating, and a shared `&limit=icc:<digest>:<intent>` link
  * matches a locally stored profile by construction rather than by filename luck.
  *
@@ -25,7 +25,7 @@
  * effect, a `link`, an A2B0-only scanner profile) is `no-gamut`. Neither is
  * STORED: a row we can say nothing about would sit in the panel and in the user's
  * storage meter forever. Everything else mounts, including `mntr` RGB display
- * profiles — a monitor profile is a perfectly good comparison target, it just has
+ * profiles - a monitor profile is a perfectly good comparison target, it just has
  * no ink to report.
  *
  * Not a policy layer: nothing here refuses a colour, warns about one, or clamps
@@ -46,7 +46,7 @@ export const USER_PROFILE_PREFIX = 'user/profiles/';
 /** The four intents, in the order the UI shows them. */
 export const INTENTS: readonly RenderingIntent[] = ['perceptual', 'relative', 'saturation', 'absolute'];
 
-/** The intent a freshly ingested profile mounts under — the print trade's default. */
+/** The intent a freshly ingested profile mounts under - the print trade's default. */
 export const DEFAULT_INTENT: RenderingIntent = 'relative';
 
 /** A profile limit id exactly as `iccGamutSource` mints it. Anything else is junk. */
@@ -65,7 +65,7 @@ export interface ColorProfilesHost {
   };
 }
 
-/** One stored profile, rendered from `meta` alone — the panel never re-parses to draw a row. */
+/** One stored profile, rendered from `meta` alone - the panel never re-parses to draw a row. */
 export interface ProfileEntry {
   /** 16 hex chars; the identity `GamutSource.id` carries. */
   digest: string;
@@ -73,7 +73,7 @@ export interface ProfileEntry {
   assetId: string;
   /** The user's filename, for a row they can recognise. */
   name: string;
-  /** The profile's own `desc` tag — what the pill and the notation row are named after. */
+  /** The profile's own `desc` tag - what the pill and the notation row are named after. */
   description: string;
   deviceClass: string;
   colourSpace: string;
@@ -103,7 +103,7 @@ export interface ProfileEntry {
  * The only kind that means anything is `registry`: a fetch LOLLY performed, for a
  * press-condition row the user pressed. That is the strongest pairing evidence the
  * PDF/X embed path has (see press-profile-embed.ts) precisely because it involves
- * no string matching — the row that was clicked is what got written. A file the
+ * no string matching - the row that was clicked is what got written. A file the
  * user dropped has no origin, and none is invented for it.
  */
 export interface ProfileOrigin {
@@ -123,7 +123,7 @@ export const isIngestFailure = (r: ProfileEntry | ProfileIngestFailure): r is Pr
 
 // ── The parsed-profile cache ──────────────────────────────────────────────────
 //
-// Parsed profiles are small, pure and immutable, and a parse is microseconds — so
+// Parsed profiles are small, pure and immutable, and a parse is microseconds - so
 // this is a convenience for the synchronous callers (paper white, device numbers)
 // rather than a performance necessity. Keyed by digest, which `iccGamutSource`
 // already owns; nothing here mints an identity of its own.
@@ -148,7 +148,7 @@ export function parseProfileLimit(id: string): { digest: string; intent: Renderi
   return m ? { digest: m[1]!, intent: m[2] as RenderingIntent } : null;
 }
 
-/** The pill/tab text for a profile under an intent — `FOGRA39 · rel`, ≤22 chars. */
+/** The pill/tab text for a profile under an intent - `FOGRA39 · rel`, ≤22 chars. */
 export function shortLabel(entry: ProfileEntry, intent: RenderingIntent = entry.activeIntent): string {
   const name = (entry.description || entry.name || entry.digest).trim();
   const abbr = intent.slice(0, 3);
@@ -156,7 +156,7 @@ export function shortLabel(entry: ProfileEntry, intent: RenderingIntent = entry.
   return `${name.length > room ? `${name.slice(0, room - 1).trimEnd()}…` : name} · ${abbr}`;
 }
 
-/** The short form of an id whose profile is not on this device — `icc ab12cd… · rel`. */
+/** The short form of an id whose profile is not on this device - `icc ab12cd… · rel`. */
 export function absentLabel(id: string): string {
   const parsed = parseProfileLimit(id);
   if (!parsed) return 'icc';
@@ -185,13 +185,13 @@ function inkChannels(colourSpace: string, n: number): ChannelSpec[] {
 }
 
 /**
- * The picker tab for a mounted profile — registered only when the file can
+ * The picker tab for a mounted profile - registered only when the file can
  * convert BOTH ways under this intent.
  *
  * The tab wears the profile's own name, so every number in it has to come out of
  * that file's tables: the same `fromLab` the Colour Lab's press notation row
  * reads, so the two cannot state different CMYK for one colour. A profile that
- * can only answer one direction gets no tab at all — its gamut still charts,
+ * can only answer one direction gets no tab at all - its gamut still charts,
  * which is a question `contains` alone can answer honestly.
  */
 function mountProfileTab(src: GamutSource, p: IccProfile, intent: RenderingIntent): void {
@@ -206,7 +206,7 @@ function mountProfileTab(src: GamutSource, p: IccProfile, intent: RenderingInten
 /**
  * Read a dropped `.icc`, validate it, store it, and return its row.
  *
- * Does NOT mount it — {@link activateProfile} is the deliberate second step, so a
+ * Does NOT mount it - {@link activateProfile} is the deliberate second step, so a
  * drop that was only meant to add to the library does not silently repoint every
  * chart. Re-ingesting the same bytes is an idempotent overwrite (same digest,
  * same asset id), which is also how a shared link's missing profile heals.
@@ -318,7 +318,7 @@ export async function getProfile(host: ColorProfilesHost, digest: string): Promi
   return (await listProfiles(host)).find(e => e.digest === digest) ?? null;
 }
 
-/** The parsed profile behind a digest — for paper white and device numbers. Cache only. */
+/** The parsed profile behind a digest - for paper white and device numbers. Cache only. */
 export function profileFor(digest: string): IccProfile | null {
   return PARSED.get(digest) ?? null;
 }
@@ -364,11 +364,11 @@ async function loadParsed(host: ColorProfilesHost, digest: string): Promise<IccP
  * Exactly ONE intent per profile is mounted at a time: four picker tabs per
  * profile would blow the output family apart for no gain, and the intent
  * buttons sit right beside the row. Switching intent is therefore an unmount +
- * a mount, and the id changes with it — which is correct, because the same
+ * a mount, and the id changes with it - which is correct, because the same
  * profile under a different intent IS a different gamut.
  *
  * Returns null when the profile is not on this device, will not parse, or cannot
- * answer under the intent asked for — never a source that silently answered with
+ * answer under the intent asked for - never a source that silently answered with
  * a different table.
  */
 export async function activateProfile(
@@ -400,7 +400,7 @@ export function deactivateProfile(digest: string): void {
 
 /**
  * Delete a stored profile: unmount every intent it could have been mounted
- * under (not just the live one — an id minted before a reload is still a live
+ * under (not just the live one - an id minted before a reload is still a live
  * registry key in this document), drop the parse cache, remove the bytes.
  */
 export async function removeProfile(host: ColorProfilesHost, digest: string): Promise<void> {

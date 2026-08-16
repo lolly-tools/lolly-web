@@ -3,13 +3,13 @@
  * CSS `filter` → SVG filter primitives.
  *
  * Every CSS shorthand filter is DEFINED by the Filter Effects spec (§18.1) as an
- * equivalent SVG filter — `grayscale(x)` is a specific feColorMatrix, `contrast(x)`
+ * equivalent SVG filter - `grayscale(x)` is a specific feColorMatrix, `contrast(x)`
  * a specific feComponentTransfer. So this is a translation table, not an
  * approximation, and the numbers below are the spec's own matrices rather than
  * anything tuned by eye.
  *
  * Before this, a filtered element simply lost its filter in vector output: 49 of them
- * on the gallery fixture alone. `drop-shadow()` is excluded — the walker already
+ * on the gallery fixture alone. `drop-shadow()` is excluded - the walker already
  * draws those as real geometry, which survives EMF/EPS where a filter would not.
  *
  * Pure: it returns primitive descriptors, and export.ts turns them into elements.
@@ -65,7 +65,7 @@ function sepiaMatrix(a: number): number[] {
 /**
  * Parse a computed `filter` value into primitives, in order.
  *
- * Returns null when the value contains anything with no SVG equivalent — a
+ * Returns null when the value contains anything with no SVG equivalent - a
  * `url(#ref)` reference to a filter we are not reproducing, or an unknown function.
  * Null means "leave it to the caller's escape hatch": emitting the recognisable half
  * of a chain would be a confidently wrong picture, which is worse than a raster.
@@ -84,7 +84,7 @@ export function parseCssFilter(value: string): FilterPrimitive[] | null {
     const arg = m[2]!.trim();
     switch (fn) {
       case 'blur':
-        // CSS blur(N) is a Gaussian of stdDeviation N — unlike backdrop-filter's
+        // CSS blur(N) is a Gaussian of stdDeviation N - unlike backdrop-filter's
         // and box-shadow's radius conventions, this one is 1:1.
         out.push({ kind: 'blur', stdDeviation: Math.max(0, amount(arg, 0)) });
         break;
@@ -147,7 +147,7 @@ export function parseCssFilter(value: string): FilterPrimitive[] | null {
       case 'drop-shadow':
         // Drawn as real geometry by the walker, and geometry survives EMF/EPS where
         // a filter reference does not. Skipping it here is deliberate, not an
-        // omission — see the box-shadow block in export.ts.
+        // omission - see the box-shadow block in export.ts.
         break;
       default:
         return null;
@@ -160,7 +160,7 @@ export function parseCssFilter(value: string): FilterPrimitive[] | null {
 }
 
 /** True when a computed filter is entirely drop-shadow(s), which the walker already
- *  draws as geometry — so no SVG filter is needed at all. */
+ *  draws as geometry - so no SVG filter is needed at all. */
 export function isDropShadowOnly(value: string): boolean {
   const v = (value ?? '').trim();
   if (!v || v === 'none') return false;

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PDF redaction (host.pdf.redact, engine v1.85) — rasterise-and-rebuild.
+ * PDF redaction (host.pdf.redact, engine v1.85) - rasterise-and-rebuild.
  *
  * Render every page to an image with the app's OWN interpreter
- * (views/pdf-import.ts pageToSvg — the same path a .ai/.pdf upload takes,
+ * (views/pdf-import.ts pageToSvg - the same path a .ai/.pdf upload takes,
  * never an external renderer), burn the bars in as fully opaque fills, and
  * construct a BRAND-NEW pdf-lib document whose pages contain only those
  * images. Nothing is copied from the source, so covered text, fonts,
@@ -25,7 +25,7 @@ export interface RedactHost { text?: TextAPI }
 
 // Draw a self-contained SVG document onto the canvas, scaled to fill it. The
 // SVG goes through an <img>, which loads no external resources and paints no
-// document fonts — which is why the caller outlines text first (the same
+// document fonts - which is why the caller outlines text first (the same
 // recipe as views/pdf-extract.ts pageArtUrl / lib/pdf-vector-shot.ts).
 async function drawSvgOnCanvas(cx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, svg: string, w: number, h: number): Promise<void> {
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
@@ -72,11 +72,11 @@ function fillRounded(
 }
 
 /**
- * host.pdf.pages — each page as a self-contained SVG document, the preview the
+ * host.pdf.pages - each page as a self-contained SVG document, the preview the
  * Redact tool draws its bar overlay on. Same recipe as redactPdf's per-page
  * render (openPdfFile → pageToSvg with outlined text → embedFonts), but the
  * SVG string IS the product: no canvas, no JPEG, so this path is not gated on
- * hasImageCodec. The viewBox is in PDF points, origin top-left — the exact
+ * hasImageCodec. The viewBox is in PDF points, origin top-left - the exact
  * space PdfRedactBar lives in. Pages that fail to render are skipped but
  * REPORTED (collectPages → `failed`, 1-based) so a missing page never passes
  * silently; when EVERY page fails (e.g. an encrypted PDF that loads under
@@ -91,7 +91,7 @@ export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, 
   const maxPages = core.clampMaxPages(opts?.maxPages);
 
   // Page sizes in points from the ORIGINAL MediaBoxes via pdf-lib, exactly as
-  // redactPdf reads them — the preview must report the same geometry the
+  // redactPdf reads them - the preview must report the same geometry the
   // redaction pass will burn bars against.
   const { PDFDocument } = await import('pdf-lib');
   const src = await PDFDocument.load(input, PDF_LOAD_OPTS);
@@ -105,12 +105,12 @@ export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, 
   const res = await core.collectPages(sizes.length, maxPages, async (i) => {
     const { width: wPt, height: hPt } = sizes[i]!;
     const page = await handle.pageToSvg(i, {
-      // The SVG must render with no document fonts — outline every run to real
+      // The SVG must render with no document fonts - outline every run to real
       // paths, with embedFonts as the safety net for unresolved runs.
       outlineText: makeTextOutliner([], host?.text),
-      // Terminal preview output, never re-exported as vectors — safe to hoist.
+      // Terminal preview output, never re-exported as vectors - safe to hoist.
       dedupePaths: true,
-      // Several page SVGs land in one DOM — the ids must not collide.
+      // Several page SVGs land in one DOM - the ids must not collide.
       idPrefix: `rdpg${i}-`,
     });
     const svg = await embedFonts(page.svg, []);
@@ -131,14 +131,14 @@ export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: R
   const dpi = core.clampDpi(opts?.dpi);
   const bars = Array.isArray(opts?.bars) ? opts.bars : [];
 
-  // Page sizes come from the ORIGINAL MediaBoxes via pdf-lib — the rebuilt
+  // Page sizes come from the ORIGINAL MediaBoxes via pdf-lib - the rebuilt
   // document must reproduce them exactly, in points.
   const { PDFDocument } = await import('pdf-lib');
   const src = await PDFDocument.load(input, PDF_LOAD_OPTS);
   const sizes = src.getPages().map((p) => p.getSize());
   if (!sizes.length) throw new Error('This PDF has no pages.');
 
-  // The app's own page renderer, lazily — the same modules views/valid.ts and
+  // The app's own page renderer, lazily - the same modules views/valid.ts and
   // views/pdf-extract.ts pull in, so redaction adds nothing to the boot chunk.
   const { openPdfFile } = await import('../views/pdf-import.ts');
   const { makeTextOutliner, embedFonts } = await import('../lib/pdf-vector-shot.ts');
@@ -159,10 +159,10 @@ export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: R
     cx.fillRect(0, 0, cw, ch);
     try {
       const page = await handle.pageToSvg(i, {
-        // An <img>-embedded SVG paints no document fonts — outline every run to
+        // An <img>-embedded SVG paints no document fonts - outline every run to
         // real paths, with embedFonts as the safety net for unresolved runs.
         outlineText: makeTextOutliner([], host?.text),
-        // Terminal raster output, never re-exported — safe to hoist repeats.
+        // Terminal raster output, never re-exported - safe to hoist repeats.
         dedupePaths: true,
         idPrefix: `redact${i}-`,
       });
@@ -181,7 +181,7 @@ export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: R
       cx.putImageData(img, 0, 0);
     }
     // Bar fill: the caller's tone when it is fully opaque and readable, else the
-    // neutral ink. Never a raw assignment of `opts.color` — canvas ignores an
+    // neutral ink. Never a raw assignment of `opts.color` - canvas ignores an
     // unreadable fillStyle, which here would leave white-on-white bars that
     // redact nothing.
     const ink = core.normaliseInk(opts?.color) ?? core.REDACT_INK_FALLBACK;

@@ -8,7 +8,7 @@
  * Every assertion round-trips: stamp real container bytes (a decodable 1×1 PNG,
  * a minimal JFIF JPEG, a GIF89a header), re-parse the result with an
  * INDEPENDENT parser written here (bitwise reference CRC, DataView reads), and
- * verify structure + values — not just "bytes changed".
+ * verify structure + values - not just "bytes changed".
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,7 +24,7 @@ import {
 const enc = new TextEncoder();
 const ascii = (s: string) => enc.encode(s);
 
-// Bitwise reference CRC-32 (no table) — independent of the engine implementation
+// Bitwise reference CRC-32 (no table) - independent of the engine implementation
 // under test: reflected poly 0xEDB88320, init/xorout 0xFFFFFFFF.
 function refCrc32(bytes: Uint8Array): number {
   let c = 0xFFFFFFFF;
@@ -170,7 +170,7 @@ test('setAvifCicp overwrites the nclx colr box with the PQ CICP, in place', () =
   const dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
   assert.equal(dv.getUint16(i + 8), 9, 'BT.2020 primaries (rewritten)');
   assert.equal(dv.getUint16(i + 10), 16, 'PQ transfer (rewritten)');
-  // matrix + full-range are the encoder's YCbCr choice — must be PRESERVED.
+  // matrix + full-range are the encoder's YCbCr choice - must be PRESERVED.
   assert.equal(dv.getUint16(i + 12), 6, 'matrix coefficients preserved');
   assert.equal(out[i + 14], 0x00, 'full-range flag preserved');
   // Non-AVIF (no ftyp) and AVIF-without-colr both pass through untouched.

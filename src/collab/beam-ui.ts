@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-ui — the door into the beam (plan 100 §6.4; the stitch-2 debt named in
+ * beam-ui - the door into the beam (plan 100 §6.4; the stitch-2 debt named in
  * `collab/beam-session.ts`'s header as "the caller's line").
  *
- * Five modules already implement a beam end to end — the frames (`beam-protocol.ts`),
+ * Five modules already implement a beam end to end - the frames (`beam-protocol.ts`),
  * the lane (`rtc-transport.ts`), staging (`lib/beam-sink.ts`), the payload
- * (`lib/beam-pack.ts`), the consent UI (`components/beam-toast.ts`) — and
+ * (`lib/beam-pack.ts`), the consent UI (`components/beam-toast.ts`) - and
  * `beam-session.ts` wires the five together. What none of them has is a way in: the
  * session is created by nobody, the toast is mounted by nobody, and `sendCurrentSession`
  * is called by nobody. A user with two paired devices could not beam a thing.
  *
  * This module is that one missing call, and deliberately nothing else. It owns no
- * frames, no storage, no protocol and no copy at all — every string a human reads
+ * frames, no storage, no protocol and no copy at all - every string a human reads
  * during a beam belongs to the toast or the pack, and the ONE new control's label
  * belongs to `components/collab-pill.ts`'s STRINGS map, which is where the translation
  * corpus can see it.
@@ -19,21 +19,21 @@
  * ── The three seams it joins ───────────────────────────────────────────────────
  *
  *   1. **the lane.** `beam-session.ts` documents its own production wiring in one
- *      line — `createBeamSession({ lane: asBeamLane(transport.beam), inbound:
- *      beamInbound(transport) })` — and that line is here, verbatim, because this is
+ *      line - `createBeamSession({ lane: asBeamLane(transport.beam), inbound:
+ *      beamInbound(transport) })` - and that line is here, verbatim, because this is
  *      the only module allowed to name both a transport and a beam session at once.
  *      `asBeamLane` is a compile-time no-op whose whole job is to fail `tsc` if the
  *      two shapes ever drift; keeping it means the drift proof travels with the call.
- *   2. **the library.** The default ingest needs a `BeamPackHost` — the bridge slice a
+ *   2. **the library.** The default ingest needs a `BeamPackHost` - the bridge slice a
  *      pack is landed into. There is exactly one place in the shell that holds one AND
  *      knows which collab it belongs to, and it is a MOUNTED TOOL
  *      (`views/tool-collab.ts`). An ACCEPTOR holds two of them, which is the one place
  *      this module branches: their `host.state` has been swapped for the memory bridge
  *      (§11.17), so their working copy PACKS from the ephemeral one and never touches a
- *      slot — while a beam they accepted LANDS in the real library, because §6.4 says a
+ *      slot - while a beam they accepted LANDS in the real library, because §6.4 says a
  *      received gift lands there attributed. `packHost` is that second host, and every
  *      caller with only one passes `host` alone and sees no branch at all.
- *   3. **the human.** `mountBeamToast(container, session.toast)` — on BOTH ends, at
+ *   3. **the human.** `mountBeamToast(container, session.toast)` - on BOTH ends, at
  *      collab mount time, because the toast is not only the receiver's consent sheet:
  *      it is also the sender's "waiting for Priya to accept…", its progress bars and
  *      its cancel. One mount serves both directions (the session multiplexes an
@@ -44,7 +44,7 @@
  *
  * Nothing here decides anything. The receiver's `accept`/`decline` travels back through
  * the toast port (`BeamEventSource`), exactly as `beam-session.ts` specifies, and the
- * sender's UI is the same event stream read from the other side — so the sender watches
+ * sender's UI is the same event stream read from the other side - so the sender watches
  * its own beam through the receiver's component, with no second progress surface to
  * keep in sync and no way for this module to skip a gate it does not own.
  *
@@ -52,7 +52,7 @@
  *
  *  - **Reach for a transport.** {@link CollabBeamLink} arrives already built by whoever
  *    made the pair (`collab/rtc-connection.ts`), and is read STRUCTURALLY at the mount
- *    — the `CollabHandleLanes` idiom from `views/tool-collab.ts`. A work collab (Track
+ * - the `CollabHandleLanes` idiom from `views/tool-collab.ts`. A work collab (Track
  *    B) publishes none, so the send control is structurally absent there rather than
  *    hidden behind a flag: the server path has no beam and never will (§7).
  *  - **Know what a session IS.** {@link BeamCurrentSessionReader} is injected by the
@@ -65,8 +65,8 @@
  *
  * A beam can only be offered and received while BOTH peers have the tool mounted,
  * because that is when each side's session subscribes to the lane. In practice that is
- * every moment a collab is live — the acceptor is navigated straight into the tool and
- * the inviter is remounted into it — but a frame that arrives in the gap between
+ * every moment a collab is live - the acceptor is navigated straight into the tool and
+ * the inviter is remounted into it - but a frame that arrives in the gap between
  * `connected` and the tool's first paint is dropped rather than queued. Queuing it
  * would mean staging bytes for a consent sheet with nowhere to appear.
  */
@@ -86,7 +86,7 @@ import type { RtcBeamLane, RtcInboundMessage } from './rtc-transport.ts';
  * inbound stream every lane is multiplexed onto.
  *
  * `RtcTransport` satisfies it as-is (see `collab/rtc-connection.ts`, which publishes
- * itself under this type), and so does a fake with six methods — which is what keeps
+ * itself under this type), and so does a fake with six methods - which is what keeps
  * the whole feature testable with no `RTCPeerConnection` anywhere.
  */
 export interface CollabBeamTransport {
@@ -105,12 +105,12 @@ export interface CollabBeamTransport {
  */
 export interface CollabBeamLink {
   readonly transport: CollabBeamTransport;
-  /** This device's ceremony role — decides only the §4.5 fallback name for a nameless
+  /** This device's ceremony role - decides only the §4.5 fallback name for a nameless
    *  peer. Either side may send and either side may receive. */
   readonly role: CeremonyRole;
   /** The peer's chosen display name (§11.23: chosen, never a profile field). */
   readonly peerName?: string;
-  /** This device's chosen display name — the receiver's "From …" attribution. */
+  /** This device's chosen display name - the receiver's "From …" attribution. */
   readonly selfName?: string;
 }
 
@@ -127,7 +127,7 @@ export interface CollabBeamCapable {
  * What {@link CollabBeamUi.sendCurrentSessionNow} beams.
  *
  * Two shapes because `beam-session.ts`'s `sendCurrentSession` takes two: a SAVED slot
- * (packed with its own label and tile) or a LIVE, unsaved state record — the working
+ * (packed with its own label and tile) or a LIVE, unsaved state record - the working
  * copy, which is what an inviter mid-edit and an ephemeral acceptor both actually have.
  */
 export type BeamCurrentSession =
@@ -142,7 +142,7 @@ export type BeamCurrentSession =
       readonly thumb?: string | null;
     };
 
-/** Read at the moment the human presses send, never cached — the point of "current". */
+/** Read at the moment the human presses send, never cached - the point of "current". */
 export type BeamCurrentSessionReader = () => BeamCurrentSession | null;
 
 // ── The handle ────────────────────────────────────────────────────────────────
@@ -167,11 +167,11 @@ export interface CollabBeamUiOptions {
   readonly packHost?: BeamPackHost | null;
   readonly currentSession?: BeamCurrentSessionReader | null;
   /** Where a received beam stages before it is landed. Defaults to `lib/beam-sink.ts`'s
-   *  IndexedDB sink, one per beam — a pass-through of `beam-session.ts`'s own option,
+   *  IndexedDB sink, one per beam - a pass-through of `beam-session.ts`'s own option,
    *  for a shell with no IndexedDB (and for a suite that must not need one). */
   readonly sink?: BeamSinkFactory;
   /** Where the toast mounts. Defaults to a div this module appends to `document.body`
-   *  and removes on close — the toast card is `position: fixed`, so its container is
+   *  and removes on close - the toast card is `position: fixed`, so its container is
    *  a hook and not a layout box (`components/beam-toast.css`). */
   readonly container?: HTMLElement | null;
   /** Injected for tests, and so a shell with an isolated tree could pass its own. */
@@ -183,7 +183,7 @@ export interface CollabBeamUiOptions {
 export interface CollabBeamUi {
   /** The live session, for a caller that wants to watch it. */
   readonly session: BeamSession;
-  /** Is the bulk lane open? THE visibility test for the send control — a button that
+  /** Is the bulk lane open? THE visibility test for the send control - a button that
    *  can only fail is worse than no button (§4.6's "no dead controls" rule, the same
    *  reason the pill renders no invite without an `onInvite`). */
   isOpen(): boolean;
@@ -206,7 +206,7 @@ function isBeamTransport(value: unknown): value is CollabBeamTransport {
  * The beam link on a connection, or `null` for one that carries none.
  *
  * Exported because the MOUNT (`lib/collab-live-mount.ts`) is on the boot path and must
- * not import this module for a value — it duck-types the link itself and calls in here
+ * not import this module for a value - it duck-types the link itself and calls in here
  * only behind a dynamic import. This is the same predicate, for anyone who can afford
  * the import, and the place the shape is stated once.
  */
@@ -221,7 +221,7 @@ export function beamLinkOf(conn: unknown): CollabBeamLink | null {
  * Create one collab's beam: the session over the pair's bulk lane, and the toast that
  * asks (and reports) on both ends.
  *
- * Synchronous and total — a missing `document`, a container that will not take a child
+ * Synchronous and total - a missing `document`, a container that will not take a child
  * or a toast that throws on mount all leave a working SESSION with no UI rather than
  * failing the collab. Presence is cosmetic and a collab is not (`views/tool-collab.ts`'s
  * own rule, applied one layer down).
@@ -325,7 +325,7 @@ export function createCollabBeamUi(opts: CollabBeamUiOptions): CollabBeamUi {
       ownedContainer = null;
       container = null;
       // Last, so a beam still in flight sees its own terminal state (and its staging
-      // is discarded — §11.18) before the stream it reports on goes away.
+      // is discarded - §11.18) before the stream it reports on goes away.
       session.close();
     },
   };

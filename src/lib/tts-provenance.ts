@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * TTS provenance — the ONE implementation of a generated clip's Content
+ * TTS provenance - the ONE implementation of a generated clip's Content
  * Credential, shared by the save path (views/script-audio.ts) and the lazy
  * heal path (views/catalog.ts) so the two can never drift on the manifest
  * shape: c2pa.created with trainedAlgorithmicMedia and the full recipe
@@ -8,13 +8,13 @@
  * LIST/INFO tags, then the signed store embedded as a top-level RIFF chunk.
  *
  * The heal exists because clips saved before the wav embed shipped hold bare
- * WAV bytes (the earliest carry no record-side credential either — only
+ * WAV bytes (the earliest carry no record-side credential either - only
  * aiGenerated: 'full' and the meta.tts recipe). Everything needed to rebuild
  * the credential is in that recipe, so "Check Content Credentials" and the
  * details dialog re-stamp such a clip on sight instead of shrugging.
  *
  * NEVER heal audio Lolly did not generate: the meta.tts recipe is the proof
- * of origin, and shouldHealTts refuses without it — a user-recorded or
+ * of origin, and shouldHealTts refuses without it - a user-recorded or
  * uploaded file is not ours to stamp.
  */
 import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
@@ -25,7 +25,7 @@ export const TTS_MODEL = 'kokoro-82m-q8';
 /** The human-readable AI declaration carried in ICMT and the created action. */
 export const TTS_DECLARATION = 'Speech synthesized on-device from a typed script — the voice is AI-generated, not a real person';
 
-/** The exact inputs that produced a clip — enough to rebuild its credential. */
+/** The exact inputs that produced a clip - enough to rebuild its credential. */
 export interface TtsRecipe {
   text: string;
   voice: string;
@@ -46,7 +46,7 @@ export interface TtsProvenanceArgs {
 /**
  * Read the recipe off a stored record's meta.tts block (buildTtsRecord's
  * shape). Pure. Returns null unless the block proves Lolly generated the
- * clip — a non-empty script and voice; speed/model/lang default like the
+ * clip - a non-empty script and voice; speed/model/lang default like the
  * save path wrote them.
  */
 export function ttsRecipeFromMeta(meta: Record<string, unknown> | null | undefined): TtsRecipe | null {
@@ -63,7 +63,7 @@ export function ttsRecipeFromMeta(meta: Record<string, unknown> | null | undefin
 }
 
 /**
- * Cheap sniff: does this WAV already carry an embedded C2PA chunk? Pure — a
+ * Cheap sniff: does this WAV already carry an embedded C2PA chunk? Pure - a
  * top-level RIFF chunk walk (headers only, chunk bodies are skipped by size),
  * mirroring the engine's placeWav scan without pulling the c2pa cluster in.
  * Anything that is not a well-formed RIFF/WAVE reads as "no credential".
@@ -101,7 +101,7 @@ type SigningHost = HostV1 & { identity?: { signer(): Promise<unknown> } };
 
 /** The signed-manifest options both builders share: the enrolled device
  *  identity when one is valid, else the engine's ephemeral on-device default
- *  (30-day window) — stampCaptureClip's recipe. */
+ *  (30-day window) - stampCaptureClip's recipe. */
 async function signerOptions(host: HostV1): Promise<Record<string, unknown>> {
   let signer: unknown = null;
   try { signer = await (host as SigningHost).identity?.signer(); } catch { /* fall back to ephemeral */ }
@@ -119,14 +119,14 @@ const createdAction = (recipe: TtsRecipe, digitalSourceType: string) => ({
 });
 
 /**
- * Sign a record-side Content Credential for a generated clip — the machine-
+ * Sign a record-side Content Credential for a generated clip - the machine-
  * readable "this voice is synthetic" mark (EU AI Act Article 50). Nothing is
  * embedded into the file: the hash binds the whole wav byte range (no
  * exclusions), mirroring a sidecar manifest, and the store is persisted ON
- * the asset record (credential/credentialFormat) — exactly what
+ * the asset record (credential/credentialFormat) - exactly what
  * host.assets.credential serves the runtime's ingredient gathering, so a
  * video or image composed from the clip chains the AI origin into its own
- * manifest. Never throws — a failure logs and returns null.
+ * manifest. Never throws - a failure logs and returns null.
  */
 export async function buildTtsCredential(host: HostV1, args: TtsProvenanceArgs): Promise<{ store: Uint8Array; format: string } | null> {
   try {
@@ -152,11 +152,11 @@ export async function buildTtsCredential(host: HostV1, args: TtsProvenanceArgs):
 /**
  * Embed the clip's provenance INTO the wav bytes: LIST/INFO tags first (INAM
  * title, ICMT the AI-declaration line, IART only with the profile's "Use my
- * details" opt-in — the same gate buildExportMeta applies — ISFT lolly.tools),
+ * details" opt-in - the same gate buildExportMeta applies - ISFT lolly.tools),
  * then the signed C2PA manifest as a top-level RIFF chunk via the engine's
  * two-pass embed, so the hash binding covers the FINAL byte layout tags
  * included. Returns the finished blob plus the extracted store (mirrored onto
- * the record for the runtime's fast ingredient path), or null on any failure —
+ * the record for the runtime's fast ingredient path), or null on any failure - 
  * callers fall back to the record-side-only credential.
  */
 export async function embedTtsProvenance(host: HostV1, args: TtsProvenanceArgs): Promise<{ blob: Blob; store: Uint8Array } | null> {
@@ -201,7 +201,7 @@ export interface TtsHealHost extends HostV1 {
  * save path does (same manifest, same INFO tags), then replace the record's
  * blob + credential in place. Returns the healed blob so the caller can hand
  * the STAMPED bytes straight to /verify, or null when the asset does not
- * qualify (shouldHealTts) or the embed failed — never throws.
+ * qualify (shouldHealTts) or the embed failed - never throws.
  */
 export async function healTtsProvenance(host: TtsHealHost, ref: AssetRef, bytes: Uint8Array): Promise<Blob | null> {
   if (!shouldHealTts(ref, bytes)) return null;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * share-sections — a generic registry of extra sections for the Share dialog.
+ * share-sections - a generic registry of extra sections for the Share dialog.
  *
  * A neutral seam so components/share-dialog.ts can stay unaware of any particular
  * feature. The dialog consults this registry once it has rendered its own rows and
@@ -9,7 +9,7 @@
  *
  * It knows nothing about WHO registers a section: a deployment's optional control
  * plane registers one to offer instance-hosted links (see src/org/), but the
- * registry is a standalone primitive — a test or a future feature can drive it the
+ * registry is a standalone primitive - a test or a future feature can drive it the
  * same way. Each builder is handed a small, product-neutral context (the tool id,
  * the already-serialised state parts, the chosen format, and a copy helper) and
  * returns a DOM node to mount, or null to render nothing.

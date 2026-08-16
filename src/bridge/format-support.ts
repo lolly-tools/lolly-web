@@ -2,7 +2,7 @@
 // Capability probes for format availability. These are tiny, stateless (bar one
 // memo) DOM/navigator/MediaRecorder feature checks the tool view calls at mount to
 // gate the format picker. They live HERE, not in export.ts, so importing them does
-// NOT drag the ~95 KB rasteriser onto the tool-open path — export.ts stays lazy
+// NOT drag the ~95 KB rasteriser onto the tool-open path - export.ts stays lazy
 // (loaded only on an actual Get/Save). export.ts re-exports these for its dynamic
 // callers, and imports canRecord for videoMimeType.
 import { WEBM_CODECS, MP4_CODECS } from './video-mime.ts';
@@ -10,7 +10,7 @@ import { WEBM_CODECS, MP4_CODECS } from './video-mime.ts';
 // Production needs canvas pixel readback (blocked by Tor / Firefox RFP, which
 // breaks every raster export). Delivery is the TIFF-specific catch: the browser
 // can't preview a CMYK TIFF, and mobile Safari / in-app WebViews route blob
-// downloads to an in-page view — a dead end for a non-displayable file. So the
+// downloads to an in-page view - a dead end for a non-displayable file. So the
 // format is offered on desktop only, until a previewable / colour-managed path
 // exists. The shell calls this from keepFormat to hide the option where unusable.
 let _cmykTiff: boolean | null = null;
@@ -35,18 +35,18 @@ export function cmykTiffSupport(): boolean {
 
 // The plain RGB TIFF has the same produce-and-deliver constraints as the CMYK one
 // (canvas pixel readback to produce; no in-browser preview + mobile blob-download
-// dead-end to deliver), so it's gated identically — desktop only. Separate export
+// dead-end to deliver), so it's gated identically - desktop only. Separate export
 // so callers read intent, not a CMYK-named check.
 export function tiffSupport(): boolean {
   return cmykTiffSupport();
 }
 
-// The pro float interchange formats (OpenEXR, Radiance RGBE — plans/61-deeprichpixels.md
+// The pro float interchange formats (OpenEXR, Radiance RGBE - plans/61-deeprichpixels.md
 // §4.2/§6 B3). The engine owns the writers, but they are fed by a float rasterisation
 // the WEB shell cannot do: packages/node-shell/src/raster.ts renders the tool to an
 // SVG, rasterises it with resvg and hands the un-premultiplied RGBA to packExr /
-// packRadiance. Nothing on this side produces that frame — the browser path ends at
-// 8-bit canvas bytes — so the answer is a flat false, not a probe. §10 item 4 puts
+// packRadiance. Nothing on this side produces that frame - the browser path ends at
+// 8-bit canvas bytes - so the answer is a flat false, not a probe. §10 item 4 puts
 // these formats CLI-first on purpose: offering an option the shell then refuses is
 // worse than not offering it. Flip this to a real probe (and add the encoders) if a
 // float render path ever lands in the browser; keepFormat and the picker's Pro
@@ -65,7 +65,7 @@ export function canRecord(): boolean {
 
 // Live capture ("Record live" on webm/mp4) needs a display-capture source plus a
 // usable recorder. Deliberately does NOT require CropTarget: any browser with
-// getDisplayMedia can take live-capture.ts's calibrated-crop tier — Chromium just
+// getDisplayMedia can take live-capture.ts's calibrated-crop tier - Chromium just
 // gets the exact element crop for free. Mobile browsers (no getDisplayMedia) and
 // Tauri WebViews fail the probe, so the toggle never shows where it can't work.
 export function liveCaptureSupport(): boolean {
@@ -74,11 +74,11 @@ export function liveCaptureSupport(): boolean {
          canRecord();
 }
 
-// The durable credential (opt-in TrustMark embed — tool-actions.ts, export.ts's
+// The durable credential (opt-in TrustMark embed - tool-actions.ts, export.ts's
 // durableEmbedCanvas) is a neural ONNX encode that lazily fetches a ~33 MB encoder
 // model from the deploy origin. Under Tauri (desktop/mobile) that model isn't
 // bundled and there's no origin server to pull it from, so the embed simply CAN'T
-// work offline there — hide the toggle rather than offer a silent no-op. The web
+// work offline there - hide the toggle rather than offer a silent no-op. The web
 // PWA fetches it from its own origin (then caches it in IndexedDB, so it keeps
 // working offline once primed), so the toggle is offered there. Also requires
 // WebAssembly for onnxruntime-web. If a Tauri build ever bundles the encoder under
@@ -92,11 +92,11 @@ export function durableSupport(): boolean {
 
 // WebCodecs half of the video gate. renderVideo tries a VideoEncoder encode FIRST,
 // so a browser whose MediaRecorder can't produce a container (e.g. no MediaRecorder
-// mp4, but VideoEncoder AVC) still makes a real file — the picker must offer it.
+// mp4, but VideoEncoder AVC) still makes a real file - the picker must offer it.
 // VideoEncoder.isConfigSupported is async while videoSupport() is a sync gate, so
 // the probe is kicked off once at module load and cached; until it resolves
 // videoSupport() reports the MediaRecorder-only answer. That transient under-report
-// is deliberate progressive enhancement — the option appears on the next gate read,
+// is deliberate progressive enhancement - the option appears on the next gate read,
 // it is never wrongly offered. Exported (with the encoder injectable) so the
 // resolve-then-OR behaviour is unit-testable under node.
 const _wcVideo = { webm: false, mp4: false };
@@ -108,7 +108,7 @@ export async function probeWebCodecsVideoSupport(
   if (typeof isSupported !== 'function') return _wcVideo;
   const ok = async (codec: string): Promise<boolean> => {
     try {
-      // Nominal 720p — export.ts's pickWebCodecsVideo re-probes at the real size.
+      // Nominal 720p - export.ts's pickWebCodecsVideo re-probes at the real size.
       return !!(await isSupported({ codec, width: 1280, height: 720, bitrate: 2_000_000, framerate: 24 }))?.supported;
     } catch { return false; }
   };
@@ -127,7 +127,7 @@ void probeWebCodecsVideoSupport();
 // record (Safari/iOS = mp4 only; Firefox = webm only; recent Chrome = both), OR'd
 // with the cached WebCodecs probe above. The view uses this to gate the format
 // picker so users only see formats their browser can produce. Deliberately probes
-// the video-only lists — audio is optional, so a browser that can't mux audio
+// the video-only lists - audio is optional, so a browser that can't mux audio
 // still offers the format (it records silent, with a log warning).
 export function videoSupport(): { webm: boolean; mp4: boolean } {
   const ok = (t: string) => canRecord() && (MediaRecorder.isTypeSupported?.(t) ?? false);
@@ -135,12 +135,12 @@ export function videoSupport(): { webm: boolean; mp4: boolean } {
 }
 
 // The audio-only export formats (lib/audio-encode.ts). wav and mp3 are pure JS
-// (engine packWav / lamejs), so they are unconditional — no probe can fail them.
+// (engine packWav / lamejs), so they are unconditional - no probe can fail them.
 // m4a and opus ride the platform's WebCodecs AudioEncoder, whose isConfigSupported
 // is async while audioSupport() is a sync gate, so this follows the same shape as
 // probeWebCodecsVideoSupport above: fire once at module load, cache, and report
 // the safe answer (false) until it resolves. The option appears on the next gate
-// read; it is never wrongly offered. Nominal config only — audio-encode.ts
+// read; it is never wrongly offered. Nominal config only - audio-encode.ts
 // re-probes at the clip's real sample rate before it encodes.
 const _wcAudio = { m4a: false, opus: false };
 export async function probeWebCodecsAudioSupport(

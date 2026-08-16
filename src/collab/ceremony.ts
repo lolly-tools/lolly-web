@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ceremony — the private-collab pairing state machine (plan 100 §6.1, §6.2a, wave 2.2).
+ * ceremony - the private-collab pairing state machine (plan 100 §6.1, §6.2a, wave 2.2).
  *
  * PURE LOGIC. This module owns the *order of events* in a Track-A pairing and nothing
  * else: no DOM, no `RTCPeerConnection`, no codec, no timers of its own. Everything that
- * touches a platform arrives injected — the four effects (`createOffer`, `checkTool`,
+ * touches a platform arrives injected - the four effects (`createOffer`, `checkTool`,
  * `createAnswer`, `applyRemote`) and the two timer functions. That is what makes the
  * whole ceremony testable at fake-time speed with stub effects, which matters more here
  * than almost anywhere else in the shell: the failure modes this machine exists to model
@@ -15,7 +15,7 @@
  * sit AROUND it: the codec turns a `CollabInvite` into the ~100-byte blob a QR carries
  * and back, the provider owns the peer connection and feeds `{ type: 'ice' }` events in,
  * the dialogs render `state.phase` and call `send()`. Signals cross this boundary as
- * DECODED envelopes on purpose — a blob that does not decode is the dialog's problem
+ * DECODED envelopes on purpose - a blob that does not decode is the dialog's problem
  * ("that reply isn't readable, try again") and must not end a ceremony, so it never
  * becomes an event here.
  *
@@ -28,7 +28,7 @@
  *   acceptor: idle → reading-invite → creating-answer → awaiting-connection → connected
  *
  * Terminal is `failed` (with a cause the UI turns into specific copy, §11.26) or
- * `closed` (the user cancelled). `reconnect-armed` is NOT terminal — it is the inviter
+ * `closed` (the user cancelled). `reconnect-armed` is NOT terminal - it is the inviter
  * holding a freshly minted re-invite, because a dropped WebRTC connection can never be
  * resumed and always needs a fresh ceremony (§6.1); pre-minting the offer the moment the
  * old one dies is what makes the session card's "Reconnect" QR feel pre-armed.
@@ -45,7 +45,7 @@
  *  1. TOOL version (probed): a MAJOR skew means the two catalogs disagree about what the
  *     input ids mean, so the ops would land on the wrong fields → terminal refusal
  *     (`version-major-mismatch`). A minor skew is a soft note (`toolVersionNote`), §11.19.
- *  2. OP-CONTRACT version (`CANVAS_OP_VERSION`): a major mismatch is NOT a refusal —
+ *  2. OP-CONTRACT version (`CANVAS_OP_VERSION`): a major mismatch is NOT a refusal - 
  *     contract §9 says the client joins OBSERVER-ONLY rather than corrupting state, so
  *     `state.observerOnly` is set and the pair still connects. Both peers set the flag on
  *     themselves, which is the symmetric, safe outcome. Either envelope MAY carry the
@@ -56,7 +56,7 @@
  * ── What "connected" MEANS: channels ready, never ICE connected ───────────────────
  *
  * `connected` is entered on one signal and one only: `{ type: 'ready' }`, the transport
- * reporting that the ops channel — the session-critical lane — is open on this side.
+ * reporting that the ops channel - the session-critical lane - is open on this side.
  *
  * ICE reaching `connected` is NOT that, and the difference is a shipped bug, not a
  * nicety. A data channel opens only after BOTH descriptions have been applied, which is
@@ -67,12 +67,12 @@
  * same synchronous turn it entered it: step 3 never renders, the reply the inviter is
  * waiting for is never deliverable, and the inviter waits for ever. Drill evidence: the
  * answer screen's copy control never appeared, `replyLeg='none'`, inviter stuck on step 2.
- * The original trace says the same thing from the other end — `ice:connected` at 542ms,
+ * The original trace says the same thing from the other end - `ice:connected` at 542ms,
  * both sides' channels open at 1269ms. Those 727ms are the ceremony.
  *
  * So ICE keeps every OTHER job and loses exactly one: `failed`/`closed` still ends the
  * ceremony with the isolation diagnosis, `disconnected` still raises the transient
- * `reconnecting` flag, `checking` still arms the connect watchdog — and an ICE
+ * `reconnecting` flag, `checking` still arms the connect watchdog - and an ICE
  * `connected` on its own now changes no phase anywhere.
  *
  * ── The publish-before-promote guarantee (§11.25) ─────────────────────────────────
@@ -82,7 +82,7 @@
  * wait may not be skipped past applying a real answer. Both fall out of one rule: `ready`
  * promotes only from `connecting` (inviter, entered after `applyRemote` succeeded) and
  * `awaiting-connection` (acceptor, entered with `state.answer` already set and notified).
- * A `ready` that arrives in any earlier phase is LATCHED, not dropped and not acted on —
+ * A `ready` that arrives in any earlier phase is LATCHED, not dropped and not acted on - 
  * it is re-read on entering one of those two phases, after that phase has been published.
  * In practice a transport cannot report ready that early; the latch is what makes that a
  * property of this machine rather than a property of the transport being well behaved.
@@ -91,7 +91,7 @@
  *
  * The transport's events are EDGE-triggered: one notification per transition, and only
  * the phase the machine happens to be in when it lands can act on it. Two phases can only
- * ever be LEFT WELL by such an event — `awaiting-connection` (acceptor) and `connecting`
+ * ever be LEFT WELL by such an event - `awaiting-connection` (acceptor) and `connecting`
  * (inviter); every other way out of them is a deadline expiring, which is to say a
  * failure. And both are entered from inside an `await` that the transitions can, and on a
  * LAN routinely do, land during. `setLocalDescription` returns and ~5ms later ICE has
@@ -101,8 +101,8 @@
  * so a pair whose channels are open on both sides sits on the answer screen until the
  * ten-minute human deadline.
  *
- * So on ENTERING either phase the machine asks the transport what things ARE — ICE via
- * `CeremonyEffects.iceState`, the lane via `CeremonyEffects.channelsReady` — and runs
+ * So on ENTERING either phase the machine asks the transport what things ARE - ICE via
+ * `CeremonyEffects.iceState`, the lane via `CeremonyEffects.channelsReady` - and runs
  * each answer through the same path a live event takes (`syncIce` → `onIce`, `syncReady`
  * → `onReady`). One pair of helpers, both roles, no special case: the inviter's version
  * of the race is identical in shape and merely wins by a couple of milliseconds today,
@@ -110,7 +110,7 @@
  * during the mint fails rather than completing.
  *
  * `rtc-transport.ts` replaying its last emitted state to a new subscriber is the other
- * half of the guard, and the two do NOT overlap — they cover the two distinct ways these
+ * half of the guard, and the two do NOT overlap - they cover the two distinct ways these
  * signals go missing, which is why both exist:
  *
  *   - the edge was HEARD and dropped, because the phase it landed in does not act on it
@@ -128,7 +128,7 @@
  *
  * ICE `disconnected` self-heals in seconds on a UDP blip, so it only raises the transient
  * `reconnecting` flag: no timer, no state change, no re-pair UI (presence greys the
- * avatar, it does not evict). Only `failed`/`closed` is fatal — and then only the inviter
+ * avatar, it does not evict). Only `failed`/`closed` is fatal - and then only the inviter
  * arms a re-invite, because the inviter owns the session and is the authoritative
  * continuation (§6.2a); the acceptor's copy is ephemeral, so its drop ends in
  * `connection-lost` and its way back is scanning the inviter's fresh invite.
@@ -145,7 +145,7 @@ import { CANVAS_OP_VERSION, isCompatibleOpVersion } from '@lolly-tools/core/canv
 export type CeremonyRole = 'inviter' | 'acceptor';
 
 /**
- * Every state the ceremony can be in. Each maps to one screen of the dialog (§11.26 —
+ * Every state the ceremony can be in. Each maps to one screen of the dialog (§11.26 - 
  * "ceremony states need first-class UI"), which is why the in-flight ones are named
  * separately rather than collapsed into a boolean.
  */
@@ -166,17 +166,17 @@ export type CeremonyPhase =
   | 'creating-answer'
   /** acceptor: the answer exists and the human is delivering it back; then the channels. */
   | 'awaiting-connection'
-  /** Both: the transport reports the ops channel OPEN — the pair can carry a session. */
+  /** Both: the transport reports the ops channel OPEN - the pair can carry a session. */
   | 'connected'
   /** inviter: the connection died; a fresh invite is minted and waiting (§6.1, §11.3). */
   | 'reconnect-armed'
   /** Terminal: ended with a cause the UI turns into specific copy (§11.26). */
   | 'failed'
-  /** Terminal: the user closed it. Not an error — never show failure copy for this. */
+  /** Terminal: the user closed it. Not an error - never show failure copy for this. */
   | 'closed';
 
 /**
- * Why a ceremony ended. Distinct causes, not one "it broke" — §11.26 asks for specific
+ * Why a ceremony ended. Distinct causes, not one "it broke" - §11.26 asks for specific
  * copy per cause, and the difference between "this network blocks device-to-device
  * traffic" and "your invite went unanswered" is the difference between a support ticket
  * and a shrug.
@@ -189,7 +189,7 @@ export type CeremonyEndCause =
   /**
    * ICE reported `failed`, or never got anywhere before the connect watchdog expired,
    * having NEVER connected. On a LAN that is overwhelmingly Wi-Fi client isolation or
-   * blocked mDNS (§11.1, §11.2) — the copy should say so and suggest a hotspot or wire,
+   * blocked mDNS (§11.1, §11.2) - the copy should say so and suggest a hotspot or wire,
    * not blame the invite.
    */
   | 'ice-failed-isolation-suspected'
@@ -210,7 +210,7 @@ export function isCeremonyTerminal(phase: CeremonyPhase): boolean {
 // ── The signals (logical form; the codec owns the bytes) ───────────────────────────
 
 /**
- * The identity that crosses the wire — chosen, never leaked (§11.23). Both fields are
+ * The identity that crosses the wire - chosen, never leaked (§11.23). Both fields are
  * optional because the QR budget is real: `sdp-codec.ts` makes the name optional and
  * carries the colour as a palette index, so an anonymous pair is a legitimate outcome
  * and the UI needs a "someone" fallback either way.
@@ -234,7 +234,7 @@ export interface CollabInvite extends CollabPeer {
   readonly toolId: string;
   /** The inviter's copy of the tool, for the skew check. */
   readonly toolVersion?: string;
-  /** The inviter's engine version — a soft note only (§11.19). */
+  /** The inviter's engine version - a soft note only (§11.19). */
   readonly engineVersion?: string;
   /**
    * The inviter's `CANVAS_OP_VERSION` (contract §9 → observer-only on a major gap).
@@ -247,7 +247,7 @@ export interface CollabInvite extends CollabPeer {
   readonly seed?: string;
 }
 
-/** The reply leg (§11.25 — the weak point, which is why it is a first-class payload). */
+/** The reply leg (§11.25 - the weak point, which is why it is a first-class payload). */
 export interface CollabAnswer extends CollabPeer {
   /** The acceptor's connection blob. */
   readonly signal: string;
@@ -302,7 +302,7 @@ export interface CeremonyEffects {
   applyRemote(answer: CollabAnswer): Promise<ApplyRemoteResult>;
   /**
    * What is the transport's ICE state RIGHT NOW? The level read behind the header's
-   * "ICE is read level-triggered on entry" — asked on entering `awaiting-connection`
+   * "ICE is read level-triggered on entry" - asked on entering `awaiting-connection`
    * and `connecting`, and processed through the same `onIce` path a live event takes.
    *
    * OPTIONAL, and additive on purpose. Effects written before it (and every stub that
@@ -310,7 +310,7 @@ export interface CeremonyEffects {
    * machine behaves exactly as it did, and the transport's replay-on-subscribe covers
    * the same window from the other side.
    *
-   * `undefined` means "cannot say" and is treated as `new` — no transition. It must not
+   * `undefined` means "cannot say" and is treated as `new` - no transition. It must not
    * throw; a thrown read is swallowed and treated the same way, because a transport
    * that cannot answer a diagnostic question has not failed the ceremony.
    */
@@ -319,14 +319,14 @@ export interface CeremonyEffects {
    * Is the session-critical lane (the ops data channel) OPEN on this side RIGHT NOW?
    *
    * The level read behind `{ type: 'ready' }`, and the only thing that completes a
-   * pairing — see the header's "What 'connected' MEANS". Asked on entering
+   * pairing - see the header's "What 'connected' MEANS". Asked on entering
    * `awaiting-connection` and `connecting`, immediately after `iceState`, and processed
    * through the same `onReady` path a live event takes.
    *
    * OPTIONAL and additive for the same reasons `iceState` is: a stub that only implements
    * the four legs keeps working, and the edge event plus the transport's replay cover the
-   * same window from the other side. Anything but `true` — including `undefined` and a
-   * thrown read — means "not ready", which is never a failure, only a not-yet.
+   * same window from the other side. Anything but `true` - including `undefined` and a
+   * thrown read - means "not ready", which is never a failure, only a not-yet.
    */
   channelsReady?(): boolean | undefined;
 }
@@ -360,7 +360,7 @@ export const EFFECT_BUDGET_MS = 20_000;
  *
  * Both re-arm paths spend it: the ten-minute timer that re-mints an unanswered
  * invite, and an answer that came back unreadable (§11.25), which restarts the same
- * wait. Counting only the first would leave an invite's lifetime unbounded — one
+ * wait. Counting only the first would leave an invite's lifetime unbounded - one
  * garbled paste every nine minutes holds the offer open for ever.
  */
 export const MAX_REARMS = 2;
@@ -376,11 +376,11 @@ export interface CeremonyState {
   readonly answer?: CollabAnswer;
   /** The other side's chosen identity, as soon as a payload carries it. */
   readonly peer?: CollabPeer;
-  /** How much of the answer leg's budget is spent (§6.1) — a re-mint after ten
+  /** How much of the answer leg's budget is spent (§6.1) - a re-mint after ten
    *  unanswered minutes, or an answer that came back unreadable, each cost one.
    *  Reset to 0 the moment the pair connects. See {@link MAX_REARMS}. */
   readonly rearms: number;
-  /** An invite mint is in flight — the QR/link is not ready to show yet. */
+  /** An invite mint is in flight - the QR/link is not ready to show yet. */
   readonly arming: boolean;
   /** ICE said `disconnected`: transient, grey the avatar, do NOT re-pair (§11.3). */
   readonly reconnecting: boolean;
@@ -419,7 +419,7 @@ export type CeremonyEvent =
   | { readonly type: 'answer'; readonly answer: CollabAnswer }
   /**
    * Either: the peer declared its `CANVAS_OP_VERSION` in band (the ops-channel hello).
-   * The escape hatch for signalling payloads too small to carry it — it recomputes
+   * The escape hatch for signalling payloads too small to carry it - it recomputes
    * `observerOnly` and lands before the first op, which is all contract §9 requires.
    */
   | { readonly type: 'peer-op-version'; readonly opVersion: string }
@@ -429,7 +429,7 @@ export type CeremonyEvent =
    * Either: the transport's session-critical lane is OPEN on this side.
    *
    * The one signal that completes a pairing (see the header). It carries no payload
-   * because it is not a transition between values — a data channel opens once and the
+   * because it is not a transition between values - a data channel opens once and the
    * transport emits this once per peer connection.
    */
   | { readonly type: 'ready' }
@@ -456,7 +456,7 @@ export interface CeremonyMachine {
   send(event: CeremonyEvent): void;
   /** Observe state. Returns an unsubscribe; a throwing subscriber cannot break the machine. */
   subscribe(fn: (state: CeremonyState) => void): () => void;
-  /** Drop timers and subscribers without emitting. Not a state change — see `cancel`. */
+  /** Drop timers and subscribers without emitting. Not a state change - see `cancel`. */
   dispose(): void;
 }
 
@@ -476,10 +476,10 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
   const pending = new Set<CeremonyTimerHandle>();
   /**
    * Bumped by every phase change. An effect is TAGGED with the generation its phase
-   * change returned (never with a re-read of this counter — see `setPhase`) and
+   * change returned (never with a re-read of this counter - see `setPhase`) and
    * discards its own result if it no longer matches, so a cancel, a timeout or an ICE
    * failure during a mint can never be undone by the late resolution of the work it
-   * abandoned — including a cancel that arrives re-entrantly, from a subscriber
+   * abandoned - including a cancel that arrives re-entrantly, from a subscriber
    * reacting to the very phase change that started the work.
    */
   let generation = 0;
@@ -490,8 +490,8 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * The buffer behind the header's publish-before-promote guarantee: a `ready` that lands
    * in a phase which may not complete (the acceptor still minting its answer, the inviter
    * still waiting for one) is remembered rather than acted on or dropped, and re-read by
-   * `syncReady` on entering a phase that may. Reset by every fresh mint — `startInvite`
-   * and `onAccept` — because each of those is a new peer connection, and the transport
+   * `syncReady` on entering a phase that may. Reset by every fresh mint - `startInvite`
+   * and `onAccept` - because each of those is a new peer connection, and the transport
    * resets its own `readyEmitted` at exactly the same points.
    */
   let readyLatched = false;
@@ -546,7 +546,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * Returns the generation it established, and callers MUST tag the work they start
    * afterwards with that number rather than re-reading `generation`. `patch` notifies
    * synchronously, and a subscriber rendering `state.phase` can call `send()` from
-   * inside that notification — a Cancel button wired straight to the new screen does
+   * inside that notification - a Cancel button wired straight to the new screen does
    * exactly that. The re-entrant event bumps the counter again, so work started after
    * the notify would otherwise capture the CANCELLED generation, look live to the
    * very guard that exists to abandon it, and resurrect a ceremony the user closed.
@@ -561,7 +561,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
 
   /**
    * Contract §9: a MAJOR op-contract gap means observer-only, never a refusal. An
-   * undeclared version is not a gap — it is silence, and the in-band hello answers it.
+   * undeclared version is not a gap - it is silence, and the in-band hello answers it.
    */
   function observerOnlyFor(peerOpVersion: string | undefined): boolean {
     return peerOpVersion !== undefined && !isCompatibleOpVersion(peerOpVersion, localOpVersion);
@@ -574,11 +574,11 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
   interface RaceHandlers<T> {
     readonly onResult: (value: T) => void;
     readonly onExpired: () => void;
-    /** A thrown effect is a hard local failure — effects are meant to return results. */
+    /** A thrown effect is a hard local failure - effects are meant to return results. */
     readonly onThrew: (detail: string) => void;
   }
 
-  /** `gen` is the phase this work belongs to — passed in, never re-read (see `setPhase`). */
+  /** `gen` is the phase this work belongs to - passed in, never re-read (see `setPhase`). */
   function race<T>(gen: number, work: Promise<T>, handlers: RaceHandlers<T>): void {
     let settled = false;
     const running = (): boolean => !settled && live(gen);
@@ -679,7 +679,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
           if (!live(next)) return;
           startTimer(next, connectWatchdogMs, () => fail('ice-failed-isolation-suspected', 'connect watchdog'));
           // ICE, and on a fast pair the channels too, can have run the whole way inside
-          // the `applyRemote` above — this phase is entered AFTER the transitions it
+          // the `applyRemote` above - this phase is entered AFTER the transitions it
           // waits for. Same reads the acceptor does, deliberately not a special case:
           // this leg loses the race by about two milliseconds rather than not having it.
           // ICE first, so a pairing that died mid-apply fails instead of completing.
@@ -688,12 +688,12 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
           return;
         }
         if (res.retryable) {
-          // §11.25: a bad paste is a step to repeat, not a ceremony to restart — but
+          // §11.25: a bad paste is a step to repeat, not a ceremony to restart - but
           // it SPENDS a re-arm. `armAnswerWait` starts the ten minutes over, so an
           // answer that never reads (a cracked camera, a chat client mangling the
           // token) would otherwise hold this offer, its ICE credentials and the
           // "anyone with this invite can join and edit" window open for as long as
-          // someone keeps pasting — with no fresh candidates ever minted either.
+          // someone keeps pasting - with no fresh candidates ever minted either.
           // The budget bounds the whole answer leg, not just its idle stretches.
           const spent = state.rearms + 1;
           if (spent > maxRearms) {
@@ -741,7 +741,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
       {
         onResult: (probe) => {
           if (probe.status === 'missing') {
-            // §6.1: peers send values, never code — so a missing tool is a refusal.
+            // §6.1: peers send values, never code - so a missing tool is a refusal.
             fail('tool-missing', invite.toolId);
             return;
           }
@@ -769,7 +769,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
         }
         // The answer is PUBLISHED here, and this notification is the one the dialog turns
         // into step 3. Everything that could complete the ceremony runs strictly after
-        // it — see the header's publish-before-promote guarantee. That ordering is the
+        // it - see the header's publish-before-promote guarantee. That ordering is the
         // whole fix: promote first and the reply the inviter is waiting for never becomes
         // deliverable, which is a pair that cannot connect rather than one that connects
         // early.
@@ -801,7 +801,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * for and the one a level read cannot cover.
    *
    * `gen` is the generation the entering phase change returned, never a re-read of the
-   * counter, and it is checked before the read and AGAIN after it — `channelsReady` is
+   * counter, and it is checked before the read and AGAIN after it - `channelsReady` is
    * foreign code that may itself have sent a `cancel`. Anything but `true` is "not yet",
    * never a failure: a transport that cannot answer has not broken the ceremony, and the
    * edge event, the replay and the watchdog are all still in play.
@@ -828,8 +828,8 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * The pair can carry a session: this is the ONLY transition into `connected`.
    *
    * Latching first and acting second is the publish-before-promote guarantee: from any
-   * phase that still owes a human a step — the acceptor minting or holding its answer's
-   * predecessors, the inviter waiting for a reply — this records the fact and changes
+   * phase that still owes a human a step - the acceptor minting or holding its answer's
+   * predecessors, the inviter waiting for a reply - this records the fact and changes
    * nothing, and `syncReady` re-reads it once the machine reaches a phase that may
    * complete. The machine may not skip publishing the answer, whatever the transport says
    * and whenever it says it.
@@ -856,7 +856,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * Read the transport's CURRENT ICE state and process it exactly as a live event.
    *
    * Called on entering the two phases the transport is the only good way out of, because
-   * both are entered from inside an `await` the transitions can land during — see the
+   * both are entered from inside an `await` the transitions can land during - see the
    * header's "Both surfaces are read level-triggered on entry" for the measured trace.
    * Run BEFORE `syncReady`, so a pairing that died during the mint fails rather than
    * completing. Deliberately routed through `onIce` rather than given its own transition
@@ -866,7 +866,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
    * `gen` is the generation the entering phase change returned, never a re-read of the
    * counter (see `setPhase`). A subscriber that cancelled from inside that phase's
    * notification has already ended this ceremony, and a level read must not be the thing
-   * that resurrects it — so the guard is checked before the read and AGAIN after it,
+   * that resurrects it - so the guard is checked before the read and AGAIN after it,
    * since `iceState` is foreign code that may itself have sent a `cancel`.
    *
    * Idempotent by construction, which is what lets the transport's replay-on-subscribe
@@ -904,14 +904,14 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
       case 'connected':
       case 'completed':
         // NOT a completion. A candidate pair answering a binding request says nothing
-        // about whether the ceremony finished — on loopback it happens BEFORE the answer
-        // has even been carried back — and promoting on it is precisely the bug that made
+        // about whether the ceremony finished - on loopback it happens BEFORE the answer
+        // has even been carried back - and promoting on it is precisely the bug that made
         // the acceptor skip its own answer screen. The channels are the signal; see
         // `onReady`. The only thing left here is un-greying a live pair that blipped.
         if (state.phase === 'connected' && state.reconnecting) patch({ reconnecting: false });
         return;
       case 'disconnected':
-        // NOT a failure: it self-heals in seconds, and no timer is started on purpose —
+        // NOT a failure: it self-heals in seconds, and no timer is started on purpose - 
         // the browser escalates to `failed` itself if it does not (§11.3).
         if (!state.reconnecting) patch({ reconnecting: true });
         return;

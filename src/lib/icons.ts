@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared icon registry — ONE Lucide-house path table for the whole shell.
+ * Shared icon registry - ONE Lucide-house path table for the whole shell.
  *
  * Before this file, the same handful of glyphs (circle-help "?", the chevrons,
  * the shield-check, the package box, the Neurospicy heartbeat …) were each
  * hand-inlined as a per-file `<svg>` const in category-icons.ts, catalog-summary.ts,
  * valid.ts, projects.ts, folder-tiles.ts, gallery.ts, profile.ts, footer-nav.ts,
- * featured-row.ts, sound-toggle.ts and neuro-dock.ts — see
+ * featured-row.ts, sound-toggle.ts and neuro-dock.ts - see
  * plans/76-component-audit.md recommendation 5. Several were byte-for-byte
  * duplicates under different names (the icons noted "merged, was X" below);
  * those are collapsed onto one canonical name here. Genuinely different Lucide
  * glyphs that merely *look* similar (e.g. a plain shield vs. a shield with a
- * check mark, or "box" vs. "package") are kept as separate entries — dedupe
+ * check mark, or "box" vs. "package") are kept as separate entries - dedupe
  * never trades away a real visual distinction.
  *
  * Usage: `icon('trash')` → a 24×24 stroke <svg> string. `icon('trash', { size: 18 })`
@@ -44,18 +44,18 @@ const SHIELD_OUTLINE = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
 const FILM_STRIP = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>';
 const GRID_4 = '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>';
 /** Lens + handle. Shared by `search` and the two zoom glyphs, which differ only
- *  by the sign drawn inside the lens — that is what makes them read as a family. */
+ *  by the sign drawn inside the lens - that is what makes them read as a family. */
 const MAGNIFIER = '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>';
 const PACKAGE_BOX = '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>';
 
 /**
  * The registry. Grouped by where the glyph mainly lives, but every key is a
- * flat, global name — there is no per-category namespacing.
+ * flat, global name - there is no per-category namespacing.
  */
 const PATHS = {
   // ---- Chrome / navigation (footer-nav, gallery, projects, profile, folder-tiles) ----
   search: MAGNIFIER,
-  // Lucide "plane" — the offline nudge's trip metaphor (views/offline-nudge.ts).
+  // Lucide "plane" - the offline nudge's trip metaphor (views/offline-nudge.ts).
   plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
   zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   // merged: identical in footer-nav.ts (NAV_ICONS.help) and featured-row.ts (HELP_ICON)
@@ -63,14 +63,14 @@ const PATHS = {
   // merged: gallery.ts INFO_ICON (two <path>s) + profile.ts INFO_ICON (one combined <path>) drew the same glyph
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   // Warning triangle (Lucide triangle-alert). Used by the export preflight findings and
-  // the aspect-warning surface — an amber "check this" mark, not an error stop.
+  // the aspect-warning surface - an amber "check this" mark, not an error stop.
   alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   dashboard: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
-  // Lucide "house" — the /start studio's always-available escape to the front
+  // Lucide "house" - the /start studio's always-available escape to the front
   // door (Tools). A history-independent Home, so a studio reached mid-session is
   // never a one-way trip regardless of what sits in the back stack.
   home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  // plain outline (no check) — the /valid hero fallback + drop-zone glyph
+  // plain outline (no check) - the /valid hero fallback + drop-zone glyph
   shield: SHIELD_OUTLINE,
   // merged: footer-nav.ts NAV_ICONS.shield ("Verify" nav link) === profile.ts VERIFY_SHIELD, byte-identical
   shieldCheck: `${SHIELD_OUTLINE}${CHECK_TICK}`,
@@ -82,7 +82,7 @@ const PATHS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   minus: '<path d="M5 12h14"/>',
   menu: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
-  // solid dot-menu — pass { filled: true }
+  // solid dot-menu - pass { filled: true }
   menuDots: '<circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/>',
   arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   // The back pill's leading mark (components/back-pill.ts). A stroked Lucide
@@ -91,14 +91,14 @@ const PATHS = {
   arrowLeft: '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
-  // Lucide "pin" — the gallery card's "available offline" toggle (filled via CSS when active).
+  // Lucide "pin" - the gallery card's "available offline" toggle (filled via CSS when active).
   pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>',
-  // Lucide "download" — the gallery card's "keep available offline" idle state.
+  // Lucide "download" - the gallery card's "keep available offline" idle state.
   download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
-  // Lucide "circle-check" — the "available offline" done state (circle filled with
+  // Lucide "circle-check" - the "available offline" done state (circle filled with
   // the accent + contrasting tick via the gallery's .pin-done rules).
   circleCheck: `<circle cx="12" cy="12" r="10"/>${CHECK_TICK}`,
-  // A bare circle — the offline download's progress ring (CSS turns it into a
+  // A bare circle - the offline download's progress ring (CSS turns it into a
   // spinning arc with stroke-dasharray while a pin is in flight).
   ring: '<circle cx="12" cy="12" r="9"/>',
   // compound sort-direction glyph (two <g> arrows, toggled by CSS via .sd-up/.sd-down)
@@ -127,7 +127,7 @@ const PATHS = {
   package: PACKAGE_BOX,
 
   // ---- Catalog category glyphs (category-icons.ts, catalog-summary.ts) ----
-  // merged: category-icons.ts "credentials" — a rounded shield badge (distinct from the plain `shield`/`shieldCheck` pair above)
+  // merged: category-icons.ts "credentials" - a rounded shield badge (distinct from the plain `shield`/`shieldCheck` pair above)
   credentialShield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>' + CHECK_TICK,
   hexagon: '<path d="M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/><circle cx="12" cy="12" r="3"/>',
   layersStack: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
@@ -185,48 +185,48 @@ const PATHS = {
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.2" r="1.1"/>',
   mapPin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
   camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
-  // Big central sparkle + two small twinkles — the "auto / AI generated" glyph.
+  // Big central sparkle + two small twinkles - the "auto / AI generated" glyph.
   aiSpark: '<path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 15v3.5M17.25 16.75h3.5"/><path d="M5 3.5v3M3.5 5h3"/>',
   checklist: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.3 1.3L6.5 5"/><path d="m3 12 1.3 1.3 2.2-2.3"/><path d="m3 18 1.3 1.3 2.2-2.3"/>',
-  // A framed ripple — the "in-pixel imprint" glyph.
+  // A framed ripple - the "in-pixel imprint" glyph.
   imprint: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M6.5 13.5c1.8-3 3.6-3 5.5 0s3.7 3 5.5 0"/><path d="M6.5 9.5c1.8-2.4 3.6-2.4 5.5 0s3.7 2.4 5.5 0"/>',
-  // Per-operation change-history glyphs — a recognisable mark for each edit we log.
+  // Per-operation change-history glyphs - a recognisable mark for each edit we log.
   crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
   droplet: '<path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/>',
-  // Lucide "blend" — two overlapping circles. Reads as opacity / overlay, unlike the
+  // Lucide "blend" - two overlapping circles. Reads as opacity / overlay, unlike the
   // droplet, which looks like a colour/tint control.
   opacity: '<circle cx="9" cy="9" r="7"/><circle cx="15" cy="15" r="7"/>',
   convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
   // A vertical double-headed arrow. Drawn upright so it can be ROTATED by whoever uses it
-  // — the visualizer turns it 45deg for its "enlarge" control, which is the conventional
+  // - the visualizer turns it 45deg for its "enlarge" control, which is the conventional
   // diagonal expand affordance.
   arrowsV: '<path d="M12 4v16"/><path d="m8 8 4-4 4 4"/><path d="m8 16 4 4 4-4"/>',
-  // Horizontal twin of arrowsV — a left/right double-arrow. Pairs with it as the pitch (X)
+  // Horizontal twin of arrowsV - a left/right double-arrow. Pairs with it as the pitch (X)
   // / yaw (Y) tilt pair; roll (Z) is the circular rotateCw below.
   arrowsH: '<path d="M4 12h16"/><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/>',
-  // Single clockwise circular arrow (Lucide rotate-cw) — an in-plane spin, i.e. roll.
+  // Single clockwise circular arrow (Lucide rotate-cw) - an in-plane spin, i.e. roll.
   rotateCw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
-  // Translate handles — a double-arrow with a centre tick marking the moved object, so they
+  // Translate handles - a double-arrow with a centre tick marking the moved object, so they
   // read as "move along X / Y" and stay distinct from the tilt rotation arrows above.
   moveX: '<path d="M2 12h20"/><path d="m6 8-4 4 4 4"/><path d="m18 8 4 4-4 4"/><path d="M12 8.5v7"/>',
   moveY: '<path d="M12 2v20"/><path d="m8 6 4-4 4 4"/><path d="m8 18 4 4 4-4"/><path d="M8.5 12h7"/>',
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
-  // Image fit modes — a deliberately symmetric pair: the same frame, with the
+  // Image fit modes - a deliberately symmetric pair: the same frame, with the
   // artwork drawn OVERFLOWING it (fill/crop) or INSET within it (fit whole). The
   // difference between the two glyphs is the whole message, so they only read
   // side by side or as a toggle that swaps between them.
   fitCover: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="6" y="1" width="12" height="22" rx="1"/>',
   fitContain: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="6" y="8" width="12" height="8" rx="1"/>',
-  // Stacked planes — "composite of multiple elements".
+  // Stacked planes - "composite of multiple elements".
   layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
-  // Microphone — "recorded live from the microphone".
+  // Microphone - "recorded live from the microphone".
   mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
-  // Lucide "speech" — a voice with sound waves. The Script audio surfaces
+  // Lucide "speech" - a voice with sound waves. The Script audio surfaces
   // (Utilities card + #/script writing view): words in, a spoken voice out.
   // Deliberately NOT `mic` (that claims live capture) or `music` (a tune).
   speech: '<path d="M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.95 1 4.8a.2.2 0 0 1 .2.2v3.5"/><path d="M19.8 17.8a7.5 7.5 0 0 0 .003-10.603"/><path d="M17 15a3.5 3.5 0 0 0-.025-4.975"/>',
-  // A screen on a stand — "captured from the screen" (IPTC screenCapture). Deliberately
+  // A screen on a stand - "captured from the screen" (IPTC screenCapture). Deliberately
   // NOT the camera glyph: a screenshot is a different claim from a photograph.
   monitor: '<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>',
 
@@ -237,9 +237,9 @@ const PATHS = {
   volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>',
 
   // ---- tool-actions.ts export bar ----
-  // Lucide rotate-cw — the "Regenerate music" button on the video audio-track card.
+  // Lucide rotate-cw - the "Regenerate music" button on the video audio-track card.
   refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>',
-  // The export panel's "dock to the side" control (lib/export-panel-float.ts) —
+  // The export panel's "dock to the side" control (lib/export-panel-float.ts) - 
   // Lucide panel-left: a framed area with a rail down the left edge.
   dock: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
 
@@ -249,7 +249,7 @@ const PATHS = {
   // magnifying glass with a sign in the lens, not a bare +/− : a lone plus next to
   // the panel's other add affordances read as "add", not "zoom".
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
-  // Lucide `upload` — the tray-and-arrow every drop zone in the app wears.
+  // Lucide `upload` - the tray-and-arrow every drop zone in the app wears.
   upload: '<path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
   zoomIn: `${MAGNIFIER}<path d="M8 11h6"/><path d="M11 8v6"/>`,
   zoomOut: `${MAGNIFIER}<path d="M8 11h6"/>`,
@@ -258,7 +258,7 @@ const PATHS = {
   scissors: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>',
   /**
    * The clip inspector's **Animate** group (enter/exit kind + duration + curve).
-   * Two axes and an ease curve rising between them — the same picture
+   * Two axes and an ease curve rising between them - the same picture
    * components/easing-editor.ts plots, so the group header and the control it
    * opens onto read as one thing. Nothing else in the registry says "a value
    * moving over time": `sparkle`/`aiSpark` mean generated, `zap` means fast,
@@ -272,7 +272,7 @@ const PATHS = {
    */
   keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
   /**
-   * Lucide `unlink` — break the A/V link between a picture and the sound detached
+   * Lucide `unlink` - break the A/V link between a picture and the sound detached
    * from it. The paired direction re-uses `link`, which the bar's link chip
    * already wears, so the two directions of one relationship look related.
    */
@@ -281,7 +281,7 @@ const PATHS = {
   // ---- Atmosphere layers (the player's background-noise beds, music-player.ts) ----
   // Lucide cloud-rain / waves / wind / flame; `noise` is Lucide audio-waveform, the
   // one row-glyph shared by the three noise colours (they differ by label, not by
-  // scene — a fake "pink" vs "brown" pictogram would only mislead).
+  // scene - a fake "pink" vs "brown" pictogram would only mislead).
   cloudRain: '<path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
   waves: '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
   wind: '<path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/>',
@@ -291,7 +291,7 @@ const PATHS = {
   cloudLightning: '<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/>',
   bird: '<path d="M16 7h.01"/><path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20"/><path d="m20 7 2 .5-2 .5"/><path d="M10 18v3"/><path d="M14 17.75V21"/><path d="M7 18a6 6 0 0 0 3.84-10.61"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-  // Windchimes — no Lucide equivalent, so drawn in the same house style: the
+  // Windchimes - no Lucide equivalent, so drawn in the same house style: the
   // suspension bar, four tubes of falling length, and the clapper disc below.
   chimes: '<path d="M4 4h16"/><path d="M7 4v9"/><path d="M11 4v12"/><path d="M15 4v8"/><path d="M19 4v11"/><circle cx="13" cy="19.5" r="2"/><path d="M13 16v1.5"/>',
   coffee: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
@@ -300,7 +300,7 @@ const PATHS = {
   keyboard: '<path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/>',
 
   // ---- object align / distribute / stacking order (shared with the free-canvas editors) ----
-  // Object alignment (two bars snapping to an edge/centre) — distinct from text-align icons.
+  // Object alignment (two bars snapping to an edge/centre) - distinct from text-align icons.
   alignL: '<line x1="4" y1="3.5" x2="4" y2="20.5"/><rect x="7" y="5.5" width="13" height="4.5" rx="1"/><rect x="7" y="14" width="8" height="4.5" rx="1"/>',
   alignC: '<line x1="12" y1="3.5" x2="12" y2="20.5"/><rect x="5" y="5.5" width="14" height="4.5" rx="1"/><rect x="8" y="14" width="8" height="4.5" rx="1"/>',
   alignR: '<line x1="20" y1="3.5" x2="20" y2="20.5"/><rect x="4" y="5.5" width="13" height="4.5" rx="1"/><rect x="9" y="14" width="8" height="4.5" rx="1"/>',
@@ -321,7 +321,7 @@ export type IconName = keyof typeof PATHS;
  *  #/components specimen gallery) never hand-sync a duplicate list. */
 export const iconNames = Object.keys(PATHS) as IconName[];
 
-/** True when `name` has a registry entry — lets a caller feed an untrusted/dynamic key
+/** True when `name` has a registry entry - lets a caller feed an untrusted/dynamic key
  *  through without a TS cast (mirrors the old maps' `?? fallback` pattern). */
 export function hasIcon(name: string): name is IconName {
   return Object.hasOwn(PATHS, name);
@@ -339,7 +339,7 @@ export function icon(name: IconName, opts: IconOpts = {}): string {
   const attrs = [
     'viewBox="0 0 24 24"',
     // Declared explicitly so XML consumers work too: innerHTML auto-namespaces
-    // <svg>, but DOMParser('image/svg+xml') does NOT — collab-pill's iconNode
+    // <svg>, but DOMParser('image/svg+xml') does NOT - collab-pill's iconNode
     // got null-namespace elements that never rendered (live UI and walker
     // shots both; the walker serialised them as xmlns="", found 2026-08-10).
     'xmlns="http://www.w3.org/2000/svg"',

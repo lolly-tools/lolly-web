@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The web shell's ONE fflate wrapper — zip + zip-bomb-guarded unzip.
+ * The web shell's ONE fflate wrapper - zip + zip-bomb-guarded unzip.
  *
  * Every zip/unzip in the shell goes through here so there is a single
  * worker/sync split and a single bomb policy, instead of the five drifting
  * copies that used to live in pro/zip.ts, brand-transfer.ts, data-transfer.ts,
  * views/design-import.ts and bridge/export-pptx.ts. (bridge/pptx.ts's
- * `inflatePptx` remains its own export — it additionally caps the COMPRESSED
+ * `inflatePptx` remains its own export - it additionally caps the COMPRESSED
  * input and lazy-loads fflate for the read path.)
  *
  * Async offloads to fflate's Worker so packaging/restoring tens of MB doesn't
@@ -14,7 +14,7 @@
  * some embedded WebViews) with byte-identical output.
  *
  * The unzip filter runs BEFORE each entry inflates: an entry declaring an
- * absurd uncompressed size — or a set of entries summing past the total cap —
+ * absurd uncompressed size - or a set of entries summing past the total cap - 
  * rejects the whole archive instead of inflating a zip bomb into memory.
  * The DEFAULT caps are the strictest policy previously shipping (brand packs:
  * a tokens doc + a few woff2s); a call site whose legitimate payloads are
@@ -50,16 +50,16 @@ export interface UnzipGuardOpts {
   /**
    * Optional entry selector, applied AFTER the bomb accounting so the whole
    * archive is still measured against the caps. Entries it rejects are never
-   * inflated — a peek at a handful of tiny JSONs inside a 30 MB design archive
+   * inflated - a peek at a handful of tiny JSONs inside a 30 MB design archive
    * costs the header scan, not the decompression (see design-import's
    * `countPenpotComponents`). Absent = every entry is returned, as before.
    */
   pick?: (entryName: string) => boolean;
 }
 
-/** Default per-entry cap — the strictest policy previously shipping (brand packs). */
+/** Default per-entry cap - the strictest policy previously shipping (brand packs). */
 export const DEFAULT_MAX_ENTRY_BYTES = 64 * 1024 * 1024;
-/** Default whole-archive cap — the strictest policy previously shipping (brand packs). */
+/** Default whole-archive cap - the strictest policy previously shipping (brand packs). */
 export const DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 
 /**

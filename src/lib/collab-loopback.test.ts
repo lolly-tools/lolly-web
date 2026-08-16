@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The loopback pair — plan 100 §10's "two real runtimes in one process" proof
+ * The loopback pair - plan 100 §10's "two real runtimes in one process" proof
  * (wave 1.6).
  *
  * Every piece below this file is already unit-tested in isolation, and that is
  * exactly the problem: `collab-plumbing.test.ts` drives a hand-written runtime
  * harness, `collab-presence.test.ts` drives one engine with scripted frames, and
  * `collab-session.test.ts` drives one session against a fake peer. None of them
- * can see the failure this file exists for — TWO real engine runtimes, each with
+ * can see the failure this file exists for - TWO real engine runtimes, each with
  * its own document, converging (or not) through a real op path. A CRDT that is
  * wrong is wrong only in the pair.
  *
@@ -17,8 +17,8 @@
  *    two `ReferenceCanvasDoc`s, two `createCollabSession`s over the real
  *    `attachCollabPlumbing`, the real presence engine, the real `createHistory`
  *    undo model wired in mountTool's order (history wrapper first, collab wrapper
- *    outside it — `views/tool.ts` §"Undo / redo", `collab-plumbing.ts` header).
- *  - FAKE: the transport. `LoopbackWire` is the whole of it — one side's outbound
+ *    outside it - `views/tool.ts` §"Undo / redo", `collab-plumbing.ts` header).
+ *  - FAKE: the transport. `LoopbackWire` is the whole of it - one side's outbound
  *    ops become the other's `applyRemotePatch`, one side's presence frames become
  *    the other's `presenceIn`. That is precisely the `CollabSessionHandle`
  *    reconciliation contract, so a Track A RTC provider or a Track B socket
@@ -29,7 +29,7 @@
  * A `WireAdapter` is what an RTC provider actually is: a `CanvasSyncAdapter` that
  * delegates convergence to a `ReferenceCanvasDoc` and puts everything the LOCAL
  * doors produce (`onLocalChange`'s return, `apply`'s single op) on the wire.
- * `applyRemotePatch` is the remote door and sends nothing — which is where an echo
+ * `applyRemotePatch` is the remote door and sends nothing - which is where an echo
  * storm would come from if the seam ever blurred, and §5 of this file measures it.
  *
  * ── ONE HONEST LIMITATION, STATED RATHER THAN HIDDEN ──────────────────────────
@@ -38,12 +38,12 @@
  * a device runs one copy of the module). Two logical devices inside one process
  * therefore share it, so the param ops this shell mints get globally-increasing
  * clocks even when the edits are causally concurrent. Convergence still means what
- * it means — LWW resolves, both sides land on the same value — but a same-clock
+ * it means - LWW resolves, both sides land on the same value - but a same-clock
  * tie broken by client id is NOT exercised on the param lane by this file. The
  * blocks lanes do not share: each side's ops are minted by its own
  * `ReferenceCanvasDoc`, which carries its own clock, so the concurrent-add case
  * below is a genuine two-clock merge. Fixing the param case needs an injectable
- * clock in the plumbing (there is none today) — reported, not papered over.
+ * clock in the plumbing (there is none today) - reported, not papered over.
  *
  * Run only this file:
  *   node --test shells/web/src/lib/collab-loopback.test.ts
@@ -220,7 +220,7 @@ function stream<T>(): { subscribe(fn: (v: T) => void): () => void; push(v: T): v
  *
  * `onLocalChange` (a row gesture the adapter differs) and `apply` (the single-op
  * door the shell mints params and order rewrites through) are both outbound.
- * `applyRemotePatch` is the inbound door and transmits NOTHING — the one line that
+ * `applyRemotePatch` is the inbound door and transmits NOTHING - the one line that
  * separates a converging pair from an echo storm.
  */
 class WireAdapter implements CanvasSyncAdapter {
@@ -298,7 +298,7 @@ interface Wire {
   /** The transport's join handshake (§4.7): each side's snapshot, minus the
    *  joiner's own entry, plus a `live` connection event. */
   join(): void;
-  /** Buffer ops instead of delivering them — a partition, which is how two edits
+  /** Buffer ops instead of delivering them - a partition, which is how two edits
    *  are made genuinely concurrent in one process. Presence is never held (its
    *  lane is lossy and immediate by construction). */
   hold(): void;
@@ -307,7 +307,7 @@ interface Wire {
    * Stop DELIVERING one side's presence frames (they are still counted as sent).
    * This is §11.4's real shape: a background tab whose timers are throttled to
    * ~1/min keeps a perfectly healthy channel while its heartbeat stops arriving.
-   * It is also the only way to make the away exemption testable — with both
+   * It is also the only way to make the away exemption testable - with both
    * engines live, A's own 15 s heartbeat refreshes B's TTL and nobody would ever
    * be evicted for any reason.
    *
@@ -362,7 +362,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
 
     // ── mountTool's wrapper stack, in mountTool's order ──────────────────────
     // 1. the undo-history wrapper (views/tool.ts), over the engine's setter;
-    // 2. the collab wrapper, installed OUTSIDE it by attachCollabPlumbing — so a
+    // 2. the collab wrapper, installed OUTSIDE it by attachCollabPlumbing - so a
     //    local edit records a step AND syncs, and a history replay syncs too.
     const history = createHistory();
     let applyingHistory = false;
@@ -379,7 +379,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
       return baseSetInput(id, value);
     };
 
-    // The presence lane is lossy and immediate by construction — never held by the
+    // The presence lane is lossy and immediate by construction - never held by the
     // partition, which only ever buffers OPS. A frame goes into the peer's
     // `presenceIn` stream, the same door an RTC data channel writes to, so a peer
     // that has closed (and torn down its subscription) simply stops hearing us.
@@ -444,7 +444,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
     join() {
       // The handshake the transport owes the presence engine (§4.7): the full set
       // MINUS the joiner's own entry (tldraw's orphan bug). One frame each is
-      // enough to bootstrap — the receiving engine answers immediately, because a
+      // enough to bootstrap - the receiving engine answers immediately, because a
       // client that has been dutifully silent is otherwise invisible to the
       // newcomer. Everything after this is the two engines talking.
       for (const frame of a.session.presence.snapshot(b.id)) lanes.get(b.id)!.presenceIn(frame);
@@ -482,7 +482,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
 
 // ── comparison helpers ────────────────────────────────────────────────────────
 
-/** FNV-1a over the hydrated template — the render-hash proxy §10 asks for. The
+/** FNV-1a over the hydrated template - the render-hash proxy §10 asks for. The
  *  hydrated string IS what the shell builds the DOM (and therefore the export)
  *  from, so equality here is the strongest determinism claim available without a
  *  browser. */
@@ -583,7 +583,7 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
   assertConverged(w, 'field edits');
   assert.deepEqual(itemsOf(w.a).map(r => `${r.label}/${r.note}`), ['a-one*/', 'b-one/noted']);
 
-  // ── reorder (the gesture no row-map diff can see — the shell mints it) ────
+  // ── reorder (the gesture no row-map diff can see - the shell mints it) ────
   await w.a.set('items', [...itemsOf(w.a)].reverse());
   await w.settle();
   assertConverged(w, 'reorder');
@@ -599,7 +599,7 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
   // Released in the OPPOSITE order to the one they were made in, so this is a
   // real interleaving and not a disguised sequence. Structural row ops MERGE
   // (`rebuildCollection` adds, removes and re-sorts rather than replacing), while a
-  // per-key VALUE write converges instead through the adapter's post-apply state —
+  // per-key VALUE write converges instead through the adapter's post-apply state - 
   // see the concurrent same-key test below, which owns that boundary.
   w.hold();
   await w.a.set('items', [...itemsOf(w.a), row('a-two')]);
@@ -636,12 +636,12 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
  * apart.
  *
  * WHAT WAS WRONG: two peers write the same key while partitioned. Their DOCUMENTS
- * always converged — `ReferenceCanvasDoc` arbitrates by Lamport `(clock, client)`
+ * always converged - `ReferenceCanvasDoc` arbitrates by Lamport `(clock, client)`
  * and discards the loser. Their INPUT MODELS did not: `buildPatch` read `op.value`
  * straight off the wire and handed it to `runtime.applyPatch`, having never asked
  * the adapter which write won. The side whose local write was NEWER got stomped by
- * the older remote value, and the pair ended up on two different models — and two
- * different renders — permanently, until somebody wrote that key again.
+ * the older remote value, and the pair ended up on two different models - and two
+ * different renders - permanently, until somebody wrote that key again.
  *
  * WHY IT WAS INVISIBLE ELSEWHERE: every unit test delivers a remote op to a side
  * that has NOT concurrently written the same key, which is the only case where "raw
@@ -650,7 +650,7 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
  *
  * THE FIX: `flush()` now snapshots `adapter.state()` after `applyRemotePatch` and
  * builds the patch from the CONVERGED value of each touched key. That is also what a
- * Yjs adapter requires rather than merely prefers — its merge result is a property of
+ * Yjs adapter requires rather than merely prefers - its merge result is a property of
  * the shared type, never of the op payload.
  */
 test('a remote write that LOSES the merge does not stomp the local model', async () => {
@@ -661,12 +661,12 @@ test('a remote write that LOSES the merge does not stomp the local model', async
   w.join();
 
   w.hold();
-  await w.a.set('title', 'A concurrent');   // lower Lamport clock — this write LOST
-  await w.b.set('title', 'B concurrent');   // higher — this is the write that WON
+  await w.a.set('title', 'A concurrent');   // lower Lamport clock - this write LOST
+  await w.b.set('title', 'B concurrent');   // higher - this is the write that WON
   w.release('a-first');
   await w.settle();
 
-  // The CRDT is right, on both sides — it always was.
+  // The CRDT is right, on both sides - it always was.
   assert.equal(
     w.a.adapter.doc.state().params.get('title'), 'B concurrent',
     'A\'s document took the newer write',
@@ -705,7 +705,7 @@ test('a remote write that LOSES the merge does not stomp the local model', async
 test('a constrained value converges in the MODEL even though the doc carries the raw write', async () => {
   // §11.11: an out-of-range remote value is clamped by the receiver's own
   // constraints, not dropped. Both peers clamp identically, so the models
-  // converge — while the doc keeps the literal that crossed the wire. Documented
+  // converge - while the doc keeps the literal that crossed the wire. Documented
   // here because "doc == model" is the assumption a future reader would make.
   _clearCanvasSyncProviderForTests();
   _resetCollabDeviceForTests('loopback');
@@ -759,7 +759,7 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
   const focusToken = 'items:01J0000000000000000000000A';
   w.a.session.setFocus(focusToken);
   w.a.session.setFocus('title');
-  w.a.session.setFocus(focusToken);     // a burst — the LAST one must be what lands
+  w.a.session.setFocus(focusToken);     // a burst - the LAST one must be what lands
   assert.equal(w.a.presenceOut.length, 1, 'the burst is coalesced, nothing sent yet');
 
   clock.advance(PRESENCE_THROTTLE_MS);
@@ -778,7 +778,7 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
   // timers are throttled to ~1/min, so ITS heartbeat stops arriving while the
   // channel is fine and the other direction keeps flowing. Starve A's outbound
   // lane and run well past the TTL: the away peer must still be there. (Without
-  // this, the assertion proves nothing — A's own 15 s heartbeat would keep
+  // this, the assertion proves nothing - A's own 15 s heartbeat would keep
   // refreshing B's TTL, so no peer could ever be evicted for any reason.)
   w.blackout('a');
   clock.advance(PRESENCE_TTL_MS * 2 + PRESENCE_SWEEP_MS);
@@ -805,7 +805,7 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
 
 test('presence control: a silent VISIBLE peer IS evicted at the TTL', async () => {
   // The counterweight to the away exemption above. Without this, "an away peer is
-  // not evicted" could be true because NOTHING is ever evicted — which would make
+  // not evicted" could be true because NOTHING is ever evicted - which would make
   // a crashed peer ghost forever, the exact failure the TTL exists to prevent.
   _clearCanvasSyncProviderForTests();
   _resetCollabDeviceForTests('loopback');
@@ -934,7 +934,7 @@ test('op counts on the wire match the edits made: no echo, no hook-derived re-em
   assert.equal(w.b.adapter.received.length, 3, 'B took three (title, the add gesture, the field)');
 
   // POSITIVE CONTROL. `mirror` is absent above because the HOOK wrote it, not
-  // because the seam refuses that input — typed by hand it crosses like any
+  // because the seam refuses that input - typed by hand it crosses like any
   // other scalar. Without this, the §11.9 assertion could pass for the wrong
   // reason forever.
   await w.a.set('mirror', 'typed by hand');
@@ -979,7 +979,7 @@ test('solo: with no provider registered a mount touches nothing and calls no ada
   const soloRender = runtime.getHydrated();
 
   // The positive control: the SAME sequence with the adapter registered does
-  // reach it — otherwise the zeros above would prove only that the spy is inert.
+  // reach it - otherwise the zeros above would prove only that the spy is inert.
   const unregister = registerCanvasSyncProvider(spy);
   const wired = await createRuntime(loopbackTool(`collab-wired-${++toolSeq}`), engineHost(), {});
   const wiredBefore = wired.setInput;

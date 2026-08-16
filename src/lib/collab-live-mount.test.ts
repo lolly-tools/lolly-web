@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-live-mount — the real mount, both roles (plan 100 §5, §6.2a, §11.17, §12 Q3).
+ * collab-live-mount - the real mount, both roles (plan 100 §5, §6.2a, §11.17, §12 Q3).
  *
  * What is worth pinning here is not "a mount mounts". It is the four things that are
  * only true if this module is written carefully, and that silently rot if it is not:
  *
  *   1. ONE-SHOT. The session handle is handed to exactly one mount, and the registry
- *      goes back to dormant as it hands it over. A second mount of the same tool — a
- *      refresh, a back-button, a second tab of the same route — must be an ordinary
+ *      goes back to dormant as it hands it over. A second mount of the same tool - a
+ *      refresh, a back-button, a second tab of the same route - must be an ordinary
  *      single-player mount, because two runtimes sharing one convergence document
  *      would echo every edit back at each other.
  *   2. EPHEMERAL MEANS EPHEMERAL. The acceptor's `host.state` is memory-backed before
  *      the route is entered, so nothing it saves can reach a slot (§6.2a). This suite
- *      runs in Node, where there IS no IndexedDB — so a save that "works" is a save
+ *      runs in Node, where there IS no IndexedDB - so a save that "works" is a save
  *      that never went near one.
  *   3. THE SEED IS THE LIVE MODEL, both ways. The inviter's remount is born with the
  *      values it had a moment ago (unsaved edits survive becoming a collab), and the
@@ -210,7 +210,7 @@ test('a seed that never lands is not an error — the mount opens and convergenc
 
 test('the inviter is force-remounted in place, and the remount preserves the live model', async () => {
   // The inviter is already IN the tool: same route, and the tool route's dedup signature
-  // strips params — so without the force-nav nothing would remount at all.
+  // strips params - so without the force-nav nothing would remount at all.
   const env = environment({
     onToolRoute: () => true,
     currentQuery: () => 'url=https%3A%2F%2Fedited-after-the-dialog-opened.example',
@@ -301,10 +301,10 @@ test('adopting the handle drops the watch — the mount owns the session from th
 });
 
 test('a handle that is ALREADY closed at arm time leaves nothing behind (both real handles replay)', async () => {
-  // The fake above does not replay on subscribe. BOTH shipping transports do —
+  // The fake above does not replay on subscribe. BOTH shipping transports do - 
   // `collab/rtc-handle.ts`'s emitter calls `fn(current())` inside `subscribe`, and
   // `org/collab-handle.ts`'s events lane documents it as "the current state,
-  // immediately" — so the disarm callback runs BEFORE `subscribe()` has returned an
+  // immediately" - so the disarm callback runs BEFORE `subscribe()` has returned an
   // unsubscribe to call. Reachable on both tracks: Track A's acceptor waits up to
   // SEED_WAIT_MS for the hello first, which is plenty of time for the peer to hang up.
   const env = environment();
@@ -371,7 +371,7 @@ test('an ACCEPTOR already in the tool carries nothing — their copy is the peer
 
 test('a pair that dies mid-remount does NOT take the carried model with it', async () => {
   // The carry only exists after `navigate` has already run, so dropping it on a late
-  // disarm would delete the live model of a remount that is already in flight — the
+  // disarm would delete the live model of a remount that is already in flight - the
   // exact loss the hand-off exists to prevent. What bounds it is the NEXT ceremony.
   environment({ onToolRoute: () => true });
   const c = conn({ role: 'inviter', ephemeral: false, toolId: 'qr-code' });
@@ -422,7 +422,7 @@ test('"Save a copy" lifts the ephemeral session into a real store as a fresh slo
 
   const real: WebStateAPI = createMemoryStateAPI();   // stands in for the device's own store
   // No `from`: handing the bridge to the mount does not lose it, because the acceptor's
-  // work exists nowhere else — one-shot is about the HANDOVER, not the reference.
+  // work exists nowhere else - one-shot is about the HANDOVER, not the reference.
   const slot = await saveCollabCopy(real);
   assert.ok(slot, 'a disclosed fork, not a shared artifact');
   const saved = await real.load(slot);

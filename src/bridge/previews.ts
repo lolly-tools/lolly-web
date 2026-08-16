@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PreviewsAPI — cache of profile-personalized gallery preview thumbnails.
+ * PreviewsAPI - cache of profile-personalized gallery preview thumbnails.
  *
  * When the user opts in to "use my details", the gallery re-renders the previews
  * of the few tools that pre-fill from the profile (bindToProfile) so the cards
  * show their name/signature instead of the committed placeholder. Those renders
  * are expensive, so the results are cached here (one record per toolId) and re-used
- * on later visits — keyed by a `sig` of the profile fields, so a profile edit
+ * on later visits - keyed by a `sig` of the profile fields, so a profile edit
  * naturally invalidates them (a stale-sig record is ignored and re-rendered).
  *
- * This is a HOST-UI helper (like host.profile.set) — it is NOT part of the
+ * This is a HOST-UI helper (like host.profile.set) - it is NOT part of the
  * tool-facing v1 bridge contract, so other shells need not implement it; the
  * gallery feature-detects `host.previews` and degrades to committed previews.
  *
@@ -60,7 +60,7 @@ export function createPreviewsAPI(db: PreviewsDb): PreviewsAPI {
     },
     /**
      * Approximate bytes this cache occupies, for the storage UI. Thumbs are
-     * data-URL strings (ASCII, so length ≈ bytes — same byte-estimate spirit as
+     * data-URL strings (ASCII, so length ≈ bytes - same byte-estimate spirit as
      * host.state.sizes()). try/catch → 0 so a missing/rebuilt store never throws.
      */
     async size() {

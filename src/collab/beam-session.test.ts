@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The beam session — the four wires, end to end (plan 100 §6.4, §11.6, §11.16,
+ * The beam session - the four wires, end to end (plan 100 §6.4, §11.6, §11.16,
  * §11.18, §11.24).
  *
  * `beam-protocol.test.ts` proves the wire, `beam-pack.test.ts` proves the two ends
@@ -8,9 +8,9 @@
  * the thing none of them can: that the four are actually CONNECTED, and connected in
  * the order the plan requires.
  *
- * Everything runs against a fake LANE PAIR — two objects with the transport's exact
+ * Everything runs against a fake LANE PAIR - two objects with the transport's exact
  * beam-lane shape (`json`/`binary`/`onDrain`/`bufferedAmount`/`lowThreshold`/`isOpen`)
- * cross-wired into each other's session — plus an in-memory sink and, on the receiving
+ * cross-wired into each other's session - plus an in-memory sink and, on the receiving
  * side, the REAL `lib/beam-pack.ts` ingest against an in-memory host. So there is no
  * `RTCPeerConnection`, no IndexedDB, no Worker and no DOM anywhere in here, and the
  * assertions are still about real bytes landing in a real library:
@@ -21,7 +21,7 @@
  *     that arrives before `accept` cancels the beam and discards staging (§11.24);
  *   - the sender is **pull-driven**: with the lane's buffer above its low threshold,
  *     nothing leaves until the lane says it drained (§11.6);
- *   - a **cancel mid-transfer** — from either side — leaves nothing staged and nothing
+ *   - a **cancel mid-transfer** - from either side - leaves nothing staged and nothing
  *     ingested (§11.18), and so does `close()`;
  *   - the toast port sees **offer → accepted → progress → item-done → complete**, in
  *     that order, with progress never going backwards.
@@ -51,7 +51,7 @@ import type { BeamAssetRecord, BeamPackHost, BeamSessionRow } from '../lib/beam-
 
 interface FakeLane extends BeamLane {
   open: boolean;
-  /** Hold every write in a buffer the test drains by hand — the backpressure model. */
+  /** Hold every write in a buffer the test drains by hand - the backpressure model. */
   manual: boolean;
   /** Everything this lane was asked to write, in order. */
   sent: BeamInboundFrame[];
@@ -135,7 +135,7 @@ interface MemSink extends BeamSessionSink {
 /**
  * The production arrangement, in memory: the SINK produces each item's digest, so the
  * protocol buffers nothing of its own (`hasher: null`, which is `createBeamSession`'s
- * default). Verification still happens — just against what staging actually holds.
+ * default). Verification still happens - just against what staging actually holds.
  */
 function memSink(): MemSink {
   const chunks = new Map<number, Uint8Array[]>();
@@ -246,7 +246,7 @@ const PHOTO = 'user/upload/1-photo.png';
 const LOGO = 'suse/logo/primary';
 const SLOT = 'design:1000';
 
-/** Deterministic pseudo-random bytes (xorshift32) — same seed, same beam, always. */
+/** Deterministic pseudo-random bytes (xorshift32) - same seed, same beam, always. */
 function bytesOf(n: number, seed: number): Uint8Array {
   const out = new Uint8Array(n);
   let x = (seed >>> 0) || 1;
@@ -471,7 +471,7 @@ test('a receiver with no ingest configured declines at offer time, before any by
     lane: laneA, role: 'inviter', host: hostA, workerFactory: null, onEvent: (e) => eventsA.push(e),
   });
   // B has a working SINK (so this is not the pre-existing "nowhere to stage"
-  // refusal) but no `ingest` and no `host` to build one from — `org/collab-
+  // refusal) but no `ingest` and no `host` to build one from - `org/collab-
   // provider.ts`'s send-only shape, or any wiring that registers a beam session
   // before it knows whether this device can receive one.
   const sessionB = createBeamSession({
@@ -484,7 +484,7 @@ test('a receiver with no ingest configured declines at offer time, before any by
   const out = ok(await sessionA.sendCurrentSession(SLOT));
   await tick(2);
 
-  // The offer, and NOTHING else — no accept, no chunk header, no payload byte. A
+  // The offer, and NOTHING else - no accept, no chunk header, no payload byte. A
   // human on B's side was never shown a consent prompt for a transfer this device
   // could never keep, and the sink factory was never even called.
   assert.equal(laneA.sent.length, 1, 'the offer, and nothing else');
@@ -496,7 +496,7 @@ test('a receiver with no ingest configured declines at offer time, before any by
   assert.equal(sessionA.state().outgoing?.phase, 'declined');
   assert.equal(sessionA.state().outgoing?.reason, 'no-space');
   assert.equal(types(eventsA).at(-1), 'cancelled');
-  // B never built a receiver machine for this beam at all — refusing at offer time
+  // B never built a receiver machine for this beam at all - refusing at offer time
   // means there is no `offer-received`/`accepted`/… sequence to have emitted events
   // into in the first place.
   assert.equal(eventsB.length, 0);
@@ -624,7 +624,7 @@ test('bytes before consent cancel the beam and discard staging (§11.24)', async
   assert.deepEqual(types(eventsB), ['offer-received'], 'the human is asked, and nothing else has happened');
   assert.equal(sessionB.state().incoming?.phase, 'offered');
 
-  // No accept. A chunk header alone is already the violation — the bytes never get
+  // No accept. A chunk header alone is already the violation - the bytes never get
   // a chance to arrive.
   sessionB.receiveJson({ v: BEAM_PROTOCOL_VERSION, beamId, t: 'chunk', itemIndex: 0, seq: 0, last: true });
   await tick();
@@ -661,7 +661,7 @@ test('the toast port sees offer → accepted → progress → item-done → comp
   connect(laneA, sessionB);
   connect(laneB, sessionA);
 
-  // Through the PORT (`subscribe`), not the construction-time listener — this is the
+  // Through the PORT (`subscribe`), not the construction-time listener - this is the
   // surface `mountBeamToast(el, session.toast)` consumes.
   const seen: BeamToastEvent[] = [];
   const stop = sessionB.toast.subscribe((e) => seen.push(e));

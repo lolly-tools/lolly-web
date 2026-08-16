@@ -5,7 +5,7 @@
  * views/picker.ts is 3,155 lines with only picker-initial-tab.test.ts against it
  * (maintainability-2026-07-29.md item 2). These rules decide what an upload is
  * STORED as and which tools can be embedded, so the cases that matter are the
- * aliases and the fallbacks — the branches that are invisible on inspection.
+ * aliases and the fallbacks - the branches that are invisible on inspection.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,7 +54,7 @@ test('extFromMime returns bin for an unknown or empty mime', () => {
 
 test('svg is matched before png, so image/svg+xml is not mis-read', () => {
   // Ordering guard: an svg mime containing neither "png" nor "jpeg" is fine, but
-  // the ladder's order is load-bearing for any future mime that contains both.
+  // the ladder's order matters for any future mime that contains both.
   assert.equal(extFromMime('image/svg+xml'), 'svg');
 });
 

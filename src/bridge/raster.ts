@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * host.raster (v1.105) — web implementation.
+ * host.raster (v1.105) - web implementation.
  *
  * Raster primitives for tool hooks that do their own canvas pixel work: the
  * realm-correct capability probe, decode-to-bitmap, measure, and
@@ -9,12 +9,12 @@
  * the headless CLI leaves `host.raster` undefined and tools feature-detect it
  * (plans/86-worker-isolation-hooks.md §6.1).
  *
- * Built on the same codec glue `host.images` uses — `decodeImageBitmap` (native
+ * Built on the same codec glue `host.images` uses - `decodeImageBitmap` (native
  * decode + the lazy bundled-libheif HEIC fallback, EXIF orientation baked in)
- * and the `OffscreenCanvas`/`convertToBlob` encode path — plus ONE tier
+ * and the `OffscreenCanvas`/`convertToBlob` encode path - plus ONE tier
  * `host.images` does not have: an `<img>` fallback in `decode`. Decoding an SVG
  * blob straight through `createImageBitmap` is unreliable across browsers, so on
- * failure we load it through an `<img>` and re-wrap — the same reason redact and
+ * failure we load it through an `<img>` and re-wrap - the same reason redact and
  * the old shared `loadImage` used an `<img>`. The result is always an
  * `ImageBitmap`, so nothing DOM-only ever leaves this surface.
  *
@@ -43,7 +43,7 @@ function isAssetRef(v: RasterSource): v is AssetRef {
     typeof (v as AssetRef).url === 'string';
 }
 
-/** SVG is text, so the byte-magic sniffer misses it — recognise the opening
+/** SVG is text, so the byte-magic sniffer misses it - recognise the opening
  *  tag so decode's `<img>` fallback gets a Blob with the right MIME (an `<img>`
  *  renders by the Blob's declared type, never by content sniffing). */
 function sniffSvg(bytes: Uint8Array): boolean {
@@ -60,7 +60,7 @@ function sniffMime(bytes: Uint8Array): string | null {
 }
 
 /** Normalise any RasterSource to bytes + a typed Blob. URLs/AssetRefs are
- *  fetched (blob:/data:/same-origin — no `network` capability needed for those);
+ *  fetched (blob:/data:/same-origin - no `network` capability needed for those);
  *  a Blob keeps its own declared type. */
 async function normaliseSource(src: RasterSource): Promise<{ bytes: Uint8Array; blob: Blob; mime: string | null }> {
   if (src instanceof Blob) {
@@ -81,7 +81,7 @@ async function normaliseSource(src: RasterSource): Promise<{ bytes: Uint8Array; 
   return { bytes, blob: new Blob([bytes as BlobPart], mime ? { type: mime } : undefined), mime };
 }
 
-/** The `<img>` fallback tier decode adds over host.images — for SVG and any
+/** The `<img>` fallback tier decode adds over host.images - for SVG and any
  *  vector the native `createImageBitmap` rejects. Load through an `<img>` (which
  *  the browser orients and rasterises reliably), then re-wrap to an ImageBitmap
  *  so the contract's return type holds in every case. */
@@ -91,7 +91,7 @@ async function decodeViaImg(blob: Blob): Promise<ImageBitmap> {
   }
   // A SIZELESS SVG (uploads strip the root width/height so the art scales by its viewBox)
   // rasterises at the browser's 150×150 default, throwing away the artwork's resolution
-  // AND aspect ratio — which then propagates as a tiny/mis-sized decode (e.g. a filter
+  // AND aspect ratio - which then propagates as a tiny/mis-sized decode (e.g. a filter
   // source that renders in a corner, and a 150×150 export box). Give it an intrinsic size
   // from its viewBox so the <img> decodes it crisply at full size. Best-effort: an
   // unreadable or already-sized SVG falls through to the browser default.
@@ -199,7 +199,7 @@ export function createRasterAPI(): RasterAPI {
       }
       const blob = await canvasToBlob(canvas, type, clampQuality(opts.quality));
       if (!blob) throw new Error('host.raster: image encoding failed.');
-      // Report the ACTUAL type back — a canvas encoder falls back to PNG where
+      // Report the ACTUAL type back - a canvas encoder falls back to PNG where
       // the requested type is unsupported.
       return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || type, width, height };
     },

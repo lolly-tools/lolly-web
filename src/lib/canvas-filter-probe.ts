@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Does `ctx.filter` actually FILTER? — the functional probe (plan 104 §11 S1).
+ * Does `ctx.filter` actually FILTER? - the functional probe (plan 104 §11 S1).
  *
  * The depth/DOF compositor wants to blur a plate per frame with one property write
  * (`ctx.filter = 'blur(Npx)'`) instead of a mip-chain of downscale/upscale passes.
@@ -8,7 +8,7 @@
  * function. Safari shipped the property on BOTH the main-thread and the OffscreenCanvas
  * 2D contexts while ignoring the value through 17.x, and the existing guard at
  * `bridge/export.ts:7277` (`if (!ctx || !('filter' in ctx)) return dataUrl`) is a
- * jsdom/old-browser guard, not a support test — it would have said yes there.
+ * jsdom/old-browser guard, not a support test - it would have said yes there.
  *
  * So this module DRAWS and LOOKS. On a scratch canvas of the caller's own kind:
  *
@@ -20,12 +20,12 @@
  * Ink at a pixel the square does not cover can only have arrived by the filter
  * spreading it. Both directions are asserted because "the neighbour has ink" alone
  * would also be true if the geometry assumption broke; and a verdict of `false` is
- * always the safe one — it only routes the caller to the slower fallback lane.
+ * always the safe one - it only routes the caller to the slower fallback lane.
  *
  * KIND, NOT THREAD. §11 S1's finding is that support is per-ENGINE: a worker's
  * OffscreenCanvas and the main thread's canvas answer the same way on a given
  * browser. The cache is keyed by context kind anyway, because the two kinds are
- * separate implementations in every engine and because module state is per-realm —
+ * separate implementations in every engine and because module state is per-realm - 
  * a worker gets its own cache regardless of what the window decided.
  *
  * Nothing here touches the caller's canvas: the probe always runs on a 16x16 scratch
@@ -39,7 +39,7 @@
 /** Which 2D implementation was asked about. */
 export type CanvasKind = 'canvas' | 'offscreen';
 
-/** The structural slice of a 2D context the probe uses — stub-able in a test. */
+/** The structural slice of a 2D context the probe uses - stub-able in a test. */
 export interface ProbeContext2D {
   filter: string;
   fillStyle: unknown;
@@ -61,17 +61,17 @@ export type FilterProbeTarget =
 const PROBE_SIZE = 16;
 const SQ = 6;
 const SQ_SIZE = 4;
-const SAMPLE_X = SQ + SQ_SIZE + 1;          // 11 — one clear pixel past the edge
-const SAMPLE_Y = SQ + SQ_SIZE / 2;          // 8  — the square's centre line
+const SAMPLE_X = SQ + SQ_SIZE + 1;          // 11 - one clear pixel past the edge
+const SAMPLE_Y = SQ + SQ_SIZE / 2;          // 8 - the square's centre line
 /** The blur the probe asks for. sigma = 2px, so the sample pixel lands ~0.75 sigma
- *  out and picks up tens of levels — no engine-specific tuning needed. */
+ *  out and picks up tens of levels - no engine-specific tuning needed. */
 const PROBE_FILTER = 'blur(2px)';
 /** Ink at or above this counts as spread. Low enough to survive a stricter blur
  *  interpretation (some engines read blur(2px) as radius, i.e. sigma 1: still ~15),
  *  high enough that a stray rounding bit is not "support". */
 const MIN_SPREAD = 2;
 
-/** Peak channel of a 1x1 read — alpha first, then RGB, so an opaque white dot reads
+/** Peak channel of a 1x1 read - alpha first, then RGB, so an opaque white dot reads
  *  the same whether the backing store is premultiplied or not. */
 function ink(ctx: ProbeContext2D, x: number, y: number): number {
   const d = ctx.getImageData(x, y, 1, 1).data;
@@ -81,7 +81,7 @@ function ink(ctx: ProbeContext2D, x: number, y: number): number {
 
 /**
  * The verdict for ONE context, uncached and non-destructive to nothing but the
- * context it is handed — pass a scratch, never a live compositor target.
+ * context it is handed - pass a scratch, never a live compositor target.
  *
  * Returns false for every failure mode (no property, assignment rejected, readback
  * throws, geometry assumption broken), because false is the lane that always works.
@@ -99,7 +99,7 @@ export function probeCanvasFilter(ctx: ProbeContext2D | null | undefined): boole
 
     ctx.filter = PROBE_FILTER;
     // An engine that does not implement the value keeps 'none' here. Cheap early-out;
-    // NOT the verdict — Safari <=17 stored the string and still ignored it.
+    // NOT the verdict - Safari <=17 stored the string and still ignored it.
     if (ctx.filter === 'none' || ctx.filter === '') return false;
     ctx.clearRect(0, 0, PROBE_SIZE, PROBE_SIZE);
     ctx.fillRect(SQ, SQ, SQ_SIZE, SQ_SIZE);
@@ -124,7 +124,7 @@ export function canvasFilterVerdicts(): Readonly<Record<string, boolean>> {
 }
 
 /**
- * Cached verdict for a kind, with the scratch-context factory injected — the seam
+ * Cached verdict for a kind, with the scratch-context factory injected - the seam
  * the test drives, and the entry point a caller uses when it knows the kind but has
  * no context yet.
  */

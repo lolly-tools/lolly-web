@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Whisper speech-recognition worker — the STT sibling of
+ * Whisper speech-recognition worker - the STT sibling of
  * lib/speech-kokoro-worker.ts, and deliberately its own worker: the two models
  * have different lifetimes (a session that narrates all day may never
  * transcribe, and vice versa), so neither should pay the other's ~80-90 MB
  * session. Same id-keyed pending-map protocol, per-request progress and
- * cooperative abort (checked between chunks — a chunk mid-inference cannot be
+ * cooperative abort (checked between chunks - a chunk mid-inference cannot be
  * preempted in-wasm). Everything heavy (transformers.js, the ~77 MB q8 ONNX
  * pair) loads HERE, dynamically, so none of it can reach the boot chunk.
  *
@@ -13,7 +13,7 @@
  * (staged by scripts/fetch-whisper-models.ts) and runs on the onnxruntime-web
  * build transformers.js pins, served from /ort-hf/ (scripts/
  * copy-transformers-ort.ts). Remote models are disabled outright, so no audio
- * or bytes can ever leave the device — the privacy posture the Kokoro worker
+ * or bytes can ever leave the device - the privacy posture the Kokoro worker
  * set, pinned for BOTH workers by lib/speech-kokoro-privacy.test.ts.
  * transformers.js caches the model fetches in the Cache API bucket
  * 'transformers-cache', which is what makes transcription offline after first
@@ -22,12 +22,12 @@
  * The input is already 16 kHz mono Float32 PCM: a worker has no
  * OfflineAudioContext, so bridge/speech.ts decodes on the main thread (the
  * bridge/audio.ts pattern) and TRANSFERS the samples here. Transcription is
- * per CHUNK, sequentially — planChunks splits at silence near 25 s boundaries
+ * per CHUNK, sequentially - planChunks splits at silence near 25 s boundaries
  * because transformers.js's own `chunk_length_s: 30` long-form path yields
  * invalid timestamps on this timestamped export (transformers.js #1358); each
  * manual chunk sits inside Whisper's native 30 s window, so that path is never
  * entered. Word timings come back chunk-relative, get repaired
- * (cleanWordTimings) and offset into the clip timeline (stitchChunks) — see
+ * (cleanWordTimings) and offset into the clip timeline (stitchChunks) - see
  * lib/speech-whisper.ts for the maths.
  */
 
@@ -62,7 +62,7 @@ const post = postMessage as (message: unknown, transfer?: Transferable[]) => voi
 /** Requests aborted from the main thread; the transcription loop checks between chunks. */
 const aborted = new Set<number>();
 
-// Minimal shape for the one transformers.js piece we touch — its own pipeline
+// Minimal shape for the one transformers.js piece we touch - its own pipeline
 // typings are bundler-hostile generics, and this call is the whole surface.
 // `chunks` is the word-level detail `return_timestamps: 'word'` adds; a
 // timestamp bound can come back null (model output, repaired downstream).
@@ -76,7 +76,7 @@ let runtime: Promise<AsrPipeline> | null = null;
 
 /**
  * Load transformers.js + the pipeline, once. Download progress is attributed
- * to the request that triggered the load (`id`) — later requests find the
+ * to the request that triggered the load (`id`) - later requests find the
  * session resident and skip straight to transcription. Unlike Kokoro there is
  * no separately-fetched voice file, so the meter total IS the full model sum.
  */
@@ -85,7 +85,7 @@ function ensureRuntime(id: number): Promise<AsrPipeline> {
   runtime = (async (): Promise<AsrPipeline> => {
     const { env, pipeline } = await import('@huggingface/transformers');
 
-    // Same-origin everything (see the module header) — the whole privacy
+    // Same-origin everything (see the module header) - the whole privacy
     // story rides on these three lines, and the privacy drift-guard test
     // scans for them.
     env.allowRemoteModels = false;
@@ -119,7 +119,7 @@ async function transcribe(id: number, pcm: Float32Array, lang?: string): Promise
   const perChunk: SpeechWordTiming[][] = [];
   const offsets: number[] = [];
   // Degrade tracking: word granularity holds only when EVERY chunk yielded
-  // word spans — one chunk without them degrades the whole clip to segment
+  // word spans - one chunk without them degrades the whole clip to segment
   // spans (one per chunk), never a mixed array a caption grouper would misread.
   let allWordAligned = true;
 
@@ -128,7 +128,7 @@ async function transcribe(id: number, pcm: Float32Array, lang?: string): Promise
     const c = chunks[i]!;
     const chunkDuration = (c.end - c.start) / sr;
 
-    // NO chunk_length_s here, ever — each manual chunk fits Whisper's native
+    // NO chunk_length_s here, ever - each manual chunk fits Whisper's native
     // 30 s window, so transformers.js's broken-timestamp long-form path
     // (#1358 on this export) is never entered.
     const out = await asr(pcm.slice(c.start, c.end), {
@@ -146,7 +146,7 @@ async function transcribe(id: number, pcm: Float32Array, lang?: string): Promise
       const text = out.text.trim();
       perChunk.push(text ? [{ text, start: 0, end: chunkDuration }] : []);
     }
-    // Reuses the synthesis phase name — SpeechProgress is shared between the
+    // Reuses the synthesis phase name - SpeechProgress is shared between the
     // two directions, and 'download' vs not-download is all a consent UI keys on.
     post({ id, progress: { phase: 'synthesis', fraction: (i + 1) / chunks.length } } satisfies TranscribeWorkerReply);
   }
@@ -162,7 +162,7 @@ async function transcribe(id: number, pcm: Float32Array, lang?: string): Promise
   };
 }
 
-/** Requests currently transcribing — an abort for an id not in here is stale
+/** Requests currently transcribing - an abort for an id not in here is stale
  *  (the request already finished) and must not park in `aborted` forever. */
 const inFlight = new Set<number>();
 

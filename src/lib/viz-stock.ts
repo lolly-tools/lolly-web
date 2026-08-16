@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The artist MilkDrop presets — community work, run as authored, with the brand's colours
+ * The artist MilkDrop presets - community work, run as authored, with the brand's colours
  * pushed through them.
  *
  * WHY THESE EXIST ALONGSIDE OURS. The community presets (Geiss, Flexi, Rovastar, Aderrasi,
@@ -14,25 +14,25 @@
  * dependency declares provenance rather than our source tree absorbing it. A clone without
  * the dependency installed simply gets an empty artist list and the brand-native presets.
  *
- * BRAND INFLUENCE — the technique that makes this work. These presets compute their colour
+ * BRAND INFLUENCE - the technique that makes this work. These presets compute their colour
  * inside their own composite shaders, so `baseVals` overrides are ignored and any
  * after-the-fact tint just flattens them. Instead we WRAP the shader: our brand header goes
  * before theirs, their body runs untouched, and a blend toward the brand ramp is appended
- * as the last statement. Verified across the whole pack — every one of the 1122 composite
+ * as the last statement. Verified across the whole pack - every one of the 1122 composite
  * shaders assigns `ret` in its body, so there is always something to blend.
  *
  *   [our header: BRAND_* consts, brandRamp, brandTone, lolLum]
  *   [their header, verbatim]
  *   shader_body { [their body, verbatim] ret = <brand blend>; }
  *
- * The blend keeps their luminance structure — which is where the motion and the modelling
- * live — and drives hue and saturation from the brand. Deliberately allowed to push past
+ * The blend keeps their luminance structure - which is where the motion and the modelling
+ * live - and drives hue and saturation from the brand. Deliberately allowed to push past
  * "tasteful": Andy's brief is that the brand should INFLUENCE these, not merely tint them,
  * and over- or under-saturation is fine in service of that.
  *
  * COST TO KNOW: these carry their equations as source strings, so butterchurn compiles them
  * with `new Function`. That reintroduces the `unsafe-eval` dependency our own presets avoid
- * (see lib/viz-presets.ts). Nothing breaks today — the shell sets no CSP — but a future
+ * (see lib/viz-presets.ts). Nothing breaks today - the shell sets no CSP - but a future
  * `script-src` would have to exempt the visualizer or drop this list.
  */
 import { brandGlslHeader } from './viz-glsl.ts';
@@ -46,12 +46,12 @@ export interface StockPresetInfo {
   id: string;
   name: string;
   author: string;
-  /** In butterchurn's minimal pack — the 29 butterchurnviz.com opens with. */
+  /** In butterchurn's minimal pack - the 29 butterchurnviz.com opens with. */
   popular: boolean;
   /**
    * Popularity tier, 1 (best) … 6. Which of butterchurn's own packs ships a preset is the
-   * only real popularity signal that exists for MilkDrop — there is no download count or
-   * rating — and the packs were chosen by people who know the corpus:
+   * only real popularity signal that exists for MilkDrop - there is no download count or
+   * rating - and the packs were chosen by people who know the corpus:
    * 1 minimal, 2 the rest of the default pack, 3 extra, 4 extra2, 5 the MilkDrop 1
    * originals, 6 in no pack at all (kept only so an id already in someone's saved session
    * keeps resolving). Sort by this; `popular` is just `tier === 1`.
@@ -59,7 +59,7 @@ export interface StockPresetInfo {
    */
   tier?: number;
   /**
-   * False for a preset that was measured rendering nothing usable — pure black, or blown
+   * False for a preset that was measured rendering nothing usable - pure black, or blown
    * out to a flat white field. Do not OFFER these in a picker or include them in a cycle;
    * they are still staged and still resolve by id, because an id already saved in someone's
    * session has to keep working.
@@ -67,7 +67,7 @@ export interface StockPresetInfo {
    * Pack membership says a preset is admired, not that it renders: 31 of the 452 fail, and
    * they fail identically with the brand wrapper bypassed, so this is how butterchurn draws
    * them rather than something the brand blend does. The blacks are pure feedback
-   * amplifiers with no light source — they come alive only by inheriting the previous
+   * amplifiers with no light source - they come alive only by inheriting the previous
    * preset's field, which means they can look fine in a cycling overlay and render black in
    * an export, which always starts cold.
    *
@@ -78,13 +78,13 @@ export interface StockPresetInfo {
    * Measured mean luminance, 0..255, on a real GPU with the brand wrapper bypassed.
    *
    * Distinct from `ok`, which only rules out the pure blacks and the blown-out whites. A
-   * FIFTH of the presets that pass that gate still measure under 25 — sparse wireframes
+   * FIFTH of the presets that pass that gate still measure under 25 - sparse wireframes
    * that are perfectly good once you have chosen them and a poor thing to hand someone
    * unasked, because a near-black field is indistinguishable from a visualiser that
    * failed to start. Use it to weight what opens, never to hide anything: every preset
    * stays reachable by stepping, and one already saved in a cover must keep resolving.
    *
-   * Optional for the same reason as `tier` — an index staged before it existed omits it.
+   * Optional for the same reason as `tier` - an index staged before it existed omits it.
    */
   luma?: number;
 }
@@ -98,7 +98,7 @@ export type BrandTint = 'off' | 'subtle' | 'strong' | 'full';
 export const BRAND_TINTS: readonly BrandTint[] = ['off', 'subtle', 'strong', 'full'];
 const TINT_MIX: Record<BrandTint, number> = { off: 0, subtle: 0.35, strong: 0.7, full: 0.94 };
 
-/** The shape a converted community preset arrives in. Equations are SOURCE STRINGS here —
+/** The shape a converted community preset arrives in. Equations are SOURCE STRINGS here - 
  *  unlike our own presets, whose equations are real functions. */
 interface StockPresetJson {
   baseVals?: Record<string, number>;
@@ -115,8 +115,8 @@ interface StockPresetJson {
 let indexPromise: Promise<StockPresetInfo[]> | null = null;
 
 /**
- * The staged artist presets. Resolves to an empty list when the pack isn't present — a
- * clone that skipped the dependency, or a deploy that didn't run the prebuild — so every
+ * The staged artist presets. Resolves to an empty list when the pack isn't present - a
+ * clone that skipped the dependency, or a deploy that didn't run the prebuild - so every
  * caller must cope with there being none.
  */
 export function stockPresetIndex(): Promise<StockPresetInfo[]> {
@@ -203,7 +203,7 @@ export function wrapCompShader(comp: string | undefined, palette: VizPalette, mi
   const ourHeader = brandGlslHeader(palette, { blur: 0 });
   const src = (comp ?? '').trim();
   if (!src) {
-    // No composite of their own — supply the engine's default and blend onto it.
+    // No composite of their own - supply the engine's default and blend onto it.
     return `${ourHeader}\nshader_body {\n${BUILT_IN_COMP}\n${blend}\n}\n`;
   }
   const marker = src.indexOf('shader_body');
@@ -225,7 +225,7 @@ export function wrapCompShader(comp: string | undefined, palette: VizPalette, mi
 /**
  * Load an artist preset, brand-influenced, in the shape butterchurn wants.
  *
- * Their equations stay as `*_eqs_str` strings so butterchurn compiles them itself — we do
+ * Their equations stay as `*_eqs_str` strings so butterchurn compiles them itself - we do
  * NOT convert them to functions, because that string path is exactly what runs their
  * authored behaviour. Shapes and waves pass through untouched: they already carry the four
  * slots the renderer indexes, since every converted preset does.
@@ -244,7 +244,7 @@ export async function loadStockPreset(
   return {
     ...(json as unknown as VizPreset),
     baseVals: { ...(json.baseVals ?? {}) },
-    // `warp` is left exactly as authored — it shapes motion, not colour, and it is where
+    // `warp` is left exactly as authored - it shapes motion, not colour, and it is where
     // the camera moves these are wanted for actually live.
     warp: (json.warp ?? '').trim(),
     comp: wrapCompShader(json.comp, palette, mix),

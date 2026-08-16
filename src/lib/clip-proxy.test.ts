@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tests for clip-proxy.ts — the import-time scrub proxies (phase 4 Track A).
+ * Tests for clip-proxy.ts - the import-time scrub proxies (phase 4 Track A).
  *
- * WHAT IS COVERED HERE (real module, real logic, injected seams — no mock theatre):
- *   • proxySkipReason / shouldBuildProxy — every threshold and its boundary, in
+ * WHAT IS COVERED HERE (real module, real logic, injected seams - no mock theatre):
+ *   • proxySkipReason / shouldBuildProxy - every threshold and its boundary, in
  *     the order that makes the reason stable
- *   • proxyDimensions — 720 long-edge clamp, aspect, even edges, passthrough
- *   • proxyKey / proxyMatchesSource — the key shape and the invalidation rule
- *   • ensureProxy — the whole contract against a FAKE converter and a FAKE store:
+ *   • proxyDimensions - 720 long-edge clamp, aspect, even edges, passthrough
+ *   • proxyKey / proxyMatchesSource - the key shape and the invalidation rule
+ *   • ensureProxy - the whole contract against a FAKE converter and a FAKE store:
  *     reuse, staleness, force, skip, every failure path, quota-less environments,
  *     and the "never throws into the caller" promise on all of them
  *   • getProxy / deleteProxy / derivedMediaSize
  *   • the media-url → asset-id registry, peek/prime/dedup/eviction and reset
- *   • THE EXPORT GUARD — a source scan proving no export-path module can reach a
+ *   • THE EXPORT GUARD - a source scan proving no export-path module can reach a
  *     proxy, and that the assets bridge imports only the lifecycle helpers
  *
- * WHAT IS **NOT** COVERED — browser-only, and a fake would prove nothing:
- *   • the actual mediabunny transcode (`Conversion` with `keyFrameInterval`) —
+ * WHAT IS **NOT** COVERED - browser-only, and a fake would prove nothing:
+ *   • the actual mediabunny transcode (`Conversion` with `keyFrameInterval`) - 
  *     it needs WebCodecs and a real encoder; that the output really carries a
  *     keyframe every ~0.5 s and really scrubs faster is a browser measurement
  *     (spec Track A's verify step: pointerdown→painted-frame in Safari)
  *   • `getFirstEncodableVideoCodec`'s answer on any given browser
- *   • the IndexedDB-backed ProxyStore (node has no indexedDB — the degraded
+ *   • the IndexedDB-backed ProxyStore (node has no indexedDB - the degraded
  *     "no database" path IS covered, since that is what node produces)
  *   • `navigator.storage.estimate()` quota refusal (node has no storage manager;
  *     the "cannot estimate → allow the write" branch is what runs here)
@@ -35,7 +35,7 @@
  *   2. bridge/sequence-render.ts `mediaUrl(el)` (and any other export-side DOM
  *      read): prefer `el.getAttribute('data-original-src')` over
  *      `currentSrc || src`.
- * Step 2 MUST land with or before step 1 — sequence-render reads the live
+ * Step 2 MUST land with or before step 1 - sequence-render reads the live
  * element's `src` today with no original-vs-preview distinction, so swapping the
  * element first would silently export the proxy. Until then the element pool
  * scrubs the original, which is slower but always correct.
@@ -121,7 +121,7 @@ function fakeConverter(cfg: {
   /** Did the transcode keep an audio track? */
   outHasAudio?: boolean;
   convertThrows?: boolean;
-  /** Resolves only once `release()` is called — for the serialisation test. */
+  /** Resolves only once `release()` is called - for the serialisation test. */
   gate?: { promise: Promise<void> };
 } = {}): FakeConverter {
   const c: FakeConverter = {
@@ -188,7 +188,7 @@ test('proxySkipReason: low-resolution sources are skipped on their LONG edge', (
 });
 
 test('proxySkipReason: the defensive ceilings win over every other reason', () => {
-  // Oversized AND short — the ceiling is reported, so a huge file is never
+  // Oversized AND short - the ceiling is reported, so a huge file is never
   // reclassified as a cheap skip and silently reconsidered later.
   assert.equal(proxySkipReason(probeOf({ bytes: MAX_PROXY_SOURCE_BYTES + 1, durationSec: 1 })), 'too-large');
   assert.equal(proxySkipReason(probeOf({ durationSec: MAX_PROXY_DURATION_SEC + 1 })), 'too-long');
@@ -400,7 +400,7 @@ test('ensureProxy: nonsense arguments are refused before anything is opened', as
 
 test('ensureProxy: with no database at all it still builds and returns (nothing stored)', async () => {
   // setProxyStore(null) restores the REAL IndexedDB-backed store, which cannot
-  // open under node — the genuine "degraded environment" path, not a fake.
+  // open under node - the genuine "degraded environment" path, not a fake.
   const conv = fakeConverter();
   reset(null, conv);
   const out = await ensureProxy('user/x', GOOD_SOURCE, { log: () => {} });
@@ -576,7 +576,7 @@ test('a converter that cannot measure its own output is trusted (no regression)'
 });
 
 test('a transcode that DROPPED the audio track is stored, and says so', async () => {
-  // Storing it is right — the pictures are still the point — but the fact has to
+  // Storing it is right - the pictures are still the point - but the fact has to
   // travel, so a waveform read can refuse the swap. See scrub-registry.test.ts.
   const store = fakeStore();
   reset(store, fakeConverter({ outHasAudio: false }));
@@ -589,7 +589,7 @@ test('a transcode that DROPPED the audio track is stored, and says so', async ()
 test('builds are SERIALISED: a burst of uploads never transcodes concurrently', async () => {
   // An idle callback is not a concurrency limit. Five dropped files would open
   // five decoder/encoder pairs and five whole output buffers in the same idle
-  // period — the exact thing the idle scheduling was supposed to prevent.
+  // period - the exact thing the idle scheduling was supposed to prevent.
   const store = fakeStore();
   let release: () => void = () => {};
   const gate = { promise: new Promise<void>((r) => { release = r; }) };
@@ -657,7 +657,7 @@ test('a proxy that lands AFTER a "no proxy" answer is still picked up', async ()
 //
 // The one rule that cannot be allowed to rot: a proxy is a lossy, downscaled
 // re-encode and must never reach an exported frame. It is enforced structurally
-// — the export path has no way to name a proxy — so the guard is a source scan.
+// - the export path has no way to name a proxy - so the guard is a source scan.
 // If one of these fails, do not "fix" the test: an export just became lossy.
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -669,7 +669,7 @@ const read = (rel: string): string => readFileSync(join(webSrc, rel), 'utf8');
  * use it FOR.
  *
  * INVERTED ON PURPOSE. The previous version of this guard listed the export-path
- * files and asserted they were clean — which is a guard that passes by default
+ * files and asserted they were clean - which is a guard that passes by default
  * for any file nobody remembered to add, and it had already missed
  * `bridge/video-encode.worker.ts` (a module that emits exported bytes) before
  * `bridge/sequence-render.worker.ts` existed at all. This walks the WHOLE tree
@@ -729,7 +729,7 @@ test('GUARD: every declared consumer still exists and still uses it', () => {
 
 test('GUARD: the executors that produce exported bytes are clean', () => {
   // Named explicitly as well as covered by the sweep above, because these are the
-  // files where a leak would actually corrupt a deliverable — including the two
+  // files where a leak would actually corrupt a deliverable - including the two
   // WORKERS, which the old allowlist-shaped guard did not know about.
   for (const rel of [
     'bridge/export.ts', 'bridge/sequence-render.ts', 'bridge/sequence-render.worker.ts',
@@ -747,7 +747,7 @@ test('GUARD: the executors that produce exported bytes are clean', () => {
 test('GUARD: the assets bridge wires lifecycle ONLY, and never proxy resolution', () => {
   const src = read('bridge/assets.ts');
   // The synchronous registry is the only STATIC import (it is also what keeps
-  // clip-proxy — and the mediabunny import site inside it — out of first paint).
+  // clip-proxy - and the mediabunny import site inside it - out of first paint).
   const m = src.match(/import \{([^}]*)\} from '\.\.\/lib\/scrub-registry\.ts';/);
   assert.ok(m, 'assets.ts is expected to register the url→id pairing');
   const named = m[1]!.split(',').map(x => x.trim()).filter(Boolean).sort();

@@ -6,7 +6,7 @@
  *
  * DOM-free: an in-memory host stands in for the assets bridge, and the digest
  * comes from the global WebCrypto `crypto.subtle` (Node 20+), the same path the
- * web shell uses. Nothing is stored on a refusal — asserted by reading the host back.
+ * web shell uses. Nothing is stored on a refusal - asserted by reading the host back.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

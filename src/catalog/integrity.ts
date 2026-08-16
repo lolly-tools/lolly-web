@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Catalog integrity — web wiring for engine/src/catalog-integrity.ts.
+ * Catalog integrity - web wiring for engine/src/catalog-integrity.ts.
  *
  * INERT BY DEFAULT: everything here no-ops unless the build pins a catalog
  * public key via the VITE_CATALOG_PUBLIC_KEY_JWK env var (a P-256 public JWK
- * JSON string — printed by `node scripts/sign-catalog.ts --gen-key`). No key
+ * JSON string - printed by `node scripts/sign-catalog.ts --gen-key`). No key
  * ships in this repo; pinning one is a per-deployment decision, made where the
  * catalog is actually signed (sign-catalog.ts writes /catalog/tools/index.sig.json).
  *
@@ -16,8 +16,8 @@
 
 // The verifier itself is DYNAMICALLY imported (see `crypto()` below), not because
 // it is slow but because it is inert: with no key pinned neither function is ever
-// called, yet a static edge from here put engine/src/catalog-integrity.ts — and,
-// through its pemToDer import, x509.ts + der-read.ts — on the web shell's boot
+// called, yet a static edge from here put engine/src/catalog-integrity.ts - and,
+// through its pemToDer import, x509.ts + der-read.ts - on the web shell's boot
 // chunk set. This module is reached at boot (bridge/tool-loader.ts, catalog/sync.ts),
 // so the import has to be the lazy one. Both public functions below are already
 // async, so the await is invisible to callers.
@@ -26,7 +26,7 @@ import type { ToolIntegrityOpts } from '../../../../engine/src/loader.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 
 declare global {
-  // Merge the optional pin into vite-env.d.ts's minimal ImportMetaEnv — Vite
+  // Merge the optional pin into vite-env.d.ts's minimal ImportMetaEnv - Vite
   // only exposes VITE_-prefixed vars, and this one is unset by default.
   interface ImportMetaEnv {
     readonly VITE_CATALOG_PUBLIC_KEY_JWK?: string;
@@ -51,7 +51,7 @@ async function load(): Promise<ToolIntegrityOpts | null> {
   const publicKey = await (await crypto()).importSpkiOrJwkPublicKey(PINNED_KEY);
   // Bypasses the service worker's /tools cache by construction (it's under
   // /catalog, which sw.js deliberately never caches; a remote-instance fetch is
-  // cross-origin, which the SW ignores entirely) — the envelope is always as
+  // cross-origin, which the SW ignores entirely) - the envelope is always as
   // fresh as the index it binds. Fetched through the instance base so a
   // key-pinned build verifies the REMOTE index against the remote's envelope:
   // an instance signed by a different key fails closed, as it must.
@@ -81,7 +81,7 @@ export function getToolIntegrity(): Promise<ToolIntegrityOpts | null> {
 /**
  * Verify freshly-fetched /catalog/tools/index.json bytes against the pinned
  * signed envelope. Resolves silently when no key is pinned; throws on ANY
- * mismatch when one is — the caller treats it as a failed sync (fail closed).
+ * mismatch when one is - the caller treats it as a failed sync (fail closed).
  */
 export async function assertToolIndexIntegrity(indexText: string): Promise<void> {
   const integrity = await getToolIntegrity();

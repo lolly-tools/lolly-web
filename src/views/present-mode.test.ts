@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Presentation-mode conductor (plan 112, M1) — DOM smoke tests under jsdom.
+ * Presentation-mode conductor (plan 112, M1) - DOM sanity tests under jsdom.
  *
  * Asserts the state-class CONTRACT (pr-active/pr-past/pr-future + pr-next, the hidden
  * window), navigation (keys + go()), the HUD counter, the debounced-URL callback surface,
- * `?s=` deep-link resolution, and — the plan's #1 risk — that the ORIGINAL frame pages are
+ * `?s=` deep-link resolution, and - the plan's #1 risk - that the ORIGINAL frame pages are
  * never mutated (the presenter clones), so exit is byte-identical.
  *
  * Run directly:  node --test shells/web/src/views/present-mode.test.ts
@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-// jsdom realm BEFORE the module loads — present-mode.ts pulls in i18n/icons/a11y-prefs,
+// jsdom realm BEFORE the module loads - present-mode.ts pulls in i18n/icons/a11y-prefs,
 // which read browser globals; a dynamic import after this setup guarantees they exist.
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://lolly.tools/' });
 const win = dom.window as unknown as Window & typeof globalThis;
@@ -291,7 +291,7 @@ test('blackout: b blacks the deck and pauses media; any key resumes without navi
   document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'b' }));
   assert.ok(stageEl()!.classList.contains('pr-blackout'), 'deck goes black');
   assert.equal(cloneVideo(0)!.__playing, false, 'media pauses under blackout');
-  // Any key lifts blackout and is spent doing so — it must NOT also advance.
+  // Any key lifts blackout and is spent doing so - it must NOT also advance.
   document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
   assert.equal(stageEl()!.classList.contains('pr-blackout'), false, 'resumed from black');
   assert.equal(ctl.frameId, 'a', 'the resume keystroke did not advance the deck');

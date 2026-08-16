@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Canvas Scene — the Phase-A load-bearing core of plans/98 (Live Canvas).
+ * Canvas Scene - the Phase-A essential core of plans/98 (Live Canvas).
  *
  * Two pure, DOM-free primitives that turn the editor's O(document) hot paths into
  * O(damage) / O(viewport) ones, WITHOUT yet touching the 8.4k-line free-canvas.ts
  * overlay. They are unit-tested here and benchmarked by scripts/bench-canvas.ts.
  *
- *   1. diffBoxes()  — the DAMAGE STREAM (plans/98 §5). Given the previous and next
+ *   1. diffBoxes() - the DAMAGE STREAM (plans/98 §5). Given the previous and next
  *      `boxes` arrays, report exactly which boxes changed and in which LANE, so a
  *      paint touches only the damaged nodes instead of re-emitting the whole canvas
  *      (`innerHTML` swap). The lanes are kept separate on purpose: a geometry-only
  *      change ("moved") must never invalidate a cached raster the way a content
- *      change ("restyled") does — plans/98 §5, plans/99 §4.3. This is also the exact
+ *      change ("restyled") does - plans/98 §5, plans/99 §4.3. This is also the exact
  *      diff the collaboration seam consumes: interned to stable ids it becomes the
- *      canvas-op stream (plans/99 §7.1) — here it stays index-keyed for the shell's
+ *      canvas-op stream (plans/99 §7.1) - here it stays index-keyed for the shell's
  *      hot loop, matching plans/98 §5's number[] interface.
  *
- *   2. buildHitGrid()/hitGrid() — the SPATIAL HIT INDEX (plans/98 §6.1). A uniform
+ *   2. buildHitGrid()/hitGrid() - the SPATIAL HIT INDEX (plans/98 §6.1). A uniform
  *      AABB grid that replaces free-canvas-math.ts's linear back-to-front scan
  *      (hitTest, run per pointer event) above ~500 boxes. hitGrid() is contractually
- *      identical to hitTest() — same topmost-wins, same rotation-aware body test —
+ *      identical to hitTest() - same topmost-wins, same rotation-aware body test - 
  *      just seeded from the point's grid cell instead of every box. Proven by the
  *      co-located test (random queries, hitGrid ≡ hitTest).
  *
@@ -33,7 +33,7 @@ import { boxAABB, boxRect, rectCentre, rotateVec, num, hitTest, marqueeHit } fro
 
 /**
  * Field names that carry a box's STRUCTURE (paint order / frame membership /
- * grouping / kind) — the fields the manifest's `canvas` flag names beyond the
+ * grouping / kind) - the fields the manifest's `canvas` flag names beyond the
  * geometry set in {@link BoxFieldConfig}. Defaults match the shipped
  * design manifest (frame/order/group/kind).
  */
@@ -67,7 +67,7 @@ export interface Damage {
   removed: number[];
   /** Paint order / frame / group changed (reparent or reorder). */
   zChanged: number[];
-  /** A `kind:"frame"` box whose geometry changed — its page bounds + membership move. */
+  /** A `kind:"frame"` box whose geometry changed - its page bounds + membership move. */
   frames: number[];
   /** True iff any lane is non-empty. A clean paint can be skipped entirely. */
   dirty: boolean;
@@ -110,7 +110,7 @@ export function diffBoxes(
   for (let i = 0; i < prev.length; i++) if (!nextById.has(prevIds[i]!)) d.removed.push(i);
 
   // Common-id relative order, for pure-reorder detection (an insert/delete alone
-  // must NOT flag every trailing box as zChanged — compare rank within the ids
+  // must NOT flag every trailing box as zChanged - compare rank within the ids
   // present in BOTH arrays).
   const rankPrev = new Map<string, number>();
   for (let i = 0, r = 0; i < prev.length; i++) if (nextById.has(prevIds[i]!)) rankPrev.set(prevIds[i]!, r++);
@@ -131,7 +131,7 @@ export function diffBoxes(
     if (rankPrev.get(id) !== rankNext.get(id)) zChanged = true;
 
     // content lane: any field outside id/geometry/structural changed. Box rows carry
-    // a FIXED field set (the wire format is append-only — every box has every declared
+    // a FIXED field set (the wire format is append-only - every box has every declared
     // field), so one pass over `b`'s own keys is exact; no per-box Set/array allocation.
     for (const k in b) {
       if (laneSkip.has(k)) continue;
@@ -167,7 +167,7 @@ export function isGeometryOnlyDamage(d: Damage): boolean {
 
 /** Field names + cross-box context the geometry fast-path planner needs (plans/98 §9). */
 export interface FastPathCfg {
-  /** id/x/y/w/h/rot — the geometry lane. */
+  /** id/x/y/w/h/rot - the geometry lane. */
   field: BoxFieldConfig;
   frameField?: string;
   groupField?: string;
@@ -176,7 +176,7 @@ export interface FastPathCfg {
   /** Connector bind fields (a box referenced by a bound path is a connector endpoint). */
   bindStartField?: string;
   bindEndField?: string;
-  /** Ids that are connector endpoints — a move of one restyles the shared connector SVG. */
+  /** Ids that are connector endpoints - a move of one restyles the shared connector SVG. */
   connectorEndpointIds?: ReadonlySet<string>;
 }
 
@@ -240,7 +240,7 @@ export function resolveCanvasFastCfg(canvas: Record<string, unknown>): Omit<Fast
  *
  * Returns the moved boxes' new left/top ONLY when the change is a **pure x/y translation**
  * (w/h/rot unchanged) of boxes with no cross-box or structural coupling that a full paint
- * would re-derive elsewhere — because the fast path patches ONLY each moved box's own
+ * would re-derive elsewhere - because the fast path patches ONLY each moved box's own
  * `left/top`, leaving every other node exactly as the last full paint produced it. It
  * therefore refuses when a moved box:
  *   - resized or rotated (would change `--fit`, a path child's `d`, or its own clip-path);
@@ -263,7 +263,7 @@ export function geometryFastPathPlan(
   const prevById = new Map<string, Box>();
   for (const b of prev) prevById.set(String(b?.[f.idField] ?? ''), b);
 
-  // Ids some box clips against — a moved mask invalidates every dependent's baked clip.
+  // Ids some box clips against - a moved mask invalidates every dependent's baked clip.
   const maskIds = new Set<string>();
   if (cfg.clipField) {
     for (const b of next) { const m = String(b?.[cfg.clipField] ?? ''); if (m) maskIds.add(m); }
@@ -353,7 +353,7 @@ export function buildHitGrid(boxes: readonly Box[], cfg: BoxFieldConfig, cell?: 
 }
 
 /**
- * Topmost box index under a native point, honouring rotation — the grid-seeded
+ * Topmost box index under a native point, honouring rotation - the grid-seeded
  * equivalent of free-canvas-math.ts `hitTest`. -1 if none. `skip` as in hitTest.
  */
 export function hitGrid(grid: HitGrid, px: number, py: number, skip?: (i: number) => boolean): number {
@@ -374,7 +374,7 @@ export function hitGrid(grid: HitGrid, px: number, py: number, skip?: (i: number
   return best;
 }
 
-/** Indices whose AABB intersects a marquee rect — grid-seeded equivalent of `marqueeHit`. */
+/** Indices whose AABB intersects a marquee rect - grid-seeded equivalent of `marqueeHit`. */
 export function hitGridMarquee(grid: HitGrid, rect: MarqueeRect, skip?: (i: number) => boolean): number[] {
   const { cell, cols, rows, minX, minY, buckets, boxes, cfg } = grid;
   const mx1 = Math.min(rect.x, rect.x + rect.w), mx2 = Math.max(rect.x, rect.x + rect.w);
@@ -418,7 +418,7 @@ function gridFor(boxes: readonly Box[], cfg: BoxFieldConfig): HitGrid {
 }
 
 /**
- * Topmost box index under a point — a DROP-IN for free-canvas-math `hitTest` that uses
+ * Topmost box index under a point - a DROP-IN for free-canvas-math `hitTest` that uses
  * the spatial grid on large docs and the linear scan on small ones. Result is identical
  * either way (proven in canvas-scene.test.ts). `skip` semantics match hitTest exactly.
  */
@@ -430,7 +430,7 @@ export function pickTopmost(
     : hitTest(boxes as Box[], px, py, cfg, skip);
 }
 
-/** Marquee indices — a DROP-IN for `marqueeHit`, grid-accelerated on large docs. */
+/** Marquee indices - a DROP-IN for `marqueeHit`, grid-accelerated on large docs. */
 export function pickMarquee(
   boxes: readonly Box[], rect: MarqueeRect, cfg: BoxFieldConfig, skip?: (i: number) => boolean,
 ): number[] {

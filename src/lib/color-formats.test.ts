@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * color-formats.ts — Hex/RGB/RGBA/OKLCH/CMYK ↔ canonical hex.
+ * color-formats.ts - Hex/RGB/RGBA/OKLCH/CMYK ↔ canonical hex.
  * Run: node --test "shells/web/src/**\/*.test.ts"
  */
 
@@ -29,7 +29,7 @@ test('formatColor renders each space from a hex', () => {
   assert.equal(formatColor('rgb', '#4f83cc'), '79, 131, 204');
   assert.equal(formatColor('rgba', '#4f83cc'), '79, 131, 204, 1');
   assert.equal(formatColor('rgba', '#0088ff80'), '0, 136, 255, 0.502'); // 0x80/255 = 0.502
-  // OKLCH: "L% C H" — the perceptual triple the tokens speak.
+  // OKLCH: "L% C H" - the perceptual triple the tokens speak.
   assert.match(formatColor('oklch', '#4f83cc'), /^\d+(\.\d+)?% [\d.]+ \d+(\.\d+)?$/);
   // CMYK: four integer percentages.
   assert.match(formatColor('cmyk', '#4f83cc'), /^\d+, \d+, \d+, \d+$/);
@@ -90,7 +90,7 @@ test('alpha survives every space that can carry it (hex8 / RGBA / OKLCH)', () =>
   const round = parseColor('oklch', okText)!;
   assert.match(round, /^#[0-9a-f]{8}$/i);
   assert.ok(Math.abs(parseInt(round.slice(7, 9), 16) - 0x80) <= 2, 'alpha byte preserved via OKLCH');
-  // CMYK has no alpha — it stays opaque (a 6-digit hex).
+  // CMYK has no alpha - it stays opaque (a 6-digit hex).
   assert.equal(formatColor('cmyk', translucent), formatColor('cmyk', '#0088ff'));
   assert.match(parseColor('cmyk', formatColor('cmyk', translucent))!, /^#[0-9a-f]{6}$/i);
 });

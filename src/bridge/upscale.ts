@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of `host.upscale` (v1.101) — on-device AI image upscaling.
+ * Web implementation of `host.upscale` (v1.101) - on-device AI image upscaling.
  * THIN by design: this file is only worker plumbing (an id-keyed pending map,
  * progress fan-out, abort translation). The onnxruntime-web runtime, the ONNX
  * weights, the WebGPU→WASM backend choice and the memory-bounded tiling all live
@@ -8,7 +8,7 @@
  * a tool is being typed into, nor reach the boot budget.
  *
  * The SYNCHRONOUS, static answers (isAvailable/backend/models/modelBytes) are
- * served straight from lib/upscale-models.ts without spawning the worker — the
+ * served straight from lib/upscale-models.ts without spawning the worker - the
  * worker (and its multi-MB runtime) only wakes for the async methods
  * (cached/canRun/run). The worker echoes the resolved backend on every reply, so
  * backend() reports it the moment the first async call has probed.
@@ -49,7 +49,7 @@ function ensureWorker(): Worker {
   worker.onerror = (): void => {
     for (const p of pending.values()) p.settle({ id: -1, error: 'upscale worker error' });
     pending.clear();
-    // Terminate + drop the dead worker so the next call spawns a fresh one —
+    // Terminate + drop the dead worker so the next call spawns a fresh one - 
     // detaching alone would leak the broken thread (and its slice of the model).
     if (worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
     worker = null;
@@ -82,7 +82,7 @@ export function createUpscaleAPI(): UpscaleAPI {
     },
 
     models(): UpscaleModelInfo[] {
-      // Only the STAGED models (real vendored weights) — a placeholder-pinned model
+      // Only the STAGED models (real vendored weights) - a placeholder-pinned model
       // would promise a download that can't complete. Copies so a caller mutating
       // the list can't corrupt the source of truth.
       return stagedUpscaleModels().map((m) => ({ ...m }));
@@ -139,7 +139,7 @@ export function createUpscaleAPI(): UpscaleAPI {
           },
           onProgress: opts?.onProgress,
         });
-        // Transfer the source pixels — the caller's frame is consumed by the run.
+        // Transfer the source pixels - the caller's frame is consumed by the run.
         w.postMessage(
           { id: reqId, type: 'run', frame, opts: serializeOpts(opts) } satisfies UpscaleWorkerRequest,
           [frame.data.buffer],

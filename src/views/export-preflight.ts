@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Preflight in the export panel — "Before you export" (plans/65-preflight-and-cost.md §8, phase 1).
+ * Preflight in the export panel - "Before you export" (plans/65-preflight-and-cost.md §8, phase 1).
  *
  * The engine owns the RULES (`engine/src/preflight.ts`, a pure synchronous
  * `preflight(job) -> PreflightReport`); this module owns only the two shell-side
  * halves the engine must never have: turning a report into a VIEW, and writing
  * that view into the panel's DOM. `views/tool-actions.ts` collects the facts.
  *
- * Four decisions that are load-bearing and must not erode:
+ * Four decisions that are essential and must not erode:
  *
  * 1. **It is a statement, not a setting**, so it sits LAST in the panel, below
  *    every control it describes and immediately above the Download button. A card
  *    that appears above a control the user is still adjusting is the one that gets
  *    clicked through.
- * 2. **Collapsed by default, always** — never pre-opened on error, no dismiss
+ * 2. **Collapsed by default, always** - never pre-opened on error, no dismiss
  *    control, no auto-focus, no animation, and it never gates Download. The
  *    severity rides the collapsed summary, so "1 to fix" is legible without
  *    opening and opening stays a choice the user makes for a reason. The panel's
@@ -22,7 +22,7 @@
  * 3. **A real `<details>`.** `parts/disclosure.css` documents why the other export
  *    cards are JS-toggled instead: they hold INPUTS whose values must survive a
  *    collapse. This card holds no fields, only reading matter, so that reason does
- *    not apply and the native element is strictly better — keyboard toggling, AT
+ *    not apply and the native element is strictly better - keyboard toggling, AT
  *    semantics and find-in-page auto-open for free, with no `aria-expanded` to
  *    keep in sync. Escape is NOT intercepted: the export popup owns Escape, and
  *    teaching the disclosure to close on it would make the user press it twice.
@@ -30,7 +30,7 @@
  *    not gain one, so its messages are the CLI/JSON English and the translation
  *    FALLBACK. The panel translates by finding `id` through {@link COPY} and
  *    re-interpolates from `evidence`. Ids not in the map fall through to the
- *    English `message` — which is the normal, documented path for a new check, not
+ *    English `message` - which is the normal, documented path for a new check, not
  *    a defect.
  *
  * There is no currency, rate or price in this module, and none may be added.
@@ -42,7 +42,7 @@ import { PREFLIGHT_FLAG, isFlagOnSync } from '../feature-flags.ts';
 import { mountModal, type ModalHandle } from '../components/modal.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 
-// ─── The view model (pure — this is the tested half) ────────────────────────
+// ─── The view model (pure - this is the tested half) ────────────────────────
 
 /**
  * How a body row is toned.
@@ -50,7 +50,7 @@ import type { Count, Finding, PreflightReport } from '@lolly/engine';
  * `gap` is its own tone, not a shade of `note`, and that distinction is the point
  * of the whole module. Every named gap carries `severity: 'info'` by the engine's
  * invariant, so toning off severity alone rendered "Lolly could not check this"
- * in exactly the same box as a measured fact — which is most of the way back to
+ * in exactly the same box as a measured fact - which is most of the way back to
  * omitting it. `gap` is MUTED, never warning-toned: a refusal is not a problem.
  */
 export type PreflightTone = 'error' | 'warn' | 'note' | 'gap';
@@ -98,15 +98,15 @@ const evStr = (f: Finding, key: string): string => {
  *
  * DELIBERATELY the minimum set (plan §8 / the surface brief §3): the five
  * findings a user can act on. Every other id falls through to `finding.message`,
- * the engine's resolved English — visible, honest, and one export/import cycle
+ * the engine's resolved English - visible, honest, and one export/import cycle
  * away from being translated if it earns it. Each entry costs a chrome string in
  * 26 locales, so a row is added here because someone argued for it.
  */
 const COPY: Record<string, (f: Finding) => string> = {
   // (A) The correctness fix. A brand can declare that a spot ink IS a finish. The
-  // CMYK sinks no longer give it the swatch's colour build — `FINISH_MASK_CMYK`
+  // CMYK sinks no longer give it the swatch's colour build - `FINISH_MASK_CMYK`
   // (engine/src/cmyk-palette.ts) routes every declared finish to 100% K in all four
-  // of them — so these strings describe the SHIPPED behaviour, and they name the
+  // of them - so these strings describe the SHIPPED behaviour, and they name the
   // defect that is actually left: overprint is implemented nowhere, so the finish
   // plate knocks out the artwork under it. Telling the user "your foil will print
   // gold" would send them to fix something that is already fixed.
@@ -180,7 +180,7 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
   const know = findings.length - fix - gaps;
 
   // Facts first: the counted measurements. Counting IS the feature, so a clean
-  // body is never empty — "nothing to fix" with no numbers under it would read as
+  // body is never empty - "nothing to fix" with no numbers under it would read as
   // a lint pass rather than a measurement.
   const facts: PreflightFact[] = [];
   if (ctx.formatLabel) facts.push({ label: t('Format'), value: ctx.formatLabel });
@@ -232,7 +232,7 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
 // ─── DOM ────────────────────────────────────────────────────────────────────
 
 /**
- * The preflight CONTROL — a compact row that opens a modal with the full report,
+ * The preflight CONTROL - a compact row that opens a modal with the full report,
  * rather than an inline body. It reuses the `.section-card` box and the canonical
  * `.section-card-head`/`.section-card-icon` anatomy; hidden until
  * {@link applyPreflight} has something true to say.
@@ -267,13 +267,13 @@ export function preflightRowHtml(): string {
  * Each row shows TWO marks: a large metaphor for WHAT the check is about (a droplet
  * for ink, stacked plates for separations, a crop frame for bleed/trim), and a
  * small corner badge for its STATUS (alert / info / help). Severity is carried by
- * the badge AND the tone tint — never colour alone, so it survives a colour-blind
+ * the badge AND the tone tint - never colour alone, so it survives a colour-blind
  * reader and a monochrome print of the screen.
  *
  * The metaphor is keyed by finding id: an exact entry first, then an id-family
  * prefix, then the card's own checklist glyph as a neutral default. A new engine
  * check with no entry still renders (as the default), so this map never gates a
- * finding — it only enriches the ones it knows.
+ * finding - it only enriches the ones it knows.
  */
 const METAPHOR_BY_ID: Record<string, IconName> = {
   'print.no-bleed': 'crop', 'print.bleed-unknown': 'crop',
@@ -311,7 +311,7 @@ export function metaphorIcon(id: string): IconName {
 }
 
 /** The status glyph on the corner badge: an alert for a warn/error, a help mark
- *  for a gap ("Lolly could not check this" — a refusal, never an alert), an info
+ *  for a gap ("Lolly could not check this" - a refusal, never an alert), an info
  *  mark for a plain note. Tone tint is applied in CSS. */
 export function statusIcon(tone: PreflightTone): IconName {
   if (tone === 'warn' || tone === 'error') return 'alert';
@@ -341,7 +341,7 @@ export function preflightBodyHtml(view: PreflightView): string {
 let currentView: PreflightView | null = null;
 let openModal: ModalHandle<void> | null = null;
 
-/** The modal's inner markup for `view` — a titled dialog wrapping the body. */
+/** The modal's inner markup for `view` - a titled dialog wrapping the body. */
 function preflightModalHtml(view: PreflightView): string {
   return `
     <div class="preflight-modal-head" data-tone="${escape(view.tone)}">

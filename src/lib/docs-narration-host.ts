@@ -5,15 +5,15 @@
  * This is the first MIGRATION increment of the unified audio-dock effort (plan
  * "this-is-a-very-sparkling-eich", Phase 2): it drives the shared
  * @lolly-tools/audio-dock shell from the app context, validating the `DockHost`
- * contract against REAL committed narration audio. It is ADDITIVE — the reader
- * had no player before — so nothing existing breaks.
+ * contract against REAL committed narration audio. It is ADDITIVE - the reader
+ * had no player before - so nothing existing breaks.
  *
  * It deliberately reuses the LOGIC of docs/player/player.ts (the static-site
  * player) without touching it: same /info/audio-index.json resolution, same
  * per-block cues.json for the caption + follow-along highlight, same speed model
  * (SPEEDS, 1.25× default). What it does NOT do:
  *   - a live AudioContext viz tap is created lazily on first play (for the dock's
- *     own frequency backdrop) — the dock owns the drawing; we only expose the node.
+ *     own frequency backdrop) - the dock owns the drawing; we only expose the node.
  *   - prev/next: narration is PER-PAGE here. Stepping across narrated pages would
  *     mean SPA navigation from inside the adapter, which the increment forbids, so
  *     the host defines no next/prev and the dock hides those buttons (see report).
@@ -29,7 +29,7 @@
  * for two reasons: it lives outside the web shell's tsconfig `include`, and it
  * imports `node:crypto` at top level (for its staleness hash, `spokenTextHash`),
  * which cannot bundle for the browser. Only the pure block extraction is needed,
- * so it is copied verbatim (minus the hash) and kept in lockstep by eye — the
+ * so it is copied verbatim (minus the hash) and kept in lockstep by eye - the
  * canonical copy stays scripts/lib/docs-spoken-text.ts.
  */
 import type { DockHost, DockNarration, DockNarrationPlayer, DockNowPlaying, DockViz } from '@lolly-tools/audio-dock';
@@ -145,7 +145,7 @@ function extractSpokenText(markdown: string, pageTitle: string): SpokenBlock[] {
  * are matched by text against the section's flow, forward from the last match, so
  * one unmapped block can't derail the section. Adapted from docs/player/player.ts's
  * buildBlockMap, but SCOPED to the reader's fragment (`root`) rather than the whole
- * document — the app has other content around the reader.
+ * document - the app has other content around the reader.
  */
 function buildBlockMap(blocks: SpokenBlock[], root: HTMLElement): Map<string, HTMLElement> {
   const map = new Map<string, HTMLElement>();
@@ -187,7 +187,7 @@ interface Track { slug: string; title: string; url: string; duration: number; by
  *  range 0.5×–2×: narration is to learn from, so the control leans slower). */
 const SPEEDS: readonly number[] = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SPEED_DEFAULT_IDX = SPEEDS.indexOf(1.25);
-/** The follow-along highlight class — styled in styles/parts/docs.css. */
+/** The follow-along highlight class - styled in styles/parts/docs.css. */
 const HERE_CLASS = 'docs-narr-here';
 /** Scroll-idle grace before follow-along re-engages after a user scroll. */
 const IDLE_MS = 4000;
@@ -203,7 +203,7 @@ export interface DocsNarrationHandle {
 
 /**
  * Resolve the narration track for a reader slug and, if one exists, build a
- * `DockHost` for it. Returns null when the slug has no committed audio — the
+ * `DockHost` for it. Returns null when the slug has no committed audio - the
  * caller then mounts no dock (content gate). English-only: the caller must gate on
  * an English reader page before calling (the audio and the block map are English).
  */
@@ -281,7 +281,7 @@ class DocsNarrationHost implements DockHost {
       caption: () => this.captionText,
       disclosure: () => DISCLOSURE,
     };
-    // The dock draws its OWN 2D frequency backdrop — supported() gates that loop,
+    // The dock draws its OWN 2D frequency backdrop - supported() gates that loop,
     // which a Canvas 2D context always satisfies. getAnalyser() is null until the
     // tap is created (first play); the dock then shows the static ground and
     // starts reacting the moment the node appears.
@@ -319,7 +319,7 @@ class DocsNarrationHost implements DockHost {
       a.removeEventListener('loadedmetadata', onMeta);
     });
 
-    // captions.vtt as a first-class <track> — programmatic value (textTracks API
+    // captions.vtt as a first-class <track> - programmatic value (textTracks API
     // for AT/extensions/UAs); the dock's caption line is the visible surface.
     const captionTrack = document.createElement('track');
     captionTrack.kind = 'captions';
@@ -437,7 +437,7 @@ class DocsNarrationHost implements DockHost {
   }
 
   /** The reader scrolls the document (html is the scroller; body grows with #view),
-   *  so follow-along listens on window — a user gesture suspends the anchor, and
+   *  so follow-along listens on window - a user gesture suspends the anchor, and
    *  after IDLE_MS of scroll-idle it re-engages and drifts back. */
   private wireFollowAlong(): void {
     const userScroll = (): void => {
@@ -500,7 +500,7 @@ class DocsNarrationHost implements DockHost {
   }
 
   /** cues.json (caption + highlight timings) and the English markdown twin (block
-   *  ids + text). Both non-blocking — transport works before either lands. */
+   *  ids + text). Both non-blocking - transport works before either lands. */
   private loadSidecars(): void {
     const base = this.track.url.replace(/\/[^/]*$/, '');
     void fetch(`${base}/cues.json`)
@@ -531,7 +531,7 @@ class DocsNarrationHost implements DockHost {
   // ── the viz tap ──────────────────────────────────────────────────────────────
 
   /** Create the AudioContext tap on first use. A tapped MediaElementSource mutes
-   *  the element's direct output, so it is reconnected to the destination FIRST —
+   *  the element's direct output, so it is reconnected to the destination FIRST - 
    *  the narration stays audible whatever happens after. Idempotent; a failure
    *  leaves the element playing untapped (no viz, narration unaffected). */
   private ensureTap(): void {

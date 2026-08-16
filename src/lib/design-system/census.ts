@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * `DesignCensus` — the one shape every design-system source scans into.
+ * `DesignCensus` - the one shape every design-system source scans into.
  *
  * Plan 97 §8: a Source scans material into a census, the census feeds the role
  * proposer, and everything lands as candidates in the tray. Until now
  * `proposeBrandRoles` only spoke Penpot's `PenpotUsage`, so a guidelines PDF, a
  * screenshot or a logo SVG had no route to the same proposal at all. This module
  * is the keystone: a small pure type, one adapter per source, and
- * `censusToUsage` — the bridge that lets the shipped `brand-propose.ts` pipeline
+ * `censusToUsage` - the bridge that lets the shipped `brand-propose.ts` pipeline
  * run over any source unchanged.
  *
  * Adapting TO the existing shape rather than retargeting the proposer is
@@ -22,7 +22,7 @@
  * compares them, and rescaling one source's counts against another's would be a
  * claim about relative importance that no source actually makes.
  *
- * Pure and DOM-free on purpose — unit-testable under plain node, importable from
+ * Pure and DOM-free on purpose - unit-testable under plain node, importable from
  * any shell module.
  */
 
@@ -38,7 +38,7 @@ export interface CensusColor {
   kind?: 'fill' | 'stroke' | 'text' | 'gradient';
 }
 
-/** One gradient a source painted with. Stops carry no positions — see `censusToUsage`. */
+/** One gradient a source painted with. Stops carry no positions - see `censusToUsage`. */
 export interface CensusGradient {
   stops: string[];
   angle?: number;
@@ -69,12 +69,12 @@ export interface DesignCensus {
   source: CensusSource;
 }
 
-/** Default face weight when a source reports none — CSS's own default. */
+/** Default face weight when a source reports none - CSS's own default. */
 const DEFAULT_FONT_WEIGHT = 400;
 
 // ── Ink and ground ───────────────────────────────────────────────────────────
 // Artwork sources (a logo SVG, a PDF's vector marks) report the paint a MARK is
-// drawn in. That is ink, not ground — but `proposeBrandRoles` reads the surface
+// drawn in. That is ink, not ground - but `proposeBrandRoles` reads the surface
 // off the heaviest FILL and, failing that, off the heaviest colour overall, so an
 // adapter that files every colour as a fill proposes the logo's own brand colour
 // as the page background and leaves a leftover neutral as the brand colour. Roles
@@ -83,7 +83,7 @@ const DEFAULT_FONT_WEIGHT = 400;
 // The split follows the proposer's own line: a colour it could never call an
 // accent (chroma under its accent floor) sitting at one end of the lightness
 // range is paper or the dark card a reverse mark is drawn for. Everything else is
-// ink, and ink is filed under `stroke` — the one bucket that scores toward an
+// ink, and ink is filed under `stroke` - the one bucket that scores toward an
 // accent without claiming either the ground or the body copy.
 
 /** Mirrors ACCENT_CHROMA_MIN in lib/brand-propose.ts: below it, the proposer will
@@ -93,7 +93,7 @@ const GROUND_CHROMA_MAX = 0.09;
 const GROUND_L_LIGHT = 0.85;
 const GROUND_L_DARK = 0.30;
 /** The ground artwork implies when it carries none of its own: paper. The one
- *  safe assumption about a mark, and it can only ever be the surface — nothing
+ *  safe assumption about a mark, and it can only ever be the surface - nothing
  *  else claims a fill, and the surface never enters the accent pool. */
 const IMPLIED_GROUND = '#FFFFFF';
 /** What an implied ground weighs: the minimum, so any ground the file really
@@ -110,7 +110,7 @@ function isGroundColor(hex: string): boolean {
 const artworkKind = (hex: string): CensusColor['kind'] => (isGroundColor(hex) ? 'fill' : 'stroke');
 
 /** Append the implied ground when the artwork carries none and has ink to sit on
- *  — without it the proposer's fallback makes the heaviest ink the surface. */
+ * - without it the proposer's fallback makes the heaviest ink the surface. */
 function withImpliedGround(rows: CensusColor[]): CensusColor[] {
   if (!rows.length || rows.some(r => r.kind === 'fill')) return rows;
   return [...rows, { hex: IMPLIED_GROUND, weight: IMPLIED_GROUND_WEIGHT, kind: 'fill' }];
@@ -126,13 +126,13 @@ const KIND_BUCKET = {
 const hex2 = (n: number): string => n.toString(16).padStart(2, '0').toUpperCase();
 
 /**
- * Any CSS colour notation to `#RRGGBB` uppercase — the form `PenpotUsage` rows
+ * Any CSS colour notation to `#RRGGBB` uppercase - the form `PenpotUsage` rows
  * are in, and the proposer's surface-shade exclusion compares gradient stops to
  * colours by string identity, so one spelling has to win.
  *
  * Alpha is dropped: one colour painted at two opacities is one colour. A fully
  * transparent value comes back null along with anything unreadable, which is the
- * same answer either way — nothing was painted.
+ * same answer either way - nothing was painted.
  */
 export function censusHex(value: string): string | null {
   const rgb = parseColorToSrgb8(value);
@@ -160,7 +160,7 @@ const weightOf = (n: number): number => (Number.isFinite(n) && n > 0 ? n : 0);
  *  - **Stops are spaced evenly.** A census records which colours a gradient runs
  *    through, not where they sit; the proposer reads stop colours only.
  *
- * `name` has no home in the usage shape — `buildBrandDocFromUsage` takes the
+ * `name` has no home in the usage shape - `buildBrandDocFromUsage` takes the
  * label separately, so callers pass `census.name` there.
  */
 export function censusToUsage(census: DesignCensus): PenpotUsage {
@@ -203,7 +203,7 @@ export function censusToUsage(census: DesignCensus): PenpotUsage {
   // fontId is the family verbatim, never a `gfont-` id: a census records what a
   // source used, never where the face can be fetched from, so proposeFonts lists
   // every family under `missing` and claims nothing under `google`. Same stance
-  // as proposeFontsFromTokens — saying nothing beats claiming an unchecked source.
+  // as proposeFontsFromTokens - saying nothing beats claiming an unchecked source.
   const fonts: PenpotFontUsage[] = census.fonts.map(f => {
     const fontWeight = Number.isFinite(f.weight) ? Number(f.weight) : DEFAULT_FONT_WEIGHT;
     return {
@@ -258,7 +258,7 @@ export function censusFromPenpotUsage(usage: PenpotUsage, label: string): Design
  * A logo's colours (engine `extractSvgColors`) as a census.
  *
  * The extractor returns distinct colours in first-seen order and reports no
- * areas at all, so order is the only ranking there is — and it is a ranking of
+ * areas at all, so order is the only ranking there is - and it is a ranking of
  * PRECEDENCE, not of painted area: the colour a mark leads with is the one its
  * owner names first, which is the same rule the shipped SVG import states ("the
  * first one kept becomes the main colour"). Weight therefore falls with position
@@ -286,7 +286,7 @@ export function censusFromSvgColors(colors: string[], label: string): DesignCens
  * An image's colour cloud (engine `imageColorCloud`) as a census.
  *
  * A bucket's `n` is its share of the sampled pixels, which is a real occurrence
- * count and maps straight onto weight — so a screenshot's background, being most
+ * count and maps straight onto weight - so a screenshot's background, being most
  * of its pixels, proposes as the surface. Points are read back through
  * `oklchToHex`, the authoritative value; two buckets can land on one hex once a
  * wide-gamut source is mapped into sRGB, and those sum.
@@ -312,7 +312,7 @@ export function censusFromImageCloud(cloud: ImageCloud, label: string): DesignCe
  * The vector marks lifted off a PDF (`listVectors`) as a census.
  *
  * Each mark reports its own fill palette most-used-first, and that per-mark
- * order is all the extractor knows — so a mark contributes falling weights the
+ * order is all the extractor knows - so a mark contributes falling weights the
  * same way an SVG's colour list does, and marks sum. A guidelines PDF then
  * proposes from the colours its artwork actually paints with.
  *
@@ -347,13 +347,13 @@ export function censusFromPdfVectors(vectors: { fills: string[] }[], label: stri
 }
 
 /**
- * Fold several sources into one census — a shopping session that pulled from a
+ * Fold several sources into one census - a shopping session that pulled from a
  * site, a PDF and a logo asks one proposer one question.
  *
  * Colours dedupe on their resolved value (so `red` and `#FF0000` are one row)
  * *per kind*: a hex used as a fill and as text is two facts, and collapsing them
  * would erase the text signal the proposal reads. First-seen spelling and
- * first-seen order both survive — ranking is the proposer's job, not the union's.
+ * first-seen order both survive - ranking is the proposer's job, not the union's.
  *
  * The merged source is the first entry's, since provenance beyond "where this
  * started" belongs on individual candidates. An empty merge has no provenance to

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * /valid's TEXT-PAYLOAD logic — the C2PA 2.4 text bindings as the verify page has
+ * /valid's TEXT-PAYLOAD logic - the C2PA 2.4 text bindings as the verify page has
  * to talk about them, plus the two policies that decide what the page will fetch.
  *
  * Pure by design, exactly like valid-verdict.ts: report/text in, a model out.
- * Zero DOM, zero network, zero side effects — valid.ts renders these models and
+ * Zero DOM, zero network, zero side effects - valid.ts renders these models and
  * owns every `t()` / `escape()` call, so the copy can be tested as data and the
  * URL policy can be attacked in a test file instead of in a browser.
  *
@@ -14,7 +14,7 @@
  *  1. **A carrier problem is not an accusation.** The engine reports a dozen
  *     distinct ways a text credential can be present-but-unusable (§A.7.1.4,
  *     §A.8.7.1, §A.9.3/§A.9.5, §15.12.1.3), and most of them are producer bugs,
- *     truncated copies or invisible characters lost in a clipboard — NOT
+ *     truncated copies or invisible characters lost in a clipboard - NOT
  *     evidence that anyone changed the content. `manifest.inaccessible` in
  *     particular means "the credential is over there", and must never render as
  *     a broken one. Every string below is written to be true of the honest cause
@@ -36,7 +36,7 @@ import type { VerifyReport, TextBinding } from './valid-verdict.ts';
 // the sniffer sets it on ONE delimiter, which is the §A.9.5 case the engine
 // deliberately reports as "no credential here" (prose that quotes a delimiter is
 // byte-identical to a damaged block, so nothing is claimed either way). The old
-// label asserted a block on the very line that goes on to deny one — the only
+// label asserted a block on the very line that goes on to deny one - the only
 // place in this wave where the copy stated something the engine had not
 // established. "Marker" is true of one delimiter and of a whole block.
 export const TEXT_FORMAT_LABEL: Record<string, string> = {
@@ -45,7 +45,7 @@ export const TEXT_FORMAT_LABEL: Record<string, string> = {
   text: 'plain text',
 };
 
-/** The English display string for a sniffed format — the raw token for every
+/** The English display string for a sniffed format - the raw token for every
  *  binary/svg format, whose presentation is deliberately unchanged. */
 export function formatLabel(format: string | null | undefined): string {
   const f = format ?? '';
@@ -87,11 +87,11 @@ export function textSnippet(text: string, cap = TEXT_SNIPPET_MAX): { body: strin
 //
 // The subtle part is normalising an absolute URL to a path. `new URL(
 // 'https://lolly.example//evil.test/x').pathname` is `//evil.test/x`, and handing
-// THAT to fetch() is a protocol-relative request to evil.test — same-origin
+// THAT to fetch() is a protocol-relative request to evil.test - same-origin
 // checked, cross-origin fetched. So the single-`/` rule is re-asserted on the
 // normalised path, not only on the raw input.
 
-// Whitespace and control characters never appear in a URI reference — the same
+// Whitespace and control characters never appear in a URI reference - the same
 // refusal the engine’s own safeExternalUrl makes, repeated here because this module
 // must never trust a value that arrived inside a file.
 const CONTROL_CHARS = /[\u0000-\u0020\u007f]/;
@@ -107,24 +107,24 @@ export type UrlGate =
    *  (`javascript:`, `data:`, `file:`, `blob:`), a protocol-relative
    *  `//host/x`, userinfo smuggled into a same-origin URL, or a same-origin URL
    *  whose path normalises back to `//host`. Every one of these is an ABSOLUTE
-   *  reference the engine was willing to hand up — the refusal is this page's,
+   *  reference the engine was willing to hand up - the refusal is this page's,
    *  and the copy has to say so rather than blame the reference for being
    *  relative, which it is not. */
   | { kind: 'unresolvable' }
   /** A genuinely RELATIVE reference (`doc.c2pa`, `../c/doc.c2pa`) with no base
-   *  to resolve it against — the only case where "it only means something next
+   *  to resolve it against - the only case where "it only means something next
    *  to where the file is served from" is the true sentence. Split out from
    *  `unresolvable` because those two facts want two different explanations,
    *  and one of them was being told about the other. */
   | { kind: 'no-base' }
-  /** Not a URL at all — for pasted text this is the ordinary case. */
+  /** Not a URL at all - for pasted text this is the ordinary case. */
   | { kind: 'not-a-url' };
 
 /**
  * Classify a reference under this page's fetch policy.
  *
  * `base` is the URL the document itself was read from, when there is one (the
- * `?src=` path) — a relative manifest reference only means something next to the
+ * `?src=` path) - a relative manifest reference only means something next to the
  * place its document is served from, and a file on your device no longer records
  * that. Without a base, a relative reference is `unresolvable` rather than
  * guessed against this site's origin.
@@ -137,14 +137,14 @@ export function classifyUrl(raw: string, origin: string, base?: string | null): 
   if (url.startsWith('//')) return { kind: 'unresolvable' };
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(url);
   if (scheme) {
-    // `javascript:`, `data:`, `file:`, `blob:` — nothing this page will follow.
+    // `javascript:`, `data:`, `file:`, `blob:` - nothing this page will follow.
     if (!/^https?$/i.test(scheme[1]!)) return { kind: 'unresolvable' };
     return absolute(url, origin);
   }
   if (url === '/') return { kind: 'same-origin', path: url };
   // A bare `/`-rooted path. It is NOT handed back verbatim: `fetch()` resolves
   // it against the document, and the WHATWG URL parser treats a BACKSLASH as a
-  // path separator for http(s) — so `/\evil.test/m.c2pa` passes a single-`/`
+  // path separator for http(s) - so `/\evil.test/m.c2pa` passes a single-`/`
   // regex, then resolves to `https://evil.test/m.c2pa`. Origin-checked,
   // cross-origin fetched, which is the exact promise this page makes. `/..//x`
   // is the same shape one normalisation further on. Resolving it here and
@@ -163,16 +163,16 @@ export function classifyUrl(raw: string, origin: string, base?: string | null): 
 function absolute(href: string, origin: string): UrlGate {
   let u: URL;
   try { u = new URL(href); } catch { return { kind: 'unresolvable' }; }
-  // Origin first, so the oldest look-alike in the book —
-  // `https://lolly.example@evil.test/x`, which IS evil.test — is named by the
+  // Origin first, so the oldest look-alike in the book - 
+  // `https://lolly.example@evil.test/x`, which IS evil.test - is named by the
   // host it actually resolves to rather than dismissed as unparseable.
   if (u.origin !== origin) return { kind: 'elsewhere', host: u.host };
   // Then userinfo. A credential reference has no business carrying credentials,
-  // and `https://evil.test@lolly.example/x` resolves same-origin — refused
+  // and `https://evil.test@lolly.example/x` resolves same-origin - refused
   // rather than fetched with a username attached.
   if (u.username || u.password) return { kind: 'unresolvable' };
   const path = `${u.pathname}${u.search}`;
-  // The normalised path must ALSO pass the single-`/` rule — see the block
+  // The normalised path must ALSO pass the single-`/` rule - see the block
   // comment above: a same-origin URL can normalise to a protocol-relative path.
   if (!SINGLE_SLASH_PATH.test(path)) return { kind: 'unresolvable' };
   return { kind: 'same-origin', path };
@@ -185,7 +185,7 @@ function absolute(href: string, origin: string): UrlGate {
  * http(s) URL or a `/`-rooted path counts as an address; `notes.txt`,
  * `example.com` and anything with a space or newline in it are payload. Reading
  * an address into a paste that was not one would silently swallow the very text
- * someone asked us to check — the more expensive mistake of the two.
+ * someone asked us to check - the more expensive mistake of the two.
  */
 export function classifyPastedUrl(text: string, origin: string): UrlGate | null {
   const s = (text ?? '').trim();
@@ -200,20 +200,20 @@ export function classifyPastedUrl(text: string, origin: string): UrlGate | null 
 // Every `title`/`body` below is an ENGLISH SOURCE STRING, keyed exactly as
 // `t()` will look it up (English is the key; see i18n.ts). The view interpolates
 // `params` through `t()`, which escapes them, and escapes `detail`/`url`
-// separately — nothing here builds markup.
+// separately - nothing here builds markup.
 
 export interface VerifyNotice {
   /** Stable identifier: the data attribute in the DOM and what tests assert on. */
   id: string;
   /** 'warn' is reserved for the one shape where content really is outside the
-   *  credential. Everything else is 'info' — a carrier problem is not damage. */
+   *  credential. Everything else is 'info' - a carrier problem is not damage. */
   tone: 'info' | 'warn';
   title: string;
   body: string;
   params?: Record<string, string | number>;
   /** The engine's own detail sentence, shown verbatim under the copy. */
   detail?: string;
-  /** A reference to display verbatim (never linkified — see valid.ts). */
+  /** A reference to display verbatim (never linkified - see valid.ts). */
   url?: string;
   /** Offer "Fetch and check": a same-origin path this page may fetch. */
   fetchPath?: string;
@@ -249,7 +249,7 @@ const failed = (report: VerifyReport, ...codes: string[]): boolean =>
 const passed = (report: VerifyReport, code: string): boolean =>
   (report.checks ?? []).some((c) => c.ok && c.code === code);
 
-/** The external-credential notice — the one the M1 report singles out as the
+/** The external-credential notice - the one the M1 report singles out as the
  *  field a shell must special-case so it does not render as "broken". */
 function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
   const gate = classifyUrl(b.manifestUrl!, ctx.origin, ctx.base);
@@ -277,7 +277,7 @@ function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
       body: 'This file names the address below instead of carrying its Content Credential, and it is a relative address — it only means something next to the place the file itself is served from, and a copy on your device no longer records where that was.',
     };
   }
-  // `unresolvable`: an ABSOLUTE reference this page will not follow — a scheme
+  // `unresolvable`: an ABSOLUTE reference this page will not follow - a scheme
   // it refuses, a protocol-relative host, userinfo, or a path that normalises
   // back out of the origin. Calling any of those "a relative address" while
   // printing the absolute address underneath is a sentence the reader can see
@@ -379,7 +379,7 @@ const STATUS_NOTICE: Record<string, { id: string; title: string; body: string }>
  * Every notice this report earns, in reading order.
  *
  * Deliberately additive to the existing verdict rendering: nothing here changes
- * a state, a check row or a scorecard pip. It says the things `state` cannot —
+ * a state, a check row or a scorecard pip. It says the things `state` cannot - 
  * "the credential is over there", "this is part of something longer", "the
  * invisible characters got lost in the clipboard".
  */
@@ -454,9 +454,9 @@ export function verifyTextNotices(report: VerifyReport, ctx: NoticeContext): Ver
  * that no longer hash to what was signed, in a markup carrier that arrived
  * through the clipboard.
  *
- * That combination has a known innocent cause — copying out of a rendered page
+ * That combination has a known innocent cause - copying out of a rendered page
  * hands you the BROWSER's serialization (attribute order, quoting, entity form,
- * whitespace), not the author's file — and "modified after signing" would be the
+ * whitespace), not the author's file - and "modified after signing" would be the
  * wrong sentence for it. Gated on the claim signature having VERIFIED, so this
  * never becomes a soft landing for a file whose credential is itself damaged.
  */
@@ -481,7 +481,7 @@ export function reserializedNotice(report: VerifyReport, ctx: NoticeContext): Ve
  * fair one only while no better explanation is in hand. Once the page is
  * printing "these bytes were re-serialized on the way here", stamping the
  * accusation over the top of it is the page arguing with itself in favour of the
- * harsher reading. The other two badges stay — a credential IS here, and these
+ * harsher reading. The other two badges stay - a credential IS here, and these
  * bytes are NOT the ones it hashed. Both are facts.
  */
 export function suppressModifiedBadge(notes: VerifyNotice[]): boolean {
@@ -491,14 +491,14 @@ export function suppressModifiedBadge(notes: VerifyNotice[]): boolean {
 // ── §18.28 ai-disclosure ─────────────────────────────────────────────────────
 
 export interface AiDisclosureRow {
-  /** modelName, else modelIdentifier — null when the claim disclosed neither. */
+  /** modelName, else modelIdentifier - null when the claim disclosed neither. */
   model: string | null;
   modelType?: string;
   oversight?: string;
   domains?: string;
 }
 
-/** Every disclosure the claim made, in claim order. Empty when there is none —
+/** Every disclosure the claim made, in claim order. Empty when there is none - 
  *  and absence is NOT a statement that no model was involved. */
 export function aiDisclosureRows(report: VerifyReport): AiDisclosureRow[] {
   const list = report.aiDisclosures?.length ? report.aiDisclosures

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of `host.speech` (v1.96; transcription v1.99) — on-device
+ * Web implementation of `host.speech` (v1.96; transcription v1.99) - on-device
  * Kokoro text-to-speech with word timings for captions, and on-device Whisper
  * transcription for audio we didn't synthesise.
  *
@@ -8,8 +8,8 @@
  * plumbing (id-keyed pending map, progress fan-out, abort) plus, for
  * transcription, the decode-to-PCM (a worker has no OfflineAudioContext, so
  * the decode happens HERE on the main thread, the bridge/audio.ts pattern,
- * and the samples TRANSFER to the worker). The heavy lifting — transformers.js,
- * the eSpeak phonemizer, the ~92 MB Kokoro and ~77 MB Whisper q8 ONNX models —
+ * and the samples TRANSFER to the worker). The costly work - transformers.js,
+ * the eSpeak phonemizer, the ~92 MB Kokoro and ~77 MB Whisper q8 ONNX models -
  * lives entirely inside lib/speech-kokoro-worker.ts and
  * lib/speech-whisper-worker.ts so none of it can block the thread a tool is
  * being typed into, and the pure bookkeeping (sentence split, word spans, PCM
@@ -25,7 +25,7 @@
  * disabled, so neither the text nor the audio ever leaves the machine.
  * `cached()`/`transcribeCached()` probe the Cache API bucket transformers.js
  * writes ('transformers-cache', keyed by the local model path) WITHOUT
- * fetching — that is the load-bearing part of the consent story: a tool can
+ * fetching - that is the essential part of the consent story: a tool can
  * tell "instant" from "one-time download" before any bytes move.
  */
 import type {
@@ -41,7 +41,7 @@ import type { TranscribeWorkerReply, TranscribeWorkerRequest } from '../lib/spee
  *  resolved local path, relative to origin). Probed by cached(), never fetched. */
 const MODEL_CACHE_URL = `/models/${KOKORO_MODEL_ID}/onnx/model_quantized.onnx`;
 
-/** Whisper's q8 pair, same probe. BOTH files — transformers.js caches per file,
+/** Whisper's q8 pair, same probe. BOTH files - transformers.js caches per file,
  *  and an interrupted first download can leave the encoder cached without the
  *  (much larger) decoder; reporting that as warm would break the consent UI. */
 const WHISPER_CACHE_URLS = [
@@ -65,7 +65,7 @@ function ensureWorker(): Worker {
   worker.onmessage = (e: MessageEvent<SpeechWorkerReply>): void => {
     const { id, progress, result, error } = e.data;
     const p = pending.get(id);
-    if (!p) return; // late reply for an aborted request — already rejected
+    if (!p) return; // late reply for an aborted request - already rejected
     if (progress) { p.onProgress?.(progress); return; }
     pending.delete(id);
     if (error || !result) p.reject(new Error(error ?? 'speech synthesis failed'));
@@ -75,7 +75,7 @@ function ensureWorker(): Worker {
     for (const p of pending.values()) p.reject(new Error('speech worker error'));
     pending.clear();
     // Terminate, then drop, the dead worker so the next synthesize() spawns a
-    // fresh one — detaching alone would leak the broken thread (and whatever
+    // fresh one - detaching alone would leak the broken thread (and whatever
     // slice of the ~92 MB session it managed to load).
     if (worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
     worker = null;
@@ -99,7 +99,7 @@ function ensureWhisperWorker(): Worker {
   whisperWorker.onmessage = (e: MessageEvent<TranscribeWorkerReply>): void => {
     const { id, progress, result, error } = e.data;
     const p = pendingTranscribe.get(id);
-    if (!p) return; // late reply for an aborted request — already rejected
+    if (!p) return; // late reply for an aborted request - already rejected
     if (progress) { p.onProgress?.(progress); return; }
     pendingTranscribe.delete(id);
     if (error || !result) p.reject(new Error(error ?? 'speech transcription failed'));
@@ -116,14 +116,14 @@ function ensureWhisperWorker(): Worker {
   return whisperWorker;
 }
 
-/** Source → the ArrayBuffer decodeAudioData wants (which it will detach) —
+/** Source → the ArrayBuffer decodeAudioData wants (which it will detach) - 
  *  the same reduction bridge/audio.ts makes, minus the procedural-song forms:
  *  a zzfxm ref or tracker module has no place here (we made it; if it needs
  *  words, synthesis already knows them). */
 async function toBytes(src: AudioSource): Promise<ArrayBuffer> {
   if (src instanceof ArrayBuffer) return src;
   if (src instanceof Uint8Array) {
-    // decodeAudioData detaches whatever it is given — hand it a COPY of the
+    // decodeAudioData detaches whatever it is given - hand it a COPY of the
     // caller's view, not the buffer the caller still holds.
     return src.slice().buffer as ArrayBuffer;
   }
@@ -137,7 +137,7 @@ async function toBytes(src: AudioSource): Promise<ArrayBuffer> {
  * Decode any AudioSource to the 16 kHz mono Float32 PCM Whisper consumes.
  * Main thread by necessity (no OfflineAudioContext in a worker); the 16 kHz
  * context makes decodeAudioData itself do the resample (the spec resamples the
- * decode to the context's rate) — one pass, no second render graph — and the
+ * decode to the context's rate) - one pass, no second render graph - and the
  * downmix is a plain channel average, which is right for speech.
  */
 async function decodePcm16k(src: AudioSource): Promise<Float32Array> {
@@ -169,7 +169,7 @@ export function createSpeechAPI(): SpeechAPI {
         const c = await caches.open('transformers-cache');
         return (await c.match(MODEL_CACHE_URL)) !== undefined;
       } catch {
-        return false; // Cache API visible but sealed (incognito iframe) — treat as cold
+        return false; // Cache API visible but sealed (incognito iframe) - treat as cold
       }
     },
 
@@ -186,7 +186,7 @@ export function createSpeechAPI(): SpeechAPI {
     synthesize(text: string, opts: SpeechSynthesizeOpts = {}): Promise<SpeechResult> {
       const { signal } = opts;
       if (signal?.aborted) return Promise.reject(abortError());
-      // Hard bound (well above the UI's soft nudge) — reject BEFORE the text
+      // Hard bound (well above the UI's soft nudge) - reject BEFORE the text
       // crosses to the worker; the worker re-checks as defence in depth.
       if (text.length > MAX_INPUT_CHARS) {
         return Promise.reject(new Error(
@@ -198,7 +198,7 @@ export function createSpeechAPI(): SpeechAPI {
       return new Promise<SpeechResult>((resolve, reject) => {
         const onAbort = (): void => {
           // Reject NOW and tell the worker, which stops at the next sentence
-          // boundary (a sentence mid-inference cannot be preempted in-wasm) —
+          // boundary (a sentence mid-inference cannot be preempted in-wasm) - 
           // its late reply then finds no pending entry and is dropped.
           if (!pending.has(id)) return;
           pending.delete(id);
@@ -234,7 +234,7 @@ export function createSpeechAPI(): SpeechAPI {
         }
         return true;
       } catch {
-        return false; // Cache API visible but sealed (incognito iframe) — treat as cold
+        return false; // Cache API visible but sealed (incognito iframe) - treat as cold
       }
     },
 
@@ -255,7 +255,7 @@ export function createSpeechAPI(): SpeechAPI {
       return new Promise<SpeechTranscript>((resolve, reject) => {
         const onAbort = (): void => {
           // Reject NOW and tell the worker, which stops at the next chunk
-          // boundary (a chunk mid-inference cannot be preempted in-wasm) —
+          // boundary (a chunk mid-inference cannot be preempted in-wasm) - 
           // its late reply then finds no pending entry and is dropped.
           if (!pendingTranscribe.has(id)) return;
           pendingTranscribe.delete(id);
@@ -268,7 +268,7 @@ export function createSpeechAPI(): SpeechAPI {
           reject: (e) => { signal?.removeEventListener('abort', onAbort); reject(e); },
           onProgress: opts.onProgress,
         });
-        // TRANSFER the samples — minutes of 16 kHz PCM is real memory, and
+        // TRANSFER the samples - minutes of 16 kHz PCM is real memory, and
         // this side never reads them again.
         w.postMessage({ id, type: 'transcribe', pcm, lang: opts.lang } satisfies TranscribeWorkerRequest, [pcm.buffer]);
       });

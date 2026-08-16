@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Components as templates — the storage half (plan §2.2, phase 1.2).
+ * Components as templates - the storage half (plan §2.2, phase 1.2).
  *
  * Run directly:  node --test shells/web/src/lib/design-templates.test.ts
  *
  * No DOM and no zip machinery: this module was split out of the importer so the
- * wire shape of a template session, the folder it lands in, and the two pure
+ * wire structure of a template session, the folder it lands in, and the two pure
  * helpers the importer leans on can be pinned against a fake host. The parsing
  * half (subtree walk → boxes) is pinned by tests/penpot-keynote-replay.test.ts
  * and tests/penpot-kitchen-sink.test.ts against real Penpot exports.
@@ -87,7 +87,7 @@ test('a template session is an ordinary session plus two additive `__` keys', ()
   assert.equal(data.__label, 'PERSON INTRO', 'the label IS the component name');
   assert.equal(data.__template, true);
   assert.deepEqual(data.__slots, [{ boxId: 'n1', kind: 'text', label: 'Subtitle', text: 'Lorem ipsum' }]);
-  // The canvas size rides the existing export-bar keys — no new size channel.
+  // The canvas size rides the existing export-bar keys - no new size channel.
   assert.equal(data.__export_width, '895');
   assert.equal(data.__export_height, '503');
   assert.equal(data.__export_unit, 'px');

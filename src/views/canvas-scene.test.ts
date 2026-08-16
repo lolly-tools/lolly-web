@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Canvas Scene (plans/98 Phase A) — the spatial hit index must be a drop-in for the
+ * Canvas Scene (plans/98 Phase A) - the spatial hit index must be a drop-in for the
  * linear scan (hitGrid ≡ hitTest, hitGridMarquee ≡ marqueeHit), and the damage diff
  * must classify each mutation into the right lane. node:test, no framework.
  */

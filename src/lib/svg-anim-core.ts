@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Animated-SVG assembly — pure, DOM-free, unit-testable core.
+ * Animated-SVG assembly - pure, DOM-free, unit-testable core.
  *
  * The export bridge (bridge/export.ts renderSvgAnim) samples a motion tool's live
- * DOM into N vector-SVG snapshots (one per moment, via renderSvgFromHtml — text
+ * DOM into N vector-SVG snapshots (one per moment, via renderSvgFromHtml - text
  * stays outlined, so the frames scale cleanly). This module stitches those frames
  * into ONE self-contained animated SVG: a "flipbook" where each frame is a <g>
  * layer and an embedded CSS @keyframes cross-cuts exactly one layer visible per
- * time slice. No video codec, no external runtime — a plain .svg that animates in
+ * time slice. No video codec, no external runtime - a plain .svg that animates in
  * a browser tab or an <img>, and scales to any size because every frame is vector.
  *
  * Two responsibilities, kept pure so they can be exercised without a DOM:
- *   • namespaceSvgIds — each snapshot generates its OWN ids (svggrad-1, fcclip-1,
+ *   • namespaceSvgIds - each snapshot generates its OWN ids (svggrad-1, fcclip-1,
  *     shadow-1 …). Stacked in one document those collide and cross-wire references,
  *     so every frame's ids + their url(#…)/href="#…" refs are prefixed per frame.
- *   • assembleAnimatedSvg — builds the flipbook: a <style> with one step-end
+ *   • assembleAnimatedSvg - builds the flipbook: a <style> with one step-end
  *     @keyframes per frame (hard cuts, no fade) + the N wrapped, namespaced layers.
  *
  * Lives in lib/ (not bridge/) precisely so tests/svg-anim.test.ts can import it
@@ -26,9 +26,9 @@
 export function namespaceSvgIds(inner: string, prefix: string): string {
   return inner
     .replace(/\bid="([^"]+)"/g, (_m, id: string) => `id="${prefix}${id}"`)
-    // url(#x), url('#x'), url("#x") — the only internal-ref form the SVG walker emits.
+    // url(#x), url('#x'), url("#x") - the only internal-ref form the SVG walker emits.
     .replace(/\burl\((['"]?)#([^)'"]+)\1\)/g, (_m, q: string, id: string) => `url(${q}#${prefix}${id}${q})`)
-    // href="#x" / xlink:href="#x" — hash refs only; data:/blob: hrefs are untouched.
+    // href="#x" / xlink:href="#x" - hash refs only; data:/blob: hrefs are untouched.
     .replace(/\b(xlink:href|href)="#([^"]+)"/g, (_m, attr: string, id: string) => `${attr}="#${prefix}${id}"`);
 }
 
@@ -39,7 +39,7 @@ export interface AnimatedSvgParts {
   widthAttr: string;
   heightAttr: string;
   viewBox: string;
-  /** Per-frame display time (ms) — the sampled frame interval. */
+  /** Per-frame display time (ms) - the sampled frame interval. */
   frameMs: number;
   /** Loop count: 0 = forever, n>0 = play n times then hold the last frame. */
   loops: number;
@@ -91,7 +91,7 @@ export function assembleAnimatedSvg(parts: AnimatedSvgParts): string {
     .map((inner, i) => `<g class="laf laf-${i}">${namespaceSvgIds(inner, `f${i}-`)}</g>`)
     .join('');
 
-  // A lone frame is just a static SVG — no <style>, no animation.
+  // A lone frame is just a static SVG - no <style>, no animation.
   let style = '';
   if (n > 1) {
     const totalMs = Math.max(1, Math.round(frameMs * n));

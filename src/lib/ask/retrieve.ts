@@ -22,7 +22,7 @@ export interface DocsSectionHit { rec: DocsRecord; score: number }
 /**
  * A small English stopword set. A natural-language question ("how do I export a
  * transparent PNG?") is mostly function words that appear in no section, and the
- * spotlight matcher is AND-across-tokens — so scoring the raw question finds
+ * spotlight matcher is AND-across-tokens - so scoring the raw question finds
  * nothing. Stripping these focuses the match on the content terms. English-only
  * and English-first by design (plans/103): other locales keep every token, where
  * the additive OR scoring below simply treats the extra words as weak signal.
@@ -36,7 +36,7 @@ const STOPWORDS = new Set([
 
 /**
  * Rank the docs section index against the tokens. Unlike the spotlight docs
- * provider (which is AND-across-tokens — right for a short lookup), Ask questions
+ * provider (which is AND-across-tokens - right for a short lookup), Ask questions
  * are natural language, so this is ADDITIVE OR: each content token contributes
  * its best-field weight through the shared matcher (a single-token scoreHaystack
  * call, so folding, word-boundary doubling and the heading>title>body ladder are

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * input-policy.ts — the generic per-(tool,input) display-policy registry.
+ * input-policy.ts - the generic per-(tool,input) display-policy registry.
  *
  * Pure, DOM-free: proves the dormant default (empty ⇒ undefined, no cost),
  * per-tool namespacing, whole-set replacement semantics (a dropped input

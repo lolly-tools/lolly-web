@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The tool-guide dialog (components/tool-guide.ts) — the shell half of the
+ * The tool-guide dialog (components/tool-guide.ts) - the shell half of the
  * manifest `guide` block. The manifest/i18n half is pinned in
  * tests/tool-guide.test.ts; this covers what the browser actually gets:
  * escaping, tab switching, and the once-per-device auto-open.
  *
  * Run directly:  node --test shells/web/src/components/tool-guide.test.ts
  *
- * jsdom with a real origin — localStorage is where the auto-open's "seen" set
+ * jsdom with a real origin - localStorage is where the auto-open's "seen" set
  * lives, and it throws SecurityError on the default opaque about:blank origin.
  * jsdom implements <dialog> but not showModal()/close(), which mountModal calls,
  * so those two are stubbed on the prototype (the lifecycle they drive is

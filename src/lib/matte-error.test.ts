@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * classifyMatteError — the belt-and-braces mapping that keeps a raw runtime string
+ * classifyMatteError - the belt-and-braces mapping that keeps a raw runtime string
  * (the std::bad_alloc that started this) out of the Remove-Background dialog.
  *
  * Run: node --test shells/web/src/lib/matte-error.test.ts
@@ -44,7 +44,7 @@ test('abort is detected by name (the dialog stays silent on it)', () => {
 test('a not-installed model is recognised by class AND by the worker-flattened message', () => {
   const typed = Object.assign(new Error('nope'), { name: 'ModelNotInstalledError' });
   assert.equal(classifyMatteError(typed), 'not-installed');
-  // The wasm worker loses the class across postMessage — only the text survives.
+  // The wasm worker loses the class across postMessage - only the text survives.
   assert.equal(
     classifyMatteError(new Error("The birefnet matte model isn't downloaded on this device yet.")),
     'not-installed');

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * staggerReveal — the gallery's entrance cascade, made reusable for any freshly-shown
+ * staggerReveal - the gallery's entrance cascade, made reusable for any freshly-shown
  * set of items: an input section expanding, or a catalog group opening. Each item
  * animates in with a stepped delay (the CSS `.reveal-item` rule → shared `card-in`
  * keyframes) and a soft "shuffle" cue plays under it.
@@ -12,7 +12,7 @@
  * A `no-preference` gate is the additive INVERSE, though: it cannot be closed by
  * adding a selector, so the app's own preference (data-a11y-motion) would leave
  * this animation running for a user whose OS has no preference set. The stagger is
- * therefore skipped in JS below — the animation and its per-item delay only exist
+ * therefore skipped in JS below - the animation and its per-item delay only exist
  * on `.reveal-item`, so not adding the class IS the off-switch, exactly as
  * armViewEnter (view-enter.ts) handles the same inversion.
  */
@@ -27,14 +27,14 @@ interface RevealOpts {
 
 /** Cascade `items` in with a stepped delay + a soft shuffle. Safe to call repeatedly.
  *  The `.reveal-item` animation fills `backwards` (see components.css): once each
- *  item's entrance ends it returns to its natural style, leaving NO translate residue —
+ *  item's entrance ends it returns to its natural style, leaving NO translate residue - 
  *  a persisted fill would make the item a containing block + stacking context that
  *  clips any position:fixed popover inside it (e.g. a colour field's swatch panel). */
 export function staggerReveal(items: Element[], { step = 14, max = 160, sound = true }: RevealOpts = {}): void {
   if (!items.length) return;
   // Calm mode drops the MOTION and keeps the cue: reduced motion is a statement about
   // movement, not about audio (sfx.ts says so in as many words, and mute is its own
-  // preference). Playing it before the early return is deliberate — a version that
+  // preference). Playing it before the early return is deliberate - a version that
   // returned first silently took the shuffle away from every OS-reduced-motion user,
   // who had always heard it back when only the CSS was gated.
   if (prefersReducedMotion()) {
@@ -75,8 +75,8 @@ function revealItemsFor(details: HTMLDetailsElement): Element[] {
 let installed = false;
 
 /**
- * App-wide: when a collapsible `<details>` SECTION opens — a sidebar input group, a
- * platform / capabilities panel, or a profile card — cascade its contents in (+ a soft
+ * App-wide: when a collapsible `<details>` SECTION opens - a sidebar input group, a
+ * platform / capabilities panel, or a profile card - cascade its contents in (+ a soft
  * shuffle). The `toggle` event doesn't bubble, so we listen in the CAPTURE phase, which
  * still visits the target for non-bubbling events. Idempotent; call once at boot
  * (main.ts), alongside installGlobalSfx().

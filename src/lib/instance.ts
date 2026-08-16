@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Instance base — point this installed shell at a REMOTE Lolly deployment for
+ * Instance base - point this installed shell at a REMOTE Lolly deployment for
  * its catalog + tools (first-run instance choice). '' (the default) means the
  * bundled same-origin content, and every helper here is a byte-identical
  * passthrough in that state.
  *
  * The base persists in IndexedDB (its own key in the 'profile' KV store, like
- * lib/offline-pins.ts — never localStorage) and is loaded by initInstanceBase()
+ * lib/offline-pins.ts - never localStorage) and is loaded by initInstanceBase()
  * BEFORE the first catalog sync (catalog/sync.ts awaits it at the top of
  * syncCatalog, so no main.ts wiring is needed).
  *
  * Fetch routing: under Tauri (window.__TAURI_INTERNALS__) a cross-origin
- * instance fetch goes through the tauri-plugin-http Rust client — the WebView's
+ * instance fetch goes through the tauri-plugin-http Rust client - the WebView's
  * own fetch would be CORS-bound, and both Tauri shells register
  * tauri_plugin_http::init() with an `https://*:*` allow scope in their
  * capabilities/default.json. Everywhere else (browser PWA, or same-origin URLs
- * under Tauri) it is plain window.fetch — which means a browser pointed at a
+ * under Tauri) it is plain window.fetch - which means a browser pointed at a
  * cross-origin instance needs that deployment to serve CORS headers.
  *
  * `https://*:*` is deliberately ANY https host/port, not scoped to LAN/private
  * ranges: a "Lolly instance" is any Lolly deployment the user names, which is
- * just as often a hosted/cloud one as a device on the same network — narrowing
+ * just as often a hosted/cloud one as a device on the same network - narrowing
  * the capability scope would break the ordinary case. The connect flow's own
  * copy (components/instance-sheet.ts) carries the trust warning instead
  * ("connect only to instances you trust"), since normalizeInstanceBase below
- * only validates well-formedness (https, no embedded credentials) — it isn't,
+ * only validates well-formedness (https, no embedded credentials) - it isn't,
  * and isn't meant to be, an allowlist of trusted hosts.
  *
  * The plugin-http guest binding is re-implemented minimally below via
  * __TAURI_INTERNALS__.invoke rather than imported: this file is bundled by the
  * web shell's Vite (where @tauri-apps/* is not a dependency) AND by the Tauri
  * shells' Vite (which roots at ../web), so a static import would break the web
- * build — and invoke is the only primitive the binding actually uses.
+ * build - and invoke is the only primitive the binding actually uses.
  *
  * OFFLINE / CACHING interplay with a remote base set (verified against
  * public/sw.js, lib/offline-pins.ts and catalog/integrity.ts):
@@ -47,19 +47,19 @@
  *     until the network returns.
  *   - Offline pins fetch AND key their PIN_CACHE entries through instancePath,
  *     so a pin made in remote mode caches the remote bytes under the remote URL
- *     (never poisoning the same-origin fallback keys) — but since the SW only
+ *     (never poisoning the same-origin fallback keys) - but since the SW only
  *     serves PIN_CACHE for same-origin requests, pinned tools are not
  *     offline-servable while a remote base is active.
  *   - Catalog signing (catalog/integrity.ts) fetches its envelope through the
  *     base too: a key-pinned build requires the remote instance to be signed by
  *     the SAME pinned key, or sync fails closed. Asset checksum verification
- *     (verifyAssetChecksum) keeps running on remote bytes unchanged — the
+ *     (verifyAssetChecksum) keeps running on remote bytes unchanged - the
  *     remote index's checksums travel with its format entries.
  */
 
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
-// set is the UNION over every importer — touching it here drags createRuntime
+// set is the UNION over every importer - touching it here drags createRuntime
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
 import { ENGINE_VERSION } from '../../../../engine/src/version.ts';
@@ -106,10 +106,10 @@ export async function setInstanceBase(url: string | null): Promise<void> {
   else await db.delete('profile', INSTANCE_KEY);
   base = next;
   // Drop catalog/sync.ts's conditional-request validators (perf-hint ETags it
-  // already keeps in localStorage — not tool state): they validate the PREVIOUS
+  // already keeps in localStorage - not tool state): they validate the PREVIOUS
   // base's copies, and a stale 304 against the new base would skip the first
   // full sync of the instance's index. Also drop the actual cached tool-index
-  // CONTENT ('sbt-tool-index', a separate key) — main.ts primes window.__toolIndex
+  // CONTENT ('sbt-tool-index', a separate key) - main.ts primes window.__toolIndex
   // from it for the pre-sync fast paint, and catalog/sync.ts falls back to it when
   // every fetch attempt fails, so leaving the PREVIOUS base's bytes in it would
   // resurface a foreign catalog on the next cold/offline boot.
@@ -127,7 +127,7 @@ export function initInstanceBase(): Promise<void> {
       const stored = await (await openDB()).get('profile', INSTANCE_KEY);
       if (typeof stored === 'string' && stored) base = normalizeInstanceBase(stored);
     } catch {
-      base = ''; // unreadable/invalid — fall back to bundled content
+      base = ''; // unreadable/invalid - fall back to bundled content
     }
   })();
   return initPromise;
@@ -161,12 +161,12 @@ export function instanceFetch(input: string | URL, init?: RequestInit): Promise<
 }
 
 /**
- * Tag instance traffic with the shell kind + engine version — the same
+ * Tag instance traffic with the shell kind + engine version - the same
  * information a User-Agent would carry if browsers let pages set one, so a
  * deployment's operator can tell which Lolly versions are in the field.
  * Same-origin and Tauri-native requests only: a custom header on a browser
  * CROSS-origin fetch forces a CORS preflight, which a plain static host
- * serving a remote instance would fail — those requests stay untagged.
+ * serving a remote instance would fail - those requests stay untagged.
  */
 function withClientHeader(init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers);
@@ -242,7 +242,7 @@ async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response
     body.set(c, off);
     off += c.length;
   }
-  // Null-body statuses (fetch spec) — Response() throws if handed bytes for them.
+  // Null-body statuses (fetch spec) - Response() throws if handed bytes for them.
   const nullBody = [101, 103, 204, 205, 304].includes(resp.status);
   const out = new Response(nullBody ? null : body, {
     status: resp.status,

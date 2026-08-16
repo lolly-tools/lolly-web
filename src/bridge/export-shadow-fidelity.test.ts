@@ -2,18 +2,18 @@
 /**
  * Shadow fidelity: does the walker's vector output actually LOOK like the bitmap?
  *
- * Every other walker suite asserts on structure — is the element there, is it clipped,
+ * Every other walker suite asserts on structure - is the element there, is it clipped,
  * is the order right. Structure cannot catch a shadow that is present but too soft, or
  * one that darkens through a translucent panel it should have been clipped out of. So
- * this one renders the same markup twice in the same browser — a DOM screenshot, and
- * the walker's SVG rasterised at the same size — and diffs the pixels.
+ * this one renders the same markup twice in the same browser - a DOM screenshot, and
+ * the walker's SVG rasterised at the same size - and diffs the pixels.
  *
  * ## Why thresholds and not exact equality
  *
  * Box shapes come out exact (0.00% on several rows below), but text does not: the
  * control row `plain text, no shadow at all` measures 0.01% mean / 20.4% worst-pixel
  * with NO shadow involved, purely from glyph antialiasing differing between an SVG
- * `<text>` element and DOM text. That row is in the table on purpose — it is the floor
+ * `<text>` element and DOM text. That row is in the table on purpose - it is the floor
  * every text row has to be read against, and without it a 4.7% worst-pixel on a
  * blurred text shadow looks like a defect rather than noise.
  *
@@ -107,7 +107,7 @@ async function pixelDiff(inner: string): Promise<[number, number]> {
   } finally { await b.close(); }
 }
 
-/** `maxMean` / `maxWorst` are the measured value with headroom, not aspirations —
+/** `maxMean` / `maxWorst` are the measured value with headroom, not aspirations - 
  *  each row's comment records what it actually measures. */
 interface Row { name: string; markup: string; maxMean: number; maxWorst: number }
 
@@ -124,7 +124,7 @@ const ROWS: Row[] = [
 
   // CSS paints an outer shadow as if the border box were opaque and clips it away
   // inside that box. Painting it and covering it with the background only works when
-  // the background IS opaque; over a frosted panel — which this app is full of — the
+  // the background IS opaque; over a frosted panel - which this app is full of - the
   // shadow used to show straight through, at 6.2% mean / 35.7% worst.
   { name: 'outer shadow under a TRANSLUCENT background', markup: box('background:rgba(255,255,255,0.35);box-shadow:0 6px 16px rgba(0,0,0,0.55)'),
     maxMean: 0.003, maxWorst: 0.05 },                       // measures 0.02% / 0.8%

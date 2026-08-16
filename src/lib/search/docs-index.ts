@@ -3,7 +3,7 @@
  * The shared /info search-index loader (plans/103 M0).
  *
  * The Docs spotlight provider (providers/docs.ts) and the Ask help pipeline
- * (lib/ask/*) both federate over the static site's per-locale search index —
+ * (lib/ask/*) both federate over the static site's per-locale search index - 
  * `/info/search-index.json` for English, `/info/<lang>/search-index.json`
  * otherwise, one record per page section, exactly as docs/build.ts's
  * indexSections writes it. This module is the ONE place that path, that record
@@ -12,7 +12,7 @@
  *
  * `loadDocsIndex()` is module-level, locale-keyed and cached: the index is
  * fetched once per session per locale and shared. Any failure resolves to an
- * empty record set — offline is a normal state for this app, not an error, so
+ * empty record set - offline is a normal state for this app, not an error, so
  * a missing/unreachable index simply means "no docs answers", silently.
  *
  * The Docs provider keeps its OWN per-instance cache (see docs.ts) rather than
@@ -26,7 +26,7 @@ import { fold, type SearchField } from './match.ts';
 /** One /info page section, as docs/build.ts's indexSections writes it. Keys are
  *  short because the file ships once per locale and is fetched by readers:
  *  p=page slug, t=page title, h=heading ('' for the page intro), a=anchor
- *  ('' for the page intro), x=body snippet, i=page sidebar-icon key (optional —
+ *  ('' for the page intro), x=body snippet, i=page sidebar-icon key (optional - 
  *  absent in indices built before plans/103; the consumer falls back). */
 export interface DocsRecord { p: string; t: string; h: string; a: string; x: string; i?: string }
 
@@ -45,21 +45,21 @@ export function docsBase(lang: Lang): string {
   return lang === 'en' ? '/info' : `/info/${lang}`;
 }
 
-/** The /info deep-link for a record — base + '/' + p + '.html' + ('#' + a when
- *  anchored) — EXACTLY the docs sidebar's construction. This is the SHARE/SEO
+/** The /info deep-link for a record - base + '/' + p + '.html' + ('#' + a when
+ *  anchored) - EXACTLY the docs sidebar's construction. This is the SHARE/SEO
  *  form (the static, crawlable page); INTERNAL navigation uses docsAppHrefFor
  *  below, which routes the in-app reader instead. The .html suffix is
- *  load-bearing (a /info/<lang>/ directory URL 404s in dev — see docsHref's note). */
+ *  required (a /info/<lang>/ directory URL 404s in dev - see docsHref's note). */
 export function docsHrefFor(base: string, rec: DocsRecord): string {
   return `${base}/${rec.p}.html${rec.a ? `#${rec.a}` : ''}`;
 }
 
-/** The IN-APP docs-reader href for a record — `#/docs/<slug>`, with the section's
+/** The IN-APP docs-reader href for a record - `#/docs/<slug>`, with the section's
  *  heading anchor carried as a `?h=<anchor>` QUERY param (NOT a second '#':
  *  `#/docs/<slug>#<anchor>` is a double hash the SPA hash router can't parse).
  *  views/docs.ts reads `h` on mount and scrolls that heading into view. The
  *  language rides the app's current locale (docsAppHref drops any lang prefix),
- *  so this is INTERNAL navigation only — share/SEO links stay on docsHrefFor /
+ *  so this is INTERNAL navigation only - share/SEO links stay on docsHrefFor /
  *  docsInfoHref. */
 export function docsAppHrefFor(rec: DocsRecord): string {
   const href = docsAppHref(rec.p);
@@ -78,7 +78,7 @@ export function prepareRecords(records: unknown): PreparedRecord[] {
   }));
 }
 
-/** Fetch + fold the active locale's index (uncached — callers cache). */
+/** Fetch + fold the active locale's index (uncached - callers cache). */
 export async function fetchDocsIndex(): Promise<PreparedRecord[]> {
   const base = docsBase(currentLang());
   try {
@@ -90,7 +90,7 @@ export async function fetchDocsIndex(): Promise<PreparedRecord[]> {
   }
 }
 
-// Module-level, locale-keyed cache — settled once per (locale), kept for the
+// Module-level, locale-keyed cache - settled once per (locale), kept for the
 // session. A language switch reloads the whole app in production, but the map is
 // keyed by lang so a test-time switch re-fetches too.
 const cache = new Map<Lang, Promise<PreparedRecord[]>>();
@@ -103,7 +103,7 @@ export function loadDocsIndex(): Promise<PreparedRecord[]> {
   return p;
 }
 
-/** Test seam — drop the cache so a suite can serve a fresh fixture. */
+/** Test seam - drop the cache so a suite can serve a fresh fixture. */
 export function _resetDocsIndexCache(): void {
   cache.clear();
 }

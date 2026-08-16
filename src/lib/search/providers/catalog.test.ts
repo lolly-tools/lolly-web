@@ -47,7 +47,7 @@ test('a catalog asset matches by name; hit shape carries the scoped-list deep li
   assert.equal(hits.length, 1);
   assert.equal(hits[0]!.title, 'Primary Logo');
   // plans/99 §5 locked target: the #/c?q= scoped list keyed on the asset's
-  // name — never #/c?asset=, which opens the per-asset details modal.
+  // name - never #/c?asset=, which opens the per-asset details modal.
   assert.equal(hits[0]!.href, '#/c?q=Primary%20Logo');
   assert.equal(hits[0]!.subtitle, 'Logos'); // lib/asset-category off the 'logo' tag
   assert.ok(hits[0]!.icon.includes('<svg'));

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — pure model logic (NO DOM, NO engine, NO host).
+ * Pro / Batch mode - pure model logic (NO DOM, NO engine, NO host).
  *
  * This module derives the batch grid's columns from the set of selected tools
  * and decides, per column, whether it can be "bulk written" (one value applied
  * to every row at once) or must be edited cell-by-cell.
  *
  * It is deliberately free of side effects so it can be unit-tested in isolation
- * (see model.test.js) and so the whole /pro feature can be reasoned about — and
- * removed — without touching the rest of the platform.
+ * (see model.test.js) and so the whole /pro feature can be reasoned about - and
+ * removed - without touching the rest of the platform.
  *
  * Vocabulary:
- *   row      — one entry in the batch: a chosen template + the values for it.
- *   column   — an input id that appears in one or more selected tools.
- *   member   — a tool's declaration of that input (carries the constraints).
- *   bulk     — every member is compatible, so the column header is actionable.
+ *   row - one entry in the batch: a chosen template + the values for it.
+ *   column - an input id that appears in one or more selected tools.
+ *   member - a tool's declaration of that input (carries the constraints).
+ *   bulk - every member is compatible, so the column header is actionable.
  */
 import type { InputSpec, InputManifest, SelectOption } from '../../../../engine/src/inputs.ts';
 
@@ -90,15 +90,15 @@ const BULK_TYPES = new Set<string>([
 ]);
 
 // Input ids that collide with reserved URL params / fixed grid chrome. These are
-// driven by the grid's own columns — Width/Height/Unit/DPI and Save-as — and by
+// driven by the grid's own columns - Width/Height/Unit/DPI and Save-as - and by
 // the export-dimension feed in render-export.js, so a tool input of the same name
 // must NOT get its own column (it would duplicate, e.g., the Width/Height shown
 // twice). Mirrors RESERVED in engine/src/url-mode.js.
 const RESERVED_KEYS = new Set<string>([
   'format', 'export', 'copy', 'slot', 'output', 'filename', '_v',
   'width', 'height', 'w', 'h', 'unit', 'dpi', 'full', 'options',
-  // presentation-mode addresses (plan 112) — shell-owned, never a batch column.
-  // NB: the signage flag `loop` is intentionally absent — it is a real input id in
+  // presentation-mode addresses (plan 112) - shell-owned, never a batch column.
+  // NB: the signage flag `loop` is intentionally absent - it is a real input id in
   // several tools (slides/deck-builder/3d/…) and must keep its own grid column.
   'present', 's',
 ]);
@@ -162,7 +162,7 @@ export function deriveColumns(rows: BatchRow[]): Column[] {
     for (const input of row.manifest.inputs ?? []) {
       if (!input || typeof input.id !== 'string') continue;
       // Reserved names (width/height/unit/dpi/filename/…) are owned by the grid
-      // chrome and the export-dimension feed — never their own column.
+      // chrome and the export-dimension feed - never their own column.
       if (RESERVED_KEYS.has(input.id)) continue;
       let col = byKey.get(input.id);
       if (!col) {

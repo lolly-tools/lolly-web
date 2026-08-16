@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — drag-to-reorder rows by their grip handle.
+ * Pro / Batch mode - drag-to-reorder rows by their grip handle.
  *
  * A single pointer listener on the grid watches for a grab on a row's drag
  * handle (the ⠿ grip in the actions cell). While held, the dragged <tr> is moved
  * among its siblings live in the DOM as the pointer crosses each row's vertical
  * midpoint, so the new order is visible as you drag. On release we read the final
- * uid order from the DOM and hand it back via onReorder — the owner reorders
+ * uid order from the DOM and hand it back via onReorder - the owner reorders
  * state.rows and re-renders, so state stays the single source of truth (the live
  * DOM moves are just feedback and get rebuilt on the next render).
  *

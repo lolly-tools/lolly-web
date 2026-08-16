@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Local usage metrics — tiny vanity counters for the profile page.
+ * Local usage metrics - tiny vanity counters for the profile page.
  *
  * Deliberately the cheapest thing that tells a story:
  *   • a single bounded JSON blob (a handful of ints + two small maps), never a
  *     growing log, so it can't bloat over time;
- *   • kept in localStorage (NOT the profile record) — synchronous, no IndexedDB
+ *   • kept in localStorage (NOT the profile record) - synchronous, no IndexedDB
  *     churn, and no profile-subscriber notifications firing on every increment;
  *   • mutated in memory and flushed *debounced* + on tab-hide, so even a
  *     per-keystroke caller would cost one write per burst, not per event.
  *
- * Everything is local-only — nothing here is ever sent anywhere, which is also
+ * Everything is local-only - nothing here is ever sent anywhere, which is also
  * the nicest line on the profile card. Delete this file + its call sites to
  * remove the feature entirely.
  */
@@ -26,9 +26,9 @@ export type MetricCounter =
 export interface MetricsData {
   v: 1;
   since: number;
-  /** { toolId: openCount } — bounded by the catalog */
+  /** { toolId: openCount } - bounded by the catalog */
   tools: Record<string, number>;
-  /** { png: n, jpg: n, … } — bounded set of formats */
+  /** { png: n, jpg: n, … } - bounded set of formats */
   formats: Record<string, number>;
   filesRendered: number;
   linksCopied: number;
@@ -55,8 +55,8 @@ function normalize(d: unknown): MetricsData {
   return {
     v: 1,
     since: Number.isFinite(src.since) ? (src.since as number) : Date.now(),
-    tools: obj(src.tools),         // { toolId: openCount } — bounded by the catalog
-    formats: obj(src.formats),     // { png: n, jpg: n, … } — bounded set of formats
+    tools: obj(src.tools),         // { toolId: openCount } - bounded by the catalog
+    formats: obj(src.formats),     // { png: n, jpg: n, … } - bounded set of formats
     filesRendered: (src.filesRendered as number) | 0,
     linksCopied: (src.linksCopied as number) | 0,
     imagesCopied: (src.imagesCopied as number) | 0,

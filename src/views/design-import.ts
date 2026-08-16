@@ -1,25 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
-// Design Import — DOM parser (Figma SVG / any SVG / Penpot .penpot|.zip → Design boxes).
+// Design Import - DOM parser (Figma SVG / any SVG / Penpot .penpot|.zip → Design boxes).
 //
-// This is the SHELL half of the import feature: it lives in the web shell because it
-// needs the browser DOM (DOMParser + a live-mounted <svg> for getBBox/getCTM) and the
-// shell's user-asset store. It is dynamic-imported by free-canvas.js. All the PURE,
-// DOM-free geometry/colour/text mapping lives in engine/src/design-map.js and is shared
-// via the '@lolly/engine' barrel (same specifier every other view uses, e.g. tool.js).
+// This is the SHELL half of the import feature: it lives in the web shell
+// because it needs the browser DOM (DOMParser + a live-mounted <svg> for
+// getBBox/getCTM) and the shell's user-asset store. It is dynamic-imported
+// by free-canvas.js. All the PURE, DOM-free geometry/colour/text mapping
+// lives in engine/src/design-map.js and is shared via the '@lolly/engine'
+// barrel (same specifier every other view uses, e.g. tool.js).
 //
-// Strategy for geometry (the load-bearing trick): we can't reliably parse arbitrary SVG
-// transform stacks by hand, so instead we mount the sanitized SVG offscreen and let the
-// browser resolve every transform for us. For each visual leaf we read:
+// Strategy for geometry (the essential trick): arbitrary SVG transform
+// stacks cannot be reliably parsed by hand, so instead the sanitized SVG is
+// mounted offscreen and the browser resolves every transform for us. For
+// each visual leaf we read:
 //   * el.getBBox()  → the element's LOCAL, unrotated bounding box (in its own user space)
 //   * el.getCTM()   → the matrix from that local space to the ROOT svg user space (= our
 //                     canvas coordinates, because we size the mount to the viewBox)
-// design-map.boxGeomFromBBox(bbox, ctm) then folds those into a top-left x/y/w/h + rotation.
-// The mount MUST be visible-in-layout (visibility:hidden, NOT display:none) — display:none
-// zeroes getBBox()/getCTM() and every element would collapse to 0×0.
+// design-map.boxGeomFromBBox(bbox, ctm) then folds those into a top-left
+// x/y/w/h + rotation. The mount MUST be visible-in-layout
+// (visibility:hidden, NOT display:none): display:none zeroes
+// getBBox()/getCTM() and every element would collapse to 0x0.
 //
-// Security: imported SVG is untrusted. sanitizeSvg() strips <script>, <foreignObject>,
-// every on* handler and javascript: hrefs BEFORE the markup is ever parsed into a live
-// document, and any SVG we flatten-and-store is sanitized a SECOND time by storeUserUpload
+// Security: imported SVG is untrusted. sanitizeSvg() strips <script>,
+// <foreignObject>, every on* handler and javascript: hrefs BEFORE the
+// markup is ever parsed into a live document, and any SVG we
+// flatten-and-store is sanitized a SECOND time by storeUserUpload
 // (DOMPurify on ingest). Scripts never run and never reach disk.
 
 import { storeUserUpload } from './picker.ts';
@@ -53,7 +57,7 @@ import { strFromU8 } from 'fflate';
 import { unzipAsync } from '../lib/zip.ts';
 // Figma .fig decode: a canvas.fig is a Kiwi binary (self-describing schema + data).
 // The schema chunk is raw-DEFLATE (native DecompressionStream); the data chunk is zstd
-// (fzstd — pure JS, by the fflate author). kiwi-schema is Evan Wallace's official decoder.
+// (fzstd - pure JS, by the fflate author). kiwi-schema is Evan Wallace's official decoder.
 import { decodeBinarySchema, compileSchema } from 'kiwi-schema';
 import { Decompress as ZstdDecompress } from 'fzstd';
 import type { HostV1, AssetRef } from '@lolly-tools/core/host-v1';
@@ -97,12 +101,13 @@ interface ElementCtx {
 // of boxes. Anything past this is dropped with a warning.
 const MAX_ELEMENTS = 2000;
 
-// Byte bounds for the import pipeline. The picked file is read whole into memory
-// and several branches make further copies (text decode, unzip, zstd), so every
-// stage is capped: the input itself, each zip entry's DECLARED inflated size and
-// their sum (the classic zip bomb hides behind a tiny compressed payload), and
-// the two .fig decompressors, which are streamed so a lying header is stopped at
-// the cap rather than trusted. All sit far above any real design export.
+// Byte bounds for the import pipeline. The picked file is read whole into
+// memory and several branches make further copies (text decode, unzip,
+// zstd), so every stage is capped: the input itself, each zip entry's
+// DECLARED inflated size and their sum (the classic zip bomb hides behind a
+// tiny compressed payload), and the two .fig decompressors, which are
+// streamed so a lying header is stopped at the cap instead of trusted. All
+// sit far above any real design export.
 const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRY_BYTES = 128 * 1024 * 1024;
 const MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -128,10 +133,10 @@ const PENPOT_NS_CANDIDATES = [
 /**
  * Parse a design file into a Design boxes array.
  * @param {File|Blob} file
- * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean, map?: object }} ctx —
+ * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean, map?: object }} ctx - 
  *   `interactive` lets a multi-page PDF/.ai ask which page via the shared page-picker
  *   dialog (cancelling throws 'Import cancelled.'); without it the first page imports
- *   with a warn, the headless-safe default. `map` is the engine's DesignMapOptions —
+ *   with a warn, the headless-safe default. `map` is the engine's DesignMapOptions - 
  *   the target tool's font vocabulary + seed colours (see free-canvas openImportPanel);
  *   omitted, the engine's neutral (lolly-start) defaults apply.
  * @returns {Promise<{ boxes: object[], width: number, height: number, background: string }>}
@@ -167,7 +172,7 @@ export async function parseDesignFile(
     return parsePdfFile(file, { host: host as HostV1, warn, interactive, map });
   }
 
-  // Raw InDesign .indd is a proprietary binary database with no open parser — guide the
+  // Raw InDesign .indd is a proprietary binary database with no open parser - guide the
   // user to InDesign's open interchange format (IDML) instead of failing opaquely.
   if (isIndd(buf, file && (file as File).name)) {
     throw new Error('A raw .indd file can’t be read directly. In InDesign choose File → Export → InDesign Markup (.idml) and import the .idml.');
@@ -203,7 +208,7 @@ export async function parseDesignFile(
 // Format sniffing
 // ---------------------------------------------------------------------------
 
-// A PDF (and a PDF-compatible .ai) begins with "%PDF-" within the first bytes — the spec
+// A PDF (and a PDF-compatible .ai) begins with "%PDF-" within the first bytes - the spec
 // permits a little leading junk, so scan a small window.
 function isPdf(buf: Uint8Array): boolean {
   const limit = Math.min(buf.length - 4, 1024);
@@ -255,15 +260,17 @@ function sanitizeSvg(svgText: string): SVGSVGElement | null {
   if (!svg) return null;
 
   // 1) Drop executable / escape-hatch elements entirely. <style> can pull external
-  //    resources via @import / url(...), so it goes too — we only read geometry + paint.
+  //    resources via @import / url(...), so it goes too - we only read geometry + paint.
   svg.querySelectorAll('script, foreignObject, style').forEach((n) => n.remove());
 
-  // 2) Walk every element: strip on* handlers, and any href/src that is not a data:
-  //    URI or a local #fragment. This is the load-bearing PRIVACY guard — the imported
-  //    SVG is untrusted and gets mounted live (to measure it), so an external
-  //    <image href="https://tracker/…"> / xlink:href would otherwise fire a network
-  //    beacon on import. Only embedded (data:) and internal (#id) refs survive; external
-  //    images simply don't import (matching the on-device, nothing-leaves-the-device stance).
+  // 2) Walk every element: strip on* handlers, and any href/src that is not
+  //    a data: URI or a local #fragment. This is the essential PRIVACY
+  //    guard: the imported SVG is untrusted and gets mounted live (to
+  //    measure it), so an external <image href="https://tracker/..."> /
+  //    xlink:href would otherwise fire a network beacon on import. Only
+  //    embedded (data:) and internal (#id) refs survive; external images
+  //    simply don't import (matching the on-device,
+  //    nothing-leaves-the-device stance).
   const all = svg.querySelectorAll('*');
   const scrub = (el: Element) => {
     for (const attr of Array.from(el.attributes)) {
@@ -295,7 +302,7 @@ async function svgToNodes(
   svgEl: SVGSVGElement,
   { host, warn, penpot = false, zipFiles = null }: SvgToNodesOpts,
 ): Promise<{ nodes: any[]; width: number; height: number }> {
-  // Determine the canvas size from the viewBox (preferred — it's the true user space
+  // Determine the canvas size from the viewBox (preferred - it's the true user space
   // that getCTM maps into) or fall back to width/height attributes.
   const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
   let canvasW = vb && vb.width ? vb.width : parseFloat(svgEl.getAttribute('width') as string) || 0;
@@ -313,11 +320,11 @@ async function svgToNodes(
   const nodes: any[] = [];
   const imageCache = new Map<string, AssetRef>(); // href → AssetRef (dedupe identical images)
   // Serialize the root <defs> once, not per flattened element (they all embed the same
-  // block) — avoids O(n·|defs|) re-serialization on a defs-heavy file.
+  // block) - avoids O(n·|defs|) re-serialization on a defs-heavy file.
   let defsCache: string | undefined;
   const defsHtml = () => (defsCache !== undefined ? defsCache : (defsCache = rootDefsHtml(mount)));
   let count = 0;      // leaf boxes emitted
-  let visited = 0;    // ALL elements walked (incl. containers) — bounds a container-only DoS
+  let visited = 0;    // ALL elements walked (incl. containers) - bounds a container-only DoS
   let truncated = false;
 
   try {
@@ -374,7 +381,7 @@ async function elementToNode(el: Element, tag: string, ctx: ElementCtx): Promise
   const { host, warn, inherited, imageCache, penpot, zipFiles } = ctx;
 
   // Geometry: local bbox → world box via the CTM. getBBox throws for a few edge cases
-  // (empty text, unrenderable defs) — the caller's try/catch handles it.
+  // (empty text, unrenderable defs) - the caller's try/catch handles it.
   const bbox = (el as SVGGraphicsElement).getBBox();
   const ctm = (el as SVGGraphicsElement).getCTM();
   const m: Matrix = ctm ? { a: ctm.a, b: ctm.b, c: ctm.c, d: ctm.d, e: ctm.e, f: ctm.f }
@@ -410,11 +417,11 @@ async function elementToNode(el: Element, tag: string, ctx: ElementCtx): Promise
     const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || el.getAttribute('xlink:href');
     const ref = href ? await storeImage(host, href, imageCache, warn) : null;
     if (ref) {
-      // Store the WHOLE AssetRef (with its object URL) — see design-map.nodeToBox: setInput
+      // Store the WHOLE AssetRef (with its object URL) - see design-map.nodeToBox: setInput
       // does not re-resolve, so an id-only ref would render as a broken image.
       return { kind: 'image', ...base, image: ref, fit: 'cover' };
     }
-    // Couldn't store — degrade to a plain placeholder box rather than dropping it.
+    // Couldn't store - degrade to a plain placeholder box rather than dropping it.
     return { kind: 'box', ...base, fill: '' };
   }
 
@@ -494,7 +501,7 @@ async function flattenToImage(el: Element, m: Matrix, ctx: ElementCtx): Promise<
     const clone = el.cloneNode(true) as SVGElement;
     clone.removeAttribute('transform'); // its transform is re-expressed by the wrapping <g>
     // The image box re-applies the element's own opacity (base.opacity), so strip it from
-    // the embedded snippet to avoid squaring it. fill-opacity is paint (not in base) — keep.
+    // the embedded snippet to avoid squaring it. fill-opacity is paint (not in base) - keep.
     clone.removeAttribute('opacity');
     if (clone.style) clone.style.removeProperty('opacity');
 
@@ -513,7 +520,7 @@ async function flattenToImage(el: Element, m: Matrix, ctx: ElementCtx): Promise<
 
     const fileName = `import-${Date.now()}-${imageCache.size}.svg`;
     const file = new File([svg], fileName, { type: 'image/svg+xml' });
-    // storeUserUpload re-sanitizes the SVG (DOMPurify) on ingest — second line of defence.
+    // storeUserUpload re-sanitizes the SVG (DOMPurify) on ingest - second line of defence.
     const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
     imageCache.set(key, ref);
     return ref;
@@ -583,7 +590,7 @@ async function storeZipImage(host: HostV1 | undefined, zipFiles: Record<string, 
 // ---------------------------------------------------------------------------
 
 async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignImportResult> {
-  // The current Penpot `.penpot` export (binfile-v3) is a ZIP of per-shape JSON — no
+  // The current Penpot `.penpot` export (binfile-v3) is a ZIP of per-shape JSON - no
   // page SVGs. Detect it by its manifest and shape-file layout and parse the JSON.
   const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
   const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
@@ -666,10 +673,10 @@ function safeJsonParse(text: string): any {
 
 // Make a Penpot deck's own font families resolvable before any box mapping.
 // Walks every page-shape JSON under pageDir, tallies the fonts its text shapes
-// use (engine collectPenpotFontUsage — the gfont- provider knowledge lives HERE,
+// use (engine collectPenpotFontUsage - the gfont- provider knowledge lives HERE,
 // not in the engine), and for each family not already known: a Google-sourced
 // family (`gfont-` fontId) is fetched once and kept on-device (interactive
-// sessions only — the established add-a-font pattern, never as the primary), and
+// sessions only - the established add-a-font pattern, never as the primary), and
 // a bundled/custom family warns and stays bucketed to the brand default (no
 // fetch: the css2 probe ladder is doomed and slow for non-Google ids). Returns
 // the map with fonts.knownFamilies extended, for EVERY subsequent finalizeBoxes.
@@ -712,13 +719,13 @@ async function ensurePenpotDeckFonts(
     }
   }
   // installGoogleFont doesn't bust the vector-export font registry itself (only
-  // removeUserFont does) — bust once after the batch so a later export
+  // removeUserFont does) - bust once after the batch so a later export
   // re-resolves the freshly installed faces.
   if (installed) bustFontRegistry();
   return { ...map, fonts: { ...map?.fonts, knownFamilies } };
 }
 
-// A group subtree flattened to one SVG asset by penpotGroupToSvg — the walks emit
+// A group subtree flattened to one SVG asset by penpotGroupToSvg - the walks emit
 // this marker instead of the group's shapes, and penpotItemsToNodes stores + places it.
 interface PenpotVectorGroupItem { __vectorGroupSvg: string; shape: any; }
 
@@ -745,7 +752,7 @@ function penpotFlattenStep(shapesById: Record<string, any>, s: any, seen: Set<st
 // DFS from the root frame following each container's `shapes` array (paint order,
 // back-to-front); append any unreachable orphans in map order. penpotShapeToNode drops
 // the root frame itself, so it just seeds the order. A `hidden` shape hides its whole
-// subtree in Penpot — importing it visible was a fidelity bug, so it prunes here.
+// subtree in Penpot - importing it visible was a fidelity bug, so it prunes here.
 // (`hideInViewer` is NOT pruned on this path: it's visible in Penpot's editor, and
 // this import feeds an editor.) All-vector groups collapse to one flatten marker.
 function orderPenpotShapes(shapesById: Record<string, any>): any[] {
@@ -786,7 +793,7 @@ async function storePenpotVectorSvg(host: HostV1 | undefined, svg: string, cache
   }
 }
 
-// Resolve an ordered walk (shapes + vector-group markers) to DesignNodes — the ONE
+// Resolve an ordered walk (shapes + vector-group markers) to DesignNodes - the ONE
 // Penpot item→node path, shared by the single-page import and the scenes walk so the
 // two can't drift. Handles image fills (_fillImageId), per-shape vector bakes
 // (_vectorPath, mirroring the Figma resolveFigMedia call), and flattened groups.
@@ -797,7 +804,7 @@ async function penpotItemsToNodes(
     imageCache: Map<string, AssetRef>; warn: (msg: string) => void;
     /** Optional out-param: the source shape id of every node pushed, in step with
      *  the returned array. Items that produce no node contribute nothing, so the
-     *  two stay aligned — that is what lets the template pass map a component's
+     *  two stay aligned - that is what lets the template pass map a component's
      *  slots back to the boxes they end up as (see parseDesignTemplates). */
     srcIds?: string[];
   },
@@ -809,7 +816,7 @@ async function penpotItemsToNodes(
   let warnedDash = false;
   for (const item of items) {
     // A rectangle/ellipse imports its stroke as a CSS border, and CSS has no way to say
-    // "8px dash, 3px gap" — only the dashed keyword. Path boxes keep the exact numbers
+    // "8px dash, 3px gap" - only the dashed keyword. Path boxes keep the exact numbers
     // (they stroke a real SVG path), so the warning names where the loss happens.
     if (!warnedDash && item && !/^(path|bool|group)$/.test(String(item.type || ''))
       && Array.isArray(item.strokes)
@@ -832,7 +839,7 @@ async function penpotItemsToNodes(
       const sel = (g.selrect && typeof g.selrect === 'object') ? g.selrect : g;
       const op = Number.isFinite(+g.opacity) ? Math.min(1, Math.max(0, +g.opacity)) : 1;
       nodes.push({
-        // fill:'' — the flattened SVG is transparent outside its art; no seed backing.
+        // fill:'' - the flattened SVG is transparent outside its art; no seed backing.
         kind: 'image', image: ref, fit: 'fill', fill: '',
         x: Number(sel.x) || 0, y: Number(sel.y) || 0,
         w: Number(sel.width) || 1, h: Number(sel.height) || 1,
@@ -851,7 +858,7 @@ async function penpotItemsToNodes(
     if (!node) continue;
     // Background blur survives on the kinds whose painted region IS the box rect
     // (plain boxes and image fills), where it becomes the `bgBlur` field. Text shapes
-    // (Penpot masks the blur to the glyphs) and baked vector art drop it — warn once
+    // (Penpot masks the blur to the glyphs) and baked vector art drop it - warn once
     // per import batch so the loss is never silent.
     if (!(node.bgBlur > 0) && penpotBackgroundBlurPx(item) > 0 && !warnedBgBlur) {
       warnedBgBlur = true;
@@ -876,7 +883,7 @@ async function penpotItemsToNodes(
 
 // Resolve a Penpot image fill to bytes and store it: fillImage.id → the media meta json
 // (→ mediaId + mtype) → the binary blob under objects/. `flip` ('x'|'y'|'xy', the
-// mapper's _fillFlip marker) mirrors the PIXELS before storage — boxes have no mirror
+// mapper's _fillFlip marker) mirrors the PIXELS before storage - boxes have no mirror
 // field, so a flipped fill must bake its flip into the stored asset. Returns a full
 // AssetRef or null.
 async function loadPenpotMedia(host: HostV1 | undefined, files: Record<string, Uint8Array>, fileId: string, fillImageId: string, cache: Map<string, AssetRef>, warn: (msg: string) => void, flip?: string): Promise<AssetRef | null> {
@@ -919,7 +926,7 @@ async function loadPenpotMedia(host: HostV1 | undefined, files: Record<string, U
 }
 
 // Translate all nodes so the union of their rects starts at (0,0); return the canvas
-// size. (Penpot shape coords are absolute page coords — a board rarely sits at origin.)
+// size. (Penpot shape coords are absolute page coords - a board rarely sits at origin.)
 function shiftToOrigin(nodes: any[]): { width: number; height: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
@@ -937,7 +944,7 @@ function shiftToOrigin(nodes: any[]): { width: number; height: number } {
 
 // A .fig is a ZIP { canvas.fig, images/<hash>, thumbnail.png, meta.json }. canvas.fig is:
 //   "fig-kiwi"(8) | version u32le(4) | schemaLen u32le | schema(deflate-raw) | dataLen u32le | data(zstd)
-// The Kiwi schema is embedded (self-describing) so it decodes any file version — but Figma
+// The Kiwi schema is embedded (self-describing) so it decodes any file version - but Figma
 // calls the format an unstable internal detail, so this may break on future format changes.
 async function parseFig(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
   const canvasFig = files['canvas.fig'];
@@ -997,8 +1004,8 @@ async function decodeCanvasFig(bytes: Uint8Array): Promise<any> {
   return compiled.decodeMessage(data);              // Figma's root type is "Message"
 }
 
-// Raw DEFLATE via the browser's native DecompressionStream (same primitive — and
-// same chunked output cap — url-pack uses: the bomb is stopped at ~cap instead of
+// Raw DEFLATE via the browser's native DecompressionStream (same primitive - and
+// same chunked output cap - url-pack uses: the bomb is stopped at ~cap instead of
 // its full expansion being allocated first).
 async function inflateRawBytes(bytes: Uint8Array, cap: number): Promise<Uint8Array> {
   const ds = new DecompressionStream('deflate-raw');
@@ -1025,7 +1032,7 @@ async function inflateRawBytes(bytes: Uint8Array, cap: number): Promise<Uint8Arr
   return out;
 }
 
-// Streamed zstd with an output cap — fzstd's one-shot decompress() trusts the
+// Streamed zstd with an output cap - fzstd's one-shot decompress() trusts the
 // frame's declared content size, which a hostile file controls.
 function zstdCapped(bytes: Uint8Array, cap: number): Uint8Array {
   const chunks: Uint8Array[] = [];
@@ -1042,7 +1049,7 @@ function zstdCapped(bytes: Uint8Array, cap: number): Uint8Array {
   return out;
 }
 
-// Store a Figma image blob (images/<hash>, extension-less — sniff the type) as a user asset.
+// Store a Figma image blob (images/<hash>, extension-less - sniff the type) as a user asset.
 async function loadFigImage(host: HostV1 | undefined, files: Record<string, Uint8Array>, hash: string | null, cache: Map<string, AssetRef>, warn: (msg: string) => void): Promise<AssetRef | null> {
   if (!hash) return null;
   if (cache.has(hash)) return cache.get(hash)!;
@@ -1063,7 +1070,7 @@ async function loadFigImage(host: HostV1 | undefined, files: Record<string, Uint
 }
 
 // Rasterise a reconstructed vector path into a standalone SVG image asset, placed at
-// the node's rect. The viewBox honours an optional `size.x/y` origin — Figma vectors
+// the node's rect. The viewBox honours an optional `size.x/y` origin - Figma vectors
 // are shape-local (0 0), Penpot path coords are absolute page space (selrect origin).
 // A Penpot `fillColorGradient` bakes as a native SVG gradient def (never the Lolly
 // grad-spec route); stroke alignment is approximated as centre (SVG has no inner/outer).
@@ -1141,7 +1148,7 @@ function figNamesOnlyFont(family: string): EmbeddedFont {
 }
 
 /** A reconstructed vector node as a standalone SVG string (the storeFigVector body,
- *  minus the catalogue store — Unpack hands back bytes, not an asset ref). */
+ *  minus the catalogue store - Unpack hands back bytes, not an asset ref). */
 function figVectorSvg(d: any, fill: any, stroke: any, size: any, gradient?: any): string {
   const w = Math.max(1, Math.round((size && size.w) || 1));
   const h = Math.max(1, Math.round((size && size.h) || 1));
@@ -1171,7 +1178,7 @@ function figNodeColors(n: any, seen: Set<string>, out: string[]): void {
   if (n._vectorStroke && n._vectorStroke.color) add(n._vectorStroke.color);
 }
 
-/** A plain preview SVG of the decoded page — rects for boxes/vectors, text, and
+/** A plain preview SVG of the decoded page - rects for boxes/vectors, text, and
  *  embedded rasters. Not faithful; enough to recognise the frame beside its prose. */
 function figNodesToSvg(nodes: any[], files: Record<string, Uint8Array>, width: number, height: number): string {
   const parts: string[] = [];
@@ -1205,11 +1212,12 @@ const figEmptyPage = (): PageText =>
   ({ blocks: [], text: '', markdown: '', columns: 1, scanned: false, rotated: 0, order: 'geometric' });
 
 /**
- * Open a Figma .fig for Unpack. Decodes the Kiwi binary once (the same path
- * parseFig uses), then reads the decoded nodes: text runs, the colours they paint
- * with, the fonts they name (names-only — a .fig references fonts, never embeds the
- * files), the embedded rasters (`images/<hash>` in the zip), and the reconstructed
- * vector outlines as standalone SVGs.
+ * Open a Figma .fig for Unpack. Decodes the Kiwi binary once (the same
+ * path parseFig uses), then reads the decoded nodes: text runs, the
+ * colours they paint with, the fonts they name (names-only, a .fig
+ * references fonts but never embeds the files), the embedded rasters
+ * (`images/<hash>` in the zip), and the reconstructed vector outlines as
+ * standalone SVGs.
  */
 export async function openFigFile(files: Record<string, Uint8Array>): Promise<UnpackHandle> {
   const canvasFig = files['canvas.fig'];
@@ -1441,7 +1449,7 @@ export interface DesignSceneAsset {
   asset: AssetRef;
   /**
    * The entrance this scene was navigated to with, when the source file carried a
-   * prototype flow (Penpot only today) — a value from the shared transition
+   * prototype flow (Penpot only today) - a value from the shared transition
    * vocabulary (`lib/transitions.ts`). Additive and optional: files without
    * interactions omit both fields and every existing caller is unaffected.
    */
@@ -1450,18 +1458,18 @@ export interface DesignSceneAsset {
 }
 export interface DesignScenesResult { scenes: DesignSceneAsset[]; }
 
-// Frames beyond this are skipped with a warning — same ceiling as the PDF page
+// Frames beyond this are skipped with a warning - same ceiling as the PDF page
 // picker (MAX_PICK_PAGES), far above any real storyboard.
 const MAX_SCENES = 60;
 
-// Marked shapes beyond this are skipped with a warning — the export-marks ingest's
+// Marked shapes beyond this are skipped with a warning - the export-marks ingest's
 // counterpart to MAX_SCENES (a mark can carry several entries; the cap counts shapes).
 const MAX_EXPORT_MARKS = 60;
 
 /**
  * Parse a design file into per-frame scene assets.
  * @param {File|Blob} file
- * @param {{ host, log?, interactive?, map? }} ctx — same contract as parseDesignFile;
+ * @param {{ host, log?, interactive?, map? }} ctx - same contract as parseDesignFile;
  *   `interactive` drives the multi-page PDF picker (all pages pre-selected),
  *   `map` carries the target tool's font/seed vocabulary into the frame bakes.
  * @returns {Promise<DesignScenesResult>} scenes in document order; empty when the
@@ -1479,7 +1487,7 @@ export async function parseDesignScenes(
   }
   const buf = new Uint8Array(await file.arrayBuffer());
 
-  // PDF / .ai: the multi-page SVG ingest already does exactly this — one stored
+  // PDF / .ai: the multi-page SVG ingest already does exactly this - one stored
   // vector asset per picked page (all pre-selected in 'multi' mode).
   if (isPdf(buf)) {
     const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
@@ -1510,7 +1518,7 @@ export async function parseDesignScenes(
   }
 
   // Plain SVG (incl. a Figma frame exported as SVG): one scene, stored as-is
-  // after sanitisation — full vector fidelity, no box mapping needed.
+  // after sanitisation - full vector fidelity, no box mapping needed.
   const svgText = new TextDecoder('utf-8').decode(buf);
   const svgEl = sanitizeSvg(svgText);
   if (!svgEl) throw new Error('This file isn’t a readable SVG. Export your design as SVG and try again.');
@@ -1549,7 +1557,7 @@ async function storeSvgAsset(host: HostV1 | undefined, svgEl: SVGSVGElement, nam
 const FAST_SETTLE_MS = 50;
 
 // True when any box carries an image ref (finalizeBoxes writes the whole AssetRef,
-// or a bare id string, into `image` — and that one field is where a lottie or video
+// or a bare id string, into `image` - and that one field is where a lottie or video
 // ref lands too). Only such a frame needs the full decode settle.
 function boxesHaveMedia(boxes: unknown[]): boolean {
   return boxes.some((b) => {
@@ -1561,8 +1569,8 @@ function boxesHaveMedia(boxes: unknown[]): boolean {
 
 // Bake one frame's boxes into a stored SVG asset via an offscreen Design
 // render. compose.render suppresses watermark/provenance (the result is an
-// intermediate), and the SVG goes through the full HTML→SVG walker — text as
-// paths, image embeds — so the baked frame needs no fonts at playback. The
+// intermediate), and the SVG goes through the full HTML→SVG walker - text as
+// paths, image embeds - so the baked frame needs no fonts at playback. The
 // transparent background lets the frame's own bg box (or the sequence canvas)
 // show through. Returns null (with a warn) when Design isn't available
 // in this build or the render fails; the caller skips that frame.
@@ -1598,7 +1606,7 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
 }
 
 // Render one frame's boxes to an SVG Blob via the same offscreen Design
-// render bakeSceneAsset uses, WITHOUT storing it — the raster bake rasterises this
+// render bakeSceneAsset uses, WITHOUT storing it - the raster bake rasterises this
 // intermediate itself (rendering vector once, then drawing at each scale, keeps a
 // png@4 crisp: re-rendering the tool at 4x page size would scale the CANVAS, not
 // the content, because design boxes are absolute px).
@@ -1650,7 +1658,7 @@ async function rasterizeSvgBlob(svgBlob: Blob, outW: number, outH: number, forma
 }
 
 // Bake one export mark's boxes to a stored raster asset at round(w*scale) x
-// round(h*scale) — bakeSceneAsset's raster sibling. Scale rides the file name as
+// round(h*scale) - bakeSceneAsset's raster sibling. Scale rides the file name as
 // '@{scale}x' (omitted at 1x) so a png@2 and a png@4 of the same shape stay distinct.
 async function bakeRasterAsset(
   host: HostV1 | undefined, warn: (msg: string) => void, name: string,
@@ -1788,7 +1796,7 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
   const imageCache = new Map<string, AssetRef>();
   const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
 
-  // Map an ordered walk (shapes + flatten markers) to nodes — the shared resolver,
+  // Map an ordered walk (shapes + flatten markers) to nodes - the shared resolver,
   // so this path and the single-page import can't drift.
   const shapesToNodes = (items: any[]): Promise<any[]> =>
     penpotItemsToNodes(items, { host, files, fileId, imageCache, warn });
@@ -1804,9 +1812,9 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     const pageName = (meta && typeof meta.name === 'string' && meta.name) || `Page ${p + 1}`;
 
     // DFS one top-level subtree in paint order (container `shapes` arrays).
-    // A hidden shape hides its whole subtree — same as Figma's visible:false.
+    // A hidden shape hides its whole subtree - same as Figma's visible:false.
     // `hideInViewer` deliberately does NOT prune here: on a nested board it means
-    // "don't show as its own slide in Penpot's viewer" — the content still paints
+    // "don't show as its own slide in Penpot's viewer" - the content still paints
     // inside its parent. It only filters which TOP-LEVEL boards become scenes.
     // An all-vector group collapses to ONE flatten marker (icons/illustrations bake
     // as a single SVG asset instead of hundreds of selrect boxes); a bool's content
@@ -1835,7 +1843,7 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
       const s = shapesById[id];
       if (!s || s.hidden === true || s.hideInViewer === true) continue;
       // A component MASTER board (componentRoot + mainInstance) is a definition,
-      // not deck content — Penpot files keep them on a "Main components" page and
+      // not deck content - Penpot files keep them on a "Main components" page and
       // every slide already carries its own instance copies. Skip them wholesale.
       if (s.componentRoot === true && s.mainInstance === true) continue;
       if (String(s.type || '') === 'frame') {
@@ -1875,7 +1883,7 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
         ...(tr ? { enter: tr.enter, ...(tr.enterMs !== undefined ? { enterMs: tr.enterMs } : {}) } : {}),
       });
     }
-    // Loose shapes only make a scene when the page has NO boards — next to
+    // Loose shapes only make a scene when the page has NO boards - next to
     // boards they're scratch content and a union-bounds scene of it is noise.
     if (loose.length && !boards.length) {
       const nodes = await shapesToNodes(loose);
@@ -1894,16 +1902,16 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
 // Penpot export marks → library assets
 // ---------------------------------------------------------------------------
 //
-// The drop router's "marked exports" route: every shape the designer marked for
-// export in Penpot (the `exports` array on a shape) becomes stored library
-// assets at the marked formats and scales. The engine collects + normalizes the
-// marks (collectPenpotExportMarks — master/hidden subtrees pruned, entries
-// deduped); this side reuses the scenes machinery: the same subtree walk with
-// pure-vector group flattening, the same penpotItemsToNodes media resolution
-// with one shared imageCache, and the same offscreen Design bake. A group
-// that flattens pure and is marked svg stores its flattened SVG directly (full
-// fidelity, no bake); rasters render the vector intermediate once and draw it at
-// each marked scale.
+// The drop router's "marked exports" route: every shape the designer marked
+// for export in Penpot (the `exports` array on a shape) becomes stored
+// library assets at the marked formats and scales. The engine collects and
+// normalizes the marks (collectPenpotExportMarks: master/hidden subtrees
+// pruned, entries deduped); this side reuses the scenes machinery: the same
+// subtree walk with pure-vector group flattening, the same
+// penpotItemsToNodes media resolution with one shared imageCache, and the
+// same offscreen Design bake. A group that flattens pure and is marked svg
+// stores its flattened SVG directly (full fidelity, no bake); rasters
+// render the vector intermediate once and draw it at each marked scale.
 
 // The scenes walk's subtree step, shared verbatim: paint-order DFS with hidden
 // pruning, pure-vector group collapse and bool operand consumption.
@@ -1925,7 +1933,7 @@ function penpotMarkSubtree(shapesById: Record<string, any>, id: string, seen: Se
 /**
  * Ingest a .penpot file's export-marked shapes as stored library assets.
  * @param {File|Blob} file a Penpot binfile-v3 export (.penpot / .zip).
- * @param {{ host, warn?, interactive? }} ctx — same contract as the other ingests;
+ * @param {{ host, warn?, interactive? }} ctx - same contract as the other ingests;
  *   per-mark failures warn and continue.
  * @returns {Promise<AssetRef[]>} one ref per baked export entry.
  */
@@ -1994,7 +2002,7 @@ export async function ingestPenpotExportsAsAssets(
     if (marks.length) anyMark = true;
 
     for (const mark of marks) {
-      // The engine normalizer drops unknown export types SILENTLY — scan the RAW
+      // The engine normalizer drops unknown export types SILENTLY - scan the RAW
       // array here so a skipped format is said out loud (once per format).
       const raw = Array.isArray((mark.shape as any).exports) ? (mark.shape as any).exports : [];
       for (const e of raw) {
@@ -2079,24 +2087,24 @@ export async function ingestPenpotExportsAsAssets(
 // Penpot components → Design templates
 // ---------------------------------------------------------------------------
 //
-// The third Penpot route (plan: penpot-design-system.md §2). A design system's
-// component MASTERS are exactly the reusable layouts a non-designer wants, so
-// each one becomes a saved session with its text runs and image fills marked as
-// fill-in-the-blank slots.
+// The third Penpot route (plan: penpot-design-system.md §2). A design
+// system's component MASTERS are exactly the reusable layouts a
+// non-designer wants, so each one becomes a saved session with its text
+// runs and image fills marked as fill-in-the-blank slots.
 //
-// This is an ADDITIONAL pass, never a change to the board/scene walks: masters
-// stay excluded there (a master board is a definition, not deck content), and
-// this pass reads nothing else. It reuses the SAME resolvers — the scenes
-// subtree walk (penpotMarkSubtree), penpotItemsToNodes, finalizeBoxes and
-// shiftToOrigin — so a template can never drift from what importing that same
-// artwork onto the canvas produces.
+// This is an ADDITIONAL pass, never a change to the board/scene walks:
+// masters stay excluded there (a master board is a definition, not deck
+// content), and this pass reads nothing else. It reuses the SAME resolvers
+// (the scenes subtree walk, penpotMarkSubtree, penpotItemsToNodes,
+// finalizeBoxes and shiftToOrigin), so a template can never drift from what
+// importing that same artwork onto the canvas produces.
 //
-// Two structures the plan predates, both established by phase 1.1 and honoured
-// here: masters NEST (TEXT 9's master sits inside PERSON INTRO's, so template
-// subtrees legitimately overlap and nothing may assume they are disjoint), and
-// a variant SET is one logical component whose default variant is the one
-// mapped. Both are the engine collector's business (collectPenpotComponents);
-// this side just walks what it returns.
+// Two structures the plan predates, both established by phase 1.1 and
+// honoured here: masters NEST (TEXT 9's master sits inside PERSON INTRO's,
+// so template subtrees legitimately overlap and nothing may assume they
+// are disjoint), and a variant SET is one logical component whose default
+// variant is the one mapped. Both are the engine collector's business
+// (collectPenpotComponents); this side just walks what it returns.
 
 /** Templates beyond this are skipped with a warning (see MAX_SCENES). */
 const MAX_TEMPLATES = 60;
@@ -2110,7 +2118,7 @@ export interface DesignTemplatesResult {
 /**
  * Parse a design file's component definitions into reusable templates.
  * @param {File|Blob} file a Penpot binfile-v3 export (.penpot / .zip).
- * @param {{ host, log?, interactive?, map? }} ctx — same contract as parseDesignFile;
+ * @param {{ host, log?, interactive?, map? }} ctx - same contract as parseDesignFile;
  *   pass back `parseDesignFile`'s returned `map` so the deck's fonts are resolved
  *   once for both passes.
  * @returns {Promise<DesignTemplatesResult>} one entry per component, in the
@@ -2211,7 +2219,7 @@ async function parsePenpotBinfileTemplates(
   const collected = collectPenpotComponents(records, pages, { fileId });
   // One aggregated line for libraries this export does not carry (plan §2.3):
   // the instances themselves still import fine on the board path, they are full
-  // copies, so nothing regressed — there is simply no master to template.
+  // copies, so nothing regressed - there is simply no master to template.
   if (collected.externals.instances > 0) {
     const n = collected.externals.components.length;
     warn(n === 1
@@ -2234,7 +2242,7 @@ async function parsePenpotBinfileTemplates(
   // component preview for a frame it has rendered, which for a deck is usually
   // the PLACED copies rather than the master sitting on the components page (in
   // the UXDays keynote all 8 previews belong to instances), so an instance's
-  // preview is the fallback for a master that has none — it depicts the same
+  // preview is the fallback for a master that has none - it depicts the same
   // component. `componentFile` must match: foreign instances reuse local
   // componentIds (the phase 1.1 trap), and a library's preview is not this
   // component's picture.

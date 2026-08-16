@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the "Available offline" download engine — the pure download
+ * Unit tests for the "Available offline" download engine - the pure download
  * machinery (list downloads with resume/cancel/failure semantics, the docs
  * file-list selection). The IDB-backed part records and the actual service
  * worker serving are covered elsewhere (sw.test.ts drives the real sw.js).
@@ -55,7 +55,7 @@ let fetches: string[] = [];
     status: 200,
     statusText: 'OK',
     // content-encoding + a COMPRESSED content-length, the way a br/gzip host
-    // answers — what the poisoning regression test needs on the wire.
+    // answers - what the poisoning regression test needs on the wire.
     headers: new Headers({
       'content-type': 'application/octet-stream',
       'content-encoding': 'br',
@@ -110,11 +110,11 @@ describe('offline-manager: downloadList', () => {
     server.set('/icons/logo.svg', 40);
     await downloadList('bucket', [{ url: '/icons/logo.svg', size: 40, hash: 'aaaa' }]);
     fetches = [];
-    // Same URL, same size, DIFFERENT bytes (new hash) — must re-download.
+    // Same URL, same size, DIFFERENT bytes (new hash) - must re-download.
     await downloadList('bucket', [{ url: '/icons/logo.svg', size: 40, hash: 'bbbb' }]);
     assert.deepEqual(fetches, ['/icons/logo.svg'], 'a same-size content change must not be invisible');
     fetches = [];
-    // Unchanged hash — must skip.
+    // Unchanged hash - must skip.
     await downloadList('bucket', [{ url: '/icons/logo.svg', size: 40, hash: 'bbbb' }]);
     assert.deepEqual(fetches, [], 'an unchanged file must resume for free');
   });
@@ -198,7 +198,7 @@ describe('offline-manager: docsFileList', () => {
   });
 
   // Narration must never silently fatten "Available offline: Docs"
-  // (plans/40-docs-audio-listen.md §7) — the group is excluded for every locale.
+  // (plans/40-docs-audio-listen.md §7) - the group is excluded for every locale.
   test('the audio group never rides along in the docs part', () => {
     for (const lang of ['en', 'fr', 'xx']) {
       assert.ok(!docsFileList(manifest, lang).some(f => f.url.includes('/audio/')),
@@ -251,7 +251,7 @@ describe('offline-manager: speech part', () => {
     assert.deepEqual(res, { bytes: 1235, files: 6 });
     const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
     // The model file must sit under the SAME key bridge/speech.ts's cached()
-    // probes and transformers.js's hub reads — a mismatch here downloads
+    // probes and transformers.js's hub reads - a mismatch here downloads
     // ~92 MB the worker then re-downloads.
     assert.ok(tf.entries.has('/models/kokoro/onnx/model_quantized.onnx'));
     assert.equal(tf.entries.size, 4, 'model/config/tokenizer files only');

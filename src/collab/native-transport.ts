@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-transport — the JS driver for the native LAN socket transport (plans/110 §4).
+ * native-transport - the JS driver for the native LAN socket transport (plans/110 §4).
  *
  * The transport itself is Rust (`src-tauri/src/native_transport.rs`): it connects the
  * socket, runs the Noise handshake, and streams framed lane messages. This module is the
- * thin JS side — it drives that transport over the poll-based Tauri command surface, the
+ * thin JS side - it drives that transport over the poll-based Tauri command surface, the
  * same shape as `lib/nearby-boot.ts`:
  *
  *   native_connect({peerId}) -> {sessionId, plateHex}   connect (initiator) + handshake
@@ -19,7 +19,7 @@
  *
  * It is NOT the WebRTC transport's ceremony surface. There is no ICE, no offer/answer, no
  * op-version-hello here: by the time a handle exists the pair is already cryptographically
- * connected (Rust did the handshake). What remains for the ceremony is the SAS plate —
+ * connected (Rust did the handshake). What remains for the ceremony is the SAS plate - 
  * `plate()` returns `h`, which the ceremony feeds to `derivePlateFromTranscript` (plate.ts)
  * and the humans compare. The commitment in the Rust handshake is what makes that plate a
  * real MITM barrier (see plate.ts's caveat). Adapting a handle into a `CollabConnection`
@@ -27,7 +27,7 @@
  *
  * ── The lanes ─────────────────────────────────────────────────────────────────
  *
- * `ops` and `beam` are reliable+ordered, `presence` is lossy — the Rust inbox enforces that
+ * `ops` and `beam` are reliable+ordered, `presence` is lossy - the Rust inbox enforces that
  * (reliable frames are never dropped; presence is drop-oldest), so this side just fans each
  * decoded frame to its subscriber. A single poll drains every buffered frame at once, so the
  * only latency is the poll interval.
@@ -93,7 +93,7 @@ export interface NativeTransportHandle {
   /** Observe inbound frames while subscribed. Starts a poll loop on the first subscriber,
    *  stops it on the last unsubscribe. Returns an unsubscribe fn. */
   subscribe(cb: (lane: NativeLane, bytes: Uint8Array) => void): () => void;
-  /** The handshake hash `h` (bytes), or null — the SAS plate's input. */
+  /** The handshake hash `h` (bytes), or null - the SAS plate's input. */
   plate(): Promise<Uint8Array | null>;
   close(): Promise<void>;
 }
@@ -129,7 +129,7 @@ export function createNativeHandle(sessionId: string, env: NativeEnv): NativeTra
         for (const cb of subs) cb(lane, bytes);
       }
     } catch {
-      /* transient (native side busy) — the next tick retries */
+      /* transient (native side busy) - the next tick retries */
     } finally {
       polling = false;
     }
@@ -190,7 +190,7 @@ export async function nativeConnect(
   return { handle: createNativeHandle(sessionId, env), plateHex };
 }
 
-/** Inbound (responder) sessions awaiting adoption — poll during a ceremony and adopt the one
+/** Inbound (responder) sessions awaiting adoption - poll during a ceremony and adopt the one
  *  whose plate matches the pairing. */
 export async function pollNativeInbound(env: NativeEnv): Promise<NativeInbound[]> {
   const raw = (await env.invoke('native_poll_inbound')) as unknown;

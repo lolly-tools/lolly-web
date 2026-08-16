@@ -2,7 +2,7 @@
 /**
  * The Ask transcript store (plans/103 M0).
  *
- * Session memory only — a module-level array, deliberately not persisted. The
+ * Session memory only - a module-level array, deliberately not persisted. The
  * conversation survives a spotlight → #/ask re-ask round-trip and a Back into the
  * view (the view re-reads it on mount and appends), but dies on a page reload.
  * That is the v1 contract: no history, no storage, nothing to clear.
@@ -35,7 +35,7 @@ export function lastAskedQuestion(): string | null {
   return null;
 }
 
-/** Test seam / hard reset — drop the whole transcript. */
+/** Test seam / hard reset - drop the whole transcript. */
 export function resetAskSession(): void {
   turns = [];
 }

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * OKLCH slice geometry — the pure mapping between a colour and its position on a
+ * OKLCH slice geometry - the pure mapping between a colour and its position on a
  * 2D plane through OKLCH space. Split out of oklch-slice.ts (which imports CSS
  * and touches a canvas) so it stays DOM-free and unit-testable under
- * `node --test` — the same split palette-wheel-geom.ts makes for the wheel.
+ * `node --test` - the same split palette-wheel-geom.ts makes for the wheel.
  *
  * The wheel plots hue and chroma polar-style and lets the dot's own colour carry
  * lightness. That reads beautifully as an instrument, but it cannot show the one
  * thing a brand needs before committing to a colour: WHERE THE GAMUT ENDS. The
- * sRGB boundary is a curve in lightness×chroma that moves with hue — yellow
- * reaches roughly twice the chroma of blue — so it only becomes visible on a
+ * sRGB boundary is a curve in lightness×chroma that moves with hue - yellow
+ * reaches roughly twice the chroma of blue - so it only becomes visible on a
  * plane that has lightness or chroma as a real axis.
  *
  * Hence the three planes (engine `SlicePlane`; the FIRST letter is the vertical
  * axis, the second the horizontal one):
  *
- *   'lc'  lightness × chroma at a fixed hue  — the horseshoe. The working view.
- *   'ch'  chroma × hue at a fixed lightness  — which hues hold up at this L.
- *   'lh'  lightness × hue at a fixed chroma  — can a ramp keep this chroma?
+ *   'lc'  lightness × chroma at a fixed hue - the horseshoe. The working view.
+ *   'ch'  chroma × hue at a fixed lightness - which hues hold up at this L.
+ *   'lh'  lightness × hue at a fixed chroma - can a ramp keep this chroma?
  *
  * Coordinates here are FRACTIONS of the plot box, x rightward and y DOWNWARD
  * (SVG/canvas convention), so a caller multiplies by its pixel size. The engine's
@@ -30,8 +30,8 @@ import type { SlicePlane } from '@lolly/engine';
 /**
  * Fallback ceiling of the chroma axis, for a caller that has no gamut in hand.
  *
- * The real ceiling comes from the gamut being charted — `chromaAxisMax(limit)` in
- * engine/src/gamut-axis.ts — because a single constant cannot serve sRGB (whose
+ * The real ceiling comes from the gamut being charted - `chromaAxisMax(limit)` in
+ * engine/src/gamut-axis.ts - because a single constant cannot serve sRGB (whose
  * chroma stops at 0.321) and Rec.2020 (0.464, which this number would CLIP) at
  * once. Every surface in the Lab passes that derived value in as `cMax`; this
  * remains only as the default for a bare geometry call.
@@ -74,7 +74,7 @@ const channelOf = (o: Oklch, ch: 'l' | 'c' | 'h'): number =>
  * This is a PROJECTION: a colour whose fixed channel differs from the slice's
  * still lands somewhere, because a palette has to stay visible while you scrub
  * through hues. Pair it with {@link sliceOffPlane} to fade the dots that aren't
- * really there — a dot drawn at full strength on a plane it doesn't belong to
+ * really there - a dot drawn at full strength on a plane it doesn't belong to
  * would be the chart lying.
  */
 export function oklchSliceXY(plane: SlicePlane, o: Oklch, cMax = SLICE_C_MAX): SliceXY {
@@ -98,13 +98,13 @@ export function sliceXYToOklch(
   out[axes.x] = clamp01(x) * channelMax(axes.x, cMax);
   out[axes.y] = (1 - clamp01(y)) * channelMax(axes.y, cMax);
   out[axes.fixed] = axes.fixed === 'h' ? normHue(fixed) : Math.max(0, fixed);
-  // The right edge of a hue axis is 360°, which IS 0° — normalise so callers
+  // The right edge of a hue axis is 360°, which IS 0° - normalise so callers
   // never see an out-of-range hue from a drag that reached the far edge.
   out.h = normHue(out.h);
   return out;
 }
 
-/** The value this colour would need the slice fixed at to lie exactly on it —
+/** The value this colour would need the slice fixed at to lie exactly on it - 
  *  what a "snap the chart to this swatch" click sets. */
 export function sliceFixedOf(plane: SlicePlane, o: Oklch): number {
   return channelOf(o, SLICE_AXES[plane].fixed);
@@ -113,7 +113,7 @@ export function sliceFixedOf(plane: SlicePlane, o: Oklch): number {
 /**
  * How far off this plane a colour sits, 0 (exactly on it) … 1 (as far as the
  * fixed channel goes). Hue wraps, so 350° is near 10°; a near-grey is treated as
- * ON every hue plane, because its hue is noise rather than a choice — the same
+ * ON every hue plane, because its hue is noise rather than a choice - the same
  * `carry` threshold the engine's `mixOklch` uses.
  */
 export function sliceOffPlane(plane: SlicePlane, o: Oklch, fixed: number, cMax = SLICE_C_MAX): number {
@@ -139,7 +139,7 @@ export function sliceTicks(ch: 'l' | 'c' | 'h', cMax = SLICE_C_MAX): { at: numbe
     return [0, 0.25, 0.5, 0.75, 1].map(l => ({ at: l, label: `${Math.round(l * 100)}%` }));
   }
   // Chroma. The ceiling now moves with the gamut (0.34 on sRGB, 0.5 on Rec.2020),
-  // so the labels come from a ROUND step under it — 0, 0.10, 0.20, 0.30 — rather
+  // so the labels come from a ROUND step under it - 0, 0.10, 0.20, 0.30 - rather
   // than from cMax/4, which would print 0.085 / 0.17 / 0.255 on an sRGB axis.
   const step = chromaTickStep(cMax);
   const n = Math.floor(cMax / step + 1e-9); // multiplied, not accumulated: 0.1*3 ≠ 0.1+0.1+0.1
@@ -157,7 +157,7 @@ export function sliceTicks(ch: 'l' | 'c' | 'h', cMax = SLICE_C_MAX): { at: numbe
 
 /**
  * Which of `n` axis labels to DROP when the chart is too narrow to print them all
- * — one flag per tick, in the order {@link sliceTicks} returns them.
+ * - one flag per tick, in the order {@link sliceTicks} returns them.
  *
  * **Both ends always survive.** An axis is read from its ends: the ceiling is the
  * number the chart is about, and the origin is where the scale starts. This rule has
@@ -165,10 +165,10 @@ export function sliceTicks(ch: 'l' | 'c' | 'h', cMax = SLICE_C_MAX): { at: numbe
  * rather than as an algorithm:
  *
  *  - v1 dropped every EVEN index, which on a six-tick chroma axis took out 0.10, 0.30
- *    and **0.50** — the ceiling.
+ *    and **0.50** - the ceiling.
  *  - v2 counted back from the last tick to protect the ceiling, and dropped index 0
  *    on every even count instead. A six-tick chroma axis then read `0.10 0.30 0.50`
- *    with the plot's left edge — chroma zero — unlabelled.
+ *    with the plot's left edge - chroma zero - unlabelled.
  *
  * So: keep `ceil(n/2)` labels, placed by rounding evenly across `[0, n-1]`, which
  * pins both ends by construction and leaves the survivors as close to evenly spaced

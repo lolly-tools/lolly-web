@@ -177,7 +177,7 @@ test('a fresh edit breaks the redo chain', () => {
 test('an edit straight after an undo does NOT merge into the entry undo left behind', () => {
   // THE SECOND REGRESSION. undo leaves an old entry on top still carrying its
   // original timestamp. Coalescing keyed off that entry rather than off the last
-  // record would extend it — losing a state. endGesture() is what prevents it,
+  // record would extend it - losing a state. endGesture() is what prevents it,
   // and the view calls it around every history application.
   const h = createHistory();
   h.record(edit('t', '', 'a'), 1000);

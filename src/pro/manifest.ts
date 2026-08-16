@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — the run REPORT: which rows produced a file, which did not, and
+ * Pro / Batch mode - the run REPORT: which rows produced a file, which did not, and
  * why.
  *
  * Pure and dependency-free (no fflate, no DOM, no engine) so it is unit-testable and
@@ -10,11 +10,11 @@
  *
  * **Index identity is the whole point of this module.** Three index spaces exist:
  *
- *   - SOURCE — position in the array the user assembled (the /pro grid, or
+ *   - SOURCE - position in the array the user assembled (the /pro grid, or
  *     `rowsForFolder`'s concatenated output). The only number a human can point at.
- *   - RUNNER — position in the array handed to `runBatch`, i.e. `planBatch().renderable`.
+ *   - RUNNER - position in the array handed to `runBatch`, i.e. `planBatch().renderable`.
  *     What `BatchProgress.index` / `BatchResult.index` and the zip's `NN-` prefix speak.
- *   - FILE — position in `files[]`.
+ *   - FILE - position in `files[]`.
  *
  * `planBatch` compacts, so an index captured before it points at a different row
  * afterwards; `BatchPlan.srcIndex` is the only bridge, and every row number that
@@ -31,7 +31,7 @@ export interface LabelledRow {
 
 /**
  * The most specific handle a row has BEFORE it renders: the filename stem the user
- * set, else the tool id. Never a promise about the output name — `uniqueName` may
+ * set, else the tool id. Never a promise about the output name - `uniqueName` may
  * de-duplicate it, and a row that never rendered has no output name at all.
  */
 export const rowLabel = (row?: LabelledRow): string =>
@@ -42,10 +42,10 @@ export type UnmadeState = 'skipped' | 'failed' | 'cancelled';
 
 /** A row that produced no file. */
 export interface UnmadeRow {
-  /** 1-based SOURCE position — `null` only when the assembler supplied no mapping. */
+  /** 1-based SOURCE position - `null` only when the assembler supplied no mapping. */
   row: number | null;
   /**
-   * 0-based RUNNER position, or `null` for a skipped row — which never entered the
+   * 0-based RUNNER position, or `null` for a skipped row - which never entered the
    * queue and so has no position in it. Carried for the machine sidecar only; the
    * text manifest prints `row` and nothing else, because runner space is not a
    * number a person can point at.
@@ -56,14 +56,14 @@ export interface UnmadeRow {
   state: UnmadeState;
   /** planBatch's reason, the caught message, or the cancelled sentence. */
   reason: string;
-  /** Already flattened to lines by the caller — the manifest never sees note objects. */
+  /** Already flattened to lines by the caller - the manifest never sees note objects. */
   notes?: readonly string[];
 }
 
 /** The reason recorded for a row the run never reached. */
 export const CANCELLED_REASON = 'The run was cancelled before this row';
 
-/** A row outcome as the runner reports it (structural — see `batch.ts` BatchResult). */
+/** A row outcome as the runner reports it (structural - see `batch.ts` BatchResult). */
 export interface ResultLike {
   index: number;
   ok: boolean;
@@ -72,7 +72,7 @@ export interface ResultLike {
   row?: LabelledRow;
 }
 
-/** A row planBatch dropped before the run (structural — see `batch.ts` BatchPlan). */
+/** A row planBatch dropped before the run (structural - see `batch.ts` BatchPlan). */
 export interface SkippedLike {
   row?: LabelledRow;
   reason: string;
@@ -82,7 +82,7 @@ export interface SkippedLike {
 
 /** Everything the report needs about one finished run. */
 export interface RunReportInput {
-  /** The RUNNER array — exactly what was handed to `runBatch`. */
+  /** The RUNNER array - exactly what was handed to `runBatch`. */
   rows: readonly LabelledRow[];
   /** `srcIndex[k]` is the 0-based SOURCE position of `rows[k]`. Identity mapping when absent. */
   srcIndex?: readonly number[];
@@ -110,7 +110,7 @@ const byRow = (a: { row: number | null }, b: { row: number | null }): number =>
  * Every row of the job that produced no file: skipped before the run, failed during
  * it, or never attempted because the run was cancelled.
  *
- * "Never attempted" is derived from absence — `runBatch` emits one `cancelled` event
+ * "Never attempted" is derived from absence - `runBatch` emits one `cancelled` event
  * and then stops pushing results, so a runner row with no result at all is a row the
  * queue never reached. Cancelled is NOT folded into failed: they are different
  * promises, and only one of them is worth a Retry button.
@@ -165,7 +165,7 @@ export function collectUnmade(input: RunReportInput): UnmadeRow[] {
 
 // ─── The machine-readable sidecar ───────────────────────────────────────────────
 
-/** One row of `preflight.json` — the index-identity contract, written down. */
+/** One row of `preflight.json` - the index-identity contract, written down. */
 export interface PreflightRow {
   /** 1-based SOURCE position. */
   row: number | null;
@@ -179,7 +179,7 @@ export interface PreflightRow {
   reason: string | null;
   /**
    * SEAM (Phase 1): opaque, serialized as handed over. Phase 2 fixes only the
-   * ENVELOPE — version, row identity, the state vocabulary, the caveat siblings.
+   * ENVELOPE - version, row identity, the state vocabulary, the caveat siblings.
    * Typed `unknown[]` on purpose: inventing half a `Finding` here is the retrofit
    * hazard running the other way.
    */
@@ -203,7 +203,7 @@ export interface PreflightReport {
   /**
    * Findings that belong to the RUN, not to any row: properties of the platform
    * ("Lolly cannot predict the output file size") or of the brand (an unresolved
-   * palette). Emitted once here rather than repeated against all 500 rows — see
+   * palette). Emitted once here rather than repeated against all 500 rows - see
    * `pro/preflight-rows.ts` RUN_LEVEL_IDS for why that repetition is a defect and
    * not thoroughness. Opaque, exactly like a row's `findings`.
    */
@@ -211,7 +211,7 @@ export interface PreflightReport {
   /**
    * Phase 2 counts and does no arithmetic. `kind` and the three null money fields ship
    * from day one so every consumer handles the null branch BEFORE Phase 4 can emit a
-   * number — an absent field must never be forgeable as zero.
+   * number - an absent field must never be forgeable as zero.
    */
   kind: 'counts-only';
   isQuote: false;
@@ -234,7 +234,7 @@ export interface PreflightJobInput extends RunReportInput {
   /** SEAM (Phase 1): the opaque findings for runner row `k`, serialized verbatim. */
   findings?: (runnerIndex: number) => unknown[];
   /**
-   * The findings for rows that never reached the runner, keyed by IDENTITY — a
+   * The findings for rows that never reached the runner, keyed by IDENTITY - a
    * skipped row has no runner index, so there is no positional channel that can carry
    * them. Matched on `uid` when the assembler set one, else on the 1-based source row
    * (`srcIndex + 1`), which is the number every other member of this module speaks.
@@ -245,8 +245,8 @@ export interface PreflightJobInput extends RunReportInput {
 }
 
 /**
- * Assemble the sidecar. Every row of the job appears exactly once — rendered rows and
- * unmade rows alike — ordered by the source row number the user can point at.
+ * Assemble the sidecar. Every row of the job appears exactly once - rendered rows and
+ * unmade rows alike - ordered by the source row number the user can point at.
  */
 export function buildPreflightReport(input: PreflightJobInput): PreflightReport {
   const { rows, results, zipName, engine, findings, skippedFindings = [] } = input;
@@ -282,7 +282,7 @@ export function buildPreflightReport(input: PreflightJobInput): PreflightReport 
     file: null,
     reason: u.reason,
     // A skipped row never reached the runner, so it has no slot in the runner-space
-    // channel — its findings come in by identity instead. They used to be dropped
+    // channel - its findings come in by identity instead. They used to be dropped
     // here, which deleted `collect.row-not-rendered` (the finding the collector exists
     // to produce for exactly this row) from the copy that leaves the building.
     findings: u.runIndex == null ? skippedFor(u.uid, u.row) : (findings?.(u.runIndex) ?? []),

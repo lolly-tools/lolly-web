@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org nearby-source — the `'org'` NearbyProvider (plans/26 §8, OSS plans/110 §5),
+ * org nearby-source - the `'org'` NearbyProvider (plans/26 §8, OSS plans/110 §5),
  * registered by org/index.ts when the instance grants `collab.nearby`.
  *
  * A browser cannot discover devices on a network, but a control plane can group its
@@ -12,7 +12,7 @@
  *   - `exchangeInvite` REJECTS. A browser cannot hand an invite token peer-to-peer;
  *     inviting an org colleague goes through the work-collab room (org/collab-*),
  *     not this provider. Listing a colleague is the whole capability here.
- *   - `subscribeInvites` never fires — there is no inbound P2P invite on this track.
+ *   - `subscribeInvites` never fires - there is no inbound P2P invite on this track.
  *
  * Everything goes through instanceFetch/instancePath (lib/instance.ts), so a shell
  * pointed at a remote instance polls THAT instance. Pure data: fetch + shape, no
@@ -29,7 +29,7 @@ import type {
 import { isVisibilityActive } from '../lib/nearby.ts';
 
 /** How often the peer list is refreshed while at least one subscriber is watching.
- *  Nearby is a background hint, not a live channel — a slow poll is correct. */
+ *  Nearby is a background hint, not a live channel - a slow poll is correct. */
 export const ORG_NEARBY_POLL_MS = 30_000;
 
 interface NearbyMemberWire {
@@ -83,11 +83,11 @@ export function createOrgNearbyProvider(env: OrgNearbyEnv = {}): NearbyProvider 
     polling = true;
     try {
       const res = await instanceFetch(instancePath('/api/v1/collab/nearby'));
-      if (!res.ok) return; // 404 disabled / 501 no-registry / 401 — nothing to show
+      if (!res.ok) return; // 404 disabled / 501 no-registry / 401 - nothing to show
       const peers = shapePeers(await res.json());
       for (const cb of peerSubs) cb(peers);
     } catch {
-      /* transient — the next tick retries */
+      /* transient - the next tick retries */
     } finally {
       polling = false;
     }
@@ -119,7 +119,7 @@ export function createOrgNearbyProvider(env: OrgNearbyEnv = {}): NearbyProvider 
     },
 
     subscribeInvites(_cb: (inv: NearbyInboundInvite) => void): () => void {
-      // No inbound P2P invites on the org track — the room is the path.
+      // No inbound P2P invites on the org track - the room is the path.
       return () => {};
     },
 

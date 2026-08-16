@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Contract tests for the shared CSS scoper — including the two regressions the
+// Contract tests for the shared CSS scoper - including the two regressions the
 // old regex caused, which tools had to work around by hand.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -116,7 +116,7 @@ test('& nesting stays relative (never scoped)', () => {
 // ─── corpus sweep: run the scoper over every real tool styles.css ────────────
 // Structural check (string/comment/bracket aware) that the scope token is never
 // injected inside a (…)/[…] group, a '…'/"…" string, or a /* … */ comment.
-// A regex can't do this — it spans across quotes — so we scan properly.
+// A regex can't do this - it spans across quotes - so we scan properly.
 function tokenLeaks(css: string, token: string): boolean {
   let i = 0, depth = 0;
   const n = css.length;
@@ -144,7 +144,7 @@ test('corpus: scoping every tool styles.css never leaks the token into parens or
   const toolsDir = fileURLToPath(new URL('../../../../tools', import.meta.url));
   let checked = 0;
   for (const d of readdirSync(toolsDir, { withFileTypes: true })) {
-    // tools/ is a profile VIEW (symlink farm — scripts/use-profile.ts), so tool
+    // tools/ is a profile VIEW (symlink farm - scripts/use-profile.ts), so tool
     // dirs are symlinks here: Dirent.isDirectory() is false for them.
     if (!d.isDirectory() && !d.isSymbolicLink()) continue;
     const p = `${toolsDir}/${d.name}/styles.css`;
@@ -178,7 +178,7 @@ test('a universal reset is confined to the scope', () => {
 });
 
 test(':root maps onto the scope rather than nesting under it', () => {
-  // `#c :root` could never match — :root is <html>, which is never inside the canvas —
+  // `#c :root` could never match - :root is <html>, which is never inside the canvas - 
   // so the rule would vanish and take the tool's custom properties with it.
   assert.equal(norm(scopeCss(':root{--brand:red}', S)), '#c {--brand:red}');
 });
@@ -195,7 +195,7 @@ test('a root selector in a list collapses without emitting the scope twice', () 
 
 test('root mapping does not touch selectors that merely start with a root name', () => {
   // `body.dark` / `html[dir]` still describe the document root, but they carry extra
-  // qualifiers, so they are NOT bare root selectors — prefixing keeps today's behaviour
+  // qualifiers, so they are NOT bare root selectors - prefixing keeps today's behaviour
   // rather than silently widening the rule to the whole canvas.
   assert.equal(norm(scopeCss('.body{margin:0}', S)), '#c .body {margin:0}');
   assert.equal(norm(scopeCss('body .a{margin:0}', S)), '#c body .a {margin:0}');
@@ -203,13 +203,13 @@ test('root mapping does not touch selectors that merely start with a root name',
 
 // ── unscoping (export path) ───────────────────────────────────────────────────
 // An SVG export clones the tool's inline <svg> into a STANDALONE file, where no
-// canvas ancestor exists — so a scoped rule inside it can never match and the
+// canvas ancestor exists - so a scoped rule inside it can never match and the
 // artwork's paths lose their fill (they render BLACK). unscopeStyleEls releases
 // exactly what scopeTemplateStyles pinned. Regression: pose-geeko's legs.
 
 test('unscopeCss reverses scopeCss for the same scope', () => {
   // scopeCss re-emits `sel {` with a space, so the round-trip is semantic, not
-  // byte-exact — normalise the brace spacing before comparing.
+  // byte-exact - normalise the brace spacing before comparing.
   const nb = (s: string) => norm(s).replace(/\s*\{\s*/g, '{');
   for (const css of [
     '.a{color:red}',
@@ -231,7 +231,7 @@ test('unscopeCss leaves selectors it did not scope alone', () => {
 
 test('a root selector survives the scope round-trip as :root', () => {
   // scopeSelectorList collapses :root/html/body onto the scope element itself;
-  // unscoping maps it back to :root — the root of a standalone SVG document.
+  // unscoping maps it back to :root - the root of a standalone SVG document.
   assert.equal(norm(unscopeCss(scopeCss(':root{--x:1}', S), S)).replace(/\s*\{\s*/g, '{'), ':root{--x:1}');
 });
 
@@ -248,7 +248,7 @@ test('scopeTemplateStyles records its scope and unscopeStyleEls releases it', ()
   unscopeStyleEls(clone);
   const cloned = clone.querySelector('style')!;
   assert.equal(norm(cloned.textContent!), '.cls-18 {fill:#32b678}');
-  // The marker is an internal detail — it must not ride into the exported file.
+  // The marker is an internal detail - it must not ride into the exported file.
   assert.equal(cloned.hasAttribute('data-lolly-scope'), false);
   // The live node keeps its scoping (the clone is what leaves).
   assert.equal(norm(styleEl.textContent!), '#c .cls-18 {fill:#32b678}');

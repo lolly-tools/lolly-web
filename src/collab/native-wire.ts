@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-wire — the byte format for the native transport's lanes (plans/110 §4).
+ * native-wire - the byte format for the native transport's lanes (plans/110 §4).
  *
  * The native transport (`native-transport.ts`) carries raw bytes per lane; this module is
  * the encode/decode that turns a collab message into those bytes and an inbound frame back
  * into the SAME `RtcInboundMessage` shape the WebRTC transport produces. That shared shape
  * is the whole point: a native session can then be adapted into `createRtcCollabHandle`
- * unchanged, so the op-ordering, presence roster, and §6.2 divergence backstop — and the
- * §11.21 op validation, which runs DOWNSTREAM in the handle, not in the transport — are all
+ * unchanged, so the op-ordering, presence roster, and §6.2 divergence backstop - and the
+ * §11.21 op validation, which runs DOWNSTREAM in the handle, not in the transport - are all
  * reused, not reimplemented. A native pair uses this codec on both ends, so it only has to
  * be self-consistent; it does not need to match the WebRTC channels' exact bytes (native
  * never talks to WebRTC).
@@ -79,7 +79,7 @@ function decodeOps(bytes: Uint8Array): RtcInboundMessage | null {
     return { lane: 'ops', kind: 'op', op: parsed.op };
   }
   if (parsed.kind === 'hello') {
-    // Copy only the known fields — never spread a stranger's record.
+    // Copy only the known fields - never spread a stranger's record.
     const out: Extract<RtcInboundMessage, { kind: 'hello' }> = { lane: 'ops', kind: 'hello' };
     const clientId = typeof parsed.clientId === 'string' ? parsed.clientId : undefined;
     const opVersion = typeof parsed.opVersion === 'string' ? parsed.opVersion : undefined;

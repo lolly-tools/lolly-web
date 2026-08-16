@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * display-gamut.test.ts — the display detection and the tab it seeds.
+ * display-gamut.test.ts - the display detection and the tab it seeds.
  * Run: node --test shells/web/src/lib/display-gamut.test.ts
  *
  * No jsdom needed: the module is DOM-touching but tiny about it, so a stubbed
  * `matchMedia` (the pattern view-fade.test.ts uses) and a hand-written fake canvas
- * cover every decision. What is pinned here is the DECISIONS — which claim wins,
+ * cover every decision. What is pinned here is the DECISIONS - which claim wins,
  * which encode space is asked for, and which one is used when the surface refuses.
  * The pixels are verified in Chrome.
  */
@@ -59,7 +59,7 @@ test('the claim is the widest keyword that matches', () => {
     assert.equal(displayGamutClaim(), c);
   }
   // A display matching nothing at all, and a host with no matchMedia, are both
-  // "we do not know" — never a guess.
+  // "we do not know" - never a guess.
   installMatchMedia('none');
   assert.equal(displayGamutClaim(), 'unknown');
   noMatchMedia();
@@ -87,7 +87,7 @@ test('a downgrade latches one-way and notifies exactly once', () => {
   const off = onDisplayGamutChange(() => { hits++; });
   assert.equal(displayAnchor(), 'display-p3');
 
-  noteEncodeDowngrade('display-p3');   // not a downgrade — ignored
+  noteEncodeDowngrade('display-p3');   // not a downgrade - ignored
   assert.equal(hits, 0);
   assert.equal(displayAnchor(), 'display-p3');
 
@@ -167,7 +167,7 @@ test('acquire2d collapses to srgb — and latches — when the option is ignored
 });
 
 /**
- * A canvas that lives in a "document": enough of the node API for the swap — a
+ * A canvas that lives in a "document": enough of the node API for the swap - a
  * parent to be replaced under, a shallow clone, and a granted space per node.
  */
 function fakeMounted(granted: () => string): { canvas: HTMLCanvasElement; nodes: unknown[]; asked: unknown[] } {
@@ -198,7 +198,7 @@ test('acquire2d re-acquires the surface when the display changes under it', () =
 
   // The window moves to an sRGB monitor. A 2D context keeps the colour space it was
   // created with and a second getContext ignores the options bag entirely, so the ONLY
-  // way to honour the move is a new surface — otherwise the fill stays P3-encoded for
+  // way to honour the move is a new surface - otherwise the fill stays P3-encoded for
   // the session while the contour marked "your display" narrows.
   mq.setClaim('srgb');
   mq.fire();
@@ -230,7 +230,7 @@ test('a retained context reporting the old space is not read as a refusal', () =
 
 const SRGB_SUBJECT = { l: 0.62, c: 0.19, h: 260 };
 /**
- * Display-P3's red primary — outside sRGB, inside P3.
+ * Display-P3's red primary - outside sRGB, inside P3.
  *
  * At FULL precision: `describeColor('color(display-p3 1 0 0)').oklch`. Rounded to
  * 4dp it tests as outside P3 as well (it is a corner of the cube), which would make

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The WASM implementation of `host.matte` (v1.103) — worker plumbing only: an
+ * The WASM implementation of `host.matte` (v1.103) - worker plumbing only: an
  * id-keyed pending map, progress fan-out, abort translation. The onnxruntime-web
  * runtime, the ONNX weights, the WebGPU→WASM choice and the letterbox/compose
  * maths all live in lib/matte-worker.ts → lib/matter.ts, off the boot budget and
@@ -137,7 +137,7 @@ export function createWasmMatteAPI(): MatteAPI {
           },
           onProgress: opts?.onProgress,
         });
-        // Transfer the source pixels — the caller's frame is consumed by the run.
+        // Transfer the source pixels - the caller's frame is consumed by the run.
         w.postMessage(
           { id: reqId, type: 'run', frame, opts: serializeOpts(opts) } satisfies MatteWorkerRequest,
           [frame.data.buffer],

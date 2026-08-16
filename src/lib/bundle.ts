@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The signed-zip bundle envelope — the format brand packs (brand-transfer.ts) and
+ * The signed-zip bundle envelope - the format brand packs (brand-transfer.ts) and
  * data backups (data-transfer.ts) BOTH speak.
  *
  * Those two modules carry very different payloads (a brand: tokens + fonts + logos;
@@ -9,12 +9,12 @@
  *
  *   - fflate entries, with already-compressed bytes passed as the `[u8, {level:0}]`
  *     tuple so images/woff2 aren't pointlessly re-deflated.
- *   - `manifest.json` carrying `format` / `formatVersion` / `minReader` — readers
+ *   - `manifest.json` carrying `format` / `formatVersion` / `minReader` - readers
  *     gate on `minReader`, never the writer's `formatVersion`, so a bundle that
  *     merely ADDS an optional part still imports on an older build.
  *   - `manifest.integrity`: SHA-256 (SRI-style) per part, so a transfer mangled in
  *     transit (USB, email, AirDrop) fails loudly instead of half-restoring.
- *     Best-effort on BOTH sides — no Web Crypto ⇒ we don't write the map, and we
+ *     Best-effort on BOTH sides - no Web Crypto ⇒ we don't write the map, and we
  *     don't fail to verify one we can't.
  *   - `lolly.txt`: a human-readable summary, written AFTER the integrity loop (a
  *     README, regenerated each export, not payload) and ignored on import.
@@ -35,12 +35,12 @@ export type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
  *  part: never counted as `skipped`, never read on import, never integrity-mapped. */
 export const README_NAME = 'lolly.txt';
 
-/** Branding banner atop both READMEs — mirrors batch-export manifests (pro/zip.js
+/** Branding banner atop both READMEs - mirrors batch-export manifests (pro/zip.js
  *  `HEADER`). Kept as a literal here so these core modules stay free of any /pro
- *  import (the batch folder is designed to be removable) — keep the two in sync. */
+ *  import (the batch folder is designed to be removable) - keep the two in sync. */
 export const BUNDLE_HEADER = '📐 Lolly  •  ❤️ Give Fitzy an Ovation  •  🌏 https://lolly.tools';
 
-/** Web Crypto — present in any secure browser context and in modern Node (so the
+/** Web Crypto - present in any secure browser context and in modern Node (so the
  *  headless round-trip tests exercise integrity too). Absent ⇒ integrity is a
  *  no-op on both sides. */
 const SUBTLE = globalThis.crypto?.subtle ?? null;
@@ -77,7 +77,7 @@ export function readJson(files: Unzipped, name: string): any {
 /**
  * The `manifest.integrity` map for everything written so far, or null when Web
  * Crypto is unavailable (callers then simply omit the field). Call this BEFORE
- * adding the manifest itself and the README — neither is integrity-protected.
+ * adding the manifest itself and the README - neither is integrity-protected.
  */
 export async function buildIntegrity(
   entries: Record<string, BundleEntry>,
@@ -94,8 +94,8 @@ export async function buildIntegrity(
  * the bundle carries no map or Web Crypto is unavailable (can't-verify is not the
  * same as corrupt, and an older bundle without a map imports unchanged).
  *
- * `subject` is the user-facing noun for this kind of bundle — "This brand file",
- * "This backup" — so the error reads as one sentence.
+ * `subject` is the user-facing noun for this kind of bundle - "This brand file",
+ * "This backup" - so the error reads as one sentence.
  */
 export async function verifyIntegrity(
   files: Unzipped, integrity: unknown, subject: string,

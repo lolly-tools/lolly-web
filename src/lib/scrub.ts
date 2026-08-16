@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Drag-to-scrub for numeric fields — the design-tool gesture: press on the number
+ * Drag-to-scrub for numeric fields - the design-tool gesture: press on the number
  * and drag sideways to change it.
  *
  * Shared, because there were already two implementations (this one, for Pro/Batch's
  * Width & Height cells, and the `.vec-scrub` handles in tool-inputs.ts) before
  * Colour Lab wanted a third for its L/C/H entries. It lives in `lib/` rather than
- * `pro/` for that reason. Every default is Pro's original behaviour exactly —
- * integer steps, `min: 1`, mouse and pen only — so generalising it changed nothing
+ * `pro/` for that reason. Every default is Pro's original behaviour exactly - 
+ * integer steps, `min: 1`, mouse and pen only - so generalising it changed nothing
  * for the existing caller.
  *
  * The hot path is deliberately minimal:
- *   • capture is taken only once a drag is recognised — no idle/global listeners;
+ *   • capture is taken only once a drag is recognised - no idle/global listeners;
  *   • geometry is cached on pointerdown, so pointermove does pure arithmetic and
  *     never reads layout (no forced reflow);
  *   • only the field's `.value` is written during the drag, rAF-coalesced so a
@@ -46,17 +46,17 @@ export interface ScrubOptions {
   max?: number;
   getFallback?: (el: HTMLInputElement) => number;
   /**
-   * Value change per pixel of travel. Default 1 — right for pixel dimensions and
+   * Value change per pixel of travel. Default 1 - right for pixel dimensions and
    * wrong for anything else: at 1/px an OKLCH chroma axis (0–0.4) would cross its
    * entire range in under a pixel. Pick it so one drag across the control's own
    * width is roughly one full range.
    */
   unitPerPx?: PerField;
-  /** Decimals to write. Default 0 — Pro's original integer rounding. */
+  /** Decimals to write. Default 0 - Pro's original integer rounding. */
   decimals?: PerField;
   /** Allow touch drags. Default false; see the touch-action note above. */
   touch?: boolean;
-  /** Live, once per frame, while dragging — for a preview. `onCommit` still fires on
+  /** Live, once per frame, while dragging - for a preview. `onCommit` still fires on
    *  release. Without it the value only lands when the pointer lifts, which loses
    *  most of the point of a scrub. */
   onDrag?: (el: HTMLInputElement, value: number) => void;
@@ -122,7 +122,7 @@ export function attachScrub(
       if (Math.abs(dx) < THRESHOLD) return;
       drag.moved = true;
       // Capture keeps events coming when the pointer leaves the narrow field. It can
-      // throw (NotFoundError) if the pointer is no longer active by the time we ask —
+      // throw (NotFoundError) if the pointer is no longer active by the time we ask - 
       // and a throw here would abandon the gesture halfway, leaving `is-scrubbing` on
       // the body with no drag to end it. Capture is an improvement, not a requirement.
       try { drag.el.setPointerCapture?.(drag.pointerId); } catch { /* not capturable */ }
@@ -157,7 +157,7 @@ export function attachScrub(
     pending = null;
     drag = null;
 
-    if (!moved) return; // it was a click — native focus already happened
+    if (!moved) return; // it was a click - native focus already happened
     try { el.releasePointerCapture?.(pointerId); } catch { /* never captured */ }
     document.body.classList.remove('is-scrubbing');
     if (value != null) {

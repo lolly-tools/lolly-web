@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The platform's bundled (local) typefaces — the single source of truth mirrored from
+ * The platform's bundled (local) typefaces - the single source of truth mirrored from
  * the @font-face registrations in styles/fonts.css. Shared by the Platform view (specimen
  * cards) and the Catalog view (specimen + download links).
  *
  * There is no machine-readable font manifest; this is the hand-maintained mirror. The
- * variable filenames contain LITERAL `[wght]` brackets — they resolve unencoded in an
+ * variable filenames contain LITERAL `[wght]` brackets - they resolve unencoded in an
  * href (see main.ts's preload), so don't URL-encode them.
  */
 
@@ -27,11 +27,11 @@ export interface FontSpec {
 }
 
 // Mirrors the @font-face registrations in styles/fonts.css. These are the platform's
-// local (bundled) typefaces — no webfont / CDN dependency at runtime. Downloads cover the
+// local (bundled) typefaces - no webfont / CDN dependency at runtime. Downloads cover the
 // variable axis (upright + italic) as both TTF (desktop) and WOFF2 (web); the per-weight
 // statics under a brand catalog's otf/ + ttf/ exist on disk too but aren't surfaced
 // (the variable file is the canonical one).
-// Every entry is shell-served (public/fonts/ — present on every profile), so nothing
+// Every entry is shell-served (public/fonts/ - present on every profile), so nothing
 // here 404s on a brand pack that ships no fonts. Since 2026-08-10 that includes SUSE
 // itself, which used to be listed from the catalog and was therefore missing under
 // lolly-start; the catalog copies remain as src fallbacks in fonts.css.

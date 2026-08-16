@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * type-compare.ts — the Type room's side-by-side compare stage (plan 97 §7.2, M4).
+ * type-compare.ts - the Type room's side-by-side compare stage (plan 97 §7.2, M4).
  *
  * Nothing in this shell has ever let anyone SEE two faces before choosing one.
  * The brand editor's type panel is commit-then-look: a Google family installs
  * first and shows itself afterwards, and an uploaded file is only visible once
- * it is a stored asset. This stage is the answer — candidates from all three
+ * it is a stored asset. This stage is the answer - candidates from all three
  * sources stand next to each other on ONE editable specimen, at ONE size, and
  * nothing is installed until a card is chosen.
  *
  * PRESENTATION ONLY, ON PURPOSE. This module never writes a token, never stores
  * an asset and does not import user-fonts.ts. A press hands a `CompareChoice` to
- * `ctx.onSelect` and the caller persists it — `installGoogleFont` for a Google
+ * `ctx.onSelect` and the caller persists it - `installGoogleFont` for a Google
  * family, `installFontFromBytes` for a file. That split is what keeps the stage
  * testable under jsdom, and it is the same seam the tray uses (a surface asks;
  * the room that owns the material commits).
@@ -25,15 +25,15 @@
  *
  * PREVIEW FACES NEVER PERSIST. A previewed face is an in-memory `FontFace` added
  * to `document.fonts` under a session-scoped family name (`__ds-preview-<slug>-<n>`
- * — see `previewFamilyName`), and it is `delete`d when its card is removed or the
+ * - see `previewFamilyName`), and it is `delete`d when its card is removed or the
  * stage is torn down. It is not an asset, it is not in IndexedDB, and it does not
  * survive a reload. The serial in the name is not decoration: two cards can hold
  * the same family from different sources (a Google Inter beside an uploaded
  * Inter.ttf) and must never share one registration, or removing either would
  * blank the other.
  *
- * NO FACE PRETENDS TO BE ANOTHER. A card whose face has not loaded — not fetched
- * yet, declined, failed, or a browser with no FontFace at all — renders its
+ * NO FACE PRETENDS TO BE ANOTHER. A card whose face has not loaded - not fetched
+ * yet, declined, failed, or a browser with no FontFace at all - renders its
  * specimen in the INTERFACE face and says that is what you are looking at. A
  * silent fallback here would be the one unforgivable bug in a type comparison:
  * you would choose a face you never saw. For the same reason "Use this face" is
@@ -41,29 +41,29 @@
  *
  * A PRESS ALWAYS ANSWERS. The card row is rebuilt wholesale on every state
  * change, so a load that ends changes nothing but text in a subtree that was
- * just replaced — invisible to anyone not watching it. Two rules follow. Every
+ * just replaced - invisible to anyone not watching it. Two rules follow. Every
  * finished load is `announce`d once (ready, failed, declined), and the card
  * itself is focusable (`tabindex="-1"`, named by its family, described by its
  * state sentence) so the repaint has somewhere to put the keyboard that is NOT
- * the Remove button — pressing Preview must never leave the next Enter on
+ * the Remove button - pressing Preview must never leave the next Enter on
  * Delete. When the repaint does land on the card, the announcement is skipped:
  * the description says the same thing, and hearing it twice is worse than once.
  *
  * TWO HALVES, like trim-offer.ts.
- *   PURE — the candidate model (`admitCandidate`, the cap), the preview-family
+ *   PURE - the candidate model (`admitCandidate`, the cap), the preview-family
  *   naming, the load state machine (`applyCardEvent`), the Google face pick
  *   (`pickPreviewFace`), the honesty facts read off a font file
  *   (`describeFaceBytes`), the default specimen text, and the markup
  *   (`compareCardsHtml`). All unit-tested in type-compare.test.ts.
- *   BROWSER — `mountTypeCompare`: the DOM, the FontFace registrations, the
+ *   BROWSER - `mountTypeCompare`: the DOM, the FontFace registrations, the
  *   consent-gated fetch, the drop zone.
  *
  * COPY. Strings arrive as `ctx.t` / `ctx.tRaw` (the consuming file's i18n
  * bindings) so the stage can be mounted from any surface without reaching for
- * the runtime — trim-offer.ts's precedent.
+ * the runtime - trim-offer.ts's precedent.
  */
 
-import '../../styles/parts/type-compare.css'; // .tycmp* rules — rides this module's lazy chunk
+import '../../styles/parts/type-compare.css'; // .tycmp* rules - rides this module's lazy chunk
 
 import { escape } from '../../utils.ts';
 import { icon } from '../icons.ts';
@@ -79,7 +79,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 // ── Contract ─────────────────────────────────────────────────────────────────
 
-/** The consuming file's `t`/`tRaw` (i18n.ts), injected — see the module note. */
+/** The consuming file's `t`/`tRaw` (i18n.ts), injected - see the module note. */
 export type TFn = (source: string, params?: Record<string, string | number>) => string;
 
 /** Where a candidate came from. Equal citizens on the stage; the only thing the
@@ -92,7 +92,7 @@ export interface CompareCandidate {
   family: string;
   /** An optional second line (a file name, a PDF's own label). */
   label?: string;
-  /** The face itself, when the candidate carries one — an upload always does, a
+  /** The face itself, when the candidate carries one - an upload always does, a
    *  tray candidate does when its source had the bytes (a PDF-embedded font). */
   bytes?: Uint8Array;
   /** Honesty chips the SOURCE established and this stage only renders: SUBSET,
@@ -140,7 +140,7 @@ export interface TypeCompare {
 // ── Pure: the candidate model ────────────────────────────────────────────────
 
 /** How many faces can stand side by side. Past this the comparison stops being
- *  one — the cards are too narrow to judge a face, and the specimen line wraps
+ *  one - the cards are too narrow to judge a face, and the specimen line wraps
  *  differently in each, which is exactly the variable a comparison must hold
  *  still. Removing a card makes room; nothing is queued behind the cap. */
 export const MAX_COMPARE_CARDS = 6;
@@ -157,7 +157,7 @@ export type CardReason = 'no-source' | 'declined' | 'fetch-failed' | 'decode-fai
 export interface CompareCard {
   /** Stable for the life of the stage; the id every data attribute carries. */
   id: string;
-  /** Mount-scoped serial — what makes the preview family name unique. */
+  /** Mount-scoped serial - what makes the preview family name unique. */
   seq: number;
   kind: CompareKind;
   family: string;
@@ -175,7 +175,7 @@ export interface CompareCard {
    *  candidate whose source had no bytes). Decides whether the card needs the
    *  consent gate before it can show anything. */
   needsFetch: boolean;
-  /** A select is in flight — the press is disabled, the card is not. */
+  /** A select is in flight - the press is disabled, the card is not. */
   busy: boolean;
 }
 
@@ -194,13 +194,13 @@ export function slugFamily(family: string): string {
  * The session-scoped family a preview registers under. The `__ds-preview-`
  * prefix says what it is to anyone reading `document.fonts` in a devtools
  * console, and the two serials keep two cards of the SAME family on separate
- * registrations — see the module note.
+ * registrations - see the module note.
  *
- * BOTH serials are load-bearing, and the mount one is the subtle half.
+ * BOTH serials are required, and the mount one is the subtle half.
  * `document.fonts` is per DOCUMENT, not per mount: a card serial alone makes
  * `__ds-preview-inter-1` in one stage collide with `__ds-preview-inter-1` in a
  * second stage mounted anywhere else on the page, and two registrations of one
- * family name are ambiguous — the specimen could paint the OTHER stage's bytes.
+ * family name are ambiguous - the specimen could paint the OTHER stage's bytes.
  * The Type room happens to keep one stage at a time, but `mountTypeCompare` is
  * exported and caller-agnostic, so the guarantee belongs here rather than in
  * whoever calls it.
@@ -214,7 +214,7 @@ export function previewFamilyName(family: string, seq: number, mount = 0): strin
 }
 
 /** Families we hold a fetchable source for, lowercased once. The same rule and
- *  the same list as tray-ui's `isFetchableFamily` — computed here rather than
+ *  the same list as tray-ui's `isFetchableFamily` - computed here rather than
  *  imported from it, because importing the tray SURFACE would drag its panel and
  *  its bottom-sheet driver into the Type room's chunk. */
 const KNOWN_FAMILIES = new Set(POPULAR_FAMILIES.map((f) => f.trim().toLowerCase()));
@@ -224,12 +224,12 @@ const KNOWN_FAMILIES = new Set(POPULAR_FAMILIES.map((f) => f.trim().toLowerCase(
  *
  * The answer differs by where the candidate came from, and that is deliberate:
  *
- *  - `google` — someone picked this family out of the Google picker BY NAME. The
+ *  - `google` - someone picked this family out of the Google picker BY NAME. The
  *    curated `POPULAR_FAMILIES` list is a suggestion list, not an availability
  *    list (its own header says so), so refusing a family merely because it is
  *    not on it would refuse real Google fonts. The gate is the same one
  *    `fetchGoogleFont` uses: the css2 name charset.
- *  - `tray` — an arbitrary family name a site or a PDF happened to mention.
+ *  - `tray` - an arbitrary family name a site or a PDF happened to mention.
  *    Firing a doomed request at every "Helvetica Neue LT Std 57" is egress spent
  *    on nothing, so an unrecognised family is reported honestly instead, exactly
  *    as the tray reports it.
@@ -343,17 +343,17 @@ export function applyCardEvent(card: CompareCard, ev: CardEvent): CompareCard {
 
 /** The honesty facts a font file states. `embeddingReadable` is the difference
  *  between "this font states no restriction" and "we cannot read what it
- *  states" — a WOFF/WOFF2 wrapper hides the OS/2 table from us, and reporting
+ *  states" - a WOFF/WOFF2 wrapper hides the OS/2 table from us, and reporting
  *  that as "no restriction stated" would be a claim the file never made. */
 export interface FaceFacts {
   format: FontFormat;
   family: string | null;
-  /** `OS/2.usWeightClass` — the DEFAULT INSTANCE's weight, which for a variable
+  /** `OS/2.usWeightClass` - the DEFAULT INSTANCE's weight, which for a variable
    *  face is one rung of the ladder it carries. Read `weightRange` first. */
   weight: number | null;
   /** The `fvar` `wght` axis as a CSS descriptor ("100 900"), or null for a
    *  static face. A variable font previewed at its default instance would show
-   *  Thin beside a Google candidate's 400 — the one variable a comparison must
+   *  Thin beside a Google candidate's 400 - the one variable a comparison must
    *  hold still. See font-resolve.ts's `variableWeightRange`. */
   weightRange: string | null;
   style: 'normal' | 'italic' | 'oblique' | null;
@@ -364,8 +364,8 @@ export interface FaceFacts {
 }
 
 /**
- * Read a dropped file's own statements — format, name-table metadata, the `fvar`
- * weight axis and `OS/2.fsType` — through the shipped pure validators
+ * Read a dropped file's own statements - format, name-table metadata, the `fvar`
+ * weight axis and `OS/2.fsType` - through the shipped pure validators
  * (lib/font-utils.ts, font-resolve.ts). Nothing here is inferred from the file
  * name.
  *
@@ -374,7 +374,7 @@ export interface FaceFacts {
  * engine's woff reader into a preview that only wants to draw a chip, so this
  * half stays sync and pure and says what it could not read. The install path
  * does unwrap, and records the face's real statement in the stored asset's meta
- * (`user-fonts.ts` `installFontFromBytes`) where it persists — so the fact is
+ * (`user-fonts.ts` `installFontFromBytes`) where it persists - so the fact is
  * kept, on the surface that keeps things.
  */
 export function describeFaceBytes(bytes: Uint8Array): FaceFacts {
@@ -433,7 +433,7 @@ export function chipsFromFacts(facts: FaceFacts, t: TFn): string[] {
 
 // ── Pure: picking one Google face to preview ─────────────────────────────────
 
-/** Distance from `target` to a css2 weight descriptor — a static number, or a
+/** Distance from `target` to a css2 weight descriptor - a static number, or a
  *  variable range ("100 900"), which costs nothing when it covers the target. */
 function weightDistance(weight: string, target: number): number {
   const nums = String(weight ?? '').trim().split(/\s+/).map(Number).filter((n) => Number.isFinite(n));
@@ -445,14 +445,14 @@ function weightDistance(weight: string, target: number): number {
 }
 
 /**
- * ONE face out of a family's css2 blocks — upright, latin, closest to 400 (a
+ * ONE face out of a family's css2 blocks - upright, latin, closest to 400 (a
  * variable range covering 400 wins outright).
  *
  * A preview downloads one file, not the family. `fetchGoogleFont` pulls every
  * kept subset and slant because it is building a permanent on-device install;
  * a look at a face is not worth a few hundred KB, and the install path is the
  * caller's job anyway. The spec LADDER is still the shipped one
- * (`resolveFamilySpec`) — only the download is narrowed.
+ * (`resolveFamilySpec`) - only the download is narrowed.
  */
 export function pickPreviewFace(faces: readonly GoogleFontFace[]): GoogleFontFace | null {
   if (!faces.length) return null;
@@ -493,7 +493,7 @@ export function defaultSpecimen(systemName: string | null, t: TFn): string {
 }
 
 /** The installed tokens asset's label. Duck-typed through the same narrow cast
- *  the Overview room uses — these are web-shell extensions, absent from the
+ *  the Overview room uses - these are web-shell extensions, absent from the
  *  tool-facing HostV1 type. Never throws: no name is a fine answer. */
 export async function readSystemName(host: HostV1): Promise<string | null> {
   const assets = host?.assets as unknown as {
@@ -504,7 +504,7 @@ export async function readSystemName(host: HostV1): Promise<string | null> {
     const nested = meta?.meta?.['name'];
     return usableSystemName(nested) ?? usableSystemName(meta?.name);
   } catch {
-    return null; // discovery unavailable — the pangram is a fine specimen
+    return null; // discovery unavailable - the pangram is a fine specimen
   }
 }
 
@@ -558,7 +558,7 @@ const noteId = (card: CompareCard): string => `${card.previewFamily}-note`;
 function cardHtml(card: CompareCard, text: string, t: TFn): string {
   const ready = card.state === 'ready';
   // The face only paints when it is REALLY loaded. Every other state renders in
-  // the interface face and says so on the next line — see the module note.
+  // the interface face and says so on the next line - see the module note.
   const style = ready ? ` style="font-family:'${escape(card.previewFamily)}'"` : '';
   const note = card.reason ? reasonText(card.reason, t)
     : card.state === 'loading' ? t('Loading the face…')
@@ -571,7 +571,7 @@ function cardHtml(card: CompareCard, text: string, t: TFn): string {
   // accessible name.
   const remove = t('Remove {family}', { family: card.family });
   // What the card is, and why it is in the state it is in. The <article> is the
-  // one thing an AT user can land on that is not a button — "Use this face" is
+  // one thing an AT user can land on that is not a button - "Use this face" is
   // DISABLED on every non-ready card, so a description hung on that button would
   // be unreachable exactly when it is the thing worth reading. It is focusable
   // programmatically (tabindex="-1") so a repaint that destroys the pressed
@@ -602,10 +602,10 @@ function cardHtml(card: CompareCard, text: string, t: TFn): string {
 }
 
 /**
- * The card row as markup — pure, so the escaping, the per-state controls and the
+ * The card row as markup - pure, so the escaping, the per-state controls and the
  * "does this card paint its face" decision are testable without a DOM
- * (trayHtml's precedent). The scaffold around it — the specimen field, the size
- * control, the drop zone — is the mount's, because none of it changes with the
+ * (trayHtml's precedent). The scaffold around it - the specimen field, the size
+ * control, the drop zone - is the mount's, because none of it changes with the
  * cards.
  */
 export function compareCardsHtml(cards: readonly CompareCard[], text: string, t: TFn): string {
@@ -637,7 +637,7 @@ function fontFaceCtor(): FontFaceCtor | null {
 /**
  * Register one face for preview under `family` and wait for it to actually
  * decode. Throws when the engine cannot do this at all, and when the bytes are
- * not a font — both of which the caller turns into an honest card state.
+ * not a font - both of which the caller turns into an honest card state.
  */
 async function loadPreviewFace(
   doc: Document, family: string, bytes: Uint8Array, descriptors: FontFaceDescriptors,
@@ -672,11 +672,11 @@ let mountSeq = 0;
 /**
  * Mount the compare stage into `el`.
  *
- * The stage does NOT own a dialog — the caller decides what holds it (the Type
+ * The stage does NOT own a dialog - the caller decides what holds it (the Type
  * room, a sheet on a phone) and therefore owns closing. Escape here does the one
  * thing that IS this module's: it cancels an IN-PROGRESS edit of the specimen
  * field, restoring the text the field held when it was focused. It never
- * commits, and it never closes something it did not open — and, just as
+ * commits, and it never closes something it did not open - and, just as
  * important, it only STOPS the key while there is an edit to cancel. With
  * nothing to cancel (or on the second press, after the first restored the text)
  * Escape belongs to whatever holds the stage, so it bubbles and closes it. A
@@ -701,7 +701,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
 
   /** Live registrations, so teardown and removal can always find the face. */
   const faces = new Map<string, FontFace>();
-  /** Per-card generation, bumped on every start/removal — a fetch that resolves
+  /** Per-card generation, bumped on every start/removal - a fetch that resolves
    *  after its card was removed or restarted must not paint anything. */
   const gen = new Map<string, number>();
 
@@ -709,7 +709,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
   const { signal } = ac;
 
   // Sink 1 of 2: the scaffold. Every interpolation is a t() literal, an icon()
-  // constant, a NUMBER, or an escape()d id — no candidate data reaches it.
+  // constant, a NUMBER, or an escape()d id - no candidate data reaches it.
   el.innerHTML = `
     <section class="tycmp" data-tycmp>
       <div class="tycmp-bar">
@@ -764,18 +764,18 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
       const id = btn.getAttribute(attr) ?? '';
       return { attr, id, index: cards.findIndex((c) => c.id === id) };
     }
-    // No control — the CARD itself is holding focus, which is where focusInCard
+    // No control - the CARD itself is holding focus, which is where focusInCard
     // parks the keyboard while a load is in flight. Remember the card, or the
     // next repaint would drop focus on the body one frame later.
     const id = active.closest<HTMLElement>(`[${CARD_ATTR}]`)?.getAttribute(CARD_ATTR) ?? '';
     return id ? { attr: CARD_ATTR, id, index: cards.findIndex((c) => c.id === id) } : null;
   }
 
-  /** The card whose ARTICLE the last repaint focused, if any — see `update`. */
+  /** The card whose ARTICLE the last repaint focused, if any - see `update`. */
   let landedOnCard: string | null = null;
 
   /** Put the keyboard somewhere sensible ON this card: the action it is now
-   *  offering, else the card itself. Remove is deliberately NOT in the list —
+   *  offering, else the card itself. Remove is deliberately NOT in the list - 
    *  it is the destructive control, and a repaint caused by pressing Preview
    *  must never leave the next Enter on Delete. It is one Tab away, which is
    *  where a control you did not ask for belongs. */
@@ -802,7 +802,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     }
     // The control went away, is now disabled, or the card itself had focus and a
     // control has since become available. Stay on the SAME card while it is here
-    // — a press acts on that card and the keyboard should not travel — else the
+    // - a press acts on that card and the keyboard should not travel - else the
     // card that took its place. Never the body: a stage that drops focus on a
     // repaint is unusable by keyboard.
     if (cards.some((c) => c.id === memo.id) && focusInCard(memo.id)) return;
@@ -830,7 +830,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     if (message) announce(message);
   }
 
-  /** What a finished load is worth SAYING. Empty while it is still in flight:
+  /** What a finished load should SAY. Empty while it is still in flight:
    *  "loading" is visible on the card and is not news worth interrupting for. */
   function outcomeText(card: CompareCard): string {
     if (card.state === 'ready') return tRaw('{family} is ready to compare.', { family: card.family });
@@ -843,12 +843,12 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     if (index < 0) return;
     const before = cards[index] as CompareCard;
     const after = applyCardEvent(before, ev);
-    if (after === before) return; // the event did not apply — no repaint
+    if (after === before) return; // the event did not apply - no repaint
     cards = [...cards.slice(0, index), after, ...cards.slice(index + 1)];
     paint();
     // A load that ends changes nothing but text inside a subtree that was just
     // replaced wholesale, so without this a screen-reader user presses Preview
-    // and hears nothing back — ever. Said once, and NOT when the repaint has
+    // and hears nothing back - ever. Said once, and NOT when the repaint has
     // just moved focus onto this card: landing on the article reads the same
     // sentence out of its description, and twice is worse than once.
     if (landedOnCard !== id) announce(outcomeText(after));
@@ -864,7 +864,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
   }
 
   /** One consent, then it holds for the mount. A decline is not remembered as a
-   *  refusal — someone may press Preview again, and asking again is the honest
+   *  refusal - someone may press Preview again, and asking again is the honest
    *  reading of a second press. */
   async function ensureConsent(): Promise<boolean> {
     if (consented) return true;
@@ -890,7 +890,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
   /**
    * The Google path: the shipped spec ladder, then ONE face file.
    * `resolveFamilySpec` is the only thing that talks to fonts.googleapis.com and
-   * the face URL is on fonts.gstatic.com — both already in the CSP, and both
+   * the face URL is on fonts.gstatic.com - both already in the CSP, and both
    * reached only after `ensureConsent()` said yes.
    */
   async function previewFromGoogle(card: CompareCard): Promise<FontFace> {
@@ -973,7 +973,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     say('');
     paint();
     // A file previews at once (no network). A Google family previews at once too
-    // ONLY once consent is already in hand — otherwise the card waits behind its
+    // ONLY once consent is already in hand - otherwise the card waits behind its
     // own Preview button, which is the press that asks.
     if (!result.card.needsFetch || consented) void preview(result.card.id);
   }
@@ -1071,7 +1071,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     textEl.addEventListener('input', () => {
       specimenTouched = true;
       specimen = textEl.value;
-      // Text only — no repaint. A keystroke must not rebuild six cards (and
+      // Text only - no repaint. A keystroke must not rebuild six cards (and
       // must not throw away the focus the field is holding).
       for (const node of el.querySelectorAll<HTMLElement>('[data-tycmp-specimen]')) {
         node.textContent = specimen;
@@ -1125,7 +1125,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
   for (const candidate of ctx.candidates ?? []) add(candidate);
 
   // The design system's own name is the best specimen anyone can set type in, so
-  // it replaces the pangram when it arrives — unless someone has already typed,
+  // it replaces the pangram when it arrives - unless someone has already typed,
   // in which case the read loses. An edit outranks a default, always.
   void readSystemName(ctx.host).then((name) => {
     if (!alive || specimenTouched || !name) return;
@@ -1139,7 +1139,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     teardown(): void {
       alive = false;
       ac.abort();
-      // Previews never outlive the stage — that is the whole reason they are
+      // Previews never outlive the stage - that is the whole reason they are
       // registrations and not assets.
       for (const id of [...faces.keys()]) dropFace(id);
       gen.clear();

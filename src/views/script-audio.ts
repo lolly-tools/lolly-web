@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Script audio — type or paste a script, pick a voice, and generate speech
+ * Script audio - type or paste a script, pick a voice, and generate speech
  * on-device via the optional host.speech bridge (v1.96), then save the clip as
  * an ordinary user audio asset.
  *
  * A host-owned modal like the picker's webcam sheet: opened lazily from the
  * asset picker's footer and the catalog's "Your uploads" section, stacks above
  * whichever surface opened it (nested focus trap), Escape/backdrop/nav closes.
- * Everything runs locally — the model downloads once (consent line up front,
+ * Everything runs locally - the model downloads once (consent line up front,
  * sized from modelBytes()), and the script never leaves the device.
  *
  * The saved record carries `aiGenerated: 'full'` so the Gen AI pill surfaces on
@@ -15,7 +15,7 @@
  * word timings) so a captioning surface can re-read the alignment later.
  */
 
-import '../styles/script-audio.css';   // async CSS chunk (lazy dialog — not on the landing)
+import '../styles/script-audio.css';   // async CSS chunk (lazy dialog - not on the landing)
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
 import {
   buildTtsCredential as buildTtsCredentialCore,
@@ -32,7 +32,7 @@ import { t, tRaw } from '../i18n.ts';
 import type { AssetRef, HostV1, SpeechProgress, SpeechResult } from '@lolly-tools/core/host-v1';
 
 /** The user-asset record this dialog writes (mirrors bridge/assets.ts's
- *  non-exported UserAssetRecord for the fields we set — same pattern as the
+ *  non-exported UserAssetRecord for the fields we set - same pattern as the
  *  picker's UserAssetRecordInput, plus the `aiGenerated` disclosure field).
  *  Exported for the Script-audio writing view (views/script-studio.ts), which
  *  saves through the same record shape. */
@@ -44,7 +44,7 @@ export interface TtsAssetRecordInput {
   version?: string;
   meta?: Record<string, unknown>;
   aiGenerated?: 'full' | 'partial';
-  // Record-side Content Credential (the store host.assets.credential serves) —
+  // Record-side Content Credential (the store host.assets.credential serves) - 
   // the same store the saved wav now carries IN its bytes (saveTtsClip embeds
   // it via the engine's RIFF C2PA chunk), kept on the record too as the fast
   // path for the runtime's ingredient chaining.
@@ -62,7 +62,7 @@ export interface ScriptAudioHost extends HostV1 {
 }
 
 /** Everything past this many characters gets a soft warning (long scripts are
- *  slow to synthesize), but Generate stays enabled — it is a nudge, not a wall. */
+ *  slow to synthesize), but Generate stays enabled - it is a nudge, not a wall. */
 export const SOFT_CHAR_CAP = 5000;
 
 /**
@@ -74,7 +74,7 @@ export const SOFT_CHAR_CAP = 5000;
  */
 export function markdownToSpokenText(src: string): string {
   let s = src.replace(/\r\n?/g, '\n');
-  // Fenced code blocks first — their content is code, not speech. The trailing
+  // Fenced code blocks first - their content is code, not speech. The trailing
   // newline goes with the block so no phantom blank line survives it.
   s = s.replace(/```[\s\S]*?(?:```|$)\n?/g, '');
   s = s.replace(/~~~[\s\S]*?(?:~~~|$)\n?/g, '');
@@ -84,14 +84,14 @@ export function markdownToSpokenText(src: string): string {
   s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
   // Inline code keeps its content, loses the ticks.
   s = s.replace(/`([^`\n]*)`/g, '$1');
-  // Horizontal rules are pure structure. Before list markers — `- - -` is a
+  // Horizontal rules are pure structure. Before list markers - `- - -` is a
   // rule, not a list item (and before emphasis, which would eat `***`).
   s = s.replace(/^[ \t]*(?:[-*_][ \t]*){3,}$\n?/gm, '');
   // Headings and quote/list markers keep the line's words.
   s = s.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '');
   s = s.replace(/^[ \t]*>[ \t]?/gm, '');
   s = s.replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, '');
-  // Emphasis markers, paired only. A single `_` stays — it is usually a word
+  // Emphasis markers, paired only. A single `_` stays - it is usually a word
   // character (snake_case), not markup.
   s = s.replace(/(\*\*|__|~~)([^]+?)\1/g, '$2');
   s = s.replace(/\*([^*\n]+)\*/g, '$1');
@@ -105,7 +105,7 @@ export function markdownToSpokenText(src: string): string {
   return s.trim();
 }
 
-/** `user/tts/<ts>-<slug>` — the slug is the first few spoken words, id-safe. */
+/** `user/tts/<ts>-<slug>` - the slug is the first few spoken words, id-safe. */
 export function ttsAssetId(spoken: string, now: number): string {
   const slug = spoken.split(/\s+/).slice(0, 4).join(' ')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
@@ -119,7 +119,7 @@ export function ttsAssetName(spoken: string): string {
   return words.length > 6 ? `${head}…` : head;
 }
 
-/** A generated clip plus the exact inputs that produced it — what Save stores.
+/** A generated clip plus the exact inputs that produced it - what Save stores.
  *  Callers snapshot these at generate time, not save time, so an edit after
  *  Generate can never mislabel a clip. */
 export interface TtsClip {
@@ -130,7 +130,7 @@ export interface TtsClip {
   speed: number;
 }
 
-/** The one asset-record recipe for a TTS clip — shared by the dialog and the
+/** The one asset-record recipe for a TTS clip - shared by the dialog and the
  *  Script-audio writing view so the two surfaces can never drift on tags,
  *  provenance disclosure or the `meta.tts` captioning block. */
 export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordInput {
@@ -167,17 +167,17 @@ export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordI
   };
 }
 
-/** A clip's provenance recipe — the lib's shared shape (lib/tts-provenance.ts). */
+/** A clip's provenance recipe - the lib's shared shape (lib/tts-provenance.ts). */
 const clipRecipe = (clip: TtsClip): TtsRecipe =>
   ({ text: clip.spokenText, voice: clip.voice, speed: clip.speed, model: TTS_MODEL, lang: 'en' });
 
 /**
- * Sign a record-side Content Credential for a generated clip — the machine-
+ * Sign a record-side Content Credential for a generated clip - the machine-
  * readable "this voice is synthetic" mark (EU AI Act Article 50; memory
  * synthetic-audio-eu-ai-act). Thin clip-shaped wrapper over the ONE
  * implementation in lib/tts-provenance.ts (shared with the catalog's lazy
  * heal path); see there for the manifest shape and signing recipe. Never
- * throws — a signing failure logs and returns null, and the clip saves
+ * throws - a signing failure logs and returns null, and the clip saves
  * uncredentialed rather than not at all.
  */
 export async function buildTtsCredential(host: ScriptAudioHost, clip: TtsClip): Promise<{ store: Uint8Array; format: string } | null> {
@@ -190,7 +190,7 @@ export async function buildTtsCredential(host: ScriptAudioHost, clip: TtsClip): 
  * credentialed file: download, share and "Check Content Credentials" all read
  * it straight off the bytes, exactly like an exported PNG. Thin clip-shaped
  * wrapper over lib/tts-provenance.ts (shared with the catalog's lazy heal
- * path). Returns null on any failure — the caller falls back to the
+ * path). Returns null on any failure - the caller falls back to the
  * record-side-only credential, and the clip always saves.
  */
 export async function embedTtsProvenance(host: ScriptAudioHost, clip: TtsClip): Promise<{ blob: Blob; store: Uint8Array } | null> {
@@ -199,13 +199,13 @@ export async function embedTtsProvenance(host: ScriptAudioHost, clip: TtsClip): 
 
 /** Store a generated clip as a user audio asset and resolve its AssetRef (via
  *  the public API, so the ref carries a live object URL). Throws on a store
- *  failure — each surface owns its own error presentation. */
+ *  failure - each surface owns its own error presentation. */
 export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise<AssetRef | null> {
   const record = buildTtsRecord(clip);
   // Provenance lives in the file: the stored blob carries the LIST/INFO tags
   // and the signed C2PA chunk, and the extracted store rides the record for
   // ingredient chaining. When the embed cannot run (malformed bytes, signing
-  // hiccup) the record-side credential alone is the fallback — a null from
+  // hiccup) the record-side credential alone is the fallback - a null from
   // both means the asset still saves with its aiGenerated flag.
   const embedded = await embedTtsProvenance(host, clip);
   if (embedded) {
@@ -342,7 +342,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
     const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
     document.addEventListener('keydown', onKey);
-    // A route change cancels the sheet like Escape/backdrop — any in-flight
+    // A route change cancels the sheet like Escape/backdrop - any in-flight
     // synthesis aborts (the surface beneath nav-closes on the same events).
     const onNav = (): void => done(null);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
@@ -350,7 +350,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
     overlay.querySelector('.script-audio-close')?.addEventListener('click', () => done(null));
     overlay.querySelector('.script-audio-cancel')?.addEventListener('click', () => done(null));
     // Contain focus over whatever opened this (the picker is itself modal; nested
-    // traps stack — this inerts the surface beneath while the sheet is open).
+    // traps stack - this inerts the surface beneath while the sheet is open).
     trap = trapFocus(overlay, { initialFocus: textarea });
 
     const showStatus = (msg: string, isError = false): void => {
@@ -370,7 +370,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
     };
     paintCount();
 
-    // An edit to the script, voice or speed makes the preview stale — drop it so
+    // An edit to the script, voice or speed makes the preview stale - drop it so
     // Save can only ever store what the listener just heard.
     const dropPreview = (): void => {
       if (!result) return;
@@ -387,7 +387,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
 
     // Voices load async; the select stays disabled (with a loading option) until
     // they arrive so Generate never races an empty voice list. With 28 voices a
-    // flat list is unreadable, so they group by accent — the list order (best
+    // flat list is unreadable, so they group by accent - the list order (best
     // grade first within each accent) is preserved inside each group.
     void speech.voices().then((voices) => {
       const groupLabel = (lang: string): string =>
@@ -405,7 +405,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
       showStatus(t("Couldn't load the voice list."), true);
     });
 
-    // First use: say what is about to happen BEFORE any bytes move — the model
+    // First use: say what is about to happen BEFORE any bytes move - the model
     // downloads once, then everything runs on-device. cached() never downloads.
     void speech.cached().then((cached) => {
       if (cached) return;
@@ -432,7 +432,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
           onProgress: paintProgress,
         });
         // The dialog may have closed mid-synthesis (cleanup aborted the signal,
-        // but a shell may resolve anyway) — never touch the removed DOM.
+        // but a shell may resolve anyway) - never touch the removed DOM.
         if (!overlay.isConnected) return;
         result = res;
         spokenText = spoken;

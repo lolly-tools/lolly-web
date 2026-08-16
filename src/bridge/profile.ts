@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ProfileAPI — user profile (firstname, headshot, etc).
+ * ProfileAPI - user profile (firstname, headshot, etc).
  *
  * Single record at key 'me'. Headshot is stored as an AssetRef pointing into
  * the user-assets object store. Subscriptions let tools (or the host UI) react
@@ -45,7 +45,7 @@ export function createProfileAPI(db: ProfileDb): WebProfileAPI {
 
   return {
     get: () => read(),
-    // Host UI uses this — not exposed to tools but kept on the same object for simplicity.
+    // Host UI uses this - not exposed to tools but kept on the same object for simplicity.
     set: write,
     bust() { cache = null; },
     subscribe(fn) {

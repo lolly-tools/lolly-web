@@ -71,7 +71,7 @@ test('targetFromBaseParts lifts format out and decodes the rest into params', ()
 });
 
 test('targetFromBaseParts tolerates no format and skips malformed parts', () => {
-  // decodeURIComponent leaves '+' as-is (it is not form-decoding) — assert the actual behaviour.
+  // decodeURIComponent leaves '+' as-is (it is not form-decoding) - assert the actual behaviour.
   const { params, format } = targetFromBaseParts(['title=Ship%20day', 'garbage', 'x=1']);
   assert.equal(format, undefined);
   assert.deepEqual(params, { title: 'Ship day', x: '1' });

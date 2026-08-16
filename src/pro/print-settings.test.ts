@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Run-level PRINT settings for the batch grid — bleed, print marks and the CMYK
- * press profile — and the one rule that makes them safe: a row that carries its
+ * Run-level PRINT settings for the batch grid - bleed, print marks and the CMYK
+ * press profile - and the one rule that makes them safe: a row that carries its
  * own value beats the run-level default.
  *
  * Three surfaces, one rule, so all three are pinned here together:
- *   - `resolvePrintSettings` (pro/batch.ts) — what `runBatch` applies per row;
- *   - `snapshotFromState` / `rowsFromSnapshot` (pro/sessions.ts) — the persistence
+ *   - `resolvePrintSettings` (pro/batch.ts) - what `runBatch` applies per row;
+ *   - `snapshotFromState` / `rowsFromSnapshot` (pro/sessions.ts) - the persistence
  *     channel, run level AND per row;
- *   - `rowFromBatchRow` (pro/folder-rows.ts) — a saved batch flattened into a
+ *   - `rowFromBatchRow` (pro/folder-rows.ts) - a saved batch flattened into a
  *     folder export, which used to drop all three (plans/65-preflight-and-cost.md §7).
  *
  * The empty string is deliberately tested as ABSENT, not as "explicitly off": `''`
@@ -46,7 +46,7 @@ test('each of the three overrides independently', () => {
 });
 
 test('an empty per-row string is absent, not an assertion of "no bleed"', () => {
-  // '' is what the export panel writes when its print card is off — a session
+  // '' is what the export panel writes when its print card is off - a session
   // saved that way must inherit the run, not silently cancel it.
   assert.deepEqual(resolvePrintSettings({ profile: '', bleed: '', marks: '' }, RUN), RUN);
 });
@@ -60,7 +60,7 @@ test('no run-level defaults leaves the row exactly as it is', () => {
 //
 // The gate is not a tidy-up. `renderRowToBlob` turns these three into export opts for
 // EVERY format, and the export bridge builds the signed C2PA `c2pa.edited` action out
-// of those opts — so before the gate a PNG rendered under a run-level 3mm bleed shipped
+// of those opts - so before the gate a PNG rendered under a run-level 3mm bleed shipped
 // a signed claim that bleed and crop marks were applied, when the raster path applies
 // neither, and its recreate URL carried the print params too.
 
@@ -76,7 +76,7 @@ test('a non-print format receives NOTHING — not the run-level values, not the 
   for (const fmt of ['png', 'jpeg', 'svg', 'webm', 'gif']) {
     assert.deepEqual(printSettingsFor({}, RUN, fmt), none, fmt);
     // The Print button hides when the format leaves print but deliberately does not
-    // clear the settings, and a row inherited from a snapshot carries its own — both
+    // clear the settings, and a row inherited from a snapshot carries its own - both
     // must be gated, or a batch of PNGs still ships the false claim.
     assert.deepEqual(printSettingsFor({ bleed: '5mm', profile: 'swop', marks: 'crop' }, RUN, fmt), none, `row-level ${fmt}`);
   }
@@ -91,7 +91,7 @@ test('a row overriding the run format to PNG is gated on the ROW\'s format', () 
 });
 
 test('an unresolvable format keeps the ROW\'s own settings and never the run\'s', () => {
-  // The folder/selection paths pass no run format at all — the tool's native format is
+  // The folder/selection paths pass no run format at all - the tool's native format is
   // chosen later. A value attached to one row is evidence; a toolbar default is not.
   assert.deepEqual(printSettingsFor({ bleed: '5mm' }, RUN, undefined), {
     profile: undefined, bleed: '5mm', marks: undefined,

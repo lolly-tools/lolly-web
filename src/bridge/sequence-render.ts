@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-render.ts — the EXECUTOR + ORCHESTRATOR for deterministic sequence
+ * sequence-render.ts - the EXECUTOR + ORCHESTRATOR for deterministic sequence
  * export (Fable timeline, phase 3 §2.5).
  *
  * The split this module lives on is the whole point of the phase-3 design (spike
  * §0.0, "DESIGN REQUIREMENT"):
  *
  *   sequence-plan.ts      decides WHAT is on screen at time t and where its media
- *                         is seeked to — pure, DOM-only-for-reading, node-testable.
- *   sequence-providers.ts turns one clip into pixels/PCM at a source time —
+ *                         is seeked to - pure, DOM-only-for-reading, node-testable.
+ *   sequence-providers.ts turns one clip into pixels/PCM at a source time - 
  *                         mediabunny + WebCodecs live ONLY behind that seam.
  *   sequence-render.worker.ts  the DOM-FREE executor: `drawItem`, the frame loop,
  *                         the provider lifecycle and the truncation reconciliation
- *                         (phase 4 Track B) — plus the Worker entry that runs it.
+ *                         (phase 4 Track B) - plus the Worker entry that runs it.
  *   THIS FILE             reads the LIVE DOM (stage parse, dom-to-image rasters,
  *                         the lottie player), mixes the audio graph, decides which
  *                         thread executes, and owns every output container.
@@ -24,8 +24,8 @@
  * OfflineAudioContext, MediaRecorder and the container writers.
  *
  * WORKER OFFLOAD (phase 4 Track B), and the SPLIT RULE. `renderSequence` builds a
- * fully serialisable `SeqJob` — the layers minus their elements, the static
- * rasters, the clip bytes, the mixed PCM — and hands it to ONE executor,
+ * fully serialisable `SeqJob` - the layers minus their elements, the static
+ * rasters, the clip bytes, the mixed PCM - and hands it to ONE executor,
  * `runSequenceJob`. Which thread that executor runs on is the only difference
  * between the two paths, so determinism is structural rather than asserted:
  *
@@ -46,11 +46,11 @@
  * MEMORY. The mp4/webm path holds O(1) DECODED frames in duration: one canvas, at
  * most two decoded samples per open provider (the providers' own ledger enforces
  * that), and at most HIGH_WATER+1 VideoFrames inside the streaming mux. That is why
- * `maxVideoFrames()` — which exists purely because the old path buffered an
- * ImageBitmap per frame — is NOT applied to it. It is NOT O(1) overall: both muxers
+ * `maxVideoFrames()` - which exists purely because the old path buffered an
+ * ImageBitmap per frame - is NOT applied to it. It is NOT O(1) overall: both muxers
  * accumulate the ENCODED stream (mp4-muxer's `fastStart:'in-memory'` by design,
  * webm-muxer's `_videoChunkQueue` until an audio chunk with a ≥ timestamp drains
- * it), so peak memory is O(duration × bitrate) in compressed bytes — ~45 MB for a
+ * it), so peak memory is O(duration × bitrate) in compressed bytes - ~45 MB for a
  * ten-minute 1080p clip, three orders of magnitude below the frame buffering this
  * path replaced. gif/apng buffer every frame as pixels, so they keep the cap; so
  * does the MediaRecorder fallback, which buffers an ImageBitmap per frame.
@@ -60,8 +60,8 @@
  * `maxVideoFrames`, `swapBlobUrls`, `getDomToImage`, the `rasterBox` technique and
  * `connectMusic`'s gain envelope are all module-private in bridge/export.ts. This
  * phase's brief allowed exactly three edits to that file (the stage sniff, the
- * dispatch branch, the snapshotMotion guard) — exporting nine more symbols is not
- * one of them — so they are reproduced here, each marked `// from export.ts:<name>`
+ * dispatch branch, the snapshotMotion guard) - exporting nine more symbols is not
+ * one of them - so they are reproduced here, each marked `// from export.ts:<name>`
  * and kept behaviourally identical. THIS IS A REPORTED DEBT: the right end state is
  * a shared bridge/video-shared.ts that both files import. See the build report.
  */
@@ -103,7 +103,7 @@ import {
   type BlurCanvas,
   type BlurCtx,
 } from '../lib/canvas-blur.ts';
-// P2b — the WebGL2 quad compositor for tilt export (plans/104 §6.4). Shell-only; the
+// P2b - the WebGL2 quad compositor for tilt export (plans/104 §6.4). Shell-only; the
 // engine supplies the projection math (`projectLayer` → `m3`) and nothing else.
 import {
   createGlQuadCompositor,
@@ -120,7 +120,7 @@ import {
   type StreamingMux,
 } from './video-encode-core.ts';
 // The DOM-free executor. Imported as an ordinary module for the in-thread path
-// AND spawned as a Worker below — one compositor, two hosts (see the header).
+// AND spawned as a Worker below - one compositor, two hosts (see the header).
 import {
   runSequenceJob,
   itemFx,
@@ -159,26 +159,26 @@ import {
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
-// The class name is imported rather than restated so the two can never drift apart —
+// The class name is imported rather than restated so the two can never drift apart - 
 // from sequence-dom.ts, which owns the DOM applier the clock itself now uses (that
 // also drops one of the bridge → views edges).
 // …and `withAuthoredDom` is the other half of the same story: `.seq-off` is the class
 // the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
-// filter, z-index) have to come off the stage for exactly as long — see the wrapper on
+// filter, z-index) have to come off the stage for exactly as long - see the wrapper on
 // `renderSequence` below, and plans/104 §6 point 0.
 import { OFF_CLASS, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
-// a Lottie box can be exported at all — re-mounting a second player would double
+// a Lottie box can be exported at all - re-mounting a second player would double
 // the memory and, worse, could resolve to a different build of the animation than
 // the one the preview showed. Reported alongside the other layering note.
 import { lottiePlayerFor } from '../views/lottie-mount.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import type { ExportOpts } from './export.ts';
-// Type only — the encoders themselves stay out of this module's graph.
+// Type only - the encoders themselves stay out of this module's graph.
 import type { AudioPcm } from '../lib/audio-encode.ts';
 
-/** The slice of the web host this renderer needs. Log only — everything else is
+/** The slice of the web host this renderer needs. Log only - everything else is
  *  resolved from the DOM the tool already rendered. */
 export interface SeqHost {
   log?(level: string, msg: string): void;
@@ -191,15 +191,15 @@ export interface SeqHost {
  *
  * A MEMORY policy, NOT a decoder-count limit (spike rule 4): 16 concurrent
  * Input+sink pairs interleaved with no stall, and mediabunny self-caps its own
- * decoded queue at 8. What is unmeasurable from JS is the native frame memory —
- * the heap moved 1.6 MB while ~2.8 GB of frame data was nominally held — so the
+ * decoded queue at 8. What is unmeasurable from JS is the native frame memory - 
+ * the heap moved 1.6 MB while ~2.8 GB of frame data was nominally held - so the
  * cap is the only instrument we have. A composition needing more overlapping
  * clips than this fails with SEQ_TOO_HEAVY rather than thrashing.
  */
 export const MAX_LIVE_PROVIDERS = 3;
 
 /** Sanity ceiling on a sequence, ms. Not a memory bound (the streaming path has
- *  none) — it is the "somebody hand-edited seq-ms in the URL" guard. */
+ *  none) - it is the "somebody hand-edited seq-ms in the URL" guard. */
 export const MAX_SEQUENCE_MS = 600_000;
 
 /** No frame completed for this long ⇒ the export is stuck; fail, never hang. */
@@ -207,7 +207,7 @@ export const WATCHDOG_MS = 10_000;
 
 /**
  * Bytes of cached fx plates one render may retain, or null for this machine's own
- * allowance (`fxCacheBudgetBytes`). TEST SEAM ONLY — see `fxPlateKey` in the executor.
+ * allowance (`fxCacheBudgetBytes`). TEST SEAM ONLY - see `fxPlateKey` in the executor.
  *
  * It exists because the claim the cache makes is PIXEL IDENTITY, and the only way to
  * prove that on a real engine is to render the same scene both ways in one run. 0
@@ -220,14 +220,14 @@ export function _setFxCacheBytes(bytes: number | null): void {
   fxCacheBytesOverride = Number.isFinite(bytes as number) && (bytes as number) >= 0 ? (bytes as number) : null;
 }
 
-/** Everything mixes at 48 kHz stereo — the rate both AAC and Opus want. */
+/** Everything mixes at 48 kHz stereo - the rate both AAC and Opus want. */
 export const MIX_RATE = 48_000;
 export const MIX_CHANNELS = 2;
 
 /** Fixed GIF frame rate (the gif encoder's own; it ignores opts.fps). */
 const GIF_FPS = 15;
 
-/** CSS pixels per inch — the APNG pHYs default, matching export.ts's exportDims. */
+/** CSS pixels per inch - the APNG pHYs default, matching export.ts's exportDims. */
 const CSS_DPI = 96;
 
 const AUDIO_BITRATE = 128_000;
@@ -263,7 +263,7 @@ function blobToDataUrl(url: string): Promise<string> {
     }));
 }
 
-// from export.ts:swapBlobUrls — dom-to-image cannot serialise a blob: URL, so any
+// from export.ts:swapBlobUrls - dom-to-image cannot serialise a blob: URL, so any
 // <img>/<image> pointing at one is temporarily rewritten to a data: URL.
 async function swapBlobUrls(node: Element): Promise<() => void> {
   const swaps: { el: Element; attr: string; url: string }[] = [];
@@ -281,7 +281,7 @@ async function swapBlobUrls(node: Element): Promise<() => void> {
   return () => swaps.forEach(({ el, attr, url }) => el.setAttribute(attr, url));
 }
 
-// from export.ts:maxVideoFrames — only the buffering (gif/apng) path uses it.
+// from export.ts:maxVideoFrames - only the buffering (gif/apng) path uses it.
 function maxVideoFrames(): number {
   const gb = (navigator as { deviceMemory?: number }).deviceMemory;
   if (!gb) return 600;
@@ -324,7 +324,7 @@ async function pickWebCodecsAudio(container: 'mp4' | 'webm'): Promise<SeqAudioPi
   return null;
 }
 
-// from export.ts:withVideoMeta — provenance tags into the container, before the
+// from export.ts:withVideoMeta - provenance tags into the container, before the
 // C2PA stamp renderFormat applies to whatever this function returns.
 async function withVideoMeta(blob: Blob, container: string, meta: ExportOpts['meta'], host: SeqHost | null): Promise<Blob> {
   if (!meta) return blob;
@@ -349,7 +349,7 @@ function manualCaptureStream(canvas: HTMLCanvasElement, fps: number): { stream: 
   return { stream: canvas.captureStream(fps), deliver: () => {} };
 }
 
-// from export.ts:videoMimeType (inlined — two lines, and importing it statically
+// from export.ts:videoMimeType (inlined - two lines, and importing it statically
 // would drag the whole rasteriser into this lazy chunk's dependency graph).
 function videoMimeType(preferred: string, audio: boolean): string | null {
   if (typeof MediaRecorder === 'undefined') return null;
@@ -368,7 +368,7 @@ interface BedFade {
    *  bed runs at full volume between and around them (top/tail intro-outro). */
   duck?: { level: number; spans: DuckSpan[] };
   /** Gain ramp seconds. Defaults to the legacy snappy 0.25 for clip ducks
-   *  (speech-under-bed; a short clip must SIT at the ducked level — pinned by
+   *  (speech-under-bed; a short clip must SIT at the ducked level - pinned by
    *  tests/sequence-render.browser.test.ts). The §6.1 mix-in path passes the
    *  slower musical MIX_RAMP_SEC. */
   rampSec?: number;
@@ -380,7 +380,7 @@ interface BedFade {
 /**
  * Connect a looping music bed through a gain envelope, scheduled at t=0.
  *
- * The automation itself is bedDuckEnvelope (audio-envelope.ts) — the same math
+ * The automation itself is bedDuckEnvelope (audio-envelope.ts) - the same math
  * export.ts's mix graphs consume, so a bed ducks identically in a tool export
  * and a sequence render: fade in, glide down to volume·level over each span of
  * sequence audio (~0.8 s ramps, never steps), back to full between spans, fade
@@ -392,7 +392,7 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
   src.buffer = buffer;
   src.loop = true;
   // In-point, reproduced from export.ts:bedStartOffset (importing it would drag that
-  // module's whole graph into this lazy chunk — the same reason rasterBox is copied).
+  // module's whole graph into this lazy chunk - the same reason rasterBox is copied).
   // loopStart/loopEnd move with it: loopStart defaults to 0, so a wrap would otherwise
   // replay the head of the track the visuals deliberately skipped, and loopEnd only
   // means "end of buffer" while untouched.
@@ -430,7 +430,7 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
  * Reproduced from export.ts:renderRecord's `rasterBox` (it is module-private
  * there): render the element at its authored size but transform-scaled to the
  * export's pixel size, so text and vectors are resampled rather than upscaled.
- * `hide` is temporarily display:none'd for the shot — that is how a video box's
+ * `hide` is temporarily display:none'd for the shot - that is how a video box's
  * background/chrome is captured without the (blank-serialising) <video> in it.
  */
 interface RasterOpts {
@@ -447,12 +447,12 @@ interface RasterOpts {
    */
   opaque?: boolean;
   /**
-   * Shoot the element with its INLINE `filter` removed — the blur rule, and the exact
+   * Shoot the element with its INLINE `filter` removed - the blur rule, and the exact
    * twin of `opaque` (plans/104 §5.5).
    *
    * `PlanItem.blur` is the WHOLE blur: the box's authored `filter: blur()`, plus the
    * keyframe `b` channel, plus depth-of-field. The executor applies that one number.
-   * A plate that still carried the element's own blur would be blurred twice — softly
+   * A plate that still carried the element's own blur would be blurred twice - softly
    * at first (2 + 2 = 4px on a 2px box), then catastrophically the moment a fly-past
    * adds 40px of DOF to a plate that was already soft. So every PLANNED layer's plate
    * is shot clean and the planner owns the number; the stage background is not a
@@ -460,7 +460,7 @@ interface RasterOpts {
    *
    * PAIRED WITH `drawItem`: a clean plate is only correct because the executor applies
    * `PlanItem.blur`. The two land together (plans/104 M1 streams F + G) and neither is
-   * complete alone — a clean plate with an executor that ignores the number is a box
+   * complete alone - a clean plate with an executor that ignores the number is a box
    * that quietly lost its authored blur.
    */
   neutralFilter?: boolean;
@@ -468,46 +468,46 @@ interface RasterOpts {
    * Extra margin, in ELEMENT px, captured on all four sides (plans/104 §5.5).
    *
    * The capture canvas grows to `(bw + 2·pad) × (bh + 2·pad)` at scale S and the clone
-   * is translated INSIDE the scale — `scale(S) translate(pad, pad)` — so the offset is
+   * is translated INSIDE the scale - `scale(S) translate(pad, pad)` - so the offset is
    * `pad·S` device px and the pad is expressed in the same units as the box. The plate
    * therefore has its origin at `(-pad, -pad)` in box space, which is what a consumer
    * has to subtract when it draws: content that spills outside the box rect (a soft
    * silhouette, a shadow) lands INSIDE the canvas instead of being clipped away at the
    * exact moment the executor wants to blur it.
    *
-   * 0 — the default, and what every P0 call site passes — is byte-for-byte today's
+   * 0 - the default, and what every P0 call site passes - is byte-for-byte today's
    * shot: the canvas is `bw·S × bh·S` and the transform string is `scale(S)` exactly as
    * it always was. The budget that chooses a non-zero pad is the planner's (§5.5).
    */
   pad?: number;
   /**
-   * Shoot the element with its inline `clip-path` removed — the SHADOW rule, and the
+   * Shoot the element with its inline `clip-path` removed - the SHADOW rule, and the
    * third member of the `opaque` / `neutralFilter` family (plans/104 P1 obligation 5b).
    *
    * Measured, not theorised (M1's browser-verify run, real Chromium and WebKit against
    * real DOM output): `rasterBox` neutralises the inline `filter` but never the inline
    * `clip-path`, and dom-to-image copies the latter onto its clone. So a
-   * compositor-owned layer's plate arrives ALREADY CLIPPED, and `drawItem` — which is
-   * correct, and was confirmed correct by the same run — then casts its drop-shadow
+   * compositor-owned layer's plate arrives ALREADY CLIPPED, and `drawItem` - which is
+   * correct, and was confirmed correct by the same run - then casts its drop-shadow
    * from the clipped silhouette while the browser casts it from the UNCLIPPED element
    * and clips the filter's OUTPUT afterwards (Filter Effects §5 / CSS Masking). Mean
    * error 1.93 / 2.26, max 204, over 2–3 % of the frame; with an unclipped plate,
    * 0.00 / 0.54. The fix belongs here, in the capture, and nowhere else.
    *
-   * Only ever set when the compositor will reproduce the clip at the destination — i.e.
+   * Only ever set when the compositor will reproduce the clip at the destination - i.e.
    * when `parseClipShape` understands the value. An unparseable `clip-path`
    * (`url(#mask)`, a shape nobody has taught the executor) is clipped by NOBODY once
    * the plate stops carrying it, so those layers keep it baked in, exactly as today.
    */
   neutralClipPath?: boolean;
   /**
-   * Shoot the element at a size other than its authored one, in ELEMENT px — the
+   * Shoot the element at a size other than its authored one, in ELEMENT px - the
    * `w`/`h` channels' half of the capture (§5.2).
    *
    * A size tween REFLOWS: text rewraps, a border stays one pixel wide. A plate cannot
    * be stretched to fake that, so a sized layer is re-photographed per frame with the
-   * element temporarily laid out at the tweened size. Absent — every layer that
-   * keyframes no size — is byte-for-byte today's shot.
+   * element temporarily laid out at the tweened size. Absent - every layer that
+   * keyframes no size - is byte-for-byte today's shot.
    */
   size?: { w: number; h: number };
 }
@@ -516,7 +516,7 @@ interface RasterOpts {
  * The capture frame one plate shot asks dom-to-image for: canvas size in device px,
  * and the clone transform that places the box inside it.
  *
- * Pure, exported and tested for one reason — `pad` (plans/104 §5.5) changes the shot's
+ * Pure, exported and tested for one reason - `pad` (plans/104 §5.5) changes the shot's
  * geometry, and "a document that uses no depth exports the same bytes it always did"
  * has to be a pinned property rather than a reading of the diff. At pad 0 both numbers
  * and the transform string are what they have always been.
@@ -545,7 +545,7 @@ export interface PlateWindowDemand {
    * Capture margin on all four sides, stage-native px: the largest distance this
    * layer's effects reach outside its own box at any frame (plans/104 §5.5).
    *
-   * Zero on a layer with no blur and no authored filter — which is every layer of
+   * Zero on a layer with no blur and no authored filter - which is every layer of
    * every document written before this feature, and the reason their plates are the
    * exact canvases they always were.
    */
@@ -557,7 +557,7 @@ export interface PlateWindowDemand {
    */
   maxEff: number;
   /**
-   * The largest DRAW size the layer reaches over the window, stage-native px — its
+   * The largest DRAW size the layer reaches over the window, stage-native px - its
    * authored box unless the track keys `w`/`h` (§5.2). The budget prices a size-tweened
    * layer at its widest, because its plate is re-shot per frame and the peak is what
    * has to fit.
@@ -575,7 +575,7 @@ export interface PlateWindowDemand {
  * walk and reads `PlanItem.blur` and `PlanItem.resolvedZ` off the same
  * `sequenceDrawPlan` the executor consumes, so the plate a layer gets is sized by the
  * numbers that will actually be drawn with it. The only arithmetic added on top is the
- * engine's own `projectDepth` — the parity law's "import the formula, never restate
+ * engine's own `projectDepth` - the parity law's "import the formula, never restate
  * it", applied to a budget instead of to a frame.
  *
  * O(frames × layers), the same shape as one extra pass of the frame loop's planning
@@ -624,7 +624,7 @@ export function plateWindowDemands(
  * The OVERSCAN the stage background must be photographed with (plans/104 §5.5).
  *
  * THE BUG THIS EXISTS TO FIX: the bg plate is drawn full-canvas and untransformed,
- * while every layer above it is projected — so a camera pan would slide the whole
+ * while every layer above it is projected - so a camera pan would slide the whole
  * composition across frozen wallpaper, which is the exact opposite of a camera move.
  * The bg is an implicit z = 0 LAYER and is projected like one; projecting it reveals
  * what used to be off the edge, so it has to be shot bigger than the stage.
@@ -636,11 +636,11 @@ export function plateWindowDemands(
  *
  *     pad ≥ |camX| + (W/2)·(1/eff − 1)         (and likewise camY / H)
  *
- * — the pan term plus the pull-back term, since `eff < 1` (the camera moved AWAY) is
+ * - the pan term plus the pull-back term, since `eff < 1` (the camera moved AWAY) is
  * what shrinks the plane inside the frame and opens a gap at every edge at once. Taken
  * as the window maximum over the SAME grid the frame loop walks, exactly as `maxEff` is.
  *
- * 0 whenever there is no camera, which is every export written before this — and then
+ * 0 whenever there is no camera, which is every export written before this - and then
  * the plate is the plate it always was and the executor takes its untransformed draw.
  */
 export function bgOverscanPad(
@@ -685,7 +685,7 @@ async function rasterBox(
   // THE STAGE IS LIVE, AND THE CLOCK HAS BEEN ON IT. Every box outside the
   // playhead window carries `.seq-off`, which timeline.css turns into
   // `display:none !important`, and dom-to-image copies the computed cssText
-  // wholesale into its clone — so a box that is merely "not under the playhead"
+  // wholesale into its clone - so a box that is merely "not under the playhead"
   // rasterises BLANK, and an export taken with the playhead at 4 s would ship
   // picture for exactly one clip. Cleared for the duration of the shot only (so
   // nothing flickers on screen for longer than a frame) and restored on every
@@ -714,11 +714,11 @@ async function rasterBox(
     restore.push(() => { el.style.opacity = prev; });
   }
   if (ropts.neutralFilter) {
-    // REMOVE THE INLINE DECLARATION, and only that — because the inline declaration is
+    // REMOVE THE INLINE DECLARATION, and only that - because the inline declaration is
     // exactly what the planner owns. `readLayer` splits `styleProp(el,'filter')`, which
     // is `el.style.getPropertyValue('filter')`: inline by construction. A `filter`
     // arriving from a tool's `styles.css` never reaches `SeqLayer.blur`/`shadowFilter`,
-    // so nobody would re-apply it — and writing `filter:none` here (which DOES
+    // so nobody would re-apply it - and writing `filter:none` here (which DOES
     // out-specify a class) would delete it from the plate as well, silently losing an
     // effect that shipped in every export before this feature existed. The neutralised
     // set and the read set are now the same set: inline is compositor-owned, a
@@ -757,7 +757,7 @@ async function rasterBox(
 interface MixResult {
   buffer: AudioBuffer | null;
   hasClipAudio: boolean;
-  /** Whether a music bed actually CONNECTED — false when none was picked and false
+  /** Whether a music bed actually CONNECTED - false when none was picked and false
    *  when the pick could not be fetched or decoded. Not the same as `opts.audio.url`
    *  being set, which is only the request. The video path does not care (a bed that
    *  failed leaves silent-but-harmless space under the picture); an audio-only
@@ -812,7 +812,7 @@ async function mixSequenceAudio(
       // correct answer and warning would be noise. For an AUDIO BOX it never is:
       // the user placed it precisely to be heard, so a null is always worth
       // saying out loud. This branch used to be a bare `continue`, which is how
-      // an unregistered container (Ogg/Opus and MP3 — i.e. the entire shipped
+      // an unregistered container (Ogg/Opus and MP3 - i.e. the entire shipped
       // music catalog) produced a silent export with nothing in the log at all.
       if (L.kind === 'audio') {
         log('warn', `sequence audio: could not decode the audio box at ${Math.round(L.startMs)}ms (${url.slice(0, 120)}) — it will be silent. If this is an unusual container, re-encode it as mp3, m4a, ogg, wav or flac.`);
@@ -826,7 +826,7 @@ async function mixSequenceAudio(
       // only `totalSec` long, so a sample starting at `startMs` can contribute at
       // most `totalSec - startMs` of sound and everything beyond that is
       // allocated, resampled, copied and then thrown away. For a decoded file the
-      // source's own end already caps it — but a PROCEDURAL clip reports
+      // source's own end already caps it - but a PROCEDURAL clip reports
       // `durationSec() === 0` by design ("I am composed to fit"), so it has no cap
       // at all: an audio box left at the parser's ceiling (MAX_TIME_MS = 1 hour)
       // would allocate ~1.4 GB of Float32 for a five-second render, twice over.
@@ -901,7 +901,7 @@ async function mixSequenceAudio(
   }
 }
 
-/** The URL a media layer decodes from — the <video>'s src, or the audio marker's. */
+/** The URL a media layer decodes from - the <video>'s src, or the audio marker's. */
 function mediaSrc(L: SeqLayer): string {
   const el = L.el;
   if (L.kind === 'audio') {
@@ -915,12 +915,12 @@ function mediaSrc(L: SeqLayer): string {
 /**
  * The mixed timeline audio as planar PCM: every unmuted clip's own sound plus the
  * export bar's music bed, ducked under them. This is what an audio-only export
- * (wav/mp3/m4a/opus) of a sequence IS — the soundtrack of the video export, in a
+ * (wav/mp3/m4a/opus) of a sequence IS - the soundtrack of the video export, in a
  * file with no picture.
  *
  * It runs the SAME `mixSequenceAudio` the mp4/webm path feeds to the muxer, over
  * the same layers at the same length, because a second mixer would drift and the
- * exported wav would stop matching the exported mp4's sound — which is the whole
+ * exported wav would stop matching the exported mp4's sound - which is the whole
  * point of offering the format.
  *
  * `null` means there is genuinely nothing to mix (no bed, and no unmuted clip that
@@ -967,14 +967,14 @@ export async function sequenceAudioPcm(
  *
  * THE READ/RESTORE SEAM (plans/104 §6 point 0) is this wrapper, and it is the whole
  * reason the render is one function inside another. Everything below reads or
- * photographs the LIVE artboard — `parseSequenceStage` takes each box's rotation,
- * opacity and blur off its inline style; `rasterBox` photographs the element itself —
+ * photographs the LIVE artboard - `parseSequenceStage` takes each box's rotation,
+ * opacity and blur off its inline style; `rasterBox` photographs the element itself - 
  * and the preview clock has been WRITING those very properties, composed for whatever
  * frame the playhead is parked on. The playhead can be parked anywhere when an export
  * starts. So the whole render runs inside `withAuthoredDom`: every live writer over
  * this node hands its per-frame writes back and stays stood down until the last plate
  * (and every live Lottie re-shot mid-render) is in, then re-asserts the frame the user
- * was looking at. Failure paths included — the scope restores on a throw.
+ * was looking at. Failure paths included - the scope restores on a throw.
  *
  * It wraps the ENTIRE render rather than just the parse because the plates are not the
  * only live read: the hybrid Lottie path re-photographs its box on demand, deep inside
@@ -992,7 +992,7 @@ async function renderSequenceAuthored(
 ): Promise<Blob> {
   const log = (l: string, m: string): void => host?.log?.(l, m);
   // The stage declares its own length (data-seq-ms), which is the default and tracks
-  // the timeline. A duration the USER typed into the export bar overrides it — the
+  // the timeline. A duration the USER typed into the export bar overrides it - the
   // override lands here, before the ceiling check and before anything is sized off
   // totalMs, so the whole render (frame grid, open-ended layers, audio, the
   // truncation verdict) is derived from one number.
@@ -1047,8 +1047,8 @@ async function renderSequenceAuthored(
       throw sequenceError('SEQ_TOO_HEAVY', `sequence needs ${frameCount} frames`);
     }
   } else {
-    // Every non-streaming path buffers each frame — gif/apng as pixels or encoded
-    // PNGs, the MediaRecorder fallback as ImageBitmaps — so the historical memory
+    // Every non-streaming path buffers each frame - gif/apng as pixels or encoded
+    // PNGs, the MediaRecorder fallback as ImageBitmaps - so the historical memory
     // cap applies to all of them (see the header).
     const cap = maxVideoFrames();
     if (frameCount > cap) {
@@ -1071,7 +1071,7 @@ async function renderSequenceAuthored(
       log('info', `sequence: the crossfade at ${Math.round(a.startMs + a.durMs)}ms runs ${j.ms}ms — the shorter of the two clips' fade lengths (this clip authored ${a.exitMs}ms). Match the two fade lengths to get the longer dissolve.`);
     }
   }
-  // Activity windows for the OVERLAP BUDGET only — the executor derives its own
+  // Activity windows for the OVERLAP BUDGET only - the executor derives its own
   // from the same wire layers and the same grid, so the two cannot disagree.
   const win = new Map<number, { first: number; last: number; span: number[] }>();
   for (const L of stage.layers) win.set(L.idx, activeFrameWindow(L, usedGrid, ext.get(L.idx) ?? 0));
@@ -1096,16 +1096,16 @@ async function renderSequenceAuthored(
   // ── plate geometry + the plate budget (plans/104 §5.5) ─────────────────
   //
   // Two numbers per layer, decided ONCE and then obeyed by the static plates, the
-  // per-frame live re-shots and the wire alike — a live plate that padded or scaled
+  // per-frame live re-shots and the wire alike - a live plate that padded or scaled
   // differently from the static one it replaces would shift the picture on exactly the
   // frames it covers, which is the worst kind of bug to look at.
   //
-  //   pad  — how far the layer's own effects reach outside its box, so the blur has
+  //   pad - how far the layer's own effects reach outside its box, so the blur has
   //          real content at the box edge instead of a hard cut. 0 with no effects.
-  //   eff  — how much EXTRA resolution the projection asked for, after the budget has
+  //   eff - how much EXTRA resolution the projection asked for, after the budget has
   //          had its say. 1 with no camera, which is every P0 export, and `S * 1` is
   //          exactly `S`.
-  // The cameras (§5.4), derived from the stage's own `camera` layers — the same
+  // The cameras (§5.4), derived from the stage's own `camera` layers - the same
   // function the worker calls over the same layers, so the two evaluators can never be
   // told different cameras. `camMoves` is asked ONCE for the whole render because a
   // plate is shot once for the whole render (the P1 obligation): under a moving camera
@@ -1123,7 +1123,7 @@ async function renderSequenceAuthored(
   // run does not pay for plates it will never draw).
   //
   // A tilted camera projects a screen-parallel layer through a HOMOGRAPHY, and the
-  // canvas compositor's transform is affine by definition — there is no approximation
+  // canvas compositor's transform is affine by definition - there is no approximation
   // to fall back to, only a wrong picture. So the whole render moves to the P2a capture
   // tier: the DOM applier already writes the engine's matrix as a per-element
   // `matrix3d`, so the live artboard IS the composite, and every frame is a photograph
@@ -1131,11 +1131,11 @@ async function renderSequenceAuthored(
   // explicitly ("that's the price of correct-first").
   const tilt = camerasTilt(cameras);
   // P2b (plans/104 §6.4, plan 98 §9.1 Phase C): with the opt-in GPU compositor flag on
-  // AND WebGL2 present, a tilted export takes the GL quad-compositor path — ONE clean
+  // AND WebGL2 present, a tilted export takes the GL quad-compositor path - ONE clean
   // plate texture per layer, resampled coherently through each per-quad homography,
   // which fixes the P2a capture-tier flicker (127 independent full-frame dom-to-image
   // rasters). It reuses the very plate pipeline below (the tilt gate has always sat
-  // BEFORE it, so plates are never built under P2a) — hence the render does NOT return
+  // BEFORE it, so plates are never built under P2a) - hence the render does NOT return
   // here; it falls through, builds plates, and hands the finished SeqJob to
   // `renderGlComposite` after the thread-selection point. Everything else about the
   // export (the plates, the audio mix, the mux, one container-level C2PA) is identical.
@@ -1147,7 +1147,7 @@ async function renderSequenceAuthored(
   if (useGl) {
     // The video refusal stays reachable on the P2b path too (§6.4 first cut: video
     // under tilt is an explicit follow-up). Failed up front, before a single plate is
-    // photographed, exactly as `renderTiltCapture` refuses it — same coded error, same
+    // photographed, exactly as `renderTiltCapture` refuses it - same coded error, same
     // wording, so a user sees one answer whichever tilt tier is active.
     const videos = stage.layers.filter((L) => L.kind === 'video');
     if (videos.length > 0) {
@@ -1160,7 +1160,7 @@ async function renderSequenceAuthored(
 
   const demands = plateWindowDemands(stage.layers, usedGrid, stage.totalMs, planEnv, camMoves);
   // The blur lanes pool their scratch canvases ACROSS frames (canvas-blur.ts's POOL),
-  // and those scratches are plate-sized — so they are part of what this render will
+  // and those scratches are plate-sized - so they are part of what this render will
   // actually hold, not an unpriced extra. Peak pool occupancy is what the budget has to
   // see; `blurScratchNeedBytes` derives it from the same per-layer pads and effs.
   const budget = planPlateBudget({
@@ -1177,7 +1177,7 @@ async function renderSequenceAuthored(
         maxEff: d?.maxEff ?? 1,
         // The lottie player is not consulted until the loop below, so a lottie layer is
         // priced as if it WILL go live (two plates). Over-counting is the safe direction
-        // for a memory budget — and a size-tweened layer goes live for certain.
+        // for a memory budget - and a size-tweened layer goes live for certain.
         needsLiveRaster: L.kind === 'lottie' || (d?.sized ?? false),
       };
     }),
@@ -1197,14 +1197,14 @@ async function renderSequenceAuthored(
   if (budget.warning) log('warn', budget.warning);
   const padOf = (idx: number): number => budget.padOf.get(idx) ?? 0;
   const plateScaleOf = (idx: number): number => S * (budget.effOf.get(idx) ?? 1);
-  // Whether this layer's plate is shot with its inline filter removed — the ONE
+  // Whether this layer's plate is shot with its inline filter removed - the ONE
   // predicate the executor's `itemFx` asks too, so a plate and the draw that places it
   // can never disagree about who owns the effect.
   const ownedFx = new Map(stage.layers.map((L) => [L.idx, ownsLayerFx(L, camMoves)]));
   const neutralOf = (idx: number): boolean => ownedFx.get(idx) ?? false;
   // …and whether its plate is ALSO shot without the `clip-path` (P1 obligation 5b).
   // Only when the compositor both owns the fx (so the shadow it casts is its own) and
-  // can actually reproduce the shape at the destination — `parseClipShape` returning
+  // can actually reproduce the shape at the destination - `parseClipShape` returning
   // null means nobody would clip it, and an unclipped plate would then leak.
   const clipNeutral = new Map(stage.layers.map((L) => [
     L.idx,
@@ -1214,7 +1214,7 @@ async function renderSequenceAuthored(
   // The DRAW size a size-tweened layer's live plate is shot at, per frame.
   const sizedLayers = new Set(stage.layers.filter((L) => demands.get(L.idx)?.sized).map((L) => L.idx));
   // The stage background's own margin (§5.5). It joins the memory budget the same way
-  // every other plate does — as bytes on a layer the budget can see — rather than as an
+  // every other plate does - as bytes on a layer the budget can see - rather than as an
   // unpriced extra: a big pull-back can ask for a plate several times the artboard.
   const bgPadWanted = transparent ? 0 : bgOverscanPad(nativeW, nativeH, usedGrid, planEnv);
   const bgBudget = bgPadWanted > 0
@@ -1234,27 +1234,27 @@ async function renderSequenceAuthored(
    * Layers whose picture must be re-rastered off the LIVE DOM every frame.
    *
    * Two reasons a layer lands here, and they are independent: a Lottie box with a
-   * mounted player (`marker` set — the frame has to be scrubbed before the shot), and a
-   * layer whose `w`/`h` are tweened (§5.2 — the element has to be laid out at the size
+   * mounted player (`marker` set - the frame has to be scrubbed before the shot), and a
+   * layer whose `w`/`h` are tweened (§5.2 - the element has to be laid out at the size
    * of the moment before the shot, because a stretched plate does not REFLOW).
    *
    * `hide` is the static plate's own hide list, carried so the live shot is the SAME
    * photograph: a video layer's plates are taken with the `<video>` (and any frozen
    * `[data-motion-still]` sibling) hidden, because the decoded frame is composited
-   * between them — a live shot that kept them would paint a stale poster under the
+   * between them - a live shot that kept them would paint a stale poster under the
    * frame it is about to draw.
    */
   const liveBoxes = new Map<number, { marker: Element | null; box: HTMLElement; hide: Element[] }>();
   let bgRaster: HTMLCanvasElement | null = null;
   // The timeline panel's frame thumbnails run through the SAME dom-to-image instance
   // this render is about to drive, and that library's options / url cache / sandbox
-  // iframe are module-global — whichever call tears down first clears them out from
+  // iframe are module-global - whichever call tears down first clears them out from
   // under the other, corrupting both pictures. Hold them for the whole render.
   const resumeThumbRasters = suspendNodeRasters();
 
   try {
     // Suspending stops the NEXT thumbnail shot; the one already inside the library
-    // cannot be cancelled, only waited out — and its teardown would clear the sandbox
+    // cannot be cancelled, only waited out - and its teardown would clear the sandbox
     // iframe and url cache out from under the first rasterBox below.
     await drainNodeRasters();
     // ── static + chrome rasters (once each) ───────────────────────────────
@@ -1269,7 +1269,7 @@ async function renderSequenceAuthored(
         // `[data-pdf-page]` frame pages (frames-as-scenes). rasterBox strips `.seq-off`
         // from the stage + all descendants for its shot, so without hiding the frames a
         // frames-as-scenes bg plate would capture EVERY slide un-gated and paint them,
-        // stacked, under every output frame — the "stuck on slide 1" bug. Each timed
+        // stacked, under every output frame - the "stuck on slide 1" bug. Each timed
         // frame is instead photographed as its own per-layer plate below, gated to its
         // window. Harmless in object-clip mode: the frame selector matches nothing there.
         // …and with the camera's OVERSCAN, so a pan/pull-back reveals artboard rather
@@ -1281,7 +1281,7 @@ async function renderSequenceAuthored(
         ], bgPad > 0 ? { pad: bgPad } : {});
       }
       // Every PLANNED layer's plate is shot the same way: at full opacity, with no
-      // filter, and with its own padding and resolution — the things the planner owns
+      // filter, and with its own padding and resolution - the things the planner owns
       // rather than the picture. The stage background above takes none of them (it is
       // not a planned layer: no PlanItem carries its alpha or its blur).
       for (const L of stage.layers) {
@@ -1302,11 +1302,11 @@ async function renderSequenceAuthored(
         let over: HTMLCanvasElement | null = null;
         let media: HTMLElement | null = null;
         let needsLiveRaster = false;
-        /** What this layer's plates were shot WITHOUT — the live re-shot must match. */
+        /** What this layer's plates were shot WITHOUT - the live re-shot must match. */
         let plateHide: Element[] = [];
         // A CAMERA is a pose over time, not a picture (plans/104 §5.4): no plate, the
         // same way an audio bed has none. `w.first >= 0` would otherwise photograph its
-        // marker div — an empty, `data-export-hide` box — once per export.
+        // marker div - an empty, `data-export-hide` box - once per export.
         if (w.first >= 0 && L.kind !== 'audio' && L.kind !== 'camera') {
           if (L.kind === 'video') {
             media = (el.matches?.('video') ? el : el.querySelector('video')) as HTMLElement | null;
@@ -1336,7 +1336,7 @@ async function renderSequenceAuthored(
           } else {
             under = await rasterBox(el, PS, [], plateOpts);
           }
-          // A size tween re-photographs per frame whatever kind the layer is — the
+          // A size tween re-photographs per frame whatever kind the layer is - the
           // static plate above stays as the fallback for a frame whose shot fails.
           if (sizedLayers.has(L.idx) && !liveBoxes.has(L.idx)) {
             liveBoxes.set(L.idx, { marker: null, box: el, hide: plateHide });
@@ -1354,7 +1354,7 @@ async function renderSequenceAuthored(
           objectFit: media?.style?.objectFit ?? '',
           objectPosition: media?.style?.objectPosition ?? '',
           needsLiveRaster,
-          // The margin the plates above were actually captured with — the executor
+          // The margin the plates above were actually captured with - the executor
           // subtracts it when it draws them. Sent rather than re-derived so a plate and
           // the draw that places it can never disagree about where its origin is.
           platePad: padOf(L.idx),
@@ -1390,12 +1390,12 @@ async function renderSequenceAuthored(
       maxLiveProviders: MAX_LIVE_PROVIDERS, watchdogMs: WATCHDOG_MS,
       // A plain number, so the worker path caches exactly the layers the in-thread
       // path does (plans/104 P3.1). Omitted unless a test pinned it, which keeps the
-      // wire — and `structuredClone(job)` — identical to what it was.
+      // wire - and `structuredClone(job)` - identical to what it was.
       ...(fxCacheBytesOverride == null ? {} : { fxCacheBytes: fxCacheBytesOverride }),
     };
     // The DRAW size of a size-tweened layer at one output frame. Answered by re-running
-    // the SAME planner the executor runs, over the same layers, grid, totalMs and env —
-    // never by a second evaluation of the track — so the plate is shot at exactly the
+    // the SAME planner the executor runs, over the same layers, grid, totalMs and env - 
+    // never by a second evaluation of the track - so the plate is shot at exactly the
     // size the draw will place it at. Memoised per frame index because a frame typically
     // asks for at most one or two layers and the executor walks the grid in order.
     let sizeCache: { i: number; byIdx: Map<number, { w: number; h: number }> } | null = null;
@@ -1421,7 +1421,7 @@ async function renderSequenceAuthored(
     // ── P2b: the GPU compositor draws tilt (plans/104 §6.4) ────────────────
     // Reached only under a tilted camera with the opt-in flag on and WebGL2 present
     // (`useGl`, decided at the gate above). The plate pipeline just ran, so this reuses
-    // the SeqJob verbatim — plates, clips, the live raster, the audio mix — and only the
+    // the SeqJob verbatim - plates, clips, the live raster, the audio mix - and only the
     // COMPOSITOR differs: GL quads through the per-quad homography instead of `drawItem`'s
     // affine canvas. Kept ahead of the worker/in-thread selection because tilt cannot run
     // on either of those (both call `drawItem`, which has no homography to draw).
@@ -1441,7 +1441,7 @@ async function renderSequenceAuthored(
         return await withVideoMeta(blob, blob.type, opts.meta, host);
       } catch (err) {
         // A CODED failure is the render's real verdict (a truncated source, a
-        // codec that isn't there, a cancel) — re-running it in-thread would only
+        // codec that isn't there, a cancel) - re-running it in-thread would only
         // reach the same answer more slowly. Anything else is the offload itself
         // failing, and the in-thread path is the honest fallback: the plates are
         // still canvases, so the retry costs no re-rasterisation.
@@ -1463,7 +1463,7 @@ async function renderSequenceAuthored(
 
   /**
    * The historical path: one compositor (`runSequenceJob`), driven here, with the
-   * frame sink chosen by output format. Unchanged in behaviour — the loop, the
+   * frame sink chosen by output format. Unchanged in behaviour - the loop, the
    * watchdog labels, the provider lifecycle and the reconciliation all now live
    * in the executor the worker runs too, which is what makes the two identical.
    */
@@ -1516,10 +1516,10 @@ async function renderSequenceAuthored(
   }
 
   /**
-   * **P2b — the GPU COMPOSITOR** (plans/104 §6.4, plan 98 §9.1 Phase C).
+   * **P2b - the GPU COMPOSITOR** (plans/104 §6.4, plan 98 §9.1 Phase C).
    *
    * The sibling of `renderInThread`: same SeqJob, same plates, same audio mix, same mux
-   * sink, same one-container-C2PA — but the frame is COMPOSED on the GPU instead of by
+   * sink, same one-container-C2PA - but the frame is COMPOSED on the GPU instead of by
    * `drawItem`, which is the only thing that lets a TILTED camera export cleanly. Each
    * layer's clean plate becomes one texture; every frame draws each PlanItem as a quad
    * through its per-quad homography (`item.m3`), resampled coherently in one GL pass.
@@ -1527,7 +1527,7 @@ async function renderSequenceAuthored(
    * (each its own serialise → SVG → raster with its own rounding); this takes one
    * texture per layer and resamples them together.
    *
-   * It draws CLEAN plates and reads them back CLEAN — no per-frame, per-quad imprint;
+   * It draws CLEAN plates and reads them back CLEAN - no per-frame, per-quad imprint;
    * provenance stays at the container exactly as P2a's does (this file makes zero
    * imprint calls, and this path keeps it that way). A tilted-video export is refused up
    * front at the gate, so no `<video>` reaches here in this cut.
@@ -1548,7 +1548,7 @@ async function renderSequenceAuthored(
       return await renderTiltCapture(tilt as { ch: 'rx' | 'ry'; deg: number; atMs: number | null });
     }
 
-    // The 2D readback destination — same kind and shape as `renderInThread`'s canvas, so
+    // The 2D readback destination - same kind and shape as `renderInThread`'s canvas, so
     // every frame sink (mp4/webm/gif/apng) consumes an ordinary 2D canvas and keeps
     // working unchanged. The GL frame is blitted onto it once per frame.
     const destCanvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
@@ -1559,7 +1559,7 @@ async function renderSequenceAuthored(
 
     const plateOf = new Map(job.plates.map((p) => [p.idx, p]));
     const wireOf = new Map(job.layers.map((w) => [w.idx, w]));
-    /** A texture slot the stage background owns — never a real layer idx (those are ≥ 0). */
+    /** A texture slot the stage background owns - never a real layer idx (those are ≥ 0). */
     const BG_TEX_IDX = -1;
 
     let mux: StreamingMux | null = null;
@@ -1581,7 +1581,7 @@ async function renderSequenceAuthored(
         const t = usedGrid[i] as number;
         comp.beginFrame();
 
-        // THE BACKGROUND is an implicit z = 0 layer (§5.5) and is projected like one —
+        // THE BACKGROUND is an implicit z = 0 layer (§5.5) and is projected like one - 
         // through the SAME `projectLayer`, so a tilt tilts the wallpaper too (the DOM
         // does exactly this in `sequence-dom.ts`). `bgPad` is the overscan the plate was
         // captured with so the reveal has artboard in it.
@@ -1602,7 +1602,7 @@ async function renderSequenceAuthored(
         }
 
         // The plan is ALREADY depth-sorted (sequence-plan.ts's `out.sort` by resolvedZ)
-        // — DO NOT re-sort. Drawing it in order is the painter's order a perspective
+        // - DO NOT re-sort. Drawing it in order is the painter's order a perspective
         // render needs, and it holds under tilt (κ > 0 over the control range, §4.2).
         const plan = sequenceDrawPlan(stageLayers, t, totalMs, planEnv);
         for (const item of plan) {
@@ -1610,7 +1610,7 @@ async function renderSequenceAuthored(
           if (L.kind === 'audio' || L.kind === 'camera') continue;   // no picture (§5.4)
           if (item.alpha <= 0) continue;
           const wire = wireOf.get(L.idx);
-          // The RESOLVED box (§5.2) — the authored rect unless the track keyed `w`/`h`.
+          // The RESOLVED box (§5.2) - the authored rect unless the track keyed `w`/`h`.
           const bw = item.sized ? item.w : (Number.isFinite(item.w) && item.w > 0 ? item.w : L.rect.w);
           const bh = item.sized ? item.h : (Number.isFinite(item.h) && item.h > 0 ? item.h : L.rect.h);
           if (bw <= 0 || bh <= 0) continue;
@@ -1630,7 +1630,7 @@ async function renderSequenceAuthored(
           // DEPTH-OF-FIELD / owned filter (§5.5): when the compositor owns this layer's
           // blur it bakes a variant via the SAME S1 mip lane the canvas path uses
           // (`renderFx`), at the plate's own resolution (`S·plateEff`) so the scaling
-          // law holds — the quad then minifies it to `S`, and `item.scale` (carrying
+          // law holds - the quad then minifies it to `S`, and `item.scale` (carrying
           // eff) magnifies it back, exactly as `drawItem` does. `renderFx` hands back a
           // POOLED scratch: upload it, then release it the same tick.
           let tex: WebGLTexture | null = null;
@@ -1679,7 +1679,7 @@ async function renderSequenceAuthored(
       return await gifBlob(gifPixels, outW, targetH, opts);
     } finally {
       if (mux) { try { await mux.abort(); } catch { /* already down */ } }
-      // The blur lanes pooled plate-sized scratches for the DOF bakes — a finished
+      // The blur lanes pooled plate-sized scratches for the DOF bakes - a finished
       // render has no next frame to hold them warm for. No-op if nothing blurred.
       releaseBlurScratches();
       comp.dispose();
@@ -1687,18 +1687,18 @@ async function renderSequenceAuthored(
   }
 
   /**
-   * **P2a — the CAPTURE TIER** (plans/104 §6.4, verbatim: "its own loop
+   * **P2a - the CAPTURE TIER** (plans/104 §6.4, verbatim: "its own loop
    * `createSequenceTime(root).apply(grid[i])` per frame → dom-to-image capture → the
    * existing streaming mux").
    *
    * The other renderer in this file plans a frame and DRAWS it; this one poses the
-   * live artboard and PHOTOGRAPHS it. Everything downstream of the picture — the
+   * live artboard and PHOTOGRAPHS it. Everything downstream of the picture - the
    * encoder pick, the streaming muxer, the gif/apng sinks, the audio mix, the
-   * provenance tags — is the same machinery, which is the point: the tilt tier changes
+   * provenance tags - is the same machinery, which is the point: the tilt tier changes
    * where pixels come from and nothing else about what an export is.
    *
    * Why it has to be a photograph. A tilted camera's projection is a homography, and
-   * `CanvasRenderingContext2D.setTransform` takes six numbers — an affine map. There
+   * `CanvasRenderingContext2D.setTransform` takes six numbers - an affine map. There
    * is no approximation of a perspective divide in that vocabulary, only a wrong
    * picture. The browser, meanwhile, has done this since CSS transforms shipped: the
    * DOM applier writes the engine's own matrix as a per-element `matrix3d` (see
@@ -1714,7 +1714,7 @@ async function renderSequenceAuthored(
    * every still and every preview already goes through.
    *
    * VIDEO REFUSES, visibly (§6.4). dom-to-image serialises the DOM into an SVG
-   * `<foreignObject>`, and a `<video>` element does not survive that — the freeze would
+   * `<foreignObject>`, and a `<video>` element does not survive that - the freeze would
    * bake one frame of it under the whole move, silently. Hybrid compositing (draw the
    * decoded frames, then the captured chrome over them) is P2b's job with the GPU
    * compositor; until then this says no with a reason.
@@ -1747,10 +1747,10 @@ async function renderSequenceAuthored(
       // all N cuts: a per-frame session would capture frame 0's composed pose as
       // "authored" and compound the offsets from frame 1 onward. It composes normally
       // because `renderSequence`'s `withAuthoredDom` scope was opened BEFORE it existed
-      // (§6 point 0) — the other writers are stood down, this one is not in the snapshot.
+      // (§6 point 0) - the other writers are stood down, this one is not in the snapshot.
       const session = createSequenceTime(stageEl);
       // The stage's own background rides along inside the photograph (there is no
-      // separate bg plate here — the whole artboard is one shot), so a transparent
+      // separate bg plate here - the whole artboard is one shot), so a transparent
       // export has to take it off the element for the duration.
       const bgPrev = stageEl.style.background;
       if (transparent) stageEl.style.background = 'transparent';
@@ -1882,7 +1882,7 @@ function makeLiveRaster(
       const prev = memo.get(memoKey);
       if (prev && prev.key === key) return prev.shot;
     }
-    // The SAME shot the static plate for THIS SLOT takes — same hide list, same
+    // The SAME shot the static plate for THIS SLOT takes - same hide list, same
     // filter/clip neutralisation, identically padded, at the identical scale, and
     // transparent for `over` exactly as the static pair is. A live plate is a drop-in
     // replacement for the static one on the frames it covers, so any difference in how
@@ -1917,7 +1917,7 @@ interface SeqWorkerRun {
   log(level: string, msg: string): void;
   progress(done: number, total: number): void;
   live?: SeqJobIO['lottieAt'];
-  /** Restart the liveness deadline — called for every message this run sends. */
+  /** Restart the liveness deadline - called for every message this run sends. */
   touch(): void;
   /** Stop the liveness deadline (the run settled). */
   clear(): void;
@@ -1930,7 +1930,7 @@ interface SeqWorkerRun {
  * WORKER's event loop: a thread killed for memory pressure (Chrome does not
  * reliably surface that as an `error` on the parent) or wedged inside a
  * synchronous native decode cannot fire its own timer either, and the returned
- * promise would then never settle — the export UI hangs with no error at all.
+ * promise would then never settle - the export UI hangs with no error at all.
  * This is the only deadline that survives the worker dying silently. Generous by
  * design: a frame that is merely slow is the worker's watchdog's business, not this
  * one's, and every message a run emits (progress, log, need-live) resets it.
@@ -2018,7 +2018,7 @@ async function onSeqWorkerMessage(w: Worker, m: SeqWorkerOut): Promise<void> {
     } catch {
       // The worker went away between the request and this reply (a terminate on
       // abort, or onerror). The bitmap was neither transferred nor consumed, so
-      // it is still ours to close — the run itself is settled elsewhere.
+      // it is still ours to close - the run itself is settled elsewhere.
       try { bitmap?.close(); } catch { /* already closed */ }
     }
     return;
@@ -2040,7 +2040,7 @@ async function onSeqWorkerMessage(w: Worker, m: SeqWorkerOut): Promise<void> {
   if (m.offload) disposeSequenceWorker();
 }
 
-/** The opt-in flag — the same one bridge/video-encode.ts uses. */
+/** The opt-in flag - the same one bridge/video-encode.ts uses. */
 export function workerSequenceRenderEnabled(): boolean {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem('lolly.workerEncode') === '1'; }
   catch { return false; }
@@ -2050,7 +2050,7 @@ export function workerSequenceRenderEnabled(): boolean {
  * Can (and should) the composite+encode run in a Worker?
  *
  * Needs module Workers, an OffscreenCanvas to composite onto, WebCodecs to encode
- * with, `createImageBitmap` to ship the plates over — and the opt-in. Anything
+ * with, `createImageBitmap` to ship the plates over - and the opt-in. Anything
  * missing falls back to the in-thread executor, which is the same code.
  */
 export function supportsWorkerSequenceRender(): boolean {
@@ -2062,7 +2062,7 @@ export function supportsWorkerSequenceRender(): boolean {
 }
 
 /**
- * The opt-in flag for the P2b GPU compositor (plans/104 §6.4) — its own switch,
+ * The opt-in flag for the P2b GPU compositor (plans/104 §6.4) - its own switch,
  * separate from the worker one, so a user can trial the tilt compositor without also
  * moving the untilted render off-thread. A test flips it with
  * `localStorage.setItem('lolly.glCompositor', '1')`.
@@ -2077,7 +2077,7 @@ export function glSequenceRenderEnabled(): boolean {
  *
  * Needs WebGL2 (probed once, cached) and the opt-in; the compositor runs IN-THREAD
  * (this cut skips Worker-OffscreenGL), so unlike `supportsWorkerSequenceRender` it asks
- * for no Worker/WebCodecs capability — a gif/apng tilt export composites on the GPU and
+ * for no Worker/WebCodecs capability - a gif/apng tilt export composites on the GPU and
  * reads back to a 2D canvas just the same. Anything missing keeps the P2a capture tier,
  * which is correct, only slower. Mirrors `supportsWorkerSequenceRender`'s shape.
  */
@@ -2106,8 +2106,8 @@ export function abortSequenceWorkerRenders(reason?: string): void {
   // Terminating in this same task would mean the worker never even DEQUEUES the
   // abort we just posted, making every cancel a hard kill mid-decode. Detach the
   // instance now (so the next render spawns a clean one and nothing here can
-  // observe its messages) and give its event loop one turn to unwind — dispose
-  // providers, abort the muxer — before pulling the thread out from under it.
+  // observe its messages) and give its event loop one turn to unwind - dispose
+  // providers, abort the muxer - before pulling the thread out from under it.
   seqWorker = null;
   w.onmessage = null;
   w.onerror = null;
@@ -2125,7 +2125,7 @@ export const SEQ_ABORT_GRACE_MS = 250;
  * the caller should retry in-thread.
  *
  * Exported as a test seam (with `_setSequenceWorkerFactory`) so the whole
- * message protocol — start, progress, log, need-live, done, error, abort — is
+ * message protocol - start, progress, log, need-live, done, error, abort - is
  * provable in node against a stub port, not only in a browser.
  */
 export async function renderSequenceInWorker(
@@ -2252,7 +2252,7 @@ async function gifBlob(frames: Uint8ClampedArray[], w: number, h: number, opts: 
  * MediaRecorder fallback: replay the already-composed frames at wall pace.
  *
  * Reached only when WebCodecs cannot encode at all. Correct but real-time, and
- * it re-introduces the buffered-frame memory profile — which is why the composed
+ * it re-introduces the buffered-frame memory profile - which is why the composed
  * frames were kept as ImageBitmaps for this path only.
  */
 async function recorderReplay(

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // On-demand input help. Instead of printing every input's help text as an always-
-// visible line under each control — which lengthens and clutters a long sidebar —
+// visible line under each control - which lengthens and clutters a long sidebar - 
 // each input gets a small info button next to its label that reveals the help on
 // hover (desktop), tap (touch), or keyboard focus. The text stays in the DOM and
 // is wired to its control via aria-describedby (see linkHelpDescriptions), so
@@ -31,7 +31,7 @@ interface HelpTipLink {
 // Returns { button, pop } HTML fragments sharing one id. The button belongs next
 // to the label text; the pop is appended as the last child of the row / block
 // control (both position:relative) so it spans that element's width and drops
-// straight down — it can never overflow the sidebar's clipped right edge.
+// straight down - it can never overflow the sidebar's clipped right edge.
 // `link` (optional) appends one action link after the text, e.g.
 // { href: '#/verify', text: 'Check a file' }. The text and href are escaped, and
 // an internal `#`/`/` href never opens a new tab; an external http(s) one does.
@@ -43,7 +43,7 @@ export function helpTip(text: string, link: HelpTipLink | null = null): { id: st
   let linkHtml = '';
   if (link && link.href) {
     const external = /^https?:/i.test(link.href);
-    // nosemgrep: lolly-href-escape-is-not-scheme-validation — every call site passes a literal in-app route ('#/verify', '#/components'); no remote value reaches it
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - every call site passes a literal in-app route ('#/verify', '#/components'); no remote value reaches it
     linkHtml = ` <a class="help-tip-link" href="${escape(link.href)}"` +
       (external ? ' target="_blank" rel="noopener"' : '') +
       `>${escape(link.text || 'Learn more')}</a>`;
@@ -99,7 +99,7 @@ export function wireHelpTips(scope: HelpScope): void {
     e.stopPropagation();
   });
 
-  // Outside-click dismiss (capture, like the colour popover) — stored on the scope
+  // Outside-click dismiss (capture, like the colour popover) - stored on the scope
   // so the view teardown can drop it and not pin a detached tree alive.
   scope._helpTipDismiss = (e: MouseEvent) => {
     if (!(e.target as Element).closest('.help-tip-btn, .help-tip-pop')) closeAll(null);
@@ -108,7 +108,7 @@ export function wireHelpTips(scope: HelpScope): void {
 }
 
 // Point each control at its help text for assistive tech. Runs every render (the
-// controls are recreated on each rebuild); cheap — only a handful of pops exist.
+// controls are recreated on each rebuild); cheap - only a handful of pops exist.
 export function linkHelpDescriptions(scope: HTMLElement): void {
   scope.querySelectorAll<HTMLElement>('.help-tip-pop[id]').forEach((pop) => {
     const row = pop.closest(HOST_SEL);
@@ -117,7 +117,7 @@ export function linkHelpDescriptions(scope: HTMLElement): void {
       ctrl.setAttribute('aria-describedby', pop.id);
     }
   });
-  // Notices (`input.notice` — the always-visible consent-gate fine print) are
+  // Notices (`input.notice` - the always-visible consent-gate fine print) are
   // aria-hidden in the row markup so they don't bloat the wrapping label's
   // accessible NAME; referencing them from aria-describedby still exposes their
   // text as the control's description (accname traversal includes referenced

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * field-policy.ts — the generic per-field display-policy registry.
+ * field-policy.ts - the generic per-field display-policy registry.
  *
  * Pure module state, no DOM: plain node:test.
  * Run directly:  node --test shells/web/src/lib/field-policy.test.ts

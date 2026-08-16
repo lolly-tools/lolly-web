@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Instance-base unit tests — the pure parts (URL validation/normalization and
+ * Instance-base unit tests - the pure parts (URL validation/normalization and
  * path prefixing) that don't touch IndexedDB. setInstanceBase/initInstanceBase
  * go through bridge/db.ts's real IndexedDB, which node:test has no fake for
  * (see font-registry.test.ts's header for the same split); _setBaseForTests

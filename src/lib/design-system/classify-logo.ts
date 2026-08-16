@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Logo variant classification (plan 97 §7.3) — pure heuristics that propose a
+ * Logo variant classification (plan 97 §7.3) - pure heuristics that propose a
  * slot in the orientation × treatment matrix so a dropped logo file lands
  * somewhere sensible instead of asking the user to pick from eight boxes.
  *
@@ -8,12 +8,12 @@
  * reason fragment (the reasons become confirm chips in the Logos room, so they
  * are written as UI-ready English):
  *
- *   ORIENTATION — content-bounds aspect ratio. Wide reads horizontal, near
+ *   ORIENTATION - content-bounds aspect ratio. Wide reads horizontal, near
  *                 square or taller reads vertical/stacked, and the band between
  *                 the two thresholds is judged horizontal at low confidence.
- *   INK         — the distinct non-neutral hues painted. One hue (or nothing but
+ *   INK - the distinct non-neutral hues painted. One hue (or nothing but
  *                 neutrals) is a one-colour mark; two or more is full colour.
- *   POLARITY    — how light the ink is. Predominantly light ink only works on a
+ *   POLARITY - how light the ink is. Predominantly light ink only works on a
  *                 dark background, which is what "reverse" means.
  *
  * DOM-free and dependency-light on purpose: the same call runs in the shell, in
@@ -21,7 +21,7 @@
  * (which pulls in the bridge and i18n); the four treatment strings are matched
  * against LOGO_TREATMENTS there by hand and must stay in step with it.
  *
- * The heuristics WILL misfile — the plan's accepted ceiling is one drag to
+ * The heuristics WILL misfile - the plan's accepted ceiling is one drag to
  * reslot, so confidence is reported honestly rather than rounded up, and an
  * ambiguous file is expected to come back below the room's confirm threshold.
  */
@@ -36,7 +36,7 @@ export interface LogoClassification {
   reasons: string[];
 }
 
-/** OKLCH chroma at or below this is neutral — a grey, a white or a black, which
+/** OKLCH chroma at or below this is neutral - a grey, a white or a black, which
  *  carries no hue and so never counts towards "full colour". */
 const NEUTRAL_CHROMA_MAX = 0.03;
 /** OKLCH lightness at or above this is light ink, i.e. ink for a dark ground. */
@@ -183,7 +183,7 @@ function rootBox(svgText: string): { width: number; height: number } | null {
 
 /**
  * Classify an SVG logo from its source text. Returns null when the text is not
- * readable as an SVG at all (empty, non-string, or carrying no `<svg>` root) —
+ * readable as an SVG at all (empty, non-string, or carrying no `<svg>` root) - 
  * every other input produces a classification, with the confidence reporting
  * how much of it was guesswork.
  */
@@ -217,7 +217,7 @@ export function classifyLogoSvg(svgText: string): LogoClassification | null {
 /**
  * Classify a raster logo from stats a caller already computed (a quantized
  * colour census plus two coverage shares over the opaque pixels). Always
- * returns a classification — a raster always has dimensions, so there is no
+ * returns a classification - a raster always has dimensions, so there is no
  * unreadable case to report.
  *
  * `transparentShare` is the share of the image that is transparent; a mark with

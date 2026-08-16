@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * On-device AI image upscaler — the onnxruntime-web RUNNER half of
+ * On-device AI image upscaler - the onnxruntime-web RUNNER half of
  * `host.upscale` (v1.101). Real-ESRGAN (general fast / x4plus quality) and
  * GFPGAN face restore, tiled to bound memory, alpha-aware, WebGPU→WASM.
  *
@@ -8,23 +8,23 @@
  * lib/upscale-worker.ts (which bridge/upscale.ts spawns). That keeps
  * onnxruntime-web (multi-MB before it fetches a model) and the tens-to-hundreds
  * of MB of ONNX weights entirely out of the boot budget AND off the thread a
- * tool is being typed into — a phone run is multi-second per tile. It reuses the
+ * tool is being typed into - a phone run is multi-second per tile. It reuses the
  * shared ORT plumbing (lib/ort.ts): one memoised runtime + init mutex (so it
  * can't race the /verify deep-scan detectors' initWasm), the fetch-once /
  * IndexedDB-forever model cache (with its HTML-poisoning guard), and the
- * canvas/tensor helpers. Everything here runs against OffscreenCanvas — no
- * document — so it is worker-safe.
+ * canvas/tensor helpers. Everything here runs against OffscreenCanvas - no
+ * document - so it is worker-safe.
  *
  * ── Adaptive backend ─────────────────────────────────────────────────────────
  * Per-session `executionProviders: ['webgpu','wasm']` with
- * `preferredOutputLocation: 'cpu'`. That output location is load-bearing: a
+ * `preferredOutputLocation: 'cpu'`. That output location is required: a
  * WebGPU gpu-resident output tensor's `.data` is empty (its getter throws), so
- * the detectors dropped WebGPU entirely — forcing CPU output fixes it and lets
+ * the detectors dropped WebGPU entirely - forcing CPU output fixes it and lets
  * us keep WebGPU's big speed-up. `navigator.gpu` is probed once; a session-create
  * failure under WebGPU falls the WHOLE runner back to wasm-only.
  *
  * ── Honesty ledger ───────────────────────────────────────────────────────────
- * NOTHING in this file has been run — there is no ONNX runtime, model, WebGPU
+ * NOTHING in this file has been run - there is no ONNX runtime, model, WebGPU
  * adapter or browser in the dev environment. The tiling/alpha/compose maths is
  * ordinary and reviewable; the model I/O contracts (tensor names, channel order,
  * GFPGAN normalization) are researched but UNVERIFIED end-to-end. Assumptions
@@ -46,24 +46,24 @@ import {
   UPSCALE_MODEL_DIR, UPSCALE_MODEL_FILES, UPSCALE_MODEL_STORE, UPSCALE_WDN_FILE, upscaleModel,
 } from './upscale-models.ts';
 
-// ── Diagnostics (gated; console.debug — host.log isn't in scope in a lazy lib) ─
+// ── Diagnostics (gated; console.debug - host.log isn't in scope in a lazy lib) ─
 const dbg = createDebugLogger({
   tag: 'upscale', storageKey: 'lolly:upscale:debug', globalFlag: '__UPSCALE_DEBUG__',
 });
 
 // ── Model bytes: fetch-once, IndexedDB-forever (shared coordinates with the
-//    Andy-run scripts/fetch-upscale-models.ts — see lib/upscale-models.ts). ────
+//    Andy-run scripts/fetch-upscale-models.ts - see lib/upscale-models.ts). ────
 const fetchModelBytes = createModelFetcher({
   store: UPSCALE_MODEL_STORE, dir: UPSCALE_MODEL_DIR, version: UPSCALE_MODEL_CACHE_VERSION, dbg,
 });
 
-// ── ORT structural types (no static onnxruntime-web import — see lib/trustmark.ts) ─
+// ── ORT structural types (no static onnxruntime-web import - see lib/trustmark.ts) ─
 type OrtModule = typeof import('onnxruntime-web');
 type InferenceSession = Awaited<ReturnType<OrtModule['InferenceSession']['create']>>;
 type OrtTensor = Awaited<ReturnType<InferenceSession['run']>>[string];
 
 /** The run context the worker threads through: progress fan-out + the only safe
- *  abort check (between tiles — a tile mid-inference can't be preempted in-wasm/gpu). */
+ *  abort check (between tiles - a tile mid-inference can't be preempted in-wasm/gpu). */
 export interface RunContext {
   onProgress?: (p: UpscaleProgress) => void;
   /** Throws an AbortError when the caller has signalled abort. Called between tiles. */
@@ -103,7 +103,7 @@ export function probeBackend(): Promise<'webgpu' | 'wasm' | null> {
   return backendProbe;
 }
 
-/** The backend resolved so far, or null before the first probe. Sync — for the
+/** The backend resolved so far, or null before the first probe. Sync - for the
  *  bridge's `UpscaleAPI.backend()` (the worker echoes it back after a probe). */
 export function currentBackend(): 'webgpu' | 'wasm' | null {
   return resolvedBackend;
@@ -117,7 +117,7 @@ const sessionCache = new Map<string, Promise<InferenceSession | null>>();
  * Load (fetch + create) one model session, memoised by file name. Download
  * progress from the FIRST caller is reported via `onDownload`; a cache hit or
  * later callers skip straight to a resident session. Returns null when the file
- * isn't on device and can't be fetched (offline / never staged) — never throws
+ * isn't on device and can't be fetched (offline / never staged) - never throws
  * for that; only a genuine runtime fault rejects.
  */
 function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void): Promise<InferenceSession | null> {
@@ -137,13 +137,13 @@ function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void):
       // (batch upscaling, a tool firing host.upscale.run in parallel) can't race it.
       const session = await serializeSessionCreate(() => ort.InferenceSession.create(new Uint8Array(bytes), {
         executionProviders: providers,
-        preferredOutputLocation: 'cpu', // gpu-resident .data is empty — see header
+        preferredOutputLocation: 'cpu', // gpu-resident .data is empty - see header
       }));
       dbg('session', { file: fileName, status: 'ok', providers });
       return session;
     } catch (err) {
       if (wantGpu) {
-        // WebGPU couldn't build a session here — downgrade the whole runner to
+        // WebGPU couldn't build a session here - downgrade the whole runner to
         // wasm and retry once (matches the detectors' "wasm is the floor" stance).
         webgpuFailed = true;
         resolvedBackend = 'wasm';
@@ -158,13 +158,13 @@ function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void):
     }
   })();
   sessionCache.set(fileName, pending);
-  // Don't make a miss/failure sticky — a later run after the model is staged
+  // Don't make a miss/failure sticky - a later run after the model is staged
   // should pick it up.
   void pending.then((s) => { if (!s) sessionCache.delete(fileName); }, () => sessionCache.delete(fileName));
   return pending;
 }
 
-/** Are a model's primary bytes already on device? A cheap key-presence probe —
+/** Are a model's primary bytes already on device? A cheap key-presence probe - 
  *  never reads (or fetches) the multi-MB blob. */
 export async function modelCached(id: UpscaleModelId): Promise<boolean> {
   try {
@@ -174,7 +174,7 @@ export async function modelCached(id: UpscaleModelId): Promise<boolean> {
   } catch { return false; }
 }
 
-// ── Canvas helpers (OffscreenCanvas — worker-safe) ───────────────────────────
+// ── Canvas helpers (OffscreenCanvas - worker-safe) ───────────────────────────
 
 type AnyCanvas = OffscreenCanvas | HTMLCanvasElement;
 function ctx2d(canvas: AnyCanvas): CanvasRenderingContext2D {
@@ -186,7 +186,7 @@ function ctx2d(canvas: AnyCanvas): CanvasRenderingContext2D {
 /** Straight-alpha RGBA → a canvas holding those pixels. */
 function frameToCanvas(data: Uint8ClampedArray, w: number, h: number): AnyCanvas {
   const c = makeCanvas(w, h);
-  // ImageData rejects a SharedArrayBuffer-backed view — copy into a plain one.
+  // ImageData rejects a SharedArrayBuffer-backed view - copy into a plain one.
   const clamped = new Uint8ClampedArray(data.length);
   clamped.set(data);
   ctx2d(c).putImageData(new ImageData(clamped, w, h), 0, 0);
@@ -269,7 +269,7 @@ function clamp255(v: number): number {
 
 const TILE_OVERLAP = 16; // pre-scale pad per side, cropped back off after ×scale
 
-/** Pre-scale tile edge from a rough device-capability estimate — the memory
+/** Pre-scale tile edge from a rough device-capability estimate - the memory
  *  lever. A tile allocates ~tile²·3·4 bytes in AND ~(tile·scale)²·3·4 out. */
 function tileEdgeFor(backend: 'webgpu' | 'wasm'): number {
   const gb = deviceMemoryGb();
@@ -406,7 +406,7 @@ async function runRealEsrgan(frame: UpscaleFrame, model: UpscaleModelInfo, opts:
     throw new Error(`The ${model.name} model isn't available on this device yet — it needs a one-time download and none is cached.`);
   }
   // Denoise is a general-model-only blend; skip silently if its WDN partner
-  // isn't cached (fetch WITHOUT progress — it's an optional add-on to the run).
+  // isn't cached (fetch WITHOUT progress - it's an optional add-on to the run).
   let wdnSession: InferenceSession | null = null;
   const denoise = model.id === 'realesr-general-x4v3' && opts.denoise != null
     ? Math.min(1, Math.max(0, opts.denoise)) : 0;
@@ -425,7 +425,7 @@ async function runRealEsrgan(frame: UpscaleFrame, model: UpscaleModelInfo, opts:
 
 // ── GFPGAN face-restore path ─────────────────────────────────────────────────
 //
-// GFPGANv1.4 ONNX I/O (researched, UNVERIFIED — xuanandsix/GFPGAN-onnxruntime-demo
+// GFPGANv1.4 ONNX I/O (researched, UNVERIFIED - xuanandsix/GFPGAN-onnxruntime-demo
 // + common ComfyUI/ReActor conversions):
 //   input  : NCHW [1,3,512,512], RGB channel order, normalized (v/127.5 − 1) ∈ [−1,1]
 //   output : NCHW [1,3,512,512], RGB, [−1,1] → (v+1)·127.5 clamped to [0,255]
@@ -436,7 +436,7 @@ async function runRealEsrgan(frame: UpscaleFrame, model: UpscaleModelInfo, opts:
 // Pipeline: upscale the whole image with the general Real-ESRGAN model for the
 // BACKGROUND, detect (best-effort) or centre-crop a 512² face, restore it, and
 // paste it back over the upscaled background at the target scale. A missing face
-// detector or no detection → a centre square crop (headshots are centred —
+// detector or no detection → a centre square crop (headshots are centred - 
 // acceptable v1).
 
 /** Best-effort face box in SOURCE pixel coords, or null → centre-crop fallback.
@@ -449,7 +449,7 @@ async function detectFaceBox(
   const session = await loadSession(UPSCALE_FACE_DETECT_FILE).catch(() => null);
   if (!session) return null;
   try {
-    // Feed a 320×320 [0,1] RGB NCHW frame — the common lightweight-detector input.
+    // Feed a 320×320 [0,1] RGB NCHW frame - the common lightweight-detector input.
     const det = 320;
     const c = makeCanvas(det, det);
     const cctx = ctx2d(c);
@@ -581,7 +581,7 @@ export async function runUpscale(frame: UpscaleFrame, opts: UpscaleOpts, ctx: Ru
     return await once();
   } catch (err) {
     // A WebGPU EP can BUILD a session yet fail at RUN time on a shape/op it can't
-    // handle — e.g. "[WebGPU] Kernel '[Clip] /Clip' failed" on a large tile. That's
+    // handle - e.g. "[WebGPU] Kernel '[Clip] /Clip' failed" on a large tile. That's
     // not an abort and not a user error: downgrade the whole runner to WASM (the
     // floor), drop the now-unusable GPU sessions, and retry once. A second failure
     // is real. (Session-CREATE faults are already downgraded in loadSession; this
@@ -590,7 +590,7 @@ export async function runUpscale(frame: UpscaleFrame, opts: UpscaleOpts, ctx: Ru
       webgpuFailed = true;
       resolvedBackend = 'wasm';
       backendProbe = Promise.resolve('wasm');
-      sessionCache.clear(); // GPU-built sessions are unusable now — rebuild on wasm
+      sessionCache.clear(); // GPU-built sessions are unusable now - rebuild on wasm
       dbg('run', { status: 'webgpu-run-fail-retry-wasm', error: (err as Error)?.message });
       ctx.checkAbort();
       return await once();
@@ -599,7 +599,7 @@ export async function runUpscale(frame: UpscaleFrame, opts: UpscaleOpts, ctx: Ru
   }
 }
 
-// ── Feasibility (canRun) — never throws ──────────────────────────────────────
+// ── Feasibility (canRun) - never throws ──────────────────────────────────────
 
 /** navigator.deviceMemory (GB, capped/rounded), or a conservative 4 when absent. */
 function deviceMemoryGb(): number {
@@ -621,7 +621,7 @@ const ABS_MAX_PIXELS = 40_000_000; // absurd-ask guard independent of RAM
 
 /** Rough peak working set. The runner ALWAYS builds a native (w·scale × h·scale)
  *  output canvas plus, when the source has alpha, a native alpha canvas and native
- *  ImageData readouts, BEFORE the single downscale to the final size — so peak is
+ *  ImageData readouts, BEFORE the single downscale to the final size - so peak is
  *  dominated by the NATIVE intermediate, not the trimmed final. */
 function estimatePeakBytes(srcW: number, srcH: number, nativePixels: number, finalPixels: number, model: UpscaleModelInfo, backend: 'webgpu' | 'wasm'): number {
   const inBytes = srcW * srcH * 4;
@@ -646,8 +646,8 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
     const model = upscaleModel(opts.model ?? UPSCALE_DEFAULT_MODEL) ?? upscaleModel(UPSCALE_DEFAULT_MODEL)!;
     const maxSrcEdge = Math.max(src.width, src.height);
     // The runner ALWAYS builds a native (source × model.scale) canvas, then
-    // downscales ONCE to the final size. That native intermediate — not the trimmed
-    // final — is what hits the browser's canvas ceiling and dominates memory, so
+    // downscales ONCE to the final size. That native intermediate - not the trimmed
+    // final - is what hits the browser's canvas ceiling and dominates memory, so
     // BOTH guards below reason about it. targetMaxEdge/scale only trim the final
     // copy; they cannot shrink the native canvas, so they are not a lever here.
     const nativeEdge = maxSrcEdge * model.scale;
@@ -655,7 +655,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
 
     // Absurd-ask / canvas-ceiling guard on the NATIVE intermediate. A source large
     // enough that source×scale exceeds this can't be built in one pass at any target
-    // size — and a large source is not what an upscaler is for. Honest refusal.
+    // size - and a large source is not what an upscaler is for. Honest refusal.
     if (nativeEdge > ABS_MAX_EDGE || nativePixels > ABS_MAX_PIXELS) {
       return {
         ok: false, reason: 'too-large',
@@ -664,7 +664,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
       };
     }
 
-    // Final (post-downscale) geometry — only affects the last, smaller copy.
+    // Final (post-downscale) geometry - only affects the last, smaller copy.
     const desiredScale = opts.scale ?? model.scale;
     let finalEdge = maxSrcEdge * desiredScale;
     if (opts.targetMaxEdge && opts.targetMaxEdge > 0) finalEdge = Math.min(finalEdge, opts.targetMaxEdge);
@@ -688,7 +688,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
     }
     return { ok: true };
   } catch (err) {
-    // canRun must NEVER throw — an estimate failure is treated as "go ahead"
+    // canRun must NEVER throw - an estimate failure is treated as "go ahead"
     // (run() still guards itself and rejects honestly on a real fault).
     dbg('canRun', { status: 'estimate-error', error: (err as Error)?.message });
     return { ok: true };

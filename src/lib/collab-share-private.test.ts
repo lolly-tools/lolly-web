@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * lib/collab-share-private.ts — the "Private collab" Share-dialog section.
+ * lib/collab-share-private.ts - the "Private collab" Share-dialog section.
  *
  * Proves both gates are independently required (the PRIVATE_COLLAB_FLAG sync
  * mirror, AND a registered 'private' opener), that either one alone leaves the
@@ -11,14 +11,14 @@
  * import" contract main.ts relies on).
  *
  * Every case below drives the flag EXPLICITLY, in both directions, so none of them
- * encodes which way it defaults — which is why this file needed no change when the
+ * encodes which way it defaults - which is why this file needed no change when the
  * flag went ON by default on 2026-08-10 (what a shipped dialog now shows: the row,
  * since main.ts registers the opener and the flag resolves on). What the default
  * resolves to is feature-flags.test.ts's subject, not this one's.
  *
  * jsdom only (document + a11y's announce()); the flag is driven through
  * feature-flags.ts's in-memory override (overrideFlagInMemory), so no
- * fetch/localStorage/org harness is needed — this row's gating never consults
+ * fetch/localStorage/org harness is needed - this row's gating never consults
  * the control plane. Run directly:
  *   node --test shells/web/src/lib/collab-share-private.test.ts
  */
@@ -35,7 +35,7 @@ globalThis.document = dom.window.document;
 globalThis.location = dom.window.location as unknown as Location;
 // a11y.ts's announce() (invoked on a successful open) schedules via rAF; jsdom's
 // pretendToBeVisual only exposes it on dom.window, not the bare global this file
-// runs in — shim it, mirroring org/approval-dialog.test.ts's harness.
+// runs in - shim it, mirroring org/approval-dialog.test.ts's harness.
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => { setTimeout(() => cb(0), 0); return 0; }) as unknown as typeof requestAnimationFrame;
 
 const store = new Map<string, string>();
@@ -52,7 +52,7 @@ const { PRIVATE_COLLAB_FLAG, overrideFlagInMemory } = await import('../feature-f
 const { registerCollabOpener, _clearCollabOpenersForTests } = await import('./collab-launch.ts');
 const { shareSectionBuilders } = await import('./share-sections.ts');
 // Importing this module is the act under test for the self-registration case
-// (its top-level `registerShareSection(...)` call) — captured BEFORE any test
+// (its top-level `registerShareSection(...)` call) - captured BEFORE any test
 // runs, so "was it registered on import" and "was it registered exactly once"
 // are both checkable without re-importing (module re-evaluation would need a
 // fresh Node module cache, which node:test doesn't give us mid-file, nor
@@ -70,7 +70,7 @@ const ctx = { toolId: 'qr-code', baseParts: ['url=https%3A%2F%2Fsuse.com'], curr
 // ── Self-registration on import ─────────────────────────────────────────────────
 
 test('importing the module registers exactly one builder into the generic seam', () => {
-  // No _clearShareSectionsForTests() here — the point is to observe what the
+  // No _clearShareSectionsForTests() here - the point is to observe what the
   // module's own import already did to the shared registry, undisturbed.
   const builders = shareSectionBuilders();
   assert.equal(builders.includes(buildPrivateCollabShareSection), true, 'the exported builder is the one registered');
@@ -118,7 +118,7 @@ test('both gates hold: renders with plan-0 naming and a working action', () => {
   assert.equal(btn!.textContent, 'Start a collab');
 
   btn!.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
-  // The opener sees the CollabLaunchContext shape — toolId/baseParts/currentFormat
+  // The opener sees the CollabLaunchContext shape - toolId/baseParts/currentFormat
   // only, never the dialog's `copy` helper (that's a ShareSectionContext concern).
   assert.deepEqual(seen, [{ toolId: ctx.toolId, baseParts: ctx.baseParts, currentFormat: ctx.currentFormat }], 'opener invoked with the session-context shape');
 });

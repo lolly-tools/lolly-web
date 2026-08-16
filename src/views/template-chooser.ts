@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "New from template" chooser — a host-owned modal shown ONLY on a blank fresh
+ * "New from template" chooser - a host-owned modal shown ONLY on a blank fresh
  * open of a tool that declares `templates[]` (see views/tool.ts's mount flow).
  *
  * Why this is a host concern, not a tool concern: a tool declares its starting
  * points (manifest `templates[]`); the shell owns the on-ramp UX, exactly like
  * the asset picker. The chooser never appears on a resume (`?slot`), a URL-seeded
  * / parameterised open, an in-process direct seed (the drop/PSD route), or a
- * `?template=<id>` launch — those all carry their own intent.
+ * `?template=<id>` launch - those all carry their own intent.
  *
  * It resolves the input-value seed for the fresh session: a chosen template's
  * `values`, or `{}` for the always-first "Blank canvas" tile (and for Escape /
- * backdrop / close — closing the chooser proceeds to the tool's own default
+ * backdrop / close - closing the chooser proceeds to the tool's own default
  * composition, which is what a blank open has always done). It never rejects.
  *
  * THE MOUNT DOES NOT WAIT FOR THIS. views/tool.ts starts the chooser and carries
  * straight on to `createRuntime`, so the tool paints and becomes interactive
  * underneath while the modal sits on top; the pick is applied afterwards as an
- * `applyPatch` seed. That is why nothing here may assume it owns the main thread —
+ * `applyPatch` seed. That is why nothing here may assume it owns the main thread - 
  * see `whenIdle()` and the preview drain below. It also means the caller can navigate
- * away before a tile is picked, with nothing else holding a reference to this modal —
+ * away before a tile is picked, with nothing else holding a reference to this modal - 
  * `ChooserOpts.onOpen` hands back a force-close for exactly that (see views/tool.ts's
  * `_cleanup`, which calls it so a torn-down view never leaves this floating on top of
  * whatever loads next).
  *
  * House UI rules honoured: Escape closes; focus is trapped and lands in the
  * search field; tiles are rounded with a neutral border (no accent-coloured
- * border, no dashed border — dashed is reserved for drop areas); strings are
+ * border, no dashed border - dashed is reserved for drop areas); strings are
  * English-only (this is a pre-i18n on-ramp).
  */
 
-import '../styles/template-chooser.css'; // async CSS chunk (lazy view — not on the landing)
+import '../styles/template-chooser.css'; // async CSS chunk (lazy view - not on the landing)
 import { escapeHtml } from '../lib/html.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { icon } from '../lib/icons.ts';
@@ -42,7 +42,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
  * the synced index carries and the chooser renders the grid from; `values` is the heavy
  * input seed, which now lives in an EXTERNAL per-template file (tools/<id>/templates/
  * <tid>.json) and is FETCHED ON DEMAND (preview render + select). For a metadata-only
- * entry `values` is `{}` — fetchTemplateValues() supplies the real seed lazily.
+ * entry `values` is `{}` - fetchTemplateValues() supplies the real seed lazily.
  */
 export interface TemplateVariant {
   id: string;
@@ -55,11 +55,11 @@ export interface TemplateVariant {
 
 /**
  * Fetch one template's full input seed from its external file
- * (tools/<toolId>/templates/<tid>.json) through the instance base / profile view — the
+ * (tools/<toolId>/templates/<tid>.json) through the instance base / profile view - the
  * same static namespace the card-preview paths use. Returns the `values` map, or `null`
  * on any failure (network, missing file, malformed JSON, non-object `values`) so a
  * caller falls through to a blank/default open rather than throwing. The heavy seed is
- * never packed into a URL — this fetch is the on-demand path for both the chooser select
+ * never packed into a URL - this fetch is the on-demand path for both the chooser select
  * and the reserved `?template=<id>` launcher.
  */
 export async function fetchTemplateValues(toolId: string, tid: string): Promise<Record<string, InputValue> | null> {
@@ -78,7 +78,7 @@ export async function fetchTemplateValues(toolId: string, tid: string): Promise<
 /**
  * Narrow a manifest's `templates` (typed `unknown[]` on the SDK Manifest) into
  * the variants this chooser can render. Entries missing the required `id` /
- * `name` / object `values` are dropped rather than throwing — a malformed
+ * `name` / object `values` are dropped rather than throwing - a malformed
  * template must never break a tool's fresh open.
  */
 export function parseTemplates(raw: unknown): TemplateVariant[] {
@@ -114,7 +114,7 @@ export function templateValuesById(raw: unknown, id: string): Record<string, Inp
 }
 
 // A neutral glyph per template, chosen from the category keyword so a poster reads
-// as an image and a carousel as a grid — falls back to a generic layers glyph.
+// as an image and a carousel as a grid - falls back to a generic layers glyph.
 function glyphFor(t: TemplateVariant): Parameters<typeof icon>[0] {
   const hay = `${t.category ?? ''} ${t.name}`.toLowerCase();
   if (/carousel|slides?|deck|grid|gallery/.test(hay)) return 'grid';
@@ -129,7 +129,7 @@ const BLANK_ID = '__blank__';
 /**
  * Resolve at the next idle moment (or after `timeout` ms, whichever comes first).
  *
- * The chooser is no longer awaited by views/tool.ts — the tool mounts UNDERNEATH it —
+ * The chooser is no longer awaited by views/tool.ts - the tool mounts UNDERNEATH it - 
  * so its tile previews now share the main thread with a live mount (the editor overlay
  * chunk alone is ~500 KB) instead of having it to themselves. Each preview is a real
  * off-screen tool mount + walker export, ~1 s of mostly-synchronous work, so firing
@@ -137,7 +137,7 @@ const BLANK_ID = '__blank__';
  * through, and would hold a tile click up behind however many renders were still
  * queued. Yielding once before the render chunk is fetched and once between renders
  * costs the previews nothing they can perceive and gives the mount (and the click) the
- * gaps they need. `requestIdleCallback` is absent in jsdom and older Safari — a
+ * gaps they need. `requestIdleCallback` is absent in jsdom and older Safari - a
  * macrotask is the honest fallback there: still a yield, just not a prioritised one.
  */
 function whenIdle(timeout = 1000): Promise<void> {
@@ -152,20 +152,20 @@ function whenIdle(timeout = 1000): Promise<void> {
 
 interface ChooserOpts {
   toolName: string;
-  /** The tool id — needed to fetch each template's external values file. */
+  /** The tool id - needed to fetch each template's external values file. */
   toolId: string;
   templates: TemplateVariant[];
   /**
-   * Host bridge — enables the live VISUAL PREVIEW (each tile fetches its values file and
+   * Host bridge - enables the live VISUAL PREVIEW (each tile fetches its values file and
    * live-renders via renderFeaturedVariant). Omit (e.g. offline / no render path) and the
    * chooser shows glyph tiles; select still fetches values.
    */
   host?: HostV1;
-  /** The tool's render.formats — the preview renders vector-first at displayFormatOf. */
+  /** The tool's render.formats - the preview renders vector-first at displayFormatOf. */
   formats?: readonly string[];
   /**
-   * Called synchronously, once the modal exists, with a function that force-closes it —
-   * exactly as if Escape/backdrop/× had been used — and resolves the returned promise
+   * Called synchronously, once the modal exists, with a function that force-closes it - 
+   * exactly as if Escape/backdrop/× had been used - and resolves the returned promise
    * with `{}`. views/tool.ts never awaits this chooser (see the header), so nothing else
    * holds a reference to it; a caller that tears its view down while the modal is still
    * open needs this to take the modal with it, or it is left floating over whatever view
@@ -217,7 +217,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       return p;
     };
 
-    // Distinct categories (tags), first-seen order — these become the filter chips. Every
+    // Distinct categories (tags), first-seen order - these become the filter chips. Every
     // template lives in ONE grid; a chip narrows it, so there are no per-category sections.
     const cats: string[] = [];
     for (const t of opts.templates) { const c = t.category; if (c && !cats.includes(c)) cats.push(c); }
@@ -243,7 +243,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       <span class="tmpl-chooser-tile-desc">Start from scratch.</span>
     </button>`;
 
-    // Tag filters — "All" plus one chip per category. Only shown when there's more than one
+    // Tag filters - "All" plus one chip per category. Only shown when there's more than one
     // category to choose between; a single-category set has nothing to filter.
     const filtersHtml = cats.length > 1 ? `
       <div class="tmpl-chooser-filters" role="group" aria-label="Filter templates by type">
@@ -285,8 +285,8 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     };
 
     trap = trapFocus(root, { initialFocus: searchInput });
-    // Hand the caller a close handle now — the modal is fully built (root is in the
-    // document, `finish` closes over it) — so a navigate-away arriving any time from
+    // Hand the caller a close handle now - the modal is fully built (root is in the
+    // document, `finish` closes over it) - so a navigate-away arriving any time from
     // here on has something to call. `finish` is itself idempotent (the `settled`
     // guard above), so this can never double-resolve against a real pick.
     opts.onOpen?.(() => finish({}));
@@ -343,11 +343,11 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     // ── Live visual previews (fire-and-forget) ──────────────────────────────────
     // Each template tile fetches its external values seed and live-renders a vector-first
     // thumbnail via the SAME off-screen engine path an export takes (renderFeaturedVariant,
-    // memoised under `template:<toolId>:<tid>:<fmt>` — a namespace that never collides with
+    // memoised under `template:<toolId>:<tid>:<fmt>` - a namespace that never collides with
     // the featured/example `featured:` records). Rendered SERIALLY, and each render waits
     // for an idle gap first (whenIdle), so opening the chooser never stampedes the engine
     // and never starves the tool mount running underneath it. A still poster-frame is fine
-    // for an animated template (v1). With no host / formats — or an authored `thumb` — the
+    // for an animated template (v1). With no host / formats - or an authored `thumb` - the
     // glyph/thumb placeholder stays. Results are memoised in host.previews, so this whole
     // block is a FIRST-open cost: a second open resolves every tile from cache.
     if (opts.host && opts.formats && opts.formats.length && typeof IntersectionObserver !== 'undefined') {
@@ -402,8 +402,8 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
 
       // Eager: enqueue every renderable template on open so previews render even if the
       // IntersectionObserver never delivers an intersecting entry (a false-negative on the
-      // first async callback — panel mid-layout, backgrounded/occluded tab, or a stale
-      // bundle — was permanent, since each tile is unobserved on first intersect and the IO
+      // first async callback - panel mid-layout, backgrounded/occluded tab, or a stale
+      // bundle - was permanent, since each tile is unobserved on first intersect and the IO
       // callback was the ONLY producer for the queue). There are only a handful of templates,
       // and the serial drain renders one at a time, so this cannot stampede the engine.
       // enqueue() dedups via `queued` and skips authored-thumb tiles, so it can't double-render.
@@ -411,11 +411,11 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
         if (t.id !== BLANK_ID) enqueue(t.id);
       }
 
-      // IntersectionObserver stays as an off-screen prioritisation nicety — with the eager
-      // loop above it is no longer load-bearing (its enqueue() calls dedup to no-ops against
+      // IntersectionObserver stays as an off-screen prioritisation nicety - with the eager
+      // loop above it is no longer required (its enqueue() calls dedup to no-ops against
       // `queued`). Root to the real scroll container (the body panel; see template-chooser.css
-      // `.tmpl-chooser-body { overflow-y: auto }`), falling back to the viewport — the modal is
-      // a fixed overlay filling it — so a missing body never means a dead observer.
+      // `.tmpl-chooser-body { overflow-y: auto }`), falling back to the viewport - the modal is
+      // a fixed overlay filling it - so a missing body never means a dead observer.
       const bodyEl = root.querySelector('.tmpl-chooser-body');
       const io = new IntersectionObserver((entries, obs) => {
         for (const en of entries) {

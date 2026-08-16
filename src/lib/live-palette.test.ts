@@ -28,7 +28,7 @@ test('a spectrum swatch normalises to the lowercase literal groupPalette() check
 
 test('a named brand swatch drops its DTCG parent group, so it falls into the brand bucket', () => {
   // Real SUSE fixture: color.brand.pine, CMYK-tagged (build-brand-tokens.ts
-  // $extensions) — the exact case this fix restores for CMYK PDF substitution.
+  // $extensions) - the exact case this fix restores for CMYK PDF substitution.
   const entry = toPaletteEntry({
     path: 'color.brand.pine', name: 'Pine', group: 'Brand', value: '#0c322c', cmyk: [65, 0, 35, 85], spot: null,
   });
@@ -86,7 +86,7 @@ test('a swatch can carry both a CMYK anchor and a spot lock independently', () =
  * in isolation; what this asserts is that they are actually connected, which is
  * the failure mode that would ship an override nobody honours.
  *
- * The palette map is keyed by QUANTISED RGB derived from the entry's hex — so if
+ * The palette map is keyed by QUANTISED RGB derived from the entry's hex - so if
  * `value` carried the automatic bake instead of the authored face, the export
  * would key on the wrong colour and the swatch's own ink would never be found.
  */
@@ -113,7 +113,7 @@ test('an authored sRGB face is the hex the CMYK export keys on', async () => {
   assert.deepEqual(hit!.cmyk.map(v => Math.round(v * 100)), [90, 0, 90, 0]);
 
   // Anti-vacuity. The automatic bake of that same colour is a DIFFERENT rgb, and
-  // the export must not find the swatch there — otherwise this test would pass
+  // the export must not find the swatch there - otherwise this test would pass
   // just as well with the face ignored.
   const auto = createTokenSet({ color: { brand: { $type: 'color', $value: 'oklch(70% 0.25 145)' } } })
     .colors()[0]!.value;

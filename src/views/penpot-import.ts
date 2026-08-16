@@ -4,9 +4,9 @@
  *
  * A `.penpot` export (binfile-v3) is a ZIP of per-shape JSON: `manifest.json`, then
  * `files/<id>/pages/<page>/<shape>.json` for every shape, plus embedded media under
- * `objects/`. This reads that structure for extraction — the words in the text
+ * `objects/`. This reads that structure for extraction - the words in the text
  * shapes, the colours every shape paints with, the font families they name, the
- * rasters they embed, and the groups/components as standalone SVGs — and hands it
+ * rasters they embed, and the groups/components as standalone SVGs - and hands it
  * back as the same `PdfHandle` shape the other formats use.
  *
  * It is deliberately SEPARATE from `design-import.ts parsePenpotBinfile` (which maps
@@ -198,7 +198,7 @@ export async function openPenpotFile(files: Record<string, Uint8Array>): Promise
   };
 
   // A whole page as one SVG: wrap its top-level shapes in a synthetic group and let
-  // the shared renderer flatten it. Best-effort — returns a blank page when the page
+  // the shared renderer flatten it. Best-effort - returns a blank page when the page
   // has nothing the vector renderer can bake (e.g. only text).
   const pageSvg = (pid: string): { svg: string; width: number; height: number } => {
     const byId = pages.get(pid)!;

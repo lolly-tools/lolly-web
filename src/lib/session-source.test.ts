@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * session-source.ts — the generic external-session-source registry.
+ * session-source.ts - the generic external-session-source registry.
  *
  * Pure, DOM-free: dormant by default (undefined), single last-wins registration,
  * a working unregister that only clears if still current.
@@ -38,6 +38,6 @@ test('last registration wins; a stale unregister is a no-op', () => {
   const off1 = registerSessionSource(stub('First'));
   registerSessionSource(stub('Second'));
   assert.equal(getSessionSource()?.label, 'Second');
-  off1(); // stale — must NOT clear the current (Second) source
+  off1(); // stale - must NOT clear the current (Second) source
   assert.equal(getSessionSource()?.label, 'Second');
 });

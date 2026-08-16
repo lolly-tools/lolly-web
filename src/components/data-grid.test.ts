@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * data-grid — the pure windowing math (the load-bearing part) + a jsdom smoke test
+ * data-grid - the pure windowing math (the essential part) + a jsdom smoke test
  * of the mount structure and the TableValue round-trip.
  */
 import { test } from 'node:test';
@@ -63,7 +63,7 @@ test('mountDataGrid: builds the grid structure and round-trips the value', async
     assert.equal(host.getAttribute('aria-colcount'), '2');
     assert.equal(host.getAttribute('aria-rowcount'), '4', 'rows + header');
     assert.ok(host.querySelector('.dg-header'), 'has a header');
-    // getValue clones — a mutation of the returned object must not leak back in.
+    // getValue clones - a mutation of the returned object must not leak back in.
     const got = grid.getValue();
     assert.deepEqual(got, value);
     got.rows[0]![0] = 'mutated';

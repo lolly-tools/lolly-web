@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The pinned Lolly CA root certificate — the trust anchor for Content
+ * The pinned Lolly CA root certificate - the trust anchor for Content
  * Credentials identity (see docs/content-credentials-identity.md).
  *
  * This is PUBLIC data (a certificate, not a key) and belongs in the open

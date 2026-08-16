@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-providers.test.ts — the headless half of the phase-3 provider layer.
+ * sequence-providers.test.ts - the headless half of the phase-3 provider layer.
  *
  * WHAT THIS FILE CAN AND CANNOT PROVE. Node has no WebCodecs, no canvas and no
  * <video>, so nothing here touches a real decoder. What it does cover is every
@@ -8,7 +8,7 @@
  * silently corrupt an export live:
  *
  *   • the provider pick ladder (per clip, not per session) with injected fakes
- *   • the primed-grid matcher — forward runs, skips, backwards requests
+ *   • the primed-grid matcher - forward runs, skips, backwards requests
  *   • the in-flight ledger: never more than MAX_IN_FLIGHT, every sample closed,
  *     including the ones skipped over and the ones whose draw threw
  *   • the PCM window trim (spike rule 6) and its resample
@@ -21,7 +21,7 @@
  * `samplesAtTimestamps` really is frame-accurate on a fixed grid, that a real
  * hidden <video> seek confirms through rVFC, and that the memory ceiling the
  * MAX_IN_FLIGHT policy exists for is actually respected by the platform. Those
- * belong to the Playwright tier and must be gated on a codec-capable channel —
+ * belong to the Playwright tier and must be gated on a codec-capable channel - 
  * Playwright's bundled Chromium has no H.264/AAC.
  */
 
@@ -110,7 +110,7 @@ function fakeMediabunny(o: FakeVideoOpts = {}): FakeWorld {
   let pulled = 0;
 
   const sampleFor = (t: number): FakeSample | null => {
-    // The nearest frame at or before t — the real sink's contract.
+    // The nearest frame at or before t - the real sink's contract.
     let best: number | null = null;
     for (const f of frames) if (f <= t + TS_EPSILON_S && (best === null || f > best)) best = f;
     if (best === null) return null;
@@ -263,8 +263,8 @@ test('every audio container the catalog ships or the uploader accepts is registe
 
   // format id (or upload extension) -> the mediabunny container that reads it.
   // null = never reaches a demuxer, so no container is needed:
-  //   'zzfxm' is procedural — synthesised straight to PCM from a seed or a song JSON.
-  //   tracker modules are SONG DATA, not encoded audio — libopenmpt renders them to PCM
+  //   'zzfxm' is procedural - synthesised straight to PCM from a seed or a song JSON.
+  //   tracker modules are SONG DATA, not encoded audio - libopenmpt renders them to PCM
   //   (lib/mod-render.ts), the same bypass, which is why the provider takes a
   //   `renderModule` hook alongside its zzfxm one. A demuxer would reject these bytes.
   const CONTAINER_FOR: Record<string, string | null> = {
@@ -289,7 +289,7 @@ test('every audio container the catalog ships or the uploader accepts is registe
     if (need) assert.ok(registered.has(need), `uploader accepts .${ext} but AUDIO_CONTAINERS omits ${need}`);
   }
 
-  // The video path stays lean on purpose — a video clip never needs an .ogg.
+  // The video path stays lean on purpose - a video clip never needs an .ogg.
   const videoSet = /const VIDEO_CONTAINERS[\s\S]*?=>\s*\[([\s\S]*?)\]/.exec(src)?.[1] ?? '';
   const vids = new Set([...videoSet.matchAll(/m\.([A-Z0-9]+)/g)].map(m => m[1]!));
   assert.deepEqual([...vids].sort(), ['MATROSKA', 'MP4', 'QTFF', 'WEBM']);
@@ -323,7 +323,7 @@ test('withTimeout resolves, rejects coded, and is a no-op for a non-positive bud
     },
   );
 
-  // 0 means "no deadline" — the same promise object comes back, so a caller that
+  // 0 means "no deadline" - the same promise object comes back, so a caller that
   // disables the budget pays nothing at all.
   const p = Promise.resolve(1);
   assert.equal(withTimeout(p, 0, 'x'), p);
@@ -363,7 +363,7 @@ test('planPull matches within TS_EPSILON_S and bounds its forward scan', () => {
 const ramp = (n: number, start = 0): Float32Array => Float32Array.from({ length: n }, (_, i) => start + i);
 
 test('assemblePcmWindow trims the straddling first and last packets', () => {
-  // Packets of 10 samples at 10 Hz (1 s each). Window is [1.5, 2.5) — the sink
+  // Packets of 10 samples at 10 Hz (1 s each). Window is [1.5, 2.5) - the sink
   // hands back the packets straddling both ends, and an untrimmed concat would
   // start 0.5 s of a neighbour early and run 0.5 s late.
   const chunks: PcmChunk[] = [
@@ -643,7 +643,7 @@ test('a truncated container yields a short clean decode — stats feed reconcile
   for (const t of grid) await p.drawAt(fakeCtx, t, dest);
 
   const s = p.stats();
-  // Nothing threw. That is the whole trap (spike rule 7) — only arithmetic sees it.
+  // Nothing threw. That is the whole trap (spike rule 7) - only arithmetic sees it.
   const full = reconcileDecoded({ expectedSec: p.durationSec(), decodedFrames: s.decoded, lastTsSec: s.lastSourceSec, fps: 30 });
   assert.equal(full.ok, true, 'the fake still random-accesses the rest of the (present) file');
   const asIfTruncated = reconcileDecoded({ expectedSec: 3, decodedFrames: s.decoded, lastTsSec: s.lastSourceSec, fps: 30 });
@@ -746,7 +746,7 @@ test('ClipAudio.pcm copies the sink buffers so a recycled AudioBuffer cannot cor
 // it is a module), the sniff (an uploaded module is a `blob:` url with no extension),
 // the trim (the same pure assembler a decoded file uses), and the degradation.
 //
-// ONLY A REAL BROWSER CAN PROVE that libopenmpt's WASM actually renders the notes —
+// ONLY A REAL BROWSER CAN PROVE that libopenmpt's WASM actually renders the notes - 
 // the worker is stubbed here through the `renderModule` seam.
 
 /** Bytes that sniff as a module of each kind, with the magic at its real offset. */

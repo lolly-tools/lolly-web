@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-gl.test.ts — the node-testable half of the P2b GPU compositor (plans/104
+ * sequence-gl.test.ts - the node-testable half of the P2b GPU compositor (plans/104
  * §6.4). A real WebGL2 context is a browser-tier concern (the parity harness drives that
  * with `localStorage['lolly.glCompositor'] = '1'` in a real browser); what CAN be pinned
  * here, with no GPU, is the pure MATH that decides whether every tilted quad lands right:
  *
- *   1. `m3ColMajor` — the ROW-major `KfMatrix3` → COLUMN-major GLSL `mat3` transpose.
+ *   1. `m3ColMajor` - the ROW-major `KfMatrix3` → COLUMN-major GLSL `mat3` transpose.
  *      Getting it wrong silently mirrors/shears every tilted quad, so it is asserted
  *      against the reference reordering directly.
- *   2. THE AFFINE REDUCTION — a JS replica of the vertex shader shows that with
+ *   2. THE AFFINE REDUCTION - a JS replica of the vertex shader shows that with
  *      `m3 = null` the unified homography path collapses to `drawItem`'s affine
  *      placement `S·(boxCentre + dx + R·Sc·p)` exactly, which is what makes the untilted
  *      frames of a tilt export match the canvas path.
- *   3. GRACEFUL DEGRADATION — with no canvas/WebGL2 in this realm the probe answers
+ *   3. GRACEFUL DEGRADATION - with no canvas/WebGL2 in this realm the probe answers
  *      false and the factory answers null (never throws), which is the fallback the
  *      caller relies on to keep the P2a capture tier reachable.
  */

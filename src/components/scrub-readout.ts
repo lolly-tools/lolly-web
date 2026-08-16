@@ -9,14 +9,14 @@
  * release.
  *
  * Two positioning modes:
- *   • anchorEl — pin the bubble above a control (desktop / pointer-locked mouse,
+ *   • anchorEl - pin the bubble above a control (desktop / pointer-locked mouse,
  *     where the pointer coordinates are frozen).
- *   • finger   — track the bubble above a touch point (mobile), so it clears the
+ *   • finger - track the bubble above a touch point (mobile), so it clears the
  *     fingertip that would otherwise hide the value.
  *
  * The bubble is a single reusable element appended to <body>, positioned `fixed`
  * so it escapes any scroll/transform container. It is purely presentational
- * (aria-hidden, pointer-events: none) — the underlying <input> stays the source
+ * (aria-hidden, pointer-events: none) - the underlying <input> stays the source
  * of truth for assistive tech.
  */
 
@@ -74,7 +74,7 @@ export function showScrubReadout(
   const b = ensureBubble();
   b.textContent = text;
   // The bubble always has layout (hidden via opacity:0, not display:none), so
-  // place() can read its size right away — position first, then reveal.
+  // place() can read its size right away - position first, then reveal.
   if (finger) {
     place(finger.x, finger.y - FINGER, finger.y + FINGER);
   } else if (anchorEl) {

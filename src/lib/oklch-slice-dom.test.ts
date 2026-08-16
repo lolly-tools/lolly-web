@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * oklch-slice.ts — the chart's markup and its drag/click/add contract.
+ * oklch-slice.ts - the chart's markup and its drag/click/add contract.
  *
  * Run directly:  node --test shells/web/src/lib/oklch-slice-dom.test.ts
  *
@@ -10,7 +10,7 @@
  * plane has axes for, and that a press which doesn't travel is a click rather
  * than a zero-distance recolour.
  *
- * jsdom has no canvas 2D context, so `paintSliceChart` is out of scope here —
+ * jsdom has no canvas 2D context, so `paintSliceChart` is out of scope here - 
  * it bails on `getContext('2d')` returning null, which is also what makes it
  * safe to call in this environment. The fill it would paint is verified against
  * the engine directly in tests/gamut.test.ts.
@@ -64,7 +64,7 @@ function pointer(
     .dispatchEvent(ev as unknown as Event);
 }
 
-/** Give a rendered dot the box its percentage position implies — jsdom lays out
+/** Give a rendered dot the box its percentage position implies - jsdom lays out
  *  nothing, and the touch slop test is entirely about distance in pixels. */
 function boxDot(root: HTMLElement, idx: number, size = 20): HTMLElement {
   const dot = root.querySelector(`[data-okls-idx="${idx}"]`) as HTMLElement;
@@ -138,7 +138,7 @@ test('a drag moves only the plane’s two channels, keeping the swatch’s own h
   const o = calls.recolor[0]!.o;
   assert.ok(Math.abs(o.c - 0.1) < 1e-6, `chroma from x: ${o.c}`);
   assert.ok(Math.abs(o.l - 0.8) < 1e-6, `lightness from y: ${o.l}`);
-  // The plane is at hue 30, but the swatch is green — its own hue must survive.
+  // The plane is at hue 30, but the swatch is green - its own hue must survive.
   assert.ok(o.h > 120 && o.h < 170, `hue kept from the swatch, not the plane: ${o.h}`);
   assert.equal(calls.commit, 1, 'the drag committed once, on release');
   assert.equal(calls.pick.length, 0, 'a drag is not a click');
@@ -193,7 +193,7 @@ test('updateSliceDot moves and recolours a dot without a re-render', () => {
   assert.ok(dot.classList.contains('is-light'), 'a pale dot gets the light outline');
   assert.equal(dot.style.getPropertyValue('--dot'), '#e8f5ec');
 
-  // The SAME element, not a replacement — a drag depends on it surviving.
+  // The SAME element, not a replacement - a drag depends on it surviving.
   assert.equal(root.querySelector('[data-okls-idx="0"]'), dot);
 });
 
@@ -209,14 +209,14 @@ test('the chart announces the plane and the value it is sliced at', () => {
 
 test('a drag holds the AUTHORED fixed channel, not a gamut-mapped bake of it', () => {
   // The shake this pins: on the chroma × hue plane the held channel is LIGHTNESS,
-  // and it used to be recovered from `hexOf` — which in Colour Lab is the subject's
+  // and it used to be recovered from `hexOf` - which in Colour Lab is the subject's
   // sRGB bake. Outside sRGB that bake has a different lightness from the colour
   // being described, so every frame of a drag re-derived the plane from a colour
   // that was not the subject, the dot left the pointer, and the next frame
   // re-derived it from the new bake. It only misbehaved past the gamut boundary.
   const state: SliceChartState = { plane: 'ch', fixed: 0.5, cMax: SLICE_C_MAX };
   const { root } = mount(state, [{ idx: 0, hex: '#ff0000', label: 'Wide red' }]);
-  // A wide-gamut red: L 0.72. Its sRGB bake is a DIFFERENT lightness — that gap is
+  // A wide-gamut red: L 0.72. Its sRGB bake is a DIFFERENT lightness - that gap is
   // the whole bug, so assert the fixture actually has one before relying on it.
   const authored = { l: 0.72, c: 0.31, h: 29 };
   // hexToOklch is nullable (a bad hex ⇒ null); this literal is fine, so pin it once.
@@ -259,8 +259,8 @@ test('without oklchOf the hex is still the fallback, so hex-native callers are u
 
 test('a TOUCH that misses the dot by a thumb’s width still drags it', () => {
   // The 20px dot against a 44px target floor: a press 25px away used to do nothing
-  // at all — not a recolour (the drag was over "empty space") and not a click
-  // either — while the caption said to drag the chart. The nearest dot within half
+  // at all - not a recolour (the drag was over "empty space") and not a click
+  // either - while the caption said to drag the chart. The nearest dot within half
   // a target is adopted instead.
   const state: SliceChartState = { plane: 'lc', fixed: 154.407, cMax: SLICE_C_MAX };
   const { root } = mount(state, [{ idx: 0, hex: '#2f7d4f', label: 'Green' }]);
@@ -268,7 +268,7 @@ test('a TOUCH that misses the dot by a thumb’s width still drags it', () => {
   const { calls, h } = HANDLERS(state, { 0: '#2f7d4f' });
   const off = wireSliceChart(root, h);
 
-  // 18px below the dot's centre, on the plot itself — not on the button.
+  // 18px below the dot's centre, on the plot itself - not on the button.
   const at = { dx: 0, dy: 18, pointerType: 'touch' };
   pointer('pointerdown', 0.2641, 0.4711, undefined, at);
   pointer('pointermove', 0.6, 0.25, undefined, { pointerType: 'touch' });
@@ -408,7 +408,7 @@ test('a touch NEAR a dot adopts it — but only for a sideways drag', () => {
 
 test('a vertical swipe near a dot scrolls the page instead of destroying the colour', () => {
   // THE REGRESSION. This must never recolour, never commit, and never be read as a
-  // click on empty space either — the user was scrolling.
+  // click on empty space either - the user was scrolling.
   const state: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
   const { root, plot } = mount(state, [{ idx: 0, hex: '#2f7d4f', label: 'Green' }]);
   const { calls, h } = HANDLERS(state, { 0: '#2f7d4f' });
@@ -448,7 +448,7 @@ test('a RETARGETED touch beside the dot is still axis-locked — target is not g
   // region by the touch radius and delivers a finger-sized pointerdown to the 20px dot
   // from up to ~24px away, so `e.target === dot` for presses that never touched it. The
   // direct-hit exemption then skipped the axis lock and a pure vertical scroll swipe
-  // drove lightness to 100% with the page frozen — measured at 390×844, radiusX 18 /
+  // drove lightness to 100% with the page frozen - measured at 390×844, radiusX 18 /
   // radiusY 22, at every offset from 0 to 24px. Because TOUCH_SLOP is 22 and the
   // retarget reaches 24, there was no offset at which the lock ran at all for a thumb.
   const state: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
@@ -460,7 +460,7 @@ test('a RETARGETED touch beside the dot is still axis-locked — target is not g
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
 
   // The dot is `touch-action: none` for its own 2D drag, and the browser reads that
-  // from the RETARGETED node before our first pointermove runs — so handing the
+  // from the RETARGETED node before our first pointermove runs - so handing the
   // gesture back is not enough here, there is no native pan waiting for it. The page
   // stayed dead under the finger until the wiring carried the scroll itself.
   const panned: number[] = [];
@@ -510,7 +510,7 @@ test('a MOUSE near-miss is not adopted, so “click near a swatch to add one” 
 // ── The RENDER path's authored chroma ────────────────────────────────────────
 // The Colour Lab subject observed at L 0.795 / C 0.176 / H 243, which is outside
 // sRGB. Its sRGB bake keeps L and H and drops C to roughly 0.12, so a dot placed
-// from that hex lands ON the sRGB contour — while the L×H plane (whose axes both
+// from that hex lands ON the sRGB contour - while the L×H plane (whose axes both
 // survive the clamp) and the 3D panel both say "outside". `oklch` is the fix.
 const WIDE = { l: 0.795, c: 0.176, h: 243 };
 const WIDE_HEX = oklchToHex(WIDE);
@@ -542,7 +542,7 @@ for (const [plane, axis] of [['lc', 'left'], ['ch', 'top']] as const) {
     // The paint is still the only colour a screen can show.
     assert.equal(dot.style.getPropertyValue('--dot'), WIDE_HEX);
     // Sliced AT the subject on every plane, so nothing is faded or announced as off
-    // it — which is what the L×H plane used to contradict, its fixed channel being
+    // it - which is what the L×H plane used to contradict, its fixed channel being
     // the very chroma the bake reduced.
     assert.equal(dot.style.getPropertyValue('--off'), '0.000');
   });

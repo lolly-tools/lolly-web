@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — grid renderer (HTML generation only).
+ * Pro / Batch mode - grid renderer (HTML generation only).
  *
  * Pure-ish: given the batch state + derived columns, it returns the table HTML.
  * All state mutation and event wiring lives in index.js, which owns the model.
@@ -88,7 +88,7 @@ const esc = (s: unknown): string => String(s ?? '')
 const EYE_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const BUCKET_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.5 8.5a1.5 1.5 0 0 0 0 2L8 19a1.5 1.5 0 0 0 2 0z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.5 2-3.5 2-3.5s2 2 2 3.5z"/></svg>`;
 const DOC_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
-// Two-column dot grip — the universal "grab to drag" affordance (see reorder.js).
+// Two-column dot grip - the universal "grab to drag" affordance (see reorder.js).
 const GRIP_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
 const WARNING_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
 
@@ -98,7 +98,7 @@ const DEFAULT_COL_W = 116;
 const COL_DEFAULTS: Record<string, number> = { __template: 210, __filename: 150, __width: 78, __height: 78, __unit: 66, __dpi: 66 };
 
 // Export-dimension columns: Save-as + output size/unit/dpi. Unlike the Template
-// column (always shown) these are collapsible — a Pro who's set them once can hide
+// column (always shown) these are collapsible - a Pro who's set them once can hide
 // them to declutter and restore from a distinct tag pinned to the front of the
 // bottom bar. The values live on each row (filename/outWidth/unit/dpi) and survive
 // collapse untouched; collapsing only hides the controls. Order here is the order
@@ -147,13 +147,13 @@ function exportHeaderCell(col: ExportCol, widths: Record<string, number> | undef
   </th>`;
 }
 
-/** Bottom bar (always shown): add-row buttons at the left — anchored where you'd
- * use them — then the "hide all" control + restorable column tags, and the
+/** Bottom bar (always shown): add-row buttons at the left - anchored where you'd
+ * use them - then the "hide all" control + restorable column tags, and the
  * queued-renders count pushed to the right.
  * @param {Array}  visible  currently-shown data columns
  * @param {Array}  hidden   collapsed data columns (shown as restore tags)
  * @param {number} queued   rows with a template chosen (the render count) */
-// + Row / +5 / Fill last — rendered directly after the </table> (see
+// + Row / +5 / Fill last - rendered directly after the </table> (see
 // renderGridHtml), not in the columns bar, so they can be positioned/styled
 // independently. "Fill last" copies the last template-filled row into every
 // empty row; it's disabled when there's no source row or nothing empty to fill.
@@ -175,7 +175,7 @@ function columnsBarHtml(visible: Column[], hidden: Column[], queued: number, col
     ? `<button type="button" class="pro-cols-action" data-hide-all-cols
         title="Hide every input column — then click the ones you want to edit">Hide all columns</button>`
     : '';
-  // "Show all" restores everything — data columns AND collapsed export columns.
+  // "Show all" restores everything - data columns AND collapsed export columns.
   const showAll = (hidden.length || collapsedExport.length)
     ? `<button type="button" class="pro-cols-action" data-show-all-cols title="Show every column">Show all</button>`
     : '';
@@ -236,7 +236,7 @@ function dataCell(col: Column, row: GridRow, ctx: GridCtx): string {
       }</td>`;
     }
     const hooks = `data-cell data-row="${esc(row.uid)}" data-col="${esc(col.key)}"`;
-    // The column label is the control's accessible name — the <th> above it is
+    // The column label is the control's accessible name - the <th> above it is
     // visual context only. `boxed: false` keeps the cell's bare-control look
     // (pro.css strips border/background so the cell's own lines are the grid).
     return `<td class="pro-cell" data-col="${esc(col.key)}" data-row="${esc(row.uid)}">${
@@ -256,9 +256,9 @@ function dataCell(col: Column, row: GridRow, ctx: GridCtx): string {
  * index.js) without rebuilding the whole table. */
 export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
   const uid = esc(row.uid);
-  const tool = ctx.toolById.get(row.toolId); // O(1) — Map.get(undefined/'') is undefined, same as .find() for blank rows
+  const tool = ctx.toolById.get(row.toolId); // O(1) - Map.get(undefined/'') is undefined, same as .find() for blank rows
   // Experimental tools flag the template cell (class .pro-exp) instead of a text
-  // badge, so the styling — e.g. a faint hatch — lives entirely in CSS.
+  // badge, so the styling - e.g. a faint hatch - lives entirely in CSS.
   const isExp = tool && tool.status === 'experimental';
 
   // Per-row format: a document-icon dropdown, sitting to the LEFT of the name.
@@ -286,7 +286,7 @@ export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
     : '';
 
   // The template "control" is a trigger that opens a search popover (built in
-  // index.js) — far easier to hit on touch than the old datalist combobox.
+  // index.js) - far easier to hit on touch than the old datalist combobox.
   const templateCell = `<td class="pro-cell-template${isExp ? ' pro-exp' : ''}" data-row="${uid}" data-col="__template"${isExp ? ' title="Experimental — exports are watermarked"' : ''}>
     <span class="pro-template-format">${fmtSelect}</span>
     <button type="button" class="pro-template-select pro-template-trigger${fmtSelect ? ' has-fmt' : ''}" data-template-trigger data-row="${uid}"

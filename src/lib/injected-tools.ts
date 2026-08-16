@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * injected-tools — a generic registry for tools an EXTERNAL source adds to the
+ * injected-tools - a generic registry for tools an EXTERNAL source adds to the
  * gallery at runtime.
  *
  * The sibling of session-source / field-policy / input-policy: a neutral seam the
@@ -13,17 +13,17 @@
  * own, but the registry is a standalone primitive a test or future feature can drive
  * the same way. One set at a time (last registration wins), mirroring session-source.
  *
- * The entries are pure DATA the gallery renders as ordinary tool cards — never code.
+ * The entries are pure DATA the gallery renders as ordinary tool cards - never code.
  * A tool's `id` is the tool id the instance serves under `/tools/<id>/`, so clicking
  * it loads through the normal tool-loader path with no change. A url-source tool is
  * "the same tool, preconfigured": its `openQuery` carries the URL-mode params, so the
- * card opens `#/tool/<id>?<openQuery>` — the tool with those inputs already applied.
+ * card opens `#/tool/<id>?<openQuery>` - the tool with those inputs already applied.
  * Both forms resolve to a locally-served tool (a url that doesn't is dropped upstream).
  */
 
 /** One injected tool, in neutral terms (no control-plane vocabulary leaks here). */
 export interface InjectedTool {
-  /** The served tool id — the `/tools/<id>/` the loader fetches (NOT the injectable id). */
+  /** The served tool id - the `/tools/<id>/` the loader fetches (NOT the injectable id). */
   id: string;
   /** Gallery card title. */
   name: string;

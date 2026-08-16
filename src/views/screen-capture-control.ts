@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-// Display-capture control (engine v1.54) — the Screenshot + Record pair for a tool
+// Display-capture control (engine v1.54) - the Screenshot + Record pair for a tool
 // declaring render.capture: "screen". Sibling of record-control.ts, deliberately NOT
 // folded into it: a camera take needs a viewfinder, framing and level coaching, while a
-// screen take needs none of them. The browser's own picker is the entire selection UI —
+// screen take needs none of them. The browser's own picker is the entire selection UI - 
 // it chooses the screen/window/tab, and a page can neither enumerate the options nor
 // pre-answer it. So this module has no preview to draw before the fact and nothing to
 // coach; it arms nothing, and the first tap goes straight to the picker.
@@ -16,7 +16,7 @@ import type { AssetRef, RecordOpts } from '@lolly-tools/core/host-v1';
 import type { ToolRuntime, WebToolHost } from './tool.ts';
 
 /** Hard ceiling on a screen take. Long enough for a real walkthrough, short enough that
- *  a forgotten recording can't fill the device — the blob is held in memory until stop. */
+ *  a forgotten recording can't fill the device - the blob is held in memory until stop. */
 const MAX_MS = 10 * 60 * 1000;
 
 /**
@@ -62,7 +62,7 @@ export function setupScreenCaptureControl({
   const SQUARE = '<span class="canvas-record-square" aria-hidden="true"></span>';
   let state: 'idle' | 'recording' = 'idle';
   let startTs = 0, timerRaf = 0;
-  let busy = false;   // a picker is open / a still is encoding — don't let a second tap race it
+  let busy = false;   // a picker is open / a still is encoding - don't let a second tap race it
   // Set once the crop overlay exists; called from render() on every state change so the
   // crop layer hides during a take (via cropEnabled()) and re-shows after. A no-op until
   // then to avoid a TDZ reference to the const-declared layer below.
@@ -93,7 +93,7 @@ export function setupScreenCaptureControl({
   };
   render();
 
-  // A denial is the normal, expected answer to a screen-share prompt — the user changed
+  // A denial is the normal, expected answer to a screen-share prompt - the user changed
   // their mind at the picker. Say so plainly and leave the tool exactly as it was.
   const reportFailure = (e: unknown, what: string): void => {
     const name = (e as { name?: string })?.name;
@@ -107,7 +107,7 @@ export function setupScreenCaptureControl({
 
   // ── Live preview of the take ────────────────────────────────────────────────
   // The recorder publishes its stream on the shell-internal channel (the engine is
-  // DOM-free), so mirror it into the canvas placeholder while recording — otherwise a
+  // DOM-free), so mirror it into the canvas placeholder while recording - otherwise a
   // screen take is completely blind: the shared surface is usually BEHIND this window.
   let previewVideo: HTMLVideoElement | null = null;
   const previewHost = (): HTMLElement =>
@@ -132,14 +132,14 @@ export function setupScreenCaptureControl({
       }
       // The browser's own "Stop sharing" bar (or the OS) ends the source without touching
       // our Stop button: the recorder finalises the clip, but the control would sit stuck
-      // in 'recording' — timer running forever, footage never offered, lost on navigate.
+      // in 'recording' - timer running forever, footage never offered, lost on navigate.
       // Finalise the take here. The `!busy` guard distinguishes this external end from the
       // null emit our own stop() also triggers (stop() sets busy=true before awaiting), so
       // we never re-enter the normal Stop path.
       if (state === 'recording' && !busy) void stop();
     }
   });
-  // The template rebuilds #tool-content on every paint, orphaning the preview — re-adopt
+  // The template rebuilds #tool-content on every paint, orphaning the preview - re-adopt
   // it into the freshest placeholder (same trick as record-control's camera).
   const reparent = (): void => {
     const h = previewHost();
@@ -173,7 +173,7 @@ export function setupScreenCaptureControl({
   /** The crop's true pixel size, or null when the shot has no usable dimensions. */
   function derivedTarget(): { width: number; height: number } | null {
     const s = shotRef();
-    // readDimensions is best-effort — cropPixelSize returns null (never NaN/0) when absent.
+    // readDimensions is best-effort - cropPixelSize returns null (never NaN/0) when absent.
     return cropPixelSize(cropVal(), Number(s?.width) || 0, Number(s?.height) || 0);
   }
 
@@ -187,7 +187,7 @@ export function setupScreenCaptureControl({
     actionsApi?.setDims?.({ width: t.width, height: t.height, unit: 'px' });
   }
 
-  // Mount: if the URL explicitly sized the export, respect it — only PRIME the guard.
+  // Mount: if the URL explicitly sized the export, respect it - only PRIME the guard.
   // Otherwise (session restore, fresh mount with a shot) push so the bar matches the crop.
   if (sizeExplicit) {
     const t = derivedTarget();
@@ -327,7 +327,7 @@ export function setupScreenCaptureControl({
       const prev = runtime.getModel().find(i => i.id === 'shot')?.value as { id?: string; url?: string } | undefined;
       // Sign the still at capture time as an on-device screen capture, so the file
       // self-asserts what it is and chains as a credentialed ingredient once placed.
-      // Never throws — a stamping hiccup returns the original bytes.
+      // Never throws - a stamping hiccup returns the original bytes.
       const { stampCaptureClip } = await import('../bridge/export.ts');
       const { blob: png, credential } = await stampCaptureClip(host, blob, 'png', { screen: true });
       // Persist as a durable user asset: a blob: URL dies on navigation, so a saved
@@ -345,7 +345,7 @@ export function setupScreenCaptureControl({
       await runtime.setInput('shot', ref);
       await runtime.setInput('crop', { ...FULL });   // a new shot invalidates the old crop region
       markSessionDirty();
-      // getDisplayMedia may hand back a DPR-scaled or tab-capped surface — report
+      // getDisplayMedia may hand back a DPR-scaled or tab-capped surface - report
       // what actually arrived, never a guess.
       const t = derivedTarget();
       announce(`Screenshot captured${t ? ` at ${t.width}×${t.height}` : ''} (${fmtBytes(png.size)}) — drag on the canvas to crop, then export.`);
@@ -388,7 +388,7 @@ export function setupScreenCaptureControl({
       busy = false; render();
       timerRaf = requestAnimationFrame(tick);
       // If the user asked to narrate but the mic was blocked, the take records silently.
-      // Say so NOW, at the start — otherwise they narrate a whole take that has no voice.
+      // Say so NOW, at the start - otherwise they narrate a whole take that has no voice.
       if (wantMic && res.micActive === false) {
         announce('Recording started, but your microphone is blocked, so there’s no narration. Allow mic access and record again for a voiceover.', { assertive: true });
       } else {
@@ -419,12 +419,12 @@ export function setupScreenCaptureControl({
 
   // The finished clip goes back through the TRANSFORM path (host.export.file): the bytes
   // the encoder produced, unwatermarked and never re-encoded. Cropping a recording would
-  // mean re-rasterising every frame — the stills path is where crop lives.
+  // mean re-rasterising every frame - the stills path is where crop lives.
   let dlBar: HTMLElement | null = null;
   let dlUrl: string | null = null;
   async function offerClip(blob: Blob, mimeType: string, micActive?: boolean): Promise<void> {
     const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-    // Sign the take as an on-device screen capture — same provenance the still gets. The
+    // Sign the take as an on-device screen capture - same provenance the still gets. The
     // mic flag reflects what was ACTUALLY captured (micActive from the recorder), not the
     // "Narrate" checkbox: a requested-but-denied mic records a silent take, and the signed
     // manifest must never claim narration that isn't there. Undefined (older path) falls

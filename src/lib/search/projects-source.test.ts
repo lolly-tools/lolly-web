@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shared projects search source (plans/99 M2) — haystack composition
+ * The shared projects search source (plans/99 M2) - haystack composition
  * (including the literal 'batch' keyword), folded token-AND semantics,
  * diacritic folding, the session-open href shapes, and the one-shot
  * Save-return marker. views/projects.ts and the spotlight's projects provider

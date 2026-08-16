@@ -5,7 +5,7 @@
  * Tools declare the host abilities they need in tool.json `capabilities`. A shell
  * may run a tool only when it can fulfil EVERY declared capability. The set a
  * shell actually fulfils lives in `bridge/capabilities-provided.js` (overridden
- * per shell) and is surfaced as `host.capabilities` — always pass THAT here, so
+ * per shell) and is surfaced as `host.capabilities` - always pass THAT here, so
  * the same gallery/tool code gates correctly in web, Tauri and CLI alike.
  *
  * Tools whose needs aren't met are surfaced as "desktop only" rather than mounted
@@ -29,7 +29,7 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
 /**
  * Capabilities a tool needs that the shell can't provide. Empty array ⇒ runnable.
  * If `shellCapabilities` is absent the host hasn't declared a set, so gating is
- * skipped (nothing is hidden) — matching the HostV1 contract.
+ * skipped (nothing is hidden) - matching the HostV1 contract.
  * @param toolCapabilities   from the tool manifest / index
  * @param shellCapabilities  host.capabilities
  */
@@ -77,25 +77,25 @@ export interface ToolSupport {
  * (plan 97 §9). The same three-verdict vocabulary `toolSupport` uses, for a
  * feature that is gated by a transport rather than by a tool manifest:
  *
- *   'ready'       — a transport exists (a Tauri shell's native fetch, or the
+ *   'ready' - a transport exists (a Tauri shell's native fetch, or the
  *                   Lolly extension), so a page can actually be read.
- *   'install'     — a Chromium browser with no transport: the extension can
+ *   'install' - a Chromium browser with no transport: the extension can
  *                   fulfil this, exactly as it can fulfil `capture`.
- *   'unavailable' — anywhere else. There is no third transport to add later:
+ *   'unavailable' - anywhere else. There is no third transport to add later:
  *                   §9's decision is that Lolly runs no fetching service, and
  *                   the deployed PWA's CSP cannot reach an arbitrary origin at
  *                   all, so this verdict is settled rather than pending.
  *
  * WHAT EACH VERDICT IS ALLOWED TO RENDER is the part worth writing down. Only
- * 'ready' puts a Website tile in the source picker — a disabled tile, or a
+ * 'ready' puts a Website tile in the source picker - a disabled tile, or a
  * "get the app" teaser where the feature cannot run, is the dark pattern §9
  * forbids. 'install' is documented on the capabilities surface
  * (lib/capabilities-data.ts → #/d?tab=caps), the same place every other gated
  * capability explains its unlock, so somebody who wants it can find out how and
  * nobody else ever trips over it.
  *
- * Transport DETECTION is not this module's business — it needs the host bridge,
- * and this file stays shell-agnostic — so the caller passes what it found
+ * Transport DETECTION is not this module's business - it needs the host bridge,
+ * and this file stays shell-agnostic - so the caller passes what it found
  * (lib/design-system/sources/website.ts's `detectSiteTransport`).
  */
 export interface SiteIngestSupport {
@@ -109,10 +109,10 @@ export function siteIngestSupport(hasTransport: boolean): SiteIngestSupport {
 
 /**
  * How a tool can run in THIS shell/browser:
- *   'ok'          — all capabilities met; render normally.
- *   'install'     — only missing 'capture', on a Chromium browser → offer the
+ *   'ok' - all capabilities met; render normally.
+ *   'install' - only missing 'capture', on a Chromium browser → offer the
  *                   capture extension (it can fulfil capture in-browser).
- *   'unavailable' — missing a capability we can't offer here (capture on
+ *   'unavailable' - missing a capability we can't offer here (capture on
  *                   Firefox/Safari, or any other capability) → desktop-only.
  */
 export function toolSupport(

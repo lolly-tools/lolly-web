@@ -4,7 +4,7 @@
  * off the main thread so a long export doesn't monopolise it. The main thread transfers
  * the pre-rendered frames (ImageBitmaps) + a copy of the audio bed's planar PCM here; the
  * worker encodes and transfers the muxed bytes back. Frame GENERATION stays main-thread
- * (dom-to-image needs the DOM) — this only offloads the encode/mux.
+ * (dom-to-image needs the DOM) - this only offloads the encode/mux.
  */
 import { encodeMuxWebCodecs, type EncodePick, type EncodeAudio } from './video-encode-core.ts';
 
@@ -15,7 +15,7 @@ interface EncodeRequest {
   o: { width: number; height: number; fps: number; bitrate: number; audio?: EncodeAudio | null };
 }
 
-// Worker-scope postMessage overload (message, transfer) — narrow it past the DOM lib's
+// Worker-scope postMessage overload (message, transfer) - narrow it past the DOM lib's
 // Window overload, as zzfxm-worker.ts does.
 const post = postMessage as (message: unknown, transfer: Transferable[]) => void;
 

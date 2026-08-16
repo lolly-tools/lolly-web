@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/team-session-origin.ts — the stash that threads a TEAM session's instance-side id
+ * org/team-session-origin.ts - the stash that threads a TEAM session's instance-side id
  * from the Projects open to the Share dialog's "Work collab" row (plans/100 §7; the
  * stitch-2 gap that left `CollabLaunchContext.sessionId` populated by nobody).
  *
  * Two halves, in one file because they are one claim:
  *
- *  1. the stash's own semantics — one-shot, spent by the first mount whether it matches
+ *  1. the stash's own semantics - one-shot, spent by the first mount whether it matches
  *     or not, never resurrected by a remount, released with the mount;
- *  2. what actually reaches the opener — a team-opened session carries `sessionId`, and
+ *  2. what actually reaches the opener - a team-opened session carries `sessionId`, and
  *     everything else hands the opener a context that is byte-identical (deepStrictEqual
  *     on the object, so an extra key holding `undefined` fails) to today's.
  *
@@ -187,11 +187,11 @@ test('a team-opened session: the context carries the instance’s session id', a
 test('a plain local session: the context is byte-identical to today’s', async () => {
   reset();
   await memberWhoCanJoin();
-  // No open, no stash, no mount hand-off — the ordinary case.
+  // No open, no stash, no mount hand-off - the ordinary case.
   consumeTeamSessionOrigin('qr-code');
 
   // deepStrictEqual: an own `sessionId` key holding `undefined` would fail here, which
-  // is the whole point — the field must be OMITTED, not blanked.
+  // is the whole point - the field must be OMITTED, not blanked.
   assert.deepEqual(pressStartCollab(), [{
     toolId: 'qr-code', baseParts: shareCtx.baseParts, currentFormat: 'png',
   }]);

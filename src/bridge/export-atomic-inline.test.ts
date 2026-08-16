@@ -4,14 +4,14 @@
  *
  * The walker's block-child loop used to skip every child whose computed display was
  * `inline`, `inline-block` or `inline-flex`, leaving them to the inline text pass.
- * That pass emits TEXT and nothing else — no background, no border, no
- * background-image — so an `inline-block` pill lost its fill entirely, and a replaced
+ * That pass emits TEXT and nothing else - no background, no border, no
+ * background-image - so an `inline-block` pill lost its fill entirely, and a replaced
  * element (an `<input>`, which has no text nodes at all) emitted nothing whatsoever.
  * The inline `<svg>` special-case in the loop was the same bug found once and patched
  * narrowly.
  *
  * The rule now: everything except a non-replaced `display: inline` has a box, and
- * boxes are visitSvgNode's job. These tests pin both halves — the box appears, and
+ * boxes are visitSvgNode's job. These tests pin both halves - the box appears, and
  * its text still appears exactly once (descending into an atomic inline from both
  * walks would double-paint it).
  */

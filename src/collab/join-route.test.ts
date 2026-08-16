@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * join-route — the two URL entry points of a private collab (plan 100 §6.1, §11.25).
+ * join-route - the two URL entry points of a private collab (plan 100 §6.1, §11.25).
  *
  * The bugs this file exists to catch are all of one kind: a name known in two places.
  * The dialog mints `#/join?inv=…`; the router has to answer to exactly that. The dialog
@@ -14,7 +14,7 @@
  *    `main.ts` parses a hash, with the router's own branch asserted in its source;
  *  - the invite is delivered into a real acceptor dialog, which has to advance a step;
  *  - the reply handoff runs over a fake BroadcastChannel between a real reply route and
- *    a real inviter dialog, and BOTH outcomes are pinned — delivered, and nobody home.
+ *    a real inviter dialog, and BOTH outcomes are pinned - delivered, and nobody home.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test shells/web/src/collab/join-route.test.ts
@@ -40,14 +40,14 @@ globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
   return 0;
 }) as unknown as typeof requestAnimationFrame;
 
-// jsdom has no `BroadcastChannel`, but NODE does — and a Node one in a jsdom realm is a
+// jsdom has no `BroadcastChannel`, but NODE does - and a Node one in a jsdom realm is a
 // hybrid that exists nowhere: it dispatches a Node `MessageEvent` into a listener while
 // `globalThis.Event` is jsdom's, which Node's own dispatch then rejects. Deleting it
 // makes this environment shaped like the browser it is standing in for, where a channel
-// is either the real thing or absent — and every test that wants one injects a fake.
+// is either the real thing or absent - and every test that wants one injects a fake.
 delete (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel;
 
-// jsdom 25 has no <dialog> showModal/close — shim exactly the surface mountModal uses.
+// jsdom 25 has no <dialog> showModal/close - shim exactly the surface mountModal uses.
 const DialogProto = dom.window.HTMLDialogElement.prototype as unknown as { showModal(): void; close(): void };
 DialogProto.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
 DialogProto.close = function (this: HTMLDialogElement) { this.removeAttribute('open'); };
@@ -153,7 +153,7 @@ function answerToken(): string {
   return encodeToken(packed.value, 'link');
 }
 
-/** Effects that drive the machine by hand — no WebRTC, no camera, no catalog. */
+/** Effects that drive the machine by hand - no WebRTC, no camera, no catalog. */
 function plainEffects(over: Partial<CeremonyEffectsBundle> = {}): CeremonyEffectsBundle {
   return {
     createOffer: async () => ({ ok: true, invite: { signal: inviteToken(), toolId: 'qr-code' } }),
@@ -171,7 +171,7 @@ const frame = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve
 /**
  * A profile host that really stores what it is given, so "the flag persisted" can be
  * asserted against a RECORD rather than against the localStorage mirror alone. `set` is
- * omitted when `writable` is false — the shape of a host that cannot save.
+ * omitted when `writable` is false - the structure of a host that cannot save.
  */
 function profileHost(writable = true): { host: JoinRouteHost; writes: JoinRouteProfile[]; record: () => JoinRouteProfile } {
   let record: JoinRouteProfile = { firstname: 'Sam' };
@@ -200,7 +200,7 @@ const headingOf = (el: Element): string => el.querySelector('[data-cer-heading]'
 /** `#view` as main.ts treats it: one element carrying the mounted route's teardown. */
 type RoutedView = HTMLElement & { _cleanup?: () => void };
 
-/** An inviter dialog sitting on step 1 with its invite minted — a window that can take a reply. */
+/** An inviter dialog sitting on step 1 with its invite minted - a window that can take a reply. */
 async function waitingInviter(): Promise<CollabCeremonyHandle> {
   const dialog = trackedOpen({ role: 'inviter', effects: plainEffects(), toolId: 'qr-code', copy: () => {} });
   dialog.el.querySelector<HTMLElement>('[data-act="create-invite"]')!.click();
@@ -221,7 +221,7 @@ beforeEach(() => {
   _clearCollabMountForTests();
   dom.window.document.body.replaceChildren();
   // The gate's default read is the real synchronous mirror. Since 2026-08-10 the flag is
-  // ON by default, so writing `false` here is not "the shipped state" any more — it is a
+  // ON by default, so writing `false` here is not "the shipped state" any more - it is a
   // user who explicitly TURNED IT OFF, which is exactly the arrival the enable card
   // exists for and the state most tests below want. The fresh-profile arrival (no stored
   // choice at all) is its own test, which clears the mirror itself.
@@ -284,7 +284,7 @@ function channelHub(): { open(): CeremonyChannelLike; posts: unknown[] } {
 //
 // The old behaviour was one screen: "turn it on in your profile settings, then open the
 // link again". That is a dead end at the only moment the reader had a reason to care, so
-// the gate asks a different question first — who decided this? — and since 2026-08-10 the
+// the gate asks a different question first - who decided this? - and since 2026-08-10 the
 // flag is ON by default, which adds a third arrival that skips the gate entirely. The
 // truth table these tests pin:
 //
@@ -375,7 +375,7 @@ test('#/join: "governed" means the flag is FORCED, not merely defaulted by the i
   // The distinction the branch turns on, driven through the real org seam rather than a
   // re-statement of it: `hidden` is a control plane taking the decision away (no toggle
   // exists, the value is forced), while a bare `default` leaves the choice with the user
-  // — who must therefore still be offered it.
+  // - who must therefore still be offered it.
   const realFetch = globalThis.fetch;
   const plane = (featureFlags: Record<string, { default?: boolean; hidden?: boolean }>) => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -436,7 +436,7 @@ test('#/join: "Turn on and continue" writes the flag to the PROFILE, not just th
   actOn(el, 'enable-collab')!.click();
   await mounting;
 
-  // The record, which is what survives a reload — the mirror alone would light the
+  // The record, which is what survives a reload - the mirror alone would light the
   // feature up for exactly one page load and lose it on the next boot.
   assert.equal(writes.length, 1, 'the profile was written once');
   assert.equal(record().featureFlags?.[PRIVATE_COLLAB_FLAG.id], true);
@@ -473,7 +473,7 @@ test('#/join: turning it on falls straight through into the ceremony, with no re
 
 test('#/join: a host that cannot save the choice says so rather than implying it was kept', async () => {
   const el = view();
-  const { host } = profileHost(false); // no `set` at all — the shape of a host that cannot write
+  const { host } = profileHost(false); // no `set` at all - the structure of a host that cannot write
   const mounting = mountJoinRoute(el, host, `${INVITE_PARAM}=${inviteToken()}`, {
     governedOff: () => false,
     openCeremony: trackedOpen,
@@ -486,8 +486,8 @@ test('#/join: a host that cannot save the choice says so rather than implying it
   await mounting;
   await settle();
 
-  // The invite still opens — it is time-limited, and refusing it would be the worse
-  // answer — but the page does not let the reader believe a preference was saved.
+  // The invite still opens - it is time-limited, and refusing it would be the worse
+  // answer - but the page does not let the reader believe a preference was saved.
   assert.equal(headingOf(openDialogs.at(-1)!.el), DIALOG_STRINGS.acceptNameHeading);
   assert.ok(el.textContent?.includes(STRINGS.enableNotSaved), el.textContent ?? '');
   await frame();
@@ -624,7 +624,7 @@ test('#/join: the flag gate still refuses honestly when neither the record nor t
 
 test('#/join: a link whose invite was emptied on the way says so', async () => {
   // `inv=` PRESENT and blank. A link was built and then damaged, which is a fact about
-  // that link — distinct from arriving with no `inv` at all, which is the code door
+  // that link - distinct from arriving with no `inv` at all, which is the code door
   // below. The two used to be one screen, and it was the wrong one for both.
   const el = view() as RoutedView;
   const mounting = mountJoinRoute(el, null, `${INVITE_PARAM}=`, {
@@ -667,7 +667,7 @@ test('#/join: a REPLY link opened on the wrong device is named for what it is', 
 
 // ── #/join: the code door ─────────────────────────────────────────────────────
 //
-// Andy's first real test of the ceremony ended at "how does one use the invite code" —
+// Andy's first real test of the ceremony ended at "how does one use the invite code" - 
 // there was an invite code, and no field in the whole app to put it in. These pin the
 // field, and pin the thing that makes it safe to have: it decodes with the SAME
 // `readSignal` call the URL token decodes with, and then walks the SAME path, so there
@@ -927,8 +927,8 @@ test('#/join: closing the ceremony hangs up a pair nobody adopted', async () => 
 
 // ── The own-invite note ───────────────────────────────────────────────────────
 //
-// Testing an invite in two tabs of one browser is legitimate — it is how this ceremony
-// is drilled — and the app used to say nothing about it, so a person who did it had no
+// Testing an invite in two tabs of one browser is legitimate - it is how this ceremony
+// is drilled - and the app used to say nothing about it, so a person who did it had no
 // way to tell "this works" from "this is the same device talking to itself". The note is
 // that sentence. It is INFORMATION: everything below pins that it never becomes a gate,
 // and that its absence leaves the flow byte-for-byte as it was.
@@ -1156,12 +1156,12 @@ test('the route constants, the router source and this module agree on both paths
  * of slightly-wrong data that self-heals a moment later.
  *
  * `#/join` cannot afford that. `probeLocalTool` (this file, above) answers "have" /
- * "missing" / "version-skew" by reading `window.__toolIndex.tools` directly — the
- * exact global the fast path would leave unsynced — and that answer is not a paint
+ * "missing" / "version-skew" by reading `window.__toolIndex.tools` directly - the
+ * exact global the fast path would leave unsynced - and that answer is not a paint
  * that quietly corrects itself: it is the ONE-SHOT refusal or acceptance the acceptor
  * sees before a peer connection ever opens (§6.1). A tool the device genuinely has,
  * probed against a stale or empty cached index, reads as "missing" and the pair is
- * told the device cannot join — an honest-sounding refusal for a reason that isn't
+ * told the device cannot join - an honest-sounding refusal for a reason that isn't
  * true, with no retry the stranger clicking the link would know to attempt. Routing
  * `#/join` through `catalogReady` first (the `else` branch) is what makes the probe's
  * answer trustworthy, so it must never join the skip-ahead list.
@@ -1371,7 +1371,7 @@ test('handoff: no waiting window means guidance plus the code, not a spinner', a
   const ticks: number[] = [];
   await mountJoinReplyRoute(el, `${ANSWER_PARAM}=${answerToken()}`, {
     flagOn: () => true,
-    // A channel with nobody listening — exactly the "the other tab is gone" case.
+    // A channel with nobody listening - exactly the "the other tab is gone" case.
     channel: () => hub.open(),
     setTimeout: (fn, ms) => { ticks.push(ms); fn(); return 0; },
     clearTimeout: () => {},
@@ -1390,7 +1390,7 @@ test('#/join-reply: a route torn down mid-wait never paints over the view that r
   let closed = 0;
   const mounting = mountJoinReplyRoute(el, `${ANSWER_PARAM}=${answerToken()}`, {
     flagOn: () => true,
-    // Nobody is listening on this hub, so the route is parked on the ack deadline —
+    // Nobody is listening on this hub, so the route is parked on the ack deadline - 
     // the common "nobody home" case, and the whole 800 ms of it.
     channel: () => hub.open(),
     setTimeout: (fn) => { fire = fn; return 0; },
@@ -1543,7 +1543,7 @@ test('appendScaffoldNote never renders copy from outside STRINGS', () => {
 
 // ── Copy discipline ───────────────────────────────────────────────────────────
 
-/** String literals in TS source, skipping comments — the ceremony suite's scanner. */
+/** String literals in TS source, skipping comments - the ceremony suite's scanner. */
 function stringLiterals(src: string): string[] {
   const out: string[] = [];
   let i = 0;
@@ -1623,7 +1623,7 @@ test('STRINGS: join-route renders no copy from outside the map', () => {
 
 test('STRINGS: the gate copy is ten distinct keys, and each one is a translator\'s key', () => {
   // The map's values ARE the catalog keys (i18n.ts looks a translation up by its English
-  // source), so two screens sharing a value is not a tidy reuse — it is one catalog entry
+  // source), so two screens sharing a value is not a tidy reuse - it is one catalog entry
   // that both screens must live with in all 26 languages. And an em-dash in a key is a
   // house-style break that would then be fanned out 26 times.
   const gate = {
@@ -1646,7 +1646,7 @@ test('STRINGS: the gate copy is ten distinct keys, and each one is a translator\
     assert.equal(value.includes('{'), false, `${name} has a placeholder nothing fills`);
   }
 
-  // Every one of them reaches the DOM through a t()/tRaw() call — the property
+  // Every one of them reaches the DOM through a t()/tRaw() call - the property
   // collab-i18n.test.ts enforces file-wide, asserted here for the screens this wave adds
   // so a bare `STRINGS.enableTitle` render site fails the suite that owns them.
   const src = readFileSync(fileURLToPath(new URL('./join-route.ts', import.meta.url)), 'utf8');

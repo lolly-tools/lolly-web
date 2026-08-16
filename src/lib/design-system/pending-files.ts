@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The mark handoff stash (plan 97 §8, M5) — how logos extracted somewhere else
+ * The mark handoff stash (plan 97 §8, M5) - how logos extracted somewhere else
  * (the `#/pdf` exploder's "Send to the Design System studio") reach the Logos
  * room across one navigation.
  *
  * This is the `takePendingToolFile` pattern from `lib/drop-router.ts`, kept to
  * the letter: a module-level one-shot stash, cleared on read, that survives
  * exactly one navigation and never touches disk. Nothing here persists, so a
- * reload loses the handoff — which is the honest behaviour: the marks were
+ * reload loses the handoff - which is the honest behaviour: the marks were
  * extracted from a file the studio no longer holds, and a stale queue of
  * mystery chips a week later would be worse than an empty room.
  *
  * The sender stashes; the Logos room drains ONCE per mount and queues what it
- * finds as ordinary confirm chips. It is deliberately not an install path — a
+ * finds as ordinary confirm chips. It is deliberately not an install path - a
  * mark that arrives from a PDF is classified and confirmed exactly like a mark
  * the user dropped by hand, so nothing lands in a slot without a tap.
  *
  * The caps mirror the room's own: {@link PENDING_LOGO_MAX_FILES} marks, each at
  * most {@link PENDING_LOGO_MAX_BYTES} (the limit `installLogo` enforces anyway).
  * Over-cap files are dropped here, at the send, rather than travelling to a room
- * that would only refuse them — and the drop is REPORTED BACK (as well as
+ * that would only refuse them - and the drop is REPORTED BACK (as well as
  * warned), because the caller is the one that promised a count and is the only
  * one that can correct it. A send that arms nothing must not read as a success.
  */
@@ -27,7 +27,7 @@
 /** The most marks one handoff may carry. Chosen under the room's own intake
  *  ceiling (12) so an arriving batch cannot fill the queue by itself. */
 export const PENDING_LOGO_MAX_FILES = 8;
-/** Per-file byte cap — the same 4 MB `installLogo` refuses above. */
+/** Per-file byte cap - the same 4 MB `installLogo` refuses above. */
 export const PENDING_LOGO_MAX_BYTES = 4 * 1024 * 1024;
 
 /**
@@ -74,7 +74,7 @@ export function stashPendingLogoFiles(files: File[]): PendingLogoSend {
   };
 }
 
-/** Consume the stash. Single use — the second call returns nothing, which is
+/** Consume the stash. Single use - the second call returns nothing, which is
  *  what keeps a room re-paint from queueing the same marks twice. */
 export function takePendingLogoFiles(): File[] {
   const files = pendingLogos;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Eight resize grips — the four edges and the four corners — for any floating
+ * Eight resize grips - the four edges and the four corners - for any floating
  * panel that positions itself with `left/top/width/height`.
  *
  * Extracted from lib/float-panel.ts (the Colour Lab's popped-out charts) so the
@@ -9,8 +9,8 @@
  * reach for the sides and the other corners, find nothing there, and conclude
  * the panel can't be shaped. Every panel in the app now resizes the same way.
  *
- * The caller owns its own geometry — how the box is read, written, clamped and
- * persisted — because a panel that remembers where it was left (the visualizer)
+ * The caller owns its own geometry - how the box is read, written, clamped and
+ * persisted - because a panel that remembers where it was left (the visualizer)
  * and one that must never wander off screen (a popped-out figure) disagree about
  * every one of those, and only agree about the pointer maths.
  */
@@ -26,13 +26,13 @@ export interface GripOpts {
   apply(b: GripBox): void;
   /** Constrain a box before it's applied (minimum size, staying on screen). */
   clamp(b: GripBox): GripBox;
-  /** Floor the pointer maths clamps the TRAVEL against — see below. */
+  /** Floor the pointer maths clamps the TRAVEL against - see below. */
   min: { w: number; h: number };
   /** Return true to ignore grips entirely (a fullscreen panel has nothing to resize). */
   locked?(): boolean;
-  /** After each applied change — repaint here. */
+  /** After each applied change - repaint here. */
   onMove?(): void;
-  /** Once, when the gesture ends — persist here. */
+  /** Once, when the gesture ends - persist here. */
   onEnd?(): void;
 }
 
@@ -47,7 +47,7 @@ export function panelGripsHtml(): string {
  * Wire every grip found under `root`. Returns a teardown function.
  *
  * A grip's direction says which edges MOVE, which is why the west and north ones
- * change `x`/`y` as well as the size — dragging a left edge rightward makes the
+ * change `x`/`y` as well as the size - dragging a left edge rightward makes the
  * panel narrower AND moves its origin, and getting that wrong makes the panel
  * appear to slide away from the pointer.
  *

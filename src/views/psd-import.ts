@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Layered-bitmap import (Photoshop PSD/PSB + GIMP XCF) — the shell half over
+ * Layered-bitmap import (Photoshop PSD/PSB + GIMP XCF) - the shell half over
  * the engine's readPsd/readXcf. Three routes out of one parse:
  *
- *   1. importLayeredFileAsSeed — the "Open as layers" journey: every layer is
+ *   1. importLayeredFileAsSeed - the "Open as layers" journey: every layer is
  *      PNG-encoded (engine packPng, deterministic, no canvas) and stored as
  *      its OWN library asset via storeUserUpload (the chunk-don't-monolith
  *      rule: peak memory is one layer, the renderer lazy-loads each image,
  *      and the layer-stack tool's block rows carry only refs + geometry so
  *      URLs stay small). Returns the initial-values seed the drop router
  *      stashes for views/tool.ts.
- *   2. parseLayeredAsDesign — the Design branch design-import.ts
+ *   2. parseLayeredAsDesign - the Design branch design-import.ts
  *      delegates to: same parse, layers → image DesignNodes → finalizeBoxes.
- *   3. ingestLayeredFileFlattened — the library route: the file's merged
+ *   3. ingestLayeredFileFlattened - the library route: the file's merged
  *      composite (PSD ships one; XCF is flattened here src-over) stored as an
  *      ordinary raster asset.
  *
  * Group handling: when the file actually has groups a choiceDialog asks
- * flat-vs-grouped (the pickPdfPages pattern's little sibling — a binary
+ * flat-vs-grouped (the pickPdfPages pattern's little sibling - a binary
  * choice needs no page grid). "Keep groups" fills each row's `g` field with
- * the group path; flat leaves it ''. Either way the layer LIST stays flat —
+ * the group path; flat leaves it ''. Either way the layer LIST stays flat - 
  * blocks `nesting` would double the wire fields per row against the tool's
  * governing URL-compactness constraint.
  *
@@ -77,7 +77,7 @@ const scrub = (s: string): string => s.replace(/[,~]/g, ' ').trim();
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack. */
+/** Base64 in chunks - String.fromCharCode(...bigArray) overflows the call stack. */
 function bytesToBase64(u8: Uint8Array): string {
   let bin = '';
   const CHUNK = 0x8000;
@@ -86,12 +86,12 @@ function bytesToBase64(u8: Uint8Array): string {
 }
 
 /**
- * Open a layered bitmap for Unpack — each layer comes out as its own named PNG, and
+ * Open a layered bitmap for Unpack - each layer comes out as its own named PNG, and
  * the flattened composite (PSD ships one; XCF is flattened here) is the page picture.
  *
  * There is deliberately NO text pass: our reader rasterises PSD/XCF text layers to
  * PIXELS (see memory psd-text-layer-editable-gap), so the honest answer is that this
- * reader has no words to give — NOT that the file has none. The view's generic
+ * reader has no words to give - NOT that the file has none. The view's generic
  * no-text line says exactly that.
  */
 export async function openPsdFile(file: File | Blob): Promise<UnpackHandle> {
@@ -147,7 +147,7 @@ function groupPathOf(l: RasterLayer, doc: LayeredRasterDoc): string {
 
 /**
  * The "Open as layers" journey. Parses, asks flat-vs-grouped when the file has
- * groups, stores one PNG asset per layer, and returns the layer-stack seed —
+ * groups, stores one PNG asset per layer, and returns the layer-stack seed - 
  * or null when the user cancelled the dialog.
  */
 export async function importLayeredFileAsSeed(
@@ -178,7 +178,7 @@ export async function importLayeredFileAsSeed(
     keepGroups = chosen === 'grouped';
   }
 
-  // Store each layer as its own PNG asset — sequential on purpose (one layer's
+  // Store each layer as its own PNG asset - sequential on purpose (one layer's
   // buffer in flight at a time), terse names so the minted user/ ids stay short.
   const { storeUserUpload } = await import('./picker.ts');
   const rows: Array<Record<string, unknown>> = [];
@@ -205,7 +205,7 @@ export async function importLayeredFileAsSeed(
 }
 
 /**
- * The Design branch — called from design-import.ts's parseDesignFile
+ * The Design branch - called from design-import.ts's parseDesignFile
  * when the magic bytes say layered bitmap. Same parse; layers become image
  * DesignNodes (unscaled at their natural bounds) through the exact
  * finalizeBoxes path every other importer uses.
@@ -252,7 +252,7 @@ export async function parseLayeredAsDesign(
 /**
  * The library route: one flattened raster asset. PSD ships a merged composite
  * (decoded even when layers fail); XCF stores none, so visible layers flatten
- * here src-over — approximate for exotic blend modes, honest for a thumbnail.
+ * here src-over - approximate for exotic blend modes, honest for a thumbnail.
  */
 export async function ingestLayeredFileFlattened(host: PickerHost, file: File): Promise<AssetRef> {
   const bytes = new Uint8Array(await file.arrayBuffer());

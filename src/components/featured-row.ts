@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Featured row — the gallery's cinematic hero.
+ * Featured row - the gallery's cinematic hero.
  *
  * A slowly-drifting strip of large tiles, one per tool flagged `featured` in its
- * manifest. Each tile is a live demonstration of Lolly's whole idea — *one tool,
- * endless on-brand outputs*: it starts on the tool's committed preview and then
- * cross-fades through a handful of rendered example looks (manifest.featured
- * .variants — different inputs AND themes), each produced by the real engine path
- * (see lib/featured-render.ts) and memoised so later visits are instant.
+ * manifest. Each tile demonstrates Lolly's core idea, *one tool, endless on-brand
+ * outputs*: it starts on the tool's committed preview, then cross-fades through a
+ * handful of rendered example looks (manifest.featured.variants - different inputs
+ * AND themes). Each look is produced by the real engine path (see
+ * lib/featured-render.ts) and memoised so later visits are instant.
  *
  * Motion, and its restraint:
  *   - The whole row drifts left at a gentle ~22px/s. It PAUSES the moment a pointer
  *     is over it, focus lands inside it, a touch begins, or the visitor scrolls it
- *     by hand — so it never fights the user — and resumes shortly after.
+ *     by hand, so it never fights the user, and resumes shortly after.
  *   - Within a tile, the active look cross-fades every ~4.6s with a slow Ken-Burns
  *     drift, so a still tile still breathes.
- *   - Reduced motion — the OS preference OR the app's own (lib/a11y-prefs.ts) —
- *     turns ALL of that off: no drift, no cross-fade, no variant rendering. The
- *     strip stays a plain, manually-scrollable row of tiles. Read once per mount,
- *     so a mid-session toggle takes effect on the next mount of the row.
+ *   - Reduced motion (the OS preference OR the app's own, lib/a11y-prefs.ts) turns
+ *     ALL of that off: no drift, no cross-fade, no variant rendering. The strip
+ *     stays a plain, manually-scrollable row of tiles. Read once per mount, so a
+ *     mid-session toggle takes effect on the next mount of the row.
  *
- * The tile art is object-fit:contain over a themed backdrop (never cropped — a
+ * The tile art uses object-fit:contain over a themed backdrop, never cropped (a
  * cropped logo or badge is worse than a letterboxed one), and every tile is a real
  * link to its tool, so the whole feature degrades to "a scrollable row of links".
  */
@@ -39,7 +39,7 @@ import type { PreviewsAPI } from '../bridge/previews.ts';
 export interface FeaturedVariant {
   label?: string;
   /**
-   * Which UI theme this look suits — set on looks that render ink on a TRANSPARENT
+   * Which UI theme this look suits - set on looks that render ink on a TRANSPARENT
    * background (e.g. a reverse/white logo). 'dark' looks are shown on dark/SUSE themes,
    * 'light' looks on the light theme; a clashing look would be near-invisible on the
    * tile, so it's filtered out. Omit for looks that bake their own background (any theme).
@@ -50,7 +50,7 @@ export interface FeaturedVariant {
 export interface FeaturedManifest {
   blurb?: string;
   order?: number;
-  /** DEPRECATED alias for the top-level `examples` field — see resolveExamples(). */
+  /** DEPRECATED alias for the top-level `examples` field - see resolveExamples(). */
   variants?: FeaturedVariant[];
 }
 /** The slice of a catalog index entry the featured row reads. */
@@ -58,7 +58,7 @@ export interface FeaturedEntry {
   id: string;
   name: string;
   preview?: string;
-  /** The tool's inlined icon SVG — shown as the tile's fallback art when no preview/
+  /** The tool's inlined icon SVG - shown as the tile's fallback art when no preview/
    *  variant has loaded (and revealed if one errors), hidden once real art is ready. */
   icon?: string;
   formats?: readonly string[];
@@ -70,7 +70,7 @@ export interface FeaturedEntry {
    * resume URL here so a middle-click / no-JS open still lands in the right place.
    */
   href?: string;
-  /** Example looks (manifest.examples) — the canonical source; see resolveExamples(). */
+  /** Example looks (manifest.examples) - the canonical source; see resolveExamples(). */
   examples?: FeaturedVariant[];
   featured: FeaturedManifest;
 }
@@ -97,21 +97,21 @@ export interface FeaturedRowHandle {
 }
 
 const FADE_INTERVAL_MS = 4600;    // dwell on each look before cross-fading
-const DRIFT_PX_PER_SEC = 22;      // "slowly" — a calm, readable drift speed
+const DRIFT_PX_PER_SEC = 22;      // "slowly" - a calm, readable drift speed
 const RESUME_DELAY_MS = 900;      // after a manual scroll settles, ease back into drift
 const WHEEL_TO_VELOCITY = 14;     // px/s of spin added per unit of horizontal wheel delta
 const MAX_VELOCITY = 3200;        // px/s cap so a wild flick or wheel can't teleport the strip
 const INERTIA_FRICTION = 0.94;    // velocity decay per ~16.7ms frame (≈1s coast to rest)
 const INERTIA_MIN_V = 6;          // px/s; below this the coast stops and ambient drift may resume
-// Lucide "arrow-right" — the Open affordance glyph.
+// Lucide "arrow-right" - the Open affordance glyph.
 const ARROW = icon('arrowRight', { size: 15, strokeWidth: 2.2 });
 
-// Lucide "circle-help" — the optional "(?)" glyph beside a strip's pull label (opts.labelHref).
-// Path data lives in lib/icons.ts as 'help' — deduped against footer-nav.ts's identical glyph
+// Lucide "circle-help" - the optional "(?)" glyph beside a strip's pull label (opts.labelHref).
+// Path data lives in lib/icons.ts as 'help' - deduped against footer-nav.ts's identical glyph
 // (component-audit rec 5; help-tip.ts's own copy is a separate agent's territory, see followups).
 const HELP_ICON = icon('help', { size: 12, strokeWidth: 2.4 });
 
-// Kebab "more actions" glyph — the optional per-tile ⋯ menu button (opts.tileMenu). The
+// Kebab "more actions" glyph - the optional per-tile ⋯ menu button (opts.tileMenu). The
 // consumer (e.g. Projects' Uncategorised ribbon) delegates the button's click to its own menu.
 const MENU_DOTS = icon('menuDots', { size: 18, filled: true });
 
@@ -135,7 +135,7 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // as layers as they arrive. A tool whose preview is missing (dev, before
   // `npm run previews`) simply starts on the themed backdrop until its first variant.
   // The FIRST tile is the above-the-fold LCP element, so it loads eagerly at high
-  // priority — `loading="lazy"` on the hero delays LCP (the browser defers the very
+  // priority - `loading="lazy"` on the hero delays LCP (the browser defers the very
   // image LCP measures). Off-screen tiles (index > 0) keep lazy.
   const loadAttrs = eager ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
   const base = entry.preview
@@ -143,27 +143,27 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
     : '';
   // The tool's own icon is the always-present fallback: it shows until a real preview/
   // variant decodes (so a missing or slow image is never a blank/broken box), and it's
-  // hidden the instant art is ready (`.ftile.has-art` — a transparent preview would
+  // hidden the instant art is ready (`.ftile.has-art` - a transparent preview would
   // otherwise let the icon show through behind it). '' when the tool has no icon.
   const iconFill = entry.icon ? `<span class="ftile-iconfill" aria-hidden="true">${entry.icon}</span>` : '';
   // Icon-HERO tile: no preview and no example looks means the icon isn't a
-  // loading fallback here — it IS the artwork for the tile's whole life (the
+  // loading fallback here - it IS the artwork for the tile's whole life (the
   // utility entries, favourited view cards). ftile--icon styles it substantial
   // (large, bold, brand-hued) instead of the faint loading ghost, and pairs it
   // with the name in a pill so icon + title read as ONE centred object: for a
   // utility the name identifies it faster than the glyph does.
   const iconHero = !entry.preview && resolveExamples(entry).length === 0;
-  // The pill lives inside the (aria-hidden) stage, so it's decoration — the
+  // The pill lives inside the (aria-hidden) stage, so it's decoration - the
   // link's aria-label still carries the name, and nothing is announced twice.
   // Its visible twin in .ftile-meta is hidden by CSS on these tiles.
   const iconName = iconHero ? `<span class="ftile-iconname">${escape(entry.name)}</span>` : '';
   const href = entry.href ?? `#/tool/${entry.id}`;
-  // `data-basehref` is the tool's default route — the fallback the tile's href reverts to
+  // `data-basehref` is the tool's default route - the fallback the tile's href reverts to
   // while the committed placeholder is showing (a rendered look then points href at its own
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
   return `
     <li class="ftile${iconHero ? ' ftile--icon' : ''}" data-tool="${escape(entry.id)}">
-      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — every entry.href is a fixed-prefix in-app route ('#/tool/…', '#/c?asset=…', '#/pro?session=…'), else the '#/tool/<id>' fallback */ ''}
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - every entry.href is a fixed-prefix in-app route ('#/tool/…', '#/c?asset=…', '#/pro?session=…'), else the '#/tool/<id>' fallback */ ''}
       <a class="ftile-link" href="${escape(href)}" data-basehref="${escape(href)}" aria-label="${escape(label)}" draggable="false">
         <span class="ftile-stage" aria-hidden="true">
           ${iconFill}
@@ -195,18 +195,20 @@ export function mountFeaturedRow(
   opts: { viewMode?: FeaturedViewMode; staticStrip?: boolean; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
 ): FeaturedRowHandle {
   const entries = [...entriesIn].sort(byFeaturedOrder);
-  // An automated screenshot run is treated as reduced motion, because every motion this
-  // component owns is JS-driven and so invisible to the capture harness's FREEZE_CSS
-  // (which can only zero CSS animations/transitions). Left running, the ambient drift
-  // moves `scrollLeft` and the cross-fade advances each tile's look between one capture
-  // and the next: re-shooting the gallery gave -22%, then -84% byte swings, which as a
-  // VECTOR baseline is churn on every run — the raster baselines only ever hid it behind
-  // their `tolerance=` pixel budget, which vector shots compare exactly and ignore.
-  // Reusing `reduced` rather than adding a second switch means the still path taken here
-  // is the one users already exercise, not a capture-only branch nothing else tests. The
-  // gallery favourites strip opts in unconditionally (`staticStrip`, Andy 2026-08-10): no
-  // auto-drift marquee and no example/preset cross-fade — a favourite shows the tool's single
-  // committed template, swipe/drag only. Cover Flow + the Projects ribbon keep their motion.
+  // An automated screenshot run is treated as reduced motion. Every motion this
+  // component owns is JS-driven, so it is invisible to the capture harness's
+  // FREEZE_CSS, which can only zero CSS animations/transitions. Left running, the
+  // ambient drift moves `scrollLeft` and the cross-fade advances each tile's look
+  // between one capture and the next. Re-shooting the gallery gave -22%, then -84%
+  // byte swings. As a VECTOR baseline this is churn on every run: the raster
+  // baselines used to hide it behind their `tolerance=` pixel budget, but vector
+  // shots compare exactly and ignore that budget. Reusing `reduced` rather than
+  // adding a second switch means the still path taken here is the one users already
+  // exercise, not a capture-only branch nothing else tests. The gallery favourites
+  // strip opts in unconditionally (`staticStrip`, Andy 2026-08-10): no auto-drift
+  // marquee and no example/preset cross-fade. A favourite shows the tool's single
+  // committed template, swipe/drag only. Cover Flow and the Projects ribbon keep
+  // their motion.
   const reduced = prefersReducedMotion() || captureNeutralPinned() || opts.staticStrip === true;
   let coverflow = opts.viewMode === 'coverflow';
   // Drag-out mode (Projects "Uncategorised" ribbon): each tile is a native HTML5 drag
@@ -219,7 +221,7 @@ export function mountFeaturedRow(
   const tileMenu = opts.tileMenu === true;
   // In-view activation: when the consumer wants a tile press to DO something in place
   // (e.g. open a modal) rather than navigate a route, it passes onActivate. Tiles then
-  // hand their id to it instead of following their href — which is what keeps the
+  // hand their id to it instead of following their href - which is what keeps the
   // catalogue favourites strip's "Open" (a same-route #/c?asset=… link) from being
   // swallowed by the router's same-route dedupe. The <a href> is kept as the middle- /
   // ⌘-click "open in new tab" + no-JS deep-link fallback.
@@ -227,7 +229,7 @@ export function mountFeaturedRow(
 
   mount.innerHTML = `
     <section class="featured${reduced ? ' featured--static' : ''}${coverflow ? ' featured--coverflow' : ''}" aria-label="${escape(opts.ariaLabel || opts.label || 'Featured tools')}" aria-roledescription="carousel">
-      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — opts.labelHref is a call-site literal doc route, never remote data */ ''}
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - opts.labelHref is a call-site literal doc route, never remote data */ ''}
       ${opts.label ? `<span class="featured-label">${escape(opts.label)}${opts.labelHref ? `<a class="featured-label-help" href="${escape(opts.labelHref)}" aria-label="${escape(opts.labelHelp || 'Learn more')}" title="${escape(opts.labelHelp || 'Learn more')}">${HELP_ICON}</a>` : ''}</span>` : ''}
       <div class="featured-viewport">
         <ul class="featured-track">${entries.map((e, i) => tileMarkup(e, i === 0, tileMenu)).join('')}</ul>
@@ -243,7 +245,7 @@ export function mountFeaturedRow(
   // Make the ORIGINAL tile links drag sources; setupLoop's wrap-clones are cloneNode(true)
   // copies made after this, so they inherit draggable (and re-cloning on a view switch
   // keeps it). tileMarkup sets draggable="false" to suppress the native link-drag ghost
-  // during a pan — here we deliberately turn it back on.
+  // during a pan - here we deliberately turn it back on.
   if (tileDragOut) track.querySelectorAll<HTMLElement>('.ftile-link').forEach((l) => { l.draggable = true; });
 
   const ac = new AbortController();
@@ -264,7 +266,7 @@ export function mountFeaturedRow(
   const isReady = (img: HTMLImageElement): boolean => img.complete && img.naturalWidth > 0;
 
   // Icon fallback ⇄ real art. Mark a tile `has-art` the instant any preview/variant image
-  // decodes — that hides the icon so a transparent image can't reveal it behind the art —
+  // decodes - that hides the icon so a transparent image can't reveal it behind the art - 
   // and DROP an image that 404s/errors so the icon stands in rather than a broken box.
   // Capture phase (load/error don't bubble); covers the committed base AND the lazily
   // appended variant layers.
@@ -279,7 +281,7 @@ export function mountFeaturedRow(
     if (imgs.length < 2) { dots.innerHTML = ''; return; }
     if (dots.childElementCount !== imgs.length) {
       // data-dot = rotation index; the delegated click handler jumps straight to that
-      // look. Spans, not buttons — they live inside the tile's <a> (no nested
+      // look. Spans, not buttons - they live inside the tile's <a> (no nested
       // interactives) and stay aria-hidden decoration; keyboard users get the same
       // looks via the ambient rotation + the seeded link.
       dots.innerHTML = imgs.map((_, i) => `<span class="ftile-dot" data-dot="${i}"></span>`).join('');
@@ -298,7 +300,7 @@ export function mountFeaturedRow(
   }
 
   // Point a tile's <a> at the currently-shown look's seeded URL, so a tap / click / ⌘-click
-  // (new tab) / keyboard Enter opens the tool in THAT exact style — the featured row's parity
+  // (new tab) / keyboard Enter opens the tool in THAT exact style - the featured row's parity
   // with the gallery carousels' click-to-seed ("you get the config you saw"). Reverts to the
   // tool's default route (`data-basehref`) while the committed placeholder is active or before
   // a look's seed URL has resolved. Each rendered look carries its URL on `data-seedhref` (set
@@ -327,14 +329,14 @@ export function mountFeaturedRow(
     const imgs = rotationImgs(stage);
     if (!imgs.length) return;
     const cur = imgs.findIndex((i) => i.classList.contains('is-active'));
-    // cur === -1 means the active layer is the base placeholder (now out of rotation) —
+    // cur === -1 means the active layer is the base placeholder (now out of rotation) - 
     // step onto the first variant regardless of direction.
     showStage(stage, imgs.length < 2 || cur === -1
       ? 0
       : ((cur + dir) % imgs.length + imgs.length) % imgs.length);
   }
 
-  // Jump one tool's stages — BOTH its original tile and its wrap-clone — to look `idx`,
+  // Jump one tool's stages - BOTH its original tile and its wrap-clone - to look `idx`,
   // so the pair stays in sync (a dot click can land on either copy).
   function jumpTool(toolId: string, idx: number): void {
     track.querySelectorAll(`.ftile[data-tool="${CSS.escape(toolId)}"] .ftile-stage`).forEach((s) => showStage(s, idx));
@@ -354,7 +356,7 @@ export function mountFeaturedRow(
   if (!reduced) {
     fadeTimer = setInterval(() => {
       // Pause the auto cross-fade while the pointer is over the strip or a finger is on
-      // it — a cross-fade firing mid-swipe animates two drop-shadowed images at once and
+      // it - a cross-fade firing mid-swipe animates two drop-shadowed images at once and
       // janks the scroll (mobile especially). `touching` covers the whole swipe;
       // hovering/manualUntil cover the mouse + post-gesture rest.
       if (destroyed || !visible || !onScreen || document.hidden || hovering || touching || performance.now() < manualUntil) return;
@@ -365,11 +367,11 @@ export function mountFeaturedRow(
   // ── Motion model: ambient drift · flick/wheel inertia · pointer drag ─────────
   // The viewport is a native horizontal scroller (swipe / trackpad / keyboard all
   // free). One rAF loop owns scrollLeft with three states, in priority order:
-  //   1. dragging   — the pointer sets scrollLeft directly (see pointermove).
-  //   2. |velocity| — a flick-release or wheel spin-up coasts and decays ("wheel
+  //   1. dragging - the pointer sets scrollLeft directly (see pointermove).
+  //   2. |velocity| - a flick-release or wheel spin-up coasts and decays ("wheel
   //                   physics": grab-and-throw keeps spinning, then eases to rest).
-  //   3. idle       — the slow ambient drift resumes.
-  // A cloned second copy of the track keeps the wrap seamless. Cloning + auto motion
+  //   3. idle - the slow ambient drift resumes.
+  // A cloned second copy of the track keeps the wrap gapless. Cloning + auto motion
   // engage only when the content overflows; under reduced motion the strip is a plain
   // (still grab-draggable) scroller with no drift and no inertia coast.
   let raf = 0;
@@ -379,11 +381,11 @@ export function mountFeaturedRow(
   let velocity = 0;   // px/s, for flick / wheel inertia
   let snapTarget: number | null = null;   // coverflow: scrollLeft to ease toward (a chosen cover)
 
-  // Drag state — mouse/pen "grab and shift" (horizontal carousel pan).
+  // Drag state - mouse/pen "grab and shift" (horizontal carousel pan).
   let dragging = false;
   let dragMoved = false;
   let dragPointerId = -1;
-  let dragStartX = 0;   // where the press began — the click-vs-drag slop is measured from here
+  let dragStartX = 0;   // where the press began - the click-vs-drag slop is measured from here
   let lastPointerX = 0;
   let lastMoveTs = 0;
   let pressLink: HTMLAnchorElement | null = null; // the tile link a mouse/pen press landed on
@@ -392,7 +394,7 @@ export function mountFeaturedRow(
   const DRAG_SLOP = 8;      // px a mouse/pen press may travel and still count as a click, not a drag
 
   // The current UI theme decides which transparent-background looks are legible (a
-  // reverse/white look on a light tile — or a dark look on a dark tile — would vanish).
+  // reverse/white look on a light tile - or a dark look on a dark tile - would vanish).
   const darkTheme = /^(dark|suse)$/.test(currentTheme());
 
   // Pause signals for the AMBIENT drift only (drag + inertia are user-driven and
@@ -402,7 +404,7 @@ export function mountFeaturedRow(
   let touching = false;
   let manualUntil = 0; // timestamp; a hand-scroll / drag suppresses drift briefly
 
-  // Flick cue — a soft paper tick as each tile / cover flips past WHILE the user is scrolling
+  // Flick cue - a soft paper tick as each tile / cover flips past WHILE the user is scrolling
   // (drag or flick-coast), never during the calm ambient drift. `flickIndex` tracks the item
   // currently at centre so we only tick on a crossing; the play is rate-limited so a fast riffle
   // flutters rather than buzzes.
@@ -424,7 +426,7 @@ export function mountFeaturedRow(
   function normalizeWrap(): void {
     if (!looping || halfWidth <= 0) return;
     // Keep scrollLeft within [0, halfWidth): the second copy is identical, so
-    // subtracting one copy's width is visually seamless. Handles drift, inertia
+    // subtracting one copy's width has no visible seam. Handles drift, inertia
     // coast, and a hand-drag/scroll that runs off either end.
     if (viewport.scrollLeft >= halfWidth) viewport.scrollLeft -= halfWidth;
     else if (viewport.scrollLeft < 0) viewport.scrollLeft += halfWidth;
@@ -444,9 +446,9 @@ export function mountFeaturedRow(
   // A cover's centre + width only change on (re)layout, but layoutCoverflow() runs every
   // frame during a drag/flick. Cache them in setupLoop so the hot loop is WRITE-only: an
   // offsetLeft/offsetWidth read mid-loop would flush a style recalc after each is-centred
-  // class toggle (a per-tile-per-frame cost — felt most on mobile). Rebuilt on resize,
+  // class toggle (a per-tile-per-frame cost - felt most on mobile). Rebuilt on resize,
   // view-switch, and the post-decode relayout.
-  // `vc` is the cover's centre as DRAWN (layout centre + this frame's tuck) — the fan
+  // `vc` is the cover's centre as DRAWN (layout centre + this frame's tuck) - the fan
   // pulls each cover toward the middle, so a pointer x can only be mapped back to a cover
   // through it (see coverAtClientX). Written by layoutCoverflow, which computes the tuck
   // anyway; undefined until the first fan layout.
@@ -462,7 +464,7 @@ export function mountFeaturedRow(
       i++;
       const cd = Math.max(-1.4, Math.min(1.4, d));        // angle/scale saturate near the edge
       // Tuck keeps pulling the FURTHER covers in (own wider clamp), instead of plateauing
-      // at cd's ±1.4 like the rotation does — otherwise every cover past the first neighbour
+      // at cd's ±1.4 like the rotation does - otherwise every cover past the first neighbour
       // sits ~a full width apart and the fan gaps out at the screen edges. With a wider range
       // the net spacing stays a uniform ~(1-CF_TUCK)·width, so the covers stack tight all the
       // way out. (Range caps the transform for far off-screen covers; doesn't affect visible ones.)
@@ -471,7 +473,7 @@ export function mountFeaturedRow(
       const scale = 1 - Math.min(Math.abs(d), 1) * (1 - CF_MIN_SCALE);
       const tuck = -td * g.w * CF_TUCK;
       // Rotating a cover about its own centre swings its NEAR half toward the camera by
-      // (halfWidth · scale · sin angle) — enough to cross the centred cover's z=0 plane, and
+      // (halfWidth · scale · sin angle) - enough to cross the centred cover's z=0 plane, and
       // the browser depth-sorts the intersecting planes per-pixel: the neighbour's near half
       // paints OVER the centred cover, smearing its frost/edge across it. Recede each cover
       // by exactly its own protrusion (+2px slack) so no plane ever reaches in front of the
@@ -496,7 +498,7 @@ export function mountFeaturedRow(
   // not hit-testable: every cover is z-translated inside the track's preserve-3d context,
   // so Chrome resolves each press in the strip to the track itself and `closest('.ftile')`
   // finds nothing (see the .featured-go note). Matched against the covers' DRAWN centres,
-  // not their layout ones — the fan tucks each cover CF_TUCK of a width toward the middle,
+  // not their layout ones - the fan tucks each cover CF_TUCK of a width toward the middle,
   // so at the third cover out the two are more than a full cover apart. Nearest drawn
   // centre wins: the covers stay in order across the strip, and the boundary between two
   // of them lands on the overlap where the nearer one starts hiding the further.
@@ -531,7 +533,7 @@ export function mountFeaturedRow(
 
   function tick(ts: number): void {
     if (destroyed) { raf = 0; return; }             // stop rescheduling once torn down
-    if (!onScreen) { raf = 0; return; }             // parked off-screen — the observer restarts us
+    if (!onScreen) { raf = 0; return; }             // parked off-screen - the observer restarts us
     raf = requestAnimationFrame(tick);
     const dt = lastTs ? ts - lastTs : 0;
     lastTs = ts;
@@ -573,7 +575,7 @@ export function mountFeaturedRow(
     track.querySelectorAll('.ftile--clone').forEach((n) => n.remove());
     looping = false;
     halfWidth = 0;
-    // Cover Flow is a finite, snap carousel (no seamless clone loop). Pad the track so
+    // Cover Flow is a finite, snap carousel (no gapless clone loop). Pad the track so
     // the first and last cover can reach the centre, then lay out the fan.
     if (coverflow) {
       section.classList.remove('featured--overflow');
@@ -596,14 +598,14 @@ export function mountFeaturedRow(
       const c = tile.cloneNode(true) as HTMLElement;
       c.classList.add('ftile--clone');
       c.setAttribute('aria-hidden', 'true');
-      // Clones are decorative duplicates — keep them out of the tab order and off AT.
+      // Clones are decorative duplicates - keep them out of the tab order and off AT.
       if (c.matches('a,button,[tabindex]')) c.setAttribute('tabindex', '-1');
       c.querySelectorAll<HTMLElement>('a,button,[tabindex]').forEach((el) => el.setAttribute('tabindex', '-1'));
       return c;
     });
     clones.forEach((c) => track.appendChild(c));
-    // The seamless period is the exact on-screen distance from the first original to
-    // its clone — measured from layout, so track padding + the flex gap are all
+    // The wrap period is the exact on-screen distance from the first original to
+    // its clone - measured from layout, so track padding + the flex gap are all
     // accounted for (a computed width would be off by a gutter and the wrap would jump).
     halfWidth = clones[0]!.offsetLeft - originals[0]!.offsetLeft;
     looping = halfWidth > 0;
@@ -619,7 +621,7 @@ export function mountFeaturedRow(
   viewport.addEventListener('scroll', () => {
     if (coverflow) { layoutCoverflow(); return; }
     normalizeWrap();
-    // Flick as each tile passes centre — but only while the user is driving it (a drag or a
+    // Flick as each tile passes centre - but only while the user is driving it (a drag or a
     // flick-coast), never during the calm ambient drift. `flickIndex` tracks position even while
     // drifting so the next user flick doesn't start out of sync.
     if (looping && halfWidth > 0) {
@@ -636,7 +638,7 @@ export function mountFeaturedRow(
   // or an explicit resume URL). We do this on pointerup for a clean tap rather than
   // trust the native click, which a drifting / re-cloning carousel drops when the
   // mousedown and mouseup resolve to different nodes (and which pointer capture can
-  // retarget off the anchor) — the root of "Open sometimes does nothing" on desktop.
+  // retarget off the anchor) - the root of "Open sometimes does nothing" on desktop.
   const openLink = (link: HTMLAnchorElement | null): void => {
     // Consumer-driven in-view open (see onActivate): hand the tile's id to the callback
     // rather than navigating its href, so a same-route "Open" isn't lost to route dedupe.
@@ -649,9 +651,9 @@ export function mountFeaturedRow(
   };
 
   // ── Wheel ─────────────────────────────────────────────────────────────────────
-  // Horizontal wheel (trackpad swipe) spins the carousel with momentum — the only
+  // Horizontal wheel (trackpad swipe) spins the carousel with momentum - the only
   // axis the strip owns. A vertical wheel ALWAYS falls through and scrolls the
-  // PAGE, in every view mode: the strip must never capture it (scroll hijack —
+  // PAGE, in every view mode: the strip must never capture it (scroll hijack - 
   // the old vertical-flips-examples gesture trapped readers trying to get past
   // the row). Non-passive so the horizontal branch can preventDefault.
   viewport.addEventListener('wheel', (e) => {
@@ -663,30 +665,30 @@ export function mountFeaturedRow(
     velocity = clampV(velocity + e.deltaX * WHEEL_TO_VELOCITY);
   }, { signal });
 
-  // ── Pointer down — mouse/pen start a horizontal carousel drag; gallery touch is
+  // ── Pointer down - mouse/pen start a horizontal carousel drag; gallery touch is
   // left ENTIRELY to the browser (touch-action pan-x pan-y: horizontal pans the
-  // strip's native scroller, vertical scrolls the page — never captured). Either
+  // strip's native scroller, vertical scrolls the page - never captured). Either
   // way the grab lights up the backdrop (see .is-grabbing). ──
   viewport.addEventListener('pointerdown', (e) => {
-    // A press on the ⋯ menu button or an example dot is neither a pan nor a tile open —
+    // A press on the ⋯ menu button or an example dot is neither a pan nor a tile open - 
     // leave it to its own click handling (the consumer's actions menu / the dot branch of
     // the capture click handler below), whatever the view mode / device. Skipping here
     // also keeps pressLink unset, so the pointerup deterministic-open never fires for it.
     if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot')) return;
     // Drag-out mode: a mouse/pen press ON a tile is a click-to-open or the start of a
-    // native drag-to-folder — never a pan grab. Yield to the browser (no preventDefault /
+    // native drag-to-folder - never a pan grab. Yield to the browser (no preventDefault /
     // pointer capture / dragging state) so HTML5 drag can begin; panning stays available
     // via the wheel/trackpad, the mobile grip, and the ambient drift. (Touch has no native
     // DnD, so it keeps its native scroll gestures.)
     if (tileDragOut && e.pointerType !== 'touch' && e.button === 0 && (e.target as Element | null)?.closest?.('.ftile-link')) return;
     velocity = 0;                                            // a grab cancels any coast
     snapTarget = null;
-    dragMoved = false;                                       // fresh press — never inherit a prior drag's "moved"
-    suppressNextClick = false;                               // fresh press — never inherit a stale suppress flag
+    dragMoved = false;                                       // fresh press - never inherit a prior drag's "moved"
+    suppressNextClick = false;                               // fresh press - never inherit a stale suppress flag
     dragStartX = e.clientX;                                  // anchor for the click-vs-drag slop test
     pressLink = (e.target as Element | null)?.closest?.<HTMLAnchorElement>('.ftile-link') ?? null;
     section.classList.add('is-grabbing');
-    // Gallery touch: no JS gesture — the native scroller owns both axes. (Cover Flow
+    // Gallery touch: no JS gesture - the native scroller owns both axes. (Cover Flow
     // touch keeps the JS horizontal drag; its pan-y touch-action leaves vertical to
     // the page.)
     if (e.pointerType === 'touch' && !coverflow) return;
@@ -701,8 +703,8 @@ export function mountFeaturedRow(
   }, { signal });
 
   // A middle-button press must pan (like the canvas), not engage the browser's middle-click
-  // autoscroll. preventDefault() on the pointerdown above doesn't stop it — the autoscroll
-  // is a default action of the mousedown on this native scroller — so cancel it here.
+  // autoscroll. preventDefault() on the pointerdown above doesn't stop it - the autoscroll
+  // is a default action of the mousedown on this native scroller - so cancel it here.
   viewport.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }, { signal });
 
   viewport.addEventListener('pointermove', (e) => {
@@ -749,7 +751,7 @@ export function mountFeaturedRow(
     // (which the drifting carousel drops when the press and release land on different
     // nodes → no click fires). Modified / middle clicks fall through to the native
     // anchor so cmd/ctrl/middle-click still open a new tab; keyboard Enter is unaffected.
-    // In Cover Flow, only the centred cover opens — a side cover's click centres it (the
+    // In Cover Flow, only the centred cover opens - a side cover's click centres it (the
     // capture-phase handler below), so leave that to the native click path.
     const plainTap = !dragMoved && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
     const centredOrGallery = !coverflow || (pressLink?.closest('.ftile')?.classList.contains('is-centred') ?? false);
@@ -761,10 +763,10 @@ export function mountFeaturedRow(
   viewport.addEventListener('pointerup', endDrag, { signal });
   viewport.addEventListener('pointercancel', endDrag, { signal });
   viewport.addEventListener('click', (e) => {
-    // Let a ⋯ menu-button click through untouched — it must reach the consumer's delegated
+    // Let a ⋯ menu-button click through untouched - it must reach the consumer's delegated
     // handler, and (in Cover Flow) must NOT be treated as a "centre this side cover" click.
     if ((e.target as Element | null)?.closest?.('.ftile-menu')) return;
-    // An example dot picks that look directly — swallow the click so the wrapping
+    // An example dot picks that look directly - swallow the click so the wrapping
     // <a> doesn't also navigate. (The non-hijacking replacement for the old
     // vertical-scroll shift gesture.)
     const dot = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile-dot');
@@ -775,13 +777,13 @@ export function mountFeaturedRow(
       if (toolId) { jumpTool(toolId, Number(dot.dataset.dot ?? 0)); markManualShift(); }
       return;
     }
-    // We already navigated on pointerup (deterministic open) — swallow the native click
+    // We already navigated on pointerup (deterministic open) - swallow the native click
     // so the anchor doesn't fire a second, duplicate navigation.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); dragMoved = false; return; }
     if (dragMoved) { e.preventDefault(); e.stopPropagation(); dragMoved = false; return; }
     // In-view activation (onActivate): a plain, unmodified click that DIDN'T come from a
-    // pointerup-open — keyboard Enter on the focused anchor, or any native click we didn't
-    // already handle — hands off to onActivate instead of the anchor's href navigation, so
+    // pointerup-open - keyboard Enter on the focused anchor, or any native click we didn't
+    // already handle - hands off to onActivate instead of the anchor's href navigation, so
     // keyboard users get the same in-view open (and it isn't lost to route dedupe). Modified
     // / middle clicks fall through so ⌘/ctrl/middle-click still open the deep link in a new
     // tab. In Cover Flow only the centred cover activates; a side cover still centres below.
@@ -792,8 +794,8 @@ export function mountFeaturedRow(
     }
     // Cover Flow: clicking a side cover brings it to the centre (select it) rather than
     // opening; the centred cover is opened from the Open button (see .featured-go).
-    // `closest('.ftile')` can't be trusted here — inside the fan Chrome's event hit test
-    // resolves to the TRACK, never a cover (see coverAtClientX) — so fall back to which
+    // `closest('.ftile')` can't be trusted here - inside the fan Chrome's event hit test
+    // resolves to the TRACK, never a cover (see coverAtClientX) - so fall back to which
     // cover the pointer's x lands on.
     if (coverflow) {
       const tile = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile') ?? coverAtClientX(e.clientX);
@@ -809,20 +811,20 @@ export function mountFeaturedRow(
   // the section rather than inside the cover it belongs to: Chrome cannot target
   // anything inside the fan. Every cover carries a `translateZ` (layoutCoverflow recedes
   // each one so the fan can't paint over the centred cover), and a z-translated plane
-  // inside a `transform-style: preserve-3d` context is not hit-testable — the event's
+  // inside a `transform-style: preserve-3d` context is not hit-testable - the event's
   // target is the preserve-3d root, `.featured-track`, wherever in the fan you press.
   // (Verified in Chrome 141: `rotateY` alone hit-tests fine, adding any translateZ makes
   // the subtree untargetable; elementsFromPoint still reports the covers, so it's the
   // event hit test specifically.) So the button sits OUTSIDE the 3D context, absolutely
   // positioned over the bottom edge of the centred cover (see featured.css), where it is
-  // an ordinary, reliably clickable button — and it reads the cover to open off
+  // an ordinary, reliably clickable button - and it reads the cover to open off
   // `.is-centred` at click time.
   const goBtn = section.querySelector<HTMLElement>('.featured-go');
   goBtn?.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     // Mid-flick no cover is close enough to be `.is-centred`, and the button is always
-    // there to be pressed — fall back to whichever cover is nearest the slot it sits in,
+    // there to be pressed - fall back to whichever cover is nearest the slot it sits in,
     // so a press during the settle opens that cover rather than nothing.
     const centred = section.querySelector<HTMLElement>('.ftile.is-centred')
       ?? coverAtClientX(viewport.getBoundingClientRect().left + viewport.clientWidth / 2);
@@ -834,11 +836,11 @@ export function mountFeaturedRow(
     if (dragMoved) { e.preventDefault(); e.stopPropagation(); dragMoved = false; }
   }, { signal, capture: true });
 
-  // ── Mobile drag handle — a JS-driven page-scroll grip (pointer events, so it works
+  // ── Mobile drag handle - a JS-driven page-scroll grip (pointer events, so it works
   // with a finger AND with a mouse at mobile widths). A belt-and-braces explicit
   // handle that drags the page 1:1 (finger/cursor up → content up), like the tool
   // editor's sheet grip. (Vertical swipes on the strip itself also scroll the page
-  // now — the strip never captures vertical.) ──
+  // now - the strip never captures vertical.) ──
   const grip = section.querySelector<HTMLElement>('.featured-grip');
   if (grip) {
     let gripId = -1;
@@ -885,12 +887,12 @@ export function mountFeaturedRow(
   // always needs it for its snap + live transforms.
   if (coverflow || !reduced) startRaf();
 
-  // Resume hook for the progressive-variant queue below — assigned once its jobs exist,
+  // Resume hook for the progressive-variant queue below - assigned once its jobs exist,
   // called by the vizObserver when the row scrolls back into view. No-op until then.
   let resumeQueue: () => void = () => {};
 
   // Park all motion while the strip is fully scrolled out of view; resume (slightly early,
-  // via the rootMargin) as it comes back. On-screen behaviour is byte-identical — this only
+  // via the rootMargin) as it comes back. On-screen behaviour is byte-identical - this only
   // stops the loop + cross-fade when there's nothing on screen to animate. Graceful fallback:
   // no IntersectionObserver → onScreen stays true and everything runs as before.
   if (typeof IntersectionObserver === 'function') {
@@ -905,7 +907,7 @@ export function mountFeaturedRow(
 
   // ── Progressive variant rendering (skipped under reduced motion) ──────────────
   // Round-robin across tools so every tile gets its first extra look before any gets
-  // its second — the row enriches evenly. Serial, on idle, cached; a failure just
+  // its second - the row enriches evenly. Serial, on idle, cached; a failure just
   // leaves that tile with fewer looks.
   let ricId = 0;
   if (!reduced) {
@@ -919,7 +921,7 @@ export function mountFeaturedRow(
       for (const t of perTool) {
         const v = t.variants[i];
         if (!v || !t.canRender) continue;
-        // Theme filter: skip a look tagged for the OPPOSITE UI theme — a reverse/white
+        // Theme filter: skip a look tagged for the OPPOSITE UI theme - a reverse/white
         // look on a light tile (or a dark look on a dark tile) would be near-invisible.
         // `index: i` keeps the ORIGINAL manifest position so the render cache key is
         // stable whichever looks the theme filters in/out.
@@ -937,12 +939,12 @@ export function mountFeaturedRow(
         img.alt = '';
         img.setAttribute('aria-hidden', 'true');
         img.draggable = false;
-        img.src = dataUrl; // data URL — decodes synchronously-ish; the ticker rotates it in once ready
+        img.src = dataUrl; // data URL - decodes synchronously-ish; the ticker rotates it in once ready
         stage.appendChild(img);
         added.push(img);
       });
       // Precompute this look's seeded open URL once (shared by the tile + its wrap-clone) so
-      // clicking the tile while this look is on screen opens the tool in this exact style —
+      // clicking the tile while this look is on screen opens the tool in this exact style - 
       // matching the gallery carousels. advanceStage points the tile's <a> at whichever look
       // is active; if this one is already showing when its URL resolves, refresh it now. A
       // failed build just leaves the default route (toolSeedHref falls back to it).
@@ -954,13 +956,13 @@ export function mountFeaturedRow(
       });
     };
 
-    // These variants are progressive "extra looks" cross-faded in later — NEVER the LCP
+    // These variants are progressive "extra looks" cross-faded in later - NEVER the LCP
     // element (that's the committed `data-base` preview, already in the DOM). Rendering
     // them eagerly at boot stole CPU + network from the critical first paint: each pulls
     // its example photos through a main-thread canvas, and with all 10 featured tools
     // queued up front that measured gallery LCP 8.3s / TBT 730ms. So the queue is now
     // (a) held until the page's critical load has settled, and (b) parked whenever the
-    // row is scrolled off-screen — the vizObserver above resumes it on re-entry.
+    // row is scrolled off-screen - the vizObserver above resumes it on re-entry.
     let queueArmed = false;
     const pumpQueue = (): void => {
       if (destroyed || !onScreen) return;      // off-screen → park; vizObserver re-pumps on re-entry
@@ -992,7 +994,7 @@ export function mountFeaturedRow(
       coverflow = next;
       velocity = 0;
       snapTarget = null;
-      flickIndex = -1;   // the two modes index differently — don't flick on the switchover
+      flickIndex = -1;   // the two modes index differently - don't flick on the switchover
       section.classList.toggle('featured--coverflow', coverflow);
       if (!coverflow) clearCoverflow();      // shed inline transforms + padding before re-cloning
       setupLoop();                           // coverflow → pad + fan; gallery → clone + drift

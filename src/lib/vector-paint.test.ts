@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * vector-paint — the shared vocabulary for canvas vector twins.
+ * vector-paint - the shared vocabulary for canvas vector twins.
  *
  * Two kinds of assertion here, and the second is the one that matters most:
  *
- *  1. BEHAVIOUR — the markup builders, the tile cap, the id namespacing that stops two
+ *  1. BEHAVIOUR - the markup builders, the tile cap, the id namespacing that stops two
  *     twins in one export from both minting `fcclip-1`, and the parse boundary that
  *     turns every malformed twin into a plain `null` (i.e. into today's raster).
- *  2. DRIFT — `waveformPathD` and `stillTilePx` are transcriptions of two loops in
+ *  2. DRIFT - `waveformPathD` and `stillTilePx` are transcriptions of two loops in
  *     views/timeline-panel.ts. They are asserted NUMERICALLY against the panel's own
  *     arithmetic, recomputed here from the same terms, AND the panel's source is
  *     scanned for those terms. If the canvas paint moves and the twin does not, an
- *     export stops matching the screen silently — this is the pair of checks that
+ *     export stops matching the screen silently - this is the pair of checks that
  *     makes that loud instead.
  *
  * jsdom only for `DOMParser` (parseSvgRoot/namespaceSvgRefs are the only DOM users in the
@@ -92,7 +92,7 @@ test('waveformPathD clamps: the 0.02 floor and the 1.0 ceiling', () => {
 });
 
 test('waveformPathD: silence is a hairline row of bars, never nothing', () => {
-  // The floor is why a silent clip still reads as a waveform on screen — an export
+  // The floor is why a silent clip still reads as a waveform on screen - an export
   // that dropped it would be a different picture, not a cleaner one.
   const h = 28;
   const d = waveformPathD(new Float32Array(64), 485, h);
@@ -105,7 +105,7 @@ test('waveformPathD: silence is a hairline row of bars, never nothing', () => {
 });
 
 test('waveformPathD: narrow bars keep the 1px minimum width', () => {
-  // 600 buckets in a 300px bar: bw = 0.5, so bw - 0.5 = 0 and the max() is load-bearing.
+  // 600 buckets in a 300px bar: bw = 0.5, so bw - 0.5 = 0 and the max() is required.
   const got = bars(waveformPathD(new Array(600).fill(0.5), 300, 28));
   for (const b of got) near(b.w, 1, 'min bar width');
 });
@@ -117,7 +117,7 @@ test('waveformPathD: degenerate inputs produce an empty path, not markup', () =>
 
 test('the panel still paints the arithmetic waveformPathD transcribes', () => {
   // A source scan, because the numeric test above can only prove the helper is
-  // self-consistent — this is what fails when the CANVAS side moves.
+  // self-consistent - this is what fails when the CANVAS side moves.
   assert.ok(panelSrc.includes('Math.max(0.02, Math.min(1, data[i]!))'), 'amp clamp');
   assert.ok(panelSrc.includes('const bh = amp * (h - 4);'), 'bar height');
   assert.ok(panelSrc.includes('ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);'), 'fillRect');
@@ -155,7 +155,7 @@ test('tileBody repeats one definition across the bar', () => {
 });
 
 test('tileBody DECLINES past MAX_TWIN_TILES rather than emitting a short run', () => {
-  // The canvas loop it transcribes has no cap, so a capped vector form would export a
+  // The canvas loop it mirrors has no cap, so a capped vector form would export a
   // bar whose right-hand end is blank while the screen shows it fully tiled. Null falls
   // through to the PNG the user is actually looking at. Reachable, not exotic: `tile`
   // floors at 6px, so a tall still needs more than 64 tiles from ~384px of bar.
@@ -204,7 +204,7 @@ test('parseSvgRoot declines malformed markup (parsererror)', () => {
 
 test('parseSvgRoot declines a non-svg root', () => {
   // A producer that returned a fragment, an HTML error page, or a bare <g> must not be
-  // spliced into the export tree — the raster fallback is correct and bounded.
+  // spliced into the export tree - the raster fallback is correct and bounded.
   assert.equal(parseSvgRoot('<g><rect/></g>'), null);
   assert.equal(parseSvgRoot('<html xmlns="http://www.w3.org/1999/xhtml"><body/></html>'), null);
 });
@@ -274,8 +274,8 @@ test('namespaceSvgRefs rewrites url() inside a twin\'s own <style>', () => {
 // silent WRONG PICTURE, not a crash, so each gets its own case.
 
 test('a hex colour is never mistaken for a fragment reference, even when an id matches it', () => {
-  // `fill="#abc"` is the colour #abc. The tempting rule — "a # value whose target is a
-  // defined id" — is ambiguous by construction, and a twin embedding arbitrary user SVG
+  // `fill="#abc"` is the colour #abc. The tempting rule - "a # value whose target is a
+  // defined id" - is ambiguous by construction, and a twin embedding arbitrary user SVG
   // (the still path resolves a data: URL) can easily define an id called `abc`. The
   // rewrite produced fill="#tw1-abc", which is not a colour, and the shape lost its paint.
   const root = parseSvgRoot(
@@ -321,8 +321,8 @@ test('CLASS selectors and class attributes are namespaced together', () => {
 });
 
 test('a twin with classes but NO ids is still namespaced', () => {
-  // The early return on an empty id set skipped class namespacing entirely — which is
-  // exactly the shape of a plain Illustrator export.
+  // The early return on an empty id set skipped class namespacing entirely - which is
+  // exactly the structure of a plain Illustrator export.
   const root = parseSvgRoot(
     '<svg xmlns="http://www.w3.org/2000/svg"><style>.cls-1{fill:red}</style>'
     + '<rect class="cls-1"/></svg>',

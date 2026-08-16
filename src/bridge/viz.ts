@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * `host.viz` — what a tool can ask about the MilkDrop visualizer.
+ * `host.viz` - what a tool can ask about the MilkDrop visualizer.
  *
  * Deliberately NOT a mounting API. A tool is data: it has no element to hand us and no
  * business holding a WebGL context, so the surface it actually renders is a
  * `[data-lolly-viz]` placeholder that lib/viz-tool-mount.ts enhances after each paint.
  * What a tool genuinely can't work out for itself is (a) whether this shell can run a
  * visualizer at all, so it can choose a fallback style, and (b) WHO WROTE the preset it
- * is about to show — which is the whole point of shipping the artist presets. Both are
+ * is about to show - which is the whole point of shipping the artist presets. Both are
  * answered here.
  *
  * Progressive enhancement, not a capability: `isAvailable()` false (no WebGL2, a

@@ -53,7 +53,7 @@ export async function installFontAsset(
     });
 
     // WOFF1 ('wOFF') is not an sfnt: parseFontMetadata can't read its table directory
-    // and the render-time font-registry only decompresses woff2, not woff1 — so a WOFF1
+    // and the render-time font-registry only decompresses woff2, not woff1 - so a WOFF1
     // upload was broken end to end. Unwrap it to a plain TTF/OTF here, once, so every
     // downstream reader sees an sfnt. woff2 is left as-is (font-registry decompresses it
     // on demand); woffToSfnt throws on woff2, so the 'woff' gate never routes it here.
@@ -255,7 +255,7 @@ export async function refreshFontRegistry(host: HostV1): Promise<void> {
     window.dispatchEvent(new CustomEvent('lolly:fonts-refreshing'));
 
     // Re-registering installed fonts (e.g. re-applying @font-face rules) is left to
-    // the caller listening for the events below — there's no host.fonts capability
+    // the caller listening for the events below - there's no host.fonts capability
     // on the bridge (no such API is declared on HostV1).
 
     // Emit success event

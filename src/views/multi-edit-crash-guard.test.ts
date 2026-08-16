@@ -6,13 +6,13 @@
 // (the router error boundary "This view didn't finish loading").
 //
 // Root cause: multi-edit's shared-card fan-out "runtime" (multi-edit.ts) is a partial
-// adapter — { setInput, getModel } — with NO `manifest`. renderInputs (tool-inputs.ts)
+// adapter - { setInput, getModel } - with NO `manifest`. renderInputs (tool-inputs.ts)
 // reads the tool's density hint off `runtime.manifest.render`, and the optional chain was
 // on `.render` instead of on `.manifest`, so a manifest-less runtime threw. Regression
 // landed with the "dense pro inputs" change (2026-08-04); the shared-card contract comment
 // that promised renderInputs only touches setInput/getModel had gone stale.
 //
-// Two independent guards — either alone stops the crash; both, so drift on either side
+// Two independent guards - either alone stops the crash; both, so drift on either side
 // re-fails. A source scan (not a mount) because renderInputs isn't exported and mounting
 // /multi needs the full session/host stack; the invariant is textual and exact.
 

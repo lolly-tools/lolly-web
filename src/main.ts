@@ -21,27 +21,27 @@ import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 // Side-effect only: registers the "Private collab" Share-dialog row into the
-// generic lib/share-sections.ts seam (plan 100 §0/§6, Track A — an OSS
+// generic lib/share-sections.ts seam (plan 100 §0/§6, Track A - an OSS
 // individual feature, not under org/). The row itself stays gated on the
 // private-collab flag + a registered opener and renders nothing until both
-// exist (see the module header) — importing it is the whole of the wiring.
+// exist (see the module header) - importing it is the whole of the wiring.
 import './lib/collab-share-private.ts';
 // Side-effect only: registers the 'private' opener that row consults, so pressing
 // "Start a collab" opens the inviter ceremony (plan 100 §6.1). Gated INSIDE the opener
-// on the same private-collab flag, and platform-free on this path — the ceremony
+// on the same private-collab flag, and platform-free on this path - the ceremony
 // dialog, the QR encoder and the WebRTC transport are one dynamic import behind the
 // press, sharing the chunk the #/join route loads (see the module header).
 import './collab/private-opener.ts';
 // The other end of that ceremony: what turns a connected pair into a MOUNTED, co-editing
 // tool (plan 100 §5, §6.2a). `lib/collab-mount.ts`'s header specifies the two-line stitch
-// — register, then drain whatever the ceremony parked while this module was importing —
+// - register, then drain whatever the ceremony parked while this module was importing - 
 // and `installLiveCollabMount()` (called below the import block) is its only call site.
 // Platform-free on the boot path for the same reason as the opener above: everything
 // under it (the memory state bridge, the tool route itself) is a dynamic import.
 import { installLiveCollabMount } from './lib/collab-live-mount.ts';
 // Side-effect wire for LAN discovery (plans/110 §3): registers the 'lan' NearbyProvider
-// ONLY when the Tauri runtime is present (probed at call time). A no-op on the web — a
-// PWA cannot do mDNS/sockets — so the registry stays empty and every Nearby affordance
+// ONLY when the Tauri runtime is present (probed at call time). A no-op on the web - a
+// PWA cannot do mDNS/sockets - so the registry stays empty and every Nearby affordance
 // stays absent, keeping the web build byte-identical. The native side is Rust `nearby.rs`.
 import { installNearbyBoot } from './lib/nearby-boot.ts';
 // The acceptor side of a nearby pairing: opens the accept ceremony when a peer hands us an
@@ -106,7 +106,7 @@ interface ViewElement extends HTMLElement {
   _cleanup?: () => void;
 }
 
-// Apply localStorage theme immediately — before the profile loads — so there
+// Apply localStorage theme immediately - before the profile loads - so there
 // is no visible flash between the inline FOUC script and full JS boot.
 initTheme();
 // Make every <select> a keyboard + wheel live-preview scrubber (macOS otherwise
@@ -136,7 +136,7 @@ interface RouteSpec {
 }
 
 /**
- * THE route table — the single source of truth for per-route chrome. The tab a
+ * THE route table - the single source of truth for per-route chrome. The tab a
  * route lights up, the scoping classes #view carries, the announced label and
  * the dedup signature's shape are all derived from here, so adding a view means
  * adding one row (plus its parseRoute branch and its lazy mount case) rather
@@ -145,7 +145,7 @@ interface RouteSpec {
 const ROUTES: Record<RouteName, RouteSpec> = {
   gallery: { label: 'Tools gallery', tab: 'tools', viewClasses: ['gallery-view'], footer: 'search' },
   // Utilities IS the gallery view (mountGallery in only-utility mode), so it must
-  // carry the same scoping class — gallery.css's desktop saved-list grid, footer
+  // carry the same scoping class - gallery.css's desktop saved-list grid, footer
   // padding and every other .gallery-view rule apply identically. Without it the
   // mounted markup is styled by nothing and the view renders broken/blank.
   utilities: { label: 'Utilities', tab: 'utilities', viewClasses: ['gallery-view', 'utilities-view'], footer: 'search' },
@@ -157,16 +157,16 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   dashboard: { label: 'Dashboard', viewClasses: ['dashboard-view'], sigKey: 'params', footer: 'search' },
   // params-keyed so #/pro?s=slot,slot… ("Edit as sheet") and #/pro?session=… deep
   // links re-seed the grid and survive Back. Safe: /pro never rewrites its own
-  // params mid-session (its only location writes navigate AWAY — see index.ts).
+  // params mid-session (its only location writes navigate AWAY - see index.ts).
   pro: { label: 'Batch mode', viewClasses: ['pro-view'], sigKey: 'params', footer: 'none' },
   projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId', footer: 'search' },
   catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'], footer: 'search' },
-  // Verify/Convert/PDF/Lab keep their own chrome in v1 — the bar reaches them in
+  // Verify/Convert/PDF/Lab keep their own chrome in v1 - the bar reaches them in
   // plans/99 M3 once proven (decision locked 2026-08-08).
   verify: { label: 'Verify', viewClasses: ['verify-view'], footer: 'none' },
   convert: { label: 'Convert', viewClasses: ['convert-view'], footer: 'none' },
   data: { label: 'Spreadsheet', viewClasses: ['data-view'], footer: 'none' },
-  // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
+  // The studio keys on ?tab= for the same reason - "Manage fonts" (#/start?tab=type)
   // clicked while already on #/start must switch steps, not dedupe to a no-op.
   start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params', footer: 'none' },
   // Multi-edit keys on its selection (?s=slot,slot…) so editing a different
@@ -176,7 +176,7 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // rather than the live bar.
   components: { label: 'Component library', footer: 'none' },
   // The Lab gets NO tab. It's a utility you open and come back from, like any tool
-  // page — so it gets the back pill and no tab bar. Lighting the Utilities tab
+  // page - so it gets the back pill and no tab bar. Lighting the Utilities tab
   // here would suggest the pill is where you are rather than where you'd go,
   // and the tabs would compete with the report's own numbered sequence.
   lab: { label: 'Colour Lab', footer: 'none' },
@@ -184,20 +184,20 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // Script audio is a utility view like the Lab: no tab, the back pill instead
   // (see the lab row's rationale above).
   script: { label: 'Script audio', viewClasses: ['scriptst-view'], footer: 'none' },
-  // Ask Lolly (#/ask) — the in-app help surface (plans/103). A utility view like
+  // Ask Lolly (#/ask) - the in-app help surface (plans/103). A utility view like
   // the Lab: no tab, the back pill, and its OWN composer (footer: 'none') rather
   // than the shell search bar, since chat-Enter is a submit the bar has no slot
   // for. Keys on `params` so a fresh #/ask?q= from spotlight (or a Back into it)
   // re-mounts and appends the new question to the session transcript instead of
   // deduping onto the first.
   ask: { label: 'Ask Lolly', viewClasses: ['ask-view'], sigKey: 'params', footer: 'none' },
-  // In-app documentation reader (#/docs/<slug>) — the /info docs rehosted into #view so
+  // In-app documentation reader (#/docs/<slug>) - the /info docs rehosted into #view so
   // they inherit the ACTIVE brand (plan "this-is-a-very-sparkling-eich" M2). A utility
   // view like Ask/Lab: no tab, the back pill, its own scroll (footer: 'none'). Keys on the
   // SLUG (routeSignature's 'slug' case), so moving between doc pages re-mounts the reader.
   docs: { label: 'Documentation', viewClasses: ['docs-view'], sigKey: 'slug', footer: 'none' },
   // The two private-collab ceremony links (plan 100 §6.1 skin 1, §11.25). Both are
-  // arrival points from someone ELSE's device, so they get no tab and no footer bar —
+  // arrival points from someone ELSE's device, so they get no tab and no footer bar - 
   // and both key on `params`, because the whole meaning of the route is the invite (or
   // reply) token in the query: a second link pasted into the same tab must re-mount
   // with the new payload, never dedupe onto the first one.
@@ -226,7 +226,7 @@ const PARAM_KEYED_ROUTES: ReadonlySet<RouteName> = new Set(
 );
 
 let _lastRouteName: RouteName | null = null;
-// Signature of the route currently mounted — used to drop a redundant re-navigate to the
+// Signature of the route currently mounted - used to drop a redundant re-navigate to the
 // SAME route (a single tool open fires hashchange AND popstate → two navigates). See navigate().
 let mountedRouteSig = '';
 
@@ -236,7 +236,7 @@ function announceRoute(name: RouteName): void {
   announce(`${ROUTES[name]?.label ?? 'Page'} loaded`);
 }
 
-/** The view-toggle tab a route lights up — null for routes without the tab bar. */
+/** The view-toggle tab a route lights up - null for routes without the tab bar. */
 function navKeyForRoute(name: RouteName): ViewToggleKey | null {
   return ROUTES[name]?.tab ?? null;
 }
@@ -251,12 +251,12 @@ function routeSignature(route: Route): string {
   const sub = route as { toolId?: string; folderId?: string | null; params?: string; slug?: string; lang?: string | null };
   if (key === 'toolId') return `${route.name}:${sub.toolId ?? ''}`;
   // The docs reader mounts a specific page, so its signature is the slug (+ any
-  // explicit route lang) — navigating between doc pages must re-mount, not dedupe.
+  // explicit route lang) - navigating between doc pages must re-mount, not dedupe.
   if (key === 'slug') return `${route.name}:${sub.lang ?? ''}/${sub.slug ?? ''}`;
   if (key === 'folderId') {
     // The ?q= results-mode param is mount state too (plans/99 §2a): entering or
-    // leaving projects results mode must remount in BOTH directions — the
-    // overlay's "See all in Projects" handoff forward AND the browser's Back —
+    // leaving projects results mode must remount in BOTH directions - the
+    // overlay's "See all in Projects" handoff forward AND the browser's Back - 
     // so the signature carries it alongside the folder. Other params stay out:
     // they don't change what's mounted.
     const q = new URLSearchParams(sub.params ?? '').get('q');
@@ -268,22 +268,22 @@ function routeSignature(route: Route): string {
 async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<void> {
   const route = parseRoute();
   // A single tool open sets a hash while on a History-API /t/<id> URL, which fires BOTH
-  // hashchange AND popstate — in separate macrotasks, with variable timing (the 2nd can
+  // hashchange AND popstate - in separate macrotasks, with variable timing (the 2nd can
   // land after the 1st mount's replaceState). That mounted the tool TWICE per open,
   // re-running loadTool + createRuntime + hydrate for nothing (~2× the open cost; the tool
   // view even documents the quirk, reading its resume markers read-only to survive it).
-  // Skip a navigate that resolves to the route already mounted — timing-independent, since
+  // Skip a navigate that resolves to the route already mounted - timing-independent, since
   // parseRoute maps both #/tool/<id> and /t/<id> to the same `tool:<id>` signature. The
   // signature must capture EVERYTHING that changes what's mounted, or it over-collapses:
   // keyed on `route.name` alone, opening a Projects folder (#/p/<id>) from the Projects
   // root both read 'projects' and the folder never opens. So each route keys on its full
-  // sub-state (folderId / params). ONLY the tool route strips params — its two burst
+  // sub-state (folderId / params). ONLY the tool route strips params - its two burst
   // events repack the query mid-mount, and same-tool param edits apply in place
   // (runtime.setInput), never by re-mount; every other route's sub-state is stable across
-  // a burst. Explicit refreshes — boot, the gallery's post-sync re-render — force past this.
+  // a burst. Explicit refreshes - boot, the gallery's post-sync re-render - force past this.
   // Which sub-state each route keys on is declared in ROUTES (sigKey) above.
   const routeSig = routeSignature(route);
-  // The URL this navigation left (hashchange oldURL / navigateTo's capture) —
+  // The URL this navigation left (hashchange oldURL / navigateTo's capture) - 
   // consumed on EVERY navigate, even a deduped one, so a stale stash can't
   // leak into a later record. popstate leaves no stash; recordLeave() then
   // falls back to the outgoing view's mount-time URL.
@@ -311,7 +311,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
 
   // The Projects "+ New tool" / resume flow arms one-shot sessionStorage markers
   // (lolly:fileInto, lolly:returnTo) that the tool view READS on mount (it can't
-  // remove them — a single hash navigation may mount the tool twice, and the second
+  // remove them - a single hash navigation may mount the tool twice, and the second
   // mount owns the live Save button). Clear them the moment we land on any NON-tool
   // view so a marker can't leak into the next, unrelated tool a user opens.
   if (route.name !== 'tool') {
@@ -324,14 +324,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
 
   // Track returns from tool → gallery so card-in animation doesn't replay.
   const prevRouteName = _lastRouteName;
-  // Leaving an editing session — a sweet "yum-yum" cheer as you step away from a tool
+  // Leaving an editing session - a sweet "yum-yum" cheer as you step away from a tool
   // (any tool → non-tool move; not tool → tool, which stays in editing).
   if (prevRouteName === 'tool' && route.name !== 'tool') playSfx('leaveSession');
   const returning = _lastRouteName === 'tool' && route.name === 'gallery';
   _lastRouteName = route.name;
 
-  // Cross-view fade: snapshot the OUTGOING view now — before its scoping class
-  // flips (below) or its markup is torn down (the clear/incoming mount below) — so
+  // Cross-view fade: snapshot the OUTGOING view now - before its scoping class
+  // flips (below) or its markup is torn down (the clear/incoming mount below) - so
   // the blank frame while the next view mounts is hidden behind the old pixels,
   // which fade out once the new view has painted underneath. Only on a genuine
   // view-NAME change (never a same-view refresh, e.g. the gallery's post-sync
@@ -339,7 +339,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   // instant feel). beginViewFade MOVES #view's nodes into the overlay, so the
   // clear/mount below fill an already-empty container; it returns null under
   // reduced motion or on first boot, collapsing to today's instant swap. commit()
-  // (after the mount, or in the catch) starts the fade — or drops the snapshot if
+  // (after the mount, or in the catch) starts the fade - or drops the snapshot if
   // superseded by a newer navigation.
   const fade = (prevRouteName && route.name !== prevRouteName && !returning)
     ? beginViewFade(view)
@@ -353,14 +353,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
 
   // The persistent search bar (plans/99 M1): shown on browse routes, hidden on
   // editing ones. After the outgoing view's _cleanup (its claim is released) and
-  // before the incoming mount (which claims it) — and before the try, so a mount
+  // before the incoming mount (which claims it) - and before the try, so a mount
   // failure still leaves the bar consistent with the route.
   applySearchBarRoute(ROUTES[route.name].footer ?? 'none', route.name);
 
   // When the route NAME changes, the view-scoping class above changes with it
   // (e.g. .profile-view → .gallery-view). But the outgoing view's markup is still
   // in `view` and won't be replaced until the incoming mount writes its innerHTML
-  // — which happens AFTER that mount's first await (gallery reads IndexedDB before
+  // - which happens AFTER that mount's first await (gallery reads IndexedDB before
   // it paints). In that gap the old markup is styled by a class it no longer has,
   // so it flashes UNSTYLED (e.g. a bare profile form). Drop the stale markup now so
   // that flash can't show; the incoming mount fills the empty container. Same-name
@@ -369,7 +369,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   if (prevRouteName && route.name !== prevRouteName) view.replaceChildren();
 
   // The dashboard leans on SUSE Mono (device readouts, hex/CMYK rows, code). It
-  // isn't preloaded globally — that would tax the mono-light gallery cold-load —
+  // isn't preloaded globally - that would tax the mono-light gallery cold-load - 
   // so warm it here, before the view chunk imports and paints, to head off a
   // post-paint reflow when the woff2 lands late. Idempotent.
   if (route.name === 'dashboard') ensureMonoPreload();
@@ -402,7 +402,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountDashboard(view, host);
       break;
     }
-    // /verify — on-device Content Credentials check (aliases /valid, /v). Same
+    // /verify - on-device Content Credentials check (aliases /valid, /v). Same
     // engine verifier the CLI `validate` command uses; the view module is named
     // for what it checks (validity), lazy-loaded like the other dashboards.
     case 'verify': {
@@ -410,14 +410,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountValid(view, host, route.params);
       break;
     }
-    // /convert — on-device file converter (fonts, SVG⇄SVGZ, raster⇄raster), a
+    // /convert - on-device file converter (fonts, SVG⇄SVGZ, raster⇄raster), a
     // verify-like drop→pick→download surface. Lazy-loaded like the other dashboards.
     case 'convert': {
       const { mountConvert } = await import('./views/convert.ts');
       await mountConvert(view, host, route.params);
       break;
     }
-    // /data — on-device spreadsheet viewer/editor (xlsx/csv/tsv/json → virtualized
+    // /data - on-device spreadsheet viewer/editor (xlsx/csv/tsv/json → virtualized
     // grid → edit → download-as). Lazy-loaded like the other dashboards.
     case 'data': {
       const { mountDataView } = await import('./views/data.ts');
@@ -443,7 +443,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // selected session (mirrors #/multi?s=…). Read the refs from the RAW query,
       // NOT via URLSearchParams: a ref is `__batch__:<label>` and a label may hold
       // ',' or '%', which encodeURIComponent wrote as %2C/%25. URLSearchParams.get
-      // would decode ONCE — turning an encoded %2C back into a delimiter comma, and
+      // would decode ONCE - turning an encoded %2C back into a delimiter comma, and
       // leaving a bare '%' that a second decode chokes on. So split the encoded
       // value on the literal commas that only ever separate refs, then decode each
       // piece exactly once (guarded, so a hand-typed malformed ?s= can't throw the
@@ -451,7 +451,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       const rawS = (route.params || '').split('&').find(p => p.startsWith('s='))?.slice(2) ?? '';
       const safeDecode = (s: string): string => { try { return decodeURIComponent(s); } catch { return s; } };
       const seedRefs = rawS ? rawS.split(',').map(safeDecode).filter(Boolean) : [];
-      // Inject a metrics hook rather than letting /pro import metrics.js — keeps
+      // Inject a metrics hook rather than letting /pro import metrics.js - keeps
       // the folder's "imports only engine/host/siblings" isolation intact.
       const onBatchRendered = (files: Array<{ name: unknown }>) => {
         recordBatch(files.length);
@@ -482,7 +482,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       break;
     }
     // --- /start: the brand studio (set, save, import or export your brand
-    // primitives — step tabs, ?tab=<key> deep-links one). Lazy-loaded — it
+    // primitives - step tabs, ?tab=<key> deep-links one). Lazy-loaded - it
     // statically pulls the engine's derive/token modules, which the gallery
     // cold-load must not pay for. ---
     case 'start': {
@@ -491,7 +491,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       break;
     }
     case 'lab': {
-      // Colour Lab (#/lab) — a scrolling single-colour report. Lazy: it pulls the
+      // Colour Lab (#/lab) - a scrolling single-colour report. Lazy: it pulls the
       // gamut solid and the slice charts, which no other view on a cold path needs.
       const { mountColorLab } = await import('./views/color-lab.ts');
       await mountColorLab(view, host as unknown as Parameters<typeof mountColorLab>[1], route.params ?? '');
@@ -505,21 +505,21 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       break;
     }
     case 'script': {
-      // Script audio (#/script) — the writing surface over host.speech. Lazy:
+      // Script audio (#/script) - the writing surface over host.speech. Lazy:
       // nothing on the landing path needs the speech plumbing.
       const { mountScriptStudio } = await import('./views/script-studio.ts');
       await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1]);
       break;
     }
     case 'ask': {
-      // Ask Lolly (#/ask) — in-app help over the docs + spotlight providers. Lazy:
+      // Ask Lolly (#/ask) - in-app help over the docs + spotlight providers. Lazy:
       // it pulls the ask pipeline (retrieval, md extraction) that no other route needs.
       const { mountAsk } = await import('./views/ask.ts');
       await mountAsk(view, host as unknown as Parameters<typeof mountAsk>[1], route.params ?? '');
       break;
     }
     case 'docs': {
-      // In-app docs reader (#/docs/<slug>) — fetches the built /info page and rehosts its
+      // In-app docs reader (#/docs/<slug>) - fetches the built /info page and rehosts its
       // `.docs-content` fragment into #view. Lazy: it pulls no heavy deps, but stays off
       // the cold-load bundle like every other non-gallery view.
       const { mountDocs } = await import('./views/docs.ts');
@@ -536,14 +536,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     }
     case 'join-reply': {
       // No host: this tab hands a payload to the tab that owns the ceremony and gets
-      // out of the way — it opens no connection and reads no profile of its own.
+      // out of the way - it opens no connection and reads no profile of its own.
       const { mountJoinReplyRoute } = await import('./collab/join-route.ts');
       await mountJoinReplyRoute(view, route.params ?? '');
       break;
     }
     case 'components': {
-      // The browsable component library (#/components). Lazy — it's a dev/design
-      // surface, off every hot path. Its back pill is the shared one — it names
+      // The browsable component library (#/components). Lazy - it's a dev/design
+      // surface, off every hot path. Its back pill is the shared one - it names
       // and returns to the view you came from, or the gallery on a cold deep link.
       const { mountComponents } = await import('./views/components.ts');
       await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1]);
@@ -552,7 +552,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'utilities':
       // The gallery in only-utilities mode: same view, same wiring, filtered to
       // the on-device utility tools (compress-pdf, strip-data, countdown-timer…).
-      // The 'Offline Utilities' flag governs the WHOLE view now — off means no
+      // The 'Offline Utilities' flag governs the WHOLE view now - off means no
       // tab and no route (a deep link lands on the main gallery).
       if (!flagEnabledSync(UTILITIES_FLAG_ID)) { window.location.replace('#'); return; }
       await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1], { only: 'utility', params: route.params });
@@ -574,7 +574,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   }
 
   // The mount settled: its document.title is set and any URL canonicalisation
-  // (the tool view's /t/<id> rewrite) is done — snapshot it as the candidate
+  // (the tool view's /t/<id> rewrite) is done - snapshot it as the candidate
   // "previous view" for the next navigation's back pill.
   noteMountedView(route.name);
 
@@ -584,7 +584,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
 
   // After the view swaps, tell assistive tech and move focus into the new view
   // so keyboard/SR users aren't stranded on the now-removed element. (Within a
-  // view, state changes use replaceState — no navigate — so focus isn't stolen.)
+  // view, state changes use replaceState - no navigate - so focus isn't stolen.)
   // BUT if the view's own mount already placed focus on something meaningful
   // (e.g. /pro focuses its template search, which lives in a body-mounted
   // popover), don't yank it back to the container.
@@ -598,7 +598,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     view.scrollTop = 0;
   }
 
-  // The incoming view is mounted and scrolled to top — fade the outgoing snapshot
+  // The incoming view is mounted and scrolled to top - fade the outgoing snapshot
   // out over it. A no-op when there was no fade (same-view refresh, reduced motion).
   fade?.commit();
 
@@ -620,7 +620,7 @@ function ensureMonoPreload(): void {
   l.as = 'font';
   l.type = 'font/woff2';
   l.crossOrigin = 'anonymous';
-  l.href = '/fonts/SUSEMono[wght].woff2'; // shell-served (fonts.css) — profile-independent
+  l.href = '/fonts/SUSEMono[wght].woff2'; // shell-served (fonts.css) - profile-independent
   document.head.appendChild(l);
 }
 
@@ -648,17 +648,17 @@ function trackVisualViewport(): void {
   if (!vv) return;
   const root = document.documentElement;
   let raf = 0;
-  // Last values written, to skip redundant setProperty calls. The common case —
+  // Last values written, to skip redundant setProperty calls. The common case - 
   // ordinary momentum scroll at scale 1, where the mobile URL bar fires
-  // visualViewport scroll/resize — recomputes the same `0px` every frame;
+  // visualViewport scroll/resize - recomputes the same `0px` every frame;
   // re-writing inherited root custom props each time invalidates style document-
   // wide and shows up as micro-stutter on long pages. Memoising makes it a no-op.
   let lastTop: number | undefined, lastLeft: number | undefined, lastRight: number | undefined, lastBottom: number | undefined;
   const apply = () => {
     raf = 0;
     // Only re-pin while genuinely pinch-zoomed (scale > 1). At scale 1 the visual
-    // and layout viewports can still differ — a mobile browser's retractable
-    // toolbar (URL bar) shrinks the visual viewport as it shows/hides on scroll —
+    // and layout viewports can still differ - a mobile browser's retractable
+    // toolbar (URL bar) shrinks the visual viewport as it shows/hides on scroll - 
     // but there position:fixed already tracks the layout-viewport edges, so a
     // computed inset would wrongly float a bottom-pinned bar up above where the
     // (often hidden) controls sit, and have it drift as you scroll. Zeroing the
@@ -687,13 +687,13 @@ async function boot(): Promise<void> {
 
   // Installing the PWA re-arms the one-time offline nudge (views/offline-nudge.ts):
   // an install puts an icon on the device while precaching only the shell, so a
-  // user who installs reasonably believes "I have the app now" — and must hear
+  // user who installs reasonably believes "I have the app now" - and must hear
   // "not all of it, yet" once more, in the installed app's sharper copy, even if
   // they dismissed the browser-tab nudge earlier. One profile write, best-effort.
   window.addEventListener('appinstalled', () => {
     void (async () => {
       try {
-        // The web bridge's profile setter — not on the tool-facing ProfileAPI,
+        // The web bridge's profile setter - not on the tool-facing ProfileAPI,
         // same structural slice the a11y prefs and the nudges themselves use.
         const profileApi = host.profile as { get(): Promise<Profile>; set?(p: Profile): Promise<void> };
         const current = await profileApi.get();
@@ -706,13 +706,13 @@ async function boot(): Promise<void> {
   // Loopback-only tooling hook: the docs-screenshot pipeline (scripts/
   // build-docs-shots.ts) prints an app page to PDF in its Chromium, then asks the
   // app itself to convert that print into a self-contained true-vector SVG
-  // (lib/pdf-vector-shot.ts — the same interpreter the design-import path ships,
+  // (lib/pdf-vector-shot.ts - the same interpreter the design-import path ships,
   // plus in-page font outlining/inlining only the app can do). Registered HERE,
   // after the host (with its text shaper) exists, and closing over it, so text
   // outlines to <path>. Gated to loopback so it never becomes deployed surface;
   // lazy import, so a normal session pays nothing for it.
   if (/^(?:127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
-    // `opts` (today: cropCssPx — the region the caller will keep, so the interpreter
+    // `opts` (today: cropCssPx - the region the caller will keep, so the interpreter
     // can drop nodes that provably can't paint there before decoding rasters and
     // shaping text) is optional and passed straight through, so an older harness
     // calling with one argument against a newer dist keeps working.
@@ -724,26 +724,26 @@ async function boot(): Promise<void> {
       ));
 
     // Sibling loopback hook, same gate: run the DIRECT HTML→SVG walker (the export
-    // bridge's renderSvgFromHtml — the path every tool export takes) over an
+    // bridge's renderSvgFromHtml - the path every tool export takes) over an
     // arbitrary page subtree, with NO print-to-PDF in between. Built for the
     // vector-render audit (plans/69-svg-snapshot-without-print.md), and since the
     // walker migration it is ALSO how the docs pipeline captures a `walker=1`
-    // recipe — `scripts/build-docs-shots.ts` calls this, not __lollyVectorShot.
+    // recipe - `scripts/build-docs-shots.ts` calls this, not __lollyVectorShot.
     (window as unknown as { __lollyWalkerShot?: (sel?: string) => Promise<unknown> }).__lollyWalkerShot =
       async (sel = 'body', o: Record<string, unknown> = {}) => {
         const node = document.querySelector(sel);
         if (!node) throw new Error(`__lollyWalkerShot: no element matches ${sel}`);
         const t0 = performance.now();
         // convertPaths / rasterFallback are web-bridge ExportOpts, wider than the
-        // portable HostV1 ExportOpts this call is typed against — hence the cast.
+        // portable HostV1 ExportOpts this call is typed against - hence the cast.
         // elementScopedRaster: a page snapshot must degrade LOCALLY. Without it one
         // conic-gradient or backdrop-filter on a top-level container rasterises the
         // whole page (measured: 100% raster coverage on two audit fixtures).
         // stackingOrder: a page snapshot must paint in CSS stacking-context order
         // (Appendix E §E.2), not DOM order. Lolly's own gallery has 99 non-auto
         // z-indexes, 22 of them negative, so DOM order puts scrims over content
-        // and cards in reverse. Off for tool exports — see ExportOpts.
-        // layerIds: this is the production caller plans/104 §7 was written for —
+        // and cards in reverse. Off for tool exports - see ExportOpts.
+        // layerIds: this is the production caller plans/104 §7 was written for - 
         // "Lolly screenshots become semantically explodable … url-shot output then
         // lifts along real UI boundaries (nav/hero/cards)". The passthrough is inert
         // unless the walked element already carries `data-box-id`, so it changes
@@ -751,20 +751,20 @@ async function boot(): Promise<void> {
         // along the boxes the canvas knows about instead of along whatever the markup
         // happened to group, and `enumerateSvgLayers` hands each id back as
         // `layer.boxId` for the lift dialog to name the row with. A caller that wants
-        // the old bytes passes `{ layerIds: false }` — `o` is spread last.
+        // the old bytes passes `{ layerIds: false }` - `o` is spread last.
         const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, backdropBlur: true, layerIds: true, ...o } as Parameters<typeof host.export.render>[2]);
         return { svg: await blob.text(), ms: Math.round(performance.now() - t0) };
       };
   }
 
   // Chrome follows the brand: override the theme accent triples from the active
-  // brand's semantic primary (a doc with no semantic slots — SUSE's — leaves the
+  // brand's semantic primary (a doc with no semantic slots - SUSE's - leaves the
   // hardcoded chrome). Fire-and-forget; the accents refine in place once tokens land.
   // User fonts first: --font-brand may name a locally-stored Google Font, so its
   // FontFaces should be in document.fonts by the time the stack applies (both are
-  // async and best-effort — worst case the face pops in a beat later).
+  // async and best-effort - worst case the face pops in a beat later).
   // register-user-fonts + load-user-fonts (and its font-utils/font-asset-handler chain)
-  // are dynamic-imported off the boot path — this was already fire-and-forget, so a
+  // are dynamic-imported off the boot path - this was already fire-and-forget, so a
   // locally-stored --font-brand face applying a beat later is the same tolerated swap.
   void import('./lib/register-user-fonts.ts')
     .then(async ({ registerUserFonts }) => {
@@ -781,7 +781,7 @@ async function boot(): Promise<void> {
   if (profileTheme) applyTheme(profileTheme, false);
 
   // Accessibility prefs ride the profile the same way (localStorage is only
-  // their FOUC mirror, applied by the index.html inline script) — reconcile.
+  // their FOUC mirror, applied by the index.html inline script) - reconcile.
   hydrateA11yPrefs(profile.a11y);
   // One-time migration: "Hide previews" used to be a device-local gallery toggle
   // (localStorage 'lolly-hide-previews'); it is now the hidePreviews a11y pref.
@@ -793,8 +793,8 @@ async function boot(): Promise<void> {
     localStorage.removeItem('lolly-hide-previews');
   } catch { /* storage off — nothing to migrate */ }
 
-  // Language — same precedence chain as the theme, plus a session-only `lang`
-  // URL override (never written back to the profile — see i18n.ts). Awaited
+  // Language - same precedence chain as the theme, plus a session-only `lang`
+  // URL override (never written back to the profile - see i18n.ts). Awaited
   // before the first navigate() below so every view renders in the resolved
   // language from its very first paint, with no re-render pass.
   await initI18n({ urlLang: peekUrlLang(), profileLang: (profile as { lang?: string }).lang });
@@ -815,29 +815,29 @@ async function boot(): Promise<void> {
   const jellyHost = host as { tokens?: { isLocked?(): Promise<boolean> } };
   setJellyDefault(!(await jellyHost.tokens?.isLocked?.().catch(() => false)));
   // Mirror the profile's feature flags to localStorage so surfaces that render before
-  // (or without) the profile — the Sound control's Neurospicy player in popovers — can
+  // (or without) the profile - the Sound control's Neurospicy player in popovers - can
   // gate synchronously.
   hydrateFeatureFlags(profile as Parameters<typeof hydrateFeatureFlags>[0]);
-  // The persistent bottom search bar (plans/99 M1) — one instance for the whole
+  // The persistent bottom search bar (plans/99 M1) - one instance for the whole
   // session, mounted after #view. Needs t() (initI18n above) and the flag mirror
   // (hydrateFeatureFlags above, for the Pro link); hidden until the first
   // navigate() below applies the route's footer mode.
   initSearchBar();
   // The spotlight overlay (plans/99 M2): hooks into the bar synchronously (the
   // chord + combobox semantics from first paint) and lazy-loads the provider
-  // set off the boot path. Must follow the bar init above — it registers into it.
+  // set off the boot path. Must follow the bar init above - it registers into it.
   initSpotlight(host);
   // An automated screenshot run pins neutral chrome: effect flags off, a11y prefs
-  // clear. It has to land HERE — after the line above rewrites the flag mirror from
+  // clear. It has to land HERE - after the line above rewrites the flag mirror from
   // the profile (which discards anything seeded earlier), and before the two reads
   // just below act on it. Inert for everyone else. See lib/capture-neutral.ts.
   if (applyCaptureNeutral()) console.info('[lolly] neutral capture state pinned');
-  // Neurospicy Mode + Atmosphere beds — reconcile the saved focus-loop / bed state,
+  // Neurospicy Mode + Atmosphere beds - reconcile the saved focus-loop / bed state,
   // then (only if enabled and left on) arm a one-shot gesture to resume, since audio
   // can't autoplay before a gesture. Both modules (lib/neurospicy.ts + lib/atmosphere.ts,
   // which statically couple through neuroAudioContext) are DEFERRED off the boot path:
   // they default OFF, and even for a flag-on user nothing here is needed before first
-  // paint — arm only installs a gesture listener, hydrate is pure state. The import is
+  // paint - arm only installs a gesture listener, hydrate is pure state. The import is
   // kicked here (after hydrateFeatureFlags + applyCaptureNeutral have settled the flag
   // mirror) so the listener installs ahead of the user's first pointerdown; a first
   // gesture landing in the ~ms import window would miss a one-time resume, which affects
@@ -859,11 +859,11 @@ async function boot(): Promise<void> {
       }
     }
   });
-  // Jelly effects — start the lazy bundle load now, racing the rest of boot
+  // Jelly effects - start the lazy bundle load now, racing the rest of boot
   // (catalog sync + first view mount) rather than blocking or idle-deferring:
   // surfaces check the synchronous jellyActive() gate at paint, and a
   // same-origin ~52 KB chunk usually wins that race (always, once the service
-  // worker has it). If it loses, that first render shows the plain controls —
+  // worker has it). If it loses, that first render shows the plain controls - 
   // and the .then() below retrofits the persistent nav pill for the view that
   // already mounted. Flag-off users never fetch the chunk.
   if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
@@ -875,7 +875,7 @@ async function boot(): Promise<void> {
   // both modes, and the chrome's plain ranges become one wherever they mount.
   const upgradeSliders = (): void => { void import('./components/custom-slider.ts').then(m => m.installRangeUpgrader()); };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(upgradeSliders); else setTimeout(upgradeSliders, 200);
-  // EVERY user-asset delete funnels through the bridge, which announces it here —
+  // EVERY user-asset delete funnels through the bridge, which announces it here - 
   // an audio delete must also leave the music player (stopping it, or advancing,
   // if it was the sounding track), no matter which surface deleted it (catalog,
   // picker, the saved-sessions folder overlay, Projects). Not gated on the feature
@@ -908,14 +908,14 @@ async function boot(): Promise<void> {
   // First-run instance choice (Tauri shells only, once): gate BEFORE the first
   // catalog sync so a chosen instance is honoured immediately instead of a
   // bundled sync followed by a second one. A no-op (one fast IndexedDB read,
-  // no dialog) on every later boot and on every non-Tauri shell — see
+  // no dialog) on every later boot and on every non-Tauri shell - see
   // components/instance-sheet.ts's own header for the two callers (this gate,
   // and the profile "Change" button later).
   await maybeShowFirstRunInstanceSheet(host);
 
   const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
   catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
-  // The Neurospicy dock mounts ABOVE, before this sync starts — on a cold install its
+  // The Neurospicy dock mounts ABOVE, before this sync starts - on a cold install its
   // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
   catalogReady.then(async () => {
     if (!flagEnabledSync('neurospicy')) return;
@@ -929,7 +929,7 @@ async function boot(): Promise<void> {
   // First-run seed: give a brand-new user the catalog's curated default asset favourites
   // (see catalog/assets/index.json → defaultFavourites) so those headshots are pinned in
   // the "Favourites" section at the top of every picker on their first visit. One-time and
-  // best-effort — only when the user has NEVER set asset favourites (an explicit choice,
+  // best-effort - only when the user has NEVER set asset favourites (an explicit choice,
   // including clearing them all, leaves favouriteAssets defined and always wins). Runs after
   // the asset sync so the id list is populated; the profile write is a single idempotent put.
   catalogReady.then(async () => {
@@ -941,7 +941,7 @@ async function boot(): Promise<void> {
   // The gallery can paint instantly from a CACHED index, then silently refresh
   // when the network sync lands. But a brand-new user has no cache, and painting
   // { tools: [] } would flash the gallery's *failure* empty-state ("couldn't
-  // load the tools — check your connection") during a sync that's actually
+  // load the tools - check your connection") during a sync that's actually
   // succeeding. So only take the fast path when we already have an index;
   // otherwise wait for the sync (it resolves even offline, falling back to cache)
   // so the first paint is real data, not a false error. Deep links to a
@@ -951,12 +951,12 @@ async function boot(): Promise<void> {
   // sync, then reconcile when it lands. The gallery and the dashboard need a
   // CACHED index (gallery would otherwise flash its load-failure empty state
   // mid-sync; the dashboard would briefly show "none loaded" for its catalogue
-  // breakdown) — but the dashboard still fast-paths without one, since its one
+  // breakdown) - but the dashboard still fast-paths without one, since its one
   // urgent live value is a tool count that's gracefully hidden when absent and
   // patched in place once synced. Deep-linked /tool and /profile keep the
   // sync-then-navigate ordering: they genuinely need synced asset metadata first.
   // Optional deployment control plane (src/org/): dormant + byte-identical to
-  // today when a deployment provides no org-config endpoint (the public case) —
+  // today when a deployment provides no org-config endpoint (the public case) - 
   // one tolerant, time-boxed probe, remembered so later boots skip even that. A
   // `gated` deployment with no signed-in member renders its own sign-in gate in
   // place of the app and returns `gate: true`; stop boot before any view mounts.
@@ -972,15 +972,15 @@ async function boot(): Promise<void> {
     await navigate(host, { force: true });
     catalogReady.then(() => {
       const now = parseRoute().name;
-      if (!toolIndexChanged()) return; // no-op sync — data is byte-identical to the cached copy
+      if (!toolIndexChanged()) return; // no-op sync - data is byte-identical to the cached copy
       if (now === 'gallery') {
-        // Re-render from fresh data — the gallery's cascade only replays because
+        // Re-render from fresh data - the gallery's cascade only replays because
         // the data actually changed (guarded above), not on every sync. force: the
         // route is unchanged (gallery→gallery), so the dedup would otherwise skip it.
         navigate(host, { force: true }).catch(console.error);
       } else if (now === 'dashboard') {
         // Patch the tool count in place. Re-navigating would replay the entrance
-        // cascade just to update a number — the exact jitter we're removing. The
+        // cascade just to update a number - the exact jitter we're removing. The
         // catalogue tile breakdown refreshes on the next visit.
         patchDashboardToolCount();
       }
@@ -996,7 +996,7 @@ async function boot(): Promise<void> {
   // boot skeleton; runs regardless of which view mounted (the chooser is
   // body-mounted). A feature-detected no-op everywhere but the Android WebView.
   // drop-router (the sniff + chooser module) is itself dynamic-imported off the boot
-  // path now — its heavy import/ingest deps were already lazy.
+  // path now - its heavy import/ingest deps were already lazy.
   void import('./lib/drop-router.ts').then(m => m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]));
 
   // Warm the likely-next view chunks so the first tap doesn't pay a cold dynamic-import.
@@ -1004,10 +1004,10 @@ async function boot(): Promise<void> {
   const warmTool = (): void => { void import('./views/tool.ts').catch(() => {}); };
 
   // The TOOL view is special: it statically pulls the render engine (createRuntime +
-  // Handlebars + Ajv + export, ~170 KB gz). That used to sit on the boot preload — moving
+  // Handlebars + Ajv + export, ~170 KB gz). That used to sit on the boot preload - moving
   // it off made the gallery boot lean, but a cold first tool-open now shows a "Loading…"
   // state while those chunks arrive. So warm it PROMPTLY (tight idle timeout wins the slot
-  // even while the featured row is rendering), not on deep idle — the cold window shrinks
+  // even while the featured row is rendering), not on deep idle - the cold window shrinks
   // from ~1.6s to <0.6s. Lolly is a tool app; the tool engine being warm matters most.
   if (typeof requestIdleCallback === 'function') requestIdleCallback(warmTool, { timeout: 600 });
   else setTimeout(warmTool, 200);
@@ -1015,7 +1015,7 @@ async function boot(): Promise<void> {
   // Belt-and-suspenders: warm the engine the instant a tool link is hovered or pressed, so
   // even a tap inside that <0.6s window opens warm. Capture-phase, one-shot (import() caches),
   // and it fires ahead of the click that navigates. Covers gallery tiles, the featured row,
-  // catalog, search results — anything linking to a tool — with one delegated listener.
+  // catalog, search results - anything linking to a tool - with one delegated listener.
   let toolWarmed = false;
   const warmOnIntent = (e: Event): void => {
     if (toolWarmed) return;
@@ -1024,7 +1024,7 @@ async function boot(): Promise<void> {
   document.addEventListener('pointerover', warmOnIntent, { capture: true, passive: true });
   document.addEventListener('pointerdown', warmOnIntent, { capture: true, passive: true });
 
-  // The other route chunks are light — deep idle is fine.
+  // The other route chunks are light - deep idle is fine.
   if (typeof requestIdleCallback === 'function') {
     requestIdleCallback(() => {
       import('./views/dashboard.ts').catch(() => {});
@@ -1046,13 +1046,13 @@ async function boot(): Promise<void> {
     Promise.resolve().then(() => { navQueued = false; navigate(host).catch(console.error); });
   };
   // Capture the URL a hash navigation leaves BEFORE the debounced navigate
-  // consumes it — it becomes the back-pill target on the next view
+  // consumes it - it becomes the back-pill target on the next view
   // (lib/back-nav.ts; navigateTo() captures its own, popstate has none).
   window.addEventListener('hashchange', (e) => noteLeavingHref(e.oldURL));
   window.addEventListener('hashchange', onRouteChange);
   window.addEventListener('popstate', onRouteChange);
   window.addEventListener('lolly:navigate', onRouteChange);
-  // Forced same-route remount — lib/drop-router.ts routes a shared file INTO the
+  // Forced same-route remount - lib/drop-router.ts routes a shared file INTO the
   // route the user is already on (its one-shot stashes are consumed at mount),
   // which the same-route dedup inside navigate() would otherwise swallow.
   window.addEventListener('lolly:remount', () => { navigate(host, { force: true }).catch(console.error); });
@@ -1065,8 +1065,8 @@ async function boot(): Promise<void> {
   });
 }
 
-// A `lang` override rides either routing form — #/tool/id?lang=de (hash) or
-// /t/id?lang=de (path) — so read both instead of depending on parseRoute()
+// A `lang` override rides either routing form - #/tool/id?lang=de (hash) or
+// /t/id?lang=de (path) - so read both instead of depending on parseRoute()
 // (which runs later and, for some routes, redirects before boot resolves i18n).
 function peekUrlLang(): string | null {
   const hashQuery = window.location.hash.split('?')[1] ?? '';
@@ -1075,7 +1075,7 @@ function peekUrlLang(): string | null {
 
 /** Tools renamed inside the id-break window. parseRoute is the single funnel for every
  *  share link, bookmark, docs link, AND saved-session resume URL (`#/tool/<storedId>?slot=`),
- *  so aliasing the old id here — and ONLY here — keeps all of them resolving instead of
+ *  so aliasing the old id here - and ONLY here - keeps all of them resolving instead of
  *  404-ing on the retired id. `layout-studio` → `design` (the Design tool). */
 const RENAMED_TOOL_IDS: Record<string, string> = { 'layout-studio': 'design' };
 const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
@@ -1099,7 +1099,7 @@ function parseRoute(): Route {
       return { name: 'dashboard', params: q };
     }
     // /platform and /capabilities merged into the single Dashboard (#/d). Redirect
-    // old links (and their deep-link flags) so bookmarks keep working — the flags
+    // old links (and their deep-link flags) so bookmarks keep working - the flags
     // still resolve, since the dashboard's sections carry the same data-flag keys.
     if (parts[0] === 'platform' || parts[0] === 'capabilities') {
       window.location.replace(`/#/d${query ? `?${query}` : ''}`);
@@ -1115,9 +1115,9 @@ function parseRoute(): Route {
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities', params: query || '' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
-    if (parts[0] === 'pdf' || parts[0] === 'unpack') return { name: 'pdf' }; // Unpack — take a design file apart; #/unpack is canonical, #/pdf a kept alias for old shared links
-    if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
-    if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly — in-app help (?q=<question>)
+    if (parts[0] === 'pdf' || parts[0] === 'unpack') return { name: 'pdf' }; // Unpack - take a design file apart; #/unpack is canonical, #/pdf a kept alias for old shared links
+    if (parts[0] === 'script') return { name: 'script' }; // Script audio - the TTS writing surface
+    if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly - in-app help (?q=<question>)
     // In-app docs reader. #/docs/<slug> renders in the app's current locale; the explicit
     // #/docs/<lang>/<slug> form (three segments) pins a language. A slug is always flat (no
     // '/'), so two segments after 'docs' can only be lang + slug. `index` is the docs home.
@@ -1128,22 +1128,22 @@ function parseRoute(): Route {
     }
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     // The two halves of a private collab's ceremony (plan 100 §6.1, §11.25). These
-    // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE —
+    // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE - 
     // an invite link carries ?inv=<token>, a reply link ?ans=<token>. A test pins the
     // two spellings against each other so a renamed route cannot quietly orphan every
     // invite already sent.
     if (parts[0] === 'join') return { name: 'join', params: query || '' };
     if (parts[0] === 'join-reply') return { name: 'join-reply', params: query || '' };
-    // The gallery itself (#/?q=… keeps its query — the search field seeds from it),
+    // The gallery itself (#/?q=… keeps its query - the search field seeds from it),
     // and the fall-through for any unrecognised hash path.
     return { name: 'gallery', params: query || '' };
   }
 
   const pathParts = window.location.pathname.split('/').filter(Boolean);
   // /t/<id> is a tool's canonical address-bar URL (path form, so a copied link
-  // carries the per-tool OG preview — see scripts/build-tool-og.ts); params ride in
-  // the query string. Returned as a first-class tool route — NOT redirected to the
-  // hash — so History-API back/forward to a /t/<id> entry re-mounts correctly. In
+  // carries the per-tool OG preview - see scripts/build-tool-og.ts); params ride in
+  // the query string. Returned as a first-class tool route - NOT redirected to the
+  // hash - so History-API back/forward to a /t/<id> entry re-mounts correctly. In
   // production the server serves the static OG stub at this exact path and the stub
   // bounces a human into #/tool/<id>, which mounts and then syncUrl rewrites the bar
   // back to /t/<id>; this branch is what re-mounts on client-side popstate to it.
@@ -1152,7 +1152,7 @@ function parseRoute(): Route {
   }
   // /p (Projects root) and /p/<folderId> deep links → redirect into the canonical
   // hash form so all in-app projects navigation stays hash-based (folders are private
-  // profile data — no OG stub / first-class path needed, unlike /t/). Same redirect
+  // profile data - no OG stub / first-class path needed, unlike /t/). Same redirect
   // style as /pro|/platform|/capabilities. Must precede the length===1 tool-shortcut
   // block so a bare /p isn't treated as a tool id.
   if (pathParts[0] === 'p') {
@@ -1160,7 +1160,7 @@ function parseRoute(): Route {
     return { name: 'projects', folderId: pathParts[1] || null };
   }
   if (pathParts.length === 1) {
-    // /design is the Design tool's canonical vanity path — the one tool with a bare
+    // /design is the Design tool's canonical vanity path - the one tool with a bare
     // top-level URL. Returned as a first-class tool route (NOT redirected), so the bar
     // stays `/design` the way /t/<id> stays put; syncUrl keeps it there via tool.ts's
     // TOOL_URL_BASE special-case, and vercel.json rewrites it to the tool's OG stub.
@@ -1180,12 +1180,12 @@ function parseRoute(): Route {
     if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') { window.location.replace('/#/verify'); return { name: 'verify' }; }
     // /start is the brand wizard, not a tool shortcut.
     if (pathParts[0] === 'start') { window.location.replace('/#/start'); return { name: 'start' }; }
-    // /components is the browsable component library, not a tool shortcut — a bare
+    // /components is the browsable component library, not a tool shortcut - a bare
     // /components would otherwise fall through to /#/tool/components and 404.
     if (pathParts[0] === 'components') { window.location.replace('/#/components'); return { name: 'components' }; }
     // The remaining view shortlinks that carry an OG share card (scripts/build-view-og.ts
     // → vercel.json rewrites them to a crawler-visible stub). In production a human never
-    // reaches this branch — the stub bounces them into the hash route — but in dev, and on
+    // reaches this branch - the stub bounces them into the hash route - but in dev, and on
     // any fall-through, these MUST resolve to their view rather than to /#/tool/<slug>,
     // which would 404 on a tool id that doesn't exist. Same contract as /pro and /start.
     const PATH_VIEWS: Record<string, { hash: string; route: Route }> = {
@@ -1231,8 +1231,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // `await import('./views/…')`) at content-hashes the new deploy removed, so the
 // import 404s ("Failed to fetch dynamically imported module"). A reload boots on
 // the fresh, network-first shell. This must be bullet-proof from EVERY angle a
-// failure surfaces — Vite's preloadError, an unhandled rejection, a failed
-// <script>/<link>, or a router mount that throws — and must NEVER strand the user
+// failure surfaces - Vite's preloadError, an unhandled rejection, a failed
+// <script>/<link>, or a router mount that throws - and must NEVER strand the user
 // on a blank page: when a reload can't help (just retried, or offline) show a
 // visible Reload card and auto-recover the moment connectivity returns.
 const CHUNK_RELOAD_KEY = 'lolly-chunk-reload-at';
@@ -1244,7 +1244,7 @@ function looksLikeChunkError(v: unknown): boolean {
   return CHUNK_ERR_RE.test(msg);
 }
 
-// A visible, always-actionable fallback — the last-resort alternative to a blank
+// A visible, always-actionable fallback - the last-resort alternative to a blank
 // container. Mirrors boot()'s error card (className 'error', a .btn Reload).
 function showReloadCard(message?: string): void {
   const view = document.getElementById('view');
@@ -1287,7 +1287,7 @@ if (import.meta.env.PROD) {
   window.addEventListener('unhandledrejection', (event) => {
     if (looksLikeChunkError(event)) { event.preventDefault(); recoverFromStaleShell(); }
   });
-  // Resource-load failures (a removed hashed <script>/<link>) don't bubble — catch
+  // Resource-load failures (a removed hashed <script>/<link>) don't bubble - catch
   // them in the capture phase, scoped to our own same-origin JS/CSS so an unrelated
   // asset error never triggers a reload.
   window.addEventListener('error', (event) => {
@@ -1300,10 +1300,10 @@ if (import.meta.env.PROD) {
 
 boot().catch(err => {
   console.error('Boot failed:', err);
-  // A stale-shell chunk failure during boot recovers the same way navigation does —
+  // A stale-shell chunk failure during boot recovers the same way navigation does - 
   // reload onto the fresh shell (or a visible Reload card), never a dead screen.
   if (import.meta.env.PROD && looksLikeChunkError(err)) { recoverFromStaleShell(); return; }
-  // Build the error node with textContent — never interpolate err.message into
+  // Build the error node with textContent - never interpolate err.message into
   // innerHTML (it can carry attacker-influenced strings).
   const view = document.getElementById('view')!;
   view.textContent = '';
@@ -1318,8 +1318,8 @@ boot().catch(err => {
   // frozen in the bfcache) closes, a reload boots cleanly. The common trigger is
   // a DB version upgrade blocked by an older tab. Rather than dead-ending here,
   // offer a Reload button AND auto-reload once when this page next regains
-  // visibility — i.e. the moment the user switches back after closing the other
-  // tab — so recovery doesn't depend on them knowing to reload manually.
+  // visibility - i.e. the moment the user switches back after closing the other
+  // tab - so recovery doesn't depend on them knowing to reload manually.
   if (err && (err.code === 'DB_BLOCKED' || err.code === 'DB_OPEN_TIMEOUT')) {
     const btn = document.createElement('button');
     btn.type = 'button';

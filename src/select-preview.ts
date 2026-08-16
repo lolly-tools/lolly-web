@@ -3,15 +3,15 @@
  * Make <select> a live-preview scrubber, by keyboard AND mouse.
  *
  * On Windows/Linux, ArrowUp/ArrowDown on a focused (closed) <select> cycles its
- * value in place and fires `change` — so a tool sees each value and live-previews
+ * value in place and fires `change` - so a tool sees each value and live-previews
  * it. On macOS the same key instead OPENS the native popup, which breaks that loop
  * (nothing changes until you commit from the menu). And no platform previews while
- * you browse the popup with the mouse — the native menu only commits on release.
+ * you browse the popup with the mouse - the native menu only commits on release.
  *
  * We normalise both:
  *   • Arrow keys cycle the value in place (never open the popup), everywhere.
- *   • The wheel cycles the value while the select is focused — the mouse analog of
- *     the arrow scrub — so a value can be dialled in and previewed without ever
+ *   • The wheel cycles the value while the select is focused - the mouse analog of
+ *     the arrow scrub - so a value can be dialled in and previewed without ever
  *     opening the menu.
  *
  * Each step moves to the next enabled option (clamped at the ends, like native
@@ -33,7 +33,7 @@ export function initSelectPreview(): void {
 
   // Wheel = the mouse scrubber. Only while the select is FOCUSED, so idle
   // scrolling over a select (e.g. in the sidebar) never hijacks the page or
-  // silently changes a value — the user has to engage the control first.
+  // silently changes a value - the user has to engage the control first.
   // Non-passive so preventDefault can stop the page from also scrolling.
   document.addEventListener('wheel', (e) => {
     const sel = asPlainSelect(e.target);

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * session-source — a generic registry for an EXTERNAL source of saved sessions.
+ * session-source - a generic registry for an EXTERNAL source of saved sessions.
  *
  * The sibling of field-policy / input-policy / export-policy: a neutral seam the
  * Projects view consults to show sessions that live somewhere other than this
  * device. It is EMPTY by default, so `getSessionSource()` returns undefined and the
- * Projects view renders exactly as today — local folders and sessions only.
+ * Projects view renders exactly as today - local folders and sessions only.
  *
  * It knows nothing about WHO registers a source: a deployment's optional control
  * plane registers one so a team's shared projects appear beside your local ones
- * (see src/org/), but the registry is a standalone primitive — a test or a future
+ * (see src/org/), but the registry is a standalone primitive - a test or a future
  * feature can drive it the same way. A single source at a time (last registration
  * wins), mirroring the approval-opener seam; there is one "elsewhere" per shell.
  *
  * The source is a pure DATA provider: it lists projects and sessions and fetches a
- * session's full state. It does NOT open anything — the Projects view owns opening
+ * session's full state. It does NOT open anything - the Projects view owns opening
  * (it already reconstructs tool URLs via the engine), so no engine or DOM concern
  * leaks into whoever registers the source.
  */
@@ -36,7 +36,7 @@ export interface TeamSessionRef {
   updatedBy?: string;
 }
 
-/** A shared session's full state — the shape the Projects view seeds a tool from. */
+/** A shared session's full state - the shape the Projects view seeds a tool from. */
 export interface TeamSessionData {
   toolId: string;
   toolVersion?: string;

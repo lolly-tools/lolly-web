@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PDF structural inspection — what a document CARRIES and what it DOES, as
+ * PDF structural inspection - what a document CARRIES and what it DOES, as
  * opposed to what it says about itself.
  *
  * `analyzePdf` in ./pdf.ts reads the Info dictionary and the XMP packet: the
  * document's own description of itself. That is the small half of "what's hidden
- * in this file". The larger half is structural — payloads and behaviour that no
+ * in this file". The larger half is structural - payloads and behaviour that no
  * metadata field mentions:
  *
- *   • attachments      — a PDF is a container; /EmbeddedFiles can hold anything
- *   • scripts          — /JavaScript that runs when the document opens
- *   • outward actions  — /Launch, /SubmitForm, /GoToR, /URI
- *   • form values      — filled AcroForm fields (the classic accidental leak)
- *   • annotations      — reviewer names and comment text left in the margins
- *   • hidden layers    — optional-content groups shipped switched OFF
+ *   • attachments - a PDF is a container; /EmbeddedFiles can hold anything
+ *   • scripts - /JavaScript that runs when the document opens
+ *   • outward actions - /Launch, /SubmitForm, /GoToR, /URI
+ *   • form values - filled AcroForm fields (the classic accidental leak)
+ *   • annotations - reviewer names and comment text left in the margins
+ *   • hidden layers - optional-content groups shipped switched OFF
  *
  * All of it is pure pdf-lib object-graph work, so it lives here rather than in
  * the bridge: it can be unit-tested against in-memory documents without a
  * browser. ./pdf.ts loads this lazily, keeping pdf-lib off the startup path.
  *
- * Read-only by construction — nothing here mutates the document. Note that
+ * Read-only by construction - nothing here mutates the document. Note that
  * `stripPdf` does NOT remove any of this; a "clean copy" still stays a
  * metadata-only operation, because dropping a script or an attachment changes
  * what the document IS, not merely what it discloses.
@@ -27,7 +27,7 @@
  * The graph is hostile input: refs can be cyclic, arrays can be enormous, and
  * every dictionary is optional. Every walk is depth-capped, cycle-guarded via
  * ref tags, and output-capped, and every accessor swallows malformed objects
- * rather than throwing — a corrupt PDF must yield fewer findings, never an
+ * rather than throwing - a corrupt PDF must yield fewer findings, never an
  * error that costs the viewer the metadata panel too.
  */
 
@@ -44,7 +44,7 @@ const MAX_DEPTH = 32;
 const MAX_ITEMS = 500;
 /** How many names a single finding lists before it summarises the tail. */
 const LIST_CAP = 8;
-/** Longest detail string we hand to the viewer — scripts especially can be huge. */
+/** Longest detail string we hand to the viewer - scripts especially can be huge. */
 const DETAIL_CAP = 400;
 
 // ── object access ─────────────────────────────────────────────────────────────
@@ -90,13 +90,13 @@ function strOf(ctx: PDFContext, o: Ref): string | null {
   try { return v.decodeText(); } catch { try { return v.asString(); } catch { return null; } }
 }
 
-/** A /JS entry is either a string or a stream — both carry the same program. */
+/** A /JS entry is either a string or a stream - both carry the same program. */
 function scriptText(ctx: PDFContext, o: Ref): string | null {
   const s = strOf(ctx, o);
   if (s != null) return s;
   const v = look(ctx, o);
   if (v instanceof PDFRawStream) {
-    // getContents() hands back the RAW bytes — still Flate/LZW-encoded as they
+    // getContents() hands back the RAW bytes - still Flate/LZW-encoded as they
     // sit in the file. decodePDFRawStream applies the /Filter chain.
     try { return new TextDecoder('utf-8').decode(decodePDFRawStream(v).decode()); } catch { return null; }
   }
@@ -106,7 +106,7 @@ function scriptText(ctx: PDFContext, o: Ref): string | null {
 /** Cycle guard key. Only indirect references can form a cycle, so a direct
  *  object simply has no tag and is always walked. */
 function refTag(o: Ref): string | null {
-  // `tag` is a PROPERTY ("5 0 R"), not a method — calling it throws, and a throw
+  // `tag` is a PROPERTY ("5 0 R"), not a method - calling it throws, and a throw
   // here would take out a whole finding category via the caller's catch.
   return o instanceof PDFRef ? o.tag : null;
 }
@@ -118,7 +118,7 @@ function clip(s: string, cap = DETAIL_CAP): string {
   return t.length > cap ? `${t.slice(0, cap - 1)}…` : t;
 }
 
-/** "a, b, c +4 more" — a bounded rendering of an unbounded list. */
+/** "a, b, c +4 more" - a bounded rendering of an unbounded list. */
 function list(items: string[], cap = LIST_CAP): string {
   const seen = items.map((s) => s.trim()).filter(Boolean);
   if (!seen.length) return '';
@@ -137,7 +137,7 @@ function bytesLabel(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** "3 items" / "1 item" — findings lead with a count so the panel scans. */
+/** "3 items" / "1 item" - findings lead with a count so the panel scans. */
 function count(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -145,7 +145,7 @@ function count(n: number, one: string, many = `${one}s`): string {
 // ── name trees (§7.9.6) ───────────────────────────────────────────────────────
 
 /**
- * Flatten a name tree — /Names pairs at the leaves, /Kids in the interior — into
+ * Flatten a name tree - /Names pairs at the leaves, /Kids in the interior - into
  * [key, value] entries. Used for both /EmbeddedFiles and /JavaScript, which share
  * the structure and differ only in what the values mean.
  */
@@ -181,7 +181,7 @@ function walkNameTree(
 interface Attachment {
   name: string;
   bytes: number | null;
-  /** Where it was found — a name-tree attachment vs a page annotation. */
+  /** Where it was found - a name-tree attachment vs a page annotation. */
   via: 'names' | 'annot' | 'af';
 }
 
@@ -199,7 +199,7 @@ function readFilespec(ctx: PDFContext, spec: Ref, via: Attachment['via'], fallba
     || fallbackName;
   const ef = dictOf(ctx, d.get(PDFName.of('EF')));
   // /EF is keyed by the same names as the filespec (/F, /UF); any of them is the
-  // same bytes. Without one this is a LINK to an external file, not a payload —
+  // same bytes. Without one this is a LINK to an external file, not a payload - 
   // still worth reporting, since it points off-device.
   const stream = ef ? (ef.get(PDFName.of('UF')) ?? ef.get(PDFName.of('F'))) : undefined;
   const size = stream
@@ -229,7 +229,7 @@ function collectAttachments(ctx: PDFContext, doc: PDFDocument, pages: PDFDict[])
     }
   }
 
-  // 3. /FileAttachment annotations — a paperclip pinned to a page. Same payload,
+  // 3. /FileAttachment annotations - a paperclip pinned to a page. Same payload,
   //    entirely different place in the graph, so a names-tree-only scan misses it.
   for (const annot of eachAnnot(ctx, pages)) {
     if (nameOf(ctx, annot.get(PDFName.of('Subtype'))) !== 'FileAttachment') continue;
@@ -272,11 +272,11 @@ interface ActionSink {
   scripts: string[];
   /** Outbound /URI targets. */
   uris: string[];
-  /** /Launch targets — an external program or file the document asks to open. */
+  /** /Launch targets - an external program or file the document asks to open. */
   launches: string[];
-  /** /SubmitForm endpoints — where filled values would be POSTed. */
+  /** /SubmitForm endpoints - where filled values would be POSTed. */
   submits: string[];
-  /** /GoToR + /GoToE — jumps into another document. */
+  /** /GoToR + /GoToE - jumps into another document. */
   remotes: string[];
 }
 
@@ -289,7 +289,7 @@ function emptySink(): ActionSink {
  *
  * An action is a small state machine: /S names the type, the type-specific keys
  * carry the payload, and /Next is zero or more actions to run afterwards. The
- * chain is the part naive scanners miss — a benign-looking /GoTo can chain into
+ * chain is the part naive scanners miss - a benign-looking /GoTo can chain into
  * a /JavaScript.
  */
 function walkAction(ctx: PDFContext, action: Ref, sink: ActionSink, seen: Set<string>, depth = 0): void {
@@ -381,7 +381,7 @@ function collectActions(ctx: PDFContext, doc: PDFDocument, pages: PDFDict[], fie
 
 interface FormField {
   dict: PDFDict;
-  /** Fully-qualified name — parent /T values joined with '.', per §12.7.3.2. */
+  /** Fully-qualified name - parent /T values joined with '.', per §12.7.3.2. */
   name: string;
   /** Field type: Tx (text), Btn (button), Ch (choice), Sig (signature). */
   type: string | null;
@@ -394,7 +394,7 @@ function fieldValue(ctx: PDFContext, v: Ref): string | null {
   const s = strOf(ctx, v);
   if (s != null) return s;
   const n = nameOf(ctx, v);
-  // /Off is the unchecked state — the absence of a value, not a value.
+  // /Off is the unchecked state - the absence of a value, not a value.
   if (n != null) return n === 'Off' ? null : n;
   const num = numOf(ctx, v);
   if (num != null) return String(num);
@@ -433,7 +433,7 @@ function walkFields(
 
   const kids = arrOf(ctx, d.get(PDFName.of('Kids')));
   // A widget kid with no /T of its own is the field's own appearance, not a
-  // child field — such a node still terminates here.
+  // child field - such a node still terminates here.
   const childFields = (kids ?? []).filter((k) => {
     const kd = dictOf(ctx, k);
     return kd ? (kd.get(PDFName.of('T')) != null || kd.get(PDFName.of('Kids')) != null) : false;
@@ -459,7 +459,7 @@ function collectFields(ctx: PDFContext, doc: PDFDocument): FormField[] {
 
 interface Layers {
   names: string[];
-  /** Layers the default configuration ships switched OFF — hidden content. */
+  /** Layers the default configuration ships switched OFF - hidden content. */
   hidden: string[];
 }
 
@@ -493,7 +493,7 @@ function pageDicts(doc: PDFDocument): PDFDict[] {
  * Inspect a loaded document's object graph and report what it carries and does.
  *
  * Findings are ordered by how much a viewer should care: payloads and executable
- * behaviour first, disclosure second, inventory last. Never throws — a graph too
+ * behaviour first, disclosure second, inventory last. Never throws - a graph too
  * broken to walk yields an empty array.
  */
 export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
@@ -556,7 +556,7 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
     }
     const signatures = fields.filter((f) => f.type === 'Sig' && f.dict.get(PDFName.of('V')) != null);
     if (signatures.length) {
-      // A signature is evidence, not a leak — but it also means any re-save
+      // A signature is evidence, not a leak - but it also means any re-save
       // (including our own strip/compress) invalidates it, so say it plainly.
       add('Digital signature', `${count(signatures.length, 'signed field')} — re-saving this file invalidates it`);
     }

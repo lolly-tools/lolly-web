@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * extract-site.ts — the pure HTML/CSS → `DesignCensus` parser behind the Design
+ * extract-site.ts - the pure HTML/CSS → `DesignCensus` parser behind the Design
  * System studio's website source (plan 97 §9 / SS9).
  *
  * Transport-agnostic on purpose: the Tauri native fetch and the Chrome extension
- * both hand this module the same three things — the page's HTML, the text of the
- * stylesheets they resolved, and the address they fetched — and get back a census
+ * both hand this module the same three things - the page's HTML, the text of the
+ * stylesheets they resolved, and the address they fetched - and get back a census
  * plus the logo candidates and the site's own name. Nothing here fetches, and
  * nothing here touches the DOM: no DOMParser, no `document`, no network. Pure
  * string/regex work, in the spirit of `engine/src/svg-colors.ts`, whose three
  * habits this file keeps deliberately:
  *
  *   1. A shared MATCH_CAP budget across every scan, so a hostile page degrades to
- *      partial output instead of spinning. Fonts are scanned BEFORE colours —
+ *      partial output instead of spinning. Fonts are scanned BEFORE colours - 
  *      colour declarations outnumber font ones by an order of magnitude on a real
  *      page, so scanning them first would let them starve the rarer, more valuable
  *      type signal when the budget runs out.
@@ -26,7 +26,7 @@
  * Known, accepted limits: markup inside HTML comments is read as markup (a
  * commented-out `<link rel=icon>` becomes a logo candidate); a selector further
  * than SELECTOR_LOOKBACK characters from its declaration is read truncated; and
- * `@media`/`@supports` wrappers are not modelled — only the innermost selector
+ * `@media`/`@supports` wrappers are not modelled - only the innermost selector
  * text is consulted, which is all the heading heuristic needs.
  */
 
@@ -81,7 +81,7 @@ const CLOSE_STYLE_RE = /<\/style\s*>/gi;
 const CLOSE_TITLE_RE = /<\/title\s*>/gi;
 const CLOSE_SCRIPT_RE = /<\/script\s*>/gi;
 
-// name, name="v", name='v', name=v — a valueless attribute reads as "".
+// name, name="v", name='v', name=v - a valueless attribute reads as "".
 const ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
 
 // The colour-bearing declarations, plus any custom property. The lookbehind stops
@@ -106,7 +106,7 @@ const GRADIENT_RE =
 const URL_FN_RE = /url\([^)]*\)/gi;
 const BARE_IDENT = /^[a-z][a-z0-9-]*$/i;
 const LEADING_ANGLE_RE = /^\s*(-?\d+(?:\.\d+)?)\s*deg(?![a-z])/i;
-// `h1`/`h2`/`h3` as a whole selector token — `.hero-h1` and `#h1x` must not match.
+// `h1`/`h2`/`h3` as a whole selector token - `.hero-h1` and `#h1x` must not match.
 const HEADING_SEL_RE = /(?:^|[^\w-])h[1-3](?![\w-])/i;
 
 /** Syntactically colour-shaped, but naming no paint. */
@@ -115,7 +115,7 @@ const NON_PAINT = new Set<string>([
   'inherit', 'initial', 'unset', 'revert', 'revert-layer',
 ]);
 
-/** Generic and system families — real faces, but never a design system's own. */
+/** Generic and system families - real faces, but never a design system's own. */
 const GENERIC_FAMILIES = new Set<string>([
   'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'math', 'emoji', 'fangsong',
   'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded',
@@ -326,7 +326,7 @@ export function extractSite(input: SiteInput): SiteExtract {
     try {
       return baseUrl != null ? new URL(v, baseUrl).href : new URL(v).href;
     } catch {
-      return v; // unresolvable relative path — still the truest thing we know
+      return v; // unresolvable relative path - still the truest thing we know
     }
   };
 
@@ -355,7 +355,7 @@ export function extractSite(input: SiteInput): SiteExtract {
     }
   };
 
-  // ── Pass 1: the markup — name, logos, theme colour, Google links, inline CSS ──
+  // ── Pass 1: the markup - name, logos, theme colour, Google links, inline CSS ──
   TAG_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while (budget.left > 0 && (m = TAG_RE.exec(html)) !== null) {

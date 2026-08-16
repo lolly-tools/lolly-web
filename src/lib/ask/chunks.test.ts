@@ -3,13 +3,13 @@
  * Section alignment (plans/103 M0) + the DRIFT GUARD.
  *
  * The unit half pins parseMdSections/alignPage on synthetic input. The drift
- * half reads the committed docs artifacts — the markdown twins under
- * public/info/*.md and the English search-index.json — and asserts that every
+ * half reads the committed docs artifacts - the markdown twins under
+ * public/info/*.md and the English search-index.json - and asserts that every
  * page's heading records align to a full section, EXCEPT a small pinned list of
  * pages rendered by a non-markdown path. It fails in BOTH directions: a docs
  * change that breaks alignment on a currently-clean page fails loudly, and a
  * pinned page that starts aligning (its exemption gone stale) fails too. That
- * second direction is the point — the snippet fallback must never quietly become
+ * second direction is the point - the snippet fallback must never quietly become
  * the norm.
  *
  * Run directly:  node --test shells/web/src/lib/ask/chunks.test.ts
@@ -68,9 +68,9 @@ const INFO = fileURLToPath(new URL('../../../public/info/', import.meta.url));
 
 // Pages rendered by a non-markdown path (their sections do not come from a twin),
 // so their records legitimately fall back to the snippet. Keep this list minimal
-// and justified — a page joining it silently would hide a real regression.
+// and justified - a page joining it silently would hide a real regression.
 const NON_MARKDOWN_PAGES = new Set<string>([
-  'index', // the landing page (docs/build.ts buildLandingContent) — injected HTML, no twin body
+  'index', // the landing page (docs/build.ts buildLandingContent) - injected HTML, no twin body
 ]);
 
 test('drift guard: every markdown page fully aligns; the pinned exceptions do not', () => {
@@ -95,7 +95,7 @@ test('drift guard: every markdown page fully aligns; the pinned exceptions do no
     const fullyAligns = missed === 0;
 
     if (NON_MARKDOWN_PAGES.has(slug)) {
-      // A pinned page that now aligns means the exemption is stale — remove it.
+      // A pinned page that now aligns means the exemption is stale - remove it.
       if (fullyAligns) staleException.push(slug);
     } else if (!fullyAligns) {
       brokeClean.push(`${slug} (${missed}/${headingRecs.length} sections unmatched)`);

@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-ui — the door into the beam (plan 100 §6.4).
+ * beam-ui - the door into the beam (plan 100 §6.4).
  *
  * `beam-session.test.ts` proves the four wires are connected. What it cannot prove is
  * that anything ever OPENS one: until this module, the whole beam stack shipped complete
- * and unreachable — no session created, no toast mounted, `sendCurrentSession` called by
+ * and unreachable - no session created, no toast mounted, `sendCurrentSession` called by
  * nobody. So this suite pins the three properties that make it reachable:
  *
- *   1. the send path builds a real offer FROM THE LIVE STATE — a working copy that was
- *      never saved to a slot — and it round-trips into the receiver's library byte-for-
+ *   1. the send path builds a real offer FROM THE LIVE STATE - a working copy that was
+ *      never saved to a slot - and it round-trips into the receiver's library byte-for-
  *      byte, with its user upload, over a fake lane pair;
  *   2. the toast is mounted ONCE per collab (not once per beam: the session multiplexes
  *      the outgoing and the incoming direction onto one stream) and comes off on close,
  *      together with the container this module made;
- *   3. a refusal is a value, never a throw — a closed lane and an empty reader come back
+ *   3. a refusal is a value, never a throw - a closed lane and an empty reader come back
  *      as `{ ok: false, reason }` so the caller can say something true;
- *   4. an ACCEPTOR's two hosts go in opposite directions — packed from the ephemeral
+ *   4. an ACCEPTOR's two hosts go in opposite directions - packed from the ephemeral
  *      working copy (§11.17), landed in the real library (§6.4). One host for both made
  *      the toast report a success that evaporated at teardown.
  *
  * The lane pair is `beam-session.test.ts`'s, narrowed to what a transport publishes: the
  * six-member bulk lane plus the `message` stream every lane is multiplexed onto. So there
  * is no `RTCPeerConnection`, no IndexedDB and no beam-protocol instance written by hand
- * anywhere here — and the assertions are still about real bytes landing in a real host.
+ * anywhere here - and the assertions are still about real bytes landing in a real host.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test shells/web/src/collab/beam-ui.test.ts
@@ -60,7 +60,7 @@ type RtcInboundMessage = import('./rtc-transport.ts').RtcInboundMessage;
 // `beam-session.test.ts`'s lane, wrapped in the two members `CollabBeamTransport`
 // names: `beam` (the bulk lane) and `on('message')` (the stream every lane shares).
 // Frames are delivered SYNCHRONOUSLY, which is the nastiest ordering a real channel
-// produces — a peer's decline lands re-entrantly, inside the sender's own write.
+// produces - a peer's decline lands re-entrantly, inside the sender's own write.
 
 interface FakeTransport extends CollabBeamTransport {
   open: boolean;
@@ -167,7 +167,7 @@ function makeHost(): FakeHost {
 //
 // `beam-session.test.ts`'s sink: the production arrangement (the SINK produces each
 // item's digest, so the protocol buffers nothing) minus IndexedDB, which Node does not
-// have. Verification still happens — just against what staging actually holds.
+// have. Verification still happens - just against what staging actually holds.
 
 function memSink(): BeamSessionSink {
   const chunks = new Map<number, Uint8Array[]>();
@@ -201,7 +201,7 @@ function memSink(): BeamSessionSink {
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const PHOTO = 'user/upload/9-photo.png';
 
-/** Deterministic bytes that actually start like a PNG — the ingest reads the BYTES to
+/** Deterministic bytes that actually start like a PNG - the ingest reads the BYTES to
  *  decide what a received file is, never the peer's label. */
 function pngOf(n: number, seed: number): Uint8Array {
   const out = new Uint8Array(n);
@@ -250,11 +250,11 @@ function toastSpy() {
  * every `sriSha256` is a Web Crypto digest on libuv's thread pool (staging's finalize,
  * the ingest re-hash, and the read-back that proves the stored bytes) and `Blob
  * .arrayBuffer()` is read the same way. A check-phase turn costs microseconds, so forty
- * of them elapse in well under a millisecond — on an idle laptop the pool answers inside
+ * of them elapse in well under a millisecond - on an idle laptop the pool answers inside
  * nine of them and the suite is green, on a two-core runner sharing its cores with the
  * rest of the suite it does not, and the assertions then describe a beam that simply has
  * not landed yet. Measured: under 10× CPU contention, 500 immediate turns were not
- * enough and 9 `setTimeout(0)` turns were — the timer's ~1 ms floor is what makes each
+ * enough and 9 `setTimeout(0)` turns were - the timer's ~1 ms floor is what makes each
  * turn a real wait instead of a spin.
  *
  * `beam-session.test.ts` already waits this way (`waitFor`), which is why the same
@@ -273,8 +273,8 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * True once the beam that started after `mark` has ended, either way.
  *
  * Terminal-event rather than "did a row appear", so an ingest that FAILED stops the wait
- * immediately and the assertion below reports what did not land — the diagnosis this
- * file is for — instead of timing out with nothing to say. Sliced from a mark because
+ * immediately and the assertion below reports what did not land - the diagnosis this
+ * file is for - instead of timing out with nothing to say. Sliced from a mark because
  * one session multiplexes both directions: an acceptor that has already sent carries its
  * own `complete` at the head of the same stream.
  */
@@ -325,7 +325,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
     'a catalog ref is LISTED, never sent (§11.16) — the receiver resolves it locally',
   );
 
-  // Consent, through the toast port — the only door there is (§11.24).
+  // Consent, through the toast port - the only door there is (§11.24).
   const offered = receiverToast.events.find((e) => e.t === 'offer-received');
   assert.ok(offered && offered.t === 'offer-received', 'the receiver was never shown an offer');
   assert.equal(offered.offer.name, 'Design', 'the offer is named from the live label');
@@ -345,7 +345,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   const got = new Uint8Array(await landed.blob!.arrayBuffer());
   assert.deepEqual([...got], [...bytes], 'the bytes must be identical or C2PA does not survive the trip');
 
-  // And the session — the UNSAVED working copy — is now a real saved session on the
+  // And the session - the UNSAVED working copy - is now a real saved session on the
   // other device, with its ref rewritten to point at the upload that travelled with it.
   const landedSessions = [...receiverHost.sessions.values()];
   assert.equal(landedSessions.length, 1, 'the live state did not land as a session');
@@ -373,14 +373,14 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
 test('an acceptor packs from the ephemeral copy and lands a gift in the REAL library', async () => {
   // The one mount in the shell that holds two `BeamPackHost`s at once. `views/tool.ts`
   // swaps `host.state` for a memory bridge before the runtime exists (§11.17), so an
-  // acceptor's working copy can never reach a slot on their device — and for a WHILE the
+  // acceptor's working copy can never reach a slot on their device - and for a WHILE the
   // beam was handed that same clone for both directions, which meant an accepted pack was
   // written into a store that dies with the mount. Worse than losing it outright: the
   // assets ride `host.assets`, which was never swapped, so they persisted while the
   // session they belong to did not, and the toast said both had landed.
   const { a, b } = pair();
   const inviterHost = makeHost();
-  /** The acceptor's memory-backed `host.state` — their working copy lives here. */
+  /** The acceptor's memory-backed `host.state` - their working copy lives here. */
   const ephemeral = makeHost();
   /** The acceptor's real bridge, as it was before the swap. */
   const library = makeHost();

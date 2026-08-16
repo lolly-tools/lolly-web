@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shared multi-select GESTURES for the tile grids — Projects (#/p) and the
+ * The shared multi-select GESTURES for the tile grids - Projects (#/p) and the
  * Catalogue (#/c). Both grids let you rubber-band a box through the gaps between
  * cards and Shift-click a selection dot to sweep up everything in between, and
  * both do it from this one implementation so they can never drift apart.
  *
- *   • MARQUEE — press in a gap and drag: every selectable tile the box touches is
+ *   • MARQUEE - press in a gap and drag: every selectable tile the box touches is
  *     selected live. A plain drag REPLACES the selection; Shift/Cmd/Ctrl ADDS to
  *     it. A plain click on empty canvas (a press that never became a drag) clears
- *     the selection. Fine-pointer only — touch has the dots.
- *   • SHIFT-RANGE — Shift-clicking a dot selects every tile from the ANCHOR (the
+ *     the selection. Fine-pointer only - touch has the dots.
+ *   • SHIFT-RANGE - Shift-clicking a dot selects every tile from the ANCHOR (the
  *     last dot you clicked plainly, or the last tile a marquee caught) through to
  *     that one, inclusive, ADDING them to whatever is already selected. Shift
- *     therefore only ever grows a selection — it never takes one away, so it's
+ *     therefore only ever grows a selection - it never takes one away, so it's
  *     safe to reach for on top of a set you built up with the box.
  *
- * Each view keeps its OWN selection store — Projects a `Map<ref, kind>` (it has to
+ * Each view keeps its OWN selection store - Projects a `Map<ref, kind>` (it has to
  * remember whether a ref is a folder / session / image), the Catalogue a plain
  * `Set<id>` of user uploads. Only the gestures live here. The adapter is the whole
  * contract between them: which tiles are selectable, how to read a tile's ref,
  * what's selected right now, and how to reconcile the store to a new set of refs.
  *
  * Everything order-dependent (i.e. what "in between" means) is derived from
- * `tiles()` in DOM order, re-queried per gesture — so a range always spans what
+ * `tiles()` in DOM order, re-queried per gesture - so a range always spans what
  * the user can actually see, and a grid rebuilt mid-session (a search, a filter,
  * a delete) needs no invalidation here.
  *
- * Wire it ONCE per view mount, against the persistent `viewEl` — both views wipe
+ * Wire it ONCE per view mount, against the persistent `viewEl` - both views wipe
  * `viewEl.innerHTML` on every render, so anything bound to the grid inside would
  * be orphaned (and re-wiring per render would reset the anchor under the user's
  * Shift-click). The delegated mousedown + the anchor both outlive a re-render.
@@ -35,14 +35,14 @@
 /** How the view exposes its grid + selection store to the gestures. */
 export interface TileSelectAdapter {
   /**
-   * The view's PERSISTENT mount element (`viewEl`) — not the rendered root inside it,
+   * The view's PERSISTENT mount element (`viewEl`) - not the rendered root inside it,
    * which every render() replaces. Owns the delegated mousedown and carries
    * `.is-marqueeing` while a box is being dragged.
    */
   host: HTMLElement;
-  /** Every tile these gestures may select, in DOM order. Re-queried on each gesture — never cached. */
+  /** Every tile these gestures may select, in DOM order. Re-queried on each gesture - never cached. */
   tiles(): HTMLElement[];
-  /** A tile's stable ref — `data-ref` in Projects, `data-id` in the Catalogue. */
+  /** A tile's stable ref - `data-ref` in Projects, `data-id` in the Catalogue. */
   refOf(tile: HTMLElement): string;
   /** The refs selected right now (a snapshot; mutating it must not touch the store). */
   current(): Set<string>;
@@ -58,7 +58,7 @@ export interface TileSelectAdapter {
   noStart: string;
 }
 
-/** The handle a view holds onto — it feeds dot clicks in, the gestures do the rest. */
+/** The handle a view holds onto - it feeds dot clicks in, the gestures do the rest. */
 export interface TileSelect {
   /**
    * Handle a click on a tile's selection dot. Shift extends the range from the anchor;
@@ -66,12 +66,12 @@ export interface TileSelect {
    * makes that tile the anchor for the next Shift-click.
    */
   onDotClick(ref: string, shiftKey: boolean, toggle: () => void): void;
-  /** Forget the anchor — for a view that clears its selection by some other route. */
+  /** Forget the anchor - for a view that clears its selection by some other route. */
   resetAnchor(): void;
   /**
    * Unbind everything. MANDATORY on view teardown (`viewEl._cleanup`): the host is the
-   * router's single, PERSISTENT `#view` element — it is never recreated, only emptied
-   * (`replaceChildren()`) — so a mousedown left bound here would stack another copy on
+   * router's single, PERSISTENT `#view` element - it is never recreated, only emptied
+   * (`replaceChildren()`) - so a mousedown left bound here would stack another copy on
    * every navigation, each one closing over a dead view's selection store and render().
    * Also drops any in-flight drag (its document listeners + the box).
    */
@@ -81,7 +81,7 @@ export interface TileSelect {
 /** Travel (px) before a press counts as a drag rather than a click. */
 const DRAG_SLOP = 5;
 
-/** Both grids mark a tile's selection dot with `data-select` — the shared convention. */
+/** Both grids mark a tile's selection dot with `data-select` - the shared convention. */
 const DOT = '[data-select]';
 
 export function wireTileSelect(a: TileSelectAdapter): TileSelect {
@@ -91,12 +91,12 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
   let anchor: string | null = null;
 
   /**
-   * The selectable tiles that are actually ON SCREEN, in DOM order — the seam BOTH gestures
+   * The selectable tiles that are actually ON SCREEN, in DOM order - the seam BOTH gestures
    * derive from (the marquee's hit test and the Shift-range's ordering).
    *
    * A view's tiles() can legitimately hand back tiles the user cannot see: the Catalogue
    * keeps a collapsed group's cards in the DOM and hides them with `display: none`. Those
-   * measure {0,0,0,0} — and a zero rect at the viewport origin PASSES the overlap test for
+   * measure {0,0,0,0} - and a zero rect at the viewport origin PASSES the overlap test for
    * any box dragged out to the top-left corner, which would silently select every card in a
    * folded-up section and arm a bulk Delete over cards that are nowhere on screen. Dropping
    * zero-area tiles here kills that at the source, for both gestures and both views at once.
@@ -120,7 +120,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     const to = order.indexOf(ref);
     if (to < 0) return;                       // the clicked tile isn't selectable (shouldn't happen)
     const from = anchor === null ? -1 : order.indexOf(anchor);
-    // The anchor is gone — deleted, or filtered out by a search since it was set. There's no
+    // The anchor is gone - deleted, or filtered out by a search since it was set. There's no
     // range to span, so treat this as a plain add and re-anchor here, giving the NEXT
     // Shift-click something live to reach back to.
     if (from < 0) {
@@ -150,7 +150,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     function onMove(e: MouseEvent): void {
       const dx = e.clientX - sx, dy = e.clientY - sy;
       if (!box) {
-        if (Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;   // micro-jitter — still a click
+        if (Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;   // micro-jitter - still a click
         box = document.createElement('div');
         box.className = 'tile-marquee';
         document.body.appendChild(box);
@@ -172,7 +172,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
 
     // Drop a live drag WITHOUT applying it: unbind everything the drag bound and bin the box.
     // Called at the end of a normal drag, by cancelDrag(), and by destroy() if the user
-    // navigates away mid-drag — which would otherwise leak the drag's listeners and orphan
+    // navigates away mid-drag - which would otherwise leak the drag's listeners and orphan
     // the box in document.body (it lives there, not in the view, so the router's
     // replaceChildren() could never reach it).
     endDrag = (): void => {
@@ -188,9 +188,9 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
 
     // Abandon a live drag and put the selection back exactly as it was when the press began.
     // Two ways in:
-    //   • Escape — every other overlay in this app backs out on Escape; a marquee you can see
+    //   • Escape - every other overlay in this app backs out on Escape; a marquee you can see
     //     is sweeping up the wrong cards should too, rather than forcing you to complete it.
-    //   • Window blur — Alt/Cmd-Tab away mid-drag and no mouseup is ever delivered, so without
+    //   • Window blur - Alt/Cmd-Tab away mid-drag and no mouseup is ever delivered, so without
     //     this the box would stay painted at z-index 8000 and `.is-marqueeing` would keep
     //     user-select dead across the view, with the next stray click committing a stale box.
     function cancelDrag(): void {
@@ -227,12 +227,12 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     const onDown = (e: MouseEvent): void => {
       if (e.button !== 0) return;
       const el = e.target as HTMLElement;
-      // A Shift-click on a dot extends the range (see onDotClick) — stop the browser ALSO
+      // A Shift-click on a dot extends the range (see onDotClick) - stop the browser ALSO
       // dragging a text selection across the cards on its way there. Shift-extend-selection
       // is a MOUSEDOWN behaviour, so suppressing it on the click would already be too late.
       if (e.shiftKey && el.closest(DOT)) { e.preventDefault(); return; }
       if (active) return;
-      // Only ever start a box in a genuine gap — never on a card, control, bar, or drop zone.
+      // Only ever start a box in a genuine gap - never on a card, control, bar, or drop zone.
       if (el.closest(a.noStart)) return;
       active = true;
       sx = e.clientX; sy = e.clientY;

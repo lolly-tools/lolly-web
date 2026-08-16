@@ -3,7 +3,7 @@
  * The payload half of the MilkDrop tool enhancer. Everything else in that module needs
  * WebGL2 and a real compositor (it is verified by rendering and reading the pixels back),
  * but the parse is where a malformed tool payload turns into a visualizer that sits
- * perfectly still — indistinguishable from a broken one — so it is pinned here.
+ * perfectly still - indistinguishable from a broken one - so it is pinned here.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

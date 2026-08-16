@@ -3,13 +3,13 @@
  * First-visit personalisation nudge (web/PWA shell only).
  *
  * A one-time, dismissible toast in the gallery's top-right corner inviting the
- * user to opt in to "use my details" — the profile.useDetails flag that lets the
+ * user to opt in to "use my details" - the profile.useDetails flag that lets the
  * profile-bound tools (bindToProfile) pre-fill and personalise their output (see
  * ../personalize-previews.ts). It *links* to the profile page, where the opt-in
  * control lives; it never flips the flag on the user's behalf.
  *
  * It is a gentle prompt, not a gate:
- *   - shown once — the "seen it" flag rides the PROFILE (profile.personalizeNudge-
+ *   - shown once - the "seen it" flag rides the PROFILE (profile.personalizeNudge-
  *     Dismissed), not device storage, so it's per-user and travels in the backup,
  *     the same way useDetails / favourites / theme do;
  *   - suppressed entirely once the user has already opted in (nothing to nudge);
@@ -19,17 +19,17 @@
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { t } from '../i18n.ts';
 
-/** The slice of the host this module writes through — the web shell's profile
+/** The slice of the host this module writes through - the web shell's profile
  *  setter (host.profile.set, not on the tool-facing ProfileAPI). */
 interface NudgeHost {
   profile: { get(): Promise<Profile>; set(profile: Profile): Promise<void> };
 }
 
-// Lucide "sparkles" — a light decorative cue that this is about personalisation.
+// Lucide "sparkles" - a light decorative cue that this is about personalisation.
 const SPARKLE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
 
 /**
- * Markup for the nudge, or '' when it shouldn't show — already seen/dismissed, or
+ * Markup for the nudge, or '' when it shouldn't show - already seen/dismissed, or
  * the user has already opted in (there's nothing left to nudge). Render this
  * inside the gallery; it positions itself fixed in the top-right.
  */
@@ -55,7 +55,7 @@ export function personalizeNudgeMarkup(profile: Profile | null | undefined): str
 /**
  * Wire the nudge once it's in the DOM: dismiss (× or "Not now") persists the
  * "seen" flag to the profile and removes the toast; following the CTA also marks
- * it seen — they've acted on it — but lets the hash navigation proceed. No-op when
+ * it seen - they've acted on it - but lets the hash navigation proceed. No-op when
  * the nudge isn't present (already seen / opted in). The write is best-effort and
  * fire-and-forget: the toast comes down instantly regardless.
  */
@@ -76,7 +76,7 @@ export function mountPersonalizeNudge(viewEl: HTMLElement, host: NudgeHost): voi
 
   nudge.querySelector<HTMLButtonElement>('.personalize-nudge-close')?.addEventListener('click', dismiss);
   nudge.querySelector<HTMLButtonElement>('.personalize-nudge-dismiss')?.addEventListener('click', dismiss);
-  // The CTA is a hash link — don't preventDefault; just remember they acted so it
+  // The CTA is a hash link - don't preventDefault; just remember they acted so it
   // doesn't reappear when they return to the gallery.
   nudge.querySelector<HTMLAnchorElement>('.personalize-nudge-cta')?.addEventListener('click', persist);
 }

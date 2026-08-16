@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * export-policy — a tiny, generic policy for what a tool may offer at export time.
+ * export-policy - a tiny, generic policy for what a tool may offer at export time.
  *
  * The third sibling alongside lib/field-policy.ts (profile fields) and
  * lib/input-policy.ts (tool inputs): where those govern how a control renders, this
@@ -9,13 +9,13 @@
  * it through an approval instead, or is output withheld entirely?
  *
  * It is a single slot, EMPTY (undefined) by default, so `getExportPolicy` returns
- * `undefined` and the export control renders exactly as it does today — this
+ * `undefined` and the export control renders exactly as it does today - this
  * primitive is dormant until a setter runs. `exportAffordance(undefined)` is
  * `'download'`, so the dormant path is byte-identical to a build without this module.
  *
  * Like its siblings, it knows nothing about WHERE a policy comes from: a deployment's
  * optional org-config module populates it (see src/org/), but the registry is a
- * standalone primitive with no dependency on that — a test or a future feature can
+ * standalone primitive with no dependency on that - a test or a future feature can
  * drive it just the same. It carries no product vocabulary and needs no i18n; any
  * user-facing copy is supplied by whoever consults it.
  */
@@ -25,7 +25,7 @@ export interface ExportPolicy {
   canDownload: boolean;
   /** May the caller instead file an approval request for the result. */
   canRequestApproval: boolean;
-  /** The approval chain bound to a tool's outputs, or `undefined` when none is —
+  /** The approval chain bound to a tool's outputs, or `undefined` when none is - 
    *  i.e. this tool's output isn't gated on this instance. */
   approvalChainFor(toolId: string): string | undefined;
   /** The export formats policy binds a tool to, or `undefined` when the tool is
@@ -36,7 +36,7 @@ export interface ExportPolicy {
 }
 
 /** The plain data a host supplies to describe the policy (the setter builds the
- *  ExportPolicy — including its `approvalChainFor` lookup — from this). */
+ *  ExportPolicy - including its `approvalChainFor` lookup - from this). */
 export interface ExportPolicySpec {
   canDownload: boolean;
   canRequestApproval: boolean;
@@ -54,7 +54,7 @@ export type ExportAffordance = 'download' | 'request-approval' | 'blocked';
 let current: ExportPolicy | undefined;
 
 /**
- * The active export policy, or `undefined` when dormant (the default — the export
+ * The active export policy, or `undefined` when dormant (the default - the export
  * control then behaves exactly as with no policy layer at all).
  */
 export function getExportPolicy(): ExportPolicy | undefined {
@@ -78,7 +78,7 @@ export function setExportPolicy(spec: ExportPolicySpec | undefined): void {
 }
 
 /**
- * The affordance a policy resolves to. Pure — the single place the download-vs-
+ * The affordance a policy resolves to. Pure - the single place the download-vs-
  * request-vs-blocked decision lives, so the view and its tests agree. `undefined`
  * (dormant) and `canDownload` both mean the ordinary download.
  */

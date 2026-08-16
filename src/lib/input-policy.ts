@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * input-policy — a generic per-input display-policy registry for the tool sidebar.
+ * input-policy - a generic per-input display-policy registry for the tool sidebar.
  *
  * The sibling of lib/field-policy.ts, one level up: where field-policy governs the
  * profile form's fixed fields, this governs a tool's declared inputs. A neutral
@@ -8,7 +8,7 @@
  * input render as usual, be locked to a read-only value, be hidden entirely, or
  * have its choices narrowed to an allowed set?
  *
- * Keyed by (toolId, inputId) — a tool's inputs are namespaced by the tool, and the
+ * Keyed by (toolId, inputId) - a tool's inputs are namespaced by the tool, and the
  * registry mirrors that so a policy for one tool can never bleed into another. It
  * is EMPTY by default, so `getInputPolicy` returns `undefined` and the sidebar
  * renders exactly as it does today; this primitive is dormant until a setter runs.
@@ -20,7 +20,7 @@
  * no i18n and no product vocabulary.
  *
  * This is a RENDERING overlay only. The engine input model stays the single source
- * of truth — nothing here mutates it; the sidebar reads a policy alongside the
+ * of truth - nothing here mutates it; the sidebar reads a policy alongside the
  * model and adjusts how it presents the control.
  */
 
@@ -42,17 +42,17 @@ export interface InputPolicy {
 const registry = new Map<string, Map<string, InputPolicy>>();
 
 /** A global fail-closed overlay: when set, every input that has no explicit policy of
- *  its own is treated as this (a locked read-only) policy — the more restrictive state.
+ *  its own is treated as this (a locked read-only) policy - the more restrictive state.
  *  Off (null) by default, so the dormant path is untouched. Its purpose is a governed
  *  instance whose live policy is momentarily unknown and un-cached: the host installs
  *  it so gated inputs never fall open to editable while policy can't be confirmed. It
- *  is orthogonal to the per-tool registry and is NOT cleared by clearInputPolicies —
+ *  is orthogonal to the per-tool registry and is NOT cleared by clearInputPolicies - 
  *  only its own setter (or the test reset) lifts it. */
 let failClosed: InputPolicy | null = null;
 
 /**
  * The policy for one input of one tool, or `undefined` when none is registered (the
- * default — the sidebar then behaves exactly as with no policy layer). An explicit
+ * default - the sidebar then behaves exactly as with no policy layer). An explicit
  * per-tool policy always wins; otherwise the global fail-closed overlay applies when
  * one is set, else `undefined`. The dormant common case (empty registry, no overlay)
  * still returns `undefined` with no per-input cost.

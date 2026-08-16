@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Colour-format bridge — read and write one colour in Hex / RGB / RGBA / OKLCH /
+ * Colour-format bridge - read and write one colour in Hex / RGB / RGBA / OKLCH /
  * CMYK, always round-tripping through a canonical sRGB hex.
  *
  * The brand editor's swatch popover lets a user set a swatch from ANY of these
@@ -8,7 +8,7 @@
  * … and extrapolate the RGB or hex"). Everything funnels to a `#rrggbb`(`aa`)
  * hex, which is what the DTCG doc stores and every picker/export already reads.
  *
- * "LCH" in this app means OKLCH — the perceptual space the tokens, the wizard and
+ * "LCH" in this app means OKLCH - the perceptual space the tokens, the wizard and
  * the colour field all speak (brand.json `$value`s are `oklch()` strings). All
  * conversions defer to the engine's colour authority (rgbToCmyk / cmykToRgbApprox
  * / hexToOklch / oklchToHex / colorToHex); this module only parses/formats the
@@ -20,7 +20,7 @@ import { colorToHex, rgbToCmyk, cmykToRgbApprox, hexToOklch, oklchToHex, formatO
 export type ColorFormat = 'hex' | 'rgb' | 'rgba' | 'hsl' | 'oklch' | 'cmyk';
 
 /**
- * How a swatch's `$value` is WRITTEN into the tokens document — distinct from
+ * How a swatch's `$value` is WRITTEN into the tokens document - distinct from
  * ColorFormat (the popover's set-by-value text row). `lch` (= OKLCH, the app's
  * perceptual default and what derived brands ship) unless the swatch already
  * carries another notation the user chose. CMYK is deliberately absent: the
@@ -137,7 +137,7 @@ export function formatColor(fmt: ColorFormat, hex: string): string {
 /**
  * Serialise a canonical hex (#rrggbb/#rrggbbaa) into the string form a swatch's
  * `$value` stores. Every emitted form is one the engine's colorToHex parses back
- * (comma-form rgb()/hsl() — its splitter doesn't take space-separated channels),
+ * (comma-form rgb()/hsl() - its splitter doesn't take space-separated channels),
  * so a doc round-trips whatever notation the user picked. Unparseable input
  * falls through verbatim rather than eating the value.
  */
@@ -161,7 +161,7 @@ export function serializeColor(hex: string, fmt: StorageFormat): string {
 }
 
 /**
- * The storage notation a stored `$value` is already written in — seeds the
+ * The storage notation a stored `$value` is already written in - seeds the
  * popover's "Stored as" toggle so editing respects the user's earlier choice.
  * Anything unrecognised (aliases, idents, DTCG objects) reports the app default,
  * `lch`.
@@ -179,7 +179,7 @@ export function storageFormatOf(raw: unknown): StorageFormat {
  * Parse a format's text back to a canonical hex (#rrggbb, or #rrggbbaa when an
  * alpha < 1 is given). Returns null on anything unparseable so the caller can
  * hold the last good value. Number entry is forgiving: commas, spaces, `rgb(...)`
- * / `oklch(...)` wrappers and `%` signs are all tolerated — only the numbers matter.
+ * / `oklch(...)` wrappers and `%` signs are all tolerated - only the numbers matter.
  */
 export function parseColor(fmt: ColorFormat, text: string): string | null {
   const t = text.trim();
@@ -207,7 +207,7 @@ export function parseColor(fmt: ColorFormat, text: string): string | null {
       return rgbaToHex(r, g, b, 1);
     }
     case 'oklch': {
-      // L (percent) C H [/ A] — reconstruct the canonical oklch() the engine
+      // L (percent) C H [/ A] - reconstruct the canonical oklch() the engine
       // parses; a 4th number is the alpha (0–1) and yields a hex8.
       const [l, c, h, a] = nums(t);
       if (l === undefined || c === undefined || h === undefined) return null;

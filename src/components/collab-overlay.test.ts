@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * collab-overlay.ts — the remote cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
+ * collab-overlay.ts - the remote cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
  *
  * Run directly:  node --test shells/web/src/components/collab-overlay.test.ts
  *
@@ -10,14 +10,14 @@
  *  1. UNIT SPACE MAPS THROUGH THE STAGE'S LIVE RECT (§4.3). Asserted at two zoom
  *     sizes, since "works at 1×" is exactly the bug normalized coordinates exist to
  *     prevent. jsdom's getBoundingClientRect is all zeros, so the rects are injected
- *     — a test that measured the real DOM here would pass vacuously.
+ * - a test that measured the real DOM here would pass vacuously.
  *  2. INTERPOLATE, NEVER EXTRAPOLATE. The position walks monotonically from the
  *     previous sample to the newest one and STOPS there, however long the ticker
  *     runs past it; a gap longer than the snap window is read as an absence and
  *     jumps instead of sweeping.
  *  3. THE LOOP COSTS NOTHING WHEN IT SHOULD COST NOTHING. Nodes are pooled by
  *     identity across roster churn; the ticker stands down on an empty roster, under
- *     reduced motion, and — the one a reader will not guess — the moment every peer's
+ *     reduced motion, and - the one a reader will not guess - the moment every peer's
  *     segment has been walked, so a PARKED pointer holds no frame loop; and dispose()
  *     leaves NO frame pending, a leaked rAF in a torn-down tool view being a loop
  *     that runs for the life of the tab.
@@ -26,7 +26,7 @@
  *     new class with no rule fails here rather than shipping as an unstyled div.
  *
  * Plus the §4.6 invariant that makes the whole feature safe: the layer is mounted
- * OUTSIDE the render surface even when a caller asks for it inside — and the
+ * OUTSIDE the render surface even when a caller asks for it inside - and the
  * re-anchor path a canvas zoom takes, which fires no event of its own.
  */
 import test from 'node:test';
@@ -52,7 +52,7 @@ type CursorPeer = Parameters<ReturnType<Mod['createCollabCursors']>['setPeers']>
 
 // ── harness ───────────────────────────────────────────────────────────────────
 
-/** A rAF stand-in that never fires on its own — the test decides when a frame is. */
+/** A rAF stand-in that never fires on its own - the test decides when a frame is. */
 function fakeFrames() {
   const queued = new Map<number, () => void>();
   let next = 1;
@@ -65,7 +65,7 @@ function fakeFrames() {
     cancelRaf(handle: number): void {
       queued.delete(handle);
     },
-    /** How many callbacks are still armed — how "no frame pending" is asserted. */
+    /** How many callbacks are still armed - how "no frame pending" is asserted. */
     pending(): number {
       return queued.size;
     },
@@ -138,7 +138,7 @@ test('the same normalized point lands correctly at two zoom sizes', () => {
   assert.equal(h.transformOf(), 'translate3d(120px, 110px, 0)',
     'at 1x: 20px stage offset + a quarter of 400px');
 
-  // Zoom the stage to 2x. Nothing about the peer changed — this is the whole reason
+  // Zoom the stage to 2x. Nothing about the peer changed - this is the whole reason
   // §4.3 puts normalized coordinates on the wire rather than pixels.
   h.setStageWidth(800);
   h.cursors.reanchor();
@@ -253,7 +253,7 @@ test('the ticker runs only while somebody is MOVING — a parked pointer and an 
   assert.equal(h.frames.pending(), 0, 'nothing is scheduled before anyone arrives');
 
   // An ARRIVAL is not a movement. There is no previous sample to walk from, so the
-  // node is placed once and there is nothing left to animate — a live roster is not
+  // node is placed once and there is nothing left to animate - a live roster is not
   // by itself a reason to hold a frame loop open (§11.14, and this module's own
   // "the ticker is not a heartbeat").
   h.cursors.setPeers([peer('a', 0.5, 0.5)]);
@@ -270,7 +270,7 @@ test('the ticker runs only while somebody is MOVING — a parked pointer and an 
 
   // Past the end of the segment the interpolator rests on the newest sample forever,
   // so every further frame would paint the identical transform after two forced
-  // layouts. It stands down instead — but only AFTER painting the resting position.
+  // layouts. It stands down instead - but only AFTER painting the resting position.
   h.setNow(400);
   h.frames.flush();
   assert.equal(h.frames.pending(), 0, 'a parked pointer stands the loop down');
@@ -345,7 +345,7 @@ test('dispose leaves no rAF pending and releases the pool', () => {
   const h = mount();
   h.cursors.setPeers([peer('a', 0.5, 0.5), peer('b', 0.1, 0.1)]);
   // A second sample apiece, so the ticker is genuinely mid-segment when the view is
-  // torn down — disposing a loop that had already stood itself down would prove
+  // torn down - disposing a loop that had already stood itself down would prove
   // nothing about the leak this test exists for.
   h.setNow(100);
   h.cursors.setPeers([peer('a', 0.6, 0.5), peer('b', 0.2, 0.1)]);
@@ -422,7 +422,7 @@ test('the module injects its own sheet, and every class it writes is defined the
 
   // The regression this pins: `.collab-cursor` and friends once existed only as
   // strings in this file. A default `display:block; position:static` div paints no
-  // arrow and no colour, but DOES paint its label's textContent — so the visible
+  // arrow and no colour, but DOES paint its label's textContent - so the visible
   // result was raw peer names stacked in normal flow over the stage, each inline
   // translate3d offsetting from the wrong origin.
   const written = classesUnder(h.cursors.el as HTMLElement);
@@ -449,7 +449,7 @@ test('a canvas zoom re-anchors a parked cursor, though it fires no event of its 
   assert.equal(h.transformOf(), 'translate3d(220px, 110px, 0)');
   assert.equal(h.frames.pending(), 0, 'parked: no ticker is re-measuring anything');
 
-  // What views/tool-stage-nav.ts actually does — a transform on an ancestor, and no
+  // What views/tool-stage-nav.ts actually does - a transform on an ancestor, and no
   // event at all. No scroll offset moves, no window resizes, and the border box is
   // unchanged, so neither a scroll listener nor a ResizeObserver would ever hear it.
   h.setStageWidth(800);

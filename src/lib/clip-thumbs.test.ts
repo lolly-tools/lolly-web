@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tests for clip-thumbs.ts — the parts that are DOM-free or injectable.
+ * Tests for clip-thumbs.ts - the parts that are DOM-free or injectable.
  *
  * WHAT IS COVERED HERE (real logic, real module, no mock theatre):
- *   • frameTimes      — midpoint sampling, clamping, degenerate spans
- *   • bucketPeaks     — the audiogram normalisation, mono mix, silence
- *   • filmstripKey / peaksKey / withinDecodeBudget — cache identity + the ceiling
- *   • createLru       — recency, eviction order, dispose-on-evict/overwrite/clear
- *   • createSeekQueue — the Safari rule: never two seeks in flight; strict order;
+ *   • frameTimes - midpoint sampling, clamping, degenerate spans
+ *   • bucketPeaks - the audiogram normalisation, mono mix, silence
+ *   • filmstripKey / peaksKey / withinDecodeBudget - cache identity + the ceiling
+ *   • createLru - recency, eviction order, dispose-on-evict/overwrite/clear
+ *   • createSeekQueue - the Safari rule: never two seeks in flight; strict order;
  *                       latest-wins supersede; abort skipping
- *   • onIdle          — the setTimeout fallback path + cancellation
- *   • filmstrip()     — resolves empty (never throws) with no DOM present
- *   • stillKey        — url + DEVICE-pixel height identity, width deliberately absent
- *   • stillFrames()   — the abort short-circuit (no <img>, no request) and the live-
+ *   • onIdle - the setTimeout fallback path + cancellation
+ *   • filmstrip() - resolves empty (never throws) with no DOM present
+ *   • stillKey - url + DEVICE-pixel height identity, width deliberately absent
+ *   • stillFrames() - the abort short-circuit (no <img>, no request) and the live-
  *                       element fast path (a decoded <img> is used, never re-fetched)
- *   • svgDataUrl      — the Lottie route: viewBox → standalone pixel size, the dropped
+ *   • svgDataUrl - the Lottie route: viewBox → standalone pixel size, the dropped
  *                       percentage style, the namespace, and the markup ceiling
- *   • nodeKey         — the frame-bar raster's identity: LRU namespace, signature +
+ *   • nodeKey - the frame-bar raster's identity: LRU namespace, signature +
  *                       device-pixel height, clamping, width deliberately absent
- *   • suspendNodeRasters — the export gate: re-entrant, idempotent release
- *   • nodeStill()     — through the `_setNodeRasterer` seam: the process-wide lock held
+ *   • suspendNodeRasters - the export gate: re-entrant, idempotent release
+ *   • nodeStill() - through the `_setNodeRasterer` seam: the process-wide lock held
  *                       across a TIMEOUT (no two shots in the library at once), the
  *                       `.seq-off` borrow + offscreen park + restore, the LEASE handover
  *                       to sequence-dom's applier when the playhead lands on a box
@@ -27,7 +27,7 @@
  *                       failure memory, the
  *                       detached-box refusal, `nodeRasterPending`, and `drainNodeRasters`
  *
- * WHAT IS **NOT** COVERED — browser-only, must be exercised in phase 2B's
+ * WHAT IS **NOT** COVERED - browser-only, must be exercised in phase 2B's
  * browser pass, because node has no media pipeline to fake honestly:
  *   • the pooled probe <video> lifecycle (creation, src reuse, idle teardown,
  *     releaseClipThumbs) and the single-run `withProbe` lock
@@ -38,15 +38,15 @@
  *     the decode itself needs a real Web Audio implementation)
  *   • ImageBitmap.close() actually running on eviction (the LRU test proves the
  *     dispose *hook* fires; that it frees GPU memory is a browser fact)
- *   • a still actually DECODING — jsdom has no 2D context and no createImageBitmap,
+ *   • a still actually DECODING - jsdom has no 2D context and no createImageBitmap,
  *     so the capture always stops at the draw step here. That an image/Lottie/tool
  *     bar ends up with the right picture is a browser fact.
- *   • the dom-to-image shot behind `nodeStill` — there is no rasteriser in node at
+ *   • the dom-to-image shot behind `nodeStill` - there is no rasteriser in node at
  *     all, so what a frame bar's photograph LOOKS like, the `.seq-off` strip/restore
  *     around it, and `disableEmbedFonts` are all browser facts. What IS testable is
- *     the panel's use of it, through the `_setNodeRasterer` seam — see
+ *     the panel's use of it, through the `_setNodeRasterer` seam - see
  *     views/timeline-panel.test.ts.
- * A jsdom stand-in would prove nothing about any of those — every one of them is
+ * A jsdom stand-in would prove nothing about any of those - every one of them is
  * a real-decoder behaviour. They are listed so the browser pass can script them.
  */
 import { test } from 'node:test';
@@ -166,7 +166,7 @@ test('bucketPeaks: mixes two channels as (L+R)/2 and takes |sample|', () => {
   const mono = bucketPeaks([l], 1);
   const stereo = bucketPeaks([l, r], 1);
   assert.equal(mono[0], 1);   // normalised against itself
-  assert.equal(stereo[0], 1); // also normalised against itself — the mix is proven below
+  assert.equal(stereo[0], 1); // also normalised against itself - the mix is proven below
   // Prove the mix by giving bucket B a level that only differs after mixing.
   const l2 = new Float32Array(64);
   const r2 = new Float32Array(64);
@@ -220,7 +220,7 @@ test('peaksKey: namespaced apart from filmstrip keys, and keyed by URL ALONE', (
 
 // The bug this fixes: the waveform was computed over the WHOLE file and stretched
 // across the bar, so trimming a clip squeezed the same picture rather than showing
-// the part that plays — and the two halves of a split clip drew identical waveforms.
+// the part that plays - and the two halves of a split clip drew identical waveforms.
 test('windowPeaks: a trim window shows THAT part of the track, not the whole thing', () => {
   // Master: silent first half, loud second half, over a 10s track.
   const master = new Float32Array(100);
@@ -254,7 +254,7 @@ test('withinDecodeBudget: refuses oversized audio, allows the ceiling exactly', 
   assert.equal(withinDecodeBudget(MAX_AUDIO_DECODE_BYTES), true);
   assert.equal(withinDecodeBudget(MAX_AUDIO_DECODE_BYTES + 1), false);
   assert.equal(withinDecodeBudget(0), true);
-  // Unknown length must not block — the post-fetch byteLength check catches it.
+  // Unknown length must not block - the post-fetch byteLength check catches it.
   assert.equal(withinDecodeBudget(null), true);
   assert.equal(withinDecodeBudget(Number.NaN), true);
 });
@@ -505,7 +505,7 @@ test('stillKey: the url AND the device-pixel height are both part of the identit
   // Clamped the same way the capture clamps, so an absurd height cannot mint keys.
   assert.equal(stillKey('a.png', 1e6), stillKey('a.png', MAX_STILL_H));
   assert.equal(stillKey('a.png', -4), stillKey('a.png', 8));
-  // Distinct from the filmstrip/peaks namespaces — one LRU holds all three.
+  // Distinct from the filmstrip/peaks namespaces - one LRU holds all three.
   assert.notEqual(stillKey('a.mp4', 34).slice(0, 2), peaksKey('a.mp4').slice(0, 2));
 });
 
@@ -698,10 +698,10 @@ test('readBounded: a throwing stream resolves null rather than rejecting into pe
   assert.equal(await readBounded(res, MAX_AUDIO_DECODE_BYTES), null);
 });
 
-// REGRESSION: an OPEN-ENDED clip (no authored dur — the default music bed, and any box
+// REGRESSION: an OPEN-ENDED clip (no authored dur - the default music bed, and any box
 // promoted with only a Start) must not collapse its window to zero. The panel used to
 // pass `dur ?? 0`, which made to === from; windowPeaks then correctly answered silence,
-// so the waveform was still painted but flat at the floor — indistinguishable from no
+// so the waveform was still painted but flat at the floor - indistinguishable from no
 // waveform. The panel now resolves the length through span(); this pins the arithmetic
 // that made the symptom, so a future caller passing a zero-width window is caught here
 // rather than by eye.
@@ -720,7 +720,7 @@ test('windowPeaks: a zero-width window is silence — which is why callers must 
 
 test('nodeKey: namespaced apart from stills, keyed by signature AND device height', () => {
   // One LRU holds filmstrips, stills, peaks and node rasters, so the prefixes must not
-  // collide — a still of a url that happened to equal a signature would otherwise be
+  // collide - a still of a url that happened to equal a signature would otherwise be
   // handed to a frame bar (and vice versa).
   assert.ok(nodeKey('sig', 34).startsWith('n|'));
   assert.notEqual(nodeKey('a.png', 34), stillKey('a.png', 34));
@@ -756,7 +756,7 @@ test('suspendNodeRasters: re-entrant, and the release is idempotent', () => {
 
 /**
  * A live box on a jsdom stage, plus the platform pieces a node raster needs. The SHOT
- * is injected (`_setNodeRasterer`), because there is no rasteriser in node — what is
+ * is injected (`_setNodeRasterer`), because there is no rasteriser in node - what is
  * exercised here is everything the module does AROUND the shot: the lock, the timeout,
  * the class borrow, the failure memory.
  */
@@ -794,7 +794,7 @@ test('nodeStill: the process-wide lock is held until the shot REALLY ends, not u
   // and its sandbox <iframe> at MODULE scope and clears them at the end of any call.
   // Releasing the lock on the 1.5s timeout let the next shot start while the timed-out
   // one was still inside the library, so the first one's teardown wiped the second's
-  // state — the exact overlap the lock exists to prevent. Nothing about a timeout can
+  // state - the exact overlap the lock exists to prevent. Nothing about a timeout can
   // cancel the call; all the lock can do is refuse to let anyone else in.
   await withNodeStage(async ({ doc }) => {
     const a = doc.createElement('div');
@@ -848,7 +848,7 @@ test('nodeStill: an off-playhead box is un-hidden for the shot, parked offscreen
 });
 
 test('onNodeShotSettled: the clock gets the last word after a shot that borrowed the class', async () => {
-  // The restore above is a GUESS taken up to 1.5s earlier — the user may have scrubbed
+  // The restore above is a GUESS taken up to 1.5s earlier - the user may have scrubbed
   // onto that very box meanwhile, and re-adding `.seq-off` would leave the ACTIVE frame
   // invisible until the next seek. So the panel hands the clock's `reapply()` here.
   await withNodeStage(async ({ box }) => {
@@ -874,7 +874,7 @@ test('onNodeShotSettled: the clock gets the last word after a shot that borrowed
 // ── the borrow is a LEASE ────────────────────────────────────────────────────
 //
 // The restore above lands up to NODE_RASTER_TIMEOUT_MS after the borrow, and the playhead
-// does not wait for it. These three pin the handover with the REAL applier — a copy of
+// does not wait for it. These three pin the handover with the REAL applier - a copy of
 // the class names here would prove nothing about the module that has to honour them.
 const seqDom = await import('../bridge/sequence-dom.ts');
 
@@ -887,7 +887,7 @@ test('clip-thumbs copies sequence-dom’s class + attribute names exactly', () =
   assert.equal(seqDom.BORROW_ATTR, 'data-tl-borrowed');
 });
 
-/** A timed box the real applier will recognise — one clip, [0,1000). */
+/** A timed box the real applier will recognise - one clip, [0,1000). */
 function timed(box: HTMLElement): HTMLElement[] {
   box.setAttribute('data-t-start', '0');
   box.setAttribute('data-t-dur', '1000');
@@ -902,7 +902,7 @@ function playheadAt(els: HTMLElement[], tMs: number): void {
 
 /**
  * Wait for the borrow to be taken. `nodeStill` queues behind the process-wide shot lock,
- * so how many microtasks separate the call from the park is an implementation detail —
+ * so how many microtasks separate the call from the park is an implementation detail - 
  * poll for the state instead of counting ticks.
  */
 async function untilParked(box: HTMLElement): Promise<void> {
@@ -977,8 +977,8 @@ test('nodeStill: a tick that leaves the box off screen must not re-hide it mid-s
 
 test('nodeStill: a shot that comes back with nothing is remembered, not retried forever', async () => {
   // A tainted canvas or a subtree past the time budget fails identically every time.
-  // Re-attempting it costs a full uncancellable shot to learn the same thing, and —
-  // because the caller's budget is spent in bar order — costs every bar behind it
+  // Re-attempting it costs a full uncancellable shot to learn the same thing, and - 
+  // because the caller's budget is spent in bar order - costs every bar behind it
   // their turn. An ABORT is different: nothing was learned, so it must stay retryable.
   await withNodeStage(async ({ box }) => {
     let calls = 0;
@@ -1011,7 +1011,7 @@ test('nodeStill: an ABORTED shot is not remembered as a failure — nothing was 
 test('nodeStill: a DETACHED box is never photographed — an unstyled blank would be cached as its picture', async () => {
   // A shot can wait a long time behind five others. If the runtime re-rendered the tool
   // meanwhile, `job.box` points at a node that is no longer in the document, whose
-  // computed styles are empty — and the blank that comes back would be cached under the
+  // computed styles are empty - and the blank that comes back would be cached under the
   // signature of the box the user is still looking at.
   await withNodeStage(async ({ box }) => {
     let calls = 0;
@@ -1045,7 +1045,7 @@ test('nodeRasterPending: a bar already in flight is not a miss — that is what 
 test('drainNodeRasters: an export waits the in-flight shot out, but is never held hostage', async () => {
   // suspendNodeRasters() is a gate on the NEXT shot; it can do nothing about the
   // uncancellable one already inside the library, whose teardown clears the sandbox
-  // iframe and url cache out from under the export. So the export drains first — with
+  // iframe and url cache out from under the export. So the export drains first - with
   // a bound, because a wedged library call must cost a beat, not the whole export.
   await withNodeStage(async ({ box }) => {
     let release!: () => void;
@@ -1085,7 +1085,7 @@ test('drainNodeRasters: an export waits the in-flight shot out, but is never hel
 // A thumbnail is a picture of the CLIP, not of the frame the playhead is parked on.
 // The authored values live in the applier's AuthoredStore, which this module cannot
 // import (bridge/sequence-dom.ts drags sequence-plan → @lolly/engine behind it, and
-// picker.ts loads this chunk for `onIdle` alone) — so they arrive injected, and the
+// picker.ts loads this chunk for `onIdle` alone) - so they arrive injected, and the
 // tests below wire the same two readers the timeline panel wires.
 
 /** The seam as the panel supplies it: the real readers, off the real applier. */
@@ -1106,7 +1106,7 @@ function posable(box: HTMLElement): HTMLElement[] {
 test('nodeShotStyle: the same five declarations as ever when nobody is composing', () => {
   const dom = new JSDOM('<!DOCTYPE html><div class="lolly-box" style="opacity:0.8;filter:blur(3px);"></div>');
   const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
-  // No seam wired at all — a picker-only chunk, a test, a shell with no timeline.
+  // No seam wired at all - a picker-only chunk, a test, a shell with no timeline.
   assert.deepEqual(nodeShotStyle(box, 200, 100, 0.17), {
     transform: 'scale(0.17)', transformOrigin: 'top left',
     width: '200px', height: '100px', left: '0', top: '0', margin: '0',
@@ -1132,7 +1132,7 @@ test('nodeShotStyle: a shot mid-keyframe carries the SAME style as a shot at res
     let composedFilter = 0;
     for (const t of [0, 400, 1000, 1600, 1999]) {
       session.apply(t);
-      // The live box IS posed — lifted, faded and (past the first diamond) blurred.
+      // The live box IS posed - lifted, faded and (past the first diamond) blurred.
       assert.notEqual(box.style.transform, '', `the applier really did pose the box at ${t}`);
       assert.notEqual(box.style.opacity, '0.8', `and compose its opacity at ${t}`);
       if (box.style.filter !== 'blur(3px) drop-shadow(0px 2px 10px #00000055)') composedFilter++;
@@ -1150,7 +1150,7 @@ test('nodeShotStyle: a shot mid-keyframe carries the SAME style as a shot at res
 
 test('nodeShotStyle: an authored-less box is photographed at 1 / none, never blank', () => {
   // `opacity: ''` on the clone REMOVES the declaration, dropping it back onto the
-  // composed value dom-to-image copied out of getComputedStyle — the opposite of the
+  // composed value dom-to-image copied out of getComputedStyle - the opposite of the
   // point. A box with nothing authored means 1 and none, spelled out.
   const dom = new JSDOM('<!DOCTYPE html><body><div class="artboard" data-sequence data-seq-ms="2000"'
     + ' style="width:1920px;height:1080px;"><div class="lolly-box"></div></div></body>');
@@ -1171,7 +1171,7 @@ test('nodeShotStyle: an authored-less box is photographed at 1 / none, never bla
 });
 
 test('withBorrowedVisibility: the vector twin reads the authored pose, and gives it back', async () => {
-  // The twin walks the LIVE subtree — there is no clone to neutralise on — so the
+  // The twin walks the LIVE subtree - there is no clone to neutralise on - so the
   // authored values go onto the element itself for the walk. The playhead's own frame
   // is put straight back afterwards, at whatever time the clock has reached by then.
   const dom = new JSDOM('<!DOCTYPE html><body><div class="artboard" data-sequence data-seq-ms="2000"'

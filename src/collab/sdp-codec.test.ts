@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sdp-codec tests — plan 100 §6.1 / §2.9 / §11.21, wave 2.1.
+ * sdp-codec tests - plan 100 §6.1 / §2.9 / §11.21, wave 2.1.
  * Run directly:  node --test shells/web/src/collab/sdp-codec.test.ts
  *
  * Four things are actually being proved here, in rising order of how much they
  * would hurt if they broke:
  *
  *  1. REAL SDP PARSES. The fixtures are shaped like what Chrome, Firefox and Safari
- *     genuinely emit for a data-channel-only description — session-level vs
+ *     genuinely emit for a data-channel-only description - session-level vs
  *     media-level fingerprints, uppercase `UDP`, mDNS `.local` candidates, TCP
  *     candidates with `tcptype`, LF-only line endings, `relay` candidates that must
  *     be dropped, component-2 lines that must be ignored. A codec that only reads
@@ -17,8 +17,8 @@
  *  3. THE BUDGET HOLDS. §6.1 asks for ~60–150 bytes; the size tests state the actual
  *     numbers (via `t.diagnostic`) so a regression shows up as a number, not a vibe.
  *  4. NOTHING THROWS. Every decode entry point is fed truncation, garbage, hostile
- *     lengths and wrong versions — including a fuzz sweep of random bytes and random
- *     strings — and must always return a typed failure (§11.21).
+ *     lengths and wrong versions - including a fuzz sweep of random bytes and random
+ *     strings - and must always return a typed failure (§11.21).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,7 +53,7 @@ function err(r: { ok: boolean; code?: string; reason?: string }, code: string, w
   assert.equal(typeof r.reason, 'string');
 }
 
-/** Deterministic PRNG — a failing fuzz case must be reproducible from the seed. */
+/** Deterministic PRNG - a failing fuzz case must be reproducible from the seed. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -115,7 +115,7 @@ function randomMaterial(rnd: () => number): SdpMaterial {
       port: int(rnd, 0, 65535),
     };
     if (rnd() < 0.35) c.priority = int(rnd, 0, 0xffffffff);
-    // Only ever `true`, only ever on tcp — the documented normalized form.
+    // Only ever `true`, only ever on tcp - the documented normalized form.
     if (protocol === 'tcp' && rnd() < 0.5) c.tcpActive = true;
     candidates.push(c);
   }
@@ -146,7 +146,7 @@ function randomInvite(rnd: () => number): InviteMeta {
 /**
  * Chrome/Edge (libwebrtc), non-trickle: media-level ICE credentials + fingerprint,
  * lowercase `udp`, `generation`/`network-id`/`network-cost` extensions, srflx with a
- * real raddr, and — deliberately — a `relay` candidate and a component-2 line that
+ * real raddr, and - deliberately - a `relay` candidate and a component-2 line that
  * the extractor must both ignore.
  */
 const CHROME_OFFER = [
@@ -197,7 +197,7 @@ const CHROME_MDNS_OFFER = [
 
 /**
  * Firefox: fingerprint at SESSION level, uppercase `UDP`/`TCP`, a TCP host candidate
- * with `tcptype`, `a=end-of-candidates`, and (here) LF-only line endings — three
+ * with `tcptype`, `a=end-of-candidates`, and (here) LF-only line endings - three
  * independent shapes Chrome never produces.
  */
 const FIREFOX_OFFER = [
@@ -268,7 +268,7 @@ test('extract: priorities are dropped by default and kept on request', () => {
   const full = ok(extract(CHROME_OFFER, { keepPriority: true }));
   assert.equal(full.candidates[0]!.priority, 2122260223);
   assert.equal(full.candidates[1]!.priority, 1686052607);
-  // Dropping them costs 4 bytes per candidate — that is the whole point.
+  // Dropping them costs 4 bytes per candidate - that is the whole point.
   assert.equal(ok(pack({ kind: 'answer', material: full })).length - ok(pack({ kind: 'answer', material: lean })).length, 8);
 });
 
@@ -542,7 +542,7 @@ test('unpack: hostile and truncated payloads always come back as typed failures'
 test('unpack: a prototype-chain toolId is refused on the way IN, not only on the way out', () => {
   const material = ok(extract(CHROME_MDNS_OFFER));
   // `construct0r` is a legal id and exactly as long as `constructor`, so one byte
-  // turns a payload we produced into one we would have refused to produce — which
+  // turns a payload we produced into one we would have refused to produce - which
   // is precisely what a hostile invite is.
   const good = ok(pack({
     kind: 'invite',
@@ -677,7 +677,7 @@ test('size: the compact semver path pays for itself', () => {
 // ── text skins ────────────────────────────────────────────────────────────────
 
 test('skins: the QR alphabet is a subset of QR alphanumeric mode', () => {
-  // ISO/IEC 18004 alphanumeric set — anything outside forces byte mode (8 b/char).
+  // ISO/IEC 18004 alphanumeric set - anything outside forces byte mode (8 b/char).
   const QR_ALPHANUMERIC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
   assert.equal(QR_ALPHABET.length, 32);
   for (const ch of QR_ALPHABET) assert.ok(QR_ALPHANUMERIC.includes(ch), `${ch} is not QR-alphanumeric`);
@@ -749,7 +749,7 @@ test('decodePayload: a stranger\'s string is always a typed answer', () => {
   err(decodePayload('not a token at all!'), 'bad-charset');
 
   // The shape the join view actually produces: `URLSearchParams.get('inv')` is
-  // `string | null`, and the default 'auto' skin sniffs BEFORE decodeToken's guard —
+  // `string | null`, and the default 'auto' skin sniffs BEFORE decodeToken's guard - 
   // so a missing or duplicated param has to come back typed, not as a TypeError.
   for (const junk of [null, undefined, 123, {}, [], Symbol.iterator]) {
     for (const skin of ['auto', 'link', 'qr'] as const) {
@@ -796,6 +796,6 @@ test('end to end: offer → invite link → answer token → both sides rebuild 
   assert.ok(remoteAnswer.includes('a=setup:active\r\n'));
   assert.deepStrictEqual(ok(extract(remoteAnswer)), answerMaterial);
 
-  // The fingerprint — the trust root — is byte-identical on both legs.
+  // The fingerprint - the trust root - is byte-identical on both legs.
   assert.deepStrictEqual(back.material.fingerprint.bytes, answerMaterial.fingerprint.bytes);
 });

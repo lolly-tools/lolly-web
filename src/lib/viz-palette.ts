@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The MilkDrop visualizer's brand palette — the LOADED brand's colours reduced to
+ * The MilkDrop visualizer's brand palette - the LOADED brand's colours reduced to
  * the handful of numbers a butterchurn preset can actually be seeded with.
  *
  * A butterchurn preset expresses colour as separate 0–1 `r`/`g`/`b` scalars (wave
  * colour, motion vectors, borders, per-shape fills), so what the visualizer needs
- * from a brand isn't "the palette" — it's an ORDERED perceptual ramp it can index
+ * from a brand isn't "the palette" - it's an ORDERED perceptual ramp it can index
  * into, plus a few hue-distinct accents for shapes. We build both here:
  *
- *   - `ramp`   — RAMP_STEPS colours dark→light through the brand's most chromatic
+ *   - `ramp` - RAMP_STEPS colours dark→light through the brand's most chromatic
  *                anchors, interpolated in OKLab (engine `rampOklab`) so the
  *                gradient a preset sweeps through stays perceptually even.
- *   - `accents`— up to ACCENT_MAX hue-distinct brand colours, for shape fills that
+ *   - `accents` - up to ACCENT_MAX hue-distinct brand colours, for shape fills that
  *                want to read as DIFFERENT rather than as steps of one hue.
- *   - `deep`/`hero`/`tip` — the ramp's dark end, chromatic middle, and light end,
+ *   - `deep`/`hero`/`tip` - the ramp's dark end, chromatic middle, and light end,
  *                named because presets reach for those three constantly.
  *
  * Colour here is SEEDING, not reproduction: a preset's own equations and blending
@@ -32,34 +32,34 @@ export type VizRgb = readonly [number, number, number];
 
 export interface VizPalette {
   /**
-   * Dark→light, perceptually even, and LOCKED TO ONE HUE FAMILY — see `HUE_WINDOW`.
+   * Dark→light, perceptually even, and LOCKED TO ONE HUE FAMILY - see `HUE_WINDOW`.
    * Presets sweep this per-frame, so it has to be a family the brand owns (SUSE:
    * dark pine → pine → jungle → mint) and never a path between distant hues.
    */
   ramp: readonly VizRgb[];
   /**
-   * The brand's CORE family, dark→light — for SUSE: dark pine, pine, jungle, mint.
+   * The brand's CORE family, dark→light - for SUSE: dark pine, pine, jungle, mint.
    * This is what effects are drawn with. Variety comes from LIGHTNESS within the
    * brand's own hue, not from reaching for a different hue.
    */
   accents: readonly VizRgb[];
   /**
-   * Off-family brand hues (SUSE: persimmon, waterhole), strongest first — for
+   * Off-family brand hues (SUSE: persimmon, waterhole), strongest first - for
    * SUPPORTING roles only: a thin border, a small highlight. Never a fill, never the
    * subject. May be empty for a single-hue brand, so every use must cope with that.
    */
   support: readonly VizRgb[];
-  /** The ramp's dark end — the ground's centre. */
+  /** The ramp's dark end - the ground's centre. */
   deep: VizRgb;
   /** Darker than `deep` and nearly neutral: the ground's outer edge, so the field
    *  falls off to something that still belongs to the brand rather than to black. */
   deepest: VizRgb;
-  /** The most chromatic anchor — the colour the brand is "about". */
+  /** The most chromatic anchor - the colour the brand is "about". */
   hero: VizRgb;
-  /** The ramp's light end — highlights, wave crests. */
+  /** The ramp's light end - highlights, wave crests. */
   tip: VizRgb;
   /**
-   * A CONTRASTING colour from a different part of the brand's wheel — persimmon against
+   * A CONTRASTING colour from a different part of the brand's wheel - persimmon against
    * jungle, say. Deliberately NOT a ramp stop: interpolating a ramp between distant
    * hues is what produced the off-brand mud the hue window exists to prevent. This
    * enters as a separate role (rim lights, edge highlights, accent marks) where it
@@ -75,14 +75,14 @@ export interface VizPalette {
  *  per-frame without banding, and small enough to stay cheap to build. */
 export const RAMP_STEPS = 8;
 const ACCENT_MAX = 4;
-/** Below this OKLCH chroma a swatch reads as grey — no hue to seed a visual with. */
+/** Below this OKLCH chroma a swatch reads as grey - no hue to seed a visual with. */
 const MIN_CHROMA = 0.045;
 /**
  * The far lower bar an explicit accent HINT has to clear.
  *
  * MIN_CHROMA exists to keep greys out of the ramp and the accent list. Applying it to
- * the hint too was a real bug: SUSE's Pine (#0c322c) has chroma 0.0437 — 0.0013 under
- * the gate — so the brand's own declared primary was rejected as "grey", the code fell
+ * the hint too was a real bug: SUSE's Pine (#0c322c) has chroma 0.0437 - 0.0013 under
+ * the gate - so the brand's own declared primary was rejected as "grey", the code fell
  * through to most-chromatic, picked Waterhole blue (0.2576), and the entire visualizer
  * came out navy.
  *
@@ -101,7 +101,7 @@ const MIN_ACCENT_LIGHTNESS_GAP = 0.12;
  * ramp.
  *
  * This exists because the first version didn't have it. A real brand palette spans
- * distant hues — SUSE carries jungle green, persimmon orange AND waterhole blue — and
+ * distant hues - SUSE carries jungle green, persimmon orange AND waterhole blue - and
  * a perceptual ramp built across all of them interpolates green→orange→blue straight
  * through PINK. The visualizer looked nothing like the brand. Restricting the ramp to
  * one family around the hero means SUSE yields dark pine → pine → jungle → mint,
@@ -115,19 +115,19 @@ const MIN_CONTRAST_HUE_GAP = 60;
 
 /**
  * The LAST-RESORT ramp, reached only when there is no live theme accent AND no usable
- * chromatic token anywhere — a brand-new or deliberately monochrome pack.
+ * chromatic token anywhere - a brand-new or deliberately monochrome pack.
  *
  * Deliberately a neutral slate-teal and NOT any real brand's colours. This module ships
  * in the public, brand-agnostic web shell and serves whatever brand is loaded; baking
  * SUSE's greens in as the platform default would make every unbranded install look
- * like SUSE. It only needs to demonstrate the three roles the derivation looks for —
- * a dark chromatic base, a mid hero, a pale tip — with enough chroma that
+ * like SUSE. It only needs to demonstrate the three roles the derivation looks for - 
+ * a dark chromatic base, a mid hero, a pale tip - with enough chroma that
  * `brandRamp` isn't grey.
  */
 const FALLBACK_ANCHORS = ['#10242b', '#1f4c57', '#3f8b96', '#a8d8de'] as const;
 const FALLBACK_ACCENTS = ['#3f8b96', '#a8d8de', '#1f4c57'] as const;
 
-/** The host slice this needs — the same optional tokens resolver the brand-var
+/** The host slice this needs - the same optional tokens resolver the brand-var
  *  modules and the confetti palette use. */
 export interface VizPaletteHost {
   tokens?: { colors(): Promise<Array<{ value: string }>> };
@@ -172,7 +172,7 @@ function reLightness(hex: string, l: number, chromaScale = 1): string {
  *
  * Only swatches within `HUE_WINDOW` of the hero take part, sorted dark→light, so the
  * ramp travels through hues the brand actually owns instead of cutting across the
- * colour wheel. Near-neutral swatches are excluded entirely — a grey anchor both
+ * colour wheel. Near-neutral swatches are excluded entirely - a grey anchor both
  * desaturates the ramp and has no hue to be "in the family" in the first place.
  *
  * A brand with only one colour in that family (or a monochrome pack) still gets a
@@ -185,7 +185,7 @@ function pickAnchors(swatches: readonly Swatch[], heroHex: string): string[] {
     ? swatches.filter((s) => s.c >= MIN_CHROMA && hueDistance(s.h, hero.h) <= HUE_WINDOW)
     : [];
   // A MONOCHROME brand keeps its own blacks, greys and whites. Inventing a hue for it
-  // would be putting a colour on screen the brand does not own — a greyscale visualizer
+  // would be putting a colour on screen the brand does not own - a greyscale visualizer
   // is the honest, on-brand result. Only a brand with NOTHING usable gets the
   // synthesised neutral, and that's a last resort, not a preference.
   if (family.length === 0 && !isChromatic(swatches)) {
@@ -194,8 +194,8 @@ function pickAnchors(swatches: readonly Swatch[], heroHex: string): string[] {
   }
   // Always bookend with synthesised ends at the hero's hue: it guarantees real range
   // dark→light even when the brand's in-family swatches all sit at similar lightness.
-  // The dark end goes NEARLY to black, deliberately. Black is fine in a visualizer —
-  // majority black is not — and a ramp that bottoms out at a mid-dark tone has no deep end
+  // The dark end goes NEARLY to black, deliberately. Black is fine in a visualizer - 
+  // majority black is not - and a ramp that bottoms out at a mid-dark tone has no deep end
   // to fall into, which is what made earlier passes read as flat. Low-intensity regions
   // now land on something almost black but still brand-hued, so contrast comes from the
   // ramp's own range instead of from a black background.
@@ -240,7 +240,7 @@ function hueDistance(a: number, b: number): number {
  * The core-family accents: the brand's OWN hue at several lightnesses.
  *
  * The first version picked the most chromatic HUE-DISTINCT swatches, which inverted
- * the brief — for SUSE that returns waterhole blue and persimmon orange ahead of
+ * the brief - for SUSE that returns waterhole blue and persimmon orange ahead of
  * jungle green, so the effects were dominated by exactly the colours that should only
  * ever support. Effects should be pine/jungle/mint; variety comes from lightness.
  *
@@ -268,7 +268,7 @@ function pickAccents(swatches: readonly Swatch[], heroHex: string): string[] {
   return out.length ? out : [...FALLBACK_ACCENTS];
 }
 
-/** Off-family brand hues, strongest chroma first — supporting accents only. */
+/** Off-family brand hues, strongest chroma first - supporting accents only. */
 function pickSupport(swatches: readonly Swatch[], heroHex: string): string[] {
   const hero = hexToOklch(heroHex);
   if (!hero) return [];
@@ -284,7 +284,7 @@ function pickSupport(swatches: readonly Swatch[], heroHex: string): string[] {
 /**
  * The colour the brand is "about".
  *
- * `heroHint` — the app's own live accent — wins whenever it's chromatic enough,
+ * `heroHint` - the app's own live accent - wins whenever it's chromatic enough,
  * because that is by definition the colour this brand presents itself with. The
  * fallback, most-chromatic-swatch, was the original heuristic and it is WRONG on real
  * palettes: OKLCH chroma is not "brand importance", and for SUSE it picked Waterhole
@@ -329,7 +329,7 @@ const clamp01v = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
  * primary slot) and falls back to the theme's `--primary`, which every Lolly theme
  * defines as an `h s% l%` triplet. This is the most honest available answer to "what
  * colour is this brand", and notably it's the ONLY one that works for SUSE, whose
- * catalog declares no semantic slots at all — so there's no primary token to read,
+ * catalog declares no semantic slots at all - so there's no primary token to read,
  * but the theme still says Pine Green.
  */
 /** The live brand accent, exported so scheme derivation can lead with the brand's own
@@ -343,7 +343,7 @@ function liveAccentHex(): string | null {
   const cs = getComputedStyle(document.documentElement);
   // `--primary` FIRST, and deliberately. brand-vars.ts patches it per theme
   // (`:root, [data-theme="light"]` and `[data-theme="dark"]` blocks via
-  // chromeBrandCss), so it is the brand's accent FOR THE THEME ON SCREEN — SUSE dark
+  // chromeBrandCss), so it is the brand's accent FOR THE THEME ON SCREEN - SUSE dark
   // mode resolves Jungle. `--brand-primary` is only ever the LIGHT primary (Pine for
   // SUSE), so preferring it would tint a dark-mode visualizer with the light accent.
   const theme = cs.getPropertyValue('--primary').trim();
@@ -383,7 +383,7 @@ export function vizPaletteDiagnostics(p: VizPalette): string {
     + ` | accents ${p.accents.map(hex).join(' ')} | support ${p.support.map(hex).join(' ') || '(none)'}`;
 }
 
-/** Build the palette from raw swatch values. Pure — the unit-testable core. */
+/** Build the palette from raw swatch values. Pure - the unit-testable core. */
 export function buildVizPalette(values: readonly string[], heroHint?: string | null): VizPalette {
   const swatches = measure(values);
   const heroHex = pickHero(swatches, heroHint);
@@ -421,7 +421,7 @@ export function buildVizPalette(values: readonly string[], heroHint?: string | n
  * The best contrasting brand colour for a given hero: far around the wheel, chromatic,
  * and light enough to read against the ramp it will sit on.
  *
- * Scored on hue distance, LIGHTNESS and CHROMA — deliberately not on WCAG contrast
+ * Scored on hue distance, LIGHTNESS and CHROMA - deliberately not on WCAG contrast
  * against the hero. WCAG measures legibility of one colour on another, and optimising
  * it here picks the darkest opposite hue (for SUSE, Midnight over Persimmon), which is
  * exactly wrong: this colour is drawn as a highlight over a DARK field, so it has to be
@@ -448,7 +448,7 @@ function pickContrast(swatches: readonly Swatch[], heroHex: string): string | nu
 let cached: Promise<VizPalette> | null = null;
 
 /**
- * The session's visualizer palette — derived from the loaded brand's tokens once,
+ * The session's visualizer palette - derived from the loaded brand's tokens once,
  * then cached (a brand swap reloads the shell, so there's no invalidation path to
  * keep). A tokenless host resolves to the SUSE-shaped fallback immediately.
  */
@@ -462,7 +462,7 @@ export function vizPalette(host?: VizPaletteHost): Promise<VizPalette> {
   return cached;
 }
 
-/** Drop the cached palette — for tests, and for a live token edit that should
+/** Drop the cached palette - for tests, and for a live token edit that should
  *  re-seed an open visualizer. */
 export function invalidateVizPalette(): void {
   cached = null;

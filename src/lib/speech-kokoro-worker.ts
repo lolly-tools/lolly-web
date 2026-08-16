@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Kokoro speech-synthesis worker. An 82M-parameter model spending seconds per
- * sentence is real work — it would otherwise freeze the tool being typed into
- * — and everything it needs (transformers.js, the eSpeak phonemizer wasm, the
+ * sentence is real work - it would otherwise freeze the tool being typed into
+ * - and everything it needs (transformers.js, the eSpeak phonemizer wasm, the
  * ~92 MB q8 ONNX model) loads HERE, dynamically, so none of it can reach the
  * boot chunk. Same id-keyed pending-map protocol as lib/audio-analyse-worker.ts,
  * plus per-request progress messages and a cooperative abort (checked between
- * sentences — a sentence mid-inference cannot be preempted in-wasm).
+ * sentences - a sentence mid-inference cannot be preempted in-wasm).
  *
  * SELF-HOSTED ONLY: the model is served same-origin from /models/kokoro/
  * (staged by scripts/fetch-kokoro-models.ts) and runs on the onnxruntime-web
  * build transformers.js pins, served from /ort-hf/ (scripts/
- * copy-transformers-ort.ts) — never the /ort/ 1.27 runtime, which is a
+ * copy-transformers-ort.ts) - never the /ort/ 1.27 runtime, which is a
  * different, incompatible build. Remote models are disabled outright, so no
  * text or bytes can ever leave the device. transformers.js caches the model
  * fetches in the Cache API bucket 'transformers-cache' (verified in its
- * utils/hub.js — local-path fetches are cached under their path key), which is
+ * utils/hub.js - local-path fetches are cached under their path key), which is
  * what makes synthesis offline after first use and what bridge/speech.ts's
  * cached() probes; the voice matrices we fetch ourselves get the same
  * treatment in a 'lolly-speech' bucket.
  *
  * Synthesis is per SENTENCE, sequentially (a sentence whose PHONEMES overrun
- * the model's 510-token budget synthesizes as several word-aligned chunks —
+ * the model's 510-token budget synthesizes as several word-aligned chunks - 
  * chunkByPhonemeLength): it bounds model input length, gives honest progress,
  * and lets abort land between sentences. Word
  * timings come from the TIMESTAMPED model export's extra `durations` output
- * (one frame count per input token) — see lib/speech-kokoro.ts for the span
+ * (one frame count per input token) - see lib/speech-kokoro.ts for the span
  * bookkeeping and why each word is phonemized separately.
  */
 
@@ -62,7 +62,7 @@ const post = postMessage as (message: unknown, transfer?: Transferable[]) => voi
 /** Requests aborted from the main thread; the synthesis loop checks between sentences. */
 const aborted = new Set<number>();
 
-// Minimal shapes for the transformers.js pieces we touch — its own typings are
+// Minimal shapes for the transformers.js pieces we touch - its own typings are
 // bundler-hostile generics, and the four operations below are the whole surface.
 interface TensorLike { data: ArrayLike<number | bigint>; dims: number[] }
 type TensorCtor = new (type: string, data: Float32Array | number[], dims: number[]) => unknown;
@@ -77,7 +77,7 @@ let runtime: Promise<KokoroRuntime> | null = null;
 
 /**
  * Load transformers.js + the model + tokenizer + phonemizer, once. Download
- * progress is attributed to the request that triggered the load (`id`) — later
+ * progress is attributed to the request that triggered the load (`id`) - later
  * requests find everything resident and skip straight to synthesis.
  */
 function ensureRuntime(id: number): Promise<KokoroRuntime> {
@@ -86,7 +86,7 @@ function ensureRuntime(id: number): Promise<KokoroRuntime> {
     const { env, AutoTokenizer, StyleTextToSpeech2Model, Tensor } = await import('@huggingface/transformers');
 
     // Same-origin everything (see the module header). localModelPath's default
-    // is already '/models/' in the browser, but set it explicitly — the whole
+    // is already '/models/' in the browser, but set it explicitly - the whole
     // privacy story rides on these three lines.
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
@@ -95,7 +95,7 @@ function ensureRuntime(id: number): Promise<KokoroRuntime> {
 
     // One aggregate download meter across the model + tokenizer files. The
     // voice matrix is fetched separately by getVoiceData and never reports
-    // here, so its bytes come OFF the denominator — counting them would leave
+    // here, so its bytes come OFF the denominator - counting them would leave
     // the bar stuck short of 100% forever. modelBytes() keeps the full sum:
     // the consent size stays honest, only the meter's total shrinks.
     const meterTotal = KOKORO_MODEL_BYTES - KOKORO_VOICE_BYTES;
@@ -123,7 +123,7 @@ function ensureRuntime(id: number): Promise<KokoroRuntime> {
   return runtime;
 }
 
-/** Voice style matrices (510x256 f32), fetched once and kept — in memory and in the Cache API. */
+/** Voice style matrices (510x256 f32), fetched once and kept - in memory and in the Cache API. */
 const voiceCache = new Map<string, Float32Array>();
 
 async function getVoiceData(voice: string): Promise<Float32Array> {
@@ -155,7 +155,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
   if (!KOKORO_VOICES.some((v) => v.id === voiceId)) {
     throw new Error(`unknown voice "${voiceId}" — one of: ${KOKORO_VOICES.map((v) => v.id).join(', ')}`);
   }
-  // Defence in depth — bridge/speech.ts already rejects before posting.
+  // Defence in depth - bridge/speech.ts already rejects before posting.
   if (text.length > MAX_INPUT_CHARS) {
     throw new Error(`speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) — split the text and synthesize in parts`);
   }
@@ -164,7 +164,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
   // Voice id prefix encodes the accent: a* = en-US, b* = en-GB (kokoro.js does the same).
   const language: 'a' | 'b' = voiceId.startsWith('b') ? 'b' : 'a';
 
-  // Normalize the WHOLE input first, THEN split — kokoro.js's order, and it
+  // Normalize the WHOLE input first, THEN split - kokoro.js's order, and it
   // matters both ways: 'Dr.(?= [A-Z])' needs the following word to expand, and
   // '3.5' must become '3 point 5' before the splitter can mistake its dot for
   // a sentence terminator.
@@ -177,7 +177,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
     const sentence = sentences[i] as string;
 
     // Phonemize per WORD (already normalized above), then join with single
-    // spaces — that joined string IS the model input, so each word's token
+    // spaces - that joined string IS the model input, so each word's token
     // span is known by construction. Sequential on purpose: one eSpeak wasm
     // instance, and reentrancy buys nothing against a model that dwarfs it.
     const words = splitWords(sentence);
@@ -187,7 +187,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
     // The raw 400-char wrap in splitSentences is only a cheap pre-pass;
     // normalization can expand text severalfold, so the binding budget check
     // is HERE, on the phonemes the model consumes. Each chunk synthesizes as
-    // its own piece — spans/timings hold per chunk by construction — instead
+    // its own piece - spans/timings hold per chunk by construction - instead
     // of letting the tokenizer truncate silently and drop trailing words.
     for (const chunk of chunkByPhonemeLength(words, wordPhonemes)) {
       if (aborted.has(id)) throw new Error('speech synthesis aborted');
@@ -195,7 +195,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
 
       const { input_ids } = tokenizer(phonemes, { truncation: true });
       const seqLen = input_ids.dims[input_ids.dims.length - 1] ?? 0;
-      // Style row is indexed by token count — the model was trained with a
+      // Style row is indexed by token count - the model was trained with a
       // per-length style lookup (rows 0..509).
       const numTokens = Math.min(Math.max(seqLen - 2, 0), 509);
       const style = voiceData.slice(numTokens * KOKORO_STYLE_DIM, (numTokens + 1) * KOKORO_STYLE_DIM);
@@ -239,7 +239,7 @@ async function synthesize(id: number, text: string, voiceId: string, speed: numb
   };
 }
 
-/** Requests currently synthesizing — an abort for an id not in here is stale
+/** Requests currently synthesizing - an abort for an id not in here is stale
  *  (the request already finished) and must not park in `aborted` forever. */
 const inFlight = new Set<number>();
 

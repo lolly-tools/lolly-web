@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of `host.matte` (v1.103) — on-device background removal.
+ * Web implementation of `host.matte` (v1.103) - on-device background removal.
  *
  * The worker plumbing moved to lib/matte-wasm-api.ts (createWasmMatteAPI) so a
  * native shell override (shells/tauri-desktop/bridge-overrides/matte.ts) can reuse

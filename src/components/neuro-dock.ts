@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Neurospicy music source — registers the music/radio/atmosphere/visualiser player into
+ * Neurospicy music source - registers the music/radio/atmosphere/visualiser player into
  * the app-global SINGLETON audio dock (lib/audio-dock-singleton.ts) while Neurospicy Mode
  * is on. There is ONE window app-wide: this module feeds the MUSIC side of it, and the
  * docs reader (views/docs.ts) feeds the NARRATION side; the two coexist in that one
  * draggable/resizable device rather than as two separate windows.
  *
- * This module keeps ONLY the neuro-specific lifecycle it always owned — flag-gated
+ * This module keeps ONLY the neuro-specific lifecycle it always owned - flag-gated
  * register/unregister, the spring-in entrance + confetti, and the close (×) semantics
  * (leave the mode). Everything shell-shaped (DOM, drag/resize/collapse, placement, the
  * collapse pref) now lives in the singleton. The music `DockHost` itself is built by
@@ -49,11 +49,11 @@ function closeMode(host: NeurospicyHost): void {
 }
 
 /** Options for showNeuroDock/syncNeuroDock. The legacy boolean form still means
- *  `{ animateIn }` — sound-toggle.ts passes it straight through. */
+ *  `{ animateIn }` - sound-toggle.ts passes it straight through. */
 export interface NeuroDockShowOpts {
   /** Spring the window up from the corner with a confetti burst (mode just enabled). */
   animateIn?: boolean;
-  /** Show expanded regardless of the collapsed pref — WITHOUT writing the pref (the
+  /** Show expanded regardless of the collapsed pref - WITHOUT writing the pref (the
    *  ?neuro demo must not persist anything). A user's own minimize afterwards still works. */
   forceExpanded?: boolean;
 }
@@ -90,7 +90,7 @@ export function hideNeuroDock(): void {
   releaseMusic();
 }
 
-/** Re-show + expand the music player — the "Show player" action for a mobile-hidden pill. */
+/** Re-show + expand the music player - the "Show player" action for a mobile-hidden pill. */
 export function reopenNeuroDock(host: NeurospicyHost): void {
   setNeuroDockCollapsed(false);
   showNeuroDock(host);
@@ -98,7 +98,7 @@ export function reopenNeuroDock(host: NeurospicyHost): void {
   audioDockController()?.refresh();
 }
 
-/** Show the shared window in the EXPANDED (draggable + resizable) window — used by the
+/** Show the shared window in the EXPANDED (draggable + resizable) window - used by the
  *  ?neuro=viz demo capture (fullscreen needs a user gesture a capture doesn't have). */
 export function openNeuroDockExpanded(host: NeurospicyHost): void {
   showNeuroDock(host, { animateIn: false, forceExpanded: true });

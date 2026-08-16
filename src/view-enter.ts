@@ -2,8 +2,8 @@
 /**
  * View-entrance cascade arming (platform & capabilities dashboards).
  *
- * The read-only dashboards reveal their top-level nodes — the back pill,
- * the header band, then each section — as ONE staggered wave, so the page reads
+ * The read-only dashboards reveal their top-level nodes - the back pill,
+ * the header band, then each section - as ONE staggered wave, so the page reads
  * as a single settle instead of the header snapping in while the cards cascade
  * underneath it. The CSS (app.css, gated behind
  * `@media (prefers-reduced-motion: no-preference)`) owns the animation; this
@@ -14,7 +14,7 @@
  * MUST be called synchronously right after the view's innerHTML is assigned (no
  * await in between): the browser paints after the current task, so as long as
  * `.is-entering` is set in the same task the FIRST paint already carries the
- * hidden `from` state — there's no frame where the nodes flash in at full
+ * hidden `from` state - there's no frame where the nodes flash in at full
  * opacity before jumping to 0.
  */
 
@@ -34,7 +34,7 @@ type EnterHost = HTMLElement & { _enterTimer?: ReturnType<typeof setTimeout> | 0
 export function armViewEnter(viewEl: EnterHost, selector: string = ENTER_NODES): void {
   // Reduced motion: leave the view un-armed. Because the hidden `from` state and
   // the animation only exist under `.is-entering`, content simply renders
-  // instantly — no animation-delay survives to hold a node invisible. That also
+  // instantly - no animation-delay survives to hold a node invisible. That also
   // means the app's own pref needs no CSS counterpart here: not arming is the
   // whole off-switch, even though the keyframes sit behind a `no-preference`
   // media query the attribute can't close.
@@ -53,7 +53,7 @@ export function armViewEnter(viewEl: EnterHost, selector: string = ENTER_NODES):
   viewEl.classList.add('is-entering');
 
   // Longest delay + duration, plus generous slack. The timer runs on wall-clock
-  // from now, but the animations start at the first PAINT — so the slack must
+  // from now, but the animations start at the first PAINT - so the slack must
   // absorb any arm→paint gap, else removing `.is-entering` early clips the last
   // node's fade. Erring long is harmless: once the wave finishes, `both` holds
   // every node at its end state, and `.is-entering` lingering changes nothing.

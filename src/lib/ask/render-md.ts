@@ -8,10 +8,10 @@
  * paragraphs, bullet/numbered lists, fenced code, simple tables, blockquotes,
  * and inline code/bold/italic. Links render as anchors ONLY to same-origin /info
  * docs or in-app targets; an external http(s) link renders as plain text (the
- * trust ethos — the Ask panel never becomes an outbound link farm), and images
+ * trust ethos - the Ask panel never becomes an outbound link farm), and images
  * are dropped (a docs screenshot is a build-time capture recipe, useless here).
  *
- * Pure and Node-testable — the only import is utils.escape.
+ * Pure and Node-testable - the only import is utils.escape.
  */
 import { escape } from '../../utils.ts';
 
@@ -70,7 +70,7 @@ export function renderAnswerMd(md: string): string {
     const t = lines[i]!.trim();
     if (blank(t)) { i++; continue; }
 
-    // Fenced code — verbatim, escaped, no inline processing.
+    // Fenced code - verbatim, escaped, no inline processing.
     if (t.startsWith('```') || t.startsWith('~~~')) {
       const fence = t.slice(0, 3);
       i++;
@@ -102,7 +102,7 @@ export function renderAnswerMd(md: string): string {
       continue;
     }
 
-    // List — bullet or numbered (no nesting; docs sections are shallow).
+    // List - bullet or numbered (no nesting; docs sections are shallow).
     const ul = /^[-*+]\s+/.test(t);
     const ol = /^\d+\.\s+/.test(t);
     if (ul || ol) {
@@ -119,7 +119,7 @@ export function renderAnswerMd(md: string): string {
       continue;
     }
 
-    // Paragraph — gather to the next blank line or block start.
+    // Paragraph - gather to the next blank line or block start.
     const para: string[] = [];
     while (i < lines.length && !blank(lines[i]!) && !isBlockStart(lines[i]!.trim())) { para.push(lines[i]!.trim()); i++; }
     const text = para.join(' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim();

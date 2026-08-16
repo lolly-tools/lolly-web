@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of the `media` capability — a live camera frame source
+ * Web implementation of the `media` capability - a live camera frame source
  * (engine bridge v1.4). The runtime drives a tool's `onFrame` hook from these
  * frames so a tool (e.g. a filter) can react to motion.
  *
- * The whole MediaStream / <video> / grab-loop lives HERE, in the shell — the engine
+ * The whole MediaStream / <video> / grab-loop lives HERE, in the shell - the engine
  * only ever sees plain RGBA pixel frames, so it stays DOM-free (mirrors how capture
  * keeps its browser engine in the shell). Pixels are read on the device and never
  * leave it; the only consumer is the in-page filter.
@@ -26,7 +26,7 @@ type FrameCallback = (frame: MediaFrame) => void;
  * The web media source, with a shell-private extension: a NON-camera "animated
  * asset" source. Arm it with a source spec and the next start() plays that
  * animation instead of the camera, sampling it with the SAME
- * drawImage→getImageData→MediaFrame path the camera uses — so an onFrame tool
+ * drawImage→getImageData→MediaFrame path the camera uses - so an onFrame tool
  * (e.g. filter) runs "live" with no camera, on a moving subject the user chose.
  * Three source kinds:
  *   - svg:    ready-to-render markup (already sanitised + brand-resolved by the
@@ -42,7 +42,7 @@ type FrameCallback = (frame: MediaFrame) => void;
  *   - video:  a video URL played muted/looped in an off-screen <video>; drawImage
  *             reads the current playback frame directly.
  * Camera and anim source are mutually exclusive (one refcounted singleton); the
- * arm method is NOT on the portable MediaAPI contract — only the web shell
+ * arm method is NOT on the portable MediaAPI contract - only the web shell
  * reaches for it.
  */
 export type AnimSourceSpec =
@@ -56,7 +56,7 @@ export interface WebMediaAPI extends MediaAPI {
   armAnimSource(src: AnimSourceSpec | string | null): void;
   /**
    * DETERMINISTICALLY render the armed anim source at exactly `tMs` (independent of the
-   * live rAF clock) into an RGBA frame — the frame-accurate export path: the live preview
+   * live rAF clock) into an RGBA frame - the frame-accurate export path: the live preview
    * is real time, the final render feeds each source frame at its true time through the
    * effect. Null when no source is set up, or the kind can't be seeked yet. Does NOT emit
    * or touch the live loop, so it composes with a running preview.
@@ -80,7 +80,7 @@ type WcImageDecoder = {
 };
 type WcImageDecoderCtor = new (init: { data: ArrayBuffer; type: string }) => WcImageDecoder;
 
-/** Sniff the container MIME from magic bytes — ImageDecoder requires a type, and a
+/** Sniff the container MIME from magic bytes - ImageDecoder requires a type, and a
  *  blob: fetch may not carry one. Covers exactly the three animated-raster kinds. */
 export function sniffRasterMime(bytes: Uint8Array): string | null {
   if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';           // GIF8…
@@ -90,25 +90,25 @@ export function sniffRasterMime(bytes: Uint8Array): string | null {
   return null;
 }
 
-// Default cap for the working frame's longest edge — plenty for a dot/line vector
+// Default cap for the working frame's longest edge - plenty for a dot/line vector
 // trace, and keeps getImageData + the downstream trace cheap. A subscriber can ask
 // for more (subscribe opts.maxEdge) when its output is a bitmap rather than a vector
-// trace — e.g. filter-pixel-stretch — and the grab loop produces frames at the
+// trace - e.g. filter-pixel-stretch - and the grab loop produces frames at the
 // largest size any live subscriber requested (clamped to the native frame).
 const DEFAULT_MAX_EDGE = 480;
 const MAX_EDGE_CAP = 1920; // ceiling so a tool can't request an absurd working frame
 const MAX_FPS = 30;
 const MIN_INTERVAL = 1000 / MAX_FPS;
 
-// One warning per page for a commitStyles refusal (bakeStaticSvg) — visible, not noisy.
+// One warning per page for a commitStyles refusal (bakeStaticSvg) - visible, not noisy.
 let commitWarnedOnce = false;
 
 /**
  * Copy each animated target's RESOLVED transform (plus transform-origin and
  * transform-box, so the matrix applies in the same reference frame) onto the
  * corresponding node of a STRUCTURAL clone of `srcRoot`. The mapping is by tree
- * order — `cloneNode(true)` preserves it exactly, and both sides are walked with
- * the same `[root, ...querySelectorAll('*')]` enumeration — so no ids or
+ * order - `cloneNode(true)` preserves it exactly, and both sides are walked with
+ * the same `[root, ...querySelectorAll('*')]` enumeration - so no ids or
  * attributes are needed on either side. Targets outside the cloned subtree and
  * targets whose computed transform is 'none' are skipped.
  *
@@ -156,7 +156,7 @@ export function createMediaAPI(): WebMediaAPI {
   // static SVG, and samples it via a lightweight <img> + drawImage. Baking is the
   // whole trick: an <img>-embedded SVG (or a dom-to-image clone) restarts its
   // @keyframes at t=0 on rasterise, so we commit the seeked transforms as inline
-  // style and disable animation in the snapshot — the img then renders exactly the
+  // style and disable animation in the snapshot - the img then renders exactly the
   // frame we seeked. Far lighter than a per-frame dom-to-image.
   let animSpec: AnimSourceSpec | null = null;
   let animHost: HTMLElement | null = null; // SVG kind: off-screen host holding the live inline <svg>
@@ -221,7 +221,7 @@ export function createMediaAPI(): WebMediaAPI {
     try {
       ctx!.drawImage(videoEl, 0, 0, cw, ch);
       emit(ctx!.getImageData(0, 0, cw, ch).data, cw, ch, now);
-    } catch { /* tainted canvas etc. — skip this frame */ }
+    } catch { /* tainted canvas etc. - skip this frame */ }
   }
 
   // Seek the live inline SVG to `elapsedMs`, then produce a STATIC snapshot of that exact
@@ -230,14 +230,14 @@ export function createMediaAPI(): WebMediaAPI {
   // what render (a live @keyframes would restart at 0 when the snapshot is drawn).
   //
   // TRANSFORMS get their own lane: commitStyles is known-flaky for `transform` on
-  // SVG targets (transform is a PRESENTATION attribute there — Chrome can refuse
+  // SVG targets (transform is a PRESENTATION attribute there - Chrome can refuse
   // or miswrite the commit, and the old silent catch made the failure invisible).
   // The field symptom (Andy, 2026-08-10, repo-root icon.svg): a mark whose
   // @keyframes hue-rotate animates while its @keyframes rotate stays frozen. So
   // after seeking, every animated target's RESOLVED matrix is read straight off
-  // getComputedStyle and stamped inline on the clone's corresponding node —
+  // getComputedStyle and stamped inline on the clone's corresponding node - 
   // together with the computed transform-origin/transform-box so the matrix lands
-  // in the same reference frame — bypassing commitStyles for transforms entirely.
+  // in the same reference frame - bypassing commitStyles for transforms entirely.
   // Returns serialised SVG, or null if there's nothing to draw.
   function bakeStaticSvg(host: HTMLElement, elapsedMs: number): string | null {
     const svg = host.querySelector('svg');
@@ -245,11 +245,11 @@ export function createMediaAPI(): WebMediaAPI {
     const anims = (host as Element & { getAnimations?: (o?: { subtree?: boolean }) => Animation[] })
       .getAnimations?.({ subtree: true }) ?? [];
     for (const a of anims) {
-      try { a.pause(); a.currentTime = elapsedMs; } catch { /* idle/finished — skip */ }
+      try { a.pause(); a.currentTime = elapsedMs; } catch { /* idle/finished - skip */ }
     }
     for (const a of anims) {
       try { (a as Animation & { commitStyles?: () => void }).commitStyles?.(); } catch (e) {
-        // Once, not per frame — but never silently: a swallowed commit failure is
+        // Once, not per frame - but never silently: a swallowed commit failure is
         // exactly how the frozen-rotation bug hid.
         if (!commitWarnedOnce) {
           commitWarnedOnce = true;
@@ -278,7 +278,7 @@ export function createMediaAPI(): WebMediaAPI {
   // Non-camera source: bake the current frame (above) and decode it through a reused <img>,
   // then drawImage → getImageData → emit. Async + skip-if-busy so a slow decode just lowers
   // the effective fps. The sync work per frame (seek + commit + clone + serialise) is a few
-  // ms on a small SVG — nothing like a per-frame dom-to-image DOM clone.
+  // ms on a small SVG - nothing like a per-frame dom-to-image DOM clone.
   function grabAnim(now: number): void {
     if (!animHost || animBusy || subscribers.size === 0) return;
     if (typeof document !== 'undefined' && document.hidden) return;
@@ -305,7 +305,7 @@ export function createMediaAPI(): WebMediaAPI {
   }
 
   // VIDEO kind: identical to the camera grab, but reading the off-screen anim
-  // <video> (no MediaStream involved) — drawImage of a <video> yields the current
+  // <video> (no MediaStream involved) - drawImage of a <video> yields the current
   // playback frame, so the loop needs no seeking of its own.
   function grabVideo(now: number): void {
     if (!animVideo || subscribers.size === 0) return;
@@ -318,12 +318,12 @@ export function createMediaAPI(): WebMediaAPI {
     try {
       ctx!.drawImage(animVideo, 0, 0, cw, ch);
       emit(ctx!.getImageData(0, 0, cw, ch).data, cw, ch, now);
-    } catch { /* tainted / not yet decodable — skip this frame */ }
+    } catch { /* tainted / not yet decodable - skip this frame */ }
   }
 
   // RASTER kind: step gif/apng/animated-webp frames on their own clock. Exactly one
   // decode is in flight at a time (skip-if-busy via animBusy, shared with the SVG
-  // bake) and each VideoFrame is closed immediately after drawing — constant memory
+  // bake) and each VideoFrame is closed immediately after drawing - constant memory
   // regardless of clip length. Frame durations come from the frames themselves.
   function grabRaster(now: number): void {
     if (!rasterDec || animBusy || subscribers.size === 0) return;
@@ -348,7 +348,7 @@ export function createMediaAPI(): WebMediaAPI {
         emit(ctx.getImageData(0, 0, cw, ch).data, cw, ch, now);
       } catch { /* a bad frame must not kill the loop */ }
       finally { try { image.close(); } catch { /* already closed */ } }
-    }).catch(() => { /* decoder closed / malformed frame — the loop just idles */ })
+    }).catch(() => { /* decoder closed / malformed frame - the loop just idles */ })
       .finally(() => { animBusy = false; });
   }
 
@@ -369,12 +369,12 @@ export function createMediaAPI(): WebMediaAPI {
     refcount++;
     if (stream || animHost || animVideo || rasterOn) return; // already running (camera or anim source)
     // Non-camera path: an animated source is armed → bring THAT up instead of the
-    // camera. No getUserMedia, no permission — works with no camera at all.
+    // camera. No getUserMedia, no permission - works with no camera at all.
     if (animSpec) {
       canvas = document.createElement('canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (animSpec.kind === 'svg') {
-        // INLINE the (already-sanitised — see svg-sanitize) markup live in an
+        // INLINE the (already-sanitised - see svg-sanitize) markup live in an
         // off-screen host, rendered so its CSS/SMIL animation actually ticks, and
         // let grabAnim bake + sample the current frame.
         const host = document.createElement('div');
@@ -418,7 +418,7 @@ export function createMediaAPI(): WebMediaAPI {
             if (epoch !== rasterEpoch || !rasterOn) { try { dec.close(); } catch { /* ignore */ } return; }
             rasterDec = dec;
             rasterFrames = dec.tracks.selectedTrack?.frameCount ?? 0;
-          } catch { /* undecodable — the loop idles; the still render stands */ }
+          } catch { /* undecodable - the loop idles; the still render stands */ }
         })();
       }
       rafId = requestAnimationFrame(loop);
@@ -429,7 +429,7 @@ export function createMediaAPI(): WebMediaAPI {
     starting = (async () => {
       const s = await navigator.mediaDevices.getUserMedia({
         // Capture at 1080p so a high-resolution subscriber (a raster filter, or a
-        // user-driven resolution slider — see runtime `render.liveMaxEdgeInput`) has
+        // user-driven resolution slider - see runtime `render.liveMaxEdgeInput`) has
         // real pixels to downscale from; the grab loop never upscales past native
         // (grab() clamps scale ≤ 1), so a low working edge still stays cheap.
         video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -445,7 +445,7 @@ export function createMediaAPI(): WebMediaAPI {
       // can leave play() pending indefinitely, and the grab loop already waits for the
       // first frame (it no-ops until videoWidth is set). So start() resolves as soon as
       // the stream + loop are wired, not when the first frame decodes.
-      videoEl.play().catch(() => { /* autoplay blocked — frames still arrive via the loop */ });
+      videoEl.play().catch(() => { /* autoplay blocked - frames still arrive via the loop */ });
       canvas = document.createElement('canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
       rafId = requestAnimationFrame(loop);
@@ -453,7 +453,7 @@ export function createMediaAPI(): WebMediaAPI {
     try {
       await starting;
     } catch (e) {
-      // Failed to come up — undo this reference and surface the error to the caller.
+      // Failed to come up - undo this reference and surface the error to the caller.
       refcount = Math.max(0, refcount - 1);
       teardown();
       throw e;
@@ -497,7 +497,7 @@ export function createMediaAPI(): WebMediaAPI {
     if (typeof document === 'undefined') return null;
     const t = Math.max(0, tMs);
     // SVG: bake the animation to exactly t (same bake the live loop uses, but at a chosen
-    // time) and rasterise it — fully deterministic and independent of wall-clock.
+    // time) and rasterise it - fully deterministic and independent of wall-clock.
     if (animHost) {
       const svgStr = bakeStaticSvg(animHost, t);
       if (!svgStr) return null;
@@ -529,7 +529,7 @@ export function createMediaAPI(): WebMediaAPI {
       return sampleToFrame(v, v.videoWidth, v.videoHeight, t);
     }
     // RASTER (gif/apng/animated-webp): deterministic frame-index mapping needs cached
-    // per-frame durations — a follow-up. Returning null keeps the frozen base rather than
+    // per-frame durations - a follow-up. Returning null keeps the frozen base rather than
     // guessing a wrong frame.
     return null;
   }

@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The persistent bottom search bar — a shell-level SINGLETON (plans/99 M1).
+ * The persistent bottom search bar - a shell-level SINGLETON (plans/99 M1).
  *
  * One footer (the shared footerNav chrome: [Pro?] [Dashboard] <search> [Verify]
  * [What?]) mounted ONCE at boot as a sibling after #view, shown on browse routes
  * (RouteSpec.footer === 'search' in main.ts's ROUTES) and hidden on editing
  * routes. Views no longer render or wire their own footer: a view CLAIMS the bar
- * on mount — placeholder, initial value, an optional live-filter tap — and
+ * on mount - placeholder, initial value, an optional live-filter tap - and
  * releases the claim from its _cleanup. Unclaimed routes (dashboard, profile)
  * get the global default placeholder; their queries go to the spotlight overlay
  * (M2), never to the view behind (plans/99 §2a).
  *
  * The invariant that matters: THE BAR NEVER RE-RENDERS WHILE A VIEW IS MOUNTED.
  * A view re-rendering on each keystroke (projects, catalogue) leaves the input
- * untouched, so focus + caret survive with no re-focus dance — the catalogue's
+ * untouched, so focus + caret survive with no re-focus dance - the catalogue's
  * old footer-outside-the-body trick, now the default for everyone. The footer's
  * markup is rebuilt only between views (a claim with a different placeholder)
- * or when the jelly/pro flags flip (checked per navigation in applyRoute) —
+ * or when the jelly/pro flags flip (checked per navigation in applyRoute) - 
  * property/attribute reactivity on the vendored <jelly-input> is unverified, so
  * a claim-time re-render is the safe path; mid-session writes go through the
  * documented live `.value` getter/setter only.
  *
  * Keyboard policy lives HERE, in one place (previously three private copies):
  * Escape with text clears the field (and notifies) keeping focus; Escape when
- * empty blurs and falls through. Only a HANDLED Escape stops propagation —
+ * empty blurs and falls through. Only a HANDLED Escape stops propagation - 
  * ordinary typing bubbles as it always did in the gallery (the typing SFX
  * layer listens at the document; projects' old stop-everything handler was
  * guarding against tool-view shortcuts that are never mounted alongside it).
@@ -36,7 +36,7 @@
  * ARIA combobox pattern (lifted from pro/index.ts's template picker); the
  * overlay drives aria-expanded/aria-activedescendant via setSearchBarExpanded.
  * The summon chord (plans/99 §2f) lives here too: ⌘Space AND ⌃Space are both
- * bound, only ⌃␣ is ever advertised (the <kbd> hint chip) — on stock macOS
+ * bound, only ⌃␣ is ever advertised (the <kbd> hint chip) - on stock macOS
  * Spotlight eats ⌘Space before the page sees it, and that inertness is by
  * design ("if the OS doesn't steal it"). The chord only acts while a search
  * route is live; it never preventDefaults a chord it isn't handling.
@@ -54,21 +54,21 @@ export interface SearchBarClaim {
   ariaLabel?: string;
   /** Initial field text (e.g. a ?q= restore). */
   value?: string;
-  /** Focus the field on claim — fine pointers only (type-to-find; skipped on
+  /** Focus the field on claim - fine pointers only (type-to-find; skipped on
    *  touch so the keyboard doesn't pop over the view). */
   autoFocus?: boolean;
   /** The live-filter tap: called with the RAW field text after the shared
    *  debounce (each view applies its own normalisation, so migrated behaviour
    *  stays byte-for-byte). Its presence is the live-adapt switch (plans/99
-   *  §2a/§2c) — overlay-only views claim without it. */
+   *  §2a/§2c) - overlay-only views claim without it. */
   onQuery?: (raw: string) => void;
   /** Overlay-only views' clear tap (plans/99 M2): clearSearchBar() notifies
-   *  onQuery('') when the claim live-filters, OTHERWISE this — so a view with
+   *  onQuery('') when the claim live-filters, OTHERWISE this - so a view with
    *  no live tap (projects' ?q= results mode) still hears the ✕/Escape clear. */
   onClear?: () => void;
 }
 
-/** The spotlight overlay's seam into the bar (plans/99 §2d/§2f) — implemented
+/** The spotlight overlay's seam into the bar (plans/99 §2d/§2f) - implemented
  *  by components/spotlight.ts, registered once at boot right after the bar. */
 export interface SpotlightHook {
   /** The debounced field text (also fired by the chord and a clear). */
@@ -77,7 +77,7 @@ export interface SpotlightHook {
    *  to consume (the bar preventDefault+stopPropagation's and skips its own
    *  Escape ladder). */
   onKeydown(e: KeyboardEvent): boolean;
-  /** Every route transition (applySearchBarRoute) — the overlay dismisses. */
+  /** Every route transition (applySearchBarRoute) - the overlay dismisses. */
   onRouteChanged(routeName: string, mode: 'search' | 'none'): void;
 }
 
@@ -89,7 +89,7 @@ let routeName = '';
 let currentClaim: SearchBarClaim | null = null;
 let spotlightHook: SpotlightHook | null = null;
 let spotlightListboxId = '';
-// Rendered-state fingerprints — a re-render happens only when one of these
+// Rendered-state fingerprints - a re-render happens only when one of these
 // changes, never while a view is mounted (see the module invariant above).
 let renderedJelly = false;
 let renderedPro = false;
@@ -101,14 +101,14 @@ const inputEl = (): HTMLInputElement | null => footerEl?.querySelector<HTMLInput
 const clearBtn = (): HTMLButtonElement | null => footerEl?.querySelector<HTMLButtonElement>('.gallery-search-clear') ?? null;
 const kbdHintEl = (): HTMLElement | null => footerEl?.querySelector<HTMLElement>('.gallery-search-kbd') ?? null;
 
-/** The active placeholder/aria pair — the claim's, or the global default. */
+/** The active placeholder/aria pair - the claim's, or the global default. */
 function labels(): { placeholder: string; ariaLabel: string } {
   const placeholder = currentClaim?.placeholder ?? t('Search Lolly…');
   return { placeholder, ariaLabel: currentClaim?.ariaLabel ?? placeholder };
 }
 
 /** The ✕ tracks the field's content (shown only while there's text to clear);
- *  the ⌃␣ hint chip is its complement — it yields the corner as soon as the
+ *  the ⌃␣ hint chip is its complement - it yields the corner as soon as the
  *  field has text (plans/99 §2f). */
 function syncClear(): void {
   const hasText = !!inputEl()?.value;
@@ -116,7 +116,7 @@ function syncClear(): void {
   kbdHintEl()?.toggleAttribute('hidden', hasText);
 }
 
-/** ARIA combobox upgrade (plans/99 §2d, the pro/index.ts pattern) — applied to
+/** ARIA combobox upgrade (plans/99 §2d, the pro/index.ts pattern) - applied to
  *  the `.gallery-search` element (also correct for the <jelly-input> host) once
  *  a spotlight hook exists, and re-applied on every re-render. */
 function applyCombobox(): void {
@@ -139,7 +139,7 @@ function render(): void {
     proEnabled: renderedPro,
     searchHtml: gallerySearchBox({
       placeholder, ariaLabel, value: currentClaim?.value ?? '',
-      // Advertise ⌃␣ ONLY — ⌘Space stays bound but silent (plans/99 §2f, locked).
+      // Advertise ⌃␣ ONLY - ⌘Space stays bound but silent (plans/99 §2f, locked).
       kbdHint: { label: '⌃␣', title: t('Ctrl + Space') },
     }),
   });
@@ -162,7 +162,7 @@ function wire(footer: HTMLElement): void {
     debounce = setTimeout(() => {
       const raw = inputEl()?.value ?? '';
       currentClaim?.onQuery?.(raw);
-      // The overlay rides the SAME debounce, after the local tap — one query,
+      // The overlay rides the SAME debounce, after the local tap - one query,
       // two tiers (plans/99 §2a: live view behind, spotlight above).
       spotlightHook?.onQueryChanged(raw);
     }, SEARCH_DEBOUNCE_MS);
@@ -193,20 +193,20 @@ function wire(footer: HTMLElement): void {
   });
 }
 
-/** Mount the singleton once, at boot — hidden until the first applyRoute. */
+/** Mount the singleton once, at boot - hidden until the first applyRoute. */
 export function initSearchBar(): void {
   if (footerEl) return;
   render();
   // The summon chord (plans/99 §2f): ⌘Space AND ⌃Space, document-level, live
   // only while a search route shows the bar. Handling = focus the field + hand
   // the current text to the overlay (so it opens if there's already a query).
-  // On stock macOS Spotlight consumes ⌘Space before the page ever sees it —
+  // On stock macOS Spotlight consumes ⌘Space before the page ever sees it - 
   // that inertness is by design; ⌃␣ is the advertised chord. A chord we are
   // NOT handling (editing routes, modifier soup, mid-IME) is never
   // preventDefault'ed [no-browser-default-hijacks].
   document.addEventListener('keydown', (e) => {
     if (mode !== 'search') return;
-    // Exactly ⌘Space or ⌃Space — never both together: ⌃⌘Space is macOS's own
+    // Exactly ⌘Space or ⌃Space - never both together: ⌃⌘Space is macOS's own
     // Character Viewer/emoji chord, and capturing it would yank focus out of
     // whatever field the user was inserting an emoji into (principle 5).
     if (e.metaKey === e.ctrlKey || e.code !== 'Space' || e.altKey || e.shiftKey || e.isComposing) return;
@@ -221,7 +221,7 @@ export function initSearchBar(): void {
  * Route transition (main.ts navigate(), after the outgoing view's _cleanup and
  * before the incoming mount): show/hide the bar, keep #view's footer-clearance
  * class in step, remember which route owns the bar (the overlay's own-domain
- * lookup — currentSearchRoute), notify the overlay, and fold in any jelly/pro
+ * lookup - currentSearchRoute), notify the overlay, and fold in any jelly/pro
  * flag flips since the last render.
  */
 export function applySearchBarRoute(nextMode: FooterMode, nextRouteName: string): void {
@@ -229,7 +229,7 @@ export function applySearchBarRoute(nextMode: FooterMode, nextRouteName: string)
   routeName = nextRouteName;
   // A route transition invalidates any in-flight keystroke: without this, a
   // debounce armed on the OUTGOING view fires after navigation and re-opens
-  // the overlay over the new route — including over a footer:'none' editing
+  // the overlay over the new route - including over a footer:'none' editing
   // view, where the hidden bar can't even receive the Escape to dismiss it.
   clearTimeout(debounce);
   // Unclaimed routes (dashboard/profile) have no release to reset the field,
@@ -247,7 +247,7 @@ export function applySearchBarRoute(nextMode: FooterMode, nextRouteName: string)
   viewEl()?.classList.toggle('has-search-footer', mode === 'search');
 }
 
-/** The route currently owning the bar — ROUTE_DOMAIN's key for the overlay's
+/** The route currently owning the bar - ROUTE_DOMAIN's key for the overlay's
  *  own-domain split (plans/99 §2a). '' until the first navigation applies. */
 export function currentSearchRoute(): string {
   return routeName;
@@ -272,7 +272,7 @@ export function setSearchBarExpanded(expanded: boolean, activeDescId?: string | 
 }
 
 /**
- * Claim the bar for the mounting view. Returns the release fn — chain it into
+ * Claim the bar for the mounting view. Returns the release fn - chain it into
  * the view's _cleanup. A stale release (called after another view claimed) is a
  * no-op, so teardown ordering can't clobber the next view's claim.
  */
@@ -300,11 +300,11 @@ export function claimSearchBar(claim: SearchBarClaim): () => void {
   };
 }
 
-/** Empty the field and notify the claim immediately (no debounce) — the shared
+/** Empty the field and notify the claim immediately (no debounce) - the shared
  *  path behind the ✕, a handled Escape, and every in-view "clear search" link
  *  ([data-search-clear] anywhere in the footer; views route their own body
  *  links here too). A live-filter claim hears onQuery(''); an overlay-only
- *  claim (no onQuery) hears onClear instead — never both. The overlay always
+ *  claim (no onQuery) hears onClear instead - never both. The overlay always
  *  hears the empty query, so a clear closes it. */
 export function clearSearchBar(opts: { focus?: boolean } = {}): void {
   clearTimeout(debounce);
@@ -317,7 +317,7 @@ export function clearSearchBar(opts: { focus?: boolean } = {}): void {
   if (opts.focus) input?.focus({ preventScroll: true });
 }
 
-/** Write the field without notifying the claim — for views that change the
+/** Write the field without notifying the claim - for views that change the
  *  query themselves and just need the bar to match (e.g. the gallery's
  *  category pills clearing an active search). */
 export function setSearchBarValue(v: string): void {

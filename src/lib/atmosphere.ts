@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Atmosphere — layered background noise (rain, waves, wind, fire, and the three
+ * Atmosphere - layered background noise (rain, waves, wind, fire, and the three
  * noise colours) that plays UNDER the Neurospicy music rather than instead of it.
  *
  * This is an accessibility feature before it is a nice-to-have: masking noise is
  * how a lot of neurodivergent people hold focus, and mixing it with music is the
- * combination people actually want. So the rules here are deliberate —
+ * combination people actually want. So the rules here are deliberate - 
  *
  *   - Every layer has its OWN level, independent of the music volume. The layers
  *     connect straight to the context destination, bypassing the music gain.
@@ -17,7 +17,7 @@
  *   - The interface-sound mute is the master mute here too: mute means silence,
  *     with the levels kept for when it comes back.
  *
- * The beds are SYNTHESISED (lib/ambience-dsp.ts) — no audio files, so this works
+ * The beds are SYNTHESISED (lib/ambience-dsp.ts) - no audio files, so this works
  * offline on a cold install, adds nothing to the bundle, and carries no licence
  * that a user could breach by exporting a video. Buffers are baked lazily when a
  * layer is first raised and dropped when it returns to zero.
@@ -32,7 +32,7 @@ export type { AmbienceKind };
 /** A row in the Atmosphere panel. `icon` is a lib/icons.ts registry name. */
 export interface AtmosphereLayer { id: AmbienceKind; label: string; icon: string; group: AtmosphereGroup }
 
-/** Fifteen rows is a list, not a row of tiles — three headings turn it back into
+/** Fifteen rows is a list, not a row of tiles - three headings turn it back into
  *  something scannable. Same grouping idea as Blanket's, which is the vocabulary
  *  people arrive with. */
 export type AtmosphereGroup = 'Outside' | 'Places' | 'Noise';
@@ -62,7 +62,7 @@ export type AtmosphereLevels = Partial<Record<AmbienceKind, number>>;
 export interface AtmosphereState {
   /** Per-layer level 0–1. Absent or 0 = off. */
   levels: AtmosphereLevels;
-  /** Whether the panel is expanded — a UI preference, but it belongs with the rest
+  /** Whether the panel is expanded - a UI preference, but it belongs with the rest
    *  of the state so it survives a reload like everything else in the player. */
   open: boolean;
 }
@@ -97,7 +97,7 @@ function sanitise(raw: unknown): AtmosphereState {
   for (const [was, now] of Object.entries(RENAMED)) {
     if (Object.hasOwn(src, was) && !Object.hasOwn(src, now)) src[now] = src[was];
   }
-  // Whitelisted by iterating OUR list, never the stored object's keys — a persisted
+  // Whitelisted by iterating OUR list, never the stored object's keys - a persisted
   // blob is untrusted input, and reading its keys is how prototype junk gets in.
   for (const l of ATMOSPHERE_LAYERS) {
     const v = clamp01(src[l.id]);
@@ -110,7 +110,7 @@ function readInitial(): AtmosphereState {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return sanitise(JSON.parse(raw));
-  } catch { /* private mode / bad JSON — defaults */ }
+  } catch { /* private mode / bad JSON - defaults */ }
   return { levels: {}, open: false };
 }
 
@@ -118,7 +118,7 @@ function persistLocal(): void {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* best-effort */ }
 }
 
-/** The host surface this module needs — just the profile, for the canonical copy. */
+/** The host surface this module needs - just the profile, for the canonical copy. */
 export interface AtmosphereHost { profile: { get(): Promise<object>; set(p: object): Promise<unknown> } }
 
 async function persistProfile(host: AtmosphereHost | null): Promise<void> {
@@ -136,7 +136,7 @@ export function hydrateAtmosphere(fromProfile: unknown): void {
 }
 
 /** Demo override for the ?neuro deep-link (lib/neuro-demo.ts): set levels + the
- *  panel-open state IN MEMORY only — no persistLocal/persistProfile, and no
+ *  panel-open state IN MEMORY only - no persistLocal/persistProfile, and no
  *  startLayer, so nothing ever sounds. A dock built after this renders the
  *  Atmosphere section open at these levels. Levels are whitelisted through the
  *  same sanitise() the persisted blob goes through. */
@@ -146,7 +146,7 @@ export function demoAtmosphere(levels: AtmosphereLevels, opts: { open?: boolean 
 
 export function getAtmosphere(): AtmosphereState { return { levels: { ...state.levels }, open: state.open }; }
 export function atmosphereLevel(id: AmbienceKind): number { return state.levels[id] ?? 0; }
-/** How many layers are currently turned up — the panel's collapsed-state badge. */
+/** How many layers are currently turned up - the panel's collapsed-state badge. */
 export function activeAtmosphereCount(): number { return Object.values(state.levels).filter((v) => v > 0).length; }
 /** The level the icon toggle would restore for a layer that is currently off. */
 export function rememberedLevel(id: AmbienceKind): number { return lastAudible.get(id) ?? DEFAULT_LEVEL; }
@@ -159,7 +159,7 @@ export function setAtmospherePanelOpen(open: boolean): void {
 /** The player body can be mounted more than once at a time (the dock, the Sound
  *  popover, the visualizer's popout window), so a change made in one has to
  *  repaint the others. A DOM event, like the rest of the player's cross-instance
- *  signals — no lib↔component dependency. */
+ *  signals - no lib↔component dependency. */
 function notifyChanged(): void {
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:atmosphere'));
 }
@@ -175,7 +175,7 @@ const buffers = new Map<AmbienceKind, AudioBuffer>();
 const baking = new Map<AmbienceKind, Promise<AudioBuffer | null>>();
 let lastHost: AtmosphereHost | null = null;
 
-/** Is ambience allowed to sound at all right now? (Master mute is the only gate —
+/** Is ambience allowed to sound at all right now? (Master mute is the only gate - 
  *  the music transport's play/pause deliberately is NOT: pausing the music to
  *  think is exactly when someone wants the rain to keep going.) */
 function allowed(): boolean { return !isSfxMuted(); }
@@ -189,7 +189,7 @@ async function ensureBuffer(ctx: AudioContext, id: AmbienceKind): Promise<AudioB
     try {
       // Off the main thread: a bed is 50–500 ms of synthesis (the café murmur is the
       // worst), which would freeze the UI on the very click that turns it on. One-off
-      // per layer per session — the buffer is cached until the layer goes back to zero.
+      // per layer per session - the buffer is cached until the layer goes back to zero.
       const chans = await bakeAmbienceOffThread(id, ctx.sampleRate);
       const buf = ctx.createBuffer(chans.length, chans[0]!.length, ctx.sampleRate);
       // The cast is the TS 5.7 typed-array generic, not a shape claim: bakeAmbience
@@ -241,7 +241,7 @@ function stopLayer(id: AmbienceKind, keepBuffer = false): void {
   gain.gain.cancelScheduledValues(ctx.currentTime);
   gain.gain.setTargetAtTime(0, ctx.currentTime, FADE / 3);
   const at = ctx.currentTime + FADE * 2;
-  try { src.stop(at); } catch { /* not started yet — the guard in startLayer drops it */ }
+  try { src.stop(at); } catch { /* not started yet - the guard in startLayer drops it */ }
   src.onended = (): void => { src.disconnect(); gain.disconnect(); };
 }
 
@@ -263,7 +263,7 @@ export function setAtmosphereLevel(host: AtmosphereHost | null, id: AmbienceKind
   if (ctx) layer.gain.gain.setTargetAtTime(v, ctx.currentTime, FADE / 4);
 }
 
-/** Turn a layer off/on from its icon — back to the level it last had. Returns the new level. */
+/** Turn a layer off/on from its icon - back to the level it last had. Returns the new level. */
 export function toggleAtmosphereLayer(host: AtmosphereHost | null, id: AmbienceKind): number {
   const on = atmosphereLevel(id) > 0;
   const next = on ? 0 : rememberedLevel(id);
@@ -272,7 +272,7 @@ export function toggleAtmosphereLayer(host: AtmosphereHost | null, id: AmbienceK
 }
 
 /**
- * Re-evaluate every layer against the master mute — the mirror of applyNeurospicy,
+ * Re-evaluate every layer against the master mute - the mirror of applyNeurospicy,
  * called from the same place (applySfxMuted). Muting stops the sources but keeps
  * the levels; un-muting brings back exactly what was sounding.
  */
@@ -285,7 +285,7 @@ export function applyAtmosphere(host?: AtmosphereHost): void {
   }
 }
 
-/** Stop everything now, keeping the saved levels — used when Neurospicy Mode is
+/** Stop everything now, keeping the saved levels - used when Neurospicy Mode is
  *  switched off (its player is the only place these controls live, so ambience
  *  must not outlive it) and when the feature flag goes away. */
 export function stopAtmosphere(): void {
@@ -298,7 +298,7 @@ export function isAtmospherePlaying(): boolean { return playing.size > 0; }
 /**
  * Autoplay policy: audio can't start before a gesture, so a persisted set-up is
  * armed rather than started. Only layers the user left above zero come back, and
- * only once — this is a resume, never an introduction.
+ * only once - this is a resume, never an introduction.
  */
 export function armAtmosphere(host: AtmosphereHost): void {
   lastHost = host;

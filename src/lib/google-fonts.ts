@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Google Fonts — fetch a family's css2 stylesheet and resolve it to a set of
+ * Google Fonts - fetch a family's css2 stylesheet and resolve it to a set of
  * downloadable font files (woff2 when the request is recognised as a modern
- * browser, truetype/opentype otherwise — see FONT_EXT_FORMAT below), so a
+ * browser, truetype/opentype otherwise - see FONT_EXT_FORMAT below), so a
  * chosen face can be stored ON-DEVICE (as `type:'font'` user assets) and
  * served from IndexedDB forever after. The network is touched exactly once
- * per family — at add time; from then on the face is local, offline, and
+ * per family - at add time; from then on the face is local, offline, and
  * travels in the data backup like any user asset.
  *
  * Scope decisions (deliberate):
  *   - latin + latin-ext, plus the non-Latin scripts of shipped UI languages
- *     (cyrillic for bg, devanagari for hi) — close to the shell's own bundled
+ *     (cyrillic for bg, devanagari for hi) - close to the shell's own bundled
  *     builds (shells/web/public/fonts/) while keeping a family to a few hundred KB.
  *   - Upright AND italic (`ital@0;1`). A family with no italic simply returns
- *     upright faces — css2 ignores the slant rather than erroring — so asking
+ *     upright faces - css2 ignores the slant rather than erroring - so asking
  *     always is free. Without the real italic face an italic run cannot be
  *     outlined at all (an upright outline would silently un-slant the text).
  *   - The variable `wght` axis whenever the family has one, at its TRUE range
  *     (see resolveFamilySpec): css2 rejects a range the family doesn't cover,
  *     and its 400 body is a generic error page, so the range is discovered by
  *     probing. Families with no axis fall back to their static weights.
- *   - Licensing: everything on Google Fonts is OFL/Apache/UFL — free to
+ *   - Licensing: everything on Google Fonts is OFL/Apache/UFL - free to
  *     download, embed and redistribute; the css2 endpoint and fonts.gstatic.com
  *     both serve CORS `*`, and the service worker ignores cross-origin URLs,
  *     so a plain fetch works. The font's own licence rides along in meta.
@@ -57,11 +57,11 @@ const CSS2 = 'https://fonts.googleapis.com/css2';
 // safety gate before the name lands in a CSS font-family value or an asset id.
 export const GOOGLE_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9 ]{0,63}$/;
 
-// css2 serves woff2 only when it recognises the request as a modern browser —
+// css2 serves woff2 only when it recognises the request as a modern browser - 
 // a UA it doesn't recognise (an unusual/locked-down browser, a privacy
 // extension that normalises the UA header on cross-origin requests, a proxy)
 // gets the SAME @font-face data back as legacy truetype instead. That's the
-// entire response format for every face, not a mix — so accepting whichever
+// entire response format for every face, not a mix - so accepting whichever
 // format actually came back (rather than discarding the whole family) is what
 // makes a family reliably downloadable regardless of the requester's UA. The
 // vector-export path (bridge/font-registry.ts) already sniffs the stored
@@ -73,7 +73,7 @@ const FONT_EXT_FORMAT: Record<string, GoogleFontFace['format']> = {
 
 /**
  * Parse a css2 response into faces. css2 emits one @font-face block per
- * subset, each preceded by a comment naming it — "latin-ext" then a block
+ * subset, each preceded by a comment naming it - "latin-ext" then a block
  * with font-family/style/weight, a fonts.gstatic.com src, and that subset's
  * unicode-range. Pure; exported for tests.
  */
@@ -104,7 +104,7 @@ export function parseGoogleFontCss(css: string): GoogleFontFace[] {
 }
 
 /** The faces worth storing: kept subsets only (or everything when the css names
- *  no subsets at all — some single-script families skip the comments). */
+ *  no subsets at all - some single-script families skip the comments). */
 export function keepFaces(faces: GoogleFontFace[]): GoogleFontFace[] {
   const named = faces.filter(f => f.subset);
   if (!named.length) return faces;
@@ -120,7 +120,7 @@ export const variableSpec = (enc: string, lo: number, hi: number): string =>
   `${enc}:ital,wght@0,${lo}..${hi};1,${lo}..${hi}`;
 
 /**
- * The non-variable ladder, best first — regular+bold in both slants, then a
+ * The non-variable ladder, best first - regular+bold in both slants, then a
  * single weight in both slants (display faces like Anton ship only 400 and
  * reject a `700` they don't have), then every style the family has at its
  * default weight, then the bare family (some faces reject any axis spec).
@@ -141,17 +141,17 @@ const WGHT_HI_STOPS = [1000, 900, 800, 700] as const;
 const VARIABLE_PROBE_WEIGHT = 450;
 
 /**
- * GET a css2 spec: its text when the API accepts it, else null — a SOFT probe
+ * GET a css2 spec: its text when the API accepts it, else null - a SOFT probe
  * that never throws, so the caller can try the next spec.
  *
  * The subtlety that makes this soft: css2 answers a spec that doesn't fit the
  * family (wrong weight range, unknown family) with a 400 whose error body
- * carries NO `Access-Control-Allow-Origin` header — so in a browser the `fetch`
+ * carries NO `Access-Control-Allow-Origin` header - so in a browser the `fetch`
  * itself REJECTS ("TypeError: Failed to fetch") rather than resolving with a
  * readable 400. A dead network throws identically. We therefore CANNOT tell a
  * mis-fit spec from real offline here, so both fold to null; resolveFamilySpec
- * only concludes "unreachable/unknown" once the whole ladder — ending in the
- * bare family, which 200s for any real font — has failed.
+ * only concludes "unreachable/unknown" once the whole ladder - ending in the
+ * bare family, which 200s for any real font - has failed.
  */
 async function fetchSpec(spec: string): Promise<string | null> {
   try {
@@ -173,7 +173,7 @@ async function specOk(spec: string): Promise<boolean> {
  * The variable `wght` range this family actually exposes, or null when it has
  * no axis. css2 refuses a range that isn't a subrange of the family's own
  * (`Figtree:wght@100..900` → 400, because Figtree starts at 300) and its error
- * body is an HTML page, not a machine-readable range — and the metadata
+ * body is an HTML page, not a machine-readable range - and the metadata
  * endpoint that would answer this serves no CORS header. So bound-probe with
  * single-weight requests, which cost ~1 KB each and only run when the widest
  * range was refused.
@@ -191,7 +191,7 @@ async function probeWeightRange(enc: string): Promise<{ lo: number; hi: number }
  * The css2 stylesheet for a family, with the widest weight axis and both slants
  * it supports. Tries the common `100..900` first (one request for most
  * families), then probes the real axis bounds, then the static ladder.
- * Returns null when css2 refuses every spec — i.e. no such family.
+ * Returns null when css2 refuses every spec - i.e. no such family.
  */
 export async function resolveFamilySpec(name: string): Promise<string | null> {
   const enc = encodeFamily(name);
@@ -228,7 +228,7 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
   }
   const css = await resolveFamilySpec(name);
   // Everything failed: online-but-nothing-resolved is almost always a wrong name
-  // (a mis-fit spec and an unknown family are indistinguishable here — both are
+  // (a mis-fit spec and an unknown family are indistinguishable here - both are
   // CORS-blocked 400s); a rare true outage lands here too, so name both.
   if (!css) throw new Error(`Couldn’t find a Google Font called “${name}” — check the spelling (or your connection).`);
 
@@ -247,7 +247,7 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
 // ─── Pinned brand fonts (SUSE era) ────────────────────────────────────────────
 // TEMPORARY, SUSE-branded ordering: these families surface at the TOP of the
 // add-font picker (in this exact order) ahead of the alphabetical rest, so the
-// brand's own faces are one keystroke away. SWITCH THIS BACK ON 2026-08-29 —
+// brand's own faces are one keystroke away. SWITCH THIS BACK ON 2026-08-29 - 
 // when the SUSE branding leaves the public build, delete PINNED_FAMILIES and
 // export the plain alphabetical `ALPHABETICAL_FAMILIES` as POPULAR_FAMILIES.
 // (This ordering is intentionally NOT gated on the active content profile: the
@@ -259,7 +259,7 @@ const PINNED_FAMILIES: readonly string[] = [
 
 /**
  * A hand-curated slice of the most-used Google Fonts families (alphabetical),
- * for the add-font <datalist> — suggestion only (any family name can be typed;
+ * for the add-font <datalist> - suggestion only (any family name can be typed;
  * the list is names, not availability). Static data, no API key, works offline.
  */
 const ALPHABETICAL_FAMILIES: readonly string[] = [

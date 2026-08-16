@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * CaptureAPI (web) — page-to-image capture.
+ * CaptureAPI (web) - page-to-image capture.
  *
  * The web PWA *cannot* fulfil this capability, and not for want of a library:
  * a browser page cannot read pixels from a cross-origin URL. Frame-busting
  * headers (X-Frame-Options / CSP frame-ancestors) stop most sites rendering in
  * a frame at all, and the tainted-canvas rule blocks pixel readback even for the
  * ones that do render. There is deliberately no page-level API for the final
- * composited framebuffer of content the page doesn't own — that's the same-origin
+ * composited framebuffer of content the page doesn't own - that's the same-origin
  * boundary, not a gap.
  *
  * So capture is a native-only capability: the Tauri shell fulfils it with its

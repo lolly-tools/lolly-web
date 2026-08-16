@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * pptxgen-import.test.ts — the pptxgenjs builder-script parser behind deck import.
+ * pptxgen-import.test.ts - the pptxgenjs builder-script parser behind deck import.
  *
  * Run with: node --test "shells/web/src/**\/*.test.ts"
  */
@@ -116,7 +116,7 @@ test('parsePptxGenJs captures layout, slides, elements, and palette', () => {
   assert.equal(shape.wIn, 6.8);
   assert.equal(shape.fill, '17251E');
   assert.equal(shape.radius, 0.08);
-  // `line: { type: "none" }` is not a visible line — nothing recorded.
+  // `line: { type: "none" }` is not a visible line - nothing recorded.
   assert.equal(shape.line, undefined);
   assert.equal(shape.rawShape, undefined);
 
@@ -187,6 +187,6 @@ test('inchesToNative maps inch coordinates onto native pixel units', () => {
   // Corners.
   assert.equal(inchesToNative(0, 13.33, 1920), 0);
   assert.equal(inchesToNative(13.33, 13.33, 1920), 1920);
-  // A zero layout can't be divided — guarded to 0.
+  // A zero layout can't be divided - guarded to 0.
   assert.equal(inchesToNative(5, 0, 1920), 0);
 });

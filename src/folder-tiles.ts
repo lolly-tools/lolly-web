@@ -2,7 +2,7 @@
 /**
  * Shared tile + badge markup for the folder overlay and the asset picker.
  *
- * Pure HTML-string builders — no host, no DOM events. Consumers (folder-overlay.js,
+ * Pure HTML-string builders - no host, no DOM events. Consumers (folder-overlay.js,
  * picker.js) own the delegated click handling via the data-* hooks each tile
  * carries. Kept free of pro/ imports so the (removable) /pro folder stays optional.
  *
@@ -71,22 +71,22 @@ const FMT_LABEL: Record<string, string> = {
 };
 export const fmtLabel = (f: string | null | undefined): string => (f != null ? FMT_LABEL[f] : undefined) ?? String(f ?? '').toUpperCase();
 
-// lucide "package" — placeholder thumbnail for batch sessions (no single render).
-// Path data lives in lib/icons.ts as 'package' — also used by projects.ts/gallery.ts's
+// lucide "package" - placeholder thumbnail for batch sessions (no single render).
+// Path data lives in lib/icons.ts as 'package' - also used by projects.ts/gallery.ts's
 // identical PACKAGE_ICON (component-audit rec 5).
 export const PACKAGE_ICON = icon('package');
 // lucide "folder"
 export const FOLDER_ICON = icon('folder');
-// lucide "more-horizontal" — the per-tile overflow (move / rename / delete) trigger.
+// lucide "more-horizontal" - the per-tile overflow (move / rename / delete) trigger.
 export const MENU_ICON = icon('menu');
-// lucide "check" — the tick shown inside a selected tile's selection toggle.
+// lucide "check" - the tick shown inside a selected tile's selection toggle.
 // width/height are set on the SVG itself (not only via CSS) so the tick can never
 // balloon to the intrinsic SVG default if it's ever painted before/without the
 // `.tile-check svg` sizing rule (the cause of the "giant tick" flash during a batch render).
 export const CHECK_ICON = icon('check', { size: 13, strokeWidth: 3 });
 
 /**
- * A multi-select toggle for a tile — a BUTTON that is a SIBLING of `.tile-primary`
+ * A multi-select toggle for a tile - a BUTTON that is a SIBLING of `.tile-primary`
  * (never nested inside it: an interactive control inside the tile's <button> lets
  * Space/Enter double-fire the open action). Opt-in via the tile builders' `selectable`
  * opt, so the folder overlay / picker (which don't pass it) are unaffected. State is on
@@ -101,7 +101,7 @@ function selectToggle(ref: string, kind: string, selected: boolean, name: string
 export function fmtBadge(format: string | null | undefined): string {
   return format ? `<span class="tile-badge tile-badge--fmt">${escape(fmtLabel(format))}</span>` : '';
 }
-// The canvas size chip — "1080×1080 px" / "210×297 mm". Pixels are rounded (they're
+// The canvas size chip - "1080×1080 px" / "210×297 mm". Pixels are rounded (they're
 // integers anyway); a physical unit keeps its authored precision so "8.5×11 in" isn't
 // mangled to "9×11". Mirrors the gallery card's dimText.
 export function dimBadge(w: number | string | undefined, h: number | string | undefined, unit: string | undefined): string {
@@ -136,7 +136,7 @@ export interface SessionTileOpts {
  * A saved session tile.
  * @param entry  host.state.list() row: { slot, toolId, label, filename, thumb, updatedAt }
  * @param opts   { toolName, sizeBytes, meta:{ format, width, height, rowCount },
- *                 tool } — `tool` is the tool's catalog index entry
+ *                 tool } - `tool` is the tool's catalog index entry
  *                 ({ formats, width, height, unit, exportable }); it supplies the
  *                 tool's INTENDED output (format + canvas size) so the tile reads the
  *                 same "what you'll get" spec as the gallery card. Explicit `meta`
@@ -156,7 +156,7 @@ export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0,
 
   // Intended output spec, drawn from the tool's index entry (primary format + canvas
   // size at its unit). Non-exportable transforms (strip-data etc.) have no fixed
-  // output, so they show nothing — matching how the gallery drops the spec line.
+  // output, so they show nothing - matching how the gallery drops the spec line.
   // Falls back to the filename extension only when the tool isn't in the index.
   const exportable = tool ? tool.exportable !== false : true;
   let format = '', width: number | string | undefined, height: number | string | undefined, unit: string | undefined;
@@ -186,7 +186,7 @@ export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0,
   });
 }
 
-/** Options for {@link imageTile} — the Projects grid opts in to selection; the folder
+/** Options for {@link imageTile} - the Projects grid opts in to selection; the folder
  *  overlay / picker leave both false (unchanged). */
 export interface ImageTileOpts {
   selectable?: boolean;
@@ -262,11 +262,11 @@ export function folderTile(folder: { id: string; name: string; items?: readonly 
 // ── Rows ──────────────────────────────────────────────────────────────────
 // A row is the same domain object as sessionTile() (thumb + title + subtitle +
 // bytes, plus a batch variant) laid out as a compact list row instead of a grid
-// tile — the gallery's per-tool history list and the profile Storage manager's
+// tile - the gallery's per-tool history list and the profile Storage manager's
 // session list (component-audit rec 6). The two callers differ in chrome (a
 // full-row open/resume trigger vs a leading select checkbox; an inline "batch"
 // pill vs folding it into the subtitle text; which HTML tag carries the title,
-// since each view's own stylesheet still keys off that tag) — kept as slots/opts
+// since each view's own stylesheet still keys off that tag) - kept as slots/opts
 // here rather than forked implementations. `rowClass`/`thumbClass`/etc. are each
 // view's own CSS hook so their existing stylesheets keep matching unchanged.
 function clsAttr(c: string | undefined): string {
@@ -275,11 +275,11 @@ function clsAttr(c: string | undefined): string {
 
 /** Options for {@link sessionRow}. */
 export interface SessionRowOpts {
-  /** Class(es) on the <li> — each view's own CSS hook (e.g. 'saved-row saved-row--batch' / 'store-sess'). */
+  /** Class(es) on the <li> - each view's own CSS hook (e.g. 'saved-row saved-row--batch' / 'store-sess'). */
   rowClass: string;
   /** Extra raw (already-escaped) attribute(s) on the <li>, e.g. `data-search="…"`. */
   rowAttrs?: string;
-  /** Base thumb class — a plain <img> gets exactly this. */
+  /** Base thumb class - a plain <img> gets exactly this. */
   thumbClass: string;
   /** Extra raw attrs on the <img> thumb (views differ: aria-hidden vs loading="lazy"). */
   thumbImgAttrs?: string;
@@ -324,7 +324,7 @@ export interface SessionRowOpts {
 }
 
 /**
- * One saved-session ROW (as opposed to {@link sessionTile}'s grid tile) — the
+ * One saved-session ROW (as opposed to {@link sessionTile}'s grid tile) - the
  * shared shape behind the gallery's per-tool history list and the profile
  * Storage manager's session list. Resolves the batch/thumb/size fallback chain
  * once; each caller supplies its own CSS-hook classes and opts into the

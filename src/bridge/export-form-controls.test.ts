@@ -5,7 +5,7 @@
  * form-controls.test.ts already pins WHAT a control says, DOM-free. This suite covers
  * the half a browser is genuinely required for: that the text reaches the output at
  * the right place, that it is clipped to the field, and that the walker does not draw
- * a second widget on top of one CSS has already styled — which is every control in
+ * a second widget on top of one CSS has already styled - which is every control in
  * this app, so a regression there would double-paint the entire sidebar.
  *
  * Real Chromium, self-skipping when one isn't installed (tests/README.md).

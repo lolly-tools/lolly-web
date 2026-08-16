@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Live-capture video export — records the ON-SCREEN preview through a screen
+ * Live-capture video export - records the ON-SCREEN preview through a screen
  * share, so the finished clip's frame pacing matches what the user actually
  * watched. The offline renderVideo path re-renders each frame deterministically;
  * this path is the opt-in alternative for "I want exactly what I'm seeing"
- * (chosen via the export panel's "Record live" toggle — never the default).
+ * (chosen via the export panel's "Record live" toggle - never the default).
  *
  * Three tiers, one recorder:
  *  - Element Capture (Chromium 132+, self-tab share): RestrictionTarget/restrictTo
- *    crops to the stage AND excludes occluding content — page chrome, toasts, our
+ *    crops to the stage AND excludes occluding content - page chrome, toasts, our
  *    own countdown pill can never land in the clip. Verified with a black-frame
  *    probe (an ineligible element yields black frames, which we must not ship).
  *  - Region Capture (Chromium 104+, self-tab share): CropTarget/cropTo crops the
- *    track to the stage box — pixel-exact and element-following, but occluders
+ *    track to the stage box - pixel-exact and element-following, but occluders
  *    inside the box still record, so overlapping chrome is hidden for the take.
  *  - Everywhere else (Safari/Firefox, or a window/monitor share): the browser
  *    can't crop, so the stage is located IN the shared picture: a short "setting
- *    the stage" flash (solid magenta, then solid green — ~700ms, dressed as a
+ *    the stage" flash (solid magenta, then solid green - ~700ms, dressed as a
  *    camera-flash moment with a caption pill and an iris-wipe reveal) is found in
  *    the incoming frames by live-capture-detect.ts, and every subsequent
  *    compositor frame is drawn cropped onto a canvas whose captureStream feeds
@@ -28,7 +28,7 @@
  *    change dimensions mid-take. settleLayout() waits for the stage rect to
  *    stop moving before anything is measured or recorded.
  *  - App chrome that hovers over the stage (the zoom HUD) opts in to hiding via
- *    the [data-live-hide] attribute — the rule ships in this module's injected
+ *    the [data-live-hide] attribute - the rule ships in this module's injected
  *    <style>, so it applies for exactly the take and can't leak.
  *  - The countdown pill only mounts where it cannot be recorded: fully outside
  *    the stage rect, or anywhere under the occlusion-safe tier. When there's no
@@ -36,7 +36,7 @@
  *    the export button instead.
  *
  * Frames are delivered by requestVideoFrameCallback (rAF fallback), so the
- * recording keeps the compositor's real cadence — including any jank the user
+ * recording keeps the compositor's real cadence - including any jank the user
  * saw. Lazy-loaded from export.ts only when the option is used.
  */
 
@@ -68,10 +68,10 @@ type DisplayRequest = NonNullable<Parameters<MediaDevices['getDisplayMedia']>[0]
 
 const MAGENTA = '#ff00ff';
 const GREEN = '#00ff00';
-const MIN_HOLD_MS = 240;        // each flash colour stays up at least this long — the pop should read, not strobe
+const MIN_HOLD_MS = 240;        // each flash colour stays up at least this long - the pop should read, not strobe
 const LOCATE_TIMEOUT_MS = 2600; // give a slow compositor ~2 full pulse cycles before giving up
 const AUDIO_BITRATE = 128_000;  // matches the offline export path's bed rate
-const PILL_H = 34;              // pill box height incl. padding — placement math only
+const PILL_H = 34;              // pill box height incl. padding - placement math only
 const PILL_GAP = 12;
 
 const NOT_FOUND_MSG =
@@ -118,11 +118,11 @@ async function settleLayout(stage: Element, maxMs = 1500): Promise<DOMRect> {
 }
 
 /**
- * True when the restricted track is producing effectively black frames — the
+ * True when the restricted track is producing effectively black frames - the
  * Element Capture failure mode for an ineligible element (the API substitutes
  * black rather than throwing). Samples a coarse grid over two frames. A tool
  * whose canvas is genuinely near-black trips this too and falls back to the
- * cropTo tier — a cosmetic downgrade (occluders record), never a black clip.
+ * cropTo tier - a cosmetic downgrade (occluders record), never a black clip.
  */
 async function looksBlack(video: RvfcVideo): Promise<boolean> {
   const c = document.createElement('canvas');
@@ -181,7 +181,7 @@ function mountLiveOverlay(rect: DOMRect, o: { withPanel: boolean; allowInsidePil
     root.appendChild(panel);
   }
 
-  // Pill placement: fully BELOW or fully ABOVE the stage rect — never overlapping
+  // Pill placement: fully BELOW or fully ABOVE the stage rect - never overlapping
   // it, because both crop tiers record anything inside the box. Under the
   // occlusion-safe tier an inside-top fallback is allowed (it can't be recorded);
   // otherwise, no safe spot → no pill (the export button carries the countdown).
@@ -218,7 +218,7 @@ function mountLiveOverlay(rect: DOMRect, o: { withPanel: boolean; allowInsidePil
       panel.style.setProperty('--lc-glow', `${css}66`);
     },
     caption(text: string, tone: 'stage' | 'rec' = 'stage'): void {
-      if (!txt || !dot) return;                   // pill had no capture-safe spot — button carries the text
+      if (!txt || !dot) return;                   // pill had no capture-safe spot - button carries the text
       txt.textContent = text;
       dot.style.background = tone === 'rec' ? '#ef4444' : '#fbbf24';
     },
@@ -234,7 +234,7 @@ function mountLiveOverlay(rect: DOMRect, o: { withPanel: boolean; allowInsidePil
       await new Promise<void>(r => {
         const done = (): void => { p.remove(); r(); };
         p.addEventListener('transitionend', done, { once: true });
-        setTimeout(done, 320);                    // fallback — never hang the export on a lost event
+        setTimeout(done, 320);                    // fallback - never hang the export on a lost event
       });
     },
     remove(): void { root.remove(); },
@@ -268,7 +268,7 @@ async function locateStage(video: RvfcVideo, overlay: LiveOverlay): Promise<Rect
       return scaleRect(found, video.videoWidth / sw, video.videoHeight / sh, video.videoWidth, video.videoHeight);
     }
     if (!onGreen && locator.phase === 'seek-b' && elapsed >= MIN_HOLD_MS) {
-      onGreen = true;                             // magenta has been READ — flash to the confirm colour
+      onGreen = true;                             // magenta has been READ - flash to the confirm colour
       overlay.setColor(GREEN);
     }
   }
@@ -322,8 +322,8 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
     const request: DisplayRequest & Record<string, unknown> = {
       video: { frameRate: { ideal: 60 } },
       audio: false,
-      // Chromium picker hints (ignored elsewhere): lead with this tab — the only
-      // surface that can be cropped exactly — and disallow mid-take switching.
+      // Chromium picker hints (ignored elsewhere): lead with this tab - the only
+      // surface that can be cropped exactly - and disallow mid-take switching.
       preferCurrentTab: true,
       selfBrowserSurface: 'include',
       surfaceSwitching: 'exclude',
@@ -334,7 +334,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
     if (!track) throw new Error('The screen share provided no video.');
     try { track.contentHint = 'motion'; } catch { /* hint only */ }
 
-    // Granting the share moves the layout (Chrome's tab banner) — wait it out,
+    // Granting the share moves the layout (Chrome's tab banner) - wait it out,
     // THEN measure. Everything below uses the settled rect.
     const rect = await settleLayout(stage);
     const onScreen = rect.width > 4 && rect.height > 4 &&
@@ -343,7 +343,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
 
     const isSelfTab = track.getSettings().displaySurface === 'browser';
 
-    // Tier 0 — Element Capture: crop AND occlusion exclusion. Forcing a stacking
+    // Tier 0 - Element Capture: crop AND occlusion exclusion. Forcing a stacking
     // context (isolation) satisfies the API's main eligibility rule; the black-
     // frame probe catches the rest (ineligibility substitutes black frames).
     let occlusionSafe = false;
@@ -364,7 +364,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
       else if (stageStyle) disposers.push(() => { stageStyle.isolation = prevIsolation; });
     }
 
-    // Tier 1 — Region Capture: exact element crop, occluders still visible (the
+    // Tier 1 - Region Capture: exact element crop, occluders still visible (the
     // overlay's [data-live-hide] rule hides the app's stage chrome for the take).
     let cropped = occlusionSafe;
     if (!cropped && isSelfTab) {
@@ -384,7 +384,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
     if (cropped) {
       recStream = new MediaStream([track]);
     } else {
-      // Tier 2 — flash, find, crop. The video element decodes the share for both
+      // Tier 2 - flash, find, crop. The video element decodes the share for both
       // the locator and the per-frame crop pump.
       const video = await openVideo(display);
       disposers.push(() => { video.pause(); video.srcObject = null; });
@@ -398,7 +398,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
     if (opts.audioTrack) recStream.addTrack(opts.audioTrack);
 
     // Drifting mid-take is unrecoverable for tier 2 (the crop rect is fixed in
-    // screen space) and merely unnecessary for the element tiers — warn either way.
+    // screen space) and merely unnecessary for the element tiers - warn either way.
     const onScroll = (): void => opts.onWarn?.('Page scrolled during the live recording — the canvas may drift out of frame.');
     const onVis = (): void => {
       if (document.hidden) opts.onWarn?.('Tab hidden during the live recording — frames freeze while it is not visible.');
@@ -445,7 +445,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
         if (left <= 0) { clearInterval(timer); stop(); }
       }, 250);
       tick(opts.durationMs);
-      // The browser's own "Stop sharing" bar ends the track without telling us —
+      // The browser's own "Stop sharing" bar ends the track without telling us - 
       // finish the take with what's recorded rather than stranding it.
       track.addEventListener('ended', () => { clearInterval(timer); stop(); }, { once: true });
     });

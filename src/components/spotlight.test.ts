@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight overlay — the plans/99 M2 contract.
+ * The spotlight overlay - the plans/99 M2 contract.
  *
  * Run directly:  node --import ./tests/css-stub.mjs --test shells/web/src/components/spotlight.test.ts
  *
  * jsdom, with the real search-bar singleton wired in front (typing in the bar
- * is how every query reaches the overlay — the same path production uses) and
+ * is how every query reaches the overlay - the same path production uses) and
  * FAKE providers swapped in via the registry's resetProviders() seam. The
  * spotlightSeams are overridden up front: jsdom's location.assign throws,
  * window.open is inert, and the default provider chunk is another builder's
- * file — none of them belong in this suite.
+ * file - none of them belong in this suite.
  *
  * Covered: the MIN_QUERY_LENGTH gate; group order + the §2a own-domain lead
  * (own group hoisted first + brand-highlighted, both tiers); the 5/8 caps; the see-all handoff
@@ -30,7 +30,7 @@ globalThis.localStorage = dom.window.localStorage;
 // activate() reads location.hash for the remount special case; the DEFAULT
 // navigate seam (not used here) would write it too.
 (globalThis as { location?: Location }).location = dom.window.location as unknown as Location;
-// The remount special case dispatches `new Event(...)` — Node's own global
+// The remount special case dispatches `new Event(...)` - Node's own global
 // Event isn't a jsdom Event, and dom.window.dispatchEvent refuses it.
 (globalThis as { Event?: typeof Event }).Event = dom.window.Event as unknown as typeof Event;
 (globalThis.window as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia =
@@ -44,7 +44,7 @@ type SearchProvider = import('../lib/search/registry.ts').SearchProvider;
 type SearchGroupId = import('../lib/search/registry.ts').SearchGroupId;
 const { SEARCH_DEBOUNCE_MS } = await import('../lib/search/match.ts');
 
-// Seam overrides BEFORE boot — the provider chunk never loads, navigation is
+// Seam overrides BEFORE boot - the provider chunk never loads, navigation is
 // recorded instead of performed.
 const navigations: string[] = [];
 const tabs: string[] = [];
@@ -164,7 +164,7 @@ test('live-adapt route (gallery): the own group hoists first and is brand-highli
   applySearchBarRoute('search', 'gallery');
   type('ab');
   await settle();
-  // gallery's own domain is tools — hoisted to the top so its results lead the
+  // gallery's own domain is tools - hoisted to the top so its results lead the
   // panel even when it occludes the live-filtered cards behind (§2a).
   assert.deepEqual(groupLabels(), ['Tools', 'Projects', 'Settings']);
   // ...and marked for the brand highlight: the own label + only the own rows.
@@ -198,8 +198,8 @@ test('caps: 8 for the own group on an overlay route, 5 for the rest — and the 
   await settle();
   const settingsRows = rows().filter((r) => r.textContent!.includes('settings hit'));
   const toolsRows = rows().filter((r) => r.textContent!.includes('tools hit'));
-  assert.equal(settingsRows.length, OWN_GROUP_CAP); // 8 — hoisted own group
-  assert.equal(toolsRows.length, GROUP_CAP);        // 5 — everyone else
+  assert.equal(settingsRows.length, OWN_GROUP_CAP); // 8 - hoisted own group
+  assert.equal(toolsRows.length, GROUP_CAP);        // 5 - everyone else
   assert.deepEqual(settingsLimits, [OWN_GROUP_CAP]);
   assert.deepEqual(toolsLimits, [GROUP_CAP]);
   clearSearchBar();
@@ -289,7 +289,7 @@ test('a see-all activation navigates plainly — no lolly:remount even on #/p (t
   dom.window.addEventListener('lolly:remount', onRemount);
   // The old build forced a remount for the #/p → #/p?q= handoff because the
   // projects signature keyed on folderId alone; routeSignature now folds the
-  // ?q= param in (main.ts), so a plain hash navigation remounts by itself —
+  // ?q= param in (main.ts), so a plain hash navigation remounts by itself - 
   // and Back out of results mode does too. The overlay must NOT dispatch.
   dom.window.location.hash = '#/p';
   type('ab');
@@ -322,7 +322,7 @@ test('a slow superseded response is discarded — the newer query keeps the pane
   });
   applySearchBarRoute('search', 'profile');
   type('aa');
-  await settle(); // query 1 in flight, unresolved — nothing painted yet
+  await settle(); // query 1 in flight, unresolved - nothing painted yet
   assert.equal(isOpen(), false);
   type('aab');
   await settle(); // query 2 in flight
@@ -331,7 +331,7 @@ test('a slow superseded response is discarded — the newer query keeps the pane
   await tick();
   assert.equal(isOpen(), true);
   assert.ok(panel()!.textContent!.includes('FRESH'));
-  // The first (stale) query resolves late — it must not repaint.
+  // The first (stale) query resolves late - it must not repaint.
   resolvers[0]!([{ icon: '', title: 'STALE', href: '#/stale', score: 1 }]);
   await tick();
   assert.ok(panel()!.textContent!.includes('FRESH'));

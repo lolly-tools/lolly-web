@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Worker offload of the sequence compositor (phase 4 Track B) — the headless tier.
+ * Worker offload of the sequence compositor (phase 4 Track B) - the headless tier.
  *
  * The pixels and the bytes still belong to the browser tier
  * (tests/sequence-render.browser.test.ts), and phase 3's determinism harness is
  * what pins frame-exactness. What node CAN prove, and what this file asserts, is
  * everything around the offload:
  *
- *   • THE SPLIT RULE — a sequence with no live-raster layer never asks the main
+ *   • THE SPLIT RULE - a sequence with no live-raster layer never asks the main
  *     thread for anything (100 % worker-side); one with a lottie layer asks
  *     exactly once per active frame, with at most ONE request in flight, and
  *     releases every image it was handed.
- *   • THE MESSAGE PROTOCOL — `handleStart` driven against a stub port and stub
+ *   • THE MESSAGE PROTOCOL - `handleStart` driven against a stub port and stub
  *     encoder: start → progress ×N → done, log passthrough, need-live/live
  *     round trips, and a failure that aborts the muxer instead of posting bytes.
- *   • CAPABILITY GATING AND FALLBACK — `supportsWorkerSequenceRender()` is false
+ *   • CAPABILITY GATING AND FALLBACK - `supportsWorkerSequenceRender()` is false
  *     the moment any piece is missing, and a NON-coded worker failure is
  *     distinguishable from a coded one (only the former may be retried
  *     in-thread; retrying a SEQ_TRUNCATED would just be slower).
- *   • ABORT TEARDOWN — the abort message reaches the worker, the run rejects
+ *   • ABORT TEARDOWN - the abort message reaches the worker, the run rejects
  *     coded, and the thread is terminated rather than leaked.
  *
- *   • DETERMINISM BY CONSTRUCTION — the source guard at the end. The worker path
+ *   • DETERMINISM BY CONSTRUCTION - the source guard at the end. The worker path
  *     and the in-thread path cannot drift because there is only ONE compositor:
  *     `drawItem` and the frame loop exist in exactly one file, and both hosts
  *     call `runSequenceJob`.
@@ -79,7 +79,7 @@ const strip = (src: string): string => src
 
 // ── stubs ───────────────────────────────────────────────────────────────────
 
-/** A 2D context that records nothing but never throws — the compositor's calls
+/** A 2D context that records nothing but never throws - the compositor's calls
  *  are proven by the browser tier; here only the CONTROL FLOW around them matters. */
 function stubCtx(): AnyCtx & { draws: unknown[] } {
   const draws: unknown[] = [];
@@ -232,7 +232,7 @@ test('a camera layer contributes zero draws (plans/104 §5.4)', async () => {
   assert.equal(plan.length, 1, 'it is still a timeline citizen — the camera IS the pose');
   assert.equal(plan[0]!.dx, 0, 'and it is never posed itself');
   // A real plate would still be a no-op here (`under` is null), so the guard is
-  // asserted against a layer that HAS one — the only way to tell the two apart.
+  // asserted against a layer that HAS one - the only way to tell the two apart.
   const plate = { under: {} as CanvasImageSource, over: null, provider: null, objectFit: '', objectPosition: '', live: null, first: 0, last: 0, span: [], lastStats: null, srcClaimedSec: 0 };
   for (const item of plan) await drawItem(ctx, item, plate as never, 1);
   assert.deepEqual(ctx.draws, [], 'and it paints nothing at all');
@@ -353,7 +353,7 @@ test('itemFx IS the gate: OWNERSHIP first, then blur × S', () => {
     'a blurred box with no depth: the plate still carries it');
   assert.equal(itemFx(planOne(layer({ shadowFilter: 'drop-shadow(0px 4px 10px #000)' })), 2), null,
     'and so does a shadowed one');
-  // Ownership moves the moment the box authors depth — that is when the plate is shot
+  // Ownership moves the moment the box authors depth - that is when the plate is shot
   // clean, and the two decisions are the same predicate (`ownsLayerFx`).
   const blurred = itemFx(planOne(layer({ blur: 3, z: 60 })), 2);
   assert.equal(blurred?.sigma, 6, 'the blur is authored px × the export scale');
@@ -395,8 +395,8 @@ test('BYTE-IDENTITY FLOOR: a clean layer takes today\'s exact path, and asks for
 test('BYTE-IDENTITY FLOOR: the gate is blur + authored filter and NOTHING else', async () => {
   const { made, done } = useScratches();
   try {
-    // Everything else a depth document can carry — a z, a keyframe track that moves the
-    // box, a resolved depth — still leaves a layer CLEAN as far as the compositor is
+    // Everything else a depth document can carry - a z, a keyframe track that moves the
+    // box, a resolved depth - still leaves a layer CLEAN as far as the compositor is
     // concerned: those change the numbers, not the pass structure.
     const w = layer({ z: 120, kf: kfTrackOf('t0_x0*t1000_x60') });
     const item = planOne(w, 500);
@@ -404,7 +404,7 @@ test('BYTE-IDENTITY FLOOR: the gate is blur + authored filter and NOTHING else',
     assert.equal(item.blur, 0);
     const ctx = opCtx();
     await drawItem(ctx, item, RES(), 1);
-    // `scale` is there because a lifted box really is magnified by the projection —
+    // `scale` is there because a lifted box really is magnified by the projection - 
     // that is a NUMBER changing, which is the feature working. What must not change is
     // the PASS STRUCTURE: still one unclipped draw straight at the destination.
     assert.deepEqual(ctx.names(), ['save', 'translate', 'scale', 'drawImage', 'restore']);
@@ -425,7 +425,7 @@ test('a BLURRED layer clips into a padded scratch and composites UNCLIPPED (§5.
     // The destination never clips. That is the whole point: the DOM clips the CONTENT
     // and applies the filter after, so the blur spills softly OUTSIDE the radius.
     assert.ok(!ctx.names().includes('clip'), 'the composite is unclipped');
-    // `scale` is the projection magnifying a lifted box — a number changing, not a
+    // `scale` is the projection magnifying a lifted box - a number changing, not a
     // pass appearing.
     assert.deepEqual(ctx.names(), ['save', 'translate', 'scale', 'drawImage', 'restore']);
     // The clip happened on the scratch instead, inside the pad translate.
@@ -452,7 +452,7 @@ test('clipPath + shadow: the clip shapes the content AND cuts the shadow (CSS or
     const item = planOne(layer({ clipPath: 'circle(40%)', shadowFilter: shadow, z: 60 }));
     await withPath2D(async () => { await drawItem(ctx, item, RES(), 1); });
     // THE TWO CLIP KINDS ARE NOT THE SAME ORDER. `border-radius` clips the element's
-    // content and the filter applies after (spill escapes the radius — the test above).
+    // content and the filter applies after (spill escapes the radius - the test above).
     // `clip-path` applies to the FILTER OUTPUT: Filter Effects renders, filters, THEN
     // clips, so the browser cuts the drop-shadow off at the path. The DOM evaluator
     // writes `filter` on the element and inherits that order for free, so the canvas
@@ -493,7 +493,7 @@ test('a SHADOWED layer with no blur takes the same restructure', async () => {
 // the pixels themselves.
 
 /**
- * Work done ON scratches, not scratches ALLOCATED — the pool re-uses a canvas across
+ * Work done ON scratches, not scratches ALLOCATED - the pool re-uses a canvas across
  * frames (that is what it is for), so a second allocation is not what "the filter ran
  * again" looks like. A recorded op on a scratch is.
  */
@@ -536,7 +536,7 @@ test('fx cache: the second frame re-composites the SAME canvas with the SAME dra
     assert.deepEqual(drawB[0]?.args, drawA[drawA.length - 1]?.args);
     assert.deepEqual(b.names(), a.names(), 'and the same call list around it');
     // The transform is written on the DESTINATION, so the cached canvas is free to be
-    // drawn under a different one — which is what makes a moving camera cheap.
+    // drawn under a different one - which is what makes a moving camera cheap.
     const moved = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
     const c = opCtx();
     await drawItem(c, moved, res, 1);
@@ -698,7 +698,7 @@ test('a padded PLATE is drawn back at its own origin, on both paths', async () =
 test('a filtered layer blurs at the PLATE\'s resolution, not at S', async () => {
   // The budget shoots a lifted layer's plate at `S·eff` precisely so a flown-past layer
   // is not a blown-up S-resolution plate. The filtered path composites through a
-  // scratch — and a scratch sized in S px resampled the plate DOWN to S, blurred it
+  // scratch - and a scratch sized in S px resampled the plate DOWN to S, blurred it
   // there, and let `ctx.scale(item.scale)` blow the result back up, throwing away
   // exactly the resolution that was paid for on exactly the layers (lifted,
   // depth-shadowed) that asked for it.
@@ -746,7 +746,7 @@ test('a filtered layer is composited back at exactly its box rect, whatever the 
     const stage = made[0];
     assert.ok(stage);
     // The draw happens inside `ctx.scale(item.scale)`, so dividing the scratch's own px
-    // by k puts one scratch px on one device px — the content lands at (ox, oy, w, h)
+    // by k puts one scratch px on one device px - the content lands at (ox, oy, w, h)
     // with the spill around it, which is what the k = 1 form always did.
     assert.deepEqual(ctx.ops.find((o) => o.op === 'drawImage')?.args,
       [-50 - pad / k, -50 - pad / k, stage.width / k, stage.height / k]);
@@ -768,7 +768,7 @@ test('an empty clip draws nothing — and costs no scratch', async () => {
 test('DETERMINISM: the executor draws the same job the same way, every run', async () => {
   // Worker and in-thread are the SAME function (the source guard below proves there is
   // only one), so what remains provable here is that the function itself is
-  // deterministic — including through the restructured path, which allocates, pools and
+  // deterministic - including through the restructured path, which allocates, pools and
   // recycles scratches. A pool that leaked state between runs would show up here.
   const runOnce = async (): Promise<string> => {
     const { done } = useScratches();
@@ -864,7 +864,7 @@ test('protocol: a live-raster layer emits need-live with a fresh token, and the 
 
 test('protocol: the transferred plates are closed even when SETUP fails', async () => {
   // The plates were TRANSFERRED, so this thread is their only owner. A throw from
-  // getContext / createStreamingMux — both of which run before the frame loop —
+  // getContext / createStreamingMux - both of which run before the frame loop - 
   // used to skip the close entirely, stranding ~170 MB of native bitmap memory
   // for a 1080p ten-layer job, once per failed attempt.
   let closed = 0;
@@ -899,7 +899,7 @@ test('isOffloadFailure: an uncoded throw is the offload; a coded verdict is not'
 test('two OVERLAPPING runs cannot resolve each other\'s live rasters', async () => {
   // The corruption this guards: both runs mint tokens 1, 2, 3… A single-slot
   // worker resolves run 1's waiter with run 2's frame, so run 1 silently
-  // composites the WRONG lottie picture — wrong pixels, no error, and the
+  // composites the WRONG lottie picture - wrong pixels, no error, and the
   // in-run uniqueness the older test asserts is exactly the property that does
   // not hold across runs.
   const reg = createRunRegistry();
@@ -1062,7 +1062,7 @@ test('fallback: a NON-coded worker failure is retryable in-thread; a coded one i
   assert.ok(e1 instanceof SequenceError, 'a coded verdict crosses the boundary as a SequenceError');
   assert.equal((e1 as SequenceError).code, 'SEQ_TRUNCATED');
 
-  // The SAME worker is reused after a coded verdict — nothing was wrong with it.
+  // The SAME worker is reused after a coded verdict - nothing was wrong with it.
   const p2 = renderSequenceInWorker(j, PICK, 1000, null, null, emptyIo);
   await new Promise((r) => setTimeout(r, 0));
   const w2 = FakeWorker.last!;
@@ -1077,8 +1077,8 @@ test('fallback: a NON-coded worker failure is retryable in-thread; a coded one i
 
 test('fallback: a coded error the worker TAGGED as an offload failure still retries in-thread', async () => {
   // The case that made the fallback unreachable before `offload` existed:
-  // `toCodedError` has no uncoded outcome, so a muxer the worker could not build —
-  // or the element-seek provider it structurally cannot run — arrived as
+  // `toCodedError` has no uncoded outcome, so a muxer the worker could not build - 
+  // or the element-seek provider it structurally cannot run - arrived as
   // SEQ_DECODE_FAILED / SEQ_UNSUPPORTED_MEDIA and read as the render's verdict.
   useFakeWorker();
   const p = renderSequenceInWorker(job([layer()]), PICK, 1000, null, null, emptyIo);
@@ -1129,7 +1129,7 @@ test('abort teardown: the worker is told, the run rejects coded, and the thread 
   // Terminating in the SAME task would mean the worker never even dequeues the
   // abort we just posted, making every cancel a hard kill mid-decode. It is given
   // one grace period to dispose its decoders and abort its muxer, and is then
-  // killed regardless — the thread is never leaked.
+  // killed regardless - the thread is never leaked.
   assert.equal(w.terminated, 0, 'not killed before it can act on the abort');
   await new Promise((r) => setTimeout(r, SEQ_ABORT_GRACE_MS + 20));
   assert.equal(w.terminated, 1, 'and the thread is not leaked even if it never answers');
@@ -1156,7 +1156,7 @@ test('contract: there is exactly ONE compositor, so the two paths cannot drift',
   // The two drawImage calls left in sequence-render.ts both move ALREADY-COMPOSED
   // frames about; neither composes one. The first is the MediaRecorder fallback's
   // replay (a playback pump); the second is P2a's tilt capture blitting one
-  // dom-to-image photograph of the live artboard onto the output canvas — the browser
+  // dom-to-image photograph of the live artboard onto the output canvas - the browser
   // did the compositing there, which is the whole point of that tier (a homography has
   // no affine spelling, so `drawItem` could not have drawn it).
   const paints = render.match(/ctx\.drawImage\(/g) ?? [];
@@ -1213,7 +1213,7 @@ test('the CAMERA crosses the wire as a layer, and both threads derive it the sam
 
 test('drawItem: `cameraMoves` reaches itemFx, so a flat shadowed layer is compositor-owned', () => {
   // P1 obligation 1, at the third obeying site. Without the parameter a camera-moved
-  // flat layer's filter is baked into its plate AND left un-owned by the executor —
+  // flat layer's filter is baked into its plate AND left un-owned by the executor - 
   // correct today only because no camera exists.
   const shadowed = layer({ shadowFilter: 'drop-shadow(0px 12px 24px #00000055)' });
   assert.equal(itemFx(planOne(shadowed), 1), null, 'still: the plate keeps it');
@@ -1243,7 +1243,7 @@ test('§5.2 w/h: the draw is sized by the RESOLVED box, growing from the top-lef
 test('§5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot REFLOW)', async () => {
   // The Lottie machinery, reused: a stretched plate is a stretched picture, while the
   // preview rewraps its text and keeps its border one pixel wide. Parity beats speed,
-  // so the layer is re-photographed at the size of the moment — even though it is a
+  // so the layer is re-photographed at the size of the moment - even though it is a
   // STATIC box with no source time at all, which is why `sourceSec` is no longer part
   // of the gate.
   const sized = layer({ kind: 'static', kf: kfTrackOf('t0_el_w100*t1000_el_w400') });
@@ -1256,7 +1256,7 @@ test('§5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot
   };
   // The FRAME asks, not the wire flag. The main thread does set `needsLiveRaster` on a
   // sized layer (it computed the demands that decided so), but the executor must not
-  // depend on that: a job built by hand — or by an older main thread — would otherwise
+  // depend on that: a job built by hand - or by an older main thread - would otherwise
   // quietly lose the reflow and stretch one plate across the whole tween.
   await runSequenceJob(job([sized]), {} as AnyCanvas, stubCtx(), io);
   assert.equal(asked.length, 4, 'once per active frame, on `item.sized` alone');
@@ -1302,8 +1302,8 @@ test('§5.2 w/h: the live re-capture is the picture that gets DRAWN, on every ki
   });
   assert.deepEqual(ctxB.draws.map(tagOf), ['plate', 'plate', 'plate', 'plate']);
 
-  // A VIDEO layer is one box photographed TWICE — opaque with the media hidden, then
-  // transparent — because the decoded frame is composited between them. So a size tween
+  // A VIDEO layer is one box photographed TWICE - opaque with the media hidden, then
+  // transparent - because the decoded frame is composited between them. So a size tween
   // has to re-shoot both slots, or the stale `over` ghosts its text over the reflowed
   // copy in `under`.
   const clip = layer({ kind: 'video', kf: kfTrackOf('t0_el_w100*t1000_el_w400') });
@@ -1324,7 +1324,7 @@ test('§5.2 w/h: the live re-capture is the picture that gets DRAWN, on every ki
 });
 
 test('§5.5 bg: the projected plate is placed by ITS OWN size and the STAGE centre', async () => {
-  // The encoder's dimensions are `Math.round(…) & ~1` — forced even for the codecs —
+  // The encoder's dimensions are `Math.round(…) & ~1` - forced even for the codecs - 
   // while the plate is `Math.round((native + 2·bgPad)·S)` and every layer above is drawn
   // in native·S space. Deriving the bg draw from `outW` therefore assumed
   // `outW === nativeW·S`, which the even-rounding breaks by up to ~2 px: invisible as a

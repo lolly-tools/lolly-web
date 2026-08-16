@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * CaptureAPI + SiteTransport (web) — backed by the Lolly Chrome extension.
+ * CaptureAPI + SiteTransport (web) - backed by the Lolly Chrome extension.
  *
  * A browser page can't read a cross-origin URL, but the companion extension can.
  * When installed, its MAIN-world content script sets `window.__lollyCapture` so we
@@ -16,8 +16,8 @@
  *
  * Nothing here fetches anything itself, and there is no server path: the deployed
  * app's CSP `connect-src` allowlists six hosts, and by decision Lolly runs no
- * fetching service. Website ingest therefore exists only where a transport does —
- * this extension, or the Tauri shells' native fetch — and the Website source tile
+ * fetching service. Website ingest therefore exists only where a transport does - 
+ * this extension, or the Tauri shells' native fetch - and the Website source tile
  * is not rendered at all otherwise.
  *
  * See shells/chrome-extension/.
@@ -27,7 +27,7 @@ import type { CaptureAPI, AssetRef } from '@lolly-tools/core/host-v1';
 // The synchronous announcement half lives in its own leaf so boot-path callers
 // (bridge/index.ts's impl choice) can ask "is it here?" without pulling this
 // module's transport into the boot chunk. Re-exported below, so importers of
-// THIS module — which want the transport anyway — see no change.
+// THIS module - which want the transport anyway - see no change.
 import { SITE_PROTOCOL, hasCaptureExtension, hasSiteCapture } from './capture-extension-probe.ts';
 
 export { SITE_PROTOCOL, hasCaptureExtension, hasSiteCapture };
@@ -99,7 +99,7 @@ export function createExtensionCaptureAPI(): CaptureAPI {
 
 /** One file the transport fetched from the page: an icon, a logo, an og:image. */
 export interface SiteAsset {
-  /** Absolute URL it came from — the key the census matches its candidates on. */
+  /** Absolute URL it came from - the key the census matches its candidates on. */
   url: string;
   /** Content-Type as served, without parameters. May be '' if the server said nothing. */
   mime: string;
@@ -113,7 +113,7 @@ export interface SiteReadResult {
   /** Stylesheet text the markup does not already carry, in document order. */
   cssTexts: string[];
   assets: SiteAsset[];
-  /** Where the page actually ended up after redirects — the census's base URL. */
+  /** Where the page actually ended up after redirects - the census's base URL. */
   finalUrl: string;
   /** The page AS PAINTED, when asked for and available. Optional, always. */
   screenshotPng?: Uint8Array;
@@ -132,8 +132,8 @@ export interface SiteReadOptions {
 /**
  * A way to read one website, on the user's command.
  *
- * Implemented twice — here over the Chrome extension, and in the Tauri shells over
- * a native fetch — so the studio's website source depends on a capability, not on
+ * Implemented twice - here over the Chrome extension, and in the Tauri shells over
+ * a native fetch - so the studio's website source depends on a capability, not on
  * a platform. Both read ONE first-party URL: no crawling, no second hop, and
  * nothing at all until `read()` is called.
  */
@@ -199,14 +199,14 @@ function readCssTexts(raw: unknown): string[] {
 }
 
 /**
- * SiteTransport over the extension relay — the same one listener, one request id,
+ * SiteTransport over the extension relay - the same one listener, one request id,
  * removed on settle discipline as `page()` above.
  *
  * The default budget is generous because the extension's own is: it allows 30 s
  * for the page to load, a settle, then up to 20 s to read it, and a shorter
  * window here would give up while the extension was still working. It is only
- * ever the backstop for an extension that dies without answering — an evicted
- * MV3 service worker — which is why it is not tuned to the sum.
+ * ever the backstop for an extension that dies without answering - an evicted
+ * MV3 service worker - which is why it is not tuned to the sum.
  */
 export function createExtensionSiteTransport(): SiteTransport {
   return {

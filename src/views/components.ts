@@ -3,12 +3,12 @@
  * The browsable component library (#/components).
  *
  * A dev/design surface, off every hot path (lazy-loaded). It renders the shell's
- * components — a "Primitives" section for the shared layer a multi-wave refactor
+ * components - a "Primitives" section for the shared layer a multi-wave refactor
  * shipped (buttons.css, chips.css, lib/seg.ts, lib/icons.ts, mountModal,
  * mountZoomHud, mountViewTopbar, swatchTile, setTheme, wireTabs, sessionRow,
  * mountBodyPopover, backPillHtml, setupMobileSheet, staggerReveal, wireTileSelect,
  * .section-card, .note/.field-input), then the remaining
- * common-primitive families, then per-view — from the specimen data in
+ * common-primitive families, then per-view - from the specimen data in
  * components-data.ts (originally generated from the component-audit workflow;
  * hand-maintained since the refactor landed; the written analysis + per-rec
  * shipped status is plans/76-component-audit.md). Each specimen is shown live where
@@ -19,7 +19,7 @@
  * (R7) keep it from drifting away from the shell it documents: every `defined:`
  * path must resolve to a real file, and every class in a `css:` list must still
  * be live somewhere. `defined:` carries a path and the symbol name, never a line
- * number — those rotted on 65 of 70 entries before they were dropped.
+ * number - those rotted on 65 of 70 entries before they were dropped.
  *
  * The page has one nav affordance: a back control that returns you where you came
  * from IF you arrived from inside Lolly (cameFromApp → history.back()), else drops
@@ -32,7 +32,7 @@
 import '../styles/parts/components-lib.css';
 // The specimens borrow the app's own stylesheets. The globally-@imported parts
 // (components, gallery, topbar, catalog, dialogs, featured, folders, projects,
-// saved-list — see styles/app.css) are already present; these view-local sheets
+// saved-list - see styles/app.css) are already present; these view-local sheets
 // are not on the landing bundle, so pull them in for the samples that need them.
 import '../styles/parts/platform.css';
 import '../styles/parts/dashboard.css';
@@ -44,7 +44,7 @@ import '../styles/parts/profile.css';
 import '../styles/parts/start.css';
 import '../styles/parts/multi-edit.css';
 import '../styles/parts/valid.css';
-import '../styles/parts/editor.css'; // .stage-nav (the tool canvas's zoom HUD) — for the Zoom HUD live specimen
+import '../styles/parts/editor.css'; // .stage-nav (the tool canvas's zoom HUD) - for the Zoom HUD live specimen
 
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
@@ -91,7 +91,7 @@ const DEMO: PaletteEntry[] = [
   { hex: '#1b1b1b', label: 'Ink', cmyk: [0, 0, 0, 92], group: 'Neutral' },
 ];
 
-// A live-openable dialog trigger — the honest sample for an imperative component.
+// A live-openable dialog trigger - the honest sample for an imperative component.
 function triggerButton(label: string, onClick: () => void): HTMLElement {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'be-cta'; b.textContent = label;
@@ -101,7 +101,7 @@ function triggerButton(label: string, onClick: () => void): HTMLElement {
 
 /** The live renderers, keyed by the `live` tag in components-data.ts. Each returns
  *  an HTML string or a node; a `wire` runs after it's inserted. Only pure/wired
- *  components with a safe render path are here — everything else falls back to a
+ *  components with a safe render path are here - everything else falls back to a
  *  markup sample or a source snippet. */
 const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: HTMLElement) => void }> = {
   colorField: { render: () => colorFieldHtml('cl-color', '#30ba78', { inline: true, modes: true }), wire: (s) => wireColorField(s) },
@@ -217,7 +217,7 @@ const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: 
   },
 };
 
-// How a specimen is actually shown — not its nature, but what the card displays,
+// How a specimen is actually shown - not its nature, but what the card displays,
 // so the tag never says "live" over a source snippet. Live = rendered by a LIVE
 // renderer; sample = static markup; source = a host-bound call shown as code.
 type Mode = 'live' | 'sample' | 'source';
@@ -257,7 +257,7 @@ function specimenShell(s: Specimen, idx: number): string {
 const sectionId = (title: string): string => 'cl-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 // A `<dialog>` renders in the browser's top layer, which escapes the stage's
-// `contain` — a markup sample with a bare <dialog> would cover the whole page.
+// `contain` - a markup sample with a bare <dialog> would cover the whole page.
 // Reduce it to an in-flow element (its own classes still style the chrome) so it
 // previews as a contained card. Overlays that merely use `position: fixed` are
 // already trapped by the stage's containment and need no help.
@@ -269,7 +269,7 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
   document.title = 'Components — Lolly';
   viewEl.classList.add('cl-view', 'components-view');
 
-  // A flat, ordered list of every specimen with the section it belongs to — so the
+  // A flat, ordered list of every specimen with the section it belongs to - so the
   // stage-fill loop can address each by index without re-walking the tree.
   const flat: Specimen[] = AUDIT_SECTIONS.flatMap(sec => sec.items);
   let n = 0;
@@ -308,7 +308,7 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
 
   // Fill each stage. A live component renders through its LIVE renderer; a markup
   // specimen drops in its sample; a host-bound one shows its source snippet. Any
-  // throw shows the error rather than a silent empty box — this is a component
+  // throw shows the error rather than a silent empty box - this is a component
   // surface; failures are the point of looking.
   flat.forEach((item, i) => {
     const stage = viewEl.querySelector<HTMLElement>(`[data-cl-stage="${i}"]`);
@@ -323,7 +323,7 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
       } else if (item.markup) {
         stage.innerHTML = neutralizeMarkup(item.markup);
       } else if (item.code) {
-        // Needs the host bridge to run — show the call as a source snippet.
+        // Needs the host bridge to run - show the call as a source snippet.
         stage.classList.add('cl-stage--plain');
         stage.innerHTML = `<code class="cl-code">${escape(item.code)}</code>`;
       } else {
@@ -334,12 +334,12 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
     }
   });
 
-  // The one nav affordance — now the shared back pill, which already names and
+  // The one nav affordance - now the shared back pill, which already names and
   // returns to the view you arrived from (and falls back to the gallery on a cold
   // deep link), so this view no longer decides that for itself.
   mountBackPill(viewEl);
   // The always-home escape (a dev/design surface is deep-linkable, so it needs a
-  // way to the main app) plus the theme cycle — genuinely useful here for eyeing
+  // way to the main app) plus the theme cycle - genuinely useful here for eyeing
   // a specimen in light, dark and brand.
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);

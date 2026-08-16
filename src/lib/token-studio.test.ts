@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * token-studio.ts — the pure DTCG surgery behind the Start studio's Tokens tab.
+ * token-studio.ts - the pure DTCG surgery behind the Start studio's Tokens tab.
  *
  * Run with: node --test "shells/web/src/**\/*.test.ts"
  *
  * Exercised against the REAL shipped starter brand (brands/lolly-start) for the
- * layered-doc cases — a change to the token contract's set layout (base/light/
- * dark) fails here rather than silently writing tokens into the wrong set —
+ * layered-doc cases - a change to the token contract's set layout (base/light/
+ * dark) fails here rather than silently writing tokens into the wrong set - 
  * plus small synthetic docs for the flat/imported shapes.
  */
 
@@ -26,7 +26,7 @@ import type { StudioKind, StudioToken, GradientStop } from './token-studio.ts';
 const BRAND = fileURLToPath(
   new URL('../../../../brands/lolly-start/catalog/assets/lolly/tokens/brand.json', import.meta.url),
 );
-/** A fresh deep clone per test — every helper mutates in place. */
+/** A fresh deep clone per test - every helper mutates in place. */
 const load = (): Record<string, unknown> => JSON.parse(readFileSync(BRAND, 'utf8'));
 
 const KINDS: StudioKind[] = ['spacing', 'sizing', 'stroke', 'opacity', 'rotation', 'number', 'shadow', 'gradient'];
@@ -338,7 +338,7 @@ test('gradient stops accept {alias} colours; an angle-only edit round-trips them
     { color: '#ffffff', position: 1 },
   ]);
   // The write gate: an angle-only edit sends the STORED stops back through
-  // readGradientInput → normStops — aliases must survive verbatim.
+  // readGradientInput → normStops - aliases must survive verbatim.
   const stored = leafAt(doc, p)!.$value as GradientStop[];
   assert.equal(setStudioTokenValue(doc, p, { stops: stored, angle: 90 }), true);
   assert.deepEqual(leafAt(doc, p)!.$value, [

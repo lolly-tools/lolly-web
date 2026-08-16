@@ -5,7 +5,7 @@
  * The governing rule is the one that keeps this safe: a RAMP never crosses hue families
  * (interpolating green→blue→orange is what produced the off-brand pinks), while the
  * CONTRAST colour deliberately does come from a distant hue because it's drawn as a
- * separate role rather than blended into the ramp. Both halves are asserted here — a
+ * separate role rather than blended into the ramp. Both halves are asserted here - a
  * regression in either direction is invisible in code and obvious on screen.
  */
 import { test } from 'node:test';
@@ -37,7 +37,7 @@ test('a rich brand yields several distinct schemes', () => {
   const s = deriveVizSchemes(SUSE, SUSE_NAMES, '#30ba78');
   assert.ok(s.length >= 3, `expected several schemes, got ${s.length}`);
   assert.equal(new Set(s.map((x) => x.id)).size, s.length, 'ids must be unique');
-  // Distinct FIELDS, not just distinct labels — two schemes on the same hue are one.
+  // Distinct FIELDS, not just distinct labels - two schemes on the same hue are one.
   const hues = s.map((x) => hueOf(x.palette.hero));
   for (let i = 0; i < hues.length; i++) {
     for (let j = i + 1; j < hues.length; j++) {
@@ -127,7 +127,7 @@ test('random cycling always moves, and stays within the brand', () => {
   const ids = new Set(s.map((x) => x.id));
   for (let i = 0; i < 200; i++) {
     const next = randomVizSchemeId(s, s[0]!.id);
-    // Never the same one — a cycle that appears to do nothing reads as broken.
+    // Never the same one - a cycle that appears to do nothing reads as broken.
     assert.notEqual(next, s[0]!.id);
     assert.ok(ids.has(next), `random picked an unknown scheme: ${next}`);
   }
@@ -138,7 +138,7 @@ test('random cycling always moves, and stays within the brand', () => {
 });
 
 test('the ramp bottoms out near black so contrast comes from its own range', () => {
-  // Andy: black is fine, majority black is not — ramping down to it in the right places
+  // Andy: black is fine, majority black is not - ramping down to it in the right places
   // is where the punch comes from. A ramp that floors at a mid-dark tone has no deep end.
   for (const sc of deriveVizSchemes(SUSE, SUSE_NAMES, '#30ba78')) {
     const lum = (c: readonly number[]): number => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;

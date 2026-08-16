@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Tests for audio-thumb.ts — the audio waveform thumbnail renderer.
+ * Tests for audio-thumb.ts - the audio waveform thumbnail renderer.
  *
  * WHAT IS COVERED HERE (real module, real catalog ids, no mocks):
- *   • audioThumbShape       — determinism + the measured distribution over the ACTUAL
+ *   • audioThumbShape - determinism + the measured distribution over the ACTUAL
  *                             audio asset ids in brands/lolly-start + brands/suse
- *   • audioThumbSvg         — all five shapes emit well-formed SVG for peak arrays of
+ *   • audioThumbSvg - all five shapes emit well-formed SVG for peak arrays of
  *                             length 1, 2, 64, all-zero and all-one
- *   • corrupt caches        — NaN / Infinity / negatives never reach a path, so no
+ *   • corrupt caches - NaN / Infinity / negatives never reach a path, so no
  *                             `d="M NaN NaN"` (a half-written peaks cache must degrade,
  *                             not render a blank tile)
- *   • escaping              — className/id/label are attribute-escaped
- *   • audioThumbPlaceholder — the honest glyph: no waveform path, no data attribution
+ *   • escaping - className/id/label are attribute-escaped
+ *   • audioThumbPlaceholder - the honest glyph: no waveform path, no data attribution
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -29,7 +29,7 @@ const REPO = fileURLToPath(new URL('../../../../', import.meta.url));
 
 /**
  * Audio asset ids from a mounted brand pack. brands/suse is a PRIVATE submodule with
- * `update = none`, so a public clone (and CI) simply has no such directory — return
+ * `update = none`, so a public clone (and CI) simply has no such directory - return
  * nothing rather than fail a test about hashing.
  */
 function catalogAudioIds(brand: string): string[] {
@@ -86,7 +86,7 @@ test('audioThumbShape spreads the REAL catalog ids across all five shapes', () =
   for (const id of ids) counts.set(audioThumbShape(id), (counts.get(audioThumbShape(id)) ?? 0) + 1);
   // Catalog ids share long prefixes (suse/music/…, lolly/loops/…). The point of the
   // feature is a varied grid, so assert every shape is actually used and no single one
-  // swallows the catalog — a char-sum hash would pile most ids onto one bucket.
+  // swallows the catalog - a char-sum hash would pile most ids onto one bucket.
   for (const s of SHAPES) {
     const n = counts.get(s) ?? 0;
     assert.ok(n > 0, `shape ${s} unused across ${ids.length} real ids`);
@@ -152,7 +152,7 @@ test('attributes are escaped', () => {
     id: '<id>',
     label: 'Tom & "Jerry"',
   });
-  // The payload survives as inert TEXT inside the class value — it must never close
+  // The payload survives as inert TEXT inside the class value - it must never close
   // the attribute and become a real handler.
   assert.ok(!/onload="/.test(svg), 'quote-break in className is neutralised');
   assert.match(svg, /class="a&quot; onload=&quot;x"/);
@@ -185,7 +185,7 @@ test('audioThumbPlaceholder is an honest glyph, not a fabricated waveform', () =
   assert.match(svg, /data-audio-shape="none"/);
   assert.match(svg, /class="cat-thumb"/);
   // The glyph is a note (one path + two circles). A waveform path would have far more
-  // vertices — this is the guard against ever swapping in a synthesised shape.
+  // vertices - this is the guard against ever swapping in a synthesised shape.
   const d = [...svg.matchAll(/ d="([^"]*)"/g)].map((m) => m[1]);
   assert.equal(d.length, 1, 'exactly one path in the glyph');
   assert.ok(((d[0] ?? '').match(/L/g) ?? []).length <= 2, 'not a polyline waveform');

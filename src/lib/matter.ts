@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The on-device background-removal runner — the ORT half of `host.matte`, the
+ * The on-device background-removal runner - the ORT half of `host.matte`, the
  * structural twin of lib/upscaler.ts but simpler: a saliency/matting net runs a
  * SINGLE forward pass at its own fixed input size (no seam-tiling), so the work
  * is letterbox → normalize → run → activate → unpad → scale mask back → straight
@@ -8,12 +8,12 @@
  * main thread until an actual run.
  *
  * HONESTY LEDGER (same as upscaler.ts): none of the ORT path has been run in
- * this environment — the dev box has no matte weights and no test can drive
+ * this environment - the dev box has no matte weights and no test can drive
  * onnxruntime-web headlessly. The PURE math below (letterbox geometry,
  * per-model normalization, activation, mask→alpha) IS unit-tested
  * (lib/matter.test.ts); the orchestration around it is verified by hand once a
  * model is staged. Per-model normalization + activation come from
- * MATTE_MODEL_SPEC and MUST be confirmed against the real ONNX before staging —
+ * MATTE_MODEL_SPEC and MUST be confirmed against the real ONNX before staging - 
  * a wrong mean/std or activation degrades the matte silently, never crashes.
  */
 
@@ -39,7 +39,7 @@ const fetchModelBytes = createModelFetcher({
 //
 // Matte is WASM-ONLY, unlike the upscaler. ort-web's WebGPU (JSEP) kernels throw
 // "using ceil() in shape computation is not yet supported for MaxPool" at run() on
-// these saliency/segmentation nets — AFTER a clean create, so a create-time EP
+// these saliency/segmentation nets - AFTER a clean create, so a create-time EP
 // fallback can't catch it (see loadSession). Rather than per-model EP juggling the
 // whole roster runs on the CPU/WASM kernels (which handle it, verified in
 // onnxruntime-node). So we never claim webgpu: the reported backend and the EP the
@@ -79,7 +79,7 @@ export class ModelNotInstalledError extends Error {
 const sessionCache = new Map<string, Promise<InferenceSession | null>>();
 
 /** Load (once) the ONNX session for a model file, or null when its bytes aren't
- *  on device yet. Never throws — a missing/failed model is 'not-installed'. */
+ *  on device yet. Never throws - a missing/failed model is 'not-installed'. */
 function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void): Promise<InferenceSession | null> {
   let entry = sessionCache.get(fileName);
   if (entry) return entry;
@@ -88,9 +88,9 @@ function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void):
     if (!bytes) return null;
     const ort: OrtModule = await loadOrt();
     await probeBackend();
-    // WASM only — deliberately. The roster's MaxPool ceil_mode isn't supported by
+    // WASM only - deliberately. The roster's MaxPool ceil_mode isn't supported by
     // ort-web's WebGPU kernels and throws at run() (AFTER a clean create, so an
-    // EP fallback at create time can't catch it — this is exactly the bug that made
+    // EP fallback at create time can't catch it - this is exactly the bug that made
     // both models fail with the ceil()/MaxPool error). The CPU/WASM kernels handle
     // ceil_mode correctly (verified on the real graphs in onnxruntime-node). If a
     // future model exports ceil-free, reintroduce webgpu per-model, not roster-wide.
@@ -223,20 +223,20 @@ export function canRun(src: { width: number; height: number }, opts: MatteOpts =
 
 // The letterbox/normalize (in) and activate/unpad/scale/compose (out) halves are
 // split out so BOTH the wasm runner below and the desktop NATIVE override
-// (shells/tauri-desktop/bridge-overrides/matte.ts) reuse the exact same geometry —
+// (shells/tauri-desktop/bridge-overrides/matte.ts) reuse the exact same geometry - 
 // the fiddly canvas math has ONE source of truth, and only the inference call in
 // the middle differs (ort-web session.run vs. a native ORT invoke()).
 
 /** Everything preprocessMatte produces that postprocessMatte needs to reassemble
  *  the cutout from the model's raw mask. */
 export interface MattePre {
-  /** Work-size source RGBA (identity when uncapped) — the final RGB planes. */
+  /** Work-size source RGBA (identity when uncapped) - the final RGB planes. */
   workRgba: Uint8ClampedArray;
   workW: number;
   workH: number;
   /** Letterbox placement of the work image inside the model square. */
   plan: LetterboxPlan;
-  /** NCHW [1,3,edge,edge] float32, normalized per the spec — the model input. */
+  /** NCHW [1,3,edge,edge] float32, normalized per the spec - the model input. */
   input: Float32Array;
   /** Model square edge (spec.inputSize[0]). */
   edge: number;
@@ -325,7 +325,7 @@ export function postprocessMatte(rawMask: ArrayLike<number>, pre: MattePre): Mat
  *  (work-size) source and alpha is the computed matte. Rejects on abort; throws
  *  ModelNotInstalledError when the model isn't on device yet (the caller shows the
  *  download/consent path). The desktop shell overrides this for the native-only
- *  heavyweight — see shells/tauri-desktop/bridge-overrides/matte.ts. */
+ *  heavyweight - see shells/tauri-desktop/bridge-overrides/matte.ts. */
 export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRunCtx): Promise<MatteFrame> {
   ctx.checkAbort();
   const id = opts.model ?? MATTE_DEFAULT_MODEL;
@@ -348,7 +348,7 @@ export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRun
   ctx.checkAbort();
   const out = result[session.outputNames[0]!]!;
   // Tensor data is a numeric TypedArray for a float mask (never the string[] the
-  // union allows — that is text/int-tensor territory); getData() defends against a
+  // union allows - that is text/int-tensor territory); getData() defends against a
   // GPU-resident buffer the way runModel does in upscaler.ts.
   const raw = (typeof out.getData === 'function' ? await out.getData(false) : out.data) as unknown as Float32Array;
   ctx.onProgress?.({ phase: 'inference', fraction: 0.85 });

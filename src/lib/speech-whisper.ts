@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Whisper transcription — the PURE half: constants and the chunk-planning /
+ * Whisper transcription - the PURE half: constants and the chunk-planning /
  * timestamp-repair maths, tested in Node (speech-whisper.test.ts) with no
  * transformers.js or wasm anywhere near them. The worker
  * (lib/speech-whisper-worker.ts) does the model I/O; bridge/speech.ts does the
@@ -11,27 +11,27 @@
  * whisper-base_timestamped export (transformers.js #1358), so the caller must
  * split the clip itself, transcribe each piece inside Whisper's native 30 s
  * window, then offset and stitch the word timings. `planChunks` picks the
- * split points — at the quietest moment near each 25 s boundary, so a word is
- * never cut mid-utterance when any silence exists to cut in — and
+ * split points - at the quietest moment near each 25 s boundary, so a word is
+ * never cut mid-utterance when any silence exists to cut in - and
  * `stitchChunks` does the offsetting plus the timestamp repair Whisper needs
  * (null ends, occasional non-monotonic spans).
  */
 import type { SpeechWordTiming } from '@lolly-tools/core/host-v1';
 
-/** Whisper consumes 16 kHz mono — the bridge decodes/resamples to this. */
+/** Whisper consumes 16 kHz mono - the bridge decodes/resamples to this. */
 export const WHISPER_SAMPLE_RATE = 16000;
 
-/** Directory under localModelPath ('/models/') — see scripts/fetch-whisper-models.ts. */
+/** Directory under localModelPath ('/models/') - see scripts/fetch-whisper-models.ts. */
 export const WHISPER_MODEL_ID = 'whisper';
 
 /**
  * One-time download total for the consent UI (host.speech.transcribeModelBytes):
  * the q8 encoder + merged decoder + tokenizer/configs, byte counts mirrored
- * from the PINS table in scripts/fetch-whisper-models.ts — keep in sync.
+ * from the PINS table in scripts/fetch-whisper-models.ts - keep in sync.
  */
 export const WHISPER_MODEL_BYTES = 23_159_167 + 53_712_708 + 2_480_466 + 282_682 + 2_243 + 3_832 + 339;
 
-/** Aim to split here — comfortably inside the 30 s window. Seconds. */
+/** Aim to split here - comfortably inside the 30 s window. Seconds. */
 export const CHUNK_TARGET_S = 25;
 /** Whisper's hard window. A chunk must never exceed this. Seconds. */
 export const CHUNK_MAX_S = 30;
@@ -43,7 +43,7 @@ export interface ChunkSpan { start: number; end: number }
  * Split a clip into transcription chunks at the quietest point near each 25 s
  * boundary. A clip that already fits the window comes back as one chunk. The
  * scan is a plain RMS floor over short frames inside the search window
- * [target - back, target + fwd] — no VAD, no model: the quietest 25 ms frame
+ * [target - back, target + fwd] - no VAD, no model: the quietest 25 ms frame
  * is where speech is least likely to be mid-word, and when the window holds
  * genuine silence the cut lands inside it. Deterministic, so a re-run plans
  * the same cuts.
@@ -59,7 +59,7 @@ export function planChunks(
   let cursor = 0;
   while (pcm.length - cursor > maxLen) {
     // Search the quietest frame between 5 s before and (maxS - targetS) after
-    // the target boundary — the upper bound keeps the chunk inside the window.
+    // the target boundary - the upper bound keeps the chunk inside the window.
     const from = cursor + Math.floor((targetS - 5) * sampleRate);
     const to = cursor + maxLen;
     const cut = quietestFrame(pcm, from, to, Math.max(1, Math.floor(0.025 * sampleRate)));
@@ -77,14 +77,14 @@ function quietestFrame(pcm: Float32Array, from: number, to: number, frameLen: nu
   for (let at = from; at + frameLen <= to; at += frameLen) {
     let sum = 0;
     for (let i = at; i < at + frameLen; i++) sum += pcm[i]! * pcm[i]!;
-    const rms = sum / frameLen; // monotonic in true RMS — no sqrt needed to compare
+    const rms = sum / frameLen; // monotonic in true RMS - no sqrt needed to compare
     if (rms < bestRms) { bestRms = rms; bestAt = at; }
   }
   return Math.min(to, bestAt + (frameLen >> 1));
 }
 
 /** What one transcribed chunk contributes before stitching. Times are seconds
- *  relative to the CHUNK start; `start`/`end` may be null or out of order —
+ *  relative to the CHUNK start; `start`/`end` may be null or out of order - 
  *  Whisper's word timestamps are model output, not bookkeeping, and the
  *  occasional span comes back broken. */
 export interface RawWord { text: string; start: number | null; end: number | null }

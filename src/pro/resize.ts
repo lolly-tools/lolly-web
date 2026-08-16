@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — drag-resize for rows and columns.
+ * Pro / Batch mode - drag-resize for rows and columns.
  *
  * No per-cell handle elements: a single pointer listener on the grid detects a
- * grab near an edge by geometry —
+ * grab near an edge by geometry - 
  *   • the bottom edge of any body row  → resize that row's height (drag anywhere
  *     along the horizontal grid line);
  *   • the right edge of a header cell  → widen/narrow that column.
@@ -38,7 +38,7 @@ export function attachResize(container: HTMLElement, {
   function onDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     // The colour popover is fixed-positioned but a DOM child of its row, so it
-    // lands below the row's bottom edge — ignore it, or we'd hijack clicks meant
+    // lands below the row's bottom edge - ignore it, or we'd hijack clicks meant
     // for the popover (e.g. focusing the hex input) as a row resize.
     if ((e.target as Element).closest?.('.color-popover')) return;
     // The actions cell holds the drag-reorder grip + remove button; a grab there

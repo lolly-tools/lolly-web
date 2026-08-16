@@ -5,7 +5,7 @@
  * When you copy cells from Excel / Google Sheets / Numbers, the clipboard carries
  * BOTH a plain-text serialisation (usually TSV, but locale-dependent) AND a real
  * `text/html` `<table>`. Reading the HTML table sidesteps every delimiter / quote /
- * embedded-newline ambiguity — the cell grid is explicit — so a data tool gets the
+ * embedded-newline ambiguity - the cell grid is explicit - so a data tool gets the
  * exact rows the user copied. This converts that HTML to clean TSV and installs a
  * textarea paste handler that swaps it in, falling through to the browser's default
  * paste for ordinary prose (no `<table>` present).
@@ -16,7 +16,7 @@ export function htmlTableToTsv(html: string): string {
   if (!html || !/<table[\s>]/i.test(html)) return '';
   let doc: Document;
   try {
-    // Turn intra-cell line breaks into spaces first — textContent alone would jam
+    // Turn intra-cell line breaks into spaces first - textContent alone would jam
     // "A<br>B" into "AB".
     doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, ' '), 'text/html');
   } catch {
@@ -47,7 +47,7 @@ export function htmlTableToTsv(html: string): string {
  * tool runtime picks it up. Safe to call once per textarea.
  */
 export function installTablePaste(ta: HTMLTextAreaElement): void {
-  if (ta.dataset.tablePaste) return; // idempotent — never double-attach on a reused node
+  if (ta.dataset.tablePaste) return; // idempotent - never double-attach on a reused node
   ta.dataset.tablePaste = '1';
   ta.addEventListener('paste', (e: ClipboardEvent) => {
     const html = e.clipboardData?.getData('text/html');

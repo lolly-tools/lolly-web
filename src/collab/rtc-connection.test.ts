@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * rtc-connection — Track A's producer for the transport-agnostic mount seam
+ * rtc-connection - Track A's producer for the transport-agnostic mount seam
  * (plan 100 §5, §6.1, §6.2a, §12 Q3).
  *
  * Two things are worth pinning, and they are both about TIME.
  *
  *   1. The seed arrives AFTER the hand-off. A ceremony reaches `connected` off an ICE
- *      event, and ICE connects before the SCTP channel the hello rides on — so a
+ *      event, and ICE connects before the SCTP channel the hello rides on - so a
  *      connection built at `connected` cannot know its seed yet, every time. The latch
  *      is why the acceptor's tool opens populated instead of empty-then-converging.
  *   2. Waiting is BOUNDED. A peer that sends no seed (an older build; a state too big
  *      for one 64 KB frame, which `rtc-transport` drops rather than lose the op-version
- *      declaration beside it) must not hold the tool closed — §6.2's late joiner gets
+ *      declaration beside it) must not hold the tool closed - §6.2's late joiner gets
  *      the state from the peer anyway, just later.
  *
  * Run directly:  node --test shells/web/src/collab/rtc-connection.test.ts

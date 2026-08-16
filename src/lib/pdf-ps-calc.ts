@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PDF FunctionType 4 — the PostScript calculator function (PDF 32000-1 §7.10.5).
+ * PDF FunctionType 4 - the PostScript calculator function (PDF 32000-1 §7.10.5).
  *
  * A tiny, total, side-effect-free stack language: numbers, booleans, a fixed
  * operator set, and `{…}` procedures that exist only as operands to `if`/`ifelse`.
- * No loops, no variables, no I/O. That makes it safe to interpret directly — the
+ * No loops, no variables, no I/O. That makes it safe to interpret directly - the
  * only unbounded things are our own bugs, which the step budget below catches.
  *
  * WHY this module exists: Chromium's print backend encodes an out-of-sRGB CSS
  * colour (`oklch()`), a `conic-gradient()`, and any wide-gamut interpolated
  * gradient as a ShadingType 1 (function-based) shading driven by a FunctionType 4
  * function. Without a Type 4 evaluator the shading is dropped, `scn` clears the
- * fill, and a colour-heavy page — the Brand Studio colours tab is the reference
- * case — prints as a white ghost of itself.
+ * fill, and a colour-heavy page - the Brand Studio colours tab is the reference
+ * case - prints as a white ghost of itself.
  *
  * WHERE it sits: the SHELL, next to the rest of the PDF byte work. The pure engine
  * receives pre-sampled colour, never a PostScript program (see pdf-shading.ts for
@@ -20,7 +20,7 @@
  * dependency-free so it is directly unit-testable.
  *
  * HARDENING: reachable from any uploaded PDF, so it follows the house rule for
- * untrusted binary/text parsers — every limit is explicit, nothing throws, and any
+ * untrusted binary/text parsers - every limit is explicit, nothing throws, and any
  * breach degrades to `null`, i.e. exactly the behaviour before this module existed.
  */
 
@@ -41,7 +41,7 @@ const MAX_STEPS = 10_000;     // per evaluation; the language has no loops, so t
 type PsNode = { t: 'n'; v: number } | { t: 'o'; v: string } | { t: 'p'; v: PsProc };
 type PsProc = PsNode[];
 
-/** Operators we implement — PDF 32000-1 §7.10.5, Table 42 in full. A token that is
+/** Operators we implement - PDF 32000-1 §7.10.5, Table 42 in full. A token that is
  *  neither a number nor one of these fails the COMPILE, not some later sample. */
 const OPS = new Set([
   // arithmetic
@@ -98,7 +98,7 @@ function parsePs(toks: string[]): PsProc | null {
       } else if (OPS.has(t)) {
         body.push({ t: 'o', v: t });
       } else {
-        return null; // unknown token — refuse the whole program
+        return null; // unknown token - refuse the whole program
       }
     }
     return null; // unbalanced: ran out of tokens before '}'
@@ -126,7 +126,7 @@ interface Budget { steps: number }
 
 /**
  * Run one procedure against the shared operand stack.
- * @returns false on ANY fault (type error, undefined result, budget breach) — the
+ * @returns false on ANY fault (type error, undefined result, budget breach) - the
  *          caller turns that into `null`. Faulting is always preferable to
  *          propagating a NaN into a colour.
  */
@@ -172,7 +172,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
       // any1..anyn n copy → duplicates the top n. `0 copy` is legal and a no-op.
       const n = st.pop();
       if (!isInt(n) || n < 0 || n > st.length || st.length + n > MAX_STACK) return false;
-      // Snapshot BEFORE pushing — st.length moves as we go.
+      // Snapshot BEFORE pushing - st.length moves as we go.
       for (const v of st.slice(st.length - n)) st.push(v);
       continue;
     }
@@ -212,14 +212,14 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
     }
     if (op === 'bitshift') {
       // Positive shift = left; negative = right, with ZEROS shifted in (a logical
-      // shift, per the PostScript language definition §bitshift) — hence `>>>`.
+      // shift, per the PostScript language definition §bitshift) - hence `>>>`.
       const sft = st.pop(), a = st.pop();
       if (!isInt(a) || !isInt(sft) || Math.abs(sft) > 31) return false;
       st.push(sft >= 0 ? (a << sft) | 0 : (a >>> -sft) | 0);
       continue;
     }
     // eq/ne compare any two non-procedure objects; mismatched types are simply
-    // unequal (PLRM `eq`), not a fault — being stricter than the language would
+    // unequal (PLRM `eq`), not a fault - being stricter than the language would
     // reject valid programs.
     if (op === 'eq' || op === 'ne') {
       const b = st.pop(), a = st.pop();
@@ -247,11 +247,11 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
         case 'div': if (b === 0) return false; out = a / b; break;
         // idiv truncates TOWARD ZERO and requires integer operands.
         case 'idiv': if (!isInt(a) || !isInt(b) || b === 0) return false; out = Math.trunc(a / b); break;
-        // mod's sign follows the DIVIDEND — which is what JS `%` already does.
+        // mod's sign follows the DIVIDEND - which is what JS `%` already does.
         case 'mod': if (!isInt(a) || !isInt(b) || b === 0) return false; out = a % b; break;
         case 'exp': out = Math.pow(a, b); break;
         // atan: `num den atan` → degrees in [0,360), NOT radians and NOT signed.
-        // This is directly load-bearing: it is how Chromium computes a hue sweep,
+        // This is essential: it is how Chromium computes a hue sweep,
         // and a sign or unit slip here silently ruins every OKLCH wheel.
         default: {
           if (a === 0 && b === 0) return false;
@@ -299,7 +299,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
  *
  * @param src   the raw stream text, including the outer `{ … }`.
  * @param nIn   declared input count (from /Domain); inputs beyond it are ignored.
- * @param range /Range, which is MANDATORY for Type 4 (PDF 32000-1 Table 39) — it
+ * @param range /Range, which is MANDATORY for Type 4 (PDF 32000-1 Table 39) - it
  *              gives the output count and clips every output. Without it we cannot
  *              know how many of the values left on the stack are results, so a
  *              missing/odd-length Range refuses the compile.

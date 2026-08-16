@@ -3,17 +3,17 @@
  * The ceremony machine is the one part of private collab whose failure modes are
  * unreachable by hand: a ten-minute unanswered invite, a laptop lid closing mid-session,
  * a guest network silently eating peer traffic. So the whole suite runs on an injected
- * clock and stub effects — no WebRTC, no DOM, no waiting.
+ * clock and stub effects - no WebRTC, no DOM, no waiting.
  *
- * What is pinned here, and why each one is load-bearing:
+ * What is pinned here, and why each one matters:
  *  - both happy paths, end to end, including the acceptor probing BEFORE it answers;
- *  - `connected` is reached on CHANNELS READY and never on ICE — an ICE `connected` moves
+ *  - `connected` is reached on CHANNELS READY and never on ICE - an ICE `connected` moves
  *    no phase, because on a loopback pair it arrives before the answer has been carried
  *    back at all, and promoting on it skips the acceptor's answer screen (see the
  *    "ICE-connected is not session-usable" section);
  *  - the 10-minute re-arm fires exactly at the boundary and mints a NEW invite;
  *  - a missing tool is a refusal, not a broken join (plan 100 §6.1);
- *  - ICE `disconnected` is transient and `failed` is not (§11.3) — the single most
+ *  - ICE `disconnected` is transient and `failed` is not (§11.3) - the single most
  *    expensive thing to get wrong, because conflating them shows a re-pair dialog every
  *    time a Wi-Fi packet goes missing;
  *  - cancel works from every non-terminal phase, and a late effect result can never
@@ -94,7 +94,7 @@ class TestClock implements CeremonyTimers {
 /** One macrotask drains every microtask chain the stub effects can produce. */
 const settle = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
 
-/** A promise that never settles — for parking the machine in an in-flight phase. */
+/** A promise that never settles - for parking the machine in an in-flight phase. */
 const never = <T>(): Promise<T> => new Promise<T>(() => {});
 
 function anInvite(over: Partial<CollabInvite> = {}): CollabInvite {
@@ -223,7 +223,7 @@ test('acceptor: idle → reading-invite → creating-answer → awaiting-connect
   assert.equal(m.state.peer?.name, 'Priya');
   await settle();
 
-  // §6.1: the tool probe GATES the answer — answering first and discovering the tool is
+  // §6.1: the tool probe GATES the answer - answering first and discovering the tool is
   // missing afterwards is exactly the broken join the probe exists to prevent.
   assert.equal(answerCallsAtProbe, 0);
   assert.equal(calls.checkTool, 1);
@@ -508,7 +508,7 @@ test('ICE failed before ever connecting reads as network isolation, not as a los
 test('ICE that connects and then dies before the channels open still fails as isolation', async () => {
   // The gap the new completion signal opens: between ICE `connected` and the lane
   // actually opening, this pair is NOT live. A failure landing in that window is the
-  // network diagnosis, not `connection-lost` — they never reached each other usefully,
+  // network diagnosis, not `connection-lost` - they never reached each other usefully,
   // and telling them the link dropped would send them looking for the wrong thing.
   for (const role of ['inviter', 'acceptor'] as const) {
     const clock = new TestClock();
@@ -590,7 +590,7 @@ test('an undelivered answer times out on the human budget', async () => {
  * a phase with no exit for it and is dropped, and nothing ever looks again.
  *
  * Reproduced 5/5 in a real-browser drill. The acceptor's trace: `sig:stable` 536ms,
- * `ice:checking` 537ms, `ice:connected` 542ms, channels open on both sides by 1269ms —
+ * `ice:checking` 537ms, `ice:connected` 542ms, channels open on both sides by 1269ms - 
  * and the ceremony sat on step 3 until the ten-minute answer deadline. The inviter has
  * the same shape and merely wins by about two milliseconds, which is why it gets the
  * identical treatment here rather than a special case.
@@ -603,7 +603,7 @@ test('an undelivered answer times out on the human budget', async () => {
  * fact, and the two are scripted independently because in the real world they are.
  *
  * `raceDuring` names the leg whose await the handshake lands inside. The stub does what
- * a real transport does, in that order: record the new level, then push the edge — so a
+ * a real transport does, in that order: record the new level, then push the edge - so a
  * machine that only listens to edges sees exactly what the browser gave it.
  */
 function racingEffects(
@@ -617,12 +617,12 @@ function racingEffects(
      * Do the CHANNELS open during the await too, and how is that discoverable?
      * `'level'` records it silently, so only a level read can find it; `'edge'` pushes
      * the event at the machine and nothing else; `'both'` does both. Absent means the
-     * lane never opens — the loopback shape, where ICE is up and the pair is not usable.
+     * lane never opens - the loopback shape, where ICE is up and the pair is not usable.
      */
     readonly ready?: 'level' | 'edge' | 'both';
     /** Runs after the transitions, still inside the await. */
     readonly during?: () => void;
-    /** Replaces the ICE level read entirely — for the "it throws"/"it cancels" cases. */
+    /** Replaces the ICE level read entirely - for the "it throws"/"it cancels" cases. */
     readonly readIce?: () => CeremonyIceState | undefined;
     /** Replaces the readiness level read entirely, for the same two cases. */
     readonly readReady?: () => boolean | undefined;
@@ -630,7 +630,7 @@ function racingEffects(
 ): {
   readonly effects: CeremonyEffects;
   attach(machine: CeremonyMachine): void;
-  /** Every edge pushed at the machine, in order — the ones the old code dropped. */
+  /** Every edge pushed at the machine, in order - the ones the old code dropped. */
   readonly pushed: (CeremonyIceState | 'ready')[];
   /** How many times the machine asked what ICE is now. */
   reads(): number;
@@ -761,7 +761,7 @@ test('THE LOOPBACK RACE, inviter half: ICE up while waiting cannot skip applying
   await settle();
   assert.equal(m.state.phase, 'awaiting-answer');
 
-  // The peer is already reachable — it has our offer and has started checking against it.
+  // The peer is already reachable - it has our offer and has started checking against it.
   // The invite is still the only thing that exists; there is no session to join.
   m.send({ type: 'ice', state: 'checking' });
   m.send({ type: 'ice', state: 'connected' });
@@ -786,7 +786,7 @@ test('THE LOOPBACK RACE, inviter half: ICE up while waiting cannot skip applying
 test('a `ready` that arrives too early is BUFFERED: the answer is published first, then the promotion', async () => {
   // The guarantee, at its most pathological: the transport reports the lane open while
   // the acceptor is still minting its answer. That cannot happen over real WebRTC (a
-  // channel opens only once both descriptions are applied) — which is exactly why the
+  // channel opens only once both descriptions are applied) - which is exactly why the
   // machine must own the invariant rather than inherit it from a well-behaved transport.
   const clock = new TestClock();
   const rig = racingEffects('createAnswer', { states: [], ready: 'edge', levelRead: false });
@@ -818,7 +818,7 @@ test('acceptor: with no level read the pair is stranded — the drill failure, p
   await settle();
 
   // The exact drill failure, pinned: healthy channels, and a ceremony still waiting.
-  // The transport's replay does NOT rescue this shape — this subscriber was wired the
+  // The transport's replay does NOT rescue this shape - this subscriber was wired the
   // whole time and did hear both edges, it was simply in a phase that could not act on
   // them. The two guards cover different halves of the window; see the machine's header.
   assert.deepEqual(rig.pushed, ['checking', 'connected']);
@@ -1014,7 +1014,7 @@ test('a garbled answer is retryable: back to waiting with a note, and the next o
 test('unreadable answers cannot hold the invite open for ever', async () => {
   // Every retryable answer restarts the ten-minute wait, so without a budget one
   // garbled paste every nine minutes keeps the offer, its ICE credentials and the
-  // "anyone with this invite can join and edit" window alive indefinitely — and no
+  // "anyone with this invite can join and edit" window alive indefinitely - and no
   // fresh candidates are ever minted either.
   const clock = new TestClock();
   const { effects, calls } = stub({
@@ -1205,7 +1205,7 @@ test('a terminal ceremony ignores everything, including a late effect result', a
   m.send({ type: 'cancel' });
   assert.equal(m.state.phase, 'closed');
 
-  // The abandoned mint finishing later must not resurrect the ceremony — the generation
+  // The abandoned mint finishing later must not resurrect the ceremony - the generation
   // guard is the whole reason an in-flight effect is safe to walk away from.
   resolveOffer?.({ ok: true, invite: anInvite() });
   await settle();
@@ -1220,7 +1220,7 @@ test('a terminal ceremony ignores everything, including a late effect result', a
 
 test('a cancel sent from inside a phase notification is not undone by the work it abandoned', async () => {
   // The dialog renders its Cancel button FROM `state.phase`, so `send()` can land
-  // re-entrantly — in the middle of the very phase change that is about to start the
+  // re-entrantly - in the middle of the very phase change that is about to start the
   // mint. The generation guard has to be tagged before that notification, not after.
   const clock = new TestClock();
   const { effects, calls } = stub();
@@ -1299,7 +1299,7 @@ test('an acceptor cancelled mid-ceremony never publishes an answer', async () =>
 
 test('a cancel from the answer screen survives a readiness that was already true', async () => {
   // The generation discipline through the NEW path. `syncReady` runs after the phase
-  // change that publishes the answer, and that change notifies synchronously — so a
+  // change that publishes the answer, and that change notifies synchronously - so a
   // dialog whose Cancel is wired to the screen it just rendered can end the ceremony
   // before the read happens. A promotion that ignored the guard would reopen a session
   // the user closed, over a transport nobody is going to tear down.
@@ -1325,7 +1325,7 @@ test('a cancel from the answer screen survives a readiness that was already true
   assert.equal(m.state.cause, 'cancelled');
   assert.equal(reads, 0, 'a ceremony the user closed is not asked whether it could connect');
 
-  // And the edge landing afterwards — the transport does not know about the cancel yet —
+  // And the edge landing afterwards - the transport does not know about the cancel yet - 
   // is ignored like everything else a terminal ceremony hears.
   m.send({ type: 'ready' });
   assert.equal(m.state.phase, 'closed');

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * User templates — a creative saves the current tool doc as a reusable STARTING POINT for
+ * User templates - a creative saves the current tool doc as a reusable STARTING POINT for
  * that tool, so it joins the built-in per-tool templates in the "New from template" chooser
  * (and, later, the Projects add-picker: "pick a tool → pick a variation, or the default").
  *
- * A user template is just a saved `values` seed under a tool id — the exact same shape a
+ * A user template is just a saved `values` seed under a tool id - the exact same shape a
  * built-in `tools/<id>/templates/<tid>.json` carries, minus the file. A "variation" is the
  * same record with `variationOf` set to the base template it descends from, so the chooser
  * can group it under its parent. This is the local half of the "make variations → submit to
@@ -15,19 +15,19 @@
  * (`profile.userTemplates`) through the host's Profile get/set, so they sync and persist like
  * everything else on the profile, and a read-modify-write over the WHOLE profile never
  * clobbers sibling fields (folders, headshot, a11y, …). No new storage layer, no core change
- * — the profile record already tolerates extra fields (folders proves it).
+ * - the profile record already tolerates extra fields (folders proves it).
  */
 
 export interface UserTemplate {
   id: string;
-  /** The tool this template seeds — the chooser/add-picker key. */
+  /** The tool this template seeds - the chooser/add-picker key. */
   toolId: string;
   name: string;
   /** The saved seed: input values plus the `__`-prefixed export markers, i.e. exactly what
    *  `sessionSnapshot()` returns and what the chooser applies for a built-in template. */
   values: Record<string, unknown>;
   /** When set, this is a VARIATION of that base template id (built-in tid or another user
-   *  template id) — the chooser groups it under its parent. Absent → a standalone template. */
+   *  template id) - the chooser groups it under its parent. Absent → a standalone template. */
   variationOf?: string;
   createdAt: string;
   updatedAt: string;
@@ -39,7 +39,7 @@ interface UserTemplateProfile {
   custom?: Record<string, string>;
 }
 
-/** The slice of the host bridge the store reads/writes — the profile get/set pair only. */
+/** The slice of the host bridge the store reads/writes - the profile get/set pair only. */
 export interface UserTemplateHost {
   profile: {
     get(): Promise<UserTemplateProfile>;

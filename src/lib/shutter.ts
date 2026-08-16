@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-/* Export shutter — a candy-swirl lollipop iris that closes over the stage while
+/* Export shutter - a candy-swirl lollipop iris that closes over the stage while
    the brief full-res resize during export (the "shake") happens, then opens
    again. Replaces the 14-blade camera iris that lived here before (kept in git
    history); that in turn replaced six skewed CSS flaps.
@@ -9,17 +9,17 @@
    brightness tracks the theme background so light themes brighten the swirl and
    dark themes deepen it, and the coloured stripe leans toward the live brand accent
    in EVERY theme (light / dark / the mid-toned 'brand' theme) so the swirl wears the
-   brand rather than a fixed green — the 'brand' theme just pushes that colour
+   brand rather than a fixed green - the 'brand' theme just pushes that colour
    hardest. A near-neutral brand falls back to Lolly green. See toneForTheme().
 
    HOW IT COVERS. The swirl is drawn in a fragment shader normalised by
    min(resolution), so it is ALWAYS a circle regardless of stage aspect. Coverage
-   grows from the outside in — at any progress every pixel at radius r is covered
+   grows from the outside in - at any progress every pixel at radius r is covered
    at least as much as the aperture edge, so the corners are covered throughout
    and at full close alpha is 1 everywhere. That is what lets it be an export
    cover. A seal plate behind it (hsl(var(--background))) fades in over the last
    sliver as belt-and-braces, and carries the whole close on its own if WebGL is
-   unavailable — so the "hide the stage during the resize" contract holds even
+   unavailable - so the "hide the stage during the resize" contract holds even
    without a GPU.
 
    THE MARK. At ~70% of the close the Lolly mark pops out on top of the swirl,
@@ -29,12 +29,12 @@
    drift (animation in styles/parts/tool.css, on the DIVS so the spin composites
    off-thread and survives the export's main-thread stall); its coloured spiral is painted the SAME brand tone the iris
    stripe uses (--exsh-swirl ← tone.green), so mark and iris agree. Small + brief + over
-   the seal, so the spin/hue costs nothing measurable even mid-export — unlike a filter on
+   the seal, so the spin/hue costs nothing measurable even mid-export - unlike a filter on
    the full-screen iris, which is why THAT stays a shader with no CSS filter.
 
    PERFORMANCE. This runs during export on phones. The shader is one full-screen
    triangle pair per frame; DPR is capped (1.5 phone / 2 desktop). No CSS filter
-   on the iris canvas — the shader's own lighting is the depth cue. */
+   on the iris canvas - the shader's own lighting is the depth cue. */
 
 import { playSfx } from './sfx.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
@@ -47,7 +47,7 @@ export interface Shutter {
   close(): Promise<void>;
   /** Open it again. Fire-and-forget. */
   open(): void;
-  /** Close then open — for callers that can't await (clipboard writes). */
+  /** Close then open - for callers that can't await (clipboard writes). */
   play(): void;
   destroy(): void;
 }
@@ -171,18 +171,18 @@ function bgLightness(): number {
 
 /* The swirl's palette follows both the theme and the brand:
    - exposure (overall brightness) tracks the theme background lightness, so the
-     dark theme is unmistakably darker and the light theme brighter — continuously,
+     dark theme is unmistakably darker and the light theme brighter - continuously,
      so any future theme adapts without a new preset;
    - the coloured stripe leans toward the live brand accent in every theme (falling
      back to Lolly green only for a near-neutral brand). Light then desaturates it
      slightly (calmer); dark leaves it and lets exposure do the dimming; the
      mid-toned 'brand' theme boosts its saturation and tints the cream stripe with
-     it too — the "more colour influenced" variant. */
+     it too - the "more colour influenced" variant. */
 function toneForTheme(): Tone {
   const bgL = bgLightness();
   const theme = currentTheme();
 
-  // The coloured stripe leans toward the live brand accent in EVERY theme — the
+  // The coloured stripe leans toward the live brand accent in EVERY theme - the
   // swirl wears the brand, not a fixed green. It only falls back to Lolly green when
   // the brand is near-neutral (no accent worth tinting toward), so a black-and-white
   // brand keeps the lollipop identity instead of washing out to grey.
@@ -198,7 +198,7 @@ function toneForTheme(): Tone {
     green = saturate(green, 1.45);                 // the "more colour influenced" pop
     creamTint = 0.4;                               // light stripes pick up the hue
   }
-  // dark keeps the accent at full strength — the low exposure below does the darkening.
+  // dark keeps the accent at full strength - the low exposure below does the darkening.
 
   let cream: Rgb = mixRgb([0.80, 0.85, 0.80], [0.97, 0.99, 0.97], bgL);
   if (creamTint) cream = mixRgb(cream, green, creamTint);
@@ -217,7 +217,7 @@ function toneForTheme(): Tone {
   };
 }
 
-/** A 0–1 Rgb triple as a CSS colour — paints the swirl MARK the same brand tone
+/** A 0–1 Rgb triple as a CSS colour - paints the swirl MARK the same brand tone
  *  (tone.green) the WebGL iris uses for its coloured stripe, so the two match. */
 function rgbToCss([r, g, b]: Rgb): string {
   return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`;
@@ -234,7 +234,7 @@ const easeOutBack = (x: number): number => {
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 };
 
-/* Close easing — the same cubic-bezier feel the blade iris used (ease-out). */
+/* Close easing - the same cubic-bezier feel the blade iris used (ease-out). */
 const bez = (p: number, a: number, b: number, cc: number, d: number): number => {
   let x = p;
   for (let i = 0; i < 6; i++) {
@@ -267,7 +267,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   // Inline Lolly swirl, one stacked <div> per generated layer (shutter-mark.ts,
   // derived from the repo-root icon.svg). The DIVS carry the spin: an HTML
   // transform composites off the main thread, so the mark keeps turning while
-  // the export render blocks it — SVG-child transforms (the old single-SVG
+  // the export render blocks it - SVG-child transforms (the old single-SVG
   // mark) froze the instant the export started.
   mark.innerHTML = SHUTTER_MARK_LAYERS.map((l) =>
     `<div class="export-shutter__layer${l.spin ? ` export-shutter__layer--spin${l.spin}` : ''}${l.blend === 'multiply' ? ' export-shutter__layer--multiply' : ''}">${l.svg}</div>`).join('');
@@ -365,7 +365,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     if (destroyed) return;
     const r = cv.getBoundingClientRect();
     // DPR capped: the iris is a transient cover, never inspected at rest, and
-    // fill rate — not geometry — is what costs on a phone.
+    // fill rate - not geometry - is what costs on a phone.
     const dpr = Math.min(window.devicePixelRatio || 1, fullscreen() ? 1.5 : 2);
     const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
     const p = Math.max(0, Math.min(1, prog));
@@ -400,7 +400,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
 
   function animate(to: number): Promise<void> {
     cancelAnimationFrame(raf);
-    // Motion only — the iris still opens and closes, it just jumps to the sealed
+    // Motion only - the iris still opens and closes, it just jumps to the sealed
     // state instead of tweening. Nothing here touches the export: the shutter
     // paints on its own overlay, never on the tool canvas.
     if (reduced()) { cur = to; paint(cur); return Promise.resolve(); }
@@ -418,7 +418,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     });
   }
 
-  // Removing the class alone does not reset a running CSS animation — force a
+  // Removing the class alone does not reset a running CSS animation - force a
   // reflow between remove and add so a rapid second export still flashes.
   function fireFlash(): void {
     if (reduced()) return;
@@ -431,10 +431,10 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     if (destroyed) return;
     tone = toneForTheme();
     // Paint the swirl mark the same brand tone the iris stripe uses (host-profile accent
-    // mixed into Lolly green) — the layers' spin + hue drift ride on top of it (tool.css).
+    // mixed into Lolly green) - the layers' spin + hue drift ride on top of it (tool.css).
     mark.style.setProperty('--exsh-swirl', rgbToCss(tone.green));
-    /* Mobile: lift the shutter out of the stage so it covers the WHOLE screen —
-       over the sidebar sheet and export controls — while the system download or
+    /* Mobile: lift the shutter out of the stage so it covers the WHOLE screen - 
+       over the sidebar sheet and export controls - while the system download or
        share sheet appears. (An ancestor's backdrop-filter is a fixed-positioning
        containing block, so moving to <body> is what actually reaches the
        viewport.) Desktop keeps it scoped to the stage. */
@@ -447,7 +447,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     paint(cur);
     playSfx('shutter');            // the ka-chunk, synced to the swirl closing
     await animate(1);
-    fireFlash();                   // sealed — pop the primary
+    fireFlash();                   // sealed - pop the primary
   }
 
   function open(): void {

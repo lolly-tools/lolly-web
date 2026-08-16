@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Per-canvas commit channel — attachCanvasCommit wires a mounted canvas element to
+ * Per-canvas commit channel - attachCanvasCommit wires a mounted canvas element to
  * the runtime that owns it, so an interactive tool template resolves the channel from
  * its OWN subtree (`closest('[data-lolly-canvas]')`) and reads/writes 1:1.
  *

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The ceremony dialog's SEAMS — the parts that only matter once a real transport is on
+ * The ceremony dialog's SEAMS - the parts that only matter once a real transport is on
  * the other end (plan 100 §6.1, §11.3, §11.25, §11.26; wave 2.2).
  *
  * `collab-ceremony.test.ts` pins the screens. This file pins the wiring between them and
@@ -8,12 +8,12 @@
  * suite that drives the machine by hand:
  *
  *  - ICE arrives from the TRANSPORT, never from a human. A dialog that does not subscribe
- *    to it renders a perfect three-step ceremony that can only ever end on a watchdog —
+ *    to it renders a perfect three-step ceremony that can only ever end on a watchdog - 
  *    both outcomes are pinned here, so the seam cannot quietly go missing again.
  *  - A transport is a peer connection plus three data channels. Every ceremony this
  *    dialog owns hands it back; the one it does not own (the live pair) it must not touch.
  *  - A validation notice is a re-render, and a re-render used to eat the paste field it
- *    was complaining about — the exact text the user needs, at the exact moment §11.25
+ *    was complaining about - the exact text the user needs, at the exact moment §11.25
  *    calls the ceremony's weak point.
  *  - `showModal()` inerts the whole document outside the dialog, so the shell's
  *    body-level `announce()` cannot be heard from in here at all.
@@ -40,7 +40,7 @@ globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
   return 0;
 }) as unknown as typeof requestAnimationFrame;
 
-// jsdom 25 has no <dialog> showModal/close — shim exactly the surface mountModal uses.
+// jsdom 25 has no <dialog> showModal/close - shim exactly the surface mountModal uses.
 const DialogProto = dom.window.HTMLDialogElement.prototype as unknown as { showModal(): void; close(): void };
 DialogProto.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
 DialogProto.close = function (this: HTMLDialogElement) { this.removeAttribute('open'); };
@@ -319,7 +319,7 @@ async function settlePlate(el: Element): Promise<string> {
 }
 
 test('the plate is a LEVEL read off the effects bundle, never an event', async () => {
-  // The material becomes available inside `createAnswer`/`applyRemote` — BEFORE ICE
+  // The material becomes available inside `createAnswer`/`applyRemote` - BEFORE ICE
   // connects, and with nothing announcing it. A dialog waiting for a plate event would
   // wait forever and show the connected screen bare; this is the same hazard `iceState`
   // and `channelsReady` exist for, answered the same way.
@@ -343,7 +343,7 @@ test('the plate is a LEVEL read off the effects bundle, never an event', async (
 
 test('one pairing is one derivation, so the live region says the plate once', async () => {
   // `render()` runs on every ICE transition and every machine notification. Re-deriving
-  // per render would be waste; re-ANNOUNCING per render is the real harm — a screen
+  // per render would be waste; re-ANNOUNCING per render is the real harm - a screen
   // reader reading six characters out again each time a candidate pair changes is worse
   // than not reading them at all.
   const t = transportSource({ plateMaterial: () => ({ local: FP_HERE, remote: FP_THERE }) });
@@ -422,7 +422,7 @@ test('a restart closes the spent transport before the factory makes another', as
   assert.equal(headingText(h.el), STRINGS.fail['ice-failed-isolation-suspected'].title);
 
   clickAct(h.el, 'restart');
-  // A timed-out ceremony leaves a connection still gathering — "finished" is exactly
+  // A timed-out ceremony leaves a connection still gathering - "finished" is exactly
   // what it is not, which is why the restart cannot just drop the reference.
   assert.equal(t.counts.closed, 1);
   assert.equal(t.counts.built, 1, 'the replacement is built when the next ceremony needs it');
@@ -552,7 +552,7 @@ test('the acceptor names itself after the probe, so the transport gets a thunk n
   typeInto(h.el, '#collab-cer-invite', inviteToken());
   clickAct(h.el, 'submit-invite');
   await settle();
-  // The transport was built for the tool probe — before the name screen existed.
+  // The transport was built for the tool probe - before the name screen existed.
   const readName = thunks[0];
   assert.ok(readName, 'the factory ran at the probe');
   assert.equal(readName(), STRINGS.inviteeFallback);
@@ -645,7 +645,7 @@ test('a scan that lands after a manual submit cannot pin its verdict on the new 
   clickAct(h.el, 'submit-invite');
   assert.deepEqual(probes.map((p) => p.toolId), ['qr-code']);
 
-  // The scan finally decodes — a DIFFERENT invite, for a different tool.
+  // The scan finally decodes - a DIFFERENT invite, for a different tool.
   scanned.resolve(inviteToken({ toolId: 'street-map' }));
   await settle();
   assert.deepEqual(probes.map((p) => p.toolId), ['qr-code', 'street-map']);

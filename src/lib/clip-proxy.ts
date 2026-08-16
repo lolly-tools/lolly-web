@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * clip-proxy.ts — import-time scrub proxies for uploaded video clips
+ * clip-proxy.ts - import-time scrub proxies for uploaded video clips
  * (Fable timeline, phase 4 Track A of plans/55-fable-timeline-phase-4.md).
  *
  * THE PROBLEM. Scrubbing a timeline is a random-access seek per pointer move,
  * and a seek costs "decode every frame from the previous keyframe". A phone
  * camera or a screen recorder happily ships a 5–10 second GOP, so one scrub step
  * can mean 150–300 frame decodes at 1080p. Safari is worst hit (it also cancels
- * a seek issued while another is in flight — see lib/clip-thumbs.ts), but no
+ * a seek issued while another is in flight - see lib/clip-thumbs.ts), but no
  * engine is fast at it. Nothing downstream can fix this: the cost is baked into
  * the container's keyframe density.
  *
  * THE FIX, ONCE, AT INGEST. When a clip is uploaded we transcode a companion
- * copy — 720p long edge, one keyframe every ~0.5 s — and keep it as DERIVED data
+ * copy - 720p long edge, one keyframe every ~0.5 s - and keep it as DERIVED data
  * next to the asset. Every *preview* consumer (filmstrips, waveforms, the scrub
  * clock) reads the proxy when one exists; a scrub then decodes at most ~15 small
  * frames instead of a few hundred big ones.
@@ -22,7 +22,7 @@
  * and must never reach an exported frame. Three things enforce that here:
  *
  *   1. The proxy is NOT reachable through `host.assets.get(id)`. It lives in its
- *      own IDB store under its own key and is resolved by this module alone —
+ *      own IDB store under its own key and is resolved by this module alone - 
  *      the engine's `resolveAssetRefs` (the single asset-resolution path both
  *      preview and export share) cannot see it.
  *   2. The proxy URL is never written onto the live `<video>` element's `src`.
@@ -30,14 +30,14 @@
  *      the mounted DOM, so leaving it alone is what keeps export honest.
  *   3. `clip-proxy.test.ts` carries a source guard that walks the WHOLE of
  *      shells/web/src and fails on any file that mentions this feature and is not
- *      on its declared-consumer list — so a new export module is a failure by
+ *      on its declared-consumer list - so a new export module is a failure by
  *      construction, not by somebody remembering to add it. If a future change
  *      *needs* the swap on the element, the swap must stamp `data-original-src`
- *      and the export-side read must prefer it — see the report at the foot of
+ *      and the export-side read must prefer it - see the report at the foot of
  *      this header.
  *
- * WHAT LIVES NEXT DOOR. The synchronous, memory-only half — the url→id registry,
- * the proxy object-URL cache and the "no proxy" memo, all bounded and revoking —
+ * WHAT LIVES NEXT DOOR. The synchronous, memory-only half - the url→id registry,
+ * the proxy object-URL cache and the "no proxy" memo, all bounded and revoking - 
  * is `./scrub-registry.ts`. It is split out so `bridge/assets.ts` can register a
  * pairing on a hot path without dragging this module (and the `import('mediabunny')`
  * site in it) into the first-paint graph.
@@ -45,43 +45,43 @@
  * ACCEPTING AN OUTPUT IS NOT AUTOMATIC. Three things are checked before a
  * transcode is kept, and each one is a real failure mode rather than a formality:
  * it must be SMALLER than the source (otherwise it is a worse deal on every
- * axis); it must not be SHORT (truncation is silent — a proxy that ended early is
+ * axis); it must not be SHORT (truncation is silent - a proxy that ended early is
  * a complete-looking container that would spread a clip's first seconds across
  * the whole filmstrip); and whether it still carries AUDIO is recorded, because a
  * proxy re-containered into WebM cannot hold an AAC track and a waveform read off
  * it would draw flat silence over a clip that exports with sound.
  *
  * ONE AT A TIME, AND CANCELLABLE. Builds run through a single-slot FIFO queue and
- * every one of them — queued or running — is abortable, wired to `pagehide`. An
+ * every one of them - queued or running - is abortable, wired to `pagehide`. An
  * idle callback is not a concurrency limit, and a 9-minute source is inside the
  * ceilings: without both, a five-file drop would open five decoder/encoder pairs
  * at once and navigating away would leave them running to completion.
  *
  * ROUTE TAKEN FOR KEYFRAME DENSITY: mediabunny's `Conversion` API, whose
  * `ConversionVideoOptions.keyFrameInterval` controls GOP length directly
- * ("Setting this field forces a transcode" — exactly what a proxy build is).
+ * ("Setting this field forces a transcode" - exactly what a proxy build is).
  * The manual decode→re-encode fallback the spec allowed for is therefore NOT
  * used: `Conversion` already owns the decode/encode/mux pipeline, and hand-
  * rolling it through video-encode-core would duplicate that for no gain and put
  * VideoSample lifetimes back in our hands. Because no sample ever crosses this
  * module's boundary, the phase-3 "at most 2 in flight, closed in the same tick"
- * rule has nothing to bind to here — it is `Conversion`'s internal business.
+ * rule has nothing to bind to here - it is `Conversion`'s internal business.
  * The phase-3 rules that DO bind are honoured: `computeDuration()` is used for
  * the skip probe (never `getDurationFromMetadata()`, which can be a header lie),
  * every failure is normalised through `toCodedError`, and mediabunny is lazily
- * imported with the explicit format singletons only — never `ALL_FORMATS`.
+ * imported with the explicit format singletons only - never `ALL_FORMATS`.
  *
  * FAILURE POLICY: nothing in this module ever throws into its caller. A proxy is
  * an optimisation; a browser without WebCodecs, a codec the encoder refuses, a
- * full disk, a wedged database — every one of them resolves to "no proxy" and
+ * full disk, a wedged database - every one of them resolves to "no proxy" and
  * the app behaves exactly as it did before this file existed.
  *
  * STORAGE. One row per asset in the `derived-media` IDB store (db.ts v8), keyed
- * `<assetId>:proxy`. It is derived, evictable and regenerable, so — like
- * `asset-blob` and `generated-previews` — it is NOT in `REQUIRED_STORES` and NOT
+ * `<assetId>:proxy`. It is derived, evictable and regenerable, so - like
+ * `asset-blob` and `generated-previews` - it is NOT in `REQUIRED_STORES` and NOT
  * in the portable backup. Its bytes are folded into the storage meter's "Asset
  * cache" slice (profile.ts), whose copy already reads "Downloaded catalog
- * content; it re-downloads on demand. Safe to clear." — so the meter stays
+ * content; it re-downloads on demand. Safe to clear." - so the meter stays
  * honest (no unlabelled growth in "Other") and "Clear cache" already evicts it.
  * `_deleteUserAsset` drops the row with the source asset.
  *
@@ -110,7 +110,7 @@ export {
   SCRUB_REGISTRY_LIMIT, PROXY_URL_LIMIT,
 } from './scrub-registry.ts';
 
-// ── tunables (skip thresholds — see shouldBuildProxy) ───────────────────────
+// ── tunables (skip thresholds - see shouldBuildProxy) ───────────────────────
 
 /** Long edge of a proxy, px. 720p is the smallest size that still reads as the
  *  real picture in a filmstrip and on a preview canvas. */
@@ -120,16 +120,16 @@ export const PROXY_KEYFRAME_SEC = 0.5;
 /** Target proxy video bitrate, bits/s. Generous for 720p; it is never exported. */
 export const PROXY_BITRATE = 2_000_000;
 
-/** Below this duration a whole clip is a couple of GOPs anyway — skip. */
+/** Below this duration a whole clip is a couple of GOPs anyway - skip. */
 export const MIN_PROXY_DURATION_SEC = 8;
-/** Below this size the source is already cheap to seek — skip. */
+/** Below this size the source is already cheap to seek - skip. */
 export const MIN_PROXY_BYTES = 3 * 1024 * 1024;
 /** Below this long edge the frames decode so fast that GOP density buys nothing. */
 export const MIN_PROXY_LONG_EDGE = 640;
 /** Defensive ceiling. The picker caps uploads at 15 MB; this leaves headroom for
  *  other callers without ever letting a background job chew a 500 MB file. */
 export const MAX_PROXY_SOURCE_BYTES = 64 * 1024 * 1024;
-/** Defensive ceiling on length — a background transcode must stay a background job. */
+/** Defensive ceiling on length - a background transcode must stay a background job. */
 export const MAX_PROXY_DURATION_SEC = 600;
 /**
  * Don't write a proxy if doing so would push the origin past this share of quota.
@@ -138,7 +138,7 @@ export const MAX_PROXY_DURATION_SEC = 600;
  * are two different kinds of byte: a user's upload is irreplaceable data they
  * asked to keep, a proxy is derived, regenerable and invisible. At equal ceilings
  * a background transcode could consume the last of the quota and make the user's
- * NEXT upload fail with "Not enough local storage space" — a real failure caused
+ * NEXT upload fail with "Not enough local storage space" - a real failure caused
  * entirely by an optimisation nobody asked for. The gap is the margin that can
  * never be eaten by derived data.
  */
@@ -175,7 +175,7 @@ export interface ProxyRecord {
   assetId: string;
   kind: 'proxy';
   blob: Blob;
-  /** Byte length of the source this was built from — see proxyMatchesSource. */
+  /** Byte length of the source this was built from - see proxyMatchesSource. */
   srcBytes: number;
   /** Proxy pixel dimensions (informational; the filmstrip re-derives its own). */
   w: number;
@@ -184,7 +184,7 @@ export interface ProxyRecord {
    * Did the transcode keep an audio track?
    *
    * A proxy is re-containered into whatever the browser can encode, and an AAC
-   * source track cannot ride in WebM — mediabunny then discards it and the
+   * source track cannot ride in WebM - mediabunny then discards it and the
    * conversion is still perfectly valid. A waveform read off such a proxy would
    * be flat silence over a clip that exports with sound, so the fact travels with
    * the row and `peekScrubUrl(url, { audio: true })` refuses the swap.
@@ -234,7 +234,7 @@ export type ProxySkipReason =
  *
  * A proxy has to pay for itself: it costs a transcode now, disk forever, and it
  * is worthless if the source was already cheap to scrub. The thresholds are
- * deliberate, not tuned — the useful window on this platform is a 3–15 MB,
+ * deliberate, not tuned - the useful window on this platform is a 3–15 MB,
  * ≥8 s, ≥640 px upload, which is exactly the phone-clip / screen-recording shape
  * that ships a multi-second GOP.
  */
@@ -260,7 +260,7 @@ export function shouldBuildProxy(p: ProxyProbe): boolean {
  * Output dimensions for a proxy: long edge clamped to PROXY_LONG_EDGE, aspect
  * preserved, both edges even (encoders reject odd dimensions for 4:2:0 chroma)
  * and never zero. A source already at or under the target is passed through
- * unscaled — it is here for the keyframes, not the pixels.
+ * unscaled - it is here for the keyframes, not the pixels.
  */
 export function proxyDimensions(width: number, height: number): { width: number; height: number } {
   const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
@@ -338,8 +338,8 @@ export interface ProxyMeasure {
  * What a transcode produced.
  *
  * The blob alone is not enough to accept a proxy. Phase 3's rule 7 is that
- * TRUNCATION IS SILENT — a decode that ends early yields a clean, complete-looking
- * short container with no error anywhere — so the output's own measured duration
+ * TRUNCATION IS SILENT - a decode that ends early yields a clean, complete-looking
+ * short container with no error anywhere - so the output's own measured duration
  * has to come back and be checked against the source's.
  */
 export interface ProxyOutput {
@@ -372,7 +372,7 @@ export function setProxyConverter(c: ProxyConverter | null): void {
 /**
  * The ONE place mediabunny is loaded in this module.
  *
- * Named members only, and only the container singletons we accept — never
+ * Named members only, and only the container singletons we accept - never
  * `ALL_FORMATS`, which drags MP3/WAVE/Ogg/FLAC/ADTS/TS/HLS along (the same rule
  * bridge/sequence-providers.ts states and guards).
  */
@@ -493,7 +493,7 @@ async function getConverter(): Promise<ProxyConverter | null> {
 /**
  * A proxy is a nicety; it must never be the write that fills the disk. Mirrors
  * the assets bridge's `assertQuotaRoom` fraction, but refuses silently rather
- * than throwing — nobody asked for this write.
+ * than throwing - nobody asked for this write.
  */
 async function hasRoomFor(bytes: number): Promise<boolean> {
   try {
@@ -510,13 +510,13 @@ async function hasRoomFor(bytes: number): Promise<boolean> {
 
 // ── build ───────────────────────────────────────────────────────────────────
 
-/** Optional wiring for `ensureProxy` — all of it has a working default. */
+/** Optional wiring for `ensureProxy` - all of it has a working default. */
 export interface EnsureProxyOpts {
   /** Skip the mediabunny probe when the caller already measured the source. */
   hint?: Partial<ProxyProbe>;
   /** Rebuild even if a matching row already exists (the regenerate action). */
   force?: boolean;
-  /** Diagnostics. Never a user-facing surface — a proxy failing is not an error. */
+  /** Diagnostics. Never a user-facing surface - a proxy failing is not an error. */
   log?: (level: 'info' | 'warn', message: string, detail?: unknown) => void;
   /** Cancel an in-flight transcode. Also honoured while queued. */
   signal?: AbortSignal;
@@ -529,7 +529,7 @@ export interface EnsureProxyOpts {
  * callback is not a concurrency limit: five 64 MB sources would open five
  * decoder/encoder pairs and five whole output buffers at once, which is precisely
  * the "don't queue transcodes in front of the UI" outcome the scheduling was
- * supposed to buy. The queue is a plain promise chain — FIFO, never rejecting,
+ * supposed to buy. The queue is a plain promise chain - FIFO, never rejecting,
  * and each link is already wrapped so one failure cannot stall the next.
  */
 let proxyQueue: Promise<unknown> = Promise.resolve();
@@ -564,7 +564,7 @@ const noteFailure = (log: EnsureProxyOpts['log'], what: string, err: unknown): n
 /**
  * Build (or reuse) the scrub proxy for one uploaded clip.
  *
- * Returns the proxy blob, or `null` when there shouldn't be one — a source below
+ * Returns the proxy blob, or `null` when there shouldn't be one - a source below
  * the skip thresholds, an unreadable container, no encodable codec, no storage
  * room, no database. **Never throws**: the caller is a fire-and-forget idle job
  * behind a successful upload and must not be able to fail it.
@@ -620,7 +620,7 @@ async function buildProxyInner(
     try {
       const existing = await store.get(key);
       if (existing?.blob && proxyMatchesSource(existing, bytes.size)) return existing.blob;
-      // A row built from different bytes is stale — drop it before rebuilding so
+      // A row built from different bytes is stale - drop it before rebuilding so
       // a failed rebuild can't leave the wrong picture behind.
       if (existing) await store.delete(key);
     } catch (err) {
@@ -661,14 +661,14 @@ async function buildProxyInner(
   const proxy = out?.blob ?? null;
   if (!out || !proxy || proxy.size <= 0) return null;
   // A "proxy" no smaller than the source is a worse deal on every axis (same
-  // decode cost, extra bytes) — throw it away rather than store it.
+  // decode cost, extra bytes) - throw it away rather than store it.
   if (proxy.size >= bytes.size) {
     log?.('info', `[clip-proxy] discarded ${assetId}: proxy (${proxy.size}B) not smaller than source (${bytes.size}B)`);
     return null;
   }
   // A SHORT proxy is the dangerous output, because nothing about it looks wrong:
   // the filmstrip would spread the clip's first few seconds across the whole bar.
-  // Only reject on a MEASURED shortfall — a converter that cannot measure its own
+  // Only reject on a MEASURED shortfall - a converter that cannot measure its own
   // output reports 0, and an unmeasured proxy is no worse than the old behaviour.
   if (out.durationSec > 0) {
     const tolerance = Math.max(PROXY_DURATION_TOLERANCE_SEC, probe.durationSec * PROXY_DURATION_TOLERANCE_FRACTION);
@@ -691,7 +691,7 @@ async function buildProxyInner(
   }
   // The proxy now EXISTS, so any "this asset has no proxy" memo taken while the
   // transcode was running is a lie. Clearing it is what lets the clip that was
-  // dropped on the timeline mid-build pick the proxy up on its next capture —
+  // dropped on the timeline mid-build pick the proxy up on its next capture - 
   // without this the very upload the feature exists for never uses its own proxy.
   clearNoProxy(assetId);
   revokeProxyUrl(assetId);   // a rebuild (force) must not leave the OLD url primed

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * tray.ts — candidate model + persistence (plan 97 SS8). No UI here; the host
+ * tray.ts - candidate model + persistence (plan 97 SS8). No UI here; the host
  * is an in-memory stand-in for `host.state` with the same save/load shape the
  * real bridge exposes.
  *
@@ -209,7 +209,7 @@ test('clearSource removes only pending candidates from the matching provenance l
     colorCandidate('#333333', 'other.pdf'),
   ]);
   const guidelines = tray.list().filter((c) => c.provenance.label === 'guidelines.pdf');
-  await tray.markAdded(guidelines[0]!.id); // one already committed — must survive the clear
+  await tray.markAdded(guidelines[0]!.id); // one already committed - must survive the clear
 
   await tray.clearSource('guidelines.pdf');
 

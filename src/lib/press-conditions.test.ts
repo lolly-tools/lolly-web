@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * Press conditions — lib/press-conditions.ts.
+ * Press conditions - lib/press-conditions.ts.
  *
  * Run directly:  node --test shells/web/src/lib/press-conditions.test.ts
  *
@@ -32,7 +32,7 @@ test('every condition the export path offers is listed here, read across not ret
 
 test('a CMYK condition may only claim a source that was probed and licensed', () => {
   // This replaces a test that asserted every condition was `own`. It is not the absence
-  // that mattered — it was the RULE: an entry may only be `fetch` once its URL has been
+  // that mattered - it was the RULE: an entry may only be `fetch` once its URL has been
   // probed for CORS and the provider's licence has been read and quoted. Four now
   // qualify (the ICC profile registry, probed 2026-07-28), so the rule is what is
   // asserted, and it is still the thing that makes adding a fifth deliberate.
@@ -60,8 +60,8 @@ test('a CMYK condition may only claim a source that was probed and licensed', ()
 test('a profile built from other characterization data is not claimed as exact', () => {
   // FOGRA39/FOGRA51/GRACoL: the registry's profile is built from the very data set the
   // OutputIntent names. SWOP: an export declares CGATS TR 001 and the registered
-  // profile is CGATS TR003 — the same press family, measurably different numbers. The
-  // panel must not present those as one thing. This is now LOAD-BEARING beyond a
+  // profile is CGATS TR003 - the same press family, measurably different numbers. The
+  // panel must not present those as one thing. This is now REQUIRED beyond a
   // label: press-profile-embed.ts pairs a fetched profile with a condition only when
   // sourceIsExact holds, so a false here is what keeps a registry-fetched SWOP profile
   // out of a `CGATS TR 001` OutputIntent declaration.
@@ -93,7 +93,7 @@ test('a fetchable source is https, CORS-probed, and states its licence', () => {
 
 test('a loaded profile is matched to its condition by what the vendor wrote in it', () => {
   // Several spellings are in circulation for one condition, which is why `match` is a
-  // list — ISOcoated_v2 IS FOGRA39, and a profile that only says so obliquely still
+  // list - ISOcoated_v2 IS FOGRA39, and a profile that only says so obliquely still
   // counts.
   const cases: Array<[string, string | null]> = [
     ['Coated FOGRA39 (ISO 12647-2:2004)', 'fogra39'],

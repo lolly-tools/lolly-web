@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/share-links — the "On this instance" section of the Share dialog.
+ * org/share-links - the "On this instance" section of the Share dialog.
  *
  * Loaded lazily by src/org/index.ts, and only when a deployment's control plane is
  * present, so a plain (control-plane-free) deployment never touches this file. It
  * builds up to two permission-gated rows, mounted into the generic Share dialog via
  * the lib/share-sections.ts seam:
  *
- *   - Rendered link (needs can['link.create']) — mints an `embed` link whose URL
+ *   - Rendered link (needs can['link.create']) - mints an `embed` link whose URL
  *     serves the rendered image itself and stays current.
- *   - Guest access (needs can['link.create-guest']) — mints a `guest-edit` link the
+ *   - Guest access (needs can['link.create-guest']) - mints a `guest-edit` link the
  *     recipient can edit for a bounded time, optionally password-protected; their
  *     saves land in the inviter's project.
  *
@@ -113,7 +113,7 @@ function makeResultRow(copy: (text: string) => Promise<void>): { el: HTMLElement
   };
 }
 
-/** A small inline error line (house style — never alert()). */
+/** A small inline error line (house style - never alert()). */
 function makeErrorLine(): { el: HTMLElement; set(msg: string): void; clear(): void } {
   const el = document.createElement('p');
   el.className = 'share-instance-error';
@@ -129,7 +129,7 @@ function makeErrorLine(): { el: HTMLElement; set(msg: string): void; clear(): vo
 
 /**
  * Build the "On this instance" section, or null when the caller may create no
- * instance links (so the dialog adds nothing — dormant even for a signed-in member
+ * instance links (so the dialog adds nothing - dormant even for a signed-in member
  * without link permissions).
  */
 export function buildInstanceShareSection(ctx: ShareSectionContext, config: OrgConfig): HTMLElement | null {
@@ -137,7 +137,7 @@ export function buildInstanceShareSection(ctx: ShareSectionContext, config: OrgC
   const rows = instanceShareRows(can);
   if (!rows.rendered && !rows.guest) return null;
   const toolId = ctx.toolId;
-  if (!toolId) return null; // no tool to target — nothing to mint
+  if (!toolId) return null; // no tool to target - nothing to mint
 
   const { params, format: parsedFormat } = targetFromBaseParts(ctx.baseParts);
   const format = ctx.currentFormat || parsedFormat;
@@ -210,7 +210,7 @@ export function buildInstanceShareSection(ctx: ShareSectionContext, config: OrgC
         `<button type="button" class="btn btn--sm" data-act="mint-guest">${escape(t('Create guest link'))}</button>` +
       `</div>` +
       // Box recipe from the shared .field-input primitive (styles/parts/fields.css);
-      // only the row's own top gap stays local — no view sheet reaches this node.
+      // only the row's own top gap stays local - no view sheet reaches this node.
       `<input type="password" data-guest-pw class="field-input" autocomplete="off" spellcheck="false" placeholder="${escape(t('Password (optional)'))}" aria-label="${escape(t('Password (optional)'))}" ` +
         `style="margin-top:.5rem">`;
     const result = makeResultRow(ctx.copy);

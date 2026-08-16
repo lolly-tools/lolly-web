@@ -5,10 +5,10 @@
  * User-uploaded photos can be huge (12 MP+ phone cameras). We cap them at
  * MAX_LONGEST_EDGE px on the longest side and re-encode. This:
  *   - keeps IndexedDB usage bounded (re-encoded WebP, under the quota guard),
- *   - strips EXIF/GPS metadata (privacy — phone photos carry location),
+ *   - strips EXIF/GPS metadata (privacy - phone photos carry location),
  *   - normalises orientation (EXIF rotation is baked in at decode time).
  *
- * SVG / vector inputs are resolution-independent and must NOT reach here — the
+ * SVG / vector inputs are resolution-independent and must NOT reach here - the
  * caller passes them through untouched.
  *
  * Bit depth: createImageBitmap + a 2D canvas flatten ANY deeper source (a
@@ -24,7 +24,7 @@
 
 import { looksLikeHeic, decodeHeicBitmap } from './heic-decode.ts';
 
-/** Longest-edge cap, in px, applied to stored user rasters (4K — high enough to
+/** Longest-edge cap, in px, applied to stored user rasters (4K - high enough to
  *  stay crisp when a tool exports at 2×–3× on a large canvas). */
 export const MAX_LONGEST_EDGE = 3840;
 
@@ -68,7 +68,7 @@ export function computeResize(
  * Human-readable, format-named reason a raster couldn't be decoded. The upload
  * accept lists advertise more image types than every browser can decode (HEIC is
  * Safari-only; AVIF/GIF are broad but not universal), so on a `createImageBitmap`
- * failure we surface THIS instead of an opaque DOMException. Pure — unit-testable.
+ * failure we surface THIS instead of an opaque DOMException. Pure - unit-testable.
  *
  * Seam: a bundled WASM decoder (e.g. libheif) would slot into downscaleRaster as a
  * fallback BEFORE this message is ever reached, at which point HEIC works everywhere.
@@ -82,7 +82,7 @@ export function describeDecodeFailure(file: Blob & { name?: string }): string {
   const is = (re: RegExp, ...exts: string[]): boolean => re.test(type) || exts.includes(ext);
   if (is(/heic|heif/, 'heic', 'heif')) {
     // Reached only when the bundled HEIC decoder ALSO failed (native + libheif both
-    // gave up), so the file itself is the problem — not a missing capability.
+    // gave up), so the file itself is the problem - not a missing capability.
     return 'This HEIC image couldn’t be read — the file may be damaged or use an unsupported feature.';
   }
   if (is(/avif/, 'avif')) return 'This browser can’t read AVIF images. Try converting it to JPEG, PNG or WebP first.';
@@ -106,7 +106,7 @@ export async function decodeImageBitmap(file: Blob & { name?: string }): Promise
   } catch {
     if (await looksLikeHeic(file)) {
       try { return await decodeHeicBitmap(file); }
-      catch { /* libheif couldn't handle it either — fall through to the message */ }
+      catch { /* libheif couldn't handle it either - fall through to the message */ }
     }
     throw Object.assign(new Error(describeDecodeFailure(file)), { code: 'DECODE_UNSUPPORTED' });
   }
@@ -122,7 +122,7 @@ export async function decodeImageBitmap(file: Blob & { name?: string }): Promise
 export async function downscaleRaster(
   file: Blob,
 ): Promise<{ blob: Blob; width: number; height: number; format: string }> {
-  // Decode with orientation baked in so the stored bytes are upright — natively, or
+  // Decode with orientation baked in so the stored bytes are upright - natively, or
   // via the bundled libheif fallback when the browser can't (iPhone HEIC on Chrome/
   // Firefox). decodeImageBitmap throws a clear, coded message if both paths fail.
   const bitmap = await decodeImageBitmap(file);
@@ -154,7 +154,7 @@ export async function downscaleRaster(
 /**
  * Read a video's intrinsic dimensions (and duration) by loading only its metadata
  * into a detached <video>. The sibling of readDimensions for the verbatim-video
- * ingest path — <img>/naturalWidth is 0 for a video, so it needs its own reader.
+ * ingest path - <img>/naturalWidth is 0 for a video, so it needs its own reader.
  * Resolves with {} (never rejects) when the browser can't decode the container, so
  * a stored video simply carries no dimensions rather than failing the whole upload.
  * Always revokes the object URL. Capped so a slow/renderless context can't wedge.
@@ -188,7 +188,7 @@ export function readVideoDimensions(
 }
 
 /**
- * Encode a canvas to WebP, reading back the actual type — browsers that can't
+ * Encode a canvas to WebP, reading back the actual type - browsers that can't
  * encode the requested type fall back to PNG per the toBlob spec, so we don't
  * assume WebP just because we asked for it.
  */

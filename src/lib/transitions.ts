@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The shared transition vocabulary — one definition of what "pop" or "slide-left"
+ * The shared transition vocabulary - one definition of what "pop" or "slide-left"
  * MEANS, consumed by both the video compositor (bridge/export.ts renderRecord) and
  * the timeline editing chrome that lets a user pick a kind per object.
  *
@@ -34,23 +34,23 @@ export const TRANSITIONS = Object.freeze({
 
 export type TransitionKind = keyof typeof TRANSITIONS;
 
-/** The kinds in registry order — for building a `<select>` or a picker grid. */
+/** The kinds in registry order - for building a `<select>` or a picker grid. */
 export const TRANSITION_KINDS = Object.freeze(Object.keys(TRANSITIONS) as TransitionKind[]);
 
 /**
- * The kind a TIMELINE box animates with when its enter/exit field is empty — 'none',
+ * The kind a TIMELINE box animates with when its enter/exit field is empty - 'none',
  * matching the manifest default of those fields (design / sequence-studio).
  *
  * Deliberately NOT the same as the video compositor's `el.dataset.transition || 'fade'`
  * fallback in bridge/export.ts: that one reads a top-tail record stage, where an
  * overlay with no declared transition is meant to fade in. Two different data sources,
- * two different "nothing stored" answers — which is why this constant is named for the
+ * two different "nothing stored" answers - which is why this constant is named for the
  * one it serves rather than being shared.
  */
 export const DEFAULT_TRANSITION: TransitionKind = 'none';
 
 /**
- * Prototype-safe membership test: hasOwnProperty, never `TRANSITIONS[v]` — a bare
+ * Prototype-safe membership test: hasOwnProperty, never `TRANSITIONS[v]` - a bare
  * lookup answers truthy for 'constructor'/'toString'/'valueOf' and would let inherited
  * Object.prototype keys through as valid kinds.
  */
@@ -74,13 +74,13 @@ function easeOutBack(t: number): number {
 
 /* ── Authored easing ─────────────────────────────────────────────────────────
    The curve above is the one every kind was BORN with, and it stays the answer
-   when nothing is authored — `recTransition` with no ease argument returns the
+   when nothing is authored - `recTransition` with no ease argument returns the
    numbers it always returned, byte for byte, which is the property that lets the
    compositor keep its existing output.
 
    What an authored ease governs is GEOMETRY ONLY: dx, dy, sc, rot. Alpha keeps
    its own fixed ramp (`pc / 0.6`, or `pc / 0.4` for the slides) because that ramp
-   is not a stylistic choice — a fade that tracks a slow curve turns to mud once
+   is not a stylistic choice - a fade that tracks a slow curve turns to mud once
    the frame has been through video compression, which is what the `aFast` comment
    below has always been about. Opacity therefore has no curve control anywhere in
    the UI, by design, not by omission.
@@ -102,7 +102,7 @@ export const EASINGS = Object.freeze({
   // round-trips every one of them BY NAME through `engine/src/keyframes.ts`. Adding
   // them here rather than only in the engine is what keeps ONE vocabulary: a curve
   // authored on a transition and one authored on a keyframe are the same curve, and
-  // `kfEaseName` hands back exactly these names. Strictly additive — the six above
+  // `kfEaseName` hands back exactly these names. Strictly additive - the six above
   // keep their spelling, their order and their points, so every authored ease and
   // every unauthored transition renders byte-identically to before.
   smooth: 'Smooth',
@@ -123,7 +123,7 @@ const EASING_POINTS: Readonly<Record<EasingName, readonly [number, number, numbe
   anticipate: [0.36, -0.4, 0.66, 1],
   // The two the keyframe grammar adds. `smooth` is the standard accelerate-decelerate
   // curve; `snappy` shares its in-ramp but holds the out-handle much later, so it
-  // leaves at the same rate and arrives abruptly — a deliberate sibling of smooth
+  // leaves at the same rate and arrives abruptly - a deliberate sibling of smooth
   // rather than a second overshoot. Byte-identical to KF_EASE_PRESETS.es/.ek in
   // engine/src/keyframes.ts; transitions.test.ts pins the two tables together.
   smooth: [0.4, 0, 0.2, 1],
@@ -143,7 +143,7 @@ export function easingPoints(v: unknown): [number, number, number, number] | nul
   const n = m[1]!.split(',').map((s) => Number(s.trim()));
   if (n.length !== 4 || n.some((x) => !Number.isFinite(x))) return null;
   // x is TIME and must stay inside the unit interval or the curve is not a
-  // function of progress — CSS rejects the same thing. y is unbounded on purpose:
+  // function of progress - CSS rejects the same thing. y is unbounded on purpose:
   // that is the whole overshoot family.
   if (n[0]! < 0 || n[0]! > 1 || n[2]! < 0 || n[2]! > 1) return null;
   return [n[0]!, n[1]!, n[2]!, n[3]!];
@@ -160,7 +160,7 @@ export function easingToWire(v: unknown): string {
  * y at time x on a unit cubic bezier with endpoints (0,0) and (1,1).
  *
  * Newton-Raphson first, because it converges in two or three steps for the curves
- * anyone actually authors, then bisection as the guaranteed fallback — the same
+ * anyone actually authors, then bisection as the guaranteed fallback - the same
  * shape as every browser's own implementation. A near-zero derivative is where
  * Newton diverges (a curve with a flat spot, e.g. an x1 of 0 against an x2 of 1),
  * so that case bails to bisection rather than dividing by it.
@@ -192,7 +192,7 @@ export function cubicBezierAt(x1: number, y1: number, x2: number, y2: number, x:
 
 /**
  * The geometry curve for one transition: the authored ease if there is a valid one,
- * otherwise the kind's own — which is `easeOutBack` for `pop` and `easeOutCubic` for
+ * otherwise the kind's own - which is `easeOutBack` for `pop` and `easeOutCubic` for
  * everything else, exactly as before this control existed.
  */
 function geometryEase(kind: string, ease: unknown): (t: number) => number {
@@ -205,14 +205,14 @@ function geometryEase(kind: string, ease: unknown): (t: number) => number {
 // Distances scale with the object's own size so a small lower-third slides a small way.
 //
 // `ease` is optional and governs GEOMETRY ONLY (see the easing section above). Omit it
-// — as every caller did before the control existed, and as every unauthored box still
-// does — and the numbers are identical to the ones this returned when the maths first
+// - as every caller did before the control existed, and as every unauthored box still
+// does - and the numbers are identical to the ones this returned when the maths first
 // moved out of the compositor.
 function recTransition(kind: string, p: number, w: number, h: number, ease?: unknown): { dx: number; dy: number; sc: number; alpha: number; rot: number } {
   if (kind === 'none') return { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 };
   const pc = Math.max(0, Math.min(1, p));
   const curve = geometryEase(kind, ease);
-  // `ep` and `eb` are the SAME curve now — a kind picks its default through
+  // `ep` and `eb` are the SAME curve now - a kind picks its default through
   // `geometryEase`, and an authored ease overrides whichever it would have used. The
   // two names are kept because the cases below read as the shapes they always were.
   const ep = curve(pc);

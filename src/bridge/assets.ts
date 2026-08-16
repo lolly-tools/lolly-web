@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * AssetsAPI — global catalog + user uploads, presented as one surface.
+ * AssetsAPI - global catalog + user uploads, presented as one surface.
  *
  * Resolution order for host.assets.get(id):
  *   1. user-assets store (if id starts with 'user/')
@@ -18,12 +18,12 @@ import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../..
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 // c2pa-verify is LAZY on purpose. It is the entry to the whole provenance
 // cluster (c2pa + c2pa-extract + c2pa-containers + c2pa-verdict + c2pa-trust +
-// video-meta, ~65 KB gz), and this module is on the boot path — a static import
-// here puts all of it in front of first paint. Nothing at boot reads a
-// credential: the two callers below (asset ingest and the user-asset listing)
-// are both already async and both skip the load entirely when no record
-// actually carries a credential. Memoised, so the second caller is free.
-// See scripts/check-bundle-budget.ts.
+// video-meta, ~65 KB gz), and this module is on the boot path, so a static
+// import here puts all of it in front of first paint. Nothing at boot reads
+// a credential: the two callers below (asset ingest and the user-asset
+// listing) are both already async and both skip the load entirely when no
+// record actually carries a credential. Memoised, so the second caller is
+// free. See scripts/check-bundle-budget.ts.
 type C2paVerifyModule = typeof import('../../../../engine/src/c2pa-verify.ts');
 let C2PA_VERIFY_MODULE: Promise<C2paVerifyModule> | null = null;
 function loadC2paVerify(): Promise<C2paVerifyModule> {
@@ -31,23 +31,26 @@ function loadC2paVerify(): Promise<C2paVerifyModule> {
   return C2PA_VERIFY_MODULE;
 }
 import { instanceFetch } from '../lib/instance.ts';
-// Derived scrub proxies (lib/clip-proxy.ts) are keyed by asset id and are NEVER
-// resolvable through this API — a proxy must not be able to reach an export. The
-// two things the assets bridge owes them are lifecycle, not resolution: register
-// the url→id pairing as an object URL is minted (the preview-only consumers see a
-// URL and nothing else), and evict the derived row when its source asset dies.
+// Derived scrub proxies (lib/clip-proxy.ts) are keyed by asset id and are
+// NEVER resolvable through this API: a proxy must not be able to reach an
+// export. The two things the assets bridge owes them are lifecycle, not
+// resolution: register the url-to-id pairing as an object URL is minted (the
+// preview-only consumers see a URL and nothing else), and evict the derived
+// row when its source asset dies.
 //
-// Only the SYNCHRONOUS registry is imported statically. `deleteProxy` is pulled in
-// on demand at the one already-async call site, which keeps lib/clip-proxy.ts —
-// and with it the `import('mediabunny')` site inside it — out of the first-paint
-// module graph entirely. The registry itself is a few maps and no dependencies.
+// Only the SYNCHRONOUS registry is imported statically. `deleteProxy` is
+// pulled in on demand at the one already-async call site, which keeps
+// lib/clip-proxy.ts, and with it the `import('mediabunny')` site inside it,
+// out of the first-paint module graph entirely. The registry itself is a few
+// maps and no dependencies.
 import { noteScrubSource } from '../lib/scrub-registry.ts';
-// The `zzfxm:` procedural-audio id — an ENGINE-owned asset-id scheme, exactly like
-// tool-url.ts's, because every shell that resolves an asset has to recognise it.
+// The `zzfxm:` procedural-audio id: an ENGINE-owned asset-id scheme, exactly
+// like tool-url.ts's, because every shell that resolves an asset has to
+// recognise it.
 import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
 // Tokens discovery must skip a published design-system VERSION (plans/97 §6a).
-// The engine leaf, like the imports above: the web bridge, the MCP server and the
-// CLI all apply this one predicate rather than each writing the rule out.
+// The engine leaf, like the imports above: the web bridge, the MCP server and
+// the CLI all apply this one predicate instead of each writing the rule out.
 import { pickHeadAssetId } from '../../../../engine/src/design-version.ts';
 // Where copy-on-write parks bytes a published version pins. Imported (not
 // re-spelled) so the listing filter below and the preserver that writes them can
@@ -91,7 +94,7 @@ interface AssetMetaRecord {
   formats: AssetFormat[];
 }
 
-/** A user-uploaded asset (the 'user-assets' IDB store) — already resolved to one blob/format. */
+/** A user-uploaded asset (the 'user-assets' IDB store) - already resolved to one blob/format. */
 interface UserAssetRecord {
   id: string;
   type: AssetRef['type'];
@@ -102,19 +105,20 @@ interface UserAssetRecord {
   width?: number;
   height?: number;
   meta?: Record<string, unknown>;
-  // Preserved Content Credentials captured at ingest — the raw C2PA manifest
+  // Preserved Content Credentials captured at ingest - the raw C2PA manifest
   // store only (no pixels/EXIF), so a placed credentialed image can carry its
   // provenance into an export without re-hoarding the metadata upload strips.
   credential?: Uint8Array;
   credentialFormat?: string;
-  // Generative-AI disclosure, DERIVED from `credential` at upload time (the file's C2PA
-  // chain declared AI/ML-generated pixels — Claude, OpenAI, Gemini, …). Cached here so the
-  // catalog/picker badge doesn't re-parse on every render. Absent = not yet computed
-  // (older uploads) — `_listUserAssets` recomputes those from `credential` on the fly.
+  // Generative-AI disclosure, DERIVED from `credential` at upload time (the
+  // file's C2PA chain declared AI/ML-generated pixels: Claude, OpenAI,
+  // Gemini, etc.). Cached here so the catalog/picker badge doesn't re-parse
+  // on every render. Absent means not yet computed (older uploads);
+  // `_listUserAssets` recomputes those from `credential` on the fly.
   aiGenerated?: 'full' | 'partial';
 }
 
-/** The record shape toAssetRef consumes — a user record or a catalog record resolved
+/** The record shape toAssetRef consumes - a user record or a catalog record resolved
  *  to one concrete blob/format (plus an optional cacheKey override for themed bakes). */
 interface AssetRefSource {
   id: string;
@@ -155,11 +159,11 @@ interface AssetsDb {
 
 const OBJECT_URL_CACHE = new Map<string, string>(); // key → blob URL, kept alive while bridge is.
 
-// Library-asset credential lookups (host.assets.credential) — the extracted
+// Library-asset credential lookups (host.assets.credential) - the extracted
 // C2PA store per id, or null once an asset is known clean. Manifest stores are
 // small (no pixels); nulls dominate, so the map stays tiny.
 const CREDENTIAL_CACHE = new Map<string, { store: Uint8Array; format: string } | null>();
-// Skip credential-scanning anything enormous — same cap as upload ingest.
+// Skip credential-scanning anything enormous - same cap as upload ingest.
 const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024;
 
 // Parsed theme list from the catalog's icon-themes palette asset (a palette-type
@@ -171,15 +175,16 @@ let ICON_THEMES_CACHE: Promise<IconTheme[]> | null = null;
 let PHOTO_TREATMENTS_CACHE: Promise<PhotoTreatment[]> | null = null;
 
 /**
- * There is no hard cap on how many device images a user may keep — the library
- * is theirs to fill, and assertQuotaRoom() (below) is the real backstop, refusing
- * a write only when device storage is genuinely tight.
+ * There is no hard cap on how many device images a user may keep. The
+ * library is theirs to fill, and assertQuotaRoom() (below) is the real
+ * backstop, refusing a write only when device storage is genuinely tight.
  *
- * Instead, as the library grows past these friendly milestones the UI nudges once
- * (see lib/asset-milestone.ts) to explain that device images stay on this device:
- * they don't travel inside share links, so an image only reaches someone else when
- * it's rendered into a file — and images everyone should always have belong in the
- * catalog. The nudge is informational, never blocking.
+ * Instead, as the library grows past these friendly milestones the UI
+ * nudges once (see lib/asset-milestone.ts) to explain that device images
+ * stay on this device: they don't travel inside share links, so an image
+ * only reaches someone else when it's rendered into a file, and images
+ * everyone should always have belong in the catalog. The nudge is
+ * informational, never blocking.
  */
 export const USER_ASSET_MILESTONES = [20, 100, 500] as const;
 
@@ -188,9 +193,10 @@ export const USER_ASSET_MILESTONES = [20, 100, 500] as const;
 const QUOTA_SAFETY_FRACTION = 0.9;
 
 // Monotonic disambiguator for duplicate ids: several copies minted inside one
-// synchronous burst (a bulk "Duplicate" over a multi-selection) share the same
-// Date.now(), so a per-mint counter is what keeps their ids unique — and, padded,
-// correctly ordered so newer copies still sort first in _listUserAssets.
+// synchronous burst (a bulk "Duplicate" over a multi-selection) share the
+// same Date.now(), so a per-mint counter is what keeps their ids unique, and,
+// padded, correctly ordered so newer copies still sort first in
+// _listUserAssets.
 let duplicateSeq = 0;
 
 /**
@@ -206,9 +212,10 @@ function mintDuplicateId(srcId: string): string {
 }
 
 /**
- * "<name> copy", or "<name> copy 2", "…3" when earlier copies already carry that
- * name — Finder-style. A trailing " copy"/" copy N" is stripped from the source
- * first, so duplicating a duplicate reads "photo copy 2", never "photo copy copy".
+ * "<name> copy", or "<name> copy 2", "...3" when earlier copies already
+ * carry that name, Finder-style. A trailing " copy"/" copy N" is stripped
+ * from the source first, so duplicating a duplicate reads "photo copy 2",
+ * never "photo copy copy".
  */
 function nextCopyName(srcName: string, taken: Set<string>): string {
   const base = srcName.replace(/ copy( \d+)?$/i, '').trim() || srcName.trim() || 'image';
@@ -218,13 +225,14 @@ function nextCopyName(srcName: string, taken: Set<string>): string {
 }
 
 /**
- * The recency key for a user asset. Every id is `user/<kind>/<ms>-…`, so the `<ms>`
- * third segment is when it was made. Sorting the WHOLE id string instead orders by
- * <kind> first (matte < upload < upscaled, alphabetically), which sinks a brand-new
- * cutout below every older upload and upscale — "newest" never reaches the top.
- * Parsing the ms out fixes that. Falls back to 0 for any id whose third segment
- * isn't leading-numeric, so a non-timestamped kind stays put (ordered by the id
- * tiebreak) instead of jumping to the front.
+ * The recency key for a user asset. Every id is `user/<kind>/<ms>-...`, so
+ * the `<ms>` third segment is when it was made. Sorting the WHOLE id string
+ * instead orders by <kind> first (matte < upload < upscaled, alphabetically),
+ * which sinks a brand-new cutout below every older upload and upscale, so
+ * "newest" never reaches the top. Parsing the ms out fixes that. Falls back
+ * to 0 for any id whose third segment isn't leading-numeric, so a
+ * non-timestamped kind stays put (ordered by the id tiebreak) instead of
+ * jumping to the front.
  */
 function userIdTime(id: string): number {
   const n = parseInt(id.split('/')[2] ?? '', 10);
@@ -234,20 +242,22 @@ function userIdTime(id: string): number {
 /** Options the shell wires in at bridge-assembly time (bridge/index.ts). */
 export interface AssetsApiOptions {
   /**
-   * Runs BEFORE anything replaces or removes the bytes stored at a user-asset
-   * id. Its job is to preserve bytes a published design-system version pins
-   * (plans/97 §6a copy-on-write) — see bridge/version-assets.ts.
+   * Runs BEFORE anything replaces or removes the bytes stored at a
+   * user-asset id. Its job is to preserve bytes a published design-system
+   * version pins (plans/97 §6a copy-on-write); see bridge/version-assets.ts.
    *
-   * A THROW REFUSES the write: losing a version's bytes is not an acceptable
-   * success, and a version that silently changed what it renders would make
-   * "published is permanent" a lie. Called from the four methods that destroy
-   * bytes at an existing id and nowhere else, so no caller can forget it.
+   * A THROW REFUSES the write: losing a version's bytes is not an
+   * acceptable success, and a version that silently changed what it renders
+   * would make "published is permanent" a lie. Called from the four methods
+   * that destroy bytes at an existing id and nowhere else, so no caller can
+   * forget it.
    *
    * `reclaiming` marks the DELETE case, where the preserved copy is a move
-   * rather than a second copy — the bytes it writes are the bytes about to be
-   * released, so it must not be quota-checked. Without that, a device near its
-   * quota refuses the delete that would have freed the space, and the user is
-   * locked out of their own storage with no way forward (see _deleteUserAsset).
+   * instead of a second copy: the bytes it writes are the bytes about to be
+   * released, so it must not be quota-checked. Without that, a device near
+   * its quota refuses the delete that would have freed the space, and the
+   * user is locked out of their own storage with no way forward (see
+   * _deleteUserAsset).
    */
   preservePinned?: (id: string, opts?: { reclaiming?: boolean }) => Promise<void>;
 }
@@ -256,13 +266,14 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
   const api = {
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
       // A PROCEDURAL asset: `zzfxm:<seed>[:<style>]` names a song that is
-      // synthesised on demand, not a file anything stores. There are no bytes to
-      // look up, so the ref resolves to ITSELF — `url === id` — and the seed
-      // travels intact through the engine's `resolveAssetRefs`, which is the one
+      // synthesised on demand, not a file anything stores. There are no bytes
+      // to look up, so the ref resolves to ITSELF (`url === id`), and the
+      // seed travels intact through the engine's `resolveAssetRefs`, the one
       // resolution path every consumer shares. Without this the engine's
       // `resolveOne` falls through to a catalog lookup, throws "Asset not in
-      // catalog", nulls the field before hooks run, and the bed silently vanishes
-      // from both the timeline and the export. See engine/src/zzfxm-ref.ts.
+      // catalog", nulls the field before hooks run, and the bed silently
+      // vanishes from both the timeline and the export. See
+      // engine/src/zzfxm-ref.ts.
       if (isZzfxmRef(id)) {
         const ref = parseZzfxmRef(id);
         if (!ref) throw new Error(`Malformed procedural audio ref: ${id}`);
@@ -278,11 +289,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         return toAssetRef(userAsset, 'user');
       }
 
-      // A presentation modifier can ride in the id, chosen at pick time and baked
-      // into a derived copy at resolve — the base asset is always resolved
-      // normally first (blob cache keyed by base id):
-      //   `<baseId>?theme=<themeId>`      — a themable two-colour icon pairing
-      //   `<baseId>?treatment=<id>`       — a raster photo colour treatment
+      // A presentation modifier can ride in the id, chosen at pick time and
+      // baked into a derived copy at resolve. The base asset is always
+      // resolved normally first (blob cache keyed by base id):
+      //   `<baseId>?theme=<themeId>` - a themable two-colour icon pairing
+      //   `<baseId>?treatment=<id>` - a raster photo colour treatment
       // An id carries at most one, so baseId comes from whichever matched.
       const { baseId: themedBase, theme } = parseThemedAssetId(id);
       const { baseId: treatedBase, treatment } = parseTreatedAssetId(id);
@@ -294,19 +305,21 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       const format = pickFormat(meta, opts.format);
       const version = opts.version ?? meta.version;
       const blobKey = `${baseId}:${format.format}:${version}`;
-      // durationMs is authored on the FORMAT entry (beside width/height) but read from
-      // ref.meta, so it has to be lifted here — otherwise a catalog clip's authored
-      // length is invisible to the picker badge and the timeline. Same "finite and
-      // positive or absent" rule the upload path applies; never a 0 placeholder.
+      // durationMs is authored on the FORMAT entry (beside width/height) but
+      // read from ref.meta, so it has to be lifted here. Otherwise a catalog
+      // clip's authored length is invisible to the picker badge and the
+      // timeline. Same "finite and positive or absent" rule the upload path
+      // applies; never a 0 placeholder.
       const durationMs = typeof format.durationMs === 'number' && Number.isFinite(format.durationMs) && format.durationMs > 0
         ? format.durationMs : undefined;
       const refMeta = {
         name: meta.name,
         tags: meta.tags,
         ...(meta.aiGenerated ? { aiGenerated: meta.aiGenerated } : {}),
-        // Licensing signals ride onto the resolved ref so downstream (e.g. the
-        // `.lolly` share file, plans/114) can tell a freely-shareable catalog asset
-        // from proprietary/brand-locked content that must not travel by default.
+        // Licensing signals ride onto the resolved ref so downstream (e.g.
+        // the `.lolly` share file, plans/114) can tell a freely-shareable
+        // catalog asset from proprietary/brand-locked content that must not
+        // travel by default.
         ...(meta.brandLock ? { brandLock: true } : {}),
         ...((meta as { license?: string }).license ? { license: (meta as { license?: string }).license } : {}),
         ...(durationMs != null ? { durationMs } : {}),
@@ -337,10 +350,10 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
             return toAssetRef({ ...common, blob: new Blob([baked], { type: 'image/svg+xml' }) }, 'library');
           }
         }
-        // Unknown theme or a non-themable file: serve the plain bytes but KEEP
-        // the requested id — a theme that's temporarily unresolvable must not
-        // be stripped from state the next save persists (and the CLI bridge
-        // behaves the same way). Shares the base asset's object URL.
+        // Unknown theme or a non-themable file: serve the plain bytes but
+        // KEEP the requested id. A theme that's temporarily unresolvable
+        // must not be stripped from state the next save persists (and the
+        // CLI bridge behaves the same way). Shares the base asset's object URL.
         return toAssetRef({
           ...meta, id, blob: await loadBlob(), format: format.format,
           cacheKey: `library:${blobKey}`, meta: refMeta,
@@ -349,18 +362,20 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
 
       if (treatment && meta.type === 'raster') {
         const def = (await api._photoTreatments()).find(t => t.id === treatment);
-        // The wrapper is a fixed-size SVG, so it needs the photo's pixel dimensions.
-        // The primary (jpg) format entry frequently omits them, so fall back to any
-        // sibling format that carries a pair (e.g. the thumb) — all share the source
-        // aspect, which is all the viewBox needs. Without this fallback the bake
-        // silently no-ops and the plain (untreated) photo is served, so a picked
-        // treatment wouldn't survive into the tool render.
+        // The wrapper is a fixed-size SVG, so it needs the photo's pixel
+        // dimensions. The primary (jpg) format entry frequently omits them,
+        // so fall back to any sibling format that carries a pair (e.g. the
+        // thumb): all share the source aspect, which is all the viewBox
+        // needs. Without this fallback the bake silently no-ops and the
+        // plain (untreated) photo is served, so a picked treatment wouldn't
+        // survive into the tool render.
         const dimSrc = (format.width && format.height) ? format : meta.formats.find(f => f.width && f.height);
         const w = dimSrc?.width, h = dimSrc?.height;
         if (def && w && h) {
-          // The derived ref keeps the BASE format (jpg), not svg: it's still the
-          // jpg blob that backs it, and pruning protects `<baseId>:jpg:<version>`
-          // — the key the derived object URL depends on.
+          // The derived ref keeps the BASE format (jpg), not svg: it's
+          // still the jpg blob that backs it, and pruning protects
+          // `<baseId>:jpg:<version>`, the key the derived object URL
+          // depends on.
           const cacheKey = `library:${blobKey}:pt:${treatment}`;
           const common = { ...meta, id, format: format.format, cacheKey, meta: { ...refMeta, treatment, baseId } };
           if (OBJECT_URL_CACHE.has(cacheKey)) return toAssetRef(common, 'library');
@@ -409,7 +424,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
      * Internal: colour treatments for raster photos, from the catalog's palette
      * asset tagged "photo-treatments". [] when the catalog has none. Same caching
      * discipline as _iconThemes(); "None" is not listed here (it's the plain
-     * photo with no id suffix — the picker prepends it).
+     * photo with no id suffix - the picker prepends it).
      */
     async _photoTreatments(): Promise<PhotoTreatment[]> {
       PHOTO_TREATMENTS_CACHE ??= (async (): Promise<PhotoTreatment[]> => {
@@ -431,36 +446,42 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     async query(filter: AssetQuery = {}): Promise<AssetRef[]> {
       const all = await db.getAll('asset-meta');
       const filtered = all.filter(m => matchesFilter(m, filter));
-      // Don't pre-resolve blob URLs — that forces every cached blob into memory.
-      // Every format carries a static catalog URL (same-origin for core/catalog,
-      // CDN for on-demand), so the picker can show a thumbnail directly without a
-      // cached blob first. Only flag a placeholder when there's genuinely no URL
-      // to resolve (an unresolved/on-demand tier with no static formats[0].url).
+      // Don't pre-resolve blob URLs: that forces every cached blob into
+      // memory. Every format carries a static catalog URL (same-origin for
+      // core/catalog, CDN for on-demand), so the picker can show a thumbnail
+      // directly without a cached blob first. Only flag a placeholder when
+      // there's genuinely no URL to resolve (an unresolved/on-demand tier
+      // with no static formats[0].url).
       return filtered.map((m): AssetRef => {
-        // Pick the format the picker should point at: for video the actual clip (a
-        // <video> plays it), for everything else formats[0] — never a companion still.
+        // Pick the format the picker should point at: for video the actual
+        // clip (a <video> plays it), for everything else formats[0], never a
+        // companion still.
         const primary = m.type === 'video'
           ? (m.formats.find(f => /^(mp4|webm|mov)$/i.test(f.format)) ?? m.formats[0])
           : m.formats[0];
-        // A still poster (a non-animation companion format) for the types that need
-        // one: a lottie thumbnails from it (an <img> can't show the json); a video
-        // can use it as its <video poster>. Excludes the animation/clip formats.
+        // A still poster (a non-animation companion format) for the types
+        // that need one: a lottie thumbnails from it (an <img> can't show
+        // the json); a video can use it as its <video poster>. Excludes the
+        // animation/clip formats.
         const still = m.formats.find(f => !/^(json|mp4|webm|mov)$/i.test(f.format))?.url ?? '';
         const lottiePoster = m.type === 'lottie' ? still : '';
         const videoPoster = m.type === 'video' ? still : '';
         const directUrl = lottiePoster || (primary?.url ?? '');
-        // Catalog animated rasters (gif/apng/animated-webp) are authored type:'raster'
-        // and tagged "animated" so the picker badges the motion (user uploads carry the
-        // same flag from ingest). Same-MIME still/animated can't be told apart otherwise.
+        // Catalog animated rasters (gif/apng/animated-webp) are authored
+        // type:'raster' and tagged "animated" so the picker badges the
+        // motion (user uploads carry the same flag from ingest). Same-MIME
+        // still/animated can't be told apart otherwise.
         const animated = m.type === 'raster' && (m.tags?.includes('animated') ?? false);
         const posterUrl = lottiePoster || videoPoster;
-        // The small WebP derivative (scripts/build-thumbnails.ts), if this raster has one.
-        // Surfaced so a grid/list view can show the ~30 KB thumb instead of the full-res
-        // original while a details/zoom view still resolves `url` (the original) for quality.
+        // The small WebP derivative (scripts/build-thumbnails.ts), if this
+        // raster has one. Surfaced so a grid/list view can show the ~30 KB
+        // thumb instead of the full-res original while a details/zoom view
+        // still resolves `url` (the original) for quality.
         const thumbUrl = m.formats.find(f => f.format === 'thumb')?.url ?? '';
-        // The playable animation (JSON) for a lottie: `directUrl`/`url` point at the still
-        // poster so an <img> thumbnail works, so surface the json separately for a looping
-        // motion preview (catalog/picker). Video needs none — its directUrl is the clip.
+        // The playable animation (JSON) for a lottie: `directUrl`/`url`
+        // point at the still poster so an <img> thumbnail works, so surface
+        // the json separately for a looping motion preview
+        // (catalog/picker). Video needs none: its directUrl is the clip.
         const animationUrl = m.type === 'lottie' ? (m.formats.find(f => f.format === 'json')?.url ?? '') : '';
         return {
           source: 'library',
@@ -483,22 +504,25 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
 
     /**
      * Internal: called only by the picker UI to stash an uploaded blob.
-     * Tools cannot call this directly — it's prefixed with _ to mark it as
+     * Tools cannot call this directly: it's prefixed with _ to mark it as
      * non-public, and not declared in the v1 bridge contract.
      *
-     * No count cap (see USER_ASSET_MILESTONES) — assertQuotaRoom() is the only
-     * guard, at the bridge boundary so it can't be bypassed by a different caller,
-     * and it refuses a write only when device storage is genuinely tight.
+     * No count cap (see USER_ASSET_MILESTONES). assertQuotaRoom() is the
+     * only guard, at the bridge boundary so it can't be bypassed by a
+     * different caller, and it refuses a write only when device storage is
+     * genuinely tight.
      *
      * `skipQuota` is for the ONE write that is not a net addition: the
-     * copy-on-write preservation of bytes that are being released in the same
-     * breath (a delete). Nothing outside bridge/version-assets.ts passes it, and
-     * it is not on the record, so a caller cannot set it by accident.
+     * copy-on-write preservation of bytes that are being released in the
+     * same breath (a delete). Nothing outside bridge/version-assets.ts
+     * passes it, and it is not on the record, so a caller cannot set it by
+     * accident.
      */
     async _uploadUserAsset(record: UserAssetRecord, upOpts: { skipQuota?: boolean } = {}): Promise<void> {
-      // Before assertQuotaRoom on purpose: the preserved copy has to exist before
-      // the incoming write can fail on quota, or a tight device would drop a
-      // published version's bytes on the floor while refusing the replacement.
+      // Before assertQuotaRoom on purpose: the preserved copy has to exist
+      // before the incoming write can fail on quota, or a tight device
+      // would drop a published version's bytes on the floor while refusing
+      // the replacement.
       await opts.preservePinned?.(record.id);
       if (!upOpts.skipQuota) await assertQuotaRoom(record.blob?.size ?? 0);
       // Compute the AI-provenance flag once, at ingest, from the captured credential.
@@ -510,13 +534,13 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     /**
-     * Internal: duplicate one user upload — a byte-identical copy under a fresh
-     * id and a "… copy" name. Everything else rides along unchanged (the same
-     * blob, format, dimensions, preserved Content Credential and AI flag), so the
-     * copy verifies exactly like its source. The write goes through
-     * _uploadUserAsset, so a duplicate is quota-checked like any other addition —
-     * a copy is real bytes on the device, not a free alias. Returns the new id,
-     * or null if the source is already gone.
+     * Internal: duplicate one user upload, a byte-identical copy under a
+     * fresh id and a "... copy" name. Everything else rides along unchanged
+     * (the same blob, format, dimensions, preserved Content Credential and
+     * AI flag), so the copy verifies exactly like its source. The write goes
+     * through _uploadUserAsset, so a duplicate is quota-checked like any
+     * other addition: a copy is real bytes on the device, not a free alias.
+     * Returns the new id, or null if the source is already gone.
      */
     async _duplicateUserAsset(id: string): Promise<string | null> {
       const src = await db.get('user-assets', id);
@@ -541,9 +565,10 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
 
     /** Internal: list the user's saved images, newest first, as resolved AssetRefs.
      *  Frozen rows (bytes a published design-system version pins, preserved by
-     *  copy-on-write) are machine-owned and hidden: the user never chose them and
-     *  cannot meaningfully act on them. They still COUNT toward _userAssetsSize —
-     *  storage honesty — and the Versions panel reports their total separately. */
+     *  copy-on-write) are machine-owned and hidden: the user never chose them
+     *  and cannot meaningfully act on them. They still COUNT toward
+     *  _userAssetsSize for storage honesty, and the Versions panel reports
+     *  their total separately. */
     async _listUserAssets(): Promise<AssetRef[]> {
       const all = (await db.getAll('user-assets')).filter(r => !String(r.id).startsWith(FROZEN_PREFIX));
       // Only older records (pre-dating the persisted flag) need the provenance
@@ -576,7 +601,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
 
     /**
      * Internal: write a user-asset record straight back in from a backup import.
-     * Deliberately bypasses the personal-library cap and quota check — a restore
+     * Deliberately bypasses the personal-library cap and quota check - a restore
      * should faithfully reproduce the library the user exported, not be rejected
      * for being "too big" on arrival.
      */
@@ -585,11 +610,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // published version pins exactly like an upload can.
       await opts.preservePinned?.(record.id);
       await db.put('user-assets', record);
-      // The one path that REWRITES an existing id rather than minting a new one.
-      // A restore normally puts identical bytes back, but a proxy read has no
-      // source size to fingerprint against, so a stale row would be accepted on
-      // faith. Dropping it costs one background transcode and removes the whole
-      // class of "the filmstrip shows the previous file".
+      // The one path that REWRITES an existing id instead of minting a new
+      // one. A restore normally puts identical bytes back, but a proxy read
+      // has no source size to fingerprint against, so a stale row would be
+      // accepted on faith. Dropping it costs one background transcode and
+      // removes the whole class of "the filmstrip shows the previous file".
       await import('../lib/clip-proxy.ts')
         .then(m => m.deleteProxy(record.id))
         .catch(() => { /* derived data — a failed evict is not an error */ });
@@ -601,10 +626,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     /**
-     * Internal: every catalog asset's BASE id (the 'asset-meta' keys). Used by the
-     * folder reconciler (folders.ts prune) so a catalog asset REFERENCED into a
-     * project folder — a pointer, not a user-owned copy — isn't mistaken for a
-     * dangling image ref and pruned away. Cheap: a key-only read, no blobs.
+     * Internal: every catalog asset's BASE id (the 'asset-meta' keys). Used
+     * by the folder reconciler (folders.ts prune) so a catalog asset
+     * REFERENCED into a project folder (a pointer, not a user-owned copy)
+     * isn't mistaken for a dangling image ref and pruned away. Cheap: a
+     * key-only read, no blobs.
      */
     async _listCatalogAssetIds(): Promise<string[]> {
       return (await db.getAllKeys('asset-meta')).map(String);
@@ -618,39 +644,41 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
 
     /** Internal: delete one user image and revoke its cached object URL. */
     async _deleteUserAsset(id: string): Promise<void> {
-      // Deleting is the most complete way to destroy pinned bytes, so it gets
-      // the same preservation pass as a replacement — but marked `reclaiming`,
-      // because here the preserved copy REPLACES the bytes it saves instead of
-      // joining them. Quota-checking it would let a full device refuse the one
-      // action that frees space, which is a dead end with no way out.
+      // Deleting is the most complete way to destroy pinned bytes, so it
+      // gets the same preservation pass as a replacement, but marked
+      // `reclaiming`, because here the preserved copy REPLACES the bytes it
+      // saves instead of joining them. Quota-checking it would let a full
+      // device refuse the one action that frees space, which is a dead end
+      // with no way out.
       await opts.preservePinned?.(id, { reclaiming: true });
       // Read the record first: the deletion event below carries its type so
       // listeners can react without re-querying a store the record just left.
       const rec = await db.get('user-assets', id).catch(() => undefined) as { type?: string } | undefined;
       await db.delete('user-assets', id);
-      // toAssetRef keys user URLs as `user:<id>:<format>:<version>` — evict any.
+      // toAssetRef keys user URLs as `user:<id>:<format>:<version>` - evict any.
       evictObjectUrlsByPrefix(`user:${id}:`);
       // A derived scrub proxy outlives nothing: without this its row (and its
       // object URL) would leak for the lifetime of the database.
       await import('../lib/clip-proxy.ts')
         .then(m => m.deleteProxy(id))
         .catch(() => { /* derived data — a failed evict is not an error */ });
-      // EVERY user-asset delete funnels through here (catalog, picker, folder
-      // overlay, projects) — announce it so cross-cutting reactions (e.g. the
-      // Neurospicy player dropping a deleted audio track, wired in main.ts)
-      // can't be skipped by whichever surface did the deleting.
+      // EVERY user-asset delete funnels through here (catalog, picker,
+      // folder overlay, projects). Announce it so cross-cutting reactions
+      // (e.g. the Neurospicy player dropping a deleted audio track, wired in
+      // main.ts) can't be skipped by whichever surface did the deleting.
       if (typeof document !== 'undefined') {
         document.dispatchEvent(new CustomEvent('lolly:user-asset-deleted', { detail: { id, type: rec?.type } }));
       }
     },
 
     /**
-     * Internal: rename one user image — a read-modify-write of only `meta.name`.
-     * Deliberately does NOT route through _uploadUserAsset: that would re-run
-     * assertQuotaRoom against the (unchanged) blob size and could spuriously trip
-     * STORAGE_FULL near quota. The id and `version` are untouched, so the cached
-     * object URL stays valid (no eviction) and _listUserAssets order is preserved.
-     * No-op if the asset is gone.
+     * Internal: rename one user image, a read-modify-write of only
+     * `meta.name`. Deliberately does NOT route through _uploadUserAsset:
+     * that would re-run assertQuotaRoom against the (unchanged) blob size
+     * and could spuriously trip STORAGE_FULL near quota. The id and
+     * `version` are untouched, so the cached object URL stays valid (no
+     * eviction) and _listUserAssets order is preserved. No-op if the asset
+     * is gone.
      */
     async _renameUserAsset(id: string, name: string): Promise<void> {
       const rec = await db.get('user-assets', id);
@@ -660,18 +688,19 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     /**
-     * Internal: replace one user asset's stored bytes with a provenance-stamped
-     * copy of THEMSELVES — the lazy heal for TTS clips saved before Lolly
-     * embedded Content Credentials into audio files (lib/tts-provenance.ts).
-     * A read-modify-write like _renameUserAsset, but the blob changes, so:
-     * quota is checked on the byte DELTA only (the stamp adds a few KB to
-     * bytes already stored — re-running assertQuotaRoom on the full size could
-     * spuriously trip STORAGE_FULL near quota), and `version` is bumped so
-     * toAssetRef mints a fresh object URL instead of serving the pre-heal
-     * bytes out of OBJECT_URL_CACHE. No-op if the asset is gone.
+     * Internal: replace one user asset's stored bytes with a
+     * provenance-stamped copy of THEMSELVES: the lazy heal for TTS clips
+     * saved before Lolly embedded Content Credentials into audio files
+     * (lib/tts-provenance.ts). A read-modify-write like _renameUserAsset,
+     * but the blob changes, so quota is checked on the byte DELTA only (the
+     * stamp adds a few KB to bytes already stored; re-running assertQuotaRoom
+     * on the full size could spuriously trip STORAGE_FULL near quota), and
+     * `version` is bumped so toAssetRef mints a fresh object URL instead of
+     * serving the pre-heal bytes out of OBJECT_URL_CACHE. No-op if the asset
+     * is gone.
      */
     async _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void> {
-      // The stamp rewrites the bytes at an existing id — pinned or not, the
+      // The stamp rewrites the bytes at an existing id. Pinned or not, the
       // previous bytes are what a published version checksummed.
       await opts.preservePinned?.(id);
       const rec = await db.get('user-assets', id);
@@ -681,9 +710,9 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       rec.credential = patch.credential;
       rec.credentialFormat = patch.credentialFormat;
       rec.meta = { ...rec.meta, bytes: patch.blob.size };
-      rec.version = String(Date.now());   // cache-buster — object URLs key on id:format:version
+      rec.version = String(Date.now());   // cache-buster - object URLs key on id:format:version
       await db.put('user-assets', rec);
-      // The re-stamp rewrote an existing id — drop any derived proxy so a
+      // The re-stamp rewrote an existing id - drop any derived proxy so a
       // stale row can't keep fingerprinting the previous bytes (see
       // _importUserAsset for the rationale).
       await import('../lib/clip-proxy.ts')
@@ -722,9 +751,9 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
      * Resolves on-demand tiers the same way get() does. Returns null if absent.
      */
     async _getBlob(id: string, opts: { format?: string; version?: string } = {}): Promise<Blob | null> {
-      // `user/…` ids live in the user-assets store as one already-resolved blob
-      // (no format/version keying) — mirror get()'s resolution order so callers
-      // like the tokens bridge can read a user-installed document by id.
+      // `user/...` ids live in the user-assets store as one already-resolved
+      // blob (no format/version keying). Mirror get()'s resolution order so
+      // callers like the tokens bridge can read a user-installed document by id.
       if (id.startsWith('user/')) {
         return (await db.get('user-assets', id))?.blob ?? null;
       }
@@ -741,32 +770,34 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     /**
-     * Internal: the HEAD asset of a given type, or null — the USER'S OWN store
-     * first, then the synced catalog metadata. Lets a sibling bridge discover a
-     * well-known singleton document (e.g. the brand `tokens` asset) — offline-
-     * safe once boot sync has run — instead of hardcoding a brand-specific id.
+     * Internal: the HEAD asset of a given type, or null. The USER'S OWN
+     * store first, then the synced catalog metadata. Lets a sibling bridge
+     * discover a well-known singleton document (e.g. the brand `tokens`
+     * asset), offline-safe once boot sync has run, instead of hardcoding a
+     * brand-specific id.
      *
      * "Head" rather than "first" because of design-system versions (plans/97
-     * §6a): a published version is a sibling asset one segment DEEPER than the
-     * system it belongs to (`user/tokens/brand/jupiter`), and it must never be
-     * picked as the design system. pickHeadAssetId — the engine predicate the
-     * MCP server and the CLI apply too — drops any id that is a proper
-     * descendant of another id of the same type, and is otherwise
-     * order-preserving: with zero or one asset of a type it returns exactly what
-     * a bare `.find(...)` did.
+     * §6a): a published version is a sibling asset one segment DEEPER than
+     * the system it belongs to (`user/tokens/brand/jupiter`), and it must
+     * never be picked as the design system. pickHeadAssetId (the engine
+     * predicate the MCP server and the CLI apply too) drops any id that is a
+     * proper descendant of another id of the same type, and is otherwise
+     * order-preserving: with zero or one asset of a type it returns exactly
+     * what a bare `.find(...)` did.
      * User-first is deliberate: an installed `user/tokens/brand` beats the
-     * shipped brand (and the flip of the returned id is exactly how the shell
-     * detects "branded" — see bridge/tokens.ts installUserTokens). A user
-     * record holds one already-resolved blob and no catalog URLs, so it's
-     * shaped as a metadata record with empty `formats`; readers get the bytes
-     * via _getBlob, which resolves `user/…` ids from the user store. The
-     * catalog scan keeps the MCP server's rule; getAll returns id order rather
-     * than index order, which only differs if a catalog ships more than one
-     * asset of a singleton type.
+     * shipped brand (and the flip of the returned id is exactly how the
+     * shell detects "branded"; see bridge/tokens.ts installUserTokens). A
+     * user record holds one already-resolved blob and no catalog URLs, so
+     * it's shaped as a metadata record with empty `formats`; readers get the
+     * bytes via _getBlob, which resolves `user/...` ids from the user store.
+     * The catalog scan keeps the MCP server's rule; getAll returns id order
+     * rather than index order, which only differs if a catalog ships more
+     * than one asset of a singleton type.
      *
-     * `queryOpts.catalogOnly` skips the user store — for reading a property that
-     * is a fact about the SHIPPED brand a user asset must not be able to shadow
-     * (the `brandLock` flag on the catalog tokens asset; see bridge/tokens.ts).
+     * `queryOpts.catalogOnly` skips the user store, for reading a property
+     * that is a fact about the SHIPPED brand a user asset must not be able
+     * to shadow (the `brandLock` flag on the catalog tokens asset; see
+     * bridge/tokens.ts).
      */
     async _findMetaByType(type: AssetRef['type'], queryOpts: { catalogOnly?: boolean } = {}): Promise<AssetMetaRecord | null> {
       if (!queryOpts.catalogOnly) {
@@ -836,14 +867,15 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         db.getAllKeys('asset-meta'),
       ]);
 
-      // keepIds: asset ids whose blobs must survive a catalog version bump —
-      // the offline-download and pinned-tool sets. Version-exact refs would let
-      // the bump prune these blobs BEFORE the idle re-prefetch has fetched the
-      // new version; if that re-fetch then fails (flaky airport wifi is this
-      // feature's home turf), the user's explicit download would be gone. So an
-      // OLD-version blob of a kept id survives exactly until the current-version
-      // copy is actually on device — then it prunes like anything else, so kept
-      // ids don't accumulate one blob per version forever.
+      // keepIds: asset ids whose blobs must survive a catalog version bump,
+      // the offline-download and pinned-tool sets. Version-exact refs would
+      // let the bump prune these blobs BEFORE the idle re-prefetch has
+      // fetched the new version; if that re-fetch then fails (flaky airport
+      // wifi is this feature's home turf), the user's explicit download
+      // would be gone. So an OLD-version blob of a kept id survives exactly
+      // until the current-version copy is actually on device, then it
+      // prunes like anything else, so kept ids don't accumulate one blob per
+      // version forever.
       const presentBlobKeys = new Set(allBlobKeys as string[]);
       const currentKeyFor = new Map<string, string>();  // `${id}:${format}` → current-version key
       for (const a of currentAssets) {
@@ -866,9 +898,10 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         await Promise.all(staleBlobs.map(k => tx.store.delete(k)));
         await tx.done;
         // Revoke any live object URLs minted for these now-deleted blobs.
-        // toAssetRef keys library URLs as `library:<blobKey>` and themed icon
-        // bakes as `library:<blobKey>:t:<theme>:<colours>` — evict both forms,
-        // else the OBJECT_URL_CACHE leaks one entry per pruned blob per sync.
+        // toAssetRef keys library URLs as `library:<blobKey>` and themed
+        // icon bakes as `library:<blobKey>:t:<theme>:<colours>`. Evict both
+        // forms, or the OBJECT_URL_CACHE leaks one entry per pruned blob per
+        // sync.
         for (const k of staleBlobs) {
           evictObjectUrl(`library:${k}`);
           evictObjectUrlsByPrefix(`library:${k}:t:`);   // themed icon bakes
@@ -899,13 +932,14 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       return cached.some(Boolean);
     },
 
-    // The Content Credentials a placed asset carries, if any — the raw C2PA
-    // manifest store + its original container format. The runtime uses this to
-    // preserve a placed credentialed asset's provenance as an export ingredient.
-    // User uploads serve the store captured at ingest (their stored pixels were
-    // re-encoded, so the bytes no longer carry it); library/catalog assets are
-    // read from their own bytes on demand (v1.31) — cached per id, since the
-    // bytes are immutable for a given version.
+    // The Content Credentials a placed asset carries, if any: the raw C2PA
+    // manifest store plus its original container format. The runtime uses
+    // this to preserve a placed credentialed asset's provenance as an export
+    // ingredient. User uploads serve the store captured at ingest (their
+    // stored pixels were re-encoded, so the bytes no longer carry it);
+    // library/catalog assets are read from their own bytes on demand
+    // (v1.31), cached per id, since the bytes are immutable for a given
+    // version.
     async credential(id: string): Promise<{ store: Uint8Array; format: string } | null> {
       if (id.startsWith('user/')) {
         const rec = await db.get('user-assets', id);
@@ -961,10 +995,10 @@ function userAssetError(message: string, code: string): UserAssetError {
 }
 
 /**
- * Best-effort quota guard. Throws STORAGE_FULL if writing `incomingBytes` would
- * push usage past the safety fraction of the quota. If the platform can't
- * estimate (older browsers, private mode), we allow the write — the IDB layer
- * remains the hard backstop.
+ * Best-effort quota guard. Throws STORAGE_FULL if writing `incomingBytes`
+ * would push usage past the safety fraction of the quota. If the platform
+ * can't estimate (older browsers, private mode), the write is allowed; the
+ * IDB layer remains the hard backstop.
  */
 async function assertQuotaRoom(incomingBytes: number): Promise<void> {
   let est: StorageEstimate | undefined;
@@ -1000,7 +1034,7 @@ function pickFormat(meta: AssetMetaRecord, requested?: string): AssetFormat {
 }
 
 function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRef {
-  // record.cacheKey overrides the default key — themed icon refs key on the
+  // record.cacheKey overrides the default key - themed icon refs key on the
   // base blob + pairing colours (see get()) so identical bakes share one URL.
   const cacheKey = record.cacheKey ?? `${source}:${record.id}:${record.format}:${record.version ?? 'x'}`;
   let url = OBJECT_URL_CACHE.get(cacheKey);
@@ -1008,10 +1042,11 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
     url = URL.createObjectURL(record.blob);
     OBJECT_URL_CACHE.set(cacheKey, url);
   }
-  // Preview consumers (filmstrips/waveforms) are handed this URL and can't get
-  // back to the id, which is the only thing a scrub proxy is keyed by. Note the
-  // pairing here — the one place a user clip's URL is minted. Registration only;
-  // the ref below still carries the ORIGINAL url, so export is untouched.
+  // Preview consumers (filmstrips/waveforms) are handed this URL and can't
+  // get back to the id, which is the only thing a scrub proxy is keyed by.
+  // Note the pairing here, the one place a user clip's URL is minted.
+  // Registration only; the ref below still carries the ORIGINAL url, so
+  // export is untouched.
   if (source === 'user' && record.type === 'video' && url) noteScrubSource(url, record.id);
   return {
     source,
@@ -1027,15 +1062,18 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
   };
 }
 
-// Generative-AI provenance derived from a user upload's captured C2PA credential store.
-// The file's manifest chain (walked whole — AI origin often lives in a parent/ingredient
-// manifest) may declare AI/ML-generated pixels via an IPTC digitalSourceType; that's what
-// drives the GEN AI badge on uploaded assets (Claude, OpenAI, Gemini, …). Memoised by asset
-// id (a credential never changes for a given upload) so the catalog/picker don't re-parse.
+// Generative-AI provenance derived from a user upload's captured C2PA
+// credential store. The file's manifest chain (walked whole, since AI origin
+// often lives in a parent/ingredient manifest) may declare AI/ML-generated
+// pixels via an IPTC digitalSourceType; that's what drives the GEN AI badge
+// on uploaded assets (Claude, OpenAI, Gemini, etc.). Memoised by asset id (a
+// credential never changes for a given upload) so the catalog/picker don't
+// re-parse.
 const AI_KIND_MEMO = new Map<string, 'full' | 'partial' | undefined>();
-// `c2pa` is the lazily-loaded reader (null when the caller determined no record
-// needs one) — passed in rather than imported so this module stays off the boot
-// path; a record that already carries the persisted flag never touches it.
+// `c2pa` is the lazily-loaded reader (null when the caller determined no
+// record needs one), passed in instead of imported so this module stays off
+// the boot path; a record that already carries the persisted flag never
+// touches it.
 function detectAiGenerated(
   rec: UserAssetRecord,
   c2pa: C2paVerifyModule | null,
@@ -1057,7 +1095,7 @@ function detectAiGenerated(
   return kind;
 }
 
-// An `image` slot accepts any still image — raster OR vector (SVG). It's the
+// An `image` slot accepts any still image - raster OR vector (SVG). It's the
 // superset an image input wants (not `any`, which would also surface video/lottie).
 function typeMatches(assetType: string, want: string | undefined): boolean {
   if (!want) return true;
@@ -1077,7 +1115,7 @@ function matchesFilter(meta: AssetMetaRecord, filter: AssetQuery): boolean {
 }
 
 async function fetchAndCache(meta: AssetMetaRecord, format: AssetFormat, blobKey: string, db: AssetsDb): Promise<Blob> {
-  // format.url comes from the synced asset-meta record — already absolutized to
+  // format.url comes from the synced asset-meta record - already absolutized to
   // the instance base when one is set (catalog/sync.ts absolutizeAssetUrls), so
   // only the CORS routing (instanceFetch) is needed here.
   const resp = await instanceFetch(format.url);
@@ -1090,7 +1128,7 @@ async function fetchAndCache(meta: AssetMetaRecord, format: AssetFormat, blobKey
 
 /**
  * A blob's bytes as a `data:<mime>;base64,…` URI. Used to inline a photo into a
- * treatment's SVG wrapper — an SVG used as an image may not fetch external
+ * treatment's SVG wrapper - an SVG used as an image may not fetch external
  * resources, so the raster has to travel inside it.
  */
 async function blobToDataUri(blob: Blob): Promise<string> {
@@ -1102,7 +1140,7 @@ async function blobToDataUri(blob: Blob): Promise<string> {
 
 /**
  * SRI SHA-256 (`sha256-<base64>`) for a blob's bytes, byte-for-byte matching the
- * build-time format from scripts/checksum-assets.ts — there it's
+ * build-time format from scripts/checksum-assets.ts - there it's
  * createHash('sha256').digest('base64'); Node's base64 alphabet + `=` padding is
  * identical to btoa over the raw digest, so the strings compare equal.
  */
@@ -1118,7 +1156,7 @@ async function sriForBlob(blob: Blob): Promise<string> {
 /**
  * Verify freshly-fetched bytes against the catalog checksum, throwing on a real
  * mismatch (tampered/corrupt download). No-ops when the format carries no
- * checksum or the runtime lacks crypto.subtle (non-secure context) — integrity
+ * checksum or the runtime lacks crypto.subtle (non-secure context) - integrity
  * is a guard, not a hard gate that should brick loading on edge runtimes. The
  * deployed catalog's checksums are kept current by validate-catalog.js (CI), so
  * this never false-positives on a correctly-published asset.

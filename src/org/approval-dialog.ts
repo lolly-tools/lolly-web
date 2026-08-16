@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/approval-dialog — the "Request approval" flow for a tool's output.
+ * org/approval-dialog - the "Request approval" flow for a tool's output.
  *
  * Loaded lazily by src/org/index.ts, and only when a deployment's control plane is
  * present AND the generic lib/export-policy.ts seam says the caller may request
@@ -49,7 +49,7 @@ interface ApprovalBody {
 /**
  * Filter the eligible-approver list by a name query (case-insensitive substring).
  * The list is already scoped to eligible people server-side, so this is a local
- * narrowing only — no per-keystroke round-trip. Pure.
+ * narrowing only - no per-keystroke round-trip. Pure.
  */
 export function filterApprovers(approvers: readonly Approver[], query: string): Approver[] {
   const q = query.trim().toLowerCase();

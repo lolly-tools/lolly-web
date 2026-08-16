@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * collab-focus.ts — the two remote-focus decorations (plan 100 §4.1, §4.6, §4.8).
+ * collab-focus.ts - the two remote-focus decorations (plan 100 §4.1, §4.6, §4.8).
  *
  * Run directly:  node --test shells/web/src/components/collab-focus.test.ts
  *
@@ -23,13 +23,13 @@
  *     leaving a row byte-identical afterwards (no class, no chip, not even an empty
  *     `style=""`) is what keeps a long session from silting up.
  *  3. A STABLE ROW ID FINDS THE RIGHT CARD. The wire carries an id, the DOM
- *     addresses an index, and the model's value order is the only honest bridge —
+ *     addresses an index, and the model's value order is the only honest bridge - 
  *     including when a concurrent insert has renumbered everything below it.
  *  4. MOST-RECENT WINS THE RING, EVERYONE IS IN THE STACK (§4.6), and "most recent"
  *     means most recently MOVED, so a 15 s heartbeat cannot steal the ring.
  *
  * jsdom returns a zero rect from getBoundingClientRect, so the canvas-outline
- * geometry is driven through the module's injected measure seams — a test that
+ * geometry is driven through the module's injected measure seams - a test that
  * measured the real DOM here would assert 0 === 0 and prove nothing.
  */
 import test from 'node:test';
@@ -155,7 +155,7 @@ const peer = (id: string, name: string, color: string, focus: string | null, ext
 test('parseFocus splits an input from a row at the LAST colon', () => {
   assert.deepEqual(parseFocus('headline'), { inputId: 'headline', rowId: null });
   assert.deepEqual(parseFocus('scenes:R2'), { inputId: 'scenes', rowId: 'R2' });
-  // Greedy, matching views/tool.ts's own `^(.+):(\d+)$` canvas mapping — one
+  // Greedy, matching views/tool.ts's own `^(.+):(\d+)$` canvas mapping - one
   // splitting convention for both directions.
   assert.deepEqual(parseFocus('a:b:R2'), { inputId: 'a:b', rowId: 'R2' });
   // Malformed shapes address the whole input rather than half a row.
@@ -179,7 +179,7 @@ test('blockRowIndex maps a stable row id through the model value order', () => {
   assert.equal(blockRowIndex(item, '1'), 1);
   assert.equal(blockRowIndex(item, '9'), -1);
 
-  // A canvas collection uses the tool's OWN declared id field, not the hidden one —
+  // A canvas collection uses the tool's OWN declared id field, not the hidden one - 
   // the rowIdField rule, so a row born on the canvas and one born in the sidebar
   // resolve identically.
   const canvasItem = {
@@ -324,7 +324,7 @@ test('a blocks row focus rings the right card, and follows a renumbering', () =>
 
 test('a row inside a decorated row keeps its own chips', () => {
   // `.block-item` lives INSIDE the `.input-row` of its blocks input, so both can be
-  // decorated at once — one peer on the whole input, another on a single card. A
+  // decorated at once - one peer on the whole input, another on a single card. A
   // descendant search for "the chip stack" from the outer row finds the inner card's
   // and rebuilds it with the wrong names (or deletes it); the stacks are direct
   // children for exactly that reason.
@@ -524,7 +524,7 @@ test('the module injects its own sheet, and every class it writes is defined the
 
   // The regression this pins: every one of these once existed only as a string in
   // the module. `.collab-focus-box` as a default block div paints no border and no
-  // colour, but `.collab-focus-box-label` DOES paint its textContent — so the
+  // colour, but `.collab-focus-box-label` DOES paint its textContent - so the
   // visible result was raw peer names stacked in normal flow over the stage, each
   // inline translate3d offsetting from the previous ring's height.
   const written = new Set<string>([
@@ -540,7 +540,7 @@ test('the module injects its own sheet, and every class it writes is defined the
     assert.ok(css.includes(`.${name}`), `.${name} is written onto a node but never styled`);
   }
   // The chip stack is addressed by attribute, not class, and carries the placement
-  // the module used to state inline — which is why the offset can be a11y-scaled.
+  // the module used to state inline - which is why the offset can be a11y-scaled.
   assert.ok(css.includes('[data-collab-chips]'), 'the chip stack has a rule of its own');
   assert.match(css, /\[data-collab-chips\] \{[^}]*inset-block-start: calc\(-9px \* var\(--a11y-fs\)\)/);
   // §4.8: chrome type rides the largeText multiplier, never a bare px.
@@ -586,7 +586,7 @@ test('a canvas zoom re-anchors the rings, though it fires no event of its own', 
   // What views/tool-stage-nav.ts actually does for Cmd-wheel zoom, pinch, Space-drag
   // pan and every HUD key: a transform on `.tool-canvas-outer`, and NO event. No
   // scroll offset changes, the window does not resize, and the observed border box
-  // is identical — so the module's other three triggers are all silent, and every
+  // is identical - so the module's other three triggers are all silent, and every
   // ring used to sit at its pre-zoom position until an unrelated model change.
   zoom = 2;
   outer.style.transform = 'translate(4px, 0px) scale(2)';

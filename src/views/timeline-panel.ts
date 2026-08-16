@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * timeline-panel.ts — the docked timeline editor for a `boxes` block that carries the
+ * timeline-panel.ts - the docked timeline editor for a `boxes` block that carries the
  * phase-1 time model (plans/53-fable-timeline-phase-2.md §2).
  *
  * Three hard rules shape everything below, and every one of them exists because the
@@ -11,11 +11,11 @@
  *     splitAll / joinClips / detachAudio / reattachAudio / snapTime / deriveDuration /
  *     fmtTime). The panel converts pixels to
  *     seconds and hands seconds to that module. If a gesture needs a new clamp, the
- *     clamp belongs in timeline-math beside the one it must agree with — never
+ *     clamp belongs in timeline-math beside the one it must agree with - never
  *     re-derived here, where it would silently drift from the tool hook.
  *  2. THE MODEL IS WRITTEN EXACTLY ONCE PER GESTURE. While a pointer is down the panel
  *     mutates only its OWN DOM (bar left/width, playhead, snapline). `commit()` fires
- *     on pointerup, yielding one coalesced undo step — identical to the canvas gesture
+ *     on pointerup, yielding one coalesced undo step - identical to the canvas gesture
  *     contract. `runtime.setInput` is never called mid-drag.
  *  3. KEYS ARE BOUND ON THE PANEL ROOT, never on window. free-canvas.ts already owns
  *     the window keydown channel (Delete/arrows/Escape on the selected boxes); a second
@@ -25,17 +25,17 @@
  * The playhead is NOT ours: ./sequence-clock.ts owns time, reads timing only from the
  * live canvas DOM, and never writes the model. The panel asks it to seek and listens to
  * `onTick` to move a line. Filmstrips/waveforms/stills come from ../lib/clip-thumbs.ts,
- * whose cache OWNS the returned ImageBitmaps — so every bitmap is drawn into the bar's
+ * whose cache OWNS the returned ImageBitmaps - so every bitmap is drawn into the bar's
  * own <canvas> SYNCHRONOUSLY on receipt and never retained across an await or a repaint.
  * EVERY bar gets a picture: a filmstrip, a waveform, one tiled still (image / Lottie /
- * tool clip), or — with no media at all — a photograph of the box itself (a frame, a
+ * tool clip), or - with no media at all - a photograph of the box itself (a frame, a
  * card, a text box, a pen shape), over its own fill as the immediate underlay. That
  * last mode is the expensive one, so it is budgeted per pass and cached by APPEARANCE
  * rather than by identity; see `thumbMode` / `canRasterBox` / `appearanceSig` below.
  *
  * Repaint law (the chromeKey precedent): a full row rebuild happens only when the box
- * SET or a lane assignment changes (`tracksKey`). Everything else — dragging, trimming,
- * zooming, scrolling, the playhead — is style writes against a cached `pxPerSec`.
+ * SET or a lane assignment changes (`tracksKey`). Everything else - dragging, trimming,
+ * zooming, scrolling, the playhead - is style writes against a cached `pxPerSec`.
  */
 
 import { t, tRaw } from '../i18n.ts';
@@ -58,12 +58,12 @@ import {
   type VectorTwin, type VectorTwinCanvas,
 } from '../lib/vector-paint.ts';
 import { TRANSITIONS, TRANSITION_KINDS, DEFAULT_TRANSITION, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
-// The keyframe wire's own vocabulary. The panel does EDITING GLUE only — every keyframe
+// The keyframe wire's own vocabulary. The panel does EDITING GLUE only - every keyframe
 // NUMBER comes from the engine module or from timeline-math's kf* primitives, and what
 // is imported here is exactly the vocabulary a control has to speak to offer a choice:
 // the preset tokens the ease picker lists, the two adapters that carry one token to and
 // from the shared easing editor's CSS wire, and `parseKf` for "how many poses are on
-// this track" — never a `split('*')` of its own.
+// this track" - never a `split('*')` of its own.
 import {
   KF_CAMERA_CHANNELS, KF_CLAMPS, KF_EASE_TOKENS, KF_HOLD_EASE, KF_Z_FIELD_CLAMP,
   kfEaseCss, kfEaseName, kfEaseToken, parseKf,
@@ -84,7 +84,7 @@ import {
   detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
   snapTime, trimClip,
   // The keyframe surface's arithmetic (plans/104 §8). EVERY number the diamonds, the
-  // latch and the CRUD list need is one of these — the panel converts a pointer to an
+  // latch and the CRUD list need is one of these - the panel converts a pointer to an
   // intent and hands the intent over.
   clearKfTrack, kfBoxTrack, kfDiamondAt, kfDiamondTimes, kfDuplicateMs, kfFormatChannel,
   kfKeyAt, kfLocalMs, kfLocalSec, kfPoseAt, kfSeekDiamond, kfSlideMs, kfTimelineSec, kfWriteMs,
@@ -106,7 +106,7 @@ import '../styles/parts/timeline.css';
 /**
  * Just the slice of the tool runtime the panel needs: repaint notifications, plus a
  * READ-ONLY peek at the manifest's declared capabilities. The panel offers no
- * device-capture affordance to a tool that has not declared it needs one — the
+ * device-capture affordance to a tool that has not declared it needs one - the
  * manifest is the contract every other shell gates on (a CLI/TUI refuses to mount a
  * `microphone` tool at all), so the panel reads the same field rather than assuming
  * that "the web shell can record" means "this tool may".
@@ -124,12 +124,12 @@ export interface TimelineRuntime {
 export interface TimelineHost {
   log?(level: string, msg: string): void;
   recorder?: RecorderAPI;
-  /** The optional speech bridge (v1.96 synthesis, v1.99 transcription) — behind the
+  /** The optional speech bridge (v1.96 synthesis, v1.99 transcription) - behind the
    *  "Script a voiceover" button and the transcription arm of Generate subtitles.
    *  Feature-detected like `recorder`, never capability-gated. */
   speech?: SpeechAPI;
-  /** The user-asset store, for retiring a take that a RE-take has superseded — and only
-   *  once the replacement has been committed to the model (see finishTake) — plus `get`,
+  /** The user-asset store, for retiring a take that a RE-take has superseded - and only
+   *  once the replacement has been committed to the model (see finishTake) - plus `get`,
    *  which resolves a box's persisted ref back to a LIVE one (fresh object URL and full
    *  meta) for the subtitle path. */
   assets?: {
@@ -149,13 +149,13 @@ export interface TimelineSelection {
  * One entry of the tool's OWN `canvas.addKinds` (free-canvas's `AddKind`, structurally).
  * The panel never hardcodes the list: sequence-studio declares clip/card/text/image/
  * lottie/audio/tool, and the next timed tool will declare something else entirely. Only
- * `id` and `label` are read here — the `seed` is free-canvas's business.
+ * `id` and `label` are read here - the `seed` is free-canvas's business.
  */
 export interface TimelineAddKind {
   id: string;
   label?: string;
   /**
-   * The manifest's own seed for this kind — free-canvas's `AddKind.seed`, already
+   * The manifest's own seed for this kind - free-canvas's `AddKind.seed`, already
    * threaded here structurally. Read for exactly one thing: a take recorded in the
    * panel is born from the AUDIO kind's seed, so the box the panel inserts is
    * field-for-field the box the rail's "Audio" add-kind would have made. The panel
@@ -168,7 +168,7 @@ export interface TimelineAddKind {
 export interface TimelineAddDetail {
   /** An addKind id from the manifest. */
   kind: string;
-  /** Playhead time, ms — where the created box must START. */
+  /** Playhead time, ms - where the created box must START. */
   atMs: number;
 }
 
@@ -180,7 +180,7 @@ export interface TimelinePanelOpts {
   blockId: string;
   cfg: TimeCfg;
   getBoxes(): Box[];
-  /** The free-canvas single write path — the ONLY way this module touches the model. */
+  /** The free-canvas single write path - the ONLY way this module touches the model. */
   commit(next: Box[]): void;
   selection: TimelineSelection;
   onDirty?(id: string): void;
@@ -201,7 +201,7 @@ export interface TimelinePanelOpts {
   assetField?: string;
   /**
    * The box sub-field carrying rendered text (free-canvas's `cv.textField`).
-   * Only Generate subtitles writes it — each cue becomes a text box — so a tool
+   * Only Generate subtitles writes it - each cue becomes a text box - so a tool
    * that declares no text field simply never offers the action.
    */
   textField?: string;
@@ -217,7 +217,7 @@ export interface TimelinePanel {
    * inspector, chip and context menu use. There is exactly one implementation of each;
    * everything else is a door onto it. Both are one commit, one undo step.
    *
-   * `dur: null` — passed explicitly, distinct from omitting it — means "author no
+   * `dur: null` - passed explicitly, distinct from omitting it - means "author no
    * length": the caller knows the box's media length is not knowable yet. See promote's
    * own doc for why that is not the same as the default.
    */
@@ -229,21 +229,21 @@ export interface TimelinePanel {
    * The panel owns the clock and therefore owns the only honest answer to "is this
    * box parked on one of its own keyframes right now". free-canvas asks that at its
    * single pointerup commit and, for the ids that come back, hands the gesture's
-   * delta here instead of moving the box — which is what makes a drag on a diamond
+   * delta here instead of moving the box - which is what makes a drag on a diamond
    * pose THAT keyframe while a drag anywhere else moves the clip, with no mode, no
    * record-arm and no second gesture to learn.
    *
    * Two calls rather than one so the caller keeps its own writers: `kfPoseIds` is a
    * question (no writes, no side effects), `kfPoseWrite` is a pure transform of a
-   * boxes array. Neither commits — the caller composes both halves of a mixed
+   * boxes array. Neither commits - the caller composes both halves of a mixed
    * selection into ONE array and makes ONE commit, so a multi-select is one undo step.
    */
   kfPoseIds(ids: readonly string[]): string[];
   /**
    * `mode` is the same distinction `writeKfPose` documents: `'add'` folds a DELTA into
    * the pose the box is already striking (a drag's dx/dy, a rotate's degrees), `'set'`
-   * writes the value itself. Resize is the one canvas gesture that is absolute — a
-   * dragged handle produces the box's new WIDTH, not a change to it — so it is the
+   * writes the value itself. Resize is the one canvas gesture that is absolute - a
+   * dragged handle produces the box's new WIDTH, not a change to it - so it is the
    * caller that knows which reading applies (§5.2, the P1 w/h reversal).
    */
   kfPoseWrite(boxes: Box[], ids: readonly string[], delta: KfPose, mode?: 'add' | 'set'): Box[];
@@ -252,7 +252,7 @@ export interface TimelinePanel {
    * the camera a canvas gesture is currently aimed at, or '' when none is.
    *
    * True when the panel is open, exactly one box is selected, it is a camera, and the
-   * playhead is inside its window — every one of which is something the user can see
+   * playhead is inside its window - every one of which is something the user can see
    * on screen. free-canvas asks before it starts a marquee on the empty stage (that
    * drag becomes a camera pan) and before it lets a plain wheel through (that wheel
    * becomes a dolly). Cmd/Ctrl-wheel and Space+drag are the VIEW's and stay the
@@ -260,7 +260,7 @@ export interface TimelinePanel {
    */
   cameraModeId(): string;
   /**
-   * The camera gesture's delta, folded into the camera's own track — pure, like
+   * The camera gesture's delta, folded into the camera's own track - pure, like
    * `kfPoseWrite`, so the caller commits once on release (a drag) or once per pause (a
    * wheel). Returns the array unchanged when no camera is armed, or when the camera
    * has an authored MOVE and the playhead is off every diamond (§8's latch, applied to
@@ -269,7 +269,7 @@ export interface TimelinePanel {
   cameraWrite(boxes: Box[], delta: KfPose): Box[];
   /**
    * The tilt the camera WOULD hold if a shift-drag of `(dRx, dRy)` degrees committed now
-   * — the current pose plus the delta, clamped to the control band (`KF_TILT_CONTROL`),
+   * - the current pose plus the delta, clamped to the control band (`KF_TILT_CONTROL`),
    * read at the latch. Pure; null when no camera is armed. Drives the canvas tilt HUD: a
    * camera drag previews NOTHING on the stage (§8 commits on release), so this absolute
    * readout is the only live feedback the gesture has, and the clamp lives here so the
@@ -280,7 +280,7 @@ export interface TimelinePanel {
    * "+Keyframe", the ACTION (plans/104 §8's M2.5 revision: "TWO homes, one action").
    *
    * The panel's own transport button, the canvas contextual bar's diamond and the `K`
-   * shortcut are three doors onto this one function — there is no second copy of the
+   * shortcut are three doors onto this one function - there is no second copy of the
    * rules anywhere. It reads the shared selection itself, so a caller passes nothing:
    * a timed box is keyed at the playhead; an UNTIMED one is promoted onto the timeline
    * and keyed in the SAME array, so the whole thing is one commit and one undo step.
@@ -289,12 +289,12 @@ export interface TimelinePanel {
    */
   addKeyframe(): void;
   /**
-   * The SCOPE half of that action, as a question — which of these ids "+Keyframe"
+   * The SCOPE half of that action, as a question - which of these ids "+Keyframe"
    * would actually key. free-canvas's contextual-bar diamond asks it for its own
    * enabled state, so the two homes of one action share one ENABLEMENT rule as well as
    * one writer: the panel's rule reads the live canvas as well as the model (a box
    * carrying an audio asset is a sound whatever its `kind` says), which a caller
-   * re-deriving from the model alone cannot see — it would offer a button that then
+   * re-deriving from the model alone cannot see - it would offer a button that then
    * writes nothing and says nothing.
    *
    * Pure: no writes, no DOM mutation, no announce.
@@ -308,7 +308,7 @@ export interface TimelinePanel {
 export const MIN_PANEL_H = 112;
 /** Panel height on first open, px. Session-local; never persisted. */
 export const DEFAULT_PANEL_H = 190;
-/** One ordinary lane plus its gap — the least a tracks area can usefully show. */
+/** One ordinary lane plus its gap - the least a tracks area can usefully show. */
 export const ONE_LANE_H = 34;
 /** Gap between the reserved band and the fitted canvas (the deck-editor's +6). */
 export const RESERVE_PAD = 6;
@@ -322,7 +322,7 @@ export const ZOOM_STEP = 1.25;
  * The HIT size and the VISUAL size are deliberately different numbers: the grip drawn
  * inside `.tl-edge` stays a 3px hairline (a fat handle on a 40px bar is the bar), while
  * the zone that responds is this wide. IMG.LY ship the same split on their mobile
- * timeline — "more than twice as wide as the visual appearance suggests".
+ * timeline - "more than twice as wide as the visual appearance suggests".
  *
  * Was 8, which was under every published floor. See EDGE_PX_COARSE for the one that
  * actually has a standard behind it; this one is the pointer that can be precise.
@@ -332,7 +332,7 @@ export const EDGE_PX = 10;
  * Edge-trim hit zone for a COARSE pointer (finger / pen), px each side.
  *
  * 24 is WCAG 2.5.8's target-size floor (AA), and the smallest of the three standards
- * in play — Apple asks 44pt, Material 48dp. Those two are about a target you TAP; this
+ * in play - Apple asks 44pt, Material 48dp. Those two are about a target you TAP; this
  * is a target you press and drag along one axis, where the other axis is the full lane
  * height, so the AA floor is the honest number rather than the ambitious one.
  *
@@ -345,7 +345,7 @@ export const EDGE_PX_COARSE = 24;
 export const SEAM_PX = 8;
 /**
  * Snap tolerance, screen px, by pointer kind. The module default in timeline-math
- * (SNAP_PX = 6) stays where it is — that is the value every OTHER caller of snapTime
+ * (SNAP_PX = 6) stays where it is - that is the value every OTHER caller of snapTime
  * gets; these two are the panel's own gesture tolerances, raised because a snap you
  * cannot land is a snap that does not exist, and a finger is not a cursor.
  */
@@ -359,7 +359,7 @@ export const TRIM_SHIFT_FRAMES = 10;
 const MIN_FRAME_PX = 40;
 
 /**
- * Voiceover take limits. `maxMs` mirrors record-control's audio cap (10 minutes) — a
+ * Voiceover take limits. `maxMs` mirrors record-control's audio cap (10 minutes) - a
  * runaway take is a runaway upload, and the panel warns before it lands. `countInMs`
  * is one beat of the 3-2-1 count-in.
  *
@@ -372,7 +372,7 @@ export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000
  * The depth SLIDER's travel (plans/104 §5.3). NOT a clamp: `KF_Z_FIELD_CLAMP` is the
  * engine's, it is what every write is held to, and it is deliberately wider than this.
  *
- * 0–300 is the band §5.3 calls tasteful — at P = 1200 it spans eff 1.00–1.33, with the
+ * 0–300 is the band §5.3 calls tasteful - at P = 1200 it spans eff 1.00–1.33, with the
  * 1.05–1.2 lift landing mid-travel and "Lift layers"' 0/40/80 stagger in the first
  * fifth. Deeper moves belong to the camera dolly, not to a per-box depth, so the slider
  * stops where taste does while the NUMBER beside it still accepts the whole field range
@@ -381,27 +381,27 @@ export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000
 export const KF_Z_SLIDER: readonly [number, number] = Object.freeze([0, 300] as const);
 
 /**
- * The TILT controls' travel (P2) — the same shape of promise `KF_Z_SLIDER` makes, and
- * made for a load-bearing reason rather than for taste alone.
+ * The TILT controls' travel (P2) - the same kind of promise `KF_Z_SLIDER` makes, and
+ * made for an essential reason rather than for taste alone.
  *
  * `KF_CLAMPS.rx/ry` is ±180 because it is a WIRE clamp: a hand-edited share link may
  * say anything and the parser has to hold it to something. It is not a control range,
  * and wiring the Tilt X / Tilt Y fields straight to it (which is what P2 first did)
  * put a reachable value on the other side of an invariant the plan path depends on.
  * `buildPlan`'s depth sort is by resolved `z`, and that reproduces a perspective render
- * only while `κ = cos(rx)·cos(ry) > 0` — past a quarter turn the sign flips, the far
+ * only while `κ = cos(rx)·cos(ry) > 0` - past a quarter turn the sign flips, the far
  * layer becomes the one painted last, and a "lifted" layer SHRINKS. At `rx = −120`
  * three layers at z 0/100/200 come out fully opaque, view-axis depths 1200/1250/1300,
  * painted in exactly the wrong order, with the behind-camera guard never engaging
  * because `D = P − κζ` GROWS with ζ once κ < 0.
  *
  * ±75 keeps `κ ≥ cos(75°)² = 0.067 > 0` for every combination of the two, so the sort
- * is correct by construction everywhere a control or a gesture can reach — and it is
+ * is correct by construction everywhere a control or a gesture can reach - and it is
  * generous for the pictures the presets are built from (Surface glide's −40°, Orbit's
  * ±25°, Depthfield's own −38°). Past ~75° a screen-parallel plane is nearly edge-on
  * and there is no artwork left to look at, so nothing is being withheld.
  *
- * The wire stays ±180 (a link that says 120 still parses and still renders — it is
+ * The wire stays ±180 (a link that says 120 still parses and still renders - it is
  * simply not something the UI will author), exactly as `z`'s wire stays ±12000 while
  * its slider stops at 300. `timeline-panel.test.ts` pins the containment.
  */
@@ -411,7 +411,7 @@ export const KF_TILT_CONTROL: readonly [number, number] = Object.freeze([-75, 75
 const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const);
 
 /**
- * The camera moves that write keyframes (plans/104 §8, §12 Q8) — stored EXPANDED.
+ * The camera moves that write keyframes (plans/104 §8, §12 Q8) - stored EXPANDED.
  *
  * Each `track` is the plan's own literal wire sketch, parsed by the ENGINE's `parseKf`
  * on the way in and re-serialised on the way out, so a preset is indistinguishable from
@@ -423,13 +423,13 @@ const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const)
  * are the first two that author `rx`/`ry`; both obey THE RESOLUTION RULE (Andy,
  * 2026-08-12, binding on every generated animation): *"elements lift off and rest back
  * down on the page; the animations showing them falling apart need to close out with it
- * all coming together."* Their last keyframe IS the rest pose — every channel the track
- * touches returns to its default — so the move is a departure that comes home rather
+ * all coming together."* Their last keyframe IS the rest pose - every channel the track
+ * touches returns to its default - so the move is a departure that comes home rather
  * than a shot that ends stranded at an angle. `tests/keyframes-tilt.test.ts` asserts it
  * by evaluating each tilt track at its own end.
  *
  * ⚑ MEASURED, NOT FIXED HERE: the five P1 presets above predate that rule and do NOT
- * obey it — `push-in` ends at `z −220`, `pull-back` at `z 0` (it does), `pan-across` at
+ * obey it - `push-in` ends at `z −220`, `pull-back` at `z 0` (it does), `pan-across` at
  * `x 140`, `rise` at `y −120, z −80`, `reveal` at rest. Bringing `push-in`, `pan-across`
  * and `rise` home would change what three shipped moves MEAN (a push-in that pushes back
  * out is a different shot), which is a product call and not a P2 one. Flagged for Andy
@@ -439,12 +439,12 @@ const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const)
  * projection is `eff = P / (P − (z − camZ))` (`projectDepth`), so a camera whose `z`
  * GROWS is a camera moving AWAY: a layer at z = 0 under camZ = 220 renders at
  * eff = 1200/1420 = 0.845, i.e. smaller. §8's sketch for "Push in" ends at z 220 and
- * would therefore pull back, and "Pull back" would push in — the two sketches are each
+ * would therefore pull back, and "Pull back" would push in - the two sketches are each
  * other's. §4.3's own Vertigo derivation agrees with the formula and not with the
  * sketches (`camZ = P·(1/c − 1) + z_s` puts camZ BELOW the subject plane to magnify
  * it, and names camZ ≈ −600 for the recipe), so the sketch is what is wrong here. The
- * SHAPE of every preset is kept exactly as authored — the same instants, the same
- * eases, the same start-or-end-at-rest structure — with the dolly's sign flipped so
+ * FORM of every preset is kept exactly as authored - the same instants, the same
+ * eases, the same start-or-end-at-rest structure - with the dolly's sign flipped so
  * that each move does what its name says. Flagged for the plan to correct §8.
  *
  * The labels go through `t()` HERE, at module scope, for the reason PANEL_SHORTCUTS
@@ -456,7 +456,7 @@ const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const)
  * to the scene's own duration (`rescaleKfTrack`, audit A1#5) so a move fits any clip.
  */
 /**
- * The shortest a rescaled preset may become — a floor under `applyCameraPreset`'s scene
+ * The shortest a rescaled preset may become - a floor under `applyCameraPreset`'s scene
  * scale so a pathologically brief scene compresses the move to a fast glide rather than a
  * single-frame strobe. Only bites below 0.8 s, which no real flythrough scene reaches.
  */
@@ -470,42 +470,44 @@ export const KF_CAMERA_PRESETS: ReadonlyArray<{ id: string; label: string; track
   { id: 'reveal', label: t('Reveal'), track: 't0_z-260_a0.5_f200*t3500_eo_z0_a0', icon: 'eye' },
   // ── P2: the two tilt moves ────────────────────────────────────────────────
   //
-  // SURFACE GLIDE is the signature (§9's re-sequencing verdict: "what I'm seeing show
-  // up are all top-down views, not angled glides along the surface of the image, POV
-  // style" — and the acceptance phrase, "to feel INSIDE the landscape of the image").
-  // It opens down among the lifted surfaces — `rx −40` pitches the camera so the near
-  // edge sits at the bottom of frame and the far edge recedes to a horizon — with the
-  // focus plane out at z 160 and the aperture open, so the flat board is soft and only
-  // the lifted layers are sharp. Then it drifts laterally (the P4 study's "the camera
-  // NEVER sits still") and RESOLVES: pitch, both pans, focus and aperture all land on 0
-  // at 5.2s, the same instant the shipped Screenshot-flythrough template settles on.
-  // Linear out of the first key because a drift that eases is a drift that wobbles;
-  // ease-out into the second so the shot lands rather than stops.
+  // SURFACE GLIDE is the signature move. §9's re-sequencing verdict said: "what I'm
+  // seeing show up are all top-down views, not angled glides along the surface of
+  // the image, POV style". The acceptance phrase was "to feel INSIDE the landscape
+  // of the image". The move opens down among the lifted surfaces: `rx −40` pitches
+  // the camera so the near edge sits at the bottom of frame and the far edge
+  // recedes to a horizon. The focus plane sits out at z 160 with the aperture open,
+  // so the flat board is soft and only the lifted layers are sharp. It then drifts
+  // laterally (per the P4 study: "the camera NEVER sits still") and RESOLVES: pitch,
+  // both pans, focus, and aperture all land on 0 at 5.2s, the same instant the
+  // shipped Screenshot-flythrough template settles on. It is linear out of the
+  // first key, because a drift that eases is a drift that wobbles, and ease-out
+  // into the second key, so the shot lands rather than stops.
   //
-  // ⚑ NO DOLLY, and that is a MEASURED decision rather than an omission. A `camZ` push
-  // was tried and taken out: on the affine tier camZ is a pure magnification, but under
-  // a pitch it also DISPLACES, because it moves the aim point along the world z axis
-  // rather than along the camera's own view axis. Measured on the P1 demo scene, adding
-  // `z −180` to the opening key lifted every layer ~130 px up the frame on top of the
-  // magnification, and pushed two of the four lifted cards clean off the top edge
-  // (card B to y −110 on a 540-tall stage). A signature preset must not open with half
-  // the artwork out of frame. Dollying ALONG the view axis under tilt is the right fix
-  // and it is a projection change, not a preset one — noted for P2b.
+  // ⚑ NO DOLLY. This is a MEASURED decision, not an omission. A `camZ` push was
+  // tried and removed: on the affine tier camZ is a pure magnification, but under a
+  // pitch it also DISPLACES, because it moves the aim point along the world z axis
+  // instead of along the camera's own view axis. Measured on the P1 demo scene,
+  // adding `z −180` to the opening key lifted every layer about 130px up the frame
+  // on top of the magnification, and pushed two of the four lifted cards clean off
+  // the top edge (card B to y −110 on a 540-tall stage). A signature preset must
+  // not open with half the artwork out of frame. Dollying ALONG the view axis under
+  // tilt is the right fix, but it is a projection change, not a preset one. Noted
+  // for P2b.
   //
   // ORBIT is no longer inert. It shipped disabled at P1 with the reason "Needs tilt
-  // (coming)" — that reason expired with this milestone, and the engine's camera model
-  // ORBITS its aim point rather than swivelling in place (see `surfaceMatrix`), so a
-  // keyframed `ry` IS an orbit: the camera swings around the artwork while the centre
-  // of frame stays put. Leaving a control dimmed behind a sentence that has stopped
-  // being true is the thing this codebase writes down not to do. It swings right, past
-  // the front, to the left and settles square — a departure that comes home, like its
-  // sibling, with a shallow `rx` through the arc so it reads as an orbit rather than a
-  // horizontal wipe.
+  // (coming)". That reason no longer applies as of this milestone: the engine's
+  // camera model ORBITS its aim point rather than swivelling in place (see
+  // `surfaceMatrix`), so a keyframed `ry` IS an orbit: the camera swings around the
+  // artwork while the centre of frame stays put. This codebase's rule is not to
+  // leave a control dimmed behind a reason that has stopped being true. The move
+  // swings right, past the front, to the left, and settles square, returning like
+  // its sibling move, with a shallow `rx` through the arc so it reads as an orbit
+  // rather than a horizontal wipe.
   { id: 'surface-glide', label: t('Surface glide'), track: 't0_el_x-120_y60_rx-40_f160_a0.8*t2600_eo_x-40_y36_rx-24_f90_a0.4*t5200_x0_y0_rx0_f0_a0', icon: 'plane' },
   { id: 'orbit', label: t('Orbit'), track: 't0_el_rx-14_ry34*t2600_es_rx-14_ry-34*t5200_rx0_ry0', icon: 'refresh' },
 ];
 
-/** One row of the shortcuts sheet — and one branch of `onKey`. */
+/** One row of the shortcuts sheet - and one branch of `onKey`. */
 export interface PanelShortcut {
   /** What the sheet prints in the keys column. Key NAMES, deliberately untranslated. */
   keys: string;
@@ -517,7 +519,7 @@ export interface PanelShortcut {
    * Every literal `KeyboardEvent.key` this row handles, with the modifier that arms
    * it. This is the MACHINE half of the row: the drift guard in timeline-panel.test.ts
    * drives each one through `onKey` and asserts it was handled, and checks the reverse
-   * direction against a literal list of `onKey`'s case labels — so a shortcut cannot
+   * direction against a literal list of `onKey`'s case labels - so a shortcut cannot
    * be added without documenting it, or documented without existing.
    *
    * Empty for a modifier-only row (Alt), which has no keydown branch of its own.
@@ -525,7 +527,7 @@ export interface PanelShortcut {
    * `altKey` is the ONE chord this panel binds, and it is documented rather than
    * hidden: Alt+←/→ (previous/next keyframe) reuses the arrow keys the bare press
    * already owns, because "the same key, one step coarser" is the only mapping that
-   * needs no second thing to remember — and Alt is already this panel's modifier
+   * needs no second thing to remember - and Alt is already this panel's modifier
    * vocabulary (it bypasses snapping everywhere else, i.e. it always means "not the
    * ordinary reading of this gesture").
    */
@@ -535,17 +537,17 @@ export interface PanelShortcut {
 /**
  * The panel's keyboard, written ONCE.
  *
- * Users learn splitting and trimming by shortcut — every canonical NLE chord for those
+ * Users learn splitting and trimming by shortcut - every canonical NLE chord for those
  * (Cmd/Ctrl+B, Cmd/Ctrl+Shift+B, Cmd/Ctrl+K) collides with a browser binding whose
  * preventDefault() is unreliable, and a shortcut that silently does nothing is worse
  * than one that has to be learned. So the panel binds bare letters and Shift+letter,
- * which nothing fights for — and that trade only holds if the list is SHOWN. This
+ * which nothing fights for - and that trade only holds if the list is SHOWN. This
  * constant is both the sheet (`?`) and the contract `onKey` is written against.
  *
  * Labels go through `t()` here, at module scope, on purpose: this is a lazily imported
  * view, so the catalog has long since loaded by the time it evaluates, and switching
  * language reloads the page (i18n.ts's switchLang). Literal `t('…')` call sites are
- * also what scripts/translate.ts extracts — a `t(row.label)` at render time would need
+ * also what scripts/translate.ts extracts - a `t(row.label)` at render time would need
  * every string hand-listed in extra-keys.spa.json instead.
  */
 export const PANEL_SHORTCUTS: PanelShortcut[] = [
@@ -590,7 +592,7 @@ const finite = (v: unknown, fallback: number): number => {
 
 /**
  * The middle dot between two readings inside ONE inspector chip. A separator, not a
- * word — no `t()`, and it must never be built by concatenating a translated fragment
+ * word - no `t()`, and it must never be built by concatenating a translated fragment
  * either side of it, which is how a summary turns into an untranslatable sentence.
  * (Between two SEPARATE chips the sheet draws a `border-inline-start` instead, which is
  * why that rule is logical rather than a physical left border: see parts/timeline.css.)
@@ -601,9 +603,9 @@ const CHIP_SEP = ' · ';
  * The Animate segment's WHOLE collapsed reading: the two kind names, `Rise · Fade`.
  *
  * §8's M2.6 pass, verbatim: "Chips must not duplicate the popup's contents… ANIMATE's
- * chip drops the ms/curve dump — kind names only". M2.5 printed
+ * chip drops the ms/curve dump - kind names only". M2.5 printed
  * `In: Rise · 400ms · Ease out` beside `Out: Cut (no animation)`, which is every field
- * of the group re-rendered as text on the door of the group — so the door taught the
+ * of the group re-rendered as text on the door of the group - so the door taught the
  * user nothing they would not read one press later, at twice the width. The segment is
  * a door with at most one glance token; the popup is where the details live.
  *
@@ -659,7 +661,7 @@ export function fitPxPerSec(durSec: number, widthPx: number): number {
 /**
  * Zoom about a cursor: the timeline instant under `cursorPx` (offset from the track
  * viewport's left edge) stays under the cursor afterwards. Returns the new zoom AND the
- * scroll that preserves the anchor — the caller applies both together.
+ * scroll that preserves the anchor - the caller applies both together.
  */
 export function zoomAbout(pxPerSec: number, factor: number, cursorPx: number, scrollLeft: number): { pxPerSec: number; scrollLeft: number } {
   const pps = clampPxPerSec(pxPerSec);
@@ -670,9 +672,9 @@ export function zoomAbout(pxPerSec: number, factor: number, cursorPx: number, sc
 
 /**
  * The identity of the panel's ROW STRUCTURE: box ids, their lane, whether they are
- * timed at all, and — for a tool with a group field — their group, because grouped
+ * timed at all, and - for a tool with a group field - their group, because grouped
  * overlays SHARE a lane row (see rebuild's collapse), so regrouping is a structure
- * change. Geometry (start/dur) is deliberately absent — moving or trimming a clip
+ * change. Geometry (start/dur) is deliberately absent - moving or trimming a clip
  * must restyle, never rebuild. The chromeKey precedent, applied to tracks.
  */
 export function tracksKey(boxes: Box[], cfg: TimeCfg): string {
@@ -691,7 +693,7 @@ export function tracksKey(boxes: Box[], cfg: TimeCfg): string {
 
 /**
  * The times a drag may snap to: every clip edge, the playhead, and the whole seconds
- * NEAR the pointer. Bounded on purpose — emitting every whole second up to MAX_TIME_S
+ * NEAR the pointer. Bounded on purpose - emitting every whole second up to MAX_TIME_S
  * would hand snapTime a 3,600-entry array on every pointermove.
  */
 export function snapCandidates(
@@ -762,7 +764,7 @@ export function isTextControl(el: Element | null | undefined): boolean {
 
 /**
  * The keyboard containment guard (page-filmstrip.ts:83-94, adapted). Shortcuts fire only
- * when the panel owns the interaction — focus inside it, or the pointer over it — and
+ * when the panel owns the interaction - focus inside it, or the pointer over it - and
  * never while a text control has focus, including the panel's own numeric fields.
  */
 export function panelKeysActive(root: HTMLElement | null, active: Element | null, hovered: boolean): boolean {
@@ -777,7 +779,7 @@ export function panelKeysActive(root: HTMLElement | null, active: Element | null
  * The floor has to clear the panel's OWN chrome, which is why `chromeH` exists: at
  * ≤720px `.tl-bar` wraps into three rows (transport / tools / inspector) where desktop
  * fits one, so the flat 112px that still leaves ~42px of track on desktop leaves none
- * at all on a phone — the resize grip could crush `.tl-tracks` to zero height and the
+ * at all on a phone - the resize grip could crush `.tl-tracks` to zero height and the
  * panel became 100% chrome showing no timeline. Callers that can measure their live
  * chrome pass it; the two-argument form keeps the original behaviour exactly.
  */
@@ -787,7 +789,7 @@ export function clampPanelH(h: number, stageH: number, chromeH = 0): number {
   return clamp(Math.round(finite(h, floor)), floor, hi);
 }
 
-/** Ruler tick spacing (seconds) for a zoom level — the smallest step ≥ 60px apart. */
+/** Ruler tick spacing (seconds) for a zoom level - the smallest step ≥ 60px apart. */
 export function tickStep(pxPerSec: number): number {
   const pps = Math.max(0.0001, finite(pxPerSec, 1));
   const steps = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
@@ -801,7 +803,7 @@ export function frameCountFor(widthPx: number): number {
 }
 
 /**
- * Is this pointer a coarse one — i.e. does it need the WCAG-floor hit target?
+ * Is this pointer a coarse one - i.e. does it need the WCAG-floor hit target?
  *
  * Written as an ALLOW-LIST of the two coarse kinds rather than "anything that is not a
  * mouse", so an absent/unknown `pointerType` (jsdom builds MouseEvents; some browsers
@@ -830,7 +832,7 @@ interface Gesture {
   /** Pointer x/y at pointerdown, viewport coords. */
   x0: number;
   y0: number;
-  /** Latest pointer position — written SYNCHRONOUSLY in pointermove, read on pointerup. */
+  /** Latest pointer position - written SYNCHRONOUSLY in pointermove, read on pointerup. */
   x: number;
   y: number;
   alt: boolean;
@@ -872,7 +874,7 @@ interface BoxMedia {
   kind: 'video' | 'audio' | 'image' | 'lottie' | '';
   dur: number | null;
   /**
-   * The live node the picture is already decoded in — the `<img>` on the canvas, or
+   * The live node the picture is already decoded in - the `<img>` on the canvas, or
    * a Lottie's mounted `<svg>`. Handed to clip-thumbs so a bar's still is drawn from
    * what is on screen instead of costing a second fetch + decode of the same asset.
    * Never retained across a repaint: a rebuild aborts the thumb pass that holds it.
@@ -891,16 +893,16 @@ export type ThumbMode = 'waveform' | 'filmstrip' | 'still' | 'node' | 'fill' | '
 export const MAX_NODE_RASTERS_PER_PASS = 6;
 /**
  * Extra idle passes a single scheduling may chain, to finish work the budget deferred
- * — and to catch the OTHER late arrival: a Lottie whose player has not mounted its
+ * - and to catch the OTHER late arrival: a Lottie whose player has not mounted its
  * <svg> by the first pass. Nothing else ever re-runs a pass (they fire on rebuild,
  * gesture-end, zoom, fit and an appearance change only), so without this a slow Lottie
  * bar stayed blank forever.
  *
  * Six, not three: three passes bounded a scheduling at 18 shots, so a twenty-frame
  * sequence had two bars that could never be reached at all. The chain still terminates
- * — a pass that leaves nothing pending does not queue the next, an in-flight bar no
+ * - a pass that leaves nothing pending does not queue the next, an in-flight bar no
  * longer counts as pending (nodeRasterPending) and a bar that failed once is retired
- * (nodeRasterFailed) — so this is a ceiling, not a schedule.
+ * (nodeRasterFailed) - so this is a ceiling, not a schedule.
  */
 export const MAX_THUMB_PASSES = 6;
 
@@ -937,7 +939,7 @@ export function isPaintedColor(css: string): boolean {
  *
  *   • A decoded ASSET wins over everything. It is both cheaper (one <img> decode, or
  *     a straight reuse of the element already on screen) and more faithful than a
- *     photograph of the DOM — and a tool clip must keep taking `still`, because that
+ *     photograph of the DOM - and a tool clip must keep taking `still`, because that
  *     <img> IS the compose render, not a screenshot of a tag.
  *   • `node` sits above `fill`, because a photograph of the box is strictly more
  *     information about the same box than its background colour is.
@@ -945,8 +947,8 @@ export function isPaintedColor(css: string): boolean {
  *     card and every pen shape (the tool hook forces `kind:'path'` boxes to a
  *     transparent fill) painted nothing at all before it existed.
  *
- * `canRaster` defaults to false so every existing call site — and every pinned row of
- * the table this function is tested against — keeps its exact previous answer.
+ * `canRaster` defaults to false so every existing call site - and every pinned row of
+ * the table this function is tested against - keeps its exact previous answer.
  */
 export function thumbMode(kind: string, url: string, fill: string, canRaster = false): ThumbMode {
   if (url) {
@@ -962,13 +964,13 @@ export function thumbMode(kind: string, url: string, fill: string, canRaster = f
  * Is this box worth photographing, and cheap enough to?
  *
  * Called ONCE per bar, in the thumb pass's read phase, and only for a box that turned
- * out to have no media — `querySelectorAll`/`textContent` force no layout, so it is
+ * out to have no media - `querySelectorAll`/`textContent` force no layout, so it is
  * safe there and nowhere near the paint phase.
  *
  * Declining is the important half. An empty, transparent, textless box would cost a
  * full dom-to-image shot to produce a blank bitmap, so it stays on `none`; and a box
  * with a pathological subtree is refused outright rather than allowed to eat the
- * pass's whole budget (the MAX_SVG_MARKUP / MAX_AUDIO_DECODE_BYTES idiom — decline,
+ * pass's whole budget (the MAX_SVG_MARKUP / MAX_AUDIO_DECODE_BYTES idiom - decline,
  * don't build it).
  */
 export function canRasterBox(
@@ -986,27 +988,27 @@ export function canRasterBox(
 }
 
 /**
- * The APPEARANCE identity of a box — everything that decides what its photograph looks
+ * The APPEARANCE identity of a box - everything that decides what its photograph looks
  * like, and nothing that decides where its bar sits.
  *
  * TIMING fields are excluded deliberately: a drag rewrites start/dur on every
  * pointermove, and re-keying on those would throw away a picture that has not changed
- * one pixel and retake it at the end of every gesture. `idField` is excluded too — two
+ * one pixel and retake it at the end of every gesture. `idField` is excluded too - two
  * boxes that look identical may legitimately share one raster (and one shot).
  *
  * O(row keys), against O(subtree bytes) for anything derived from the DOM. The box DOM
  * is a pure function of (model row, brand/theme, fonts), so the caller appends the two
- * environment terms it already has in hand — the box's computed background and the
- * document's theme stamp — rather than this module reaching for them. Same shape as
+ * environment terms it already has in hand - the box's computed background and the
+ * document's theme stamp - rather than this module reaching for them. Same shape as
  * the `tracksKey` precedent above.
  *
- * Joined on U+0001, written as an escape — no authored field value contains it.
+ * Joined on U+0001, written as an escape - no authored field value contains it.
  */
 /**
  * One field's contribution to an appearance signature.
  *
- * `String(v)` is wrong for the structured halves of `InputValue` — a token reference
- * `{ref,value}`, an asset ref, a blocks array — every one of which stringifies to
+ * `String(v)` is wrong for the structured halves of `InputValue` - a token reference
+ * `{ref,value}`, an asset ref, a blocks array - every one of which stringifies to
  * `[object Object]`. Two boxes differing ONLY in such a field would then share a
  * signature, hence a cache key, hence (via `share()`) one photograph served to both.
  * Today's sequence-studio schema keeps its colours and paths as strings, so this is
@@ -1052,7 +1054,7 @@ export function appearanceSig(box: Box | undefined, cfg: TimeCfg): string {
 // multi-edit.ts's zoom. Every access is wrapped, because a private-mode browser throws
 // on the property access itself, not only on the call.
 //
-// ABSENCE is the off state — there is no `on: false` record. That keeps the default
+// ABSENCE is the off state - there is no `on: false` record. That keeps the default
 // unambiguous (nothing stored, nothing drawn) and means turning it off leaves no
 // residue for a future version to misread.
 const ONION_KEY = 'lolly:onion';
@@ -1100,12 +1102,12 @@ function writeOnionPref(pref: OnionPref | null): void {
  *
  * There is therefore no per-group open MAP any more, and its absence is the point:
  *
- *   • ONE popover at a time — opening a second group swaps, the way a menu bar does.
+ *   • ONE popover at a time - opening a second group swaps, the way a menu bar does.
  *     A map of independently-open groups cannot express that, and the strip it used to
  *     describe (bodies inline, side by side) is exactly what the revision removed.
  *   • DEFAULT ALL-SHUT. Nothing auto-discloses on selection: a popover that opens
  *     itself over the canvas because you clicked a box is a popover you have to close.
- *   • Still UI state and still session-local — it lives in `openGroup` inside the panel
+ *   • Still UI state and still session-local - it lives in `openGroup` inside the panel
  *     closure below, never in the model (plans/104 §8: "never a model field") and never
  *     in storage. A group left open is a working posture, not a setting.
  */
@@ -1177,7 +1179,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * A button that says what it does IN WORDS, with the glyph beside the text rather
    * than instead of it.
    *
-   * The panel's `btn()` above is the TOOLBAR recipe — a 24px target in a row of
+   * The panel's `btn()` above is the TOOLBAR recipe - a 24px target in a row of
    * peers, where the icon is the whole control and the label lives in `aria-label` +
    * a tooltip. That is the wrong register inside the inspector, where an action
    * arrives alone in a disclosed group with nothing beside it to give it context:
@@ -1209,13 +1211,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const addBtn = btn('tl-add', t('Add to the timeline'), icon('plus'));
   addBtn.setAttribute('aria-haspopup', 'menu');
   addBtn.setAttribute('aria-expanded', 'false');
-  // No declared kinds means the host tool has no create pipeline to arm — the button
+  // No declared kinds means the host tool has no create pipeline to arm - the button
   // would open an empty menu, so it is not rendered at all.
   addBtn.hidden = !addKinds.length;
   const splitBtn = btn('tl-split', t('Split at playhead'), icon('scissors'));
   const snapBtn = btn('tl-snap', t('Snap to edges'), icon('pin'));
   snapBtn.setAttribute('aria-pressed', 'true');
-  // Onion skin — OFF by default, and the button says so before anything is clicked.
+  // Onion skin - OFF by default, and the button says so before anything is clicked.
   // A long-press / right-click on it opens the options popover (see onionMenu).
   const onionBtn = btn('tl-onion', t('Onion skin'), icon('filmStrip'));
   onionBtn.setAttribute('aria-pressed', 'false');
@@ -1224,7 +1226,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const zoomInBtn = btn('tl-zoom-in', t('Zoom in'), icon('zoomIn'));
   const fitBtn = btn('tl-fit', t('Fit to view'), icon('resize'));
   // The sheet. Bare letters are the only key space the browser leaves alone, so the
-  // panel's shortcuts are unguessable by design — this is where they stop being so.
+  // panel's shortcuts are unguessable by design - this is where they stop being so.
   const keysBtn = btn('tl-keys', t('Keyboard shortcuts'), icon('keyboard'));
   keysBtn.setAttribute('aria-haspopup', 'dialog');
 
@@ -1233,7 +1235,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // declared it needs a microphone; see canRecordVoiceover for why both.
   const micBtn = btn('tl-mic', t('Record a voiceover'), icon('mic'));
   micBtn.hidden = true;   // decided below, once the capability check has run
-  // Scripted voiceover — the mic's typed twin: opens the Script-audio dialog
+  // Scripted voiceover - the mic's typed twin: opens the Script-audio dialog
   // (views/script-audio.ts, on-device TTS) and commits the saved clip at the
   // playhead exactly like a finished take. Feature-detected on `host.speech`,
   // the same progressive-capability terms as the mic (see canRecordVoiceover).
@@ -1241,23 +1243,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   scriptBtn.hidden = true;   // decided below, beside the mic's check
 
   /**
-   * "+Keyframe" — one of its TWO homes (plans/104 §8's M2.5 revision).
+   * "+Keyframe" - one of its TWO homes (plans/104 §8's M2.5 revision).
    *
    * It sits at the END of the left cluster, AFTER the keyboard sheet (§8's M2.6 pass:
    * "the transport diamond moves to after the keyboard icon"). M2.5 put it fourth,
    * among `+` / mic / script on the reasoning that it is the fourth thing this panel
-   * can ADD — but on the built strip that reading did not survive contact: the three
+   * can ADD - but on the built strip that reading did not survive contact: the three
    * additive buttons all put something NEW on a track, and a diamond poses a box that
    * is already there, so it read as an interruption mid-cluster. The other home is the
    * canvas's selected-object contextual bar (views/free-canvas.ts), and both call the
-   * SAME exported action — `addKeyframeAction` below — so there is one writer, one set
+   * SAME exported action - `addKeyframeAction` below - so there is one writer, one set
    * of rules and one undo step however the press arrived.
    *
    * DISABLED, never hidden, when the selection has nothing keyframable in it: a
    * control that vanishes teaches nothing, and this one's whole job is to be the
    * answer to "how do I animate this". `aria-disabled` rather than the `disabled`
    * property, so it keeps its place in the tab order and can still explain itself.
-   * A tool whose manifest declares no `kf` sub-field never grows the button at all —
+   * A tool whose manifest declares no `kf` sub-field never grows the button at all - 
    * the same progressive-capability gate the `+` and the mic already carry.
    */
   const kfBtn = btn('tl-kf-btn', t('+Keyframe'), icon('keyframe'));
@@ -1293,7 +1295,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  // `kfBtn` LAST — the end of the left cluster, after the keyboard sheet (§8's M2.6).
+  // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (§8's M2.6).
   tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
@@ -1332,7 +1334,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * out of source. Shown for the length of a trim gesture only (FCP's "available media"
    * idea, drawn rather than implied).
    *
-   * A panel-level element positioned in timeline pixels, NOT a child of the bar —
+   * A panel-level element positioned in timeline pixels, NOT a child of the bar - 
    * `.tl-clip` is `overflow: hidden`, so a child could never paint the one thing this
    * element exists to show, which is the media that is currently OUTSIDE the bar.
    *
@@ -1344,7 +1346,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   extent.setAttribute('aria-hidden', 'true');
   /**
    * The trim readout: absolute duration plus a signed delta, anchored at the edge being
-   * dragged (Final Cut's pairing — the absolute number is what you are aiming for, the
+   * dragged (Final Cut's pairing - the absolute number is what you are aiming for, the
    * delta is what you have done). aria-hidden because it changes every frame; the
    * spoken version is one announce() on release.
    */
@@ -1368,7 +1370,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     commit(next);
   }
 
-  /** Set fields on one box. A VALUE write — no arithmetic, by design (see header). */
+  /** Set fields on one box. A VALUE write - no arithmetic, by design (see header). */
   function patchBox(boxes: Box[], id: string, patch: Record<string, Box[string]>): Box[] {
     const i = indexOfId(boxes, cfg, id);
     if (i < 0) return boxes;
@@ -1384,13 +1386,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * The media length a DETACHED sound borrows from the clip it came from.
    *
-   * A detached audio box is a REFERENCE — same asset ref, same URL — but the tool hook
+   * A detached audio box is a REFERENCE - same asset ref, same URL - but the tool hook
    * only stamps `data-audio-dur` when the ASSET carries a `meta.durationMs`, and a video
    * file's ref usually does not (its length is discovered by decoding it). The partner
    * video element has already decoded, and `video.duration` is the same number the
    * sound's own source runs for. Without this a detached sound is unclamped: you can
    * drag its out-edge past the end of the file into silence, and "fit to media" cannot
-   * work — the exact hole `data-audio-dur` exists to close for a library track.
+   * work - the exact hole `data-audio-dur` exists to close for a library track.
    *
    * Reads the partner's <video> DIRECTLY rather than recursing through mediaOf, so a
    * mutually-linked pair can never loop.
@@ -1411,7 +1413,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * A box's media, read from the LIVE CANVAS rather than the model: the hook has already
    * resolved the asset ref to a URL there, and a decoded <video> also knows its real
-   * duration — which is exactly what trimClip's media clamp wants.
+   * duration - which is exactly what trimClip's media clamp wants.
    */
   function mediaOf(id: string): BoxMedia {
     const el = boxEl(id);
@@ -1439,7 +1441,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // A Lottie is a MARKER div, not an <img>: the shell's lottie-mount enhancer builds
     // a live <svg> inside it. Checked before the <img> branch because the marker also
     // carries .lolly-box-img (it inherits the same position/size rules). Its picture is
-    // that mounted <svg> — absent until the player has painted, which just means the
+    // that mounted <svg> - absent until the player has painted, which just means the
     // bar stays plain until the next thumb pass.
     const lottie = el.querySelector<HTMLElement>('.lolly-box-lottie[data-lottie-src]');
     if (lottie) {
@@ -1461,7 +1463,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function labelFor(id: string): string {
     const el = boxEl(id);
     // A CAMERA first, and off the MODEL: it paints nothing, so every probe below reads
-    // '' on it and its chip would have said "Clip" — the one thing a camera is not
+    // '' on it and its chip would have said "Clip" - the one thing a camera is not
     // (plans/104 §5.4). This is the label the "Always on" scenery chip wears, which is
     // the whole affordance the implicit scene camera is discovered through.
     const rows = getBoxes();
@@ -1490,7 +1492,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /** Every TIMED box whose span contains `at` (seconds). Scenery is always on and is
-   *  never listed — it has no span to leave. */
+   *  never listed - it has no span to leave. */
   function activeIdsAt(boxes: Box[], at: number): string[] {
     const total = durationSec();
     const out: string[] = [];
@@ -1506,20 +1508,20 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //
   // "Selecting in the timeline moves the playhead so the selection stays live."
   //
-  // The rule is one-directional on purpose. TIME never rewrites the selection — that
+  // The rule is one-directional on purpose. TIME never rewrites the selection - that
   // is the Premiere failure ("the selection jumps back to the clip under the playhead
-  // and I wind up making changes to the wrong clip") — but SELECTION may move time,
+  // and I wind up making changes to the wrong clip") - but SELECTION may move time,
   // because the alternative is a selected clip the canvas cannot show and therefore
   // cannot edit. So every route into `selection.set` inside this panel comes through
   // here instead, and the canvas's off-playhead banner becomes a state you can only
   // reach the long way round (scrub away from your own selection).
   //
-  // Three refusals, each load-bearing:
-  //   • `{ reveal: false }` — a Shift-extend. Revealing on the SECOND of two clips
+  // Three refusals, each essential:
+  //   • `{ reveal: false }` - a Shift-extend. Revealing on the SECOND of two clips
   //     picks one arbitrarily and moves the picture out from under the first.
-  //   • playing — a seek mid-playback is a jump-cut nobody asked for, and during
+  //   • playing - a seek mid-playback is a jump-cut nobody asked for, and during
   //     playback the selection is going in and out of frame by definition.
-  //   • already live — the commonest case by far, and it must cost nothing.
+  //   • already live - the commonest case by far, and it must cost nothing.
   function selectAndReveal(ids: string[], opts?: { reveal?: boolean }): void {
     selection.set(ids);
     if (opts?.reveal === false || disposed || clock.playing()) return;
@@ -1544,7 +1546,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The diamonds: one strip per ANIMATED clip, one dot per keyframe (plans/104 §8).
    *
    * POINTER SUGAR, and the word is exact. A bar is `role="option"` inside a listbox,
-   * where an interactive child is illegal — so these are `<span>`s, aria-hidden, out
+   * where an interactive child is illegal - so these are `<span>`s, aria-hidden, out
    * of the tab order, and everything they can do (retime, duplicate, re-ease, delete)
    * is also a real labelled button in the inspector's Keyframes group. That list is
    * the keyboard and screen-reader route; this is the one you can grab.
@@ -1555,7 +1557,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * the panel body-mounts (the trap documented on `.tl-panel`), and the seam chips
    * learned that first.
    *
-   * On an `is-tight` bar the strip hides outright — the trim-grip precedent: a target
+   * On an `is-tight` bar the strip hides outright - the trim-grip precedent: a target
    * you cannot hit is worse than no target, and the inspector list still has every
    * keyframe. Reconciled in place (`restyle`'s no-churn law): the dots are re-used and
    * only their count changes with the track.
@@ -1585,18 +1587,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       dot.className = 'tl-kf-dot';
       // NO tabIndex, not even -1 (§8's M2.6 low): this subtree is aria-hidden, and a
       // focusable node inside an aria-hidden subtree is the one combination that has no
-      // honest reading — focus would land somewhere the accessibility tree says is not
+      // honest reading - focus would land somewhere the accessibility tree says is not
       // there. `-1` keeps it out of the TAB order but leaves it programmatically
       // focusable, and a pointer press focuses it in some engines. Nothing needs it:
       // the dots are pointer sugar and the inspector list is the AT route.
       strip.appendChild(dot);
     }
-    // A NEW dot is a BLANK dot — `is-selected` went with the node it replaced (or with
+    // A NEW dot is a BLANK dot - `is-selected` went with the node it replaced (or with
     // the whole row, on a `rebuild`). The latch's structural memo is keyed on the
     // ANSWER, which a row rebuild does not change, so it would skip the re-mark and the
     // enlarged diamond would silently vanish (§8's M2.6 low: "enlarged-diamond mark
-    // lost on row rebuild"). Resetting the memo is the whole fix — the next
-    // `syncKfLatch` re-reads and re-marks — and it costs nothing on the common path,
+    // lost on row rebuild"). Resetting the memo is the whole fix - the next
+    // `syncKfLatch` re-reads and re-marks - and it costs nothing on the common path,
     // because a repaint that mints no dot does not touch it.
     if (grew || fresh) kfLatchKey = '\u0000';
     for (let i = 0; i < track.length; i++) {
@@ -1605,7 +1607,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       dot.dataset.t = String(k.t);
       dot.style.left = `${timeToPx(kfLocalSec(k.t), pxPerSec)}px`;
       // `title`, not [data-tip]: the bubble primitive draws a ::after ABOVE the
-      // element and this one lives inside the `.tl-tracks` scroller, which clips —
+      // element and this one lives inside the `.tl-tracks` scroller, which clips - 
       // the same reason the scenery chip's `+` uses a native tooltip.
       const tip = t('Keyframe @ {t}', { t: fmtTime(kfTimelineSec(box, cfg, k.t)) });
       if (dot.title !== tip) dot.title = tip;
@@ -1637,11 +1639,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     return el;
   }
 
-  /** Full row rebuild — only when `tracksKey` changed. */
+  /** Full row rebuild - only when `tracksKey` changed. */
   function rebuild(boxes: Box[]): void {
     const scrollLeft = tracks.scrollLeft;
     // Every bar is about to be destroyed. If one of them had focus, the browser sends
-    // focus to <body> — and since the key handler is bound on `root`, that kills the
+    // focus to <body> - and since the key handler is bound on `root`, that kills the
     // keyboard for the rest of the session (delete a clip, then no shortcut works).
     // Remember it and restore focus onto the new roving bar below.
     const hadFocus = root.contains(document.activeElement) && !!(document.activeElement as HTMLElement | null)?.closest('.tl-clip');
@@ -1654,10 +1656,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const seq = seqBoxes(boxes, cfg);
     const seqIds = new Set(seq.map((b) => String(b[cfg.idField] ?? '')));
 
-    // Overlay lanes first (one row each — except that overlays SHARING a group share
+    // Overlay lanes first (one row each - except that overlays SHARING a group share
     // one row), then the magnetic seq row. The collapse is presentation only: the
     // boxes stay independent in the model, individually selectable and fully editable
-    // on canvas — but 200 generated caption cues must not become 200 lane rows, and
+    // on canvas - but 200 generated caption cues must not become 200 lane rows, and
     // grouped bars never overlap in time (cues are sequential), so side by side on one
     // row is both honest and readable. The lane-explosion decision, §5 of the plan.
     const groupLanes = new Map<string, HTMLElement>();
@@ -1679,7 +1681,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (group) {
           groupLanes.set(group, lane);
           // A generated caption row says what it is. Other groups keep an unlabelled
-          // shared row — their bars already carry their own labels.
+          // shared row - their bars already carry their own labels.
           if (isCaptionGroup(group)) {
             lane.classList.add('tl-lane-captions');
             const lab = document.createElement('span');
@@ -1705,7 +1707,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       slot.type = 'button';
       slot.className = 'tl-dropslot';
       slot.textContent = t('Add a clip');
-      // Pointer affordance only — a button is not a legal child of a listbox. The
+      // Pointer affordance only - a button is not a legal child of a listbox. The
       // keyboard/AT route to the same thing is the canvas rail's add-clip control.
       slot.setAttribute('aria-hidden', 'true');
       slot.tabIndex = -1;
@@ -1753,7 +1755,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (!id) continue;
         // A pill of TWO buttons rather than one: the label selects (which now opens a
         // real inspector), and the `+` promotes the box onto an overlay lane. A button
-        // inside a button is not legal HTML, hence the wrapper — the pill's border and
+        // inside a button is not legal HTML, hence the wrapper - the pill's border and
         // background live on the group so the two halves read as one control.
         const group = document.createElement('span');
         group.className = 'tl-chip-group';
@@ -1826,13 +1828,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (linkEl.title !== tip) linkEl.title = tip;
       }
       el.setAttribute('aria-selected', isSel ? 'true' : 'false');
-      // Read once and shared with the diamond gate below — `mediaOf` is a live DOM
+      // Read once and shared with the diamond gate below - `mediaOf` is a live DOM
       // query, and this loop runs per bar per restyle.
       const mediaKind = mediaOf(id).kind;
       el.dataset.kind = mediaKind || (seqSet.has(id) ? 'clip' : 'overlay');
       // Too narrow to carry two trim zones (see MIN_TRIM_BAR_PX): hide the grips and
       // say where the precise route is, rather than offering a target that would eat
-      // the whole bar. Read off the width we just WROTE — asking the DOM for
+      // the whole bar. Read off the width we just WROTE - asking the DOM for
       // offsetWidth here would force a layout per bar per keystroke.
       const tight = timeToPx(dur, pxPerSec) < MIN_TRIM_BAR_PX;
       el.classList.toggle('is-tight', tight);
@@ -1844,7 +1846,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (timing.speed !== 1) el.dataset.speed = String(timing.speed);
       else delete el.dataset.speed;
     }
-    // Scenery chips carry the same selected state a bar does — otherwise selecting an
+    // Scenery chips carry the same selected state a bar does - otherwise selecting an
     // untimed box changes the inspector with nothing on screen to say which box it is.
     for (const [id, chip] of chips) {
       const isSel = sel.has(id);
@@ -1863,13 +1865,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const faded = Boolean(aBox && isTransitionKind(aBox[cfg.exitField]) && aBox[cfg.exitField] !== 'none')
         || Boolean(i >= 0 && isTransitionKind(boxes[i]![cfg.enterField]) && boxes[i]![cfg.enterField] !== 'none');
       chip.classList.toggle('is-fade', faded);
-      // THROUGH EDIT — a cut whose two sides are still contiguous, i.e. a split nobody
+      // THROUGH EDIT - a cut whose two sides are still contiguous, i.e. a split nobody
       // has committed to yet. Final Cut's hairline marker, and the single mechanism in
       // the whole survey that makes cutting non-frightening: you can see at a glance
       // which seams are decisions and which are just "I cut here and changed nothing".
       // Computed HERE rather than in rebuild's seam pass, because contiguity dies to a
       // trim or a transition edit, neither of which changes tracksKey.
-      // The MARK is the whole affordance, exactly as Final Cut does it — the tip still
+      // The MARK is the whole affordance, exactly as Final Cut does it - the tip still
       // says what clicking does (open the junction), because that is still what it does;
       // the junction dialog is where the Join action appears.
       chip.classList.toggle('is-through', isThroughEdit(boxes, cfg, chip.dataset.a || '', bId, sameSource));
@@ -1893,7 +1895,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // And so does "+Keyframe": it is enabled by what is SELECTED, which is one of the
     // two things that bring us here.
     syncKfBtn();
-    // So does the blade's — its scope depends on the selection and on the model, which
+    // So does the blade's - its scope depends on the selection and on the model, which
     // are exactly the two things that bring us here. The other half (the playhead
     // crossing a clip boundary) rides `tl-time`, so neither costs a per-tick pass.
     syncSplitBtn();
@@ -1962,7 +1964,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // ── promotion / demotion (scenery ⇄ timed) ──────────────────────────────────
 
   /**
-   * Give an UNTIMED box (scenery: no lane, no start — what the `text` / `image` /
+   * Give an UNTIMED box (scenery: no lane, no start - what the `text` / `image` /
    * `lottie` / `tool` add-kinds seed) a place on the timeline, in ONE commit.
    *
    * The defaults, spelled out because they are a product decision, not arithmetic:
@@ -1973,7 +1975,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     first (a `card` add-kind seeds 2.5 s; clobbering it would make a card promoted
    *     here disagree with the identical card added from the rail), then its media
    *     duration when the live canvas knows it (a video or audio box plays in full),
-   *     else DEFAULT_CLIP_S — the same 3 s the magnetic pack hands a clip it cannot
+   *     else DEFAULT_CLIP_S - the same 3 s the magnetic pack hands a clip it cannot
    *     measure, so a promoted box and a packed one never disagree.
    *   • `dur: null`, passed EXPLICITLY, means "author no length at all". That is the
    *     free-canvas create path: it promotes a box born milliseconds ago, before its
@@ -1981,23 +1983,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     freezing DEFAULT_CLIP_S in would pin a 45 s audio track to 3 s and destroy the
    *     seq row's derive-from-media rule permanently. Left unauthored, packSeq fills a
    *     seq clip from its media later and an overlay stays open-ended to the sequence
-   *     end — exactly what the same box added from the CANVAS already does.
+   *     end - exactly what the same box added from the CANVAS already does.
    *   • The box lands on an OVERLAY lane, never on the magnetic seq row: seq membership
    *     is a separate, deliberate choice (it repacks the whole row), and silently
    *     joining the spine because someone typed a start would move other clips.
    *
    * NO clamping arithmetic lives here. `moveOverlay` owns the start clamp and the
    * millisecond grid; `setDuration` owns the length clamp and the media fit. Both are
-   * pure, so composing them on the intermediate array is ONE undo step, not two — and
+   * pure, so composing them on the intermediate array is ONE undo step, not two - and
    * a promoted start lands on exactly the value a drag to the same time would.
    */
   /**
    * The PURE half of {@link promote}: the promoted array, no commit and no side
-   * effects. Split out for the one caller that must compose it with a second write —
+   * effects. Split out for the one caller that must compose it with a second write - 
    * "+Keyframe" on an UNTIMED box, which promotes it and poses its first keyframe in
    * ONE commit and therefore one undo step (§8's M2.5 revision). Everything about the
-   * resolution — the playhead start, the authored → media → DEFAULT_CLIP_S length
-   * ladder, the overlay lane — is documented on `promote` and lives HERE so neither
+   * resolution - the playhead start, the authored → media → DEFAULT_CLIP_S length
+   * ladder, the overlay lane - is documented on `promote` and lives HERE so neither
    * caller re-derives it.
    */
   function promoteRows(rows: Box[], id: string, want?: { start?: number; dur?: number | null }): Box[] {
@@ -2017,7 +2019,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!id || i < 0) return;
     const next = promoteRows(rows, id, want);
     // Both writers keep row IDENTITY for every row they did not change, so an
-    // all-identical array means this promote had nothing to write — a seq-lane clip,
+    // all-identical array means this promote had nothing to write - a seq-lane clip,
     // whose start the magnetic spine owns and whose length is derived. Skip the commit
     // rather than spend an undo step on a no-op.
     if (next.some((b, k) => b !== rows[k])) write(next);
@@ -2030,7 +2032,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The reverse: take a timed box back to scenery ("always on"), in ONE commit, so that
    * state stays reachable instead of being a one-way trap.
    *
-   * `start: ''` — not 0 — is what makes it scenery: boxTiming reads an authored 0 as
+   * `start: ''` - not 0 - is what makes it scenery: boxTiming reads an authored 0 as
    * "enters at the top of the sequence" and only an EMPTY field as untimed. This is a
    * VALUE write, which is exactly what patchBox is for.
    */
@@ -2043,7 +2045,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       [cfg.startField]: '', [cfg.durField]: '', [cfg.laneField]: '',
     });
     // Pulling a clip off the magnetic row leaves a hole. Close it the way a delete
-    // does — same pack, same overlay ripple — inside the same commit.
+    // does - same pack, same overlay ripple - inside the same commit.
     write(wasSeq ? rippleOverlays(rows, packSeq(cleared, cfg, mediaDur), cfg) : cleared);
     focusedId = '';
     selectAndReveal([id]);
@@ -2071,7 +2073,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const ph = el.offsetHeight;
     const vw = window.innerWidth || 1024;
     const vh = window.innerHeight || 768;
-    // Align to the anchor's NEAR edge — left under ltr, right under rtl (body-popover's
+    // Align to the anchor's NEAR edge - left under ltr, right under rtl (body-popover's
     // own default is right-aligned for the same reason). Aligning to `left` in Arabic
     // opens the menu away from the button that spawned it.
     const rtl = document.documentElement.dir === 'rtl';
@@ -2083,7 +2085,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * One menu row. Same markup + classes as the projects/folder menus, so no new CSS —
+   * One menu row. Same markup + classes as the projects/folder menus, so no new CSS - 
    * except `sub`, a second line in the plainer register for an action whose NAME cannot
    * carry its meaning ("Detach audio" says what, not what for). The two lines live in
    * one column so the icon still centres against the pair.
@@ -2116,7 +2118,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * The cross-module seam (see the panel's contract with free-canvas): the panel never
-   * creates a box itself — it names an add-kind and the time it wants, and free-canvas's
+   * creates a box itself - it names an add-kind and the time it wants, and free-canvas's
    * create pipeline does the rest. `atMs` is the PLAYHEAD, because a box added from the
    * timeline must land timed where the user is looking, which is the opposite default
    * from the canvas `+` (that one makes scenery).
@@ -2130,7 +2132,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     el.textContent = '';
     let first: HTMLElement | null = null;
     for (const k of addKinds) {
-      // The label is the MANIFEST's, exactly as the canvas add-menu shows it — the
+      // The label is the MANIFEST's, exactly as the canvas add-menu shows it - the
       // panel must not second-guess a tool's own vocabulary or hardcode the list.
       const item = menuItem(k.label || k.id, KIND_ICON.get(k.id) ?? 'plus', () => {
         pop.close();
@@ -2146,7 +2148,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //
   // The panel owns the PREFERENCE and the emission; views/onion-skin.ts owns the
   // drawing and is lazily imported by free-canvas off the `tl-time` detail. Nothing
-  // here touches the model, so nothing here is undoable — a view preference is not an
+  // here touches the model, so nothing here is undoable - a view preference is not an
   // edit, and putting it on the undo stack would make Cmd-Z stop meaning "unmake that
   // change to my work".
 
@@ -2285,7 +2287,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const i = ctxId ? indexOfId(rows, cfg, ctxId) : -1;
     if (i < 0) {
       // mountBodyPopover appends, positions and focus-traps whatever this render leaves
-      // behind — a null return only means "don't move focus", not "don't open". Bail out
+      // behind - a null return only means "don't move focus", not "don't open". Bail out
       // of the open itself, or a box that vanished between openCtxMenu's check and here
       // paints an empty, focus-trapped card. Unreachable today (openCtxMenu re-checks in
       // the same tick); one microtask is the cheap insurance against that ever deferring.
@@ -2296,12 +2298,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     el.textContent = '';
     const act = (fn: () => void) => () => { pop.close(); fn(); };
     if (timed) {
-      // Exactly the writers that already exist — the context menu is a second DOOR onto
+      // Exactly the writers that already exist - the context menu is a second DOOR onto
       // them, never a second implementation (see promote/demote above).
       el.appendChild(menuItem(t('Split at playhead'), 'scissors', act(() => { selectAndReveal([ctxId]); splitAtPlayhead(); })));
       // Join is offered only where it is REAL: a cut whose two sides are still perfectly
       // contiguous, on either side of this clip. Everywhere else the item is absent
-      // rather than disabled — a menu of greyed-out rows teaches nothing.
+      // rather than disabled - a menu of greyed-out rows teaches nothing.
       const join = throughNeighbour(ctxId, rows);
       if (join) el.appendChild(menuItem(t('Join clips'), 'link', act(() => joinAt(join.aId, join.bId))));
       const partner = partnerOf(ctxId, rows);
@@ -2312,7 +2314,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         el.appendChild(menuItem(t('Detach audio'), 'volumeOff', act(() => detachAudioAt(ctxId)),
           { sub: t('Puts the sound on its own lane so you can move and trim it separately.') }));
       }
-      // Subtitles, for a clip with sound — absent (never greyed) when no timing
+      // Subtitles, for a clip with sound - absent (never greyed) when no timing
       // source is reachable, the same offered-only-where-real rule as Join.
       if (canGenerateSubtitles(ctxId)) {
         el.appendChild(menuItem(t('Generate subtitles'), 'speech', act(() => { void generateSubtitles(ctxId); }),
@@ -2334,7 +2336,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The selection COLLAPSES to the clicked box, even when it was already part of a
    * multi-selection: every item in this menu is per-box and acts on `ctxId` alone, so
    * leaving three bars painted as selected while "Make always on" demotes one of them
-   * shows the user a state that never existed — and the next act is an undo of
+   * shows the user a state that never existed - and the next act is an undo of
    * something they did not think they did. Free-canvas's sibling menu resolves the
    * same tension the other way (it disables per-box items on a multi-selection); here
    * collapsing is better, because the box under the pointer is unambiguous.
@@ -2353,8 +2355,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The diamond's own menu: the three things §3 lists on the transport's right —
-   * EASING / DUPLICATE / DELETE — offered where the pointer already is.
+   * The diamond's own menu: the three things §3 lists on the transport's right - 
+   * EASING / DUPLICATE / DELETE - offered where the pointer already is.
    *
    * Pointer sugar again, and the same three actions are labelled buttons in the
    * inspector's list, so nothing here is the only way to reach anything.
@@ -2372,7 +2374,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const act = (fn: () => void) => () => { pop.close(); fn(); };
     // ONE SURFACE (§8's M2.7): the curve editor is DOCKED in the Keyframes popup, so
     // this item opens that popup on this keyframe rather than spawning a second,
-    // nested editor of its own — which is exactly what a left-click on the same
+    // nested editor of its own - which is exactly what a left-click on the same
     // diamond already does. The item stays because a context menu that lists Duplicate
     // and Delete and not the third thing you can do to a keyframe is a menu with a
     // hole in it.
@@ -2411,7 +2413,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     openCtxMenu(id, e.clientX, e.clientY, null);
   }
 
-  /** The keyboard route (Menu key / Shift+F10) — a pointer-only menu is not reachable. */
+  /** The keyboard route (Menu key / Shift+F10) - a pointer-only menu is not reachable. */
   function openCtxForFocused(): void {
     const active = document.activeElement as HTMLElement | null;
     const el = (root.contains(active) ? active?.closest<HTMLElement>('.tl-clip, .tl-chip') : null)
@@ -2432,12 +2434,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * lands in a toolbar the user is already looking at, and watching it land is the
    * complaint that started this: three regions of chrome appeared between two adjacent
    * frames of a screen recording, one of them clipping a tool button, with nothing to
-   * lead the eye. So the arrival is announced — `is-entering` runs one short fade and
-   * rise — and ONLY the arrival: a field edit or a scrub rebuilds this row constantly,
+   * lead the eye. So the arrival is announced - `is-entering` runs one short fade and
+   * rise - and ONLY the arrival: a field edit or a scrub rebuilds this row constantly,
    * and re-running the cue on every one of those is its own kind of noise.
    *
    * Reduced motion is honoured in the sheet rather than by withholding the class, so
-   * the cue still exists for someone who asked for less movement — it just does not
+   * the cue still exists for someone who asked for less movement - it just does not
    * move.
    */
   let inspectorShown = false;
@@ -2452,14 +2454,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /* ── the custom-easing popover ─────────────────────────────────────────────
      ONE instance for both directions: which box and which field it writes are
      `easeId` / `easeField`, set by the trigger before `open()`. The trigger itself
-     cannot be the anchor — the inspector rebuilds its controls on every commit, so
+     cannot be the anchor - the inspector rebuilds its controls on every commit, so
      the `<select>` that opened this is a detached node moments later. `pointAnchor`
      with a `delegate` is the same shape openCtxMenu already uses for exactly that:
      the point supplies geometry, the delegate takes the focus restore.
 
      Body-mounted (via mountBodyPopover) rather than parented in the panel, because
      the panel is a fixed-position band whose descendants must never become the
-     containing block for this card — the trap documented on `.tl-panel` and
+     containing block for this card - the trap documented on `.tl-panel` and
      `.fc-toolbar`. Escape, the outside click and the focus restore come free with it. */
   const easePoint = pointAnchor();
   let easeId = '';
@@ -2505,16 +2507,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * CAN this box be keyframed at all (plans/104 §8, M2.5) — the ONE rule, with five
+   * CAN this box be keyframed at all (plans/104 §8, M2.5) - the ONE rule, with five
    * readers: "+Keyframe"'s scope, the transport button's enabled state, the canvas
    * contextual bar's enabled state (through `keyframableIds` on the handle), the
    * inspector's Keyframes group, and the diamonds on the bar.
    *
    * Deliberately permissive: a box is keyframable timed or not, because the M2.5
-   * revision made the button itself the door — an untimed box is promoted onto the
+   * revision made the button itself the door - an untimed box is promoted onto the
    * timeline and keyed in the same commit. Two exclusions, both named in §8:
    *
-   *   • `audio` — sound has no pose to strike; keyframed gain is plan 101's, and until
+   *   • `audio` - sound has no pose to strike; keyframed gain is plan 101's, and until
    *     it exists an audio clip in a mixed selection must fall out rather than be
    *     silently given an x/y/s/r/o track no evaluator reads. The kind is taken from
    *     the MODEL row and from the live canvas, because a box carrying an audio asset
@@ -2522,7 +2524,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     this is a function and not an inline `kind !== 'audio'` at each site: a model
    *     read alone offers the affordance to a box the writer then refuses.
    *   • a `camera` is keyframable (it exists only to be animated) but is never
-   *     PROMOTED by "+Keyframe" — a camera is timed by construction, so that button's
+   *     PROMOTED by "+Keyframe" - a camera is timed by construction, so that button's
    *     promote branch can only be reached by a content box.
    *
    * `mediaKind` is the caller's already-paid `mediaOf(id).kind` where it has one (the
@@ -2542,7 +2544,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * THE "+Keyframe" action — one implementation, three doors (the transport button,
+   * THE "+Keyframe" action - one implementation, three doors (the transport button,
    * the canvas contextual bar, and `K`), which is the whole point of §8's M2.5
    * revision: "TWO homes, one action".
    *
@@ -2554,7 +2556,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * AUTO-PROMOTION is the new half: a selected box with no time at all is promoted
    * onto an overlay lane and keyed **inside the same array**, so the commit below is
    * still one write and one ⌘Z takes both back. `promoteRows` is the panel's existing
-   * resolution (playhead start, authored → media → DEFAULT_CLIP_S length), composed —
+   * resolution (playhead start, authored → media → DEFAULT_CLIP_S length), composed - 
    * never re-derived.
    */
   function addKeyframeAction(opts?: { speak?: boolean }): void {
@@ -2564,7 +2566,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const at = playheadSec();
     const before = getBoxes();
     let next = before;
-    // Where the FIRST written keyframe actually landed — which is the playhead unless
+    // Where the FIRST written keyframe actually landed - which is the playhead unless
     // it sat outside the clip, in which case `kfWriteMs` clamped it to the clip's own
     // edge. Announcing the playhead there would name a time no keyframe exists at.
     let landed: number | null = null;
@@ -2577,7 +2579,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // The CAPTURED playhead, not `promoteRows`'s own `clock.t()` fallback. Both
         // reads are the playhead, but they are two reads: while the transport is
         // playing the second one is later, so the clip would start after the time its
-        // first keyframe is then written at — the pose lands at a non-zero local ms (or
+        // first keyframe is then written at - the pose lands at a non-zero local ms (or
         // gets clamped to the clip edge) instead of at the box's own t = 0, and the
         // announcement names a time no keyframe is at. One gesture, one instant.
         const grown = promoteRows(next, id, { start: at });
@@ -2603,7 +2605,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * The transport button's enabled state, memoised on the ACHIEVED state rather than
    * on the selection: this runs on every repaint, and the attribute must not be
-   * rewritten on each one. Disabled — `aria-disabled`, never `hidden` — is a real
+   * rewritten on each one. Disabled - `aria-disabled`, never `hidden` - is a real
    * state here: with nothing keyframable selected the button stays in place and its
    * tooltip says what would make it work.
    */
@@ -2631,7 +2633,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const rows = getBoxes();
     const i = indexOfId(rows, cfg, id);
     if (i < 0 || !cfg.kfField) return;
-    // t = 0 in the box's OWN time, which is its start on the timeline — not the
+    // t = 0 in the box's OWN time, which is its start on the timeline - not the
     // playhead. A door that opened onto a track whose only key sat wherever the
     // playhead happened to be would make the clip jump the moment it was animated.
     const next = writeKfPose(rows, cfg, id, kfTimelineSec(rows[i]!, cfg, 0), {}, 'set');
@@ -2649,11 +2651,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * Alt+←/→ — the playhead to the previous / next diamond of the SELECTED boxes.
+   * Alt+←/→ - the playhead to the previous / next diamond of the SELECTED boxes.
    *
    * Same selection rule as the latch, for the same reason: the diamonds you can walk
    * are the ones you declared you were working on. Stops at the ends rather than
-   * wrapping — a shortcut that silently teleports to the other end of a sequence is
+   * wrapping - a shortcut that silently teleports to the other end of a sequence is
    * how you lose your place.
    */
   function seekDiamond(dir: number): void {
@@ -2685,7 +2687,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * selection is what builds the inspector row this popup borrows its body from (so
    * the group must exist before it can be opened), and the seek comes after it because
    * `selectAndReveal` moves the playhead to the clip's start when the selection would
-   * otherwise be off screen — which would land it beside the diamond rather than on it.
+   * otherwise be off screen - which would land it beside the diamond rather than on it.
    *
    * Writes nothing. Opening a keyframe is a way of LOOKING at it, and §8's whole model
    * is that nothing is keyed by accident.
@@ -2698,7 +2700,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     clock.seek(kfTimelineSec(rows[i]!, cfg, atMs) * 1000);
     // The row is rebuilt by the selection change above (restyle → renderInspector), so
     // the segment this points at is the live one. On a box whose row offers no
-    // Keyframes group (there is none — a diamond only exists where the group does)
+    // Keyframes group (there is none - a diamond only exists where the group does)
     // `openGroupPopover` finds nothing and does nothing.
     openGroupPopover('keyframes', id);
     syncKfLatch();
@@ -2725,16 +2727,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // The panel owns three things about it and nothing else: WHERE its pose is written
   // (this section), how it is offered (the Camera inspector group), and whether a
   // canvas gesture is currently aimed at it (`cameraModeId`). Every NUMBER is the
-  // engine's — `resolveCamera` reads the same track this writes.
+  // engine's - `resolveCamera` reads the same track this writes.
 
   const cameraKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'camera');
 
-  /** A box is a camera because its kind says so — the hooks' own rule (§5.4). */
+  /** A box is a camera because its kind says so - the hooks' own rule (§5.4). */
   function isCameraBox(b: Box | undefined): boolean {
     return !!b && String(b.kind ?? '') === 'camera';
   }
 
-  /** The scene camera's id, or '' — the FIRST camera in the array (DOM order). */
+  /** The scene camera's id, or '' - the FIRST camera in the array (DOM order). */
   function sceneCameraId(rows: Box[]): string {
     for (const b of rows) if (isCameraBox(b)) return String(b?.[cfg.idField] ?? '');
     return '';
@@ -2744,24 +2746,24 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * THE IMPLICIT SCENE CAMERA (§5.4's "default experience", the review's strongest UX
    * finding): the first depth interaction auto-creates ONE untimed camera box.
    *
-   * PURE — it returns the array and the id, and commits nothing, so the gesture that
+   * PURE - it returns the array and the id, and commits nothing, so the gesture that
    * triggered it composes the camera and its own write into ONE commit and therefore
    * one undo step. That is the whole reason this is not a `write()`: lifting a box and
    * minting the camera that looks at it is one action to the user, and two ⌘Zs to undo
    * it would be a lie about what just happened.
    *
    * UNTIMED, deliberately: no `start` field, so it renders as an "Always on" scenery
-   * chip whose inspector is the scene-camera panel — Depthfield's SCENE DEFAULTS. It
+   * chip whose inspector is the scene-camera panel - Depthfield's SCENE DEFAULTS. It
    * becomes a timed clip only when promoted (the existing timed ⇄ always-on switch),
    * and a SECOND camera is how you cut.
    *
    * It is born from the manifest's own `camera` add-kind seed where the tool declares
-   * one, exactly as a recorded take is born from the audio seed — the panel never
+   * one, exactly as a recorded take is born from the audio seed - the panel never
    * invents a kind. With no seed it still mints `{kind:'camera'}`, because the wire is
    * the contract and the hooks key their marker off `kind` alone.
    *
    * No geometry: a camera has no canvas footprint (§5.4), and a zero-size box is
-   * exactly that — nothing to hit-test, nothing to marquee, nothing to paint.
+   * exactly that - nothing to hit-test, nothing to marquee, nothing to paint.
    */
   function ensureSceneCameraRows(rows: Box[]): { rows: Box[]; id: string } {
     const found = sceneCameraId(rows);
@@ -2776,7 +2778,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * WHERE a camera pose edit lands, in TIMELINE seconds — or null when it may not land
+   * WHERE a camera pose edit lands, in TIMELINE seconds - or null when it may not land
    * at all. The camera's reading of §8's latch, and the one place that decides it.
    *
    * Three cases, in order:
@@ -2784,8 +2786,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *   • a track of at most ONE key → that key (or t = 0 when there are none). A single
    *     key IS the scene default: evaluation clamp-holds before the first key and after
    *     the last, so with one key the camera holds that pose for the whole sequence.
-   *     This is what makes the fresh implicit camera behave as SCENE DEFAULTS — pan it,
-   *     dolly it, change its focus, and the whole shot moves — with no keyframe UI in
+   *     This is what makes the fresh implicit camera behave as SCENE DEFAULTS - pan it,
+   *     dolly it, change its focus, and the whole shot moves - with no keyframe UI in
    *     the way and no auto-keying (§8's "No auto-key" is about NEW diamonds; there is
    *     no new diamond here).
    *   • a real MOVE (two or more keys), off every diamond → null. Writing the first key
@@ -2806,7 +2808,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * SELECTION, never a global toggle")? Returns the camera's id, or ''.
    *
    * Three conditions, all of them things the user can SEE: the panel is open (the same
-   * reason `kfPoseIds` refuses a shut panel — with no playhead on screen there is no
+   * reason `kfPoseIds` refuses a shut panel - with no playhead on screen there is no
    * arm), exactly one box is selected and it is a camera, and the playhead is inside
    * its window (a camera that is not running is not the camera you are looking
    * through). Clicking a box exits by ordinary selection semantics; there is nothing
@@ -2829,7 +2831,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * A camera gesture's delta, folded into whichever key `cameraPoseAtSec` resolved —
+   * A camera gesture's delta, folded into whichever key `cameraPoseAtSec` resolved - 
    * pure, like `kfPoseWrite`, so the caller commits once on release.
    *
    * `'add'`, because a drag and a wheel are both "from wherever it already was": the
@@ -2838,7 +2840,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * pose at that instant first.
    *
    * WHICH IS ALSO WHY THE TILT BAND IS HELD HERE and not in the caller. `KF_TILT_CONTROL`
-   * bounds the RESULT, and a shift-drag only ever supplies a delta — clamping the delta
+   * bounds the RESULT, and a shift-drag only ever supplies a delta - clamping the delta
    * would let three drags of +30° walk `rx` to 90 and past the sign change in `κ` that
    * the depth sort depends on. So the composed value is what gets held: re-evaluate the
    * pose the write is about to start from (the same `kfWriteMs` + `kfPoseAt` reading
@@ -2858,7 +2860,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The tilt half of `cameraWrite`'s clamp — pure, and a no-op by identity on every
+   * The tilt half of `cameraWrite`'s clamp - pure, and a no-op by identity on every
    * delta that carries no `rx`/`ry`, so the pan and dolly gestures are byte-unchanged.
    */
   function holdTilt(box: Box, atSec: number, delta: KfPose): KfPose {
@@ -2874,7 +2876,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The ABSOLUTE tilt a shift-drag of `(dRx, dRy)` degrees would produce — current pose
+   * The ABSOLUTE tilt a shift-drag of `(dRx, dRy)` degrees would produce - current pose
    * plus the delta, clamped to the same band `holdTilt` enforces, so the HUD and the
    * write can never disagree. Reads at the latch when the playhead is on/near a key, and
    * falls back to the playhead itself for an authored move parked off every diamond (the
@@ -2896,21 +2898,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * One camera preset, expanded onto the camera's own track in ONE commit — creating
+   * One camera preset, expanded onto the camera's own track in ONE commit - creating
    * the scene camera first if there is none (§8: "inserting writes the camera's kf
    * track (creating the scene camera if absent) in one commit").
    *
    * `parseKf` is the engine's reader and `setKfTrack` re-serialises through the
-   * engine's writer, so what lands is the canonical wire at the §4.6 quanta — never
+   * engine's writer, so what lands is the canonical wire at the §4.6 quanta - never
    * the literal string, which would put an unvalidated author's text on the wire.
    */
   function applyCameraPreset(preset: { label: string; track: string }): void {
     if (!cfg.kfField) return;
     const seeded = ensureSceneCameraRows(getBoxes());
-    // A1#5 — a preset is AUTHORED at a fixed length (4–5.2 s); stretch or compress it so
+    // A1#5 - a preset is AUTHORED at a fixed length (4–5.2 s); stretch or compress it so
     // the move fills THIS scene rather than overrunning it or parking the camera early.
     // A scene with no derived duration (a still with no clip timing) keeps the authored
-    // length — `deriveDuration` returns 0, and `rescaleKfTrack` treats a 0 target as
+    // length - `deriveDuration` returns 0, and `rescaleKfTrack` treats a 0 target as
     // "leave it", so nothing regresses. The floor keeps a sub-second scene from strobing.
     const sceneMs = deriveDuration(seeded.rows, cfg);
     const track = sceneMs > 0
@@ -2925,7 +2927,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // ── the latch (plans/104 §8) ────────────────────────────────────────────────
   //
   // ONE question, asked once per tick: is the playhead parked exactly on a diamond?
-  // Everything downstream is a reading of that answer — the group header's wording,
+  // Everything downstream is a reading of that answer - the group header's wording,
   // whether the pose fields accept an edit, which list row is marked, which diamond
   // draws large, and (through `kfPoseIds`, below) whether a canvas drag writes a
   // keyframe or the base.
@@ -2947,7 +2949,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     id: string;
     /** "Scene pose" ⇄ "Keyframe @ 0:01.8". */
     state: HTMLElement;
-    /** The pose controls — enabled only ON a diamond (except `z`, which has a base). */
+    /** The pose controls - enabled only ON a diamond (except `z`, which has a base). */
     pose: KfPoseField[];
     /** The CRUD list, whose rows carry `data-t`. */
     list: HTMLElement;
@@ -2963,11 +2965,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   let kfCam: { id: string; fields: KfPoseField[] } | null = null;
   let kfCamKey = '\u0000';
 
-  /** The pose readout's own memo — see `syncKfLatch` for why the two are separate. */
+  /** The pose readout's own memo - see `syncKfLatch` for why the two are separate. */
   let kfPoseKey = '\u0000';
 
   /**
-   * The pose channels the inspector offers, and the shape of each control.
+   * The pose channels the inspector offers, and the form of each control.
    *
    * Four, and the reason they are these four: `x`/`y`/`r`/`w`/`h` are authored ON THE
    * CANVAS (drag, rotate and resize, redirected at free-canvas's single pointerup
@@ -2977,7 +2979,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * `z` clamps to the FIELD range (`KF_Z_FIELD_CLAMP`), not the wider wire range: the
    * wire has to carry a camera dolly, a control does not, and a depth a user can
    * scrub to should stay inside the band the guard never has to rescue (§5.1). It is
-   * also the only one with a SLIDER, and the only one that stays live off a diamond —
+   * also the only one with a SLIDER, and the only one that stays live off a diamond - 
    * both because it is the one channel with a base field of its own (see `base`).
    */
   const KF_POSE_FIELDS: ReadonlyArray<{
@@ -2986,7 +2988,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     slider?: readonly [number, number];
     /**
      * The box sub-field this channel falls back to when the playhead is OFF every
-     * diamond — §8's "edits write the base". Only `z` has one: a depth is a property
+     * diamond - §8's "edits write the base". Only `z` has one: a depth is a property
      * of the box (the `z` field) that a keyframe may override for a segment (§5.2),
      * while scale/opacity/blur have no per-box base the pose row could write.
      */
@@ -2999,28 +3001,28 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   ];
 
   /**
-   * The CAMERA's own channels, as the §8 camera panel offers them — pose, tilt, focus,
+   * The CAMERA's own channels, as the §8 camera panel offers them - pose, tilt, focus,
    * aperture and perspective, each with the affordance chip Depthfield puts on the
    * same row (§3's observed UI: DRAG for pan, SCROLL for the dolly).
    *
    * `p` is labelled as FOV STRENGTH and never "zoom": `eff(z = camZ) === 1` for every
-   * value of p, so p changes the perspective, not the magnification — a dolly (`z`) is
+   * value of p, so p changes the perspective, not the magnification - a dolly (`z`) is
    * what magnifies (§4.3). Calling this control "zoom" is the one naming mistake this
    * feature can make, and the plan names it twice.
    *
    * P2 PUT THE TILT ROWS HERE (this is the seam the M2.5 comment reserved). They sit
-   * between the pans and the dolly because that is the order a shot is set up in — where
-   * the camera is, which way it is pointing, how far away it is — and they carry the
+   * between the pans and the dolly because that is the order a shot is set up in - where
+   * the camera is, which way it is pointing, how far away it is - and they carry the
    * SHIFT-DRAG chip, the gesture §8 reserved for them at M2.5 and P2 finally spends.
    *
    * The labels are TILT X / TILT Y, the reference tool's own words, and not "pitch"/
    * "yaw": those are the correct terms and nobody outside a flight sim uses them. Signs
    * are the engine's (`surfaceMatrix`): **negative Tilt X pitches the camera down over
-   * the artwork** — the near edge to the bottom of frame, the far edge receding to a
-   * horizon — which is the POV shot the Surface glide preset is built from. Positive
+   * the artwork** - the near edge to the bottom of frame, the far edge receding to a
+   * horizon - which is the POV shot the Surface glide preset is built from. Positive
    * Tilt Y brings the right-hand edge nearer.
    *
-   * Ranges come from the engine's own clamp table, never re-typed here — with the two
+   * Ranges come from the engine's own clamp table, never re-typed here - with the two
    * tilt rows the deliberate exception, held to `KF_TILT_CONTROL` (±75) rather than to
    * the ±180 WIRE clamp. That is not taste trimming: past a quarter turn `κ` changes
    * sign and `buildPlan`'s depth sort inverts, so ±180 on a control is a reachable
@@ -3045,8 +3047,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *
    * Order is the reading order of the feature: where am I (the latch), what can I
    * change here (the pose), what is on this track (the list), and how do I stop
-   * (remove). The list is the KEYBOARD AND SCREEN-READER ROUTE to the diamonds — real
-   * buttons with real labels — which is what lets the diamonds themselves stay
+   * (remove). The list is the KEYBOARD AND SCREEN-READER ROUTE to the diamonds - real
+   * buttons with real labels - which is what lets the diamonds themselves stay
    * aria-hidden pointer sugar on a `role="option"` bar.
    */
   /**
@@ -3055,14 +3057,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Depth is a box PROPERTY (`cfg.zField`), not a keyframe: it is the one pose channel
    * with a base field of its own, so writing it off a diamond sets the box's own depth
    * (§5.2 / §8's "edits write the BASE") rather than minting a keyframe. It used to be
-   * reachable only through the Keyframes pose row — i.e. only AFTER pressing Animate,
+   * reachable only through the Keyframes pose row - i.e. only AFTER pressing Animate,
    * which a still, un-animated layer has no reason to do. Standing a lifted layer off the
    * board is the whole point of a flythrough's parallax, so it should not cost a keyframe
    * track to reach.
    *
    * This does NOT cross §8's disclosure law: it writes the box's `z` field through the
    * SAME `ensureSceneCameraRows(patchBox(...))` path the pose row already uses off a
-   * diamond — no track is created, exactly as setting position or size creates none, and
+   * diamond - no track is created, exactly as setting position or size creates none, and
    * a box nobody touches keeps `zField` absent, so its export stays byte-identical. Only
    * rendered in the no-track branch; once a box has keyframes the pose row owns Depth (and
    * can key it), so there is never a second control disagreeing about where the value goes.
@@ -3087,7 +3089,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     num.value = kfFormatChannel('z', cur);
 
     // The tasteful 0–300 travel of the pose row's own slider, while the number beside it
-    // still takes the whole field range (negatives included) — both held to the engine's
+    // still takes the whole field range (negatives included) - both held to the engine's
     // `KF_Z_FIELD_CLAMP`, never re-typed here.
     const slider = document.createElement('input');
     slider.className = 'tl-kf-slider tl-depth-slider';
@@ -3099,12 +3101,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     slider.value = String(clamp(cur, KF_Z_SLIDER[0], KF_Z_SLIDER[1]));
 
     // One model write per gesture: `input` mirrors into the number continuously, `change`
-    // fires once on release and is the one that commits — the pose row's own contract.
+    // fires once on release and is the one that commits - the pose row's own contract.
     const commit = (raw: number): void => {
       const v = clamp(raw, KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]);
       num.value = kfFormatChannel('z', v);
       // The first depth interaction mints the scene camera in the SAME commit (§5.4), so
-      // one gesture stays one ⌘Z and the camera panel becomes reachable — identical to the
+      // one gesture stays one ⌘Z and the camera panel becomes reachable - identical to the
       // pose row's off-diamond base write.
       const seeded = ensureSceneCameraRows(patchBox(getBoxes(), id, { [field]: v }));
       write(seeded.rows);
@@ -3138,7 +3140,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     state.className = 'tl-kf-state';
     // No aria-live: this changes on every scrub, and narrating "Keyframe at 0:01.2,
     // scene pose, keyframe at 0:01.4…" through a drag is not information. The state
-    // is spoken where it is ACTED on — the pose fields' own labels below carry it.
+    // is spoken where it is ACTED on - the pose fields' own labels below carry it.
     state.textContent = t('No keyframe here');
     latch.append(state);
     body.appendChild(latch);
@@ -3150,10 +3152,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // blur on a camera would be controls for something that paints nothing.
     //
     // The §5.2 "size is not keyframable" tooltip is GONE, and its absence is the
-    // point: the P1 reversal (Andy, 2026-08-12 — "I can't change width and height of
+    // point: the P1 reversal (Andy, 2026-08-12 - "I can't change width and height of
     // elements and have them tween") put `w`/`h` on the wire, and a resize ON a
     // diamond now writes them. Size is still authored on the CANVAS, like x/y/r, so it
-    // earns no field here — but the standing claim that it could never be animated had
+    // earns no field here - but the standing claim that it could never be animated had
     // to go.
     const pose: KfPoseField[] = [];
     if (!isCam) {
@@ -3175,7 +3177,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           // RE-DERIVE THE LATCH AT COMMIT TIME, because `el.disabled` is not the guard
           // it looks like. `syncKfLatch` flips it on every clock tick; disabling a
           // FOCUSED input blurs it, and a browser commits the pending edit as `change`
-          // on that blur — so a number typed while parked on a diamond could otherwise
+          // on that blur - so a number typed while parked on a diamond could otherwise
           // land as a BRAND-NEW keyframe wherever the playhead had since travelled (a
           // ruler scrub `preventDefault()`s, so the field keeps focus throughout).
           // §8's model is "nobody keyframes by accident".
@@ -3193,10 +3195,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           const v = clamp(raw, f.range[0], f.range[1]);
           el.value = kfFormatChannel(f.ch, v);
           if (!on) {
-            // OFF a diamond, §8's rule is "edits write the BASE" — and depth is the
+            // OFF a diamond, §8's rule is "edits write the BASE" - and depth is the
             // one channel here that HAS one: a keyed `z` REPLACES the box's `z` field
             // for its segment (§5.2), so the field is exactly what it replaces. Every
-            // other channel is refused as before — there is no keyframe to pose and
+            // other channel is refused as before - there is no keyframe to pose and
             // nothing else to write, and minting one would be the accident §8 forbids.
             if (f.base !== 'z' || !cfg.zField) {
               kfPoseKey = '\u0000';   // the memo would otherwise call the stale value current
@@ -3206,7 +3208,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
             // THE FIRST DEPTH INTERACTION (§5.4): lifting a box mints the scene camera
             // in the SAME array, so one gesture stays one commit and one ⌘Z. Depth
             // already projects correctly without it (no camera box resolves to the
-            // DEFAULT camera, never an identity) — the box is what makes the camera
+            // DEFAULT camera, never an identity) - the box is what makes the camera
             // panel reachable, not what makes depth work.
             const seeded = ensureSceneCameraRows(patchBox(rows, id, { [cfg.zField]: v }));
             write(seeded.rows);
@@ -3215,7 +3217,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           // 'set', not 'add': a typed number IS the value. The writer still composes a
           // FULL pose around it (every active channel evaluated at this instant), so a
           // diamond never becomes a partial one by being edited.
-          // The SAME `rows`/`at` the latch check above was made against — re-reading
+          // The SAME `rows`/`at` the latch check above was made against - re-reading
           // them here would be asking a second time whether this edit may land.
           write(writeKfPose(rows, cfg, id, at, { [f.ch]: v }, 'set'));
         };
@@ -3230,7 +3232,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         lab.className = 'field-label';
         lab.textContent = f.label;
         wrap.append(lab, el);
-        // THE DEPTH SLIDER (§5.3 — P1's headline control). Its travel is the tasteful
+        // THE DEPTH SLIDER (§5.3 - P1's headline control). Its travel is the tasteful
         // band 0–300 while the number beside it still takes the whole field range,
         // negatives included; both are held to `KF_Z_FIELD_CLAMP`, which is the
         // engine's and is never re-typed here. One model write per gesture: `input`
@@ -3271,7 +3273,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       time.className = 'field-input tl-num tl-kf-time';
       time.type = 'number';
       // The wire's own quantum is the millisecond (§4.6), so the grid is milliseconds
-      // and the step is a hundredth of a second — fine enough to place a beat, coarse
+      // and the step is a hundredth of a second - fine enough to place a beat, coarse
       // enough that the arrow keys are usable.
       time.step = '10';
       time.min = '0';
@@ -3299,7 +3301,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     body.appendChild(list);
 
     // ── the way out ───────────────────────────────────────────────────────────
-    // Destructive, named with its own count, and one commit — so ⌘Z brings the whole
+    // Destructive, named with its own count, and one commit - so ⌘Z brings the whole
     // animation back. Disabling animation IS this: there is no stored flag to clear.
     // Absent on an empty track (a camera, before its first pose): there is nothing to
     // remove, and "Remove 0 keyframes" is a button that describes nothing.
@@ -3319,17 +3321,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // ── the curve, DOCKED (§8's M2.7) ─────────────────────────────────────────
     //
-    // "The curve editor docks INSIDE the Keyframes popup (top or bottom of it — one
+    // "The curve editor docks INSIDE the Keyframes popup (top or bottom of it - one
     // surface, never a second nested popover)". So the per-keyframe ease `<select>`s in
     // the list above no longer carry a "Custom…" route: the plot IS the custom editor,
     // it is always here, and whatever method the latched keyframe holds is what it
-    // draws — "they can use presets to learn". Dragging a handle commits a bezier,
+    // draws - "they can use presets to learn". Dragging a handle commits a bezier,
     // which is what auto-switches that keyframe's select to Custom.
     //
     // It follows the LATCH like everything else in this popup: the curve it edits is
     // the curve out of the keyframe the playhead is parked on, and off a diamond it
     // says so rather than editing an arbitrary one. `syncKfDock` builds and rebuilds
-    // it — never this function, which runs on a model change while the dock has to
+    // it - never this function, which runs on a model change while the dock has to
     // follow the clock.
     //
     // The standalone editor is NOT retired: the Animate group's In/Out curves still
@@ -3351,7 +3353,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The docked curve editor, rebuilt only when the keyframe it is easing CHANGES.
    *
    * Mounting an easing editor costs an SVG, a rAF loop and a document listener, and the
-   * latch is re-read on every clock tick — so this is memoised on the target keyframe's
+   * latch is re-read on every clock tick - so this is memoised on the target keyframe's
    * own local ms (NaN meaning "nothing yet", which compares unequal to everything
    * including itself, so the first sync always builds).
    */
@@ -3360,7 +3362,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!d) return;
     // ONLY WHILE THE POPUP IS SHOWING. The group's body stays in the document when the
     // group is shut (hidden, not detached), and the easing editor runs a rAF loop for
-    // its motion strip which self-terminates only on DETACH — so mounting it into a
+    // its motion strip which self-terminates only on DETACH - so mounting it into a
     // hidden body would leave an invisible animation painting for the life of the
     // session. `openGroupPopover`/`restoreGroupBody` reset the latch memo, so opening
     // the group builds it and closing it takes it down.
@@ -3386,7 +3388,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (key.ease === KF_HOLD_EASE) {
       // HOLD IS NOT A CURVE. Drawing the editor's fallback shape here would show a
       // motion this keyframe does not produce, which is the one thing a plot must
-      // never do — so the dock says what hold means instead.
+      // never do - so the dock says what hold means instead.
       const note = document.createElement('p');
       note.className = 'tl-kf-dock-note';
       note.textContent = t('Hold keeps this pose until the next keyframe. Pick another curve to shape it.');
@@ -3395,7 +3397,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     d.editor = mountEasingEditor(d.host, {
       // The ENGINE's adapters both ways: the wire token in, the CSS bezier the editor
-      // speaks out (§5.1 — "the adapter is mandatory", because the canonical ease wire
+      // speaks out (§5.1 - "the adapter is mandatory", because the canonical ease wire
       // uses commas and the kf charset bans them).
       value: kfEaseCss(key.ease),
       onCommit: (wire) => writeTrack(refs.id, (tr) => kfTrackSetEase(tr, on, kfEaseToken(wire))),
@@ -3403,7 +3405,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The ease picker for ONE keyframe — the same vocabulary the transition picker uses.
+   * The ease picker for ONE keyframe - the same vocabulary the transition picker uses.
    * `at` is the row's formatted time: its accessible name has to carry it for the same
    * reason the time field's does (see there).
    */
@@ -3428,7 +3430,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // "Custom…" opens a popover; this list is inside a popup that already has the
     // curve editor DOCKED in it, and a second nested editor is exactly what M2.7
     // replaced. So a keyframe whose ease is an authored bezier selects an option that
-    // says so, and dragging a handle in the dock is what puts it there — the numbers
+    // says so, and dragging a handle in the dock is what puts it there - the numbers
     // live in the dock's own readout, three lines below, rather than in this label.
     if (!KF_EASE_TOKENS.includes(ease as (typeof KF_EASE_TOKENS)[number]) && ease !== KF_HOLD_EASE) opt(ease, t('Custom'));
     el.value = ease;
@@ -3439,20 +3441,20 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * Read the latch, once, and reflect it — the group header's wording, the pose
+   * Read the latch, once, and reflect it - the group header's wording, the pose
    * fields' values and enablement, the marked list row, the enlarged diamond.
    *
    * TWO memos, because the two halves change at different rates and the expensive one
    * must not be paid for the cheap one:
    *
-   *   • `kfLatchKey` — the STRUCTURE. Keyed on the latch ANSWER (which selected box is
+   *   • `kfLatchKey` - the STRUCTURE. Keyed on the latch ANSWER (which selected box is
    *     parked on which diamond) plus the track, so scrubbing across a two-second gap
    *     asks this a hundred times and writes no DOM at all. The bars/dots walk, the
    *     header wording and the list marking live under it.
-   *   • `kfPoseKey` — the POSE READOUT. Keyed on the playhead's own local millisecond,
+   *   • `kfPoseKey` - the POSE READOUT. Keyed on the playhead's own local millisecond,
    *     because §8's M2.5 revision made these fields track it: off a diamond they now
    *     print the EVALUATED value at the playhead (the engine's `evaluateKf`, through
-   *     `kfPoseAt` — the same arithmetic the preview and the export read), disabled.
+   *     `kfPoseAt` - the same arithmetic the preview and the export read), disabled.
    *     Four `<input>.value` writes per changed millisecond, and only while the
    *     Keyframes popover is actually built.
    */
@@ -3508,7 +3510,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!refs || !box) return;
     // Where to READ the pose from: the diamond when parked on one, otherwise the
     // playhead itself. `kfPoseAt` evaluates the track through the engine, so an
-    // off-diamond number is the value the box is actually striking at this instant —
+    // off-diamond number is the value the box is actually striking at this instant - 
     // the same number the preview shows and the export writes.
     const readMs = on ?? kfLocalMs(box, cfg, at);
     const poseKey = `${refs.id}|${on ?? ''}|${readMs}|${String(box[cfg.kfField] ?? '')}|${
@@ -3518,7 +3520,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     for (const f of refs.pose) {
       // EVALUATED, never blank (§8's M2.5 point 3: blanking was honest but read as
       // broken). A disabled control showing the live value says "this is what it is
-      // doing here, and there is no keyframe here to change it on" — which is the
+      // doing here, and there is no keyframe here to change it on" - which is the
       // truth. The memo above is keyed on `readMs`, so this genuinely tracks the
       // playhead rather than freezing at whatever the last diamond was.
       const v = kfPoseAt(box, cfg, readMs, [f.ch])[f.ch];
@@ -3530,7 +3532,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // that, and the title says so rather than leaving a dead control unexplained.
       //
       // EXCEPT DEPTH (§5.3, P1): it has a base field of its own, so off a diamond an
-      // edit there is not an invention — it is §8's "edits write the base", which is
+      // edit there is not an invention - it is §8's "edits write the base", which is
       // the whole reason the depth slider is usable on a box that has never been
       // keyframed at all. `base` is set on exactly the channels that have one.
       const inert = on === null && !f.base;
@@ -3546,8 +3548,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * The CAMERA's channels, re-read on the same tick as the latch (§8).
    *
-   * Same readout law as the pose fields — the live EVALUATED pose, so the numbers are
-   * what the shot is actually doing at this instant — but a different enablement rule,
+   * Same readout law as the pose fields - the live EVALUATED pose, so the numbers are
+   * what the shot is actually doing at this instant - but a different enablement rule,
    * because a camera's scene default IS a keyframe: `cameraPoseAtSec` has the three
    * cases, and this is just a picture of its answer.
    *
@@ -3583,12 +3585,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Build one inspector group: a SEGMENT for the strip (a disclosure button carrying
    * an icon, a text label and the resolved value chips) plus the body its fields live
-   * in — which, since §8's M2.5 revision, is NOT appended to the segment.
+   * in - which, since §8's M2.5 revision, is NOT appended to the segment.
    *
    * The row this replaced was eleven labelled inputs in a horizontal overflow
    * scroller, and the keyframe row would have made it fourteen (plans/104 §8,
    * "Inspector regrouping"). Grouping answered that; the M2.5 revision answers what
-   * grouping left behind — an open group still had to fit its whole body INSIDE the
+   * grouping left behind - an open group still had to fit its whole body INSIDE the
    * strip, which is why the ease pickers were truncated to "Ease in ar…". So the body
    * is now mounted in a popover ABOVE the transport and the segment keeps a constant
    * width whether it is open or shut.
@@ -3596,27 +3598,27 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Three properties this shape has to keep, all of them contracts elsewhere:
    *
    *   • the body is hidden with the `hidden` PROPERTY while it is not in a popover, so
-   *     a shut group leaves the accessibility tree as well as the picture — and no
+   *     a shut group leaves the accessibility tree as well as the picture - and no
    *     sheet may style `[hidden]` (styles/hidden-attribute-guard.test.ts fails the
    *     build for a rule that tries). Nothing here is display-toggled by class.
-   *   • no `transform` / `filter` / `backdrop-filter` on the group or its body — the
+   *   • no `transform` / `filter` / `backdrop-filter` on the group or its body - the
    *     fixed-popover containing-block trap documented on `.tl-panel` and
-   *     `.fc-toolbar`. It is now doubly load-bearing: the body itself is reparented
+   *     `.fc-toolbar`. It is now doubly essential: the body itself is reparented
    *     into a `position: fixed` popover, and the ease `<select>`s inside it open
    *     fixed popovers of their own. The caret rotation is on a LEAF `<svg>`, which is
    *     an ancestor of nothing.
-   *   • the head is a real `<button>` with `aria-expanded`, keyboard reachable — the
+   *   • the head is a real `<button>` with `aria-expanded`, keyboard reachable - the
    *     diamonds on the bars are aria-hidden pointer sugar, so the inspector is the AT
    *     route and it cannot become a div that listens for clicks.
    */
   interface InspectorGroup {
-    /** The group wrapper (`.tl-group[data-group]`) — append it to the inspector. */
+    /** The group wrapper (`.tl-group[data-group]`) - append it to the inspector. */
     root: HTMLElement;
     /** Where controls go. Reparented into the popover while this group is open. */
     body: HTMLElement;
     /** The disclosure control. Its accessible name is label + summary. */
     head: HTMLButtonElement;
-    /** The group's own translated name — also the popover's accessible name. */
+    /** The group's own translated name - also the popover's accessible name. */
     label: string;
     /** Replace the value summary. Empty strings are dropped. */
     setSummary(parts: string[]): void;
@@ -3625,7 +3627,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The live segments of the row just built, by group id — what the popover machinery
+   * The live segments of the row just built, by group id - what the popover machinery
    * re-points itself at after a rebuild.
    */
   const groupsById = new Map<string, InspectorGroup>();
@@ -3637,7 +3639,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * A POINT anchor, not the head button: the inspector is rebuilt on every commit, so
    * the button that opened the popover is a detached node moments later. The point
-   * supplies geometry and its `delegate` — re-pointed by `renderInspector` — receives
+   * supplies geometry and its `delegate` - re-pointed by `renderInspector` - receives
    * the focus restore and the `aria-expanded` upkeep. Exactly the pattern the ease
    * editor already uses, and the reason the M2 fix round established it.
    */
@@ -3649,7 +3651,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The panel is docked at the BOTTOM of the stage and the bar is its top edge, so a
    * popover dropped under its anchor would open into the tracks it exists to edit (and
    * off the bottom of the window on a short viewport). Bottom-aligned to the panel's
-   * own top edge, near-edge aligned to the anchor (left under ltr, right under rtl —
+   * own top edge, near-edge aligned to the anchor (left under ltr, right under rtl - 
    * `menuPosition`'s rule, for the same reason), and clamped into the viewport.
    */
   function groupPopPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
@@ -3675,7 +3677,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (g) {
       g.body.hidden = false;
       host.appendChild(g.body);
-      // WHICH group this is, not the constant "Clip settings" — every group opens
+      // WHICH group this is, not the constant "Clip settings" - every group opens
       // the same popover, so a dialog that always announces the same name never tells a
       // screen-reader user which one they just opened. Set after `open()` has already
       // stamped the fallback, so the constant only ever survives the (unreachable)
@@ -3691,7 +3693,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     ariaLabel: t('Clip settings'),
     position: groupPopPosition,
     // The bodies borrowed into this card carry the ease `<select>`s, and picking
-    // "Custom…" opens a curve editor — a SIBLING popover on `document.body`, so
+    // "Custom…" opens a curve editor - a SIBLING popover on `document.body`, so
     // `menu.contains()` says false and the first press inside it would otherwise
     // dismiss this card mid-drag (and hide the very `<select>` the editor restores
     // focus to). `.tl-ease-pop` is the class both curve editors mount with.
@@ -3699,8 +3701,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const el = (n as Element | null)?.closest ? (n as Element) : ((n as ChildNode | null)?.parentElement ?? null);
       return !!el?.closest('.tl-ease-pop');
     },
-    // EVERY route out — Escape, an outside press, a route change, the caller's own
-    // close — lands here, which is what makes the borrowed body safe: the popover is
+    // EVERY route out - Escape, an outside press, a route change, the caller's own
+    // close - lands here, which is what makes the borrowed body safe: the popover is
     // about to detach its element, and the group's live body is inside it.
     onClose: () => restoreGroupBody(),
   });
@@ -3709,7 +3711,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Put the borrowed body back in its segment (hidden) and forget the open state.
    *
    * Called from the popover's own `onClose`, so it runs however the popover was
-   * dismissed. It must NOT call `groupPop.close()` — that is what called it.
+   * dismissed. It must NOT call `groupPop.close()` - that is what called it.
    */
   function restoreGroupBody(): void {
     const g = openGroup ? groupsById.get(openGroup.gid) : null;
@@ -3776,7 +3778,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * After a rebuild: re-point the popover at the segment that replaced its anchor, and
    * move the freshly built body inside it. A field edit inside the popover commits,
-   * which rebuilds the whole inspector row — without this the popover would be left
+   * which rebuilds the whole inspector row - without this the popover would be left
    * holding the DETACHED body of a row that no longer exists, and Escape would restore
    * focus to a node that is not in the document.
    */
@@ -3851,7 +3853,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     head.addEventListener('click', () => {
       // Purely a UI disclosure: no write() anywhere on this path, and `inspectorKey`
-      // never sees it (see its comment) — so this can never dirty the session.
+      // never sees it (see its comment) - so this can never dirty the session.
       openGroupPopover(gid, inspectorId);
     });
 
@@ -3859,13 +3861,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The CAMERA group (plans/104 §8) — the scene-camera panel, and the only place a
+   * The CAMERA group (plans/104 §8) - the scene-camera panel, and the only place a
    * camera's pose is typed rather than dragged.
    *
    * Three parts, in the order a shot is set up: the preset MOVES (each one commit, each
    * expanded onto the track), the pose CHANNELS with their affordance chips, and
-   * nothing else. The chips are the reference tool's own vocabulary — DRAG on the pans,
-   * SHIFT-DRAG on the tilts, SCROLL on the dolly — and they are honest here because this
+   * nothing else. The chips are the reference tool's own vocabulary - DRAG on the pans,
+   * SHIFT-DRAG on the tilts, SCROLL on the dolly - and they are honest here because this
    * group is only ever shown while the camera is selected, which is exactly the
    * condition that arms those canvas gestures (`cameraModeId`).
    *
@@ -3879,7 +3881,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const g = inspectorGroup('camera', t('Camera'), 'camera');
     inspector.appendChild(g.root);
     // What the segment reads at a glance: how many poses this camera holds. A camera
-    // with none is the scene default — one still shot — and says so.
+    // with none is the scene default - one still shot - and says so.
     const n = kfBoxTrack(box, cfg).length;
     g.setSummary([
       n === 0 ? t('Not animated')
@@ -3900,7 +3902,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // and comes out of the loop like every other move. The dimmed twin is GONE rather
     // than kept: a control explaining what it is waiting for is only honest while it is
     // still waiting, and this codebase's own rule about the raster allowlist applies
-    // word for word — "don't leave a reason standing once it stops being true".
+    // word for word - "don't leave a reason standing once it stops being true".
     g.body.appendChild(moves);
 
     const cam: KfPoseField[] = [];
@@ -3945,7 +3947,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       g.body.appendChild(wrap);
       cam.push({ ch: f.ch, el });
     }
-    // The camera's channels ride the latch like every other live readout — but in a
+    // The camera's channels ride the latch like every other live readout - but in a
     // reference of their own rather than inside `kfLatch`, because the Keyframes group
     // that owns that one is built AFTER this and is not guaranteed to exist at all (a
     // tool could declare a camera kind and no `kf` sub-field). One nullable ref, set
@@ -3956,20 +3958,20 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   function renderInspector(boxes: Box[]): void {
     // Bars AND chips: an untimed box has no bar, and gating on `bars` alone is what
-    // made "always on" a dead end — selecting a scenery chip rendered an empty bar and
+    // made "always on" a dead end - selecting a scenery chip rendered an empty bar and
     // there was no field anywhere in the UI that could give the box a time.
     const ids = selection.get().filter((id) => bars.has(id) || chips.has(id));
     const id = ids.length === 1 ? ids[0]! : '';
     const i = id ? indexOfId(boxes, cfg, id) : -1;
     const box = i >= 0 ? boxes[i]! : null;
-    // MODEL VALUES ONLY — appended to, never trimmed. Group disclosure is session UI
+    // MODEL VALUES ONLY - appended to, never trimmed. Group disclosure is session UI
     // state and deliberately absent: folding it in here would rebuild the whole row on
     // every toggle (throwing away the focus the user just pressed with), and would make
     // a repaint memo that is supposed to answer "did the MODEL change" answer something
     // else. The three added at the tail are what the regroup reads that the flat row
     // did not: the keyframe track and the box kind gate the Keyframes group's very
-    // existence (plans/104 §8). The A/V link no longer decides anything in this row —
-    // M2.6 sent detach / re-attach back to the clip context menu — but it STAYS in the
+    // existence (plans/104 §8). The A/V link no longer decides anything in this row - 
+    // M2.6 sent detach / re-attach back to the clip context menu - but it STAYS in the
     // key, because this list is appended to and never trimmed: a spare entry costs one
     // string compare, and dropping one is how a row starts printing stale values the
     // day something reads that field again. `z` joins them for the same reason `kf`
@@ -3984,7 +3986,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // The segments about to be destroyed are the popover's anchor and its content. The
     // map is rebuilt below; `resyncGroupPopover` at the end of this function re-points
     // an open popover at the segment that replaced its anchor (or shuts it), which is
-    // what makes editing a field inside the popover — a commit, hence a rebuild — not
+    // what makes editing a field inside the popover - a commit, hence a rebuild - not
     // close the popover under the user's hands.
     groupsById.clear();
     // The row about to be destroyed owned the latch's DOM. Drop the reference before
@@ -4034,7 +4036,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return wrap;
     };
     /**
-     * A numeric field. `value === null` means UNAUTHORED — the field renders empty with
+     * A numeric field. `value === null` means UNAUTHORED - the field renders empty with
      * a placeholder rather than a misleading 0 (an untimed box does not start at zero,
      * it has no start at all), and an empty field that is left empty commits nothing.
      */
@@ -4074,13 +4076,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return el;
     };
     /**
-     * The easing picker for one direction. Governs GEOMETRY ONLY — opacity keeps its
+     * The easing picker for one direction. Governs GEOMETRY ONLY - opacity keeps its
      * own fixed ramp (see the easing section of lib/transitions.ts), which is why there
      * is no fade curve offered anywhere here and must not be.
      *
      * UNAUTHORED IS A REAL STATE and it is the default one: the empty option means "the
      * curve this kind was born with", it is what an untouched box selects, and choosing
-     * it changes nothing — a `<select>` fires no `change` for the value it already
+     * it changes nothing - a `<select>` fires no `change` for the value it already
      * shows, so simply rendering this row can never write a field. That property is the
      * whole reason the built-in is an option rather than an implied absence of one.
      *
@@ -4101,7 +4103,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       };
       opt('', t('Built-in'));
       for (const [k, label] of Object.entries(EASINGS)) opt(k, t(label));
-      // An authored bezier has no preset to select, so it brings its own option — and
+      // An authored bezier has no preset to select, so it brings its own option - and
       // shows the actual numbers, because "Custom" alone tells the user nothing about
       // the curve they are looking at.
       if (cur && !Object.hasOwn(EASINGS, cur)) opt(cur, cur);
@@ -4124,8 +4126,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // ── the groups ────────────────────────────────────────────────────────────
     //
     // A `camera` box swaps Time + Animate for the CAMERA group (plans/104 §8, the P1
-    // seam this function was left holding): pose channels — pan / dolly / focus /
-    // aperture / FOV strength — each with the DRAG / SCROLL affordance chip the
+    // seam this function was left holding): pose channels - pan / dolly / focus /
+    // aperture / FOV strength - each with the DRAG / SCROLL affordance chip the
     // reference tool puts on the same row. Keyframes and the timed ⇄ always-on switch
     // stay exactly as they are: a camera is timed like any other box, and its whole
     // purpose is animation.
@@ -4133,14 +4135,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Why the two it replaces go: a camera's ENTER/EXIT transition is ignored by both
     // evaluators in v1 (§5.4), so an Animate group on one is a control that writes a
     // field nothing reads; and its Time is the switch below plus the clip's own bar,
-    // not a start/length pair — a camera has no media to trim and no speed to set.
+    // not a start/length pair - a camera has no media to trim and no speed to set.
     const isCamera = isCameraBox(box);
 
     // ── Camera ────────────────────────────────────────────────────────────────
     if (isCamera) buildCameraGroup(id, box);
 
     // ── Time ──────────────────────────────────────────────────────────────────
-    // Shut, like every group since §8's M2.5 revision — including on an UNTIMED box,
+    // Shut, like every group since §8's M2.5 revision - including on an UNTIMED box,
     // where Start and Length are still the typed promotion route (the `.tl-timing`
     // switch below is the one-press one). Auto-opening a popover over the canvas
     // because a box was selected is a popover the user has to dismiss.
@@ -4151,7 +4153,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // ── UNTIMED (scenery) ───────────────────────────────────────────────────
       // Start and Length are the promotion route: this is the ONLY place in the UI a
       // text/image/lottie/tool box could ever be given a time without hand-editing the
-      // ?boxes= URL. Both render EMPTY — a 0 would claim the box starts at the top of
+      // ?boxes= URL. Both render EMPTY - a 0 would claim the box starts at the top of
       // the sequence, which is a different (and authored) state.
       const hint = t('Type a time to place this on the timeline');
       const untimedStart = numField(null, 0.1, 0, (v) => promote(id, { start: v }), '—');
@@ -4178,7 +4180,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       timeG.body.appendChild(row(t('Start'), startField));
       // Length is ABSOLUTE (`setDuration`), seeded from the span the bar actually shows.
       // The old shape seeded from `timing.dur ?? 0` and committed a DELTA against it,
-      // so on an open-ended clip — which displays as `total - start` and read 0 — typing
+      // so on an open-ended clip - which displays as `total - start` and read 0 - typing
       // 5 landed on trimClip's own 3 s fallback + 5 = 8 s.
       const shown = span(box, durationSec());
       timeG.body.appendChild(row(t('Length'), numField(shown.dur, 0.1, MIN_DUR, (v) => {
@@ -4203,7 +4205,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       speed.value = String(timing.speed);
       speed.addEventListener('change', () => write(setSpeed(getBoxes(), cfg, id, finite(speed.value, 1), mediaOf(id).dur, mediaDur)));
       timeG.body.appendChild(row(t('Speed'), speed));
-      // The collapsed reading: where it starts, how long it runs, how fast — the three
+      // The collapsed reading: where it starts, how long it runs, how fast - the three
       // numbers a clip is identified by. Formatted by timeline-math's own formatters
       // (`fmtTime` / `fmtDur`), the same ones the transport pill and the trim badge use,
       // so a summary can never disagree with the readout beside it. Trim-in stays behind
@@ -4225,7 +4227,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       animG.body.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
       // The curve sits beside its duration, not beside its kind: "how long" and "how it
       // moves over that time" are the pair a user tunes together. Offered only where the
-      // manifest declares a field for it — a tool that never asked for authored easing is
+      // manifest declares a field for it - a tool that never asked for authored easing is
       // not given a control that would write a sub-field it does not read.
       if (cfg.enterEaseField) animG.body.appendChild(row(t('In curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
       animG.body.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
@@ -4233,7 +4235,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (cfg.exitEaseField) animG.body.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
       animG.setSummary(animateSummary(box[cfg.enterField], box[cfg.exitField]));
       // A rebuild mints a new <select>, so an editor that is still open is anchored to a
-      // detached node — its focus restore on Escape would land nowhere. Re-point the
+      // detached node - its focus restore on Escape would land nowhere. Re-point the
       // delegate at the control that replaced it.
       if (easeMenu.isOpen() && easeId === id && easeField) {
         const live = Array.from(inspector.querySelectorAll<HTMLSelectElement>('.tl-ease'))
@@ -4247,23 +4249,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // THE DISCLOSURE LAW (plans/51:80, restated by plans/104 §8): nobody keyframes by
     // accident. A camera exists only to be animated, so it always carries the group; a
     // content box earns it by already having a track. Every other box has no keyframe
-    // affordance anywhere in the UI — not a disabled one, not an empty one. Animate is
+    // affordance anywhere in the UI - not a disabled one, not an empty one. Animate is
     // DERIVED, never stored: the gate reads the track itself, so there is no second
     // source of truth to drift (§8, "Animate is DERIVED, not stored").
     //
-    // The body itself is built below. The DOOR is the shape of it: a box with no
+    // The body itself is built below. The DOOR is the form of it: a box with no
     // track and no camera kind gets ONE action ("Animate") behind a collapsed
-    // disclosure, and nothing else — no diamonds on its bar, no latch, no list. A
+    // disclosure, and nothing else - no diamonds on its bar, no latch, no list. A
     // camera is born disclosed, because a camera exists only to be animated.
     //
     // `isKeyframable` is the SAME gate "+Keyframe" uses, and it has to be: without it
     // a detached sound got the group and its Animate door, which wrote precisely the
-    // x/y/s/r/o track the button refuses to write and no evaluator reads — a door onto
+    // x/y/s/r/o track the button refuses to write and no evaluator reads - a door onto
     // a room the rest of the UI says does not exist (§8's disclosure law is explicit:
     // "Every other box has no keyframe affordance anywhere in the UI").
     const kfRaw = cfg.kfField ? String(box[cfg.kfField] ?? '') : '';
     if (cfg.kfField && isKeyframable(box, id)) {
-      // parseKf is the engine's own reader (plans/104 §5.1) — never a `split('*')` here.
+      // parseKf is the engine's own reader (plans/104 §5.1) - never a `split('*')` here.
       // It never throws, so a hand-edited share URL summarises as "No keyframes" rather
       // than taking the inspector down with it.
       const track = kfRaw ? parseKf(kfRaw) : null;
@@ -4284,14 +4286,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         buildDepthControl(kfG, id, box);
         // One action, one commit, one undo step. Enabling is DERIVED, not stored
         // (§8): what it writes is a t = 0 pose, and the track's existence IS the
-        // animated state from then on — there is no flag anywhere to drift.
+        // animated state from then on - there is no flag anywhere to drift.
         const door = actionBtn('tl-kf-animate', t('Animate'), 'keyframe');
         door.title = t('Adds a first pose at the start of this clip. Everything else stays where it is.');
         door.addEventListener('click', () => animateBox(id));
         kfG.body.appendChild(door);
       } else {
         // The curve editor is DOCKED in this body now (§8's M2.7), so there is no
-        // second popover anchored to a `<select>` this rebuild just detached — the
+        // second popover anchored to a `<select>` this rebuild just detached - the
         // re-point the transition editor still needs above has nothing to re-point.
         // `syncKfLatch` rebuilds the dock against the row that replaced this one.
         buildKeyframes(kfG, id, box, track ?? parseKf(''), isCamera);
@@ -4301,13 +4303,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // ── Sound: a TOGGLE, never a group ────────────────────────────────────────
     //
     // §8's M2.6 pass: "SOUND stops being a popover group entirely… it becomes a
-    // speaker/mute icon toggle on the strip (direct click flips mute — the NLE
+    // speaker/mute icon toggle on the strip (direct click flips mute - the NLE
     // convention), no popup." Mute is ONE bit, and a disclosure onto one switch is a
     // door onto a door: the M2.5 group cost a press, a popover mount and a "Sound on"
     // chip to say what a speaker glyph with `aria-pressed` says standing still.
     //
     // The A/V link went back to the CLIP CONTEXT MENU, its pre-M2 home (`ctxMenu`
-    // above, which never stopped offering Re-attach / Detach) — plus the `Shift + D`
+    // above, which never stopped offering Re-attach / Detach) - plus the `Shift + D`
     // chord. Detaching a clip's audio is a structural edit that grows a second bar on
     // another lane; it is not a sibling of a mute switch, and it is not something the
     // inspector needs a permanent seat for.
@@ -4319,10 +4321,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const mute = btn('tl-mute', muteLabel, icon(muted ? 'volumeOff' : 'volumeOn'));
       // PRESSED means silent. The glyph flips with it (speaker ⇄ speaker-off) so the
       // state is readable without hovering, and the label names the ACTION the press
-      // performs — both existing keys, neither invented for this pass.
+      // performs - both existing keys, neither invented for this pass.
       mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
       // `title`, not the `[data-tip]` bubble `btn()` stamps: `.tl-inspector` is an
-      // overflow scroller, so a bubble drawn above the control is clipped — the same
+      // overflow scroller, so a bubble drawn above the control is clipped - the same
       // reason the `.tl-timing` switch at the end of the row carries a title.
       mute.removeAttribute('data-tip');
       mute.title = muteLabel;
@@ -4365,14 +4367,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     /** Device-pixel ratio, read ONCE per pass rather than once per bar. */
     dpr: number;
     media: BoxMedia;
-    /** The bar's resolved foreground colour — canvas 2D silently ignores currentColor. */
+    /** The bar's resolved foreground colour - canvas 2D silently ignores currentColor. */
     ink: string;
     /** The BOX's own computed background, for the no-media fallback. */
     fill: string;
     /**
      * The live `.lolly-box`, and its model row. Both resolved HERE, in the read pass:
      * `paintThumbs` used to re-scan `getBoxes()` with `indexOfId` per bar, which is
-     * O(bars × boxes) and — now that node mode needs the row for its cache key too —
+     * O(bars × boxes) and - now that node mode needs the row for its cache key too - 
      * would have been paid twice.
      */
     box: HTMLElement | null;
@@ -4396,7 +4398,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * One idle pass, and — when it left work behind — the next.
+   * One idle pass, and - when it left work behind - the next.
    *
    * The continuation reuses the SAME AbortController rather than going back through
    * `scheduleThumbs`, which would abort the shots this pass has just started. Every
@@ -4407,7 +4409,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     cancelIdle = onIdle(() => {
       cancelIdle = null;
       if (ac.signal.aborted || disposed) return;
-      // READ every bar first, THEN paint — one style/layout pass for the whole panel.
+      // READ every bar first, THEN paint - one style/layout pass for the whole panel.
       // Interleaving clientWidth/getComputedStyle reads with canvas size writes forces
       // a synchronous layout PER BAR, which is what this two-phase shape exists to stop.
       // getComputedStyle joined the read phase when the card fallback landed: it is the
@@ -4459,7 +4461,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // uncancellable shot behind six others. Three kinds of bar are free:
       //
       //   • a cache HIT paints synchronously out of the LRU and costs nothing;
-      //   • a bar already IN FLIGHT joins the running shot (`share()` dedups it) — this
+      //   • a bar already IN FLIGHT joins the running shot (`share()` dedups it) - this
       //     is what makes the retry chain converge, because the shots are serialised and
       //     a continuation pass fires long before its predecessor's six have landed;
       //   • a bar whose shot already FAILED is retired, not retried forever.
@@ -4501,7 +4503,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     /**
      * The bar's VECTOR TWIN: what this canvas would look like as SVG, for the export
      * walker (lib/vector-paint.ts, bridge/export.ts's `vectorTwinEl`). Presence-keyed
-     * and invisible — no element, class, attribute or ThumbMode is added, so the bar's
+     * and invisible - no element, class, attribute or ThumbMode is added, so the bar's
      * four children and the live paint are byte-for-byte what they always were, and a
      * canvas that never gets a twin serialises exactly as it does today.
      *
@@ -4522,8 +4524,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // sizing a canvas that would only be cleared.
     if (mode === 'none') return;
 
-    // Sizing a canvas RESETS its bitmap — assigning `cv.width` clears it even when the
-    // value is unchanged — so it is deferred behind whoever actually has something to
+    // Sizing a canvas RESETS its bitmap - assigning `cv.width` clears it even when the
+    // value is unchanged - so it is deferred behind whoever actually has something to
     // draw. That matters for exactly one bar: a transparent node bar (every text card,
     // every pen shape) whose raster is a cache MISS this pass. Sizing it eagerly wiped
     // the picture it was already showing and left it blank until the shot landed, so
@@ -4535,7 +4537,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (sizedOnce) return ctx2d;
       sizedOnce = true;
       cv.width = Math.round(w * dpr);
-      // Assigning width RESETS the bitmap (see above) — so whatever a twin was
+      // Assigning width RESETS the bitmap (see above) - so whatever a twin was
       // describing has just been erased. Cleared here rather than only at entry
       // because `sized()` is deferred: the node branch's underlay can size the canvas
       // passes after the twin that is still hanging off it was stamped.
@@ -4557,12 +4559,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     };
 
     /**
-     * ONE bitmap, once, over the box's own flat fill — the STATIC bar (plans/104 §8's
+     * ONE bitmap, once, over the box's own flat fill - the STATIC bar (plans/104 §8's
      * M2.5 revision, point 4).
      *
      * A filmstrip or a waveform repeats because it is a picture of time passing. A
      * photograph of a text card is not: it is identical in every tile, so a three-second
-     * title card read as the same sentence printed twenty times at 6px — noise wearing
+     * title card read as the same sentence printed twenty times at 6px - noise wearing
      * the costume of information. Drawn once at the leading edge, with the fill carrying
      * the rest of the bar, so the bar reads as one label over one colour.
      *
@@ -4577,19 +4579,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         c.fillRect(0, 0, w, h);
       }
       const tile = stillTilePx(bm.height > 0 ? bm.width / bm.height : 0, h);
-      // The FULL tile, cut by the canvas edge — never squeezed into `min(tile, w)`.
+      // The FULL tile, cut by the canvas edge - never squeezed into `min(tile, w)`.
       // `drawTiled` has always drawn every tile at its own aspect and let the last one
       // overhang, and the vector twin below models exactly that (the walk is sized to
       // `tile` and clipped at `min(tile, w)`). Scaling here instead made a bar narrower
-      // than one tile — a short clip, or any clip at low zoom — show a squeezed whole
+      // than one tile - a short clip, or any clip at low zoom - show a squeezed whole
       // thumbnail on screen against an undistorted left slice in the exported SVG, which
       // is the preview-authenticity rule broken in the one place it is cheapest to keep.
       c.drawImage(bm, 0, 0, tile, h);
       el.classList.add('has-thumbs');
     };
 
-    // The box's own background, flat across the bar. It is honest — it IS the colour
-    // that box paints on the frame — and it costs one fillRect, which is why it is
+    // The box's own background, flat across the bar. It is honest - it IS the colour
+    // that box paints on the frame - and it costs one fillRect, which is why it is
     // also the UNDERLAY a node raster upgrades from (below).
     const paintFill = (): void => {
       const ctx = sized();
@@ -4615,14 +4617,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // decode, so the picture is a photograph of the box itself.
     //
     // Three states, and none of them ever un-paints. The fill underlay goes down
-    // SYNCHRONOUSLY, before any await, so there is no blank frame and — because the
+    // SYNCHRONOUSLY, before any await, so there is no blank frame and - because the
     // upgrade overwrites the same canvas inside one synchronous `.then` body, and
-    // `has-thumbs` is only ever added — no flash either. A declined, deferred, failed,
+    // `has-thumbs` is only ever added - no flash either. A declined, deferred, failed,
     // timed-out or aborted raster simply leaves the underlay standing.
     //
     // ONE bitmap, drawn ONCE: a node-mode box cannot animate by construction (any
     // <video>/<img>/Lottie/audio child would have classified it as media instead, and
-    // this tool has no box nesting — an animated neighbour is a SIBLING with its own
+    // this tool has no box nesting - an animated neighbour is a SIBLING with its own
     // bar), so N rasters would buy N identical pictures and N TILES of one raster buy
     // N identical thumbnails. This branch used to tile it like a still, which is what
     // §8's M2.5 revision (point 4) calls clip-bar label noise: the picture repeated
@@ -4642,11 +4644,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (!ctx) return;
         drawSingle(ctx, bm);
         // ONLY once the raster actually landed. A declined, deferred, failed or aborted
-        // shot returns above and keeps `paintFill`'s honest flat-colour twin — an export
+        // shot returns above and keeps `paintFill`'s honest flat-colour twin - an export
         // must not claim a crisp walk of a box the bar never showed.
         //
         // The twin does not reuse the bitmap: it re-walks the LIVE box to real vector.
-        // Only numbers survive this callback (the aspect, hence the tile advance) —
+        // Only numbers survive this callback (the aspect, hence the tile advance) - 
         // the bitmap belongs to the clip-thumbs LRU and is never retained.
         const tile = stillTilePx(bm.height > 0 ? bm.width / bm.height : 0, h);
         const box = job.box;
@@ -4655,7 +4657,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // which is not necessarily what the bar is showing: `scheduleThumbs` is
         // debounced behind `onIdle(…, 400)`, so for at least that long after an edit the
         // canvas still holds the OLD raster. Exporting in that window would emit a
-        // picture the user never saw — and, because `tile` is frozen from the old
+        // picture the user never saw - and, because `tile` is frozen from the old
         // bitmap while the walk is sized live and stretched with
         // preserveAspectRatio="none", a box resized in that window would export
         // distorted. Mismatch ⇒ null ⇒ the PNG on screen, which is always honest.
@@ -4673,7 +4675,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           if (`${appearanceSig(rowNow, cfg)}\u0001${fillNow}\u0001${themeNow}` !== sigAtPaint) return null;
           try {
             const { renderSvgFromHtml } = await import('../bridge/export.ts');
-            // LAYOUT size, not the rendered rect — the same reasoning as
+            // LAYOUT size, not the rendered rect - the same reasoning as
             // `defaultNodeRasterer` in clip-thumbs: the stage carries the editor's zoom,
             // and sizing off the rect would walk the box at whatever magnification the
             // user happens to be at.
@@ -4682,7 +4684,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
             // `.seq-off` (display:none) is on every box outside the playhead window, and
             // a walk of a display:none subtree yields nothing. withBorrowedVisibility is
             // the right lease here precisely because this caller owns the read to
-            // completion — unlike captureNode, whose lease must outlive its own race.
+            // completion - unlike captureNode, whose lease must outlive its own race.
             const blob = await withBorrowedVisibility(box, () => renderSvgFromHtml(box, { width: bw, height: bh }));
             const root = parseSvgRoot(await blob.text());
             if (!root) return null;
@@ -4696,7 +4698,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
             const inner = new XMLSerializer().serializeToString(root);
             // `tileBody` over the SINGLE-tile width: one <use>, clipped exactly where
             // the canvas's own edge cuts it. It cannot return null at one tile, but the
-            // guard stays — a null twin falls through to the PNG, which is always what
+            // guard stays - a null twin falls through to the PNG, which is always what
             // the user is actually looking at.
             const under = isPaintedColor(job.fill) ? rectBody(job.fill, w, h) : '';
             const body = tileBody(inner, tile, Math.min(tile, w), h);
@@ -4709,7 +4711,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
 
-    // Every remaining mode has a picture coming, so the canvas is sized now — same
+    // Every remaining mode has a picture coming, so the canvas is sized now - same
     // point in the paint as before this was a closure.
     const ctx = sized();
     if (!ctx) return;
@@ -4723,10 +4725,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const timing0 = box0 ? boxTiming(box0, cfg) : null;
     const clipIn0 = timing0?.clipIn ?? 0;
     // The length must come from span(), NOT from `timing.dur ?? 0`. An OPEN-ENDED box
-    // (no authored dur — which is what the default music bed is, and what any box
+    // (no authored dur - which is what the default music bed is, and what any box
     // promoted with only a Start becomes) has a null dur meaning "run to the end of the
     // sequence". Defaulting that to 0 collapses the window to zero width, and
-    // windowPeaks correctly answers with silence — so the waveform was still drawn, but
+    // windowPeaks correctly answers with silence - so the waveform was still drawn, but
     // flat at the 0.02 floor: a hairline that reads as no waveform at all. span() is the
     // one place that resolves the effective length, and every other geometry read in
     // this panel already goes through it.
@@ -4737,9 +4739,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const buckets = Math.max(8, Math.min(600, Math.round(w / 2)));
       peaks(media.url, buckets, signal, { fromSec: clipIn0, toSec: out0 }).then((data) => {
         if (signal.aborted || !data.length) return;
-        // Synchronous draw on receipt — the array is cache-owned, never mutated or kept.
+        // Synchronous draw on receipt - the array is cache-owned, never mutated or kept.
         ctx.clearRect(0, 0, w, h);
-        // Canvas 2D has no `currentColor` — assigning it is silently IGNORED and the
+        // Canvas 2D has no `currentColor` - assigning it is silently IGNORED and the
         // waveform paints default black, invisible on a dark clip. `ink` is that cascade
         // resolved to a real colour (in the read pass), so the bars follow the theme.
         ctx.fillStyle = job.ink;
@@ -4759,7 +4761,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       }).catch(() => { /* clip-thumbs never rejects; belt and braces */ });
       return;
     }
-    // One picture, TILED across the bar — an image, a Lottie's live frame, or a tool
+    // One picture, TILED across the bar - an image, a Lottie's live frame, or a tool
     // clip's compose render. Tiled rather than stretched for the same reason the video
     // branch draws a strip: a long bar must read as a length of film, and a single
     // stretched thumbnail reads as a smear. One bitmap serves every bar width, so the
@@ -4777,7 +4779,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         const src = media.url;
         setTwin(async () => {
           // data: only. `inlineSvgFromImg` would happily fetch a blob:/http(s) source,
-          // but the panel does no network I/O — a photograph stays a photograph, and a
+          // but the panel does no network I/O - a photograph stays a photograph, and a
           // remote SVG simply keeps the raster path, which is correct and bounded.
           if (!/^data:/i.test(src)) return null;
           try {
@@ -4814,7 +4816,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     if (mode !== 'filmstrip') {
       // Exhaustiveness guard. Every other mode returns above, so TypeScript narrows
-      // `mode` to `never` here — which makes ADDING a ThumbMode without a branch a
+      // `mode` to `never` here - which makes ADDING a ThumbMode without a branch a
       // compile error instead of a bar that silently paints nothing. That is exactly
       // how a new mode would fail: quietly, on one clip kind, in a browser only.
       const unhandled: never = mode;
@@ -4824,7 +4826,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     filmstrip(media.url, { count: frameCountFor(w), h, clipInSec: clipIn0, clipOutSec: out0 }, signal).then((frames) => {
       if (signal.aborted || !frames.length) return;
       // OWNERSHIP CONTRACT: these ImageBitmaps belong to the clip-thumbs LRU. Draw them
-      // into our own canvas right here, synchronously, and drop the references — never
+      // into our own canvas right here, synchronously, and drop the references - never
       // hold one across an await or a repaint, and never close() one.
       ctx.clearRect(0, 0, w, h);
       let x = 0;
@@ -4835,7 +4837,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (x >= w) break;
       }
       // No twin, deliberately: decoded video frames are photographs. There is no vector
-      // form to recover, so the walker keeps rasterising this bar — which is the right
+      // form to recover, so the walker keeps rasterising this bar - which is the right
       // answer, not a gap.
       setTwin(null);
       el.classList.add('has-thumbs');
@@ -4880,7 +4882,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // What a bar's PICTURE depends on, which is a different question from what its
     // ROW depends on. `tracksKey` is id/lane/timed only, so editing a card's text or
     // its colour took the restyle branch and the bar kept photographing the old words
-    // indefinitely — a thumbnail that actively lies is worse than the flat fill it
+    // indefinitely - a thumbnail that actively lies is worse than the flat fill it
     // replaced. Timing is excluded (see appearanceSig), so a drag does not re-key.
     const akey = appearanceKey(boxes);
     const looksDifferent = akey !== lastAppearance;
@@ -4906,7 +4908,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     emitTime(clock.t());
     // Re-gate the freshly-rebuilt canvas at the current playhead. A commit rebuilds the
     // tool DOM (new nodes → the sequence gate's `.seq-off` is gone), and while playback's
-    // rAF loop reapplies every frame, a PAUSED timeline emits no ticks — so without this a
+    // rAF loop reapplies every frame, a PAUSED timeline emits no ticks - so without this a
     // scenery→timed edit (promote, or frames-as-scenes "Place in order", whose frame pages
     // get no thumbnail shot to ride the shot-settle reapply) would leave every element on
     // screen until the next scrub. `reapply()` is one class/style pass and is exactly the
@@ -4940,7 +4942,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Snap a raw time unless Alt is held (the universal bypass).
    *
    * `coarse` is EXPLICIT rather than read off `gesture` at every call site, because the
-   * one call that decides what gets written — onPointerUp's — runs AFTER endGesture has
+   * one call that decides what gets written - onPointerUp's - runs AFTER endGesture has
    * already cleared `gesture`. Defaulting it off the live gesture and letting pointerup
    * pass the value it captured is what keeps the committed number identical to the
    * preview the user was looking at; reading it lazily meant a finger's drag previewed
@@ -4948,7 +4950,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * the cut.
    */
   /**
-   * The keyframes of the SELECTED boxes, as timeline seconds — the latch's own
+   * The keyframes of the SELECTED boxes, as timeline seconds - the latch's own
    * candidates (plans/104 §8).
    *
    * Selected only, and that is the whole design: a timeline with six animated clips
@@ -4977,13 +4979,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const boxes = getBoxes();
     const cands = snapCandidates(boxes, cfg, clock.t() / 1000, raw, excludeId);
     // The playhead latches onto diamonds; a CLIP being dragged does not. A clip's
-    // edges snap to structure (cuts, the ruler's seconds, the playhead) — adding
+    // edges snap to structure (cuts, the ruler's seconds, the playhead) - adding
     // another clip's keyframes to that set would make a move jump to a mark that has
     // nothing to do with where the clip belongs.
     if (latch) cands.push(...latchCandidates(boxes));
     // A finger cannot land on an 8px window. The tolerance follows the pointer that
     // started the gesture (timeline-math's own SNAP_PX default stays 6 for every other
-    // caller — this panel is the only one that knows what started the drag).
+    // caller - this panel is the only one that knows what started the drag).
     const px = coarse ? SNAP_PX_COARSE : SNAP_PX_FINE;
     const r = snapTime(raw, cands, pxPerSec, px);
     showSnapline(r.snapped);
@@ -4991,7 +4993,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // feedback a thumb over the bar can actually receive. Gated on the LIVE gesture, not
     // on `coarse`: the haptic belongs to the drag, and firing it again from pointerup
     // (where endGesture has just reset snappedAt, so every snap reads as new) would tick
-    // twice for one snap. Reduced motion turns it off — the pref is about involuntary
+    // twice for one snap. Reduced motion turns it off - the pref is about involuntary
     // sensation, not only about pixels moving.
     if (r.snapped !== null && r.snapped !== snappedAt && isCoarsePointer(gesture?.pointerType)
       && !prefersReducedMotion() && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -5031,15 +5033,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The three edge states, armed. Every class added here comes off in endGesture — the
-   * single teardown — and never at a call site, matching the `is-drop-target` discipline.
+   * The three edge states, armed. Every class added here comes off in endGesture - the
+   * single teardown - and never at a call site, matching the `is-drop-target` discipline.
    */
   function beginTrimChrome(g: Gesture): void {
     if (!g.el) return;
     g.el.classList.add('is-trimming');
     edgeEl(g.el, g.edge)?.classList.add('is-active');
-    // The badge's VERTICAL place is fixed for the gesture — a trim never moves a bar
-    // between lanes — so it is measured once here rather than per frame. Reading
+    // The badge's VERTICAL place is fixed for the gesture - a trim never moves a bar
+    // between lanes - so it is measured once here rather than per frame. Reading
     // offsetTop/offsetHeight inside the rAF that has just written every bar's geometry
     // is a forced synchronous layout, sixty times a second, for a number that cannot
     // have changed.
@@ -5058,7 +5060,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * The reachable span of the clip being trimmed, in timeline seconds, drawn as a ghost
    * behind/around the bar: `[start - clipIn/speed, start + (media - clipIn)/speed]`.
-   * Only when the media length is known — a card, a Lottie or a procedural bed has no
+   * Only when the media length is known - a card, a Lottie or a procedural bed has no
    * "end of the source" to draw.
    */
   function showExtent(g: Gesture): void {
@@ -5113,7 +5115,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (e.shiftKey) selectAndReveal(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id], { reveal: false });
     else {
       // A/V-linked pair: pressing either half selects both, so a move or a delete keeps
-      // picture and sound together. Alt selects just the one — the shell's established
+      // picture and sound together. Alt selects just the one - the shell's established
       // "solo this box" idiom, and the reason there is no global "linked selection"
       // toggle to find and remember.
       const partner = e.altKey ? '' : partnerOf(id);
@@ -5147,7 +5149,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
 
-    // A DIAMOND under the pointer — checked after the trim zone and before move, in
+    // A DIAMOND under the pointer - checked after the trim zone and before move, in
     // that order and deliberately. A keyframe at local t = 0 sits exactly on the
     // in-edge, and a clip you cannot trim because its first pose is parked there
     // would be a worse trade than a first pose you retime from the inspector's list
@@ -5187,7 +5189,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The panel's non-track chrome — grip + bar + ruler — MEASURED rather than derived
+   * The panel's non-track chrome - grip + bar + ruler - MEASURED rather than derived
    * from a constant, because `.tl-bar` wraps to two or three rows below 720px depending
    * on how many tool buttons the host declared and whether a clip is selected (the
    * inspector row only exists with a selection). This is what clampPanelH's floor is
@@ -5209,7 +5211,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     trimBadge.style.left = `${timeToPx(edgeTime, pxPerSec)}px`;
   }
 
-  /** Live preview — PANEL DOM ONLY. The model is untouched until pointerup. */
+  /** Live preview - PANEL DOM ONLY. The model is untouched until pointerup. */
   function paintGesture(g: Gesture): void {
     if (g.kind === 'resize') {
       const stageH = stageEl.getBoundingClientRect().height || 0;
@@ -5234,7 +5236,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     //
     // EVERY bar, not just the dragged one: trimming a seq clip ripples the whole row,
     // and Premiere 26's answer (the downstream bars move WITH the drag rather than
-    // jumping on release) is free here — the throwaway array already holds their new
+    // jumping on release) is free here - the throwaway array already holds their new
     // starts. The seam chips ride the same numbers, exactly as restyle positions them.
     const previewRows = (rows: Box[]): void => {
       const total = durationSec();
@@ -5253,7 +5255,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (g.kind === 'kf') {
       // PANEL DOM ONLY, like every other preview here: the dot moves, the model does
       // not. Alt is the DUPLICATE modifier on this gesture (it is the drag's own
-      // meaning, not a snap bypass — a keyframe snaps to nothing), so the class says
+      // meaning, not a snap bypass - a keyframe snaps to nothing), so the class says
       // so while the pointer is down and the copy is made once, on release.
       const dot = g.kfDot;
       if (!dot) return;
@@ -5275,7 +5277,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const i = indexOfId(rows, cfg, g.id);
       if (i < 0) return;
       const achieved = span(rows[i]!, durationSec());
-      // THE LIMIT SIGNAL. Requested vs achieved, using the writer's OWN answer — no
+      // THE LIMIT SIGNAL. Requested vs achieved, using the writer's OWN answer - no
       // clamp is duplicated here, which is the whole point: `fitToMedia` stays the only
       // authority on where a clip runs out of source, and this just notices that it
       // said no. Without it a drag past the end of the media looks like a dead pointer.
@@ -5291,7 +5293,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         g.limitSaid = true;
         // Direction, not edge: held back from moving the edge EARLIER is the head of the
         // source, from moving it LATER is the tail. (A clip stopped by the MIN_DUR floor
-        // rather than by the file reports through the same pair — the visual signal is
+        // rather than by the file reports through the same pair - the visual signal is
         // exactly right either way, and these are the nearest true words we have.)
         announce(achievedD > d ? t('Start of the source') : t('End of the source'));
       }
@@ -5316,15 +5318,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * THE one teardown for a gesture, whatever ended it — pointerup, pointercancel, a
+   * THE one teardown for a gesture, whatever ended it - pointerup, pointercancel, a
    * lost capture, or the panel closing under a drag. Every transient the gesture
    * painted is cleared HERE, so no exit path can leak one:
    *   • `is-drop-target` lives on OTHER bars, and a reorder does not change tracksKey,
-   *     so a rebuild will never clean it up — a stale ring would sit on a clip for the
+   *     so a rebuild will never clean it up - a stale ring would sit on a clip for the
    *     rest of the session;
    *   • the dragged bar's lift transform and dropIndex;
    *   • the three trim states (`is-trimming` on the bar, `is-active`/`is-limit` on the
-   *     edge), the readout badge and the ghost extent — added in beginTrimChrome and
+   *     edge), the readout badge and the ghost extent - added in beginTrimChrome and
    *     removed ONLY here, so no exit path can strand a red edge on a clip;
    *   • the pointer capture.
    * It also replays a model change that arrived mid-gesture and was dropped.
@@ -5368,7 +5370,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // mid-gesture model change (a sidebar edit made while scrubbing) never got.
     if (g.kind === 'resize') { reserve(panelH + RESERVE_PAD); sync(); scheduleThumbs(); return; }
     // `gesture` is already null (endGesture, above), so every maybeSnap below has to be
-    // told what kind of pointer this was — see maybeSnap's own note.
+    // told what kind of pointer this was - see maybeSnap's own note.
     const coarse = isCoarsePointer(g.pointerType);
     if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse, true); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
     // A diamond PRESSED and released without moving is a click, and a click on a
@@ -5395,7 +5397,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         writeTrack(g.id, (track) => (alt ? kfTrackDuplicate(track, from, to) : kfTrackRetime(track, from, to)));
         announce(alt ? t('Keyframe copied to {t}', { t: at }) : t('Keyframe moved to {t}', { t: at }));
       } else {
-        // Nothing landed, so nothing was written — but the dot has been dragged and
+        // Nothing landed, so nothing was written - but the dot has been dragged and
         // must go back to where the model still says it is.
         scheduleSync();
       }
@@ -5414,7 +5416,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       write(next);
       // The badge was aria-hidden throughout (sixty updates a second is not speech);
       // this is its ONE spoken form, and it reports what actually landed, not what was
-      // asked for — so a drag the media refused says so by simply reading back short.
+      // asked for - so a drag the media refused says so by simply reading back short.
       const j = indexOfId(next, cfg, g.id);
       if (j >= 0) {
         const now = span(next[j]!, durationSec()).dur;
@@ -5425,7 +5427,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     } else if (g.kind === 'reorder') {
       // Re-derive from the FINAL pointer position rather than trusting g.index: that one
       // is written by paintGesture, which is rAF-coalesced, so the last pointermove of a
-      // fast drag may never have painted. Same discipline as move/trim above — pointerup
+      // fast drag may never have painted. Same discipline as move/trim above - pointerup
       // never depends on whether a frame ran.
       const index = dropIndexAt(boxes, cfg, timeAt(g.x), g.id);
       if (index !== g.index0) write(moveSeqClip(boxes, cfg, g.id, index, mediaDur));
@@ -5531,7 +5533,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     and at any zoom past ~80 px/s the snap tolerance is smaller than MIN_DUR, so the
    *     playhead can rest inside that band without being pulled onto the cut.
    *
-   * Both cases used to read as "Split clip", enabled — and then announce a refusal on
+   * Both cases used to read as "Split clip", enabled - and then announce a refusal on
    * the press. The label cannot promise what the press refuses, so it asks the same
    * question.
    */
@@ -5543,15 +5545,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * SPLIT — one operation, four doors (the toolbar blade, `s`, the context menu, and
+   * SPLIT - one operation, four doors (the toolbar blade, `s`, the context menu, and
    * the blade's own LABEL, which has to answer the same question a press would) and one
    * scope rule shared by all of them. Resolved here, once, so the label can never
    * promise something the press then refuses.
    *
    * Scope, in the order Premiere and Descript both resolve it:
-   *   1. every SELECTED clip the playhead is inside — so a deliberate multi-selection
+   *   1. every SELECTED clip the playhead is inside - so a deliberate multi-selection
    *      cuts through all of it in one press, and one undo takes the whole thing back;
-   *   2. failing that, the seq clip under the playhead — the "I just want to cut here"
+   *   2. failing that, the seq clip under the playhead - the "I just want to cut here"
    *      case, which must not require selecting anything first;
    *   3. failing that, say so and write nothing.
    *
@@ -5567,7 +5569,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Snap BEFORE deciding scope: the snapped instant is the one the cut is tested
     // against, so "inside this clip" and "where the cut lands" can never disagree.
     //
-    // NOT through maybeSnap — the playhead is one of its own candidates, so snapping
+    // NOT through maybeSnap - the playhead is one of its own candidates, so snapping
     // the playhead would always find itself at distance 0 and change nothing. Passing a
     // negative playhead drops that candidate (snapCandidates guards on `ph >= 0`) and
     // leaves the clip edges and whole seconds, which is exactly what a razor should
@@ -5593,7 +5595,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The blade says what it would cut BEFORE it is pressed — the researched
+   * The blade says what it would cut BEFORE it is pressed - the researched
    * self-teaching affordance, and the one that makes the scope rule above learnable
    * instead of surprising: "Split clip" when the playhead is inside one, "Split 3
    * clips" when a selection spans it, and disabled (not a refusal announced after the
@@ -5602,11 +5604,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Disabled is decided by the UNION of both scopes, because Shift-click is the
    * split-everything door: a playhead inside an overlay but no seq clip still has work
    * to do, and a disabled button would swallow that press. The LABEL stays the plain
-   * scope's — it describes what an unmodified click does.
+   * scope's - it describes what an unmodified click does.
    *
    * `aria-disabled`, NOT the `disabled` property. A successful split leaves the playhead
    * exactly on the cut it just made, so both scopes resolve empty on the very next
-   * restyle — i.e. the blade goes inert the instant you use it. Per the HTML spec a
+   * restyle - i.e. the blade goes inert the instant you use it. Per the HTML spec a
    * FOCUSED control that becomes `disabled` is no longer focusable and the browser drops
    * focus to <body>; this panel's keydown listener is bound on `root` and gated by
    * panelKeysActive, so a keyboard user who pressed Enter on the blade would silently
@@ -5621,7 +5623,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Disabled is decided by the UNION of both scopes; the label is the plain scope's.
     const off = n === 0 && splitScope(true, boxes).ids.length === 0;
     // The memo is on the ACHIEVED state, not on the playhead: this runs once per tick
-    // (see emitTime — the splittable set changes one frame AFTER the active set does,
+    // (see emitTime - the splittable set changes one frame AFTER the active set does,
     // when the playhead steps off a clip's exact start, so it cannot ride tl-time's own
     // gate), and the DOM must not be written sixty times a second for a label that
     // changes twice a sequence.
@@ -5651,7 +5653,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // stack is untouched. The commonest way here is a second press at the same instant.
     if (next === boxes) { announce(t('The playhead is already at a cut')); return; }
     write(next);
-    // Select the right-hand halves — what you carry on editing after a cut is the part
+    // Select the right-hand halves - what you carry on editing after a cut is the part
     // ahead of the playhead, and the panel's one selection writer keeps it on screen.
     if (split.length) selectAndReveal(split);
     announce(split.length > 1 ? t('Split {n} clips', { n: String(split.length) }) : t('Clip split'));
@@ -5661,7 +5663,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //
   // Detach is deliberately NOT Final Cut's: theirs is one-way, and "there's no way to
   // resync a clip, except for Undo" is the single most-cited complaint in the survey.
-  // This is the Premiere/Resolve model — a persistent link, written on BOTH boxes, so
+  // This is the Premiere/Resolve model - a persistent link, written on BOTH boxes, so
   // the sound can go back where it came from from either side. All of the arithmetic is
   // in timeline-math (`detachAudio` / `reattachAudio`); everything here is the gate.
 
@@ -5681,7 +5683,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * this even mean anything here" rather than policy:
    *   • the TOOL declares a link sub-field (sequence-studio does; design does
    *     not, and gets no affordance at all rather than a broken one);
-   *   • the tool has an `audio` add-kind — the vocabulary a detached sound is born into,
+   *   • the tool has an `audio` add-kind - the vocabulary a detached sound is born into,
    *     exactly the check the microphone button already makes;
    *   • the box is actually a video (an image has no sound; a sound is already detached);
    *   • and it is not linked already.
@@ -5719,7 +5721,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * Are two clips the same source? Injected into `isThroughEdit`, which must not know
-   * what an asset is. Compared on the ref's ID (its identity), never the whole object —
+   * what an asset is. Compared on the ref's ID (its identity), never the whole object - 
    * two refs to the same asset can differ in resolved url/meta.
    */
   const sameSource = (a: Box, b: Box): boolean => {
@@ -5740,7 +5742,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const next = at + 1 < row.length ? row[at + 1]! : '';
     // FCP accepts a ONE-SIDED selection: pressing Join on either half of a through edit
     // joins that edit. The clip's own out-edge is tried first, so a clip between two
-    // through edits joins forwards — the direction the playhead is travelling.
+    // through edits joins forwards - the direction the playhead is travelling.
     if (next && isThroughEdit(rows, cfg, id, next, sameSource)) return { aId: id, bId: next };
     if (prev && isThroughEdit(rows, cfg, prev, id, sameSource)) return { aId: prev, bId: id };
     return null;
@@ -5757,7 +5759,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Ids are the tool's contract; mint one that cannot collide with an existing row.
    *
-   * `rows` is the array to mint AGAINST — defaulted to the live model, but passed
+   * `rows` is the array to mint AGAINST - defaulted to the live model, but passed
    * explicitly by any caller composing several writes into one commit (the implicit
    * scene camera), where the live model does not yet contain the boxes already minted
    * into the pending array.
@@ -5773,16 +5775,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Remove one box, rippling the row behind it. `target` names it (the context menu);
    * with no argument it is the focused/selected bar (the Delete key). Scenery is
-   * deletable too — it has a chip rather than a bar, and no reason to be undeletable.
+   * deletable too - it has a chip rather than a bar, and no reason to be undeletable.
    */
   /**
    * Delete one half of an A/V pair and the other half is left holding a link to an id
    * that no longer exists. `partnerOf` reads a dangling id as '' (so Detach is offered
-   * again, and then refuses — `detachAudio` re-reads the raw field and returns null),
+   * again, and then refuses - `detachAudio` re-reads the raw field and returns null),
    * while the bar paint reads the RAW field and keeps the link chip: the two disagree
    * about whether the clip is linked, and the picture is left silent with nothing in the
    * panel saying why. So the delete sweeps the link off every survivor pointing at the
-   * clip that went — and un-mutes it too when it was MUTED, because the only reason it
+   * clip that went - and un-mutes it too when it was MUTED, because the only reason it
    * was silent was that its sound lived on the clip just deleted.
    */
   function sweepLinksTo(rows: Box[], goneId: string): Box[] {
@@ -5809,7 +5811,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const at = order.indexOf(id);
     if (at >= 0) focusedId = order[at + 1] || order[at - 1] || '';
     // Say what was actually removed. Scenery has a chip, not a bar, and the panel's own
-    // UI never calls it a clip — announcing "Clip removed" for an always-on image is the
+    // UI never calls it a clip - announcing "Clip removed" for an always-on image is the
     // one place the vocabulary would slip, and it slips only for screen-reader users.
     const wasClip = bars.has(id);
     write(sweepLinksTo(removeAndRipple(getBoxes(), cfg, id, mediaDur), id));
@@ -5822,7 +5824,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // The best affordance in the whole survey for an editor that has to be approachable:
   // it needs no pointer precision at all, it works at any zoom (including one where the
   // bar is too narrow to carry a hit zone), and "trim to the playhead" is the operation
-  // people actually want most of the time — you are already looking at the frame.
+  // people actually want most of the time - you are already looking at the frame.
   //
   // Each command is ONE write() = one undo step; holding a key coalesces through
   // tool-history's 500ms window exactly like a held arrow on the canvas.
@@ -5830,7 +5832,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /** Which edge the keyboard is aimed at, or null. Cleared by the first Escape. */
   let focusedEdge: 'in' | 'out' | null = null;
 
-  /** Every row's resolved timing, as one string — "did this edit change anything?". */
+  /** Every row's resolved timing, as one string - "did this edit change anything?". */
   function timingSig(rows: Box[]): string {
     return JSON.stringify(rows.map((b) => {
       const tm = boxTiming(b, cfg);
@@ -5867,7 +5869,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Nudge the focused edge by `deltaSec`. One write, one undo step.
    *
-   * `lead` prefixes the spoken readout rather than being announce()d separately —
+   * `lead` prefixes the spoken readout rather than being announce()d separately - 
    * announce() replaces the live region's text, so two calls in one turn means the
    * first one is never heard.
    */
@@ -5879,7 +5881,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (i < 0) return;
     const before = span(boxes[i]!, durationSec()).dur;
     const next = trimClip(boxes, cfg, id, focusedEdge, deltaSec, mediaOf(id).dur, mediaDur);
-    // A press that hit a wall must not cost an undo entry — the same rule the split blade
+    // A press that hit a wall must not cost an undo entry - the same rule the split blade
     // already follows ("a split at an existing cut writes NOTHING"). Compared on the
     // resolved TIMING of every row, not on raw field equality: trimClip writes clipIn
     // explicitly, so a refused nudge still returns rows carrying `clipIn: 0` where the
@@ -5896,7 +5898,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     announce(lead ? `${lead} ${said}` : said);
   }
 
-  /** Pull the focused edge to the playhead — the no-dragging trim. */
+  /** Pull the focused edge to the playhead - the no-dragging trim. */
   function trimToPlayhead(): void {
     const id = trimTargetId();
     if (!id || !focusedEdge) return;
@@ -5912,14 +5914,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // Press the mic, get a 3-2-1 count-in, then perform AGAINST THE PICTURE: the panel
   // runs the playhead through the take, so what you narrate is what you were watching.
   // On stop the blob becomes a durable user asset and lands as an audio box at the
-  // time the take started — one commit, one undo step, trimmable immediately.
+  // time the take started - one commit, one undo step, trimmable immediately.
   //
-  // Four things here are load-bearing and each has already cost someone an afternoon:
+  // Four things here are essential and each has already cost someone an afternoon:
   //
   //  1. THE LENGTH IS MEASURED, NEVER READ OFF THE BLOB. A fresh MediaRecorder blob
   //     reports duration Infinity or 0 (record-control.ts's `data-clip-ms` note says
   //     the same thing from the video side), so the elapsed wall-clock between "the
-  //     recorder said go" and "the user pressed stop" IS the duration — and it is
+  //     recorder said go" and "the user pressed stop" IS the duration - and it is
   //     stored as the asset's `meta.durationMs`, because that is what the tool hook
   //     stamps as `data-audio-dur` and therefore the only thing `mediaOf` can clamp a
   //     trim against. A take stored without it cannot be trimmed properly.
@@ -5933,10 +5935,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //  3. EVERY EXIT PATH GOES THROUGH endTake(). A leaked microphone is the worst
   //     outcome available here: the browser shows a recording indicator with no way
   //     for the user to trace it. Denial, an abort mid-count-in, a hidden tab, closing
-  //     the panel, destroy() — all of them land in the same teardown.
+  //     the panel, destroy() - all of them land in the same teardown.
   //  4. THE INSERT IS ONE COMMIT, composed from the SAME writers a drag uses
   //     (moveOverlay + setDuration on the intermediate array). No new clamping
-  //     arithmetic lives in this view — see the module header.
+  //     arithmetic lives in this view - see the module header.
 
   type TakePhase = 'idle' | 'countin' | 'recording' | 'saving';
 
@@ -5946,18 +5948,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /** Microphone METER references this panel currently holds. A COUNT, not a boolean:
    *  `recorder.meter` is refcounted, so every resolved `start()` owes exactly one
    *  `stop()`. A boolean cannot describe "a start resolved after the take that asked for
-   *  it was abandoned, while a newer take holds its own reference" — and an unbalanced
+   *  it was abandoned, while a newer take holds its own reference" - and an unbalanced
    *  count is unrecoverable: the browser's recording indicator stays lit until reload. */
   let takeMeterRefs = 0;
   /** Identity of the take in flight. Every await in the take driver is resumed by a
    *  continuation that may belong to an ABANDONED take, and the phase string cannot tell
    *  them apart (an abandoned take's continuation sees a NEWER take's 'countin' and
-   *  proceeds as if it were live — two sessions, one leaked meter reference). Compare
+   *  proceeds as if it were live - two sessions, one leaked meter reference). Compare
    *  this instead: it is bumped by every start and every teardown. */
   let takeSeq = 0;
   /** Playhead seconds at the instant the recorder actually started. */
   let takeStartSec = 0;
-  /** performance.now() at the same instant — the duration's only honest source. */
+  /** performance.now() at the same instant - the duration's only honest source. */
   let takeStartedAt = 0;
   let takeTimer = 0;
   let takeCountTimer = 0;
@@ -5981,17 +5983,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const now = (): number => (typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now() : Date.now());
 
-  /** The manifest's audio add-kind — the seed a recorded take is born from. */
+  /** The manifest's audio add-kind - the seed a recorded take is born from. */
   const audioKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'audio');
 
   /**
-   * PROGRESSIVE ENHANCEMENT, deliberately not a manifest capability — the same call
+   * PROGRESSIVE ENHANCEMENT, deliberately not a manifest capability - the same call
    * `host.media`'s live camera makes: the button appears when the running shell can
    * actually record and the tool has somewhere to put a take, and is absent otherwise.
    * Two questions, both answered here:
    *   - `host.recorder` + `isAvailable('audio')`: can THIS SHELL capture audio at all (a
    *     CLI cannot, and neither can a browser outside a secure context);
-   *   - the audio add-kind: does the tool have an audio vocabulary — with no audio kind
+   *   - the audio add-kind: does the tool have an audio vocabulary - with no audio kind
    *     there is no box for a take to become.
    * No permission prompt is risked by the button existing: nothing opens the mic until it
    * is pressed. Declaring `microphone` on the manifest instead would say "this tool cannot
@@ -6018,7 +6020,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The field on a box that carries an asset ref. See TimelinePanelOpts.assetField.
    * Memoised once found: a tool's field vocabulary cannot change under a mount, and
    * this is reached from `restyle` (every keystroke). The FALLBACK is deliberately not
-   * cached — a composition with no assets yet may grow one.
+   * cached - a composition with no assets yet may grow one.
    */
   let assetFieldCache = '';
   function assetFieldName(): string {
@@ -6048,7 +6050,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * A box holding a previous VOICEOVER take — the one a re-take is allowed to overwrite.
+   * A box holding a previous VOICEOVER take - the one a re-take is allowed to overwrite.
    *
    * The id namespace alone is not enough: the record tool and screen capture mint their
    * takes as `user/recording/<ts>.mp4|webm` through the same `storeRecordingAsset`. Pick
@@ -6124,7 +6126,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /** Release `n` held meter references (all of them by default). Never releases more
-   *  than are held — over-stopping would tear the mic out from under another holder. */
+   *  than are held - over-stopping would tear the mic out from under another holder. */
   function stopMeter(n = takeMeterRefs): void {
     for (let i = Math.min(n, takeMeterRefs); i > 0; i--) {
       takeMeterRefs--;
@@ -6144,7 +6146,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     stopMeter();
     const session = takeSession;
     takeSession = null;
-    // Only reachable on an abort path — stopTake() has already consumed its session.
+    // Only reachable on an abort path - stopTake() has already consumed its session.
     if (session) { try { session.cancel(); } catch { /* already released */ } }
     restoreComposition();
     takeReplaceId = '';
@@ -6197,7 +6199,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     });
   }
 
-  /** The elapsed clock, the cap, and the mute re-assertion — one rAF loop. */
+  /** The elapsed clock, the cap, and the mute re-assertion - one rAF loop. */
   function tickTake(): void {
     takeTimer = 0;
     if (phase() !== 'recording' || disposed) return;
@@ -6210,7 +6212,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     if (el >= TAKE_TIMING.maxMs) { void stopTake(); return; }
     // A repaint mid-take mints fresh box elements, which arrive unmuted. Re-silence
-    // them a few times a second rather than every frame — this walks the canvas.
+    // them a few times a second rather than every frame - this walks the canvas.
     if (el - lastMuteAt > 250) { lastMuteAt = el; muteComposition(); }
     takeTimer = requestAnimationFrame(tickTake);
   }
@@ -6221,7 +6223,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!recorder) return;
     // This take's identity for the rest of the function. `stale()` is the ONLY correct
     // post-await guard: a continuation that fails it belongs to an abandoned take and
-    // must clean up only what IT acquired — never call endTake(), which would tear down
+    // must clean up only what IT acquired - never call endTake(), which would tear down
     // whichever take is live now.
     const seq = ++takeSeq;
     const stale = (): boolean => seq !== takeSeq || disposed;
@@ -6330,9 +6332,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { await finishTake(blob, takeMs, seq); }
     catch (err) {
       // Storage-full carries a user-ready message (assets.ts's STORAGE_FULL) and every
-      // other upload in the app surfaces it verbatim — swallowing it behind "could not be
+      // other upload in the app surfaces it verbatim - swallowing it behind "could not be
       // saved" leaves the user with no reason and no way to make room.
-      // A `code` marks the user-ready ones (STORAGE_FULL and the cap errors) — the same
+      // A `code` marks the user-ready ones (STORAGE_FULL and the cap errors) - the same
       // test picker.ts's upload handler uses.
       const coded = (err as { code?: unknown; message?: string } | null);
       setNote(coded?.code && coded.message ? coded.message : t('The take could not be saved.'));
@@ -6363,13 +6365,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // (navigate away, close the panel) and the old recording is gone while the box still
       // points at it. The delete happens below, after the commit has landed.
       blob, ext, undefined, undefined,
-      // The measured length, not the blob's — see note 1. This is what becomes
+      // The measured length, not the blob's - see note 1. This is what becomes
       // `data-audio-dur` and therefore what a trim can clamp against.
       { audio: true, durationMs: takeMs },
     );
     // The take was abandoned while the bytes were being stored (the panel closed, the
-    // timeline was toggled off, destroy()). Commit nothing — an audio box arriving in a
-    // panel the user has left is an undo step for a take they cancelled — and leave the
+    // timeline was toggled off, destroy()). Commit nothing - an audio box arriving in a
+    // panel the user has left is an undo step for a take they cancelled - and leave the
     // replaced asset alone. The orphan take is harmless; a deleted one is not.
     if (disposed || seq !== takeSeq) return;
     insertTake(ref, takeMs / 1000);
@@ -6380,12 +6382,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The take lands on the timeline — ONE commit either way (see note 4).
+   * The take lands on the timeline - ONE commit either way (see note 4).
    *
    * A new take is born from the manifest's audio add-kind seed, placed by `moveOverlay`
    * and sized by `setDuration`, both composed on the intermediate array so the two
    * writers cost one undo step between them. A re-take patches the asset in place and
-   * re-fits the length in the same array, and clears `clipIn` — a trim-in measured
+   * re-fits the length in the same array, and clears `clipIn` - a trim-in measured
    * against the OLD recording points into audio that no longer exists.
    */
   function insertTake(ref: AssetRef, durSec: number): void {
@@ -6404,7 +6406,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * One audio clip lands at one time — the SINGLE inserter behind both a finished
+   * One audio clip lands at one time - the SINGLE inserter behind both a finished
    * mic take and a saved scripted voiceover, so the two can never drift: born from
    * the manifest's audio seed, placed by `moveOverlay`, sized by `setDuration`,
    * one commit, one undo step.
@@ -6428,7 +6430,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //
   // The Script-audio dialog owns everything speech: consent + model download,
   // voice/speed, generation progress, preview, save. The panel only remembers
-  // WHERE the playhead was when the user pressed the button — the dialog can
+  // WHERE the playhead was when the user pressed the button - the dialog can
   // stay open for minutes, and the clip must land where they were looking, not
   // wherever the clock has since drifted to.
 
@@ -6446,7 +6448,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const ref = await openScriptAudioDialog(host as unknown as Parameters<typeof openScriptAudioDialog>[0]);
       if (disposed || !ref) return;
       // The measured clip length rides the record (script-audio's buildTtsRecord
-      // stamps `meta.durationMs`) — the same field a mic take stores, and for the
+      // stamps `meta.durationMs`) - the same field a mic take stores, and for the
       // same reason: it is what a trim can clamp against.
       const ms = Number((ref.meta as Record<string, unknown> | undefined)?.durationMs);
       insertAudioBoxAt(ref, Number.isFinite(ms) && ms > 0 ? ms / 1000 : DEFAULT_CLIP_S, atSec);
@@ -6461,17 +6463,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // ── generated subtitles (plans/41-tts-stt-programme.md §5) ─────────────────────
   //
   // Timing-source ladder, best first: the asset's own `meta.tts.words` (a TTS
-  // clip aligns itself — exact by construction, no download, no wait), else
+  // clip aligns itself - exact by construction, no download, no wait), else
   // on-device Whisper via `host.speech.transcribe` (v1.99, its own one-time
   // model download behind its own consent sheet). Neither → the menu item is
   // simply absent. Words become cues through the ENGINE's grouper and cues
-  // become ordinary overlay text boxes — editable, trimmable, deletable like
+  // become ordinary overlay text boxes - editable, trimmable, deletable like
   // anything else on the timeline, never a burned-in afterthought. The whole
   // set carries `group = captions:<source id>`, which is what lets a re-run
   // REPLACE the previous set (idempotent, never duplicating) and what the
   // panel's lane collapse reads to keep 200 cues off 200 lane rows.
 
-  /** The manifest's text add-kind — the seed a caption cue is born from. */
+  /** The manifest's text add-kind - the seed a caption cue is born from. */
   const textKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'text');
 
   /** A subtitles run is one job; a second request while one is in flight is noise. */
@@ -6479,7 +6481,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * Whether Generate subtitles can be OFFERED for this box: the tool must have a
-   * text vocabulary, a group field to own the set with, audio to read — and at
+   * text vocabulary, a group field to own the set with, audio to read - and at
    * least one rung of the timing ladder must be reachable. Sync, because the
    * context menu renders synchronously: the stored ref's meta answers the TTS
    * rung without a round-trip, and the transcription rung is a sync probe.
@@ -6497,7 +6499,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The consent + progress sheet for the transcription rung. Resolves the
    * transcript's word timings, or null on cancel; a failure surfaces in the
    * sheet itself (the caller has nothing to add) and resolves null too.
-   * Escape/backdrop abort the run — every exit path aborts and resolves once.
+   * Escape/backdrop abort the run - every exit path aborts and resolves once.
    */
   function transcribeSheet(src: AssetRef | string): Promise<SpeechWordTiming[] | null> {
     const sp = host.speech;
@@ -6521,7 +6523,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         className: 'modal tl-junction-modal',
         ariaLabel: t('Generate subtitles'),
         initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
-        // However it closed — Escape, backdrop, cancel, or done — settle exactly once.
+        // However it closed - Escape, backdrop, cancel, or done - settle exactly once.
         onClose: () => { abort?.abort(); resolve(words); },
       });
       const note = modal.el.querySelector<HTMLElement>('[data-stt-note]');
@@ -6529,7 +6531,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const progress = modal.el.querySelector<HTMLElement>('[data-stt-progress]');
       const fill = modal.el.querySelector<HTMLElement>('[data-stt-fill]');
       const goBtn = modal.el.querySelector<HTMLButtonElement>('[data-act="go"]');
-      // The one-time download is the consent-worthy part, so say so up front —
+      // The one-time download is the consent-worthy part, so say so up front - 
       // but only when it is actually owed (the probe is async, the line arrives).
       void sp.transcribeCached?.().then((cached) => {
         if (!cached && dlNote) {
@@ -6596,7 +6598,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * Generate (or REgenerate) the caption set for one audio/video box. One commit:
-   * the previous `captions:<id>` group goes and the new cues land in its place —
+   * the previous `captions:<id>` group goes and the new cues land in its place - 
    * run it twice and you have one set, not two.
    */
   async function generateSubtitles(id: string): Promise<void> {
@@ -6622,7 +6624,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (!spans.length) { announce(t('No speech was found to caption.'), { assertive: true }); return; }
       const gid = captionGroup(id);
       const kept = rows.filter((b) => !b || String(b[groupField] ?? '') !== gid);
-      // Mint against the SURVIVORS plus what this loop has already minted — mintId
+      // Mint against the SURVIVORS plus what this loop has already minted - mintId
       // reads the live model, which does not include either until the commit lands.
       const used = new Set(kept.map((b) => String(b?.[cfg.idField] ?? '')));
       let n = used.size + 1;
@@ -6661,7 +6663,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * A backgrounded tab STOPS the take rather than dropping it: the clock pauses itself
-   * on `visibilitychange`, so the picture the user was performing against is gone —
+   * on `visibilitychange`, so the picture the user was performing against is gone - 
    * but the audio recorded up to that point is theirs, and losing it silently would be
    * worse than a short take. Nothing keeps running either way.
    */
@@ -6682,7 +6684,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const isCut = !isTransitionKind(boxes[bi]![cfg.enterField]) || boxes[bi]![cfg.enterField] === 'none';
     // A through edit gets its own way out: this cut has changed nothing, so the useful
     // action here is not "which transition" but "put it back". Offered only where it is
-    // real — the same predicate that draws the seam's hairline.
+    // real - the same predicate that draws the seam's hairline.
     const through = isThroughEdit(boxes, cfg, aId, bId, sameSource);
     const html = `<form method="dialog" class="tl-junction">
       <h2 class="tl-junction-title">${t('Transition between clips')}</h2>
@@ -6800,25 +6802,25 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     done.focus();
   }
 
-  // ── keyboard (panel-scoped; NEVER window — free-canvas owns that channel) ────
+  // ── keyboard (panel-scoped; NEVER window - free-canvas owns that channel) ────
 
   let hovered = false;
 
   function onKey(e: KeyboardEvent): void {
     if (!open) return;
     if (!panelKeysActive(root, document.activeElement, hovered)) return;
-    // UNMODIFIED ONLY (Shift excepted — several bindings below read it deliberately).
+    // UNMODIFIED ONLY (Shift excepted - several bindings below read it deliberately).
     // Every binding here is a bare letter or punctuation chosen BECAUSE no browser
     // fights for it; that reasoning only holds if the handler also declines the chord.
     // Without this, Cmd/Ctrl+S split instead of saving the page, Cmd/Ctrl+F fitted the
     // timeline instead of opening Find, Cmd+[ / Cmd+] armed a trim edge instead of
-    // going back/forward, and Ctrl+- / Ctrl+= zoomed the timeline instead of the page —
+    // going back/forward, and Ctrl+- / Ctrl+= zoomed the timeline instead of the page - 
     // every one of them preventDefault()ed. free-canvas.ts guards its `v`/`p` tool
     // letters the same way.
     // …with ONE documented exception, taken BEFORE the guard because the guard is a
     // bare `return`: Alt+←/→ walks the selected clip's keyframes (plans/104 §8). Alt
-    // is already this panel's "not the ordinary reading" modifier — it bypasses
-    // snapping on every drag — and no browser binds Alt+arrow on a focused element,
+    // is already this panel's "not the ordinary reading" modifier - it bypasses
+    // snapping on every drag - and no browser binds Alt+arrow on a focused element,
     // which is the same test every bare letter below had to pass.
     if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault();
@@ -6831,7 +6833,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const stepS = e.shiftKey ? 1 : FRAME_S;
     switch (e.key) {
       case ' ': case 'Spacebar': {
-        // A focused <button> activates on Space by itself (click on keyup). Let it —
+        // A focused <button> activates on Space by itself (click on keyup). Let it - 
         // handling it here as well would toggle playback twice.
         if ((e.target as HTMLElement | null)?.closest('button')) return;
         e.preventDefault(); e.stopPropagation(); togglePlay(); return;
@@ -6875,7 +6877,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       }
       // Trim, from the keyboard. `[` / `]` aim at an edge; `,` / `.` walk it a frame at
       // a time (Shift: ten); `e` pulls it to the playhead. Bare letters and punctuation
-      // deliberately — every canonical NLE trim chord collides with a browser binding
+      // deliberately - every canonical NLE trim chord collides with a browser binding
       // whose preventDefault() is unreliable, and a shortcut that silently does nothing
       // is worse than one the user has to learn.
       case '[': e.preventDefault(); e.stopPropagation(); focusEdge('in'); return;
@@ -6887,7 +6889,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         e.preventDefault(); e.stopPropagation();
         trimBy((e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
       case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
-      // "+Keyframe" from the keyboard — the THIRD door onto `addKeyframeAction`, and
+      // "+Keyframe" from the keyboard - the THIRD door onto `addKeyframeAction`, and
       // literally the same call the transport button and the canvas contextual bar
       // make (§8's M2.5 revision: two homes, one action). So `K` inherits every rule
       // from it, including the auto-promotion of an untimed selected box: the panel
@@ -6901,12 +6903,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         addKeyframeAction({ speak: true });
         return;
       }
-      // Onion skin: `o` toggles it, Shift+O opens its options — the same bare-letter /
+      // Onion skin: `o` toggles it, Shift+O opens its options - the same bare-letter /
       // Shift-letter split `s`/`S` and `d`/`D` already use, and the only key space left
       // that no browser binding fights for. Both cases fold into ONE branch and the
       // modifier is read off the EVENT, exactly like `s`/`S`: KeyboardEvent.key reports
       // the produced character, so with Caps Lock on a bare `o` arrives as 'O' and
-      // Shift+o as 'o' — branching on the letter's case inverts the pair.
+      // Shift+o as 'o' - branching on the letter's case inverts the pair.
       case 'o': case 'O':
         e.preventDefault(); e.stopPropagation();
         if (e.shiftKey) onionMenu.open(); else toggleOnion();
@@ -6919,23 +6921,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // "Send to timeline" / "Make always on" would be pointer-only affordances.
       // `?` is the web's own "what can I press here" key. Every shortcut this panel
       // binds is a bare letter chosen because no browser fights for it, which also
-      // means none of them is guessable — so the sheet is not a nicety.
+      // means none of them is guessable - so the sheet is not a nicety.
       case '?': e.preventDefault(); e.stopPropagation(); openShortcuts(); return;
       case 'ContextMenu': e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
       case 'F10': if (!e.shiftKey) return; e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
-      // The Escape LADDER, narrowest mode first: (1) a LIVE pointer drag — a trim or a
+      // The Escape LADDER, narrowest mode first: (1) a LIVE pointer drag - a trim or a
       // move mid-flight is the narrowest mode of all, and it is a visible one (the bar
       // carries .is-trimming, the badge and the reachable-media ghost are on screen), so
       // Escape must abandon it rather than pull the whole panel out from under the
-      // pointer; (2) an armed keyboard trim edge, (3) a live take — mid-recording Escape
+      // pointer; (2) an armed keyboard trim edge, (3) a live take - mid-recording Escape
       // is the "stop, I fluffed it" key, and closing the panel out from under a live
-      // microphone is not what the press meant — (4) the panel itself. Each rung is a
+      // microphone is not what the press meant - (4) the panel itself. Each rung is a
       // mode the user entered deliberately, so each one gets its own press.
       case 'Escape':
         e.preventDefault(); e.stopPropagation();
         if (gesture) {
           // endGesture drops the pointer capture and the chrome, so the pointerup that
-          // follows finds `gesture === null` and writes nothing — the edit is abandoned,
+          // follows finds `gesture === null` and writes nothing - the edit is abandoned,
           // not committed. The re-sync repaints the bars from the model, since a live
           // ripple preview would otherwise sit on screen until the next unrelated sync.
           endGesture(gesture);
@@ -6969,7 +6971,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
   // Shift-click the blade is the pointer twin of Shift+S: cut everything the playhead
   // is inside. Same one write, same one undo step.
-  // aria-disabled is advisory, so the press has to be swallowed here — that is the
+  // aria-disabled is advisory, so the press has to be swallowed here - that is the
   // price of keeping the blade focusable while it is inert (see syncSplitBtn).
   splitBtn.addEventListener('click', (e) => {
     if (splitBtn.getAttribute('aria-disabled') === 'true') return;
@@ -6994,7 +6996,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   });
   scenery.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
-    // The `+` half of the pill promotes straight from the strip — no need to select
+    // The `+` half of the pill promotes straight from the strip - no need to select
     // first and then find a field. One commit, exactly like the inspector route.
     const add = target?.closest<HTMLElement>('.tl-chip-add');
     if (add?.dataset.id) { promote(add.dataset.id); return; }
@@ -7021,7 +7023,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   root.addEventListener('pointerenter', () => { hovered = true; });
   root.addEventListener('pointerleave', () => { hovered = false; });
   tracks.addEventListener('scroll', () => { rulerInner.style.transform = `translateX(${-tracks.scrollLeft}px)`; }, { passive: true });
-  // Only touchmove is non-passive — it is the one that has to preventDefault the pan.
+  // Only touchmove is non-passive - it is the one that has to preventDefault the pan.
   tracks.addEventListener('touchstart', onTouchStart, { passive: true });
   tracks.addEventListener('touchmove', onTouchMove, { passive: false });
   tracks.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -7033,7 +7035,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     restyle(getBoxes());
   });
   /**
-   * `tl-time` — the panel→canvas half of the one rule's seam (free-canvas.ts's header).
+   * `tl-time` - the panel→canvas half of the one rule's seam (free-canvas.ts's header).
    * Same CustomEvent-on-the-stage pattern as `tl-add` / `tl-take`, deliberately: the
    * canvas needs to repaint its chrome when the set of ON-SCREEN boxes changes, and it
    * must NOT repaint sixty times a second while a clip merely plays through.
@@ -7045,7 +7047,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The ONION SKIN rides the same event and the same gate. Its neighbour set changes on
    * exactly the boundaries the active set does, so folding `mode` / `opacity` / the two
    * id lists into the signature keeps the "never once per tick" property intact while
-   * making a toggle or an option change fire immediately — `setOnion` simply calls this.
+   * making a toggle or an option change fire immediately - `setOnion` simply calls this.
    * With the preference OFF (the default) the whole onion half costs one `!!` per tick:
    * `onionNeighbours` is never called, and `mode` goes out as the empty string, which is
    * what tells free-canvas not to load the module at all.
@@ -7065,7 +7067,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const opacity = pref ? pref.opacity : 1;
     // BEFORE the gate, and deliberately: the splittable set is NOT the active set. A
     // clip becomes active at its exact start, where a cut is impossible, and becomes
-    // splittable one frame later — so gating the blade's label on tl-time's signature
+    // splittable one frame later - so gating the blade's label on tl-time's signature
     // would leave it disabled for the whole clip. It carries its own memo instead, so
     // the per-tick cost is one scope resolution and no DOM write.
     syncSplitBtn();
@@ -7082,7 +7084,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     syncPlayBtn();
     emitTime(tMs);
     // The latch is a question about the PLAYHEAD, so it is asked on the same tick the
-    // playhead moves on — and answers with no DOM write at all unless the answer
+    // playhead moves on - and answers with no DOM write at all unless the answer
     // changed (see its memo). Outside emitTime's own gate, which is keyed on the
     // ACTIVE set: crossing a diamond changes neither what is on screen nor which
     // clips are playing, so that gate would swallow every latch there is.
@@ -7091,7 +7093,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   });
 
   /**
-   * `fc-seek` — the canvas→panel half. The off-playhead banner's "Go to it" asks for a
+   * `fc-seek` - the canvas→panel half. The off-playhead banner's "Go to it" asks for a
    * time; the clock is ours, so the seek is ours. Untrusted detail (anything can
    * dispatch a CustomEvent), hence the finite/non-negative coercion.
    */
@@ -7112,7 +7114,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *
    * The borrow is a LEASE now (`data-tl-borrowed`, sequence-dom.ts): the applier revokes
    * it the instant the playhead moves onto the box, and the shot's restore re-hides only
-   * what still carries its own token. So this is no longer the fix — it is the belt to
+   * what still carries its own token. So this is no longer the fix - it is the belt to
    * the applier's braces, for the ordinary case where nothing raced. Cheap: `reapply()`
    * is one pass of class/style writes, and this only fires for a box that carried the
    * class at all.
@@ -7124,9 +7126,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * A thumbnail is a picture of the CLIP, never of the frame the playhead is parked on
-   * (plans/104 §6.5). clip-thumbs cannot reach the authored values itself — importing
+   * (plans/104 §6.5). clip-thumbs cannot reach the authored values itself - importing
    * bridge/sequence-dom.ts would drag sequence-plan → @lolly/engine into the chunk
-   * picker.ts loads for `onIdle` alone — so the panel, which already owns both ends,
+   * picker.ts loads for `onIdle` alone - so the panel, which already owns both ends,
    * hands it the two readers. Removed with the panel: a seam pointing at a destroyed
    * clock's store would answer authored reads out of nothing.
    */
@@ -7153,7 +7155,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       sync();
       clock.reapply();
       // The synchronous reapply above gates the canvas AS IT IS NOW, but `reserve()` at
-      // :4839 re-fits (and may re-render) the artboard AFTER this returns — a plain re-fit
+      // :4839 re-fits (and may re-render) the artboard AFTER this returns - a plain re-fit
       // that does not move the clock fires no further gate, so a template whose clips are
       // already timed on first render (sequence-studio "Video") would keep every clip
       // visible at rest until the user first scrubs/plays. Re-assert the gate one frame
@@ -7170,7 +7172,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // screen to say so.
       cancelTake();
       // End any gesture FIRST: Escape is reachable mid-drag, and a live resize keeps
-      // calling reserve() on every subsequent pointermove — leaving the artboard
+      // calling reserve() on every subsequent pointermove - leaving the artboard
       // shrunk behind a hidden panel until the tool is destroyed.
       endGesture(gesture);
       // The menus are body-mounted, so hiding the panel does not hide them.
@@ -7227,7 +7229,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { unsubPose(); } catch { /* already gone */ }
     // The decoded pictures outlive the panel otherwise: nothing else in the web shell
     // consumes this cache (picker.ts imports `onIdle` alone), so up to CACHE_LIMIT
-    // ImageBitmaps — filmstrips of dozens each, plus every frame's node raster — would
+    // ImageBitmaps - filmstrips of dozens each, plus every frame's node raster - would
     // sit there with no DOM referencing them until some other editor happened to evict
     // them. Also detaches the probe <video> and closes the decode context.
     try { releaseClipThumbs(); } catch { /* nothing decoded this session */ }
@@ -7266,7 +7268,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function kfPoseIds(ids: readonly string[]): string[] {
     // A CLOSED panel arms nothing. §8's model is "the playhead's position IS the arm",
     // and with the panel shut there is no playhead on screen, no diamonds, no latch
-    // header and no "+Keyframe" anywhere — so a drag that quietly wrote a keyframe
+    // header and no "+Keyframe" anywhere - so a drag that quietly wrote a keyframe
     // instead of moving the box would be the one thing this model exists to prevent:
     // a keyframe nobody asked for, from a gesture that looked like an ordinary move.
     // `setOpen(false)` keeps the clock's time, so the answer would otherwise survive
@@ -7283,7 +7285,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The gesture's delta, folded into each box's keyframe at the playhead — a FULL
+   * The gesture's delta, folded into each box's keyframe at the playhead - a FULL
    * pose over its active channel set, so every diamond stays a complete honest one.
    * Pure: no commit, no announce, no DOM. The caller writes once.
    */
@@ -7309,7 +7311,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 }
 
 /**
- * Repack the seq row — exposed for free-canvas's create path, which drops a new clip
+ * Repack the seq row - exposed for free-canvas's create path, which drops a new clip
  * onto the magnetic lane and needs it gapless before the next paint. Thin on purpose:
  * the arithmetic is timeline-math's.
  */

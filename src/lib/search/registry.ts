@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight provider registry (plans/99 M2) — the contract between the
+ * The spotlight provider registry (plans/99 M2) - the contract between the
  * overlay (components/spotlight.ts) and the domain providers (./providers/*).
  *
  * Providers federate at RUNTIME over data the client already holds (the synced
- * tool index, IndexedDB state/assets, static registries) — there is no
+ * tool index, IndexedDB state/assets, static registries) - there is no
  * build-time unified index, so per-brand privacy holds by construction
  * (plans/99 principle 2). Hits NAVIGATE, they never mutate (principle 3).
  *
- * Group presentation is fixed (GROUP_ORDER) — spotlight groups; ranking happens
+ * Group presentation is fixed (GROUP_ORDER) - spotlight groups; ranking happens
  * within a group only, by SearchHit.score (lib/search/match.ts scoring). Which
  * group a view "owns", and whether that view live-filters behind the overlay or
  * sends everything to it, is declared in ROUTE_DOMAIN (§2a). Either way the own
@@ -24,30 +24,30 @@ export type SearchGroupId = 'tools' | 'utilities' | 'projects' | 'catalog' | 'se
 export interface SearchHit {
   /** Inline SVG markup for the row glyph (lib/icons.ts `icon(...)`), or ''. */
   icon: string;
-  /** Row title — already localized (t()/index-localized) plain text. */
+  /** Row title - already localized (t()/index-localized) plain text. */
   title: string;
-  /** One-line context (category, folder path, section name) — plain text. */
+  /** One-line context (category, folder path, section name) - plain text. */
   subtitle?: string;
   /** Navigation target: an in-app hash href, or a path for docs pages. */
   href: string;
-  /** lib/search scoreHaystack value — orders rows within the group. */
+  /** lib/search scoreHaystack value - orders rows within the group. */
   score: number;
 }
 
 export interface SearchProvider {
   id: SearchGroupId;
   /** Tokens come pre-folded from lib/search tokenize(); return the top hits up
-   *  to `limit`, best score first. Must never throw for an empty result — and
+   *  to `limit`, best score first. Must never throw for an empty result - and
    *  a provider that CAN'T serve (data missing, fetch failed) returns []. */
   search(tokens: readonly string[], limit: number): Promise<SearchHit[]>;
 }
 
-/** Fixed presentation order (plans/99 §2a — no interleaved global ranking). The
+/** Fixed presentation order (plans/99 §2a - no interleaved global ranking). The
  *  `ask` group is LAST: it is the fallback affordance ("ask Lolly about this")
  *  under whatever concrete hits the other providers found (plans/103 M0). */
 export const GROUP_ORDER: readonly SearchGroupId[] = ['tools', 'utilities', 'projects', 'catalog', 'settings', 'places', 'docs', 'ask'];
 
-/** Group headers — English t() keys, translated at render time. */
+/** Group headers - English t() keys, translated at render time. */
 export const GROUP_LABELS: Record<SearchGroupId, string> = {
   tools: 'Tools',
   utilities: 'Utilities',
@@ -59,7 +59,7 @@ export const GROUP_LABELS: Record<SearchGroupId, string> = {
   ask: 'Ask Lolly',
 };
 
-/** §2a — which group is a route's own domain, and its tier. Routes absent here
+/** §2a - which group is a route's own domain, and its tier. Routes absent here
  *  (an unclaimed bar would only show on future M3 routes) show every group. */
 export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' | 'overlay' }> = {
   gallery: { group: 'tools', tier: 'live' },
@@ -70,7 +70,7 @@ export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' |
   dashboard: { group: 'settings', tier: 'overlay' },
 };
 
-/** "See all in <view> →" targets — the explicit ?q= handoff (plans/99 §2a).
+/** "See all in <view> →" targets - the explicit ?q= handoff (plans/99 §2a).
  *  Only the four list views have one; settings/places/docs groups end plain. */
 export const GROUP_SEE_ALL: Partial<Record<SearchGroupId, (q: string) => string>> = {
   tools: (q) => `#/?q=${encodeURIComponent(q)}`,
@@ -98,7 +98,7 @@ export function searchProviders(): readonly SearchProvider[] {
   return [...providers].sort((a, b) => GROUP_ORDER.indexOf(a.id) - GROUP_ORDER.indexOf(b.id));
 }
 
-/** Test seam — spotlight.test.ts swaps fake providers in. */
+/** Test seam - spotlight.test.ts swaps fake providers in. */
 export function resetProviders(): void {
   providers.length = 0;
 }

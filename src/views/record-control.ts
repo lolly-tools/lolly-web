@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Device recording control — the Record button + framing viewfinder + coaching HUD +
+// Device recording control - the Record button + framing viewfinder + coaching HUD +
 // live self-view + timer + capture-session orchestration for a tool declaring
 // render.capture. Extracted verbatim from tool.ts: a self-contained, module-level
 // subsystem that closes over only its param object plus these imports.
@@ -41,12 +41,12 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   stageEl.appendChild(btn);
   stageEl.appendChild(timerEl);
   // Marks a capture-tool stage so its overlay text can size to the canvas (a scoped
-  // container context — see .tool-stage.has-record in tool.css).
+  // container context - see .tool-stage.has-record in tool.css).
   stageEl.classList.add('has-record');
 
   // Where the live camera view mounts. An EDITOR-layout record tool (the `record`
   // tool) renders a [data-record-camera] placeholder in its MIDDLE frame, so the
-  // viewfinder / self-view sit inside that frame — inheriting its pan/zoom/fit — rather
+  // viewfinder / self-view sit inside that frame - inheriting its pan/zoom/fit - rather
   // than covering the whole stage. Plain capture tools (top-tail-recorder) have no
   // placeholder → the camera falls back to a full-stage overlay, unchanged. The
   // placeholder is re-created on every editor re-render (contentEl.innerHTML rebuild),
@@ -55,7 +55,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   const cameraHost = (): HTMLElement =>
     (stageEl.querySelector('[data-record-camera]') as HTMLElement | null) ?? stageEl;
 
-  // Flip-camera control — offered only where a rear camera is the point: a touch device
+  // Flip-camera control - offered only where a rear camera is the point: a touch device
   // recording video/av. Sets `facingMode` for the framing viewfinder AND the next take.
   let facingMode: 'user' | 'environment' = 'user';
   const canFlip = wantVideo && !!host.media?.isAvailable?.() && matchMedia('(pointer: coarse)').matches;
@@ -87,8 +87,8 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   const flasher = createTipFlasher(help.flash);
   let flashUnsub: (() => void) | null = null;
   if (host.recorder) {
-    // A red (hot) meter held this long = a CONSTANT loud source — a fan / AC / air blowing
-    // on the mic — not speech's brief peaks (speech dips between syllables and resets it).
+    // A red (hot) meter held this long = a CONSTANT loud source - a fan / AC / air blowing
+    // on the mic - not speech's brief peaks (speech dips between syllables and resets it).
     const RED_SUSTAIN_MS = 2000, FAN_COOLDOWN_MS = 12000;
     let redSince = 0, fanFlashedAt = -Infinity;
     flashUnsub = host.recorder.meter.subscribe((level) => {
@@ -102,7 +102,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         if (now - redSince >= RED_SUSTAIN_MS && now - fanFlashedAt >= FAN_COOLDOWN_MS) {
           fanFlashedAt = now; flasher.reset(); help.flash('fan');
         }
-        return;  // while red, the fan tracker owns coaching — don't also push the generic cue
+        return;  // while red, the fan tracker owns coaching - don't also push the generic cue
       }
       redSince = 0;
       flasher.push(coaching.cue);
@@ -119,7 +119,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   };
   // The FIRST tap warms the capture device (mic sound-check / camera framing) rather than
-  // recording — so the idle button says so plainly instead of a misleading "Record". Once
+  // recording - so the idle button says so plainly instead of a misleading "Record". Once
   // warmed (armed), the next tap records. If this tool/shell can't arm (no level hook / no
   // camera), the first tap records directly, so it just says "Record".
   const warmLabel = isAudio ? 'Warm the mic' : (wantAudio ? 'Warm the camera and mic' : 'Warm the camera');
@@ -141,7 +141,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   render();
 
   // While awaiting getUserMedia (arm/begin) a slow permission prompt would otherwise
-  // leave the button disabled and unlabelled — a dead UI. Show a transient "Starting…"
+  // leave the button disabled and unlabelled - a dead UI. Show a transient "Starting…"
   // affordance (and announce it) until the try/catch settles and render() restores state.
   const showStarting = (): void => {
     btn.disabled = true;
@@ -152,8 +152,8 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
 
   // Exposure-coaching state. Declared up here (ahead of the self-view section, whose
   // subscribeRecordPreview fires synchronously) so the sampler it may start never reads a
-  // `let`/`const` still in its temporal dead zone. The rest of the coaching wiring — the
-  // HUD, feedExposure, the sampler loop — lives in the coaching section below.
+  // `let`/`const` still in its temporal dead zone. The rest of the coaching wiring - the
+  // HUD, feedExposure, the sampler loop - lives in the coaching section below.
   const wantExposure = wantVideo && !!host.media?.isAvailable?.(); // exposure coaching available?
   let sampCanvas: HTMLCanvasElement | null = null;                 // offscreen sampler for the take self-view
   let sampRaf = 0, sampAt = 0;
@@ -163,7 +163,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   let vfUnsub: (() => void) | null = null;
   async function startViewfinder(): Promise<void> {
     if (isAudio || !host.media?.isAvailable?.() || vfUnsub) return;
-    try { await host.media.start({ facingMode }); } catch { return; /* denied — record still works, just no live view */ }
+    try { await host.media.start({ facingMode }); } catch { return; /* denied - record still works, just no live view */ }
     viewfinder = document.createElement('canvas');
     viewfinder.className = 'canvas-record-viewfinder';
     viewfinder.setAttribute('data-export-hide', '');
@@ -174,14 +174,14 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       if (viewfinder.width !== frame.width) viewfinder.width = frame.width;
       if (viewfinder.height !== frame.height) viewfinder.height = frame.height;
       vctx.putImageData(new ImageData(frame.data.slice(), frame.width, frame.height), 0, 0);
-      // Exposure coaching off the live framing frame (RGBA already in hand — no readback).
+      // Exposure coaching off the live framing frame (RGBA already in hand - no readback).
       feedExposure(frame.data, frame.width, frame.height);
     }, { maxEdge: 640 });
   }
   function stopViewfinder(): void {
     if (vfUnsub) { vfUnsub(); vfUnsub = null; try { host.media?.stop(); } catch { /* ignore */ } }
     viewfinder?.remove(); viewfinder = null;
-    // Framing has ended (flip / begin) — clear any lingering exposure warning; the take's
+    // Framing has ended (flip / begin) - clear any lingering exposure warning; the take's
     // self-view sampler takes over from here.
     coachHud?.updateExposure({ tone: 'ok', warning: '', cue: null });
     exposureFlasher.reset();
@@ -189,7 +189,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
 
   // ── Live self-view during the take ──────────────────────────────────────────
   // Once recording starts the framing viewfinder is torn down so the recorder can open
-  // its own stream — leaving the take "blind". The recorder publishes that stream via a
+  // its own stream - leaving the take "blind". The recorder publishes that stream via a
   // shell-internal channel (record-preview.ts, since the engine is DOM-free); mirror it
   // into a <video> so the user keeps seeing themselves. Cleared when the take ends.
   let previewVideo: HTMLVideoElement | null = null;
@@ -232,9 +232,9 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   // An audio tool renders its own meter in the template (onLevel); a video/av tool's
   // canvas shows the composited bookends, so the shell draws a level+warning HUD over
   // the viewfinder instead. It carries two rows:
-  //   • audio  — fed by the raw sound-check meter (levels + noiseFloor/hum/hiss), live
+  //   • audio - fed by the raw sound-check meter (levels + noiseFloor/hum/hiss), live
   //     from arm through the take;
-  //   • exposure — fed by the live camera frames (too dark / too bright / overexposed),
+  //   • exposure - fed by the live camera frames (too dark / too bright / overexposed),
   //     off the framing viewfinder while arming and off the self-view during the take.
   const wantCoach = wantAudio && !isAudio && !!host.recorder;   // audio-level coaching (wantExposure hoisted above)
   const coachTarget: CoachTarget = 'normal';
@@ -271,7 +271,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       const vw = vid.videoWidth, vh = vid.videoHeight;
       if (!vw || !vh) return;
       sampAt = now;
-      const scale = Math.min(1, 160 / Math.max(vw, vh));  // downscale — exposure needs no detail
+      const scale = Math.min(1, 160 / Math.max(vw, vh));  // downscale - exposure needs no detail
       const w = Math.max(1, Math.round(vw * scale)), h = Math.max(1, Math.round(vh * scale));
       if (sampCanvas!.width !== w) sampCanvas!.width = w;
       if (sampCanvas!.height !== h) sampCanvas!.height = h;
@@ -353,7 +353,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   async function stop(): Promise<void> {
     if (state !== 'recording') return;
     if (timerRaf) cancelAnimationFrame(timerRaf);
-    // Measured take length — the one reliable duration source. A fresh MediaRecorder blob
+    // Measured take length - the one reliable duration source. A fresh MediaRecorder blob
     // often reports duration=Infinity/0, so we hand this to the compositor as a fallback.
     const takeMs = startTs ? performance.now() - startTs : 0;
     btn.disabled = true;
@@ -369,7 +369,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     if (isAudio && runtime.hasLevelHook) { try { coachPhase = 'check'; await runtime.startMeter(); state = 'armed'; render(); } catch { /* ignore */ } }
   }
 
-  // First tap ARMS (audio: mic sound-check; video: camera framing) — so the camera /
+  // First tap ARMS (audio: mic sound-check; video: camera framing) - so the camera /
   // mic only opens on an explicit tap, never just from opening the tool. Second tap
   // records.
   async function arm(): Promise<void> {
@@ -414,12 +414,12 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       const prevClip = runtime.getModel().find(i => i.id === 'clip')?.value as { id?: string; url?: string } | undefined;
       // Sign the take at capture time as a live camera+mic capture (IPTC digitalCapture,
       // on-device Lolly) so the clip file self-asserts AND, placed into the composition,
-      // chains as a credentialed ingredient. Never throws — a stamping hiccup returns the
+      // chains as a credentialed ingredient. Never throws - a stamping hiccup returns the
       // original bytes + a null credential, so a take is never lost.
       const { stampCaptureClip } = await import('../bridge/export.ts');
       const { blob: clip, credential } = await stampCaptureClip(host, blob, ext, { camera: true, microphone: true });
       // Persist the take as a DURABLE user asset so a SAVED session restores its footage
-      // after a reload — a blob: URL dies on navigation and a bare `recording.mp4` id
+      // after a reload - a blob: URL dies on navigation and a bare `recording.mp4` id
       // can't be re-resolved, so before this the clip vanished from any reopened session.
       // storeRecordingAsset also retires the previous auto-recorded take (no orphan pile-up)
       // and stamps meta.bytes for the save/exit dialog. Fall back to an in-memory blob URL
@@ -434,15 +434,15 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         ref = { source: 'user', id: `recording.${ext}`, type: 'video', format: ext, url: URL.createObjectURL(clip), meta: { bytes: clip.size } };
       }
       // Free the prior take's object URL only if it's OUR in-memory fallback (id
-      // `recording.<ext>`, minted just above). Every other clip URL — a persisted
-      // user/recording|upload/* or a library asset — is bridge-owned + cached, so
+      // `recording.<ext>`, minted just above). Every other clip URL - a persisted
+      // user/recording|upload/* or a library asset - is bridge-owned + cached, so
       // revoking it would break a later get() of the same asset; the store handles its
       // own eviction on delete.
       if (prevClip?.url?.startsWith('blob:') && String(prevClip.id).startsWith('recording.')) URL.revokeObjectURL(prevClip.url);
       await runtime.setInput('clip', ref);
       markSessionDirty();
       // An editable record stage ([data-record-camera] middle frame) auto-processes the
-      // export the moment you stop — the tab is foreground and the clip is fresh, so the
+      // export the moment you stop - the tab is foreground and the clip is fresh, so the
       // real-time compositor runs cleanly. Other capture tools (top-tail-recorder) keep
       // the manual "export in the bar" flow.
       if (stageEl.querySelector('[data-record-camera]')) { await autoProcessRecording(ext, takeMs); return; }
@@ -450,10 +450,10 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       return;
     }
     // Audio: sign the take so the downloaded voice recording self-asserts as a live
-    // mic capture — the SAME credential a video take gets. Every container a
+    // mic capture - the SAME credential a video take gets. Every container a
     // MediaRecorder hands back here is one the engine embeds into: audio/webm (Opus in
     // Matroska), audio/mp4 (AAC → the m4a BMFF placer, which names the manifest
-    // audio/mp4 rather than video/mp4), and audio/ogg (Ogg Opus, what Firefox writes —
+    // audio/mp4 rather than video/mp4), and audio/ogg (Ogg Opus, what Firefox writes - 
     // native support landed with the Ogg placer). captureContainer maps MIME → the
     // container key; null (an encoder we don't recognise) saves unsigned + logs, rather
     // than mislabelling the bytes.
@@ -474,7 +474,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     try {
       // CRITICAL: setInput('clip') repaints by rebuilding #tool-content's innerHTML, which
       // REPLACES the whole strip node. So we must grab the stage AFTER that paint lands and
-      // re-query it live — capturing it up front (as this did before) hands renderRecord the
+      // re-query it live - capturing it up front (as this did before) hands renderRecord the
       // stale pre-clip strip with no [data-record-clip], and the export comes out as just the
       // intro+outro bookends. The paint is coalesced behind rAF (and the onInput hook can
       // schedule a second), so poll a few frames until the clip <video> actually appears.
@@ -501,7 +501,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       }
       const filename = (runtime.manifest?.name || 'Record').trim() || 'Record';
       const blob = await runtime.export(recStage, ext === 'webm' ? 'webm' : 'mp4', {});
-      // Never hand back an empty render — a 0-byte download reads as "broken" with no
+      // Never hand back an empty render - a 0-byte download reads as "broken" with no
       // clue. Surface it instead so the user can retry / use the manual Export button.
       if (!blob || blob.size < 1024) throw new Error(`empty render (${blob?.size ?? 0} bytes)`);
       await host.export.download(blob, `${filename}.${ext}`);
@@ -515,7 +515,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     }
   }
 
-  // "Processing your video" curtain — darkens the stage with a spinner while the
+  // "Processing your video" curtain - darkens the stage with a spinner while the
   // compositor runs. data-export-hide keeps it out of any concurrent capture.
   function showProcessing(): { close: () => void; succeed: (sub: string) => void } {
     const ov = document.createElement('div');
@@ -531,7 +531,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       '</div>';
     stageEl.appendChild(ov);
     const close = (): void => ov.remove();
-    // Swap to a "ready + size" confirmation, then dismiss — so the user sees what was
+    // Swap to a "ready + size" confirmation, then dismiss - so the user sees what was
     // produced (and how big) rather than the curtain just vanishing.
     const succeed = (sub: string): void => {
       const spin = ov.querySelector<HTMLElement>('.canvas-processing-spinner');
@@ -547,7 +547,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
 
   // Post-record download bar for audio: MP3 (primary) + the native container.
   let dlBar: HTMLElement | null = null;
-  let dlUrl: string | null = null;  // the <audio> preview's object URL — revoked when the bar is replaced/dismissed/torn down
+  let dlUrl: string | null = null;  // the <audio> preview's object URL - revoked when the bar is replaced/dismissed/torn down
   function showAudioDownload(blob: Blob, mimeType: string, container?: string | null): void {
     dlBar?.remove();
     if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
@@ -570,7 +570,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     // Say where the credential can be READ rather than implying parity: MP3's ID3v2
     // GEOB and M4A's BMFF box are the C2PA spec's own homes, while the Ogg and
     // Matroska bindings are Lolly's (c2pa-rs has a reader for neither). Since the
-    // recorder prefers audio/webm, the DEFAULT container is the least portable one —
+    // recorder prefers audio/webm, the DEFAULT container is the least portable one - 
     // so the MP3 save is the one that travels, and the affordance should not be coy
     // about it (plan 102 §5.4).
     const portableCred = container === 'm4a' || container === 'mp3' || container === 'wav';
@@ -590,7 +590,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       mp3Btn.disabled = true; mp3Btn.textContent = 'Encoding…';
       try {
         // Transcoding rebuilds the bytes, so the take's own credential does not survive
-        // it — re-sign the MP3 as what it is: the same live mic capture, re-encoded on
+        // it - re-sign the MP3 as what it is: the same live mic capture, re-encoded on
         // device (created/digitalCapture + a c2pa.converted step). Without this the
         // PRIMARY save button was the one shipping unsigned.
         const mp3 = await blobToMp3(blob);
@@ -620,7 +620,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
     // Free the last captured clip's object URL only if it's OUR in-memory fallback (id
     // `recording.<ext>`). A persisted user/* or library clip's URL is bridge-owned +
-    // cached — revoking it would break a later read of the same asset elsewhere.
+    // cached - revoking it would break a later read of the same asset elsewhere.
     const clip = runtime.getModel().find(i => i.id === 'clip')?.value as { id?: string; url?: string } | undefined;
     if (clip?.url?.startsWith('blob:') && String(clip.id).startsWith('recording.')) URL.revokeObjectURL(clip.url);
   };

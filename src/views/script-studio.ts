@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Script audio (#/script) — the writing surface over on-device speech.
+ * Script audio (#/script) - the writing surface over on-device speech.
  *
  * The dialog (views/script-audio.ts) is a quick capture point inside the asset
  * picker and the catalog; this is the same synthesis with room to actually
  * WRITE. The script sheet is the hero: generous type, a tall page, and the
- * numbers a narrator cares about sitting quietly under it — how many words, and
+ * numbers a narrator cares about sitting quietly under it - how many words, and
  * roughly how long they take to listen to at a comfortable pace. Everything
  * mechanical (voice, speed, generate, save) lives in a side rail so the words
  * keep the widest column.
@@ -43,11 +43,11 @@ import type { SpeechResult } from '@lolly-tools/core/host-v1';
 /**
  * The honest listening pace: ~150 words a minute is the well-worn narration
  * average, and the label that renders this number always says it is an
- * estimate — the model's actual pace varies with the words.
+ * estimate - the model's actual pace varies with the words.
  */
 export const LISTEN_WPM = 150;
 
-/** Words a voice would actually speak — counted on the SPOKEN text, so code
+/** Words a voice would actually speak - counted on the SPOKEN text, so code
  *  blocks and image URLs never inflate the number. Pure, tested. */
 export function countWords(spoken: string): number {
   return spoken.match(/\S+/g)?.length ?? 0;
@@ -61,7 +61,7 @@ export function estimateListenSeconds(words: number, speed = 1): number {
 }
 
 /** The estimate as a whole sentence (translators need the sentence, not glued
- *  fragments — the pdf-extract count convention). Always says "an estimate". */
+ *  fragments - the pdf-extract count convention). Always says "an estimate". */
 export function formatListenEstimate(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   const m = Math.floor(total / 60);
@@ -74,7 +74,7 @@ export function formatListenEstimate(seconds: number): string {
 /**
  * One short audition line per voice, synthesized on first request and kept for
  * the session (module-level, so revisiting the view replays instantly). The
- * value is an object URL over a small WAV — a second or two of audio.
+ * value is an object URL over a small WAV - a second or two of audio.
  */
 const auditionUrls = new Map<string, Promise<string>>();
 
@@ -96,7 +96,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
         </header>
       </div>`;
     mountBackPill(viewEl);
-    // A deep link onto an unsupported shell is still a dead end without this —
+    // A deep link onto an unsupported shell is still a dead end without this - 
     // the back pill needs somewhere to have come from; Home always answers.
     mountHomeFab(viewEl);
     mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
@@ -170,7 +170,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   const saveBtn     = viewEl.querySelector<HTMLButtonElement>('[data-save]')!;
   const savedEl     = viewEl.querySelector<HTMLElement>('[data-saved]')!;
 
-  // The generate shortcut, named in the platform's own words (textContent — no
+  // The generate shortcut, named in the platform's own words (textContent - no
   // markup, so no sink).
   const isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform);
   kbdEl.textContent = tRaw('{keys} generates', { keys: isMac ? '⌘ Enter' : 'Ctrl Enter' });
@@ -179,7 +179,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   let abort: AbortController | null = null;
   let previewUrl: string | null = null;
   // The last generated clip + the exact inputs that produced it (Save stores
-  // these, not the live form — the dialog's discipline).
+  // these, not the live form - the dialog's discipline).
   let result: SpeechResult | null = null;
   let wavBlob: Blob | null = null;
   let spokenText = '';
@@ -214,7 +214,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   };
   paintMeter();
 
-  // An edit to the script, voice or speed makes the preview stale — drop it so
+  // An edit to the script, voice or speed makes the preview stale - drop it so
   // Save can only ever store what the listener just heard.
   const dropPreview = (): void => {
     if (!result) return;
@@ -301,7 +301,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
         onProgress: paintProgress,
       });
       // The view may have unmounted mid-synthesis (cleanup aborted the signal,
-      // but a shell may resolve anyway) — never touch the replaced DOM.
+      // but a shell may resolve anyway) - never touch the replaced DOM.
       if (!viewEl.isConnected) return;
       result = res;
       spokenText = spoken;

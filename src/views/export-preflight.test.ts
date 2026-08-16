@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * views/export-preflight.ts — the export panel's "Before you export" card.
+ * views/export-preflight.ts - the export panel's "Before you export" card.
  *
  * Run directly:  node --test shells/web/src/views/export-preflight.test.ts
  *
@@ -26,11 +26,11 @@ import type { Count, Finding, PreflightReport } from '@lolly/engine';
 import { preflight } from '@lolly/engine';
 
 // The export-panel surface is a personal OPT-IN flag, default OFF (an individual
-// exporting a PNG must never be ambushed by prepress findings — PREFLIGHT_FLAG in
+// exporting a PNG must never be ambushed by prepress findings - PREFLIGHT_FLAG in
 // feature-flags.ts; a control plane can default it on or hide the toggle through
-// the ordinary flag governance). Pin the default first — with no mirror and no
+// the ordinary flag governance). Pin the default first - with no mirror and no
 // override the flag's own `default:false` must hold, never the historic
-// missing-key-means-ON fallback — then enable for the rest of the suite, which
+// missing-key-means-ON fallback - then enable for the rest of the suite, which
 // tests the surface as a user who turned it on sees it.
 test('preflight card is absent by default — the user (or governance) opts in', () => {
   assert.equal(preflightRowHtml(), '', 'flag off ⇒ no card markup at all');
@@ -185,7 +185,7 @@ test('no view, for any job, contains a currency symbol or the word cost', () => 
 
 test('a declared FINISH surfaces as an error the user can read, through the real rules', () => {
   // cmyk-tiff has no /Separation plate, so a finish genuinely flattens into the
-  // process build and cannot overprint — still an error. (On pdf-cmyk the finish now
+  // process build and cannot overprint - still an error. (On pdf-cmyk the finish now
   // overprints as its own named plate, so it is an info heads-up, tested in the engine.)
   const r = preflight({
     manifest: { id: 't', render: { width: 800, height: 600 } },
@@ -259,7 +259,7 @@ test('the metaphor is the CONTENT of the check, the badge is its STATUS', () => 
   assert.equal(metaphorIcon('count.pages.pages'), 'document', 'family prefix');
   assert.equal(metaphorIcon('input.required-blank'), 'keyboard', 'family prefix');
   assert.equal(metaphorIcon('a.brand.new.check'), 'checklist', 'unknown id still renders, via the default');
-  // Status: severity, never colour alone — a distinct glyph per tone.
+  // Status: severity, never colour alone - a distinct glyph per tone.
   assert.equal(statusIcon('error'), 'alert');
   assert.equal(statusIcon('warn'), 'alert');
   assert.equal(statusIcon('note'), 'info');

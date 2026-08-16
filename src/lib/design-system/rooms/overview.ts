@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Overview room — the studio's hub and its completion state (plan 97 §5).
+ * The Overview room - the studio's hub and its completion state (plan 97 §5).
  *
- * Two faces of one room, decided by whether a design system is in force here —
+ * Two faces of one room, decided by whether a design system is in force here - 
  * this device's own install or a real one shipped by the catalog, either way:
  *
  *  - EMPTY: two doors. "Start from a file" hands off to the source modal the
  *    view already owns; "Start from scratch" walks into Colours. A quiet exit
  *    to the tools sits under them, because leaving is a legitimate answer.
- *  - FURNISHED: what exists, at a glance — the palette, the type families, how
+ *  - FURNISHED: what exists, at a glance - the palette, the type families, how
  *    many logo slots are filled, how many tokens there are. Every block is a
  *    door into its room. Counts, never a progress bar: nothing here is owed.
  *
- * The website door (plan 97 §9) is deliberately absent rather than disabled —
+ * The website door (plan 97 §9) is deliberately absent rather than disabled - 
  * it arrives with M6, gated on a transport that actually works, and a greyed
  * third door would advertise something nobody can use.
  *
@@ -35,7 +35,7 @@ export type OverviewHost = HostV1;
 
 export interface OverviewCtx {
   host: OverviewHost;
-  /** The mounted editor, or null when it failed or is still mounting — read
+  /** The mounted editor, or null when it failed or is still mounting - read
    *  late, because the room outlives any one editor mount. */
   editor: () => BrandEditorHandle | null;
   /** Open a room by its `?area=` key. */
@@ -50,9 +50,9 @@ export interface OverviewRoom {
   teardown: () => void;
 }
 
-/** What the room shows. Everything is a count or a name — no progress state. */
+/** What the room shows. Everything is a count or a name - no progress state. */
 export interface OverviewModel {
-  /** A design system is in force here — this device's own install, or a real
+  /** A design system is in force here - this device's own install, or a real
    *  one shipped by the catalog. False only on the starter placeholder. */
   furnished: boolean;
   /** Swatch values for the strip, capped at STRIP_MAX. */
@@ -67,8 +67,8 @@ export interface OverviewModel {
 const STRIP_MAX = 12;
 
 /** The starter catalog's placeholder tokens asset (brands/lolly-start). Matching
- *  it is the shell's existing "unbranded" test — views/gallery.ts gates the
- *  first-run welcome on the same id — and it is the one tokens asset that means
+ *  it is the shell's existing "unbranded" test - views/gallery.ts gates the
+ *  first-run welcome on the same id - and it is the one tokens asset that means
  *  nothing has been furnished yet. */
 const STARTER_TOKENS_ID = 'lolly/tokens/brand';
 
@@ -93,12 +93,12 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
   // "Furnished" is about whether a design system EXISTS here, not about who
   // installed it. bridge/tokens.ts resolves an unlocked catalog's own tokens doc
   // when there is no user install, so host.tokens below would answer with that
-  // pack's full palette — and an "Nothing here yet" empty state over a painted
+  // pack's full palette - and an "Nothing here yet" empty state over a painted
   // Colours room is simply false. The one genuinely empty case is the starter
   // placeholder, which is also the shell's own unbranded signal.
   let tokensId = '';
   try { tokensId = (await assets._findMetaByType?.('tokens'))?.id ?? ''; }
-  catch { /* discovery unavailable — treat as not installed here */ }
+  catch { /* discovery unavailable - treat as not installed here */ }
   if (!tokensId || tokensId === STARTER_TOKENS_ID) return EMPTY_MODEL;
 
   const swatches = await tokens?.colors?.().catch(() => []) ?? [];
@@ -118,7 +118,7 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
   // counts them, so hand every one straight back rather than leaking it.
   const logos = await listLogos(host as unknown as Parameters<typeof listLogos>[0]).catch(() => []);
   for (const logo of logos) {
-    try { URL.revokeObjectURL(logo.url); } catch { /* no blob-URL support — nothing to release */ }
+    try { URL.revokeObjectURL(logo.url); } catch { /* no blob-URL support - nothing to release */ }
   }
 
   return {
@@ -234,7 +234,7 @@ export function mountOverviewRoom(el: HTMLElement, ctx: OverviewCtx): OverviewRo
   paint(null);
   el.addEventListener('click', onClick);
   // A palette change lands here from anywhere in the studio, including rooms
-  // that repaint on every frame of a wheel drag — so only a VISIBLE overview
+  // that repaint on every frame of a wheel drag - so only a VISIBLE overview
   // re-reads. A hidden one is caught by the refresh() the view runs on entry.
   const unsubscribe = ctx.editor()?.onPalette(() => { if (!el.hidden) refresh(); }) ?? ((): void => {});
   refresh();

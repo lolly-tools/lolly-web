@@ -5,15 +5,15 @@
  * main.ts). Mirrors the desktop bridge's capture.vector(): a Chromium print of an
  * app page runs through the SAME interpreter a .ai/.pdf upload takes
  * (views/pdf-import.ts → engine pdfNodesToSvg), so boxes, fills, paths and images
- * come back as real vectors — not a screenshot in a scalable box.
+ * come back as real vectors - not a screenshot in a scalable box.
  *
  * Text is OUTLINED to real <path>s by default (the same HarfBuzz path the SVG
- * export uses — resolveVectorFont + host.text.toPath), so a shot is pixel-faithful
+ * export uses - resolveVectorFont + host.text.toPath), so a shot is pixel-faithful
  * and needs no fonts at render time: an <img>-embedded SVG runs in secure static
  * mode and can't fetch webfonts, so un-outlined <text> would fall back to
  * sans-serif. Any run we can't outline (a font we can't resolve, an uncovered
  * glyph) stays <text>, and embedFonts still inlines the app's own @font-face for
- * those as a safety net — so nothing is ever lost, it just isn't scalable text.
+ * those as a safety net - so nothing is ever lost, it just isn't scalable text.
  */
 import { openPdfFile } from '../views/pdf-import.ts';
 import { resolveVectorFont, type VectorFont } from '../bridge/font-registry.ts';
@@ -30,7 +30,7 @@ export interface VectorShotResult {
   /** Page size in the SVG's own units (PDF points). */
   width: number;
   height: number;
-  /** Drawable nodes the interpreter found — 0 means the print was blank. NOT
+  /** Drawable nodes the interpreter found - 0 means the print was blank. NOT
    *  reduced by `cropCssPx`; see PdfPageSvg.elementCount. */
   elementCount: number;
   warnings: string[];
@@ -43,7 +43,7 @@ export interface VectorShotOpts {
    * The region the caller is actually going to keep, in CSS pixels of the printed
    * page (x/y measured from the top-left of the FULL printed page, i.e. scroll
    * offset already folded in). Nodes that provably cannot paint inside it are
-   * dropped straight after interpretation — before raster decode, shading-tile
+   * dropped straight after interpretation - before raster decode, shading-tile
    * rasterisation and text outlining, which is where a cropped capture spends its
    * bytes and its seconds.
    *
@@ -164,7 +164,7 @@ export async function embedFonts(svg: string, warnings: string[]): Promise<strin
 // The print → PDF → interpret round-trip re-encodes every raster on the page,
 // and some encodings don't survive (webp previews, patterns). But the ORIGINALS
 // are right here in the live DOM. So: inventory every visible <img> and <canvas>
-// (document-space rect + original bytes — webp stays webp; a canvas gives its
+// (document-space rect + original bytes - webp stays webp; a canvas gives its
 // live pixels), then let the interpreter substitute each image node whose
 // geometry matches, keeping z-order and losing nothing to transcoding.
 
@@ -211,7 +211,7 @@ async function collectDomRasters(warnings: string[]): Promise<DomRaster[]> {
   return out;
 }
 
-/** Best inventory hit for an image node's CSS-px rect — centre and size must
+/** Best inventory hit for an image node's CSS-px rect - centre and size must
  *  both agree within a few px, so unrelated rasters can never swap in. */
 function matchRaster(rasters: DomRaster[], rect: { x: number; y: number; w: number; h: number }): string | null {
   let best: DomRaster | null = null;
@@ -231,7 +231,7 @@ function matchRaster(rasters: DomRaster[], rect: { x: number; y: number; w: numb
 /**
  * A text-run outliner backed by the app's own shaper (host.text.toPath) and font
  * resolver (resolveVectorFont, decompressing woff2→sfnt as HarfBuzz needs). One
- * VectorFont per (family, weight) is cached — a page has few distinct faces but
+ * VectorFont per (family, weight) is cached - a page has few distinct faces but
  * hundreds of runs. Returns per-line path `d`, or null to keep the <text>
  * fallback (font unresolved, or any glyph uncovered by the whole fallback chain).
  */
@@ -288,19 +288,19 @@ export async function pdfToVectorSvg(b64: string, host?: OutlineHost, opts: Vect
   const page = await handle.pageToSvg(0, {
     warn: (msg) => warnings.push(msg),
     outlineText,
-    // A docs shot is TERMINAL output — it is written to a file and shown in an
-    // <img>, never re-exported — so it can hoist repeated path data into
+    // A docs shot is TERMINAL output - it is written to a file and shown in an
+    // <img>, never re-exported - so it can hoist repeated path data into
     // <defs>/<use>. That matters here because Chromium prints a dashed border as
     // four separately-clipped copies of the whole dash ring: 37% of a brand-studio
     // capture, 50% of a logo-grid one. Asset ingest must NOT set this (svg-ir's
-    // EMF/EPS/DXF path skips <use>) — see PdfPageSvgOpts.dedupePaths.
+    // EMF/EPS/DXF path skips <use>) - see PdfPageSvgOpts.dedupePaths.
     dedupePaths: true,
     resolveImage: (rect) => matchRaster(rasters, {
       x: rect.x / PT_PER_PX, y: rect.y / PT_PER_PX, w: rect.w / PT_PER_PX, h: rect.h / PT_PER_PX,
     }),
     // Only passed when there IS a crop: pdf-import applies it right after
     // interpretation, i.e. before raster inlining, tile rasterisation and text
-    // outlining — which is where a cropped capture spends its bytes and seconds.
+    // outlining - which is where a cropped capture spends its bytes and seconds.
     // See the crop-culling notes in engine/src/pdf-svg.ts for why this is a
     // separate, conservative rect and not windowPdfSvg's authoritative one.
     ...(cull ? { cull } : {}),

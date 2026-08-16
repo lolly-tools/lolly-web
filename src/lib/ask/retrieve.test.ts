@@ -48,7 +48,7 @@ test('empty tokens retrieve nothing', async () => {
 });
 
 test('natural-language questions strip stopwords and match content terms (OR, not AND)', async () => {
-  // The spotlight docs provider (AND) finds nothing for a full question — no
+  // The spotlight docs provider (AND) finds nothing for a full question - no
   // section contains "how" AND "do" AND "i". Ask retrieval must still answer.
   indexBody = [
     { p: 'x', t: 'Exporting', h: 'Transparency', a: 'transparency', x: 'export a transparent png with alpha' },

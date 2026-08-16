@@ -5,7 +5,7 @@
  *
  * Why this is worth its own file: editing a path never loses paint (penEditWrite spreads
  * the existing box and rewrites only the path and the frame), so the whole risk sits in the
- * ONE commit that creates a path — which starts from an empty object and therefore renders
+ * ONE commit that creates a path - which starts from an empty object and therefore renders
  * as nothing at all if a field is left unseeded. A tool may declare `canvas.pathField`
  * (which is what offers the pen) without declaring a `path` add-kind (which is what carries
  * a brand's idea of what a path looks like); Sequence Studio ships exactly that shape, and
@@ -43,7 +43,7 @@ test('pathPaintSeed takes each field from the first source that states it', () =
 
 test('pathPaintSeed treats empty, null and a zero stroke width as "no opinion"', () => {
   // lolly-start's path seed is stroke-only (bg ''), SUSE's is fill-only (stroke '', strokeW 0).
-  // Neither may out-rank a later source that actually has the half it omits — which is the
+  // Neither may out-rank a later source that actually has the half it omits - which is the
   // whole reason this resolves per field instead of taking one seed wholesale.
   const suseish = { bg: '#30ba78', stroke: '', strokeW: 0, fillRule: 'nonzero' };
   const startish = { bg: '', stroke: '#0e1217', strokeW: 4, fillRule: 'nonzero' };
@@ -55,7 +55,7 @@ test('pathPaintSeed treats empty, null and a zero stroke width as "no opinion"',
 
 test('pathPaintSeed keeps stroke colour and width together', () => {
   // A colour with no width paints nothing, and a width with no colour is just as invisible,
-  // so whichever source wins the colour supplies the width — falling back when it has none.
+  // so whichever source wins the colour supplies the width - falling back when it has none.
   const got = pathPaintSeed(F, [{ stroke: '#123456' }], 7);
   assert.equal(got.stroke, '#123456');
   assert.equal(got.strokeW, 7, 'the fallback width rides along rather than leaving a dead stroke');
@@ -130,7 +130,7 @@ const rect = (left: number, top: number, width: number, height: number): DOMRect
 } as DOMRect);
 
 /** jsdom has no PointerEvent, so the overlay's pointer listeners are driven with a
- *  MouseEvent carrying the pointer properties — the same shim the sibling pen suite uses. */
+ *  MouseEvent carrying the pointer properties - the same shim the sibling pen suite uses. */
 function pointerEvent(type: string, o: { x: number; y: number; id?: number }): MouseEvent {
   const e = new W.MouseEvent(type, { bubbles: true, cancelable: true, clientX: o.x, clientY: o.y, button: 0 });
   Object.defineProperty(e, 'pointerId', { value: o.id ?? 1 });
@@ -212,7 +212,7 @@ const key = (k: string): void => {
   dom.window.dispatchEvent(new W.KeyboardEvent('keydown', { key: k, bubbles: true }));
 };
 
-/** Arm the pen — IDEMPOTENT. Finishing a path leaves the pen armed (Escape unwinds one
+/** Arm the pen - IDEMPOTENT. Finishing a path leaves the pen armed (Escape unwinds one
  *  rung at a time), so a second unconditional click would toggle it back off and the next
  *  "draw" would just be a selection click. */
 function armPen(f: Fixture): void {
@@ -264,7 +264,7 @@ test('a drawn path is visible even when the tool declares NO path add-kind', () 
 
 /** Drive a real paint control on the object bar: the stroke panel's width slider. Every
  *  paint write on both bars (fill, stroke colour, and the whole stroke panel) commits
- *  through the same `setField`, so this exercises the seam the memory hangs off — and the
+ *  through the same `setField`, so this exercises the seam the memory hangs off - and the
  *  slider is the one control that needs no popover, which keeps the test about the write. */
 function setStrokeWidthViaControl(f: Fixture, width: number): void {
   const btn = f.stageEl.querySelector<HTMLElement>('.fc-ctxbar [data-cx="stroke"]');
@@ -303,7 +303,7 @@ test('recolouring a NON-path selection does not teach the pen anything', () => {
   const f = mount(WITH_PATH_KIND, [{ id: 'plain', kind: 'box', shape: 'rect', x: 100, y: 100, w: 300, h: 300, bg: '#111111' } as Box]);
   place(f, 250, 250);            // select the plain box
   // The stroke panel is path-only, so a non-path selection is restyled through the field
-  // the object bar does offer it — the same setField the memory listens on.
+  // the object bar does offer it - the same setField the memory listens on.
   const bar = f.stageEl.querySelector<HTMLElement>('.fc-ctxbar');
   assert.ok(bar, 'the plain box is selected and has a bar');
   assert.equal(bar!.querySelector('[data-cx="stroke"]'), null, 'and no stroke button, being a box');

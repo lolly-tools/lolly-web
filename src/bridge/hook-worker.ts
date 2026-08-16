@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Main-thread client for the hook Worker (hook-worker.worker.ts) — the web
+ * Main-thread client for the hook Worker (hook-worker.worker.ts) - the web
  * shell's Worker-isolated HookExecutor (plans/86-worker-isolation-hooks.md M2).
  *
  * `getWorkerHookExecutor()` returns a `HookExecutor` the mount chokepoint injects
@@ -10,16 +10,16 @@
  *   2. snapshots the brand token doc + the sync feature-detect seeds;
  *   3. inits a shared singleton worker with that mount's runId and returns a
  *      `Hooks` object whose worker-backed slots postMessage a hook invocation and
- *      resolve the patch — which runHook already time-boxes like an async hook.
+ *      resolve the patch - which runHook already time-boxes like an async hook.
  * It also SERVICES the worker's `host-call` RPCs against THAT mount's real host
  * (so host.net's per-mount allowlist can't leak across tools), and forwards the
  * worker's batched log lines to host.log.
  *
- * SAFETY: any failure — no Worker, a spawn/init error, a worker crash — makes the
+ * SAFETY: any failure - no Worker, a spawn/init error, a worker crash - makes the
  * executor fall back to the in-realm path, so a tool NEVER fails to mount because
  * isolation was unavailable. The node-carrying export hooks (beforeExport/
  * afterExport/exportStill) always run in-realm (a live DOM node can't cross the
- * boundary) — a documented M2 hybrid.
+ * boundary) - a documented M2 hybrid.
  */
 import { inRealmHookExecutor } from '@lolly/engine';
 import type { HookExecutor, Hooks } from '@lolly/engine';
@@ -145,8 +145,8 @@ async function snapshotTokens(host: HostV1): Promise<{ doc: unknown | null; excl
   } catch { return { doc: null, excluded: [] }; }
 }
 
-/** Run one hook in the worker: strip the (non-serializable) host from ctx — the
- *  worker supplies its own proxy — and await the patch. */
+/** Run one hook in the worker: strip the (non-serializable) host from ctx - the
+ *  worker supplies its own proxy - and await the patch. */
 function invokeInWorker(runId: number, name: WorkerHookName, ctx: unknown): Promise<unknown> {
   const w = ensureWorker();
   const callId = ++callSeq;
@@ -156,7 +156,7 @@ function invokeInWorker(runId: number, name: WorkerHookName, ctx: unknown): Prom
   // STRUCTURED CLONE, deliberately NOT a Transferable. media.ts fans ONE shared
   // MediaFrame object to every live subscriber synchronously (media.ts:74-77), so
   // transferring its buffer would neuter it for a second subscriber. Clone is
-  // ~0.1ms at the 480px default working edge (≤~1ms at the 1920 cap) — negligible
+  // ~0.1ms at the 480px default working edge (≤~1ms at the 1920 cap) - negligible
   // beside the worker's per-frame encode, and it can't corrupt the camera loop.
   return new Promise((resolve, reject) => {
     invokeWaiters.set(key, { resolve, reject });
@@ -182,7 +182,7 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
       shell: host.shell, capabilities: host.capabilities ?? [],
     });
   });
-  // A worker compile error can't run the hooks there — reject so the executor
+  // A worker compile error can't run the hooks there - reject so the executor
   // falls back to in-realm (matching in-realm's loud failure), never a silent
   // all-null-slots mount.
   if (initMsg.compileError) throw new Error(`hook worker compile error: ${initMsg.compileError}`);
@@ -195,15 +195,15 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
     has.has(name) ? (ctx: unknown) => invokeInWorker(runId, name, ctx) : null;
 
   // The node-carrying export hooks (beforeExport/afterExport/exportStill) receive
-  // a live DOM Element and MUST run in-realm — it can't cross the boundary. Always
+  // a live DOM Element and MUST run in-realm - it can't cross the boundary. Always
   // compile in-realm and source them from there: a hooks.js may DEFINE an export
   // hook without declaring it in the manifest (filter-duotone defines beforeExport
   // but lists only onInit/onInput/onFrame), so the manifest is not a reliable
-  // signal — the compiled module is. The in-realm compile is cheap (top-level is
+  // signal - the compiled module is. The in-realm compile is cheap (top-level is
   // function definitions); its onInit/onInput/onFrame exist but are never called
   // (those come from the worker). An export hook that reads render state must read
   // it from the DOM (ctx.node), NOT from module vars an isolated interactive hook
-  // wrote — those live in the worker closure (see the overlay-export refactor,
+  // wrote - those live in the worker closure (see the overlay-export refactor,
   // plans/86 §18); this split is only sound once that holds.
   const inRealm = await inRealmHookExecutor(tool, host);
 
@@ -228,7 +228,7 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
 }
 
 /**
- * The Worker-isolated executor. Falls back to the in-realm path on ANY failure —
+ * The Worker-isolated executor. Falls back to the in-realm path on ANY failure - 
  * so opting a tool in can never make it fail to mount, only lose isolation.
  */
 export function getWorkerHookExecutor(): HookExecutor {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Ambience synthesis (lib/ambience-dsp.ts) — the beds behind the player's
+ * Ambience synthesis (lib/ambience-dsp.ts) - the beds behind the player's
  * Atmosphere section. Pure numbers in, PCM out, so this suite tests the real
  * module with no Web Audio stub anywhere.
  *
@@ -10,7 +10,7 @@
  * must be reproducible, because a "why does rain sound different today" bug would
  * be miserable to chase.
  *
- * Runs at 16 kHz (not 48) — every property here is sample-rate-independent, and a
+ * Runs at 16 kHz (not 48) - every property here is sample-rate-independent, and a
  * third of the samples keeps the whole file well under a second.
  */
 import test from 'node:test';
@@ -19,7 +19,7 @@ import { bakeAmbience, ambienceBytes, AMBIENCE_KINDS, AMBIENCE_SECONDS } from '.
 
 const SR = 16000;
 
-/** Root-mean-square over a window — the level measure used throughout. */
+/** Root-mean-square over a window - the level measure used throughout. */
 function rms(a: Float32Array, from = 0, to = a.length): number {
   let sum = 0;
   for (let i = from; i < to; i++) sum += a[i]! * a[i]!;
@@ -55,7 +55,7 @@ test('every bed is finite, in range, and the length its loop advertises', () => 
 test('the two channels are decorrelated — a mono bed in stereo clothing is not stereo', () => {
   // Measured as the MEDIAN of per-window correlations, not one figure over the whole
   // buffer. Singular events (a train's horn, a roll of thunder) are deliberately
-  // coherent in both ears — one horn is one horn, and making it independent per
+  // coherent in both ears - one horn is one horn, and making it independent per
   // channel smears it into two. Those moments are genuinely correlated and should
   // be; what must not be correlated is the bed underneath, which is most of the
   // windows and therefore the median.
@@ -79,7 +79,7 @@ test('the loop seam neither clicks nor dips', () => {
   const win = Math.round(0.05 * SR);
   for (const kind of AMBIENCE_KINDS) {
     for (const c of bakeAmbience(kind, SR)) {
-      // A click would show up as a step between the last sample and the first —
+      // A click would show up as a step between the last sample and the first - 
       // compare it against the typical sample-to-sample step of the bed itself.
       let steps = 0;
       for (let i = 1; i < c.length; i++) steps += Math.abs(c[i]! - c[i - 1]!);
@@ -92,7 +92,7 @@ test('the loop seam neither clicks nor dips', () => {
       // beds (keyboard, birds, crickets) are mostly gaps by design, so a hushed
       // 50 ms at the seam is only a defect if it is hushed compared with the
       // quietest ordinary moment.
-      // The interior windows are the yardstick — the head and tail are what's on
+      // The interior windows are the yardstick - the head and tail are what's on
       // trial, so they don't get to set the range they're judged against.
       const windows: number[] = [];
       for (let i = win; i + win * 2 <= c.length; i += win) windows.push(rms(c, i, i + win));
@@ -105,7 +105,7 @@ test('the loop seam neither clicks nor dips', () => {
         assert.ok(v > floor * 0.6, `${kind}: ${name} level ${v} dips below the bed's quiet floor ${floor}`);
         // A crossfade that summed instead of crossfading would put a level at the
         // seam that occurs nowhere else in the bed. A loud EVENT landing there is
-        // fine — it just has to be no louder than events elsewhere get.
+        // fine - it just has to be no louder than events elsewhere get.
         assert.ok(v < ceiling * 1.5, `${kind}: ${name} level ${v} spikes past anything in the bed itself (${ceiling})`);
       }
     }
@@ -152,8 +152,8 @@ test('event beds put their events IN FRONT of the bed, not under it', () => {
   // crockery, a train with no clacks, a stream with no blops. In every case the
   // events were there but the continuous bed was loud enough to swallow them, and
   // RMS normalisation then set the level from the bed. Measured as the ratio of the
-  // loudest short window to the MEDIAN one — "how far the foreground rises above
-  // the background" — which is what an ear is actually judging.
+  // loudest short window to the MEDIAN one - "how far the foreground rises above
+  // the background" - which is what an ear is actually judging.
   const punch = (kind: Parameters<typeof bakeAmbience>[0]): number => {
     const c = bakeAmbience(kind, SR)[0]!;
     const win = Math.round(0.03 * SR);

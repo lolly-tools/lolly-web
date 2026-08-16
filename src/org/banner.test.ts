@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/banner.ts — the single-message inbox banner.
+ * org/banner.ts - the single-message inbox banner.
  *
  * pickMessage is pure (severity selection). The mount path is exercised DOM-light
  * with jsdom for the info/action bar: it renders one bar and, on dismiss, POSTs

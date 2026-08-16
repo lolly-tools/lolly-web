@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Beam packs — build and ingest (plan 100 §6.4, §11.15a, §11.16, §11.18, §11.24).
+ * Beam packs - build and ingest (plan 100 §6.4, §11.15a, §11.16, §11.18, §11.24).
  *
  * `collab/beam-protocol.test.ts` proves the wire. This suite proves the two ends that
  * touch the user's own data, against an in-memory host that behaves like the real
@@ -8,19 +8,19 @@
  * asserted rather than described:
  *
  *   - **closure**: a session's offer carries exactly the user-local assets it
- *     references — no more (an unreferenced upload never travels), no fewer (a ref
+ *     references - no more (an unreferenced upload never travels), no fewer (a ref
  *     buried in a `blocks` row does), and catalog refs are LISTED, never sent, with
  *     the `resolve: 'local'` marker that makes §11.16's cross-profile honesty a
  *     property of the pack rather than a promise in the UI;
  *   - **checksums are the catalog's own**: a beam item's digest is byte-for-byte what
- *     `scripts/checksum-assets.ts` writes for the same bytes — cross-checked against
+ *     `scripts/checksum-assets.ts` writes for the same bytes - cross-checked against
  *     that script's real `sriForFile`, because that equality is what makes
  *     receiver-side dedup a string compare;
  *   - **re-key + rewrite round trip**: assets land under receiver-local ids and the
  *     session that arrives after them opens pointing at those ids (§11.18), with a
  *     ref the pack could not carry reported rather than silently lost;
- *   - **dedup**: identical bytes already here are reused — no second row, and the
- *     session's refs point at the row that was already there — but never onto a
+ *   - **dedup**: identical bytes already here are reused - no second row, and the
+ *     session's refs point at the row that was already there - but never onto a
  *     machine-owned row the user's library deliberately hides;
  *   - **byte-exactness**: what was staged is what is stored, bit for bit, so an
  *     embedded C2PA credential survives the trip (§6.4);
@@ -33,7 +33,7 @@
  *   - **no partial ingest** (§11.18): a failed write undoes itself, and the whole beam
  *     can be rolled back;
  *   - **the worker is an optimisation, never a dependency**: a Worker constructor that
- *     throws — or one that never answers — produces the identical pack (§11.15a's
+ *     throws - or one that never answers - produces the identical pack (§11.15a's
  *     fallback).
  *
  * The last test drives a real `createBeamSender`/`createBeamReceiver` pair over a
@@ -135,8 +135,8 @@ function makeHost(): FakeHost {
 //
 // The ingest side reads the BYTES to decide what a file is, so a fixture that claims
 // `image/png` has to actually start like one. These build the smallest structures the
-// real sniffers/extractors recognise — a PNG signature, a PNG chunk walk with a `caBX`
-// (C2PA) chunk, an SVG — so the tests exercise `sniffFormat`/`extractC2paStore`
+// real sniffers/extractors recognise - a PNG signature, a PNG chunk walk with a `caBX`
+// (C2PA) chunk, an SVG - so the tests exercise `sniffFormat`/`extractC2paStore`
 // themselves rather than a stand-in for them.
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -157,7 +157,7 @@ function pngWithCredential(store: Uint8Array): Uint8Array {
       (len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff,
       ...[...type].map(c => c.charCodeAt(0)),
       ...data,
-      0, 0, 0, 0,                                   // CRC — structural only
+      0, 0, 0, 0,                                   // CRC - structural only
     ];
   };
   return new Uint8Array([
@@ -168,7 +168,7 @@ function pngWithCredential(store: Uint8Array): Uint8Array {
   ]);
 }
 
-/** Deterministic pseudo-random bytes (xorshift32) — same seed, same pack, always. */
+/** Deterministic pseudo-random bytes (xorshift32) - same seed, same pack, always. */
 function bytesOf(n: number, seed: number): Uint8Array {
   const out = new Uint8Array(n);
   let x = (seed >>> 0) || 1;
@@ -229,7 +229,7 @@ function senderHost(): FakeHost {
   const host = makeHost();
   addAsset(host, PHOTO, pngOf(3000, 11), {
     // The sender's row holds a SIDECAR credential (bytes that no longer carry it) and
-    // a persisted AI flag. Neither travels — see the provenance tests below.
+    // a persisted AI flag. Neither travels - see the provenance tests below.
     credential: bytesOf(64, 99),
     credentialFormat: 'jpeg',
     aiGenerated: 'partial',
@@ -486,7 +486,7 @@ async function deliver(
   return { ctx, results };
 }
 
-/** An ingest primed with a hand-written manifest — the hostile-sender harness. The
+/** An ingest primed with a hand-written manifest - the hostile-sender harness. The
  *  manifest goes in through the real item-0 path, so nothing here bypasses parsing. */
 async function manifestOnly(
   to: FakeHost,
@@ -565,7 +565,7 @@ test('type, format and MIME are sniffed from the bytes, never taken from the man
   // The exact shape lib/tts-provenance.ts re-arms the on-device speech-credential heal
   // on: `type: 'audio'`, `format: 'wav'`, and a `meta.tts` recipe. If any of the three
   // survived a beam, the receiver's own enrolled identity would sign the SENDER's bytes
-  // as its own AI synthesis — and rewrite the received bytes doing it.
+  // as its own AI synthesis - and rewrite the received bytes doing it.
   const to = makeHost();
   const payload = pngOf(256, 41);
   const ctx = await manifestOnly(to, [{
@@ -631,7 +631,7 @@ test('markup is sanitised before it is stored, and refused when it cannot be', a
   );
   assert.equal(bare.records.size, 0, 'nothing was written on the way to refusing it');
 
-  // 2. With a sanitiser, the SANITISED bytes are what land — digest, dedup and the
+  // 2. With a sanitiser, the SANITISED bytes are what land - digest, dedup and the
   //    stored blob all agree on them, and the executable markup is gone.
   const to = makeHost();
   const ctx = await manifestOnly(to, [entry], {
@@ -784,7 +784,7 @@ test('a read-back that disagrees deletes the row it just wrote', async () => {
     kind: 'asset', itemId: '1/x', sourceId: 'user/upload/x.png', label: 'x.png',
     bytes: payload.length, checksum: 'x', type: 'raster', format: 'png', mime: 'image/png',
   }]);
-  // A store that quietly normalises on write — the exact failure the read-back exists
+  // A store that quietly normalises on write - the exact failure the read-back exists
   // to catch, and the one that used to leave a corrupt row behind a failed beam.
   const upload = to.assets._uploadUserAsset;
   to.assets._uploadUserAsset = async (record) => upload!.call(to.assets, { ...record, blob: new Blob(['re-encoded']) });
@@ -804,7 +804,7 @@ test('a beam that fails partway can be rolled back whole', async () => {
   const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const ctx = createBeamIngest(to, { fromName: 'Priya' });
 
-  // Manifest, photo, map, session — then the quota refusal a 38 MB pack routinely hits.
+  // Manifest, photo, map, session - then the quota refusal a 38 MB pack routinely hits.
   for (let i = 0; i < 3; i++) await ingestBeamItem(built.offer.items[i]!, await payloadOf(built, i), ctx);
   await ingestBeamItem(built.offer.items[3]!, await payloadOf(built, 3), ctx);
   assert.equal(to.records.size, 2);
@@ -840,7 +840,7 @@ test('dedup never lands on a row the user’s library hides', async () => {
   const to = makeHost();
   // A frozen preservation copy (bridge/version-assets.ts) of the very bytes arriving:
   // machine-owned, hidden from Manage uploads, and reclaimable by the versioning
-  // machinery — so a session re-keyed onto it would point at bytes that can vanish.
+  // machinery - so a session re-keyed onto it would point at bytes that can vanish.
   addAsset(to, 'user/frozen/1700000000-map.png', pngOf(1500, 22), { meta: { name: 'map.png' } });
 
   const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
@@ -1007,7 +1007,7 @@ test('a pack survives the real protocol and lands in the receiver’s library', 
   assert.equal(receiver.state.phase, 'complete');
   assert.equal(receiver.state.discarded, false);
 
-  // Only now — after `complete` — does anything enter the library.
+  // Only now - after `complete` - does anything enter the library.
   const ctx = createBeamIngest(to, { fromName: 'Priya' });
   const landed = [];
   for (let i = 0; i < built.offer.items.length; i++) {

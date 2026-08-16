@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * view-fade.ts — the cross-view fade overlay.
+ * view-fade.ts - the cross-view fade overlay.
  *
  * Run directly:  node --test shells/web/src/view-fade.test.ts
  *
  * jsdom gives us a real DOM (createElement/appendChild), rAF (pretendToBeVisual),
- * and a getBoundingClientRect that returns zeros — enough to exercise the node-
+ * and a getBoundingClientRect that returns zeros - enough to exercise the node-
  * moving contract that matters. matchMedia isn't implemented by jsdom, so we
  * install a controllable stub (view-fade.ts reads the bare `matchMedia` global to
  * honour reduced motion). transitionend never fires under jsdom, so teardown rides
- * the module's safety-net timeout — which is exactly the path we assert survives.
+ * the module's safety-net timeout - which is exactly the path we assert survives.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -105,7 +105,7 @@ test('commit tears the overlay down (safety-net timeout, since jsdom fires no tr
   assert.equal(document.querySelectorAll('.view-fade').length, 1);
 
   handle.commit();
-  handle.commit(); // idempotent — second call must not throw or double-schedule
+  handle.commit(); // idempotent - second call must not throw or double-schedule
 
   // rAF (≈16ms) schedules the 1200ms safety net; wait past it, then assert removal.
   await new Promise((r) => setTimeout(r, 1400));

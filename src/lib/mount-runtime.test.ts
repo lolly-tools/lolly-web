@@ -2,10 +2,10 @@
 // Holds the mount-runtime chokepoint invariant.
 //
 // `host.color` and `host.geom` are installed lazily (they are ~39 KB gz that no
-// shell code reads — only tool hooks) by lib/mount-runtime.ts's
+// shell code reads - only tool hooks) by lib/mount-runtime.ts's
 // createToolRuntime, immediately before the runtime that runs those hooks.
 // Someone importing the engine's `createRuntime` directly instead gets code that
-// compiles, typechecks and renders — it just leaves both APIs undefined, and
+// compiles, typechecks and renders - it just leaves both APIs undefined, and
 // tools FEATURE-DETECT them, so a colour or vector tool degrades to its own
 // fallback in total silence. No behavioural test can catch that; this grep can.
 import { test } from 'node:test';
@@ -31,7 +31,7 @@ test('nothing in shells/web/src imports createRuntime outside the chokepoint', (
   for (const file of walk(srcDir)) {
     if (file === allowed) continue;
     const src = readFileSync(file, 'utf8');
-    // Import statements only — prose in header comments mentions createRuntime
+    // Import statements only - prose in header comments mentions createRuntime
     // all over the shell and must not trip this.
     for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
       const names = (m[1] ?? '').split(',').map((s) => s.trim().split(/\s+as\s+/)[0]?.trim());

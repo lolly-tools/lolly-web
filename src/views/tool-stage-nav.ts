@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Canvas stage navigation for the tool view: pinch-zoom + drag-pan on touch,
- * trackpad-native zoom/pan on desktop, a Fit/% HUD, and keyboard shortcuts —
+ * trackpad-native zoom/pan on desktop, a Fit/% HUD, and keyboard shortcuts - 
  * all layered on top of the fitCanvas scale via a transform on the OUTER wrapper.
  * Extracted verbatim from views/tool.ts (was a standalone module-level factory
  * there); `isTyping` moved with it because it was used only by this controller.
  * The HUD widget itself (markup/click-delegation/disabled-state) now lives in
  * components/zoom-hud.ts, shared with multi-edit and the catalog inspector/crop
- * dialog — this module keeps the pinch/pan/wheel/keyboard math, which is real
+ * dialog - this module keeps the pinch/pan/wheel/keyboard math, which is real
  * per-canvas behaviour, not accidental duplication.
  */
 import { mountZoomHud } from '../components/zoom-hud.ts';
@@ -22,7 +22,7 @@ export interface StageNav { reset(): void; isZoomed(): boolean; sync(): void; fo
 // True when focus is in a text field, so global canvas shortcuts don't hijack typing.
 // Shadow-aware (lib/typing-target.ts): the sidebar's fields are <jelly-input> custom
 // elements whose real <input> is in a shadow root, and a host-only test used to read
-// as "not typing" — which is why `0` and `1` could not be typed into any text field.
+// as "not typing" - which is why `0` and `1` could not be typed into any text field.
 const isTyping = (): boolean => isTypingTarget();
 
 /**
@@ -31,7 +31,7 @@ const isTyping = (): boolean => isTypingTarget();
  * The page's native pinch-zoom is disabled (viewport user-scalable=no) so the
  * sticky sidebar header can't be stranded off-screen on mobile. To compensate,
  * the canvas preview gets gesture zoom here. It applies a transform to the OUTER
- * wrapper — fitCanvas only ever touches the inner canvas's width/height/transform,
+ * wrapper - fitCanvas only ever touches the inner canvas's width/height/transform,
  * so the two layers compose cleanly (fit-to-screen, then pinch on top of that).
  *
  * Returns { reset } so callers can snap back to the fitted view.
@@ -90,7 +90,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   }
 
   // Zooming OUT past Fit is allowed down to an absolute floor of MIN_ABS (so
-  // objects parked off the artboard stay reachable in editor tools) — or Fit
+  // objects parked off the artboard stay reachable in editor tools) - or Fit
   // itself when a huge canvas already fits below that floor.
   function minScale(): number {
     const w = canvasEl ? canvasEl.getBoundingClientRect().width : 0;
@@ -99,7 +99,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     return Math.min(1, MIN_ABS / fitAbs);
   }
 
-  // Zoom-IN ceiling as a fit-multiplier — the `scale` that renders at MAX_ABS× native
+  // Zoom-IN ceiling as a fit-multiplier - the `scale` that renders at MAX_ABS× native
   // pixels, so the HUD tops out at a consistent ~1600% regardless of stage/canvas size
   // (MAX_ABS is an ABSOLUTE cap; the fit ratio varies, so a fixed multiplier wouldn't).
   // Never below 1, so a tiny canvas already shown large still zooms to at least Fit.
@@ -136,7 +136,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     return { x: (sr.left + sr.right) / 2, y: (sr.top + sr.bottom) / 2 };
   }
 
-  // Effective on-screen size vs native export pixels — the figure the HUD shows.
+  // Effective on-screen size vs native export pixels - the figure the HUD shows.
   function pct(): number {
     const w = canvasEl ? canvasEl.getBoundingClientRect().width : 0;
     return w > 0 ? Math.round(w / nativeW * 100) : 100;
@@ -152,7 +152,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
 
   // Zoom + pan so a CLIENT-space rect (an artboard's live on-screen box) fills ~85% of the
   // stage, centred. The Artboards navigator reads the frame element's getBoundingClientRect
-  // and passes it through an `fc-focus-rect` event — client coords, deliberately, so this is
+  // and passes it through an `fc-focus-rect` event - client coords, deliberately, so this is
   // immune to how the canvas is sized (a frames tool's canvas overflows its nominal width
   // with pasteboard frames, so a native→screen scale derived from `nativeW` is wrong by the
   // pasteboard ratio). Clamped to the same min/max as every other zoom; clampPan keeps it
@@ -210,8 +210,8 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
       if (lastMid) { tx += m.x - lastMid.x; ty += m.y - lastMid.y; }  // two-finger pan
       // Pinch-zoom with a dead-zone: ignore small finger-spread wobble so a
       // two-finger PAN doesn't register as zoom. (Without this, every frame
-      // applied a tiny zoom about the moving midpoint and the jitter compounded —
-      // "zooms like crazy" — while also fighting the pan so it felt sluggish.)
+      // applied a tiny zoom about the moving midpoint and the jitter compounded - 
+      // "zooms like crazy" - while also fighting the pan so it felt sluggish.)
       // Hold pinchDist as the reference until we actually zoom, so a slow,
       // deliberate pinch still accumulates past the threshold and applies smoothly.
       if (pinchDist > 0 && Math.abs(d / pinchDist - 1) > PINCH_DEADZONE) {
@@ -239,7 +239,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
 
   const endTouch = (e: PointerEvent) => {
     // Mouse pointerups belong to the desktop pan path (endMouse below). Without
-    // this guard — the pointerdown/move handlers have it, this one didn't — a
+    // this guard - the pointerdown/move handlers have it, this one didn't - a
     // middle-drag PAN at Fit fell through to the settle check: pan never changes
     // `scale`, so "scale ≈ 1" read as "back at fit" and the release snapped the
     // canvas straight back to centre. The fit lock is released by the pan itself
@@ -253,7 +253,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
       panPt = { x: p!.x, y: p!.y };
     } else if (pts.size === 0) {
       panPt = null;
-      // Settled back AT fit — clear the transform. (Not <=: zoomed OUT past fit
+      // Settled back AT fit - clear the transform. (Not <=: zoomed OUT past fit
       // is a legitimate resting state now.)
       if (Math.abs(scale - 1) <= 0.001) reset();
     }
@@ -277,7 +277,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   const onKeyDown = (e: KeyboardEvent) => {
     // CHORDS BELONG TO THE BROWSER. Cmd/Ctrl+= and Cmd/Ctrl+- are the browser's
     // whole-UI zoom (Cmd/Ctrl+0 its reset), and this handler used to catch their
-    // bare `key` values ('=', '-', '0') and preventDefault them — so native page
+    // bare `key` values ('=', '-', '0') and preventDefault them - so native page
     // zoom could never fire on any canvas tool. Canvas zoom answers only the bare
     // keys and their Shift siblings ('+' is Shift+'=' and '_' is Shift+'-' on
     // most layouts); the moment Meta/Ctrl/Alt is down the key is the browser's,
@@ -285,7 +285,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     // TODO(tauri): the Tauri webviews ship no native page-zoom UI, so on desktop
     // Cmd+= currently falls through to nothing there. Whole-UI zoom needs the
     // shell to wire WebviewWindow.setZoom (plus the
-    // core:webview:allow-set-webview-zoom capability) behind these chords —
+    // core:webview:allow-set-webview-zoom capability) behind these chords - 
     // neither shell has any zoom hook today (checked bridge-overrides/ and
     // src-tauri/, 2026-08-10). Web is the priority; do NOT re-capture the chords
     // here as a workaround.
@@ -301,7 +301,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   };
   const onKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') { spaceDown = false; stageEl.classList.remove('is-grabbable'); } };
 
-  // Zoom HUD (−  [NN%]  +  Fit) — created for EVERY pointer type. On touch it's the
+  // Zoom HUD (−  [NN%]  +  Fit) - created for EVERY pointer type. On touch it's the
   // primary way to snap to exact zoom levels and Fit (a pinch is imprecise); on
   // desktop it complements the trackpad/keyboard. The desktop-only wheel, mouse-pan
   // and keyboard wiring stays gated behind !isTouch further below.
@@ -319,7 +319,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   hud = mountZoomHud(hudEl, {
     ariaLabel: 'Zoom',
     // editor.css's mobile stacked-order rules key off the literal `data-nav`
-    // attribute (`.stage-nav [data-nav="in"]` etc.) — opt into it explicitly;
+    // attribute (`.stage-nav [data-nav="in"]` etc.) - opt into it explicitly;
     // every other caller gets the component's private, collision-proof default.
     navAttr: 'data-nav',
     classes: { btn: 'stage-nav-btn', pct: 'stage-nav-pct', fit: 'stage-nav-fit', sep: 'stage-nav-sep' },

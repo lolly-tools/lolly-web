@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stable row identity — a dependency-free ULID, plus the hidden id field every
+ * Stable row identity - a dependency-free ULID, plus the hidden id field every
  * `blocks` row carries from birth.
  *
- * Why (plan 100 §3, "Hard prerequisite — stable row ids"): a live collab addresses
- * ops at a ROW, and peers mint rows with no chance to coordinate — so an array
+ * Why (plan 100 §3, "Hard prerequisite - stable row ids"): a live collab addresses
+ * ops at a ROW, and peers mint rows with no chance to coordinate - so an array
  * position cannot be an identity (a concurrent insert renumbers everything below it,
  * and a late field op would land on someone else's row), and neither can a per-mount
  * counter (two devices opening the same saved session both start at 1). A ULID is
@@ -16,8 +16,8 @@
  *
  * The ids are shell-internal and tool-invisible: `ROW_ID_FIELD` is not a declared
  * sub-field, so no control renders it and no template references it. It should not
- * ride a URL either — a URL is a transport for VALUES, and the rows it describes are
- * new rows on the receiving device, not the sender's rows — but only the COMPACT
+ * ride a URL either - a URL is a transport for VALUES, and the rows it describes are
+ * new rows on the receiving device, not the sender's rows - but only the COMPACT
  * blocks encoding gets that for free (lib/blocks-url.ts writes DECLARED fields in
  * field order). The lossless JSON fallback, which any row bearing a `,` or a `~`
  * falls back to, copies every key: `stripHiddenRowIds` is what keeps the link
@@ -31,7 +31,7 @@
  * today), not a special case for this one name.
  */
 
-/** Crockford base32 — no I, L, O or U (unambiguous when read aloud or typed). */
+/** Crockford base32 - no I, L, O or U (unambiguous when read aloud or typed). */
 const ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const TIME_LEN = 10;      // 50 bits of characters holding a 48-bit ms timestamp
 const RANDOM_LEN = 16;    // 80 bits of entropy
@@ -44,7 +44,7 @@ const ULID_RE = /^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/;
 
 // Monotonic state: within one millisecond the spec increments the random component
 // rather than redrawing it, so ids minted in a tight loop (a 40-row paste) stay both
-// unique and sorted. Per-tab only — cross-device ordering rides the 80 random bits.
+// unique and sorted. Per-tab only - cross-device ordering rides the 80 random bits.
 let lastMs = -1;
 let lastRandom: number[] = [];
 
@@ -76,7 +76,7 @@ function bumpRandom(): void {
 /**
  * A fresh ULID. Monotonic within a millisecond; never throws, never awaits, and
  * degrades to `Math.random` where `crypto.getRandomValues` is missing (uniqueness is
- * what this needs — it is not a secret).
+ * what this needs - it is not a secret).
  */
 export function ulid(): string {
   const now = Date.now();
@@ -97,7 +97,7 @@ export function isUlid(v: unknown): boolean {
 
 /**
  * Give every row that lacks one an id in `field`, and return the SAME array when
- * nothing was missing — so a caller can commit only on a real change (`next !== rows`).
+ * nothing was missing - so a caller can commit only on a real change (`next !== rows`).
  * Existing ids are never rewritten: this is the lazy migration for rows saved before
  * ids existed, run on load, and it must be a no-op the second time it sees them.
  */
@@ -114,7 +114,7 @@ export function ensureRowIds<T extends object>(rows: readonly T[], field: string
 }
 
 /**
- * A blocks value with the HIDDEN id stripped from every row — what a link carries.
+ * A blocks value with the HIDDEN id stripped from every row - what a link carries.
  * Returns the same array when there was nothing to strip, and touches only
  * `ROW_ID_FIELD`: a canvas collection's DECLARED id is content (connector endpoints,
  * frame membership and masks all reference it by name) and must ride the URL.
@@ -133,7 +133,7 @@ export function stripHiddenRowIds<T>(value: T): T {
 
 // ── Which field, and the once-per-mount migration ──────────────────────────────
 
-/** The slice of an input model item this module reads — structural on purpose, so
+/** The slice of an input model item this module reads - structural on purpose, so
  *  row-id.ts stays importable from anywhere (no engine, no DOM, no view). */
 export interface RowIdInput {
   id: string;
@@ -145,12 +145,12 @@ export interface RowIdInput {
 
 /**
  * The sub-field a row of this input carries its stable id in (plan 100 §3, "Hard
- * prerequisite — stable row ids"):
+ * prerequisite - stable row ids"):
  *
  *  - a CANVAS collection uses the tool's own declared id sub-field, because that id is
  *    already the wire identity everything resolves a box through (selection, connector
  *    endpoints, frame membership, masks). free-canvas resolves the same name the same
- *    way — declared, else the 'id' default — so a row added from the sidebar is born
+ *    way - declared, else the 'id' default - so a row added from the sidebar is born
  *    with exactly the identity a box added on the canvas gets;
  *  - every OTHER blocks input uses the hidden `ROW_ID_FIELD`. Undeclared on purpose: no
  *    control renders it, no template references it, and the compact blocks URL form
@@ -166,7 +166,7 @@ export function rowIdField(inp: Pick<RowIdInput, 'fields' | 'canvas'>): string {
   return name && (inp.fields ?? []).some(f => f.id === name) ? name : ROW_ID_FIELD;
 }
 
-/** The write path the migration takes — `applyPatch`, never `setInput`. See below. */
+/** The write path the migration takes - `applyPatch`, never `setInput`. See below. */
 export interface RowIdRuntime {
   getModel(): RowIdInput[];
   applyPatch(values: Record<string, unknown>): Promise<void>;
@@ -176,14 +176,14 @@ export interface RowIdRuntime {
  * Give every id-less row in every `blocks` input its stable id, once, at mount.
  *
  * Rows created from here on are born with one (`newBlockRow` in views/tool-inputs.ts);
- * this is the lazy migration for sessions saved before ids existed — no pass over
+ * this is the lazy migration for sessions saved before ids existed - no pass over
  * stored slots, and a session closed unsaved simply gets fresh ids next time.
  *
- * Two placement rules the shape of this function encodes, both learned the hard way:
+ * Two placement rules built into this function's structure, both learned the hard way:
  *
  *  - it belongs to a MOUNTED SESSION, not to a sidebar render. Panel rendering is
  *    also driven by `/multi`'s fan-out runtime, whose `getModel()` returns the LEAD
- *    session's items and whose `setInput` writes to EVERY session declaring that id —
+ *    session's items and whose `setInput` writes to EVERY session declaring that id - 
  *    so migrating from there would overwrite each sibling session's rows with the
  *    lead's and mark them all dirty, before the user touched anything.
  *  - it writes through `applyPatch`, not `setInput`. In mountTool `setInput` is the

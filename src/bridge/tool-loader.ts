@@ -3,7 +3,7 @@
  * Shared tool loader for the web shell's render paths.
  *
  * Loading (and caching) a tool definition, plus the small format/exportability
- * helpers, live here — separate from pro/render-export.js — so the embed
+ * helpers, live here - separate from pro/render-export.js - so the embed
  * interceptor (bridge/embed.js) and the off-screen renderer (pro/render-export.js)
  * can both reach them WITHOUT a circular import (render-export ↔ embed).
  */
@@ -13,8 +13,8 @@ import { currentLang } from '../i18n.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 
-// Loaded tools are cached so selecting the same template across many rows — the
-// primary power-user workflow — loads each template only once.
+// Loaded tools are cached so selecting the same template across many rows - the
+// primary power-user workflow - loads each template only once.
 const toolCache = new Map<string, Promise<LoadedTool> | LoadedTool>();
 
 function makeFetchFile(toolId: string): (path: string) => Promise<string> {
@@ -31,7 +31,7 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
 
 /** Load (and cache) a tool definition. Used both to read inputs and to render.
  *  Translates the manifest's name/description/input labels via its i18n/<lang>.json
- *  sidecar when one exists (engine/src/loader.ts's applyManifestI18n) — the active
+ *  sidecar when one exists (engine/src/loader.ts's applyManifestI18n) - the active
  *  language never changes mid-session (switchLang reloads the page), so the cache
  *  doesn't need lang in its key. */
 export async function getTool(toolId: string): Promise<LoadedTool> {

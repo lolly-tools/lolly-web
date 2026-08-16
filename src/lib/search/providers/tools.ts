@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Tools + Utilities spotlight providers (plans/99 §2b) — both read the
+ * The Tools + Utilities spotlight providers (plans/99 §2b) - both read the
  * synced tool index off window.__toolIndex (catalog/sync.ts owns that global;
  * the provider assembly passes no deps, so the read happens per search call and
  * a mid-session re-sync is picked up automatically).
  *
  * The split mirrors views/gallery.ts exactly: utilities are `category ===
  * 'utility'` (the `#/u` view), tools are everything else, and unlisted entries
- * (manifest `listed: false` — mechanisms invoked from context, e.g.
+ * (manifest `listed: false` - mechanisms invoked from context, e.g.
  * asset-export) never surface. Haystacks include the pristine English strings
  * localizeToolIndex stashes on `tool.en` (plans/99 §2e), so a Spanish session
  * finds "Compress PDF" by "compress" AND by its Spanish name.
@@ -75,7 +75,7 @@ function splitRows(index: ToolIndexLike): { tools: Row[]; utilities: Row[] } {
 }
 
 function makeProvider(id: 'tools' | 'utilities'): SearchProvider {
-  // Utilities get the wrench, tools the tool glyph — existing lib/icons entries.
+  // Utilities get the wrench, tools the tool glyph - existing lib/icons entries.
   const glyph = icon(id === 'utilities' ? 'wrench' : 'tool');
   return {
     id,
@@ -109,7 +109,7 @@ export function createUtilitiesProvider(): SearchProvider {
   return {
     id: 'utilities',
     // Gated per call on the same flag that owns the #/u route (main.ts replaces
-    // it with the gallery when off) — without this, the group's "See all in
+    // it with the gallery when off) - without this, the group's "See all in
     // Utilities" handoff would bounce to the gallery and drop the query. Same
     // per-call pattern as the places provider's Batch-mode entry.
     search: (tokens, limit) => flagEnabledSync(UTILITIES_FLAG_ID) ? base.search(tokens, limit) : Promise.resolve([]),

@@ -3,7 +3,7 @@
  * Pure helpers for vectorising HTML text into SVG <path> via host.text.toPath.
  *
  * DOM-free at import so it's unit-testable under node:test (see text-svg.test.js).
- * The SUSE-specific font resolution lives HERE (the shell), never in the engine —
+ * The SUSE-specific font resolution lives HERE (the shell), never in the engine - 
  * the engine stays brand-agnostic. The HarfBuzz shaping itself is the engine's
  * host.text primitive; this module only decides *which* font file to feed it and
  * *where* to place the resulting baseline-relative path.
@@ -18,7 +18,7 @@ export interface FontStyleSlice {
 
 // Maps a CSS numeric font-weight to the nearest SUSE static TTF filename stem.
 // SUSE Mono has no Black cut (its weight axis tops out at ExtraBold/800), so
-// mono resolution caps there — matching how the browser clamps the variable font.
+// mono resolution caps there - matching how the browser clamps the variable font.
 export function suseWeightName(weight: number, mono = false): string {
   const map = ([
     [100, 'Thin'], [200, 'ExtraLight'], [300, 'Light'], [400, 'Regular'],
@@ -42,10 +42,10 @@ export function suseFontFile(weight: number, italic: boolean, mono = false): str
  * Resolve a computed style to a SUSE TTF URL host.text.toPath can fetch, or null
  * if this run isn't set in the brand font. SUSE Mono resolves to the SUSEMono-*
  * statics. This is just the BRAND-CATALOG branch of the resolver, so it returns
- * null under a pack that ships no fonts even for a SUSE run — the shell-served
+ * null under a pack that ships no fonts even for a SUSE run - the shell-served
  * platform SUSE face is reached through font-registry.ts instead. Non-catalog
- * families — installed user fonts, the platform faces, and (Phase 2, shipped) any
- * arbitrary document `@font-face` — resolve via font-registry.ts's resolveVectorFont,
+ * families - installed user fonts, the platform faces, and (Phase 2, shipped) any
+ * arbitrary document `@font-face` - resolve via font-registry.ts's resolveVectorFont,
  * which fetches + woff2-decompresses their bytes. A run only falls back to a plain
  * <text> element when NO family in the stack resolves to a font file (see canVectoriseText).
  */
@@ -63,7 +63,7 @@ export function resolveSuseFontUrl(style: FontStyleSlice): string | null {
  * only when there's no host.text primitive or no resolvable font file. Tracking
  * (letter-spacing) and OpenType feature toggles (ligatures/alternates) are baked
  * into the shaped path via toPath's letterSpacing/features opts, so they no longer
- * force a fallback — outlined text stays outlined.
+ * force a fallback - outlined text stays outlined.
  */
 export function canVectoriseText(style: FontStyleSlice, fontUrl: string | null, hasTextApi: boolean): boolean {
   return Boolean(hasTextApi && fontUrl);

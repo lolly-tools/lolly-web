@@ -3,7 +3,7 @@
  * Lower a rendered document DOM node into the flat heading/paragraph block model the
  * engine's `writeDocx` / `writeOdt` writers consume. The bridge only ever receives
  * the RENDERED node (a tool's ProseMirror JSON and its `mdSource` extra never cross
- * to the host), so the block model is read back off the DOM — exactly as `mdBlockDom`
+ * to the host), so the block model is read back off the DOM - exactly as `mdBlockDom`
  * does for Markdown export.
  *
  * doc-studio splits its content across `.doc-page > .doc-body`; walking every
@@ -13,7 +13,7 @@
  * Lossy BY DESIGN: the writers support headings + plain paragraphs only, so lists
  * flatten to one paragraph per item and inline marks (bold/italic/links/colour),
  * tables-as-structure, and images are dropped (`textContent` keeps only the words).
- * Keep any UI/register copy honest — "headings and paragraphs stay editable", never
+ * Keep any UI/register copy honest - "headings and paragraphs stay editable", never
  * "full fidelity".
  */
 

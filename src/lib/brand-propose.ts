@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Usage-derived brand proposal — the policy half of the token-less Penpot
+ * Usage-derived brand proposal - the policy half of the token-less Penpot
  * import. The engine's `scanPenpotUsage` (brand-import.ts) is the pure census:
  * every paint source tallied per colour, gradients deduped, fonts aggregated.
  * This module turns that census into the roles a designer would assign:
  *
  *   - surface   = the highest-weight FILL colour (backgrounds dominate fills);
  *   - shades    = colours co-occurring with the surface in any gradient's stops
- *                 (data-driven, no hue window) — excluded from the accent pool,
- *                 which is load-bearing: a surface shade rides huge gradient
+ *                 (data-driven, no hue window) - excluded from the accent pool,
+ *                 which is essential: a surface shade rides huge gradient
  *                 counts and would otherwise out-score a real accent;
  *   - accents   = remaining colours with OKLCH chroma >= 0.09, scored
  *                 weight x chroma; primary is the top score, secondary the next
@@ -48,13 +48,13 @@ export interface BrandRoleProposal {
 }
 
 export interface BrandUsageFonts {
-  /** The most-used family — the app's primary face candidate. */
+  /** The most-used family - the app's primary face candidate. */
   brand: string | null;
   /** The most-used family matching /mono/i, for font.mono. */
   mono: string | null;
   /** Families sourced from Google Fonts (`gfont-` ids), most-used first. */
   google: string[];
-  /** Families with no fetchable source — named in the card, never fetched. */
+  /** Families with no fetchable source - named in the card, never fetched. */
   missing: string[];
 }
 
@@ -94,7 +94,7 @@ export function proposeBrandRoles(usage: PenpotUsage): BrandRoleProposal | null 
   const surfaceLook: 'light' | 'dark' = surfaceL < 0.5 ? 'dark' : 'light';
 
   // Surface shades: colours that share a gradient with the surface. A shade is
-  // the surface's own ramp partner, not an accent — and its gradient-stop
+  // the surface's own ramp partner, not an accent - and its gradient-stop
   // weight would out-score genuine accents if left in the pool.
   const shades = new Set<string>();
   for (const g of usage.gradients) {
@@ -174,7 +174,7 @@ export function proposeFonts(usage: PenpotUsage): BrandUsageFonts {
   };
 }
 
-// ── Token-first proposal — roles from what the file DECLARES ─────────────────
+// ── Token-first proposal - roles from what the file DECLARES ─────────────────
 // The token-less path above reads pixels; this one reads names. When a Penpot
 // file carries its own token document, the designer has already said what their
 // colours are called, and `scanPenpotAppliedTokens` says which of those tokens
@@ -212,7 +212,7 @@ interface Candidate {
 /**
  * Propose brand roles from a file's DECLARED tokens, ranked by how the designer
  * applied them. Null when the document resolves no usable colour tokens at all
- * — the caller then falls back to `proposeBrandRoles` over the usage census,
+ * - the caller then falls back to `proposeBrandRoles` over the usage census,
  * which is what every token-less file gets today.
  *
  * @param doc     the reassembled token document (extractPenpotProject's output)
@@ -235,7 +235,7 @@ export function proposeRolesFromTokens(
   if (!cands.length) return null;
 
   // Weights: the applied census first. Token names join to createTokenSet's
-  // flattened paths verbatim — Penpot's token-name grammar has no spaces, so
+  // flattened paths verbatim - Penpot's token-name grammar has no spaces, so
   // there is nothing to normalise and normalising would only break the join.
   const byName = new Map(applied.map(r => [r.name, r]));
   let weighted = false;
@@ -245,7 +245,7 @@ export function proposeRolesFromTokens(
     c.fills = row.fills; c.strokes = row.strokes; c.text = row.text; c.total = row.total;
     if (row.total > 0) weighted = true;
   }
-  // Bridge: no applied census (or none of it named a colour token) — fall back
+  // Bridge: no applied census (or none of it named a colour token) - fall back
   // to how often each declared colour was actually painted.
   if (!weighted && usage) {
     const byHex = new Map(usage.colors.map(r => [r.hex, r]));
@@ -258,7 +258,7 @@ export function proposeRolesFromTokens(
   }
 
   // Surface: the most-filled token. With no weights at all, the least colourful
-  // declared colour is the honest guess — a brand's surface is its neutral.
+  // declared colour is the honest guess - a brand's surface is its neutral.
   let surfaceC = cands[0]!;
   if (weighted) {
     for (const c of cands) if (c.fills > surfaceC.fills) surfaceC = c;
@@ -371,7 +371,7 @@ const ROLE_VARS = ['primary', 'secondary', 'surface', 'text'] as const;
  * Return a copy of `doc` whose `color.semantic.*` roles ALIAS the declared
  * tokens named in `refs`. Aliases, not literals: the installed brand then still
  * points at the designer's own token, so editing that token moves the role with
- * it — the same alias-write `buildBrandDocFromUsage` uses for its secondary.
+ * it - the same alias-write `buildBrandDocFromUsage` uses for its secondary.
  *
  * A layered Tokens-Studio doc gets a new top-level set (`Lolly roles`, appended
  * to `$metadata.tokenSetOrder` and enabled in every theme) rather than having a
@@ -440,7 +440,7 @@ export function withRoleAliases(
 
 /**
  * Compose a full installable tokens doc from a usage census. Throws when the
- * census has no colours — call proposeBrandRoles first to gate on null.
+ * census has no colours - call proposeBrandRoles first to gate on null.
  *
  * `opts.keepExtras` restricts which of the proposal's extra accents become
  * custom swatches (the review card's checkboxes); omitted = keep them all.
@@ -460,7 +460,7 @@ export function buildBrandDocFromUsage(
 
   // Detach color.semantic.secondary from its derived ramp step in BOTH theme
   // sets, pinning the colour the designer actually used (writing a literal
-  // over the alias is the supported detach — see brand-doc.ts).
+  // over the alias is the supported detach - see brand-doc.ts).
   if (roles.secondary) {
     for (const set of ['light', 'dark']) {
       const setRec = doc[set];
@@ -475,7 +475,7 @@ export function buildBrandDocFromUsage(
     }
   }
 
-  // Kept extra accents land as custom swatches, labelled by their hex — honest
+  // Kept extra accents land as custom swatches, labelled by their hex - honest
   // provenance for colours the file used without naming.
   const keep = opts?.keepExtras ?? roles.extras;
   for (const hex of keep) {
@@ -493,7 +493,7 @@ export function buildBrandDocFromUsage(
     if (path) gradientCount++;
   }
 
-  // Font roles from the tally — writing them here means carryUserFontTokens
+  // Font roles from the tally - writing them here means carryUserFontTokens
   // keeps THESE on install instead of re-applying the previously chosen faces.
   const fonts = proposeFonts(usage);
   if (fonts.brand) doc = withFontRoleToken(doc, 'brand', fonts.brand);

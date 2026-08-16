@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Web implementation of the `compose` capability — render another tool to an
+ * Web implementation of the `compose` capability - render another tool to an
  * embeddable AssetRef (tool composition / "nested exports").
  *
  * Reuses the off-screen render recipe in pro/render-export.js (loadTool →
@@ -10,12 +10,12 @@
  * and returned as an AssetRef, so the runtime can expose it via `{{asset <id>}}`
  * and every existing export seam (blob→data, SVG-inline-as-vector) handles it.
  *
- * Recursion guards live in the engine (assertComposeStack — one depth/cycle
+ * Recursion guards live in the engine (assertComposeStack - one depth/cycle
  * policy shared by every shell bridge). An LRU of rendered results keyed by
  * tool+inputs+format+size makes the per-keystroke preview re-render free
  * and bounds object-URL memory (oldest URL revoked on eviction). A spec marked
  * `transient` bypasses that LRU in both directions and hands URL ownership to the
- * caller — a bulk one-shot bake must not flush the cache it will never read.
+ * caller - a bulk one-shot bake must not flush the cache it will never read.
  */
 
 import { parseToolUrl, buildEmbedUrl, parseUrlState, expandQuery, RESERVED, assertComposeStack } from '@lolly/engine';
@@ -30,7 +30,7 @@ import { getTool } from './tool-loader.ts';
 const IMAGE_FORMATS = ['svg', 'png', 'jpg', 'webp'];
 const normFmt = (f: string | null | undefined): string => { const x = String(f || '').toLowerCase(); return x === 'jpeg' ? 'jpg' : x; };
 
-// Motion child formats — a tool with movement can be embedded as a MOVING image
+// Motion child formats - a tool with movement can be embedded as a MOVING image
 // instead of a frozen frame. webm/mp4 are recorded video (need the browser's
 // MediaRecorder); gif/apng are animated rasters encoded frame-by-frame (always
 // available). Kept separate from IMAGE_FORMATS so the still path is untouched when
@@ -41,7 +41,7 @@ const MOTION_FORMATS = [...VIDEO_FORMATS, ...RASTER_MOTION_FORMATS];
 const isMotionFormat = (f: string | null | undefined): boolean => MOTION_FORMATS.includes(normFmt(f));
 
 // AssetRef.type for a rendered child: video for webm/mp4, vector for svg, raster
-// otherwise (still OR animated raster). Drives how the placement layer mounts it —
+// otherwise (still OR animated raster). Drives how the placement layer mounts it - 
 // mediaHtmlFor emits <video> for 'video' and an (already-animating) <img> for a gif.
 const assetTypeFor = (f: string | null | undefined): AssetRef['type'] =>
   VIDEO_FORMATS.includes(normFmt(f)) ? 'video' : normFmt(f) === 'svg' ? 'vector' : 'raster';
@@ -70,7 +70,7 @@ export function createComposeAPI(host: HostV1) {
 
     // `transient` bypasses the LRU on BOTH sides: a one-shot bulk render is never
     // re-requested, so caching it would evict live preview entries for nothing and
-    // pin a multi-MB blob. The URL is then unowned here — the caller revokes it.
+    // pin a multi-MB blob. The URL is then unowned here - the caller revokes it.
     const key = transient ? '' : cacheKey(toolId, inputs, format, width, height, unit, dpi);
     if (!transient) {
       const hit = cache.get(key);
@@ -119,7 +119,7 @@ export function createComposeAPI(host: HostV1) {
     let tool;
     try { tool = await getTool(parsed.toolId); } catch { return null; } // unknown id → 404 → null
     // A pasted link may carry packed state (`?z=…`); expand before parsing. Return the
-    // EXPANDED query too — renderUrl mints the persistent embed id from it, not from the
+    // EXPANDED query too - renderUrl mints the persistent embed id from it, not from the
     // still-packed parsed.query (whose only param would be the reserved `z`, which gets
     // stripped, yielding a stateless id that re-renders as defaults on reload).
     const query = await expandQuery(parsed.query);
@@ -128,7 +128,7 @@ export function createComposeAPI(host: HostV1) {
 
   // Describe a pasted tool URL for the picker UI (the "✦ Detected: <tool>" card):
   // the tool's name, the image formats it supports, and the size/format implied by
-  // the link. No render — cheap enough to call as the user types. Null when the URL
+  // the link. No render - cheap enough to call as the user types. Null when the URL
   // isn't a renderable local tool, so the picker falls back to a plain search.
   async function describeUrl(url: string) {
     const r = await resolveSpec(url);
@@ -151,7 +151,7 @@ export function createComposeAPI(host: HostV1) {
       name: r.tool.manifest.name ?? r.parsed.toolId,
       formats: list,
       format: def,
-      // The subset of `formats` that carries movement — the picker uses it to show a
+      // The subset of `formats` that carries movement - the picker uses it to show a
       // still poster while the (slow) motion file encodes only on commit.
       motion,
       width: r.state.width ?? null,
@@ -162,7 +162,7 @@ export function createComposeAPI(host: HostV1) {
   }
 
   // Render a pasted tool URL to a usable AssetRef whose `id` is the CANONICAL
-  // embed URL — the portable identity that persists through URL mode + saved
+  // embed URL - the portable identity that persists through URL mode + saved
   // sessions and is fed back here by the runtime to re-render on load. `opts`
   // (format/size, set by the picker) override what the link specifies.
   async function renderUrl(url: string, opts: ComposeUrlOpts = {}) {
@@ -175,7 +175,7 @@ export function createComposeAPI(host: HostV1) {
       || (supported.includes('svg') ? 'svg' : (supported[0] || 'png'));
     // An SVG render with no explicit size keeps the tool's width="100%", which is
     // fine to DISPLAY (CSS sizes the <img>) but leaves the SVG with no intrinsic
-    // pixel size — so a consuming tool that reads the image's pixels (canvas
+    // pixel size - so a consuming tool that reads the image's pixels (canvas
     // getImageData) can't measure it. Fall back to the child's native render size
     // for SVG so the embedded image always carries real dimensions. (Rasters always
     // have a natural size, so they need no fallback.)
@@ -200,7 +200,7 @@ export function createComposeAPI(host: HostV1) {
     // Canonical identity: keep the user's own child input params verbatim (already
     // compact/encoded), drop any export-control params, then fold in the effective
     // size. Built from the EXPANDED query (not parsed.query) so a pasted PACKED link's
-    // state survives — otherwise the only param is the reserved `z`, which the delete
+    // state survives - otherwise the only param is the reserved `z`, which the delete
     // loop strips, leaving a stateless id that re-renders as defaults on reload. The
     // strict embed form re-parses everywhere (parseEmbedUrl is host-locked).
     const q = new URLSearchParams(query);
@@ -227,7 +227,7 @@ export function createComposeAPI(host: HostV1) {
   }
 
   // _describeUrl is web-only host-UI chrome (the picker's detected-tool card), not
-  // part of the v1 ComposeAPI contract — underscore-prefixed like assets._* helpers.
+  // part of the v1 ComposeAPI contract - underscore-prefixed like assets._* helpers.
   return { render, renderUrl, _describeUrl: describeUrl };
 }
 

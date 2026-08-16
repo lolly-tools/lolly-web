@@ -10,7 +10,7 @@
 import type { HostV1, AssetRef, AssetPickerOpts, RecorderAPI } from '@lolly-tools/core/host-v1';
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
-// set is the UNION over every importer — touching it here drags createRuntime
+// set is the UNION over every importer - touching it here drags createRuntime
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
 import { createStateAPI } from './state.ts';
@@ -21,7 +21,7 @@ import { createTokensAPI } from './tokens.ts';
 import { createPinPreserver } from './version-assets.ts';
 import { createClipboardAPI } from './clipboard.ts';
 // export.ts (the 90 KB SVG/PDF/video bridge) and compose.ts (which statically pulls
-// in the full render runtime — Handlebars — and the tool loader — Ajv) are NOT
+// in the full render runtime - Handlebars - and the tool loader - Ajv) are NOT
 // imported statically: they'd land in the boot chunk that the gallery landing loads
 // before first paint, yet neither runs until a tool exports or composes. Both are
 // wired below as lazy facades (dynamic import on first use), like host.assets.pick.
@@ -39,7 +39,7 @@ import { cameraAvailable, recorderAvailable } from './capture-support.ts';
 import { hasCaptureExtension } from './capture-extension-probe.ts';
 import { vizSupported } from '../lib/viz-support.ts';
 // The dependency-free leaf, NOT '../lib/speech-kokoro.ts' (which re-exports the whole
-// engine speech-text module) — this module is on the boot path and needs only the number.
+// engine speech-text module) - this module is on the boot path and needs only the number.
 import { KOKORO_MODEL_BYTES } from '../../../../engine/src/speech-model-bytes.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
@@ -51,7 +51,7 @@ import { openDB } from './db.ts';
 /**
  * The web shell's full host surface: HostV1 with `shell` pinned to 'web', plus
  * the two web-only host-UI helpers that are NOT part of the tool-facing v1
- * contract — `identity` (Content Credentials device identity + CA cert) and
+ * contract - `identity` (Content Credentials device identity + CA cert) and
  * `previews` (cache of profile-personalized gallery thumbnails). Their concrete
  * shapes come straight from their factories.
  */
@@ -100,7 +100,7 @@ export async function createBridge(): Promise<WebHost> {
   host.state = createStateAPI(db);
   host.profile = createProfileAPI(db);
   // Shell-internal like previews (not part of HostV1): Content Credentials device
-  // identity + CA cert. A lazy facade — all five methods are async, and its only
+  // identity + CA cert. A lazy facade - all five methods are async, and its only
   // callers are the /profile view's credentials card and tool-actions' signer
   // choice, both far past first paint. Its cross-tab BroadcastChannel is built
   // with the impl, which is correct: a tab that never touches identity has no
@@ -119,8 +119,8 @@ export async function createBridge(): Promise<WebHost> {
   // `pick` is attached below (line ~99), so the factory return is intentionally
   // missing it here; the cast reconciles that with the AssetsAPI-typed field.
   // Copy-on-write preservation of bytes a published design-system version pins
-  // (plans/97 §6a). Assigned AFTER tokens exists — the preserver reads the head
-  // document to find the version ledger — so the option closes over the binding
+  // (plans/97 §6a). Assigned AFTER tokens exists - the preserver reads the head
+  // document to find the version ledger - so the option closes over the binding
   // rather than the value, the same late-binding trick createTokensAPI(host) uses.
   // With nothing published it returns on a property read, so an unversioned
   // install pays nothing for it.
@@ -133,7 +133,7 @@ export async function createBridge(): Promise<WebHost> {
   host.clipboard = createClipboardAPI();
 
   // Lazy export facade: build (and cache) the real 90 KB export bridge on first
-  // export — always a user gesture (Get/Save), never on the gallery landing. Keeps
+  // export - always a user gesture (Get/Save), never on the gallery landing. Keeps
   // it out of the boot chunk. All three ExportAPI methods are async, so the facade
   // is transparent to callers.
   let exportImpl: WebHost['export'] | null = null;
@@ -149,7 +149,7 @@ export async function createBridge(): Promise<WebHost> {
   };
 
   // Lazy compose facade: compose renders CHILD tools through the same bridge, so it
-  // statically pulls in the render runtime (Handlebars) + tool loader (Ajv) — ~90 KB
+  // statically pulls in the render runtime (Handlebars) + tool loader (Ajv) - ~90 KB
   // gz the gallery never needs. Built + cached on first compose/embed. Exposes the
   // web-only `_describeUrl` host-UI helper alongside the ComposeAPI contract.
   type WebComposeImpl = Awaited<ReturnType<typeof import('./compose.ts')['createComposeAPI']>>;
@@ -164,7 +164,7 @@ export async function createBridge(): Promise<WebHost> {
     _describeUrl: async (url: string) => (await loadCompose())._describeUrl(url),
   } as WebHost['compose'];
 
-  // Fail-closed boot default — an EMPTY allowlist, never mutated. A tool that
+  // Fail-closed boot default - an EMPTY allowlist, never mutated. A tool that
   // declares network.allowlist gets a per-mount HOST CLONE with a scoped net
   // instead: views/tool.ts (the live canvas), views/multi-edit.ts (each member's
   // runtime), and pro/render-export.ts withToolNet (offscreen batch/zip/compose).
@@ -203,15 +203,15 @@ export async function createBridge(): Promise<WebHost> {
   // Extension when installed (real capture in the browser); otherwise the stub
   // that throws a clear error. In Tauri, capture.js is overridden to the native impl.
   // Which of the two it is stays a SYNCHRONOUS decision (the extension sets its flag
-  // at document_start, and `capabilities` above already read it) — only the impl is lazy.
+  // at document_start, and `capabilities` above already read it) - only the impl is lazy.
   const loadCapture = memo(async () => extCapture
     ? (await import('./capture-extension.ts')).createExtensionCaptureAPI()
     : (await import('./capture.ts')).createCaptureAPI());
   // A lazy facade must still mirror the impl's SURFACE synchronously, because tools
   // feature-detect `typeof host.capture.vector === 'function'` (host-v1 CaptureAPI:
   // "callers feature-detect host.capture.vector and fall back to page()"). vector() is
-  // native-desktop-only — the Chrome extension and the web stub both expose page()
-  // alone — so it is surfaced exactly where the resolved impl has it: the Tauri build,
+  // native-desktop-only - the Chrome extension and the web stub both expose page()
+  // alone - so it is surfaced exactly where the resolved impl has it: the Tauri build,
   // whose capture override IS the native page+vector impl. A page-only facade made the
   // detect lie everywhere, so url-shot rasterised every SVG/PDF capture it could have
   // kept true-vector (regression from c71a7de's lazy-facade conversion).
@@ -222,7 +222,7 @@ export async function createBridge(): Promise<WebHost> {
     // Eagerly load the native capture impl at bridge creation, NOT lazily on the first
     // capture. Its module raises HOOK_BUDGET_MS.beforeExport (5s default → 90s) to fit a
     // real page navigation + printToPDF + PDF→SVG, and the runtime reads that budget when
-    // it STARTS a tool's beforeExport hook — so the raise must already have happened. With
+    // it STARTS a tool's beforeExport hook - so the raise must already have happened. With
     // the lazy import the raise ran INSIDE the first capture's beforeExport, after the 5s
     // budget was locked in, so url-shot timed out at 5s ("Auto-export failed: timed out
     // after 5000ms"). Awaiting here restores the pre-c71a7de eager desktop import. (On the
@@ -235,11 +235,11 @@ export async function createBridge(): Promise<WebHost> {
     };
   }
   host.capture = captureFacade;
-  // Lift (v1.123) — enumerate an SVG's layers for a tool template that cannot import the
+  // Lift (v1.123) - enumerate an SVG's layers for a tool template that cannot import the
   // engine (the Flythrough tool). A LAZY FACADE like capture/pdf: the module is cached by
   // the bundler after the first import, and `svg` is stateless, so no `memo` is needed.
   host.lift = { svg: async (source) => (await import('./lift.ts')).svg(source) } as WebHost['lift'];
-  // Keyframes (v1.124) — evaluate the engine's `kf` wire into pose samples for a template
+  // Keyframes (v1.124) - evaluate the engine's `kf` wire into pose samples for a template
   // (the Flythrough tool's custom camera track). Lazy facade like lift, stateless.
   host.keyframes = { sample: async (kf, count) => (await import('./keyframes.ts')).sample(kf, count) } as WebHost['keyframes'];
   // Live camera frames (v1.4) for motion-reactive tools. Progressive enhancement,
@@ -249,9 +249,9 @@ export async function createBridge(): Promise<WebHost> {
   // A LAZY FACADE, like capture/net/text/pdf above (these two were the last eager
   // impls left on the bridge, and between them ~11.7 KB of minified boot: media.ts,
   // recorder.ts and recorder's video-mime.ts bitrate tables). Nothing before a tool
-  // mount reads a frame or a level — the only pre-mount caller of either API is the
+  // mount reads a frame or a level - the only pre-mount caller of either API is the
   // asset picker's "Capture screen" tile, which feature-detects `recorder.still` and
-  // then awaits it — so the impl is built on the first call that actually needs a
+  // then awaits it - so the impl is built on the first call that actually needs a
   // device, and `isAvailable` is answered synchronously from bridge/capture-support.ts,
   // the same probe module the impls themselves call.
   //
@@ -279,22 +279,22 @@ export async function createBridge(): Promise<WebHost> {
     stop: () => { mediaImpl?.stop(); },
     subscribe: (cb, opts) => lazySubscribe(loadMedia, (m) => m.subscribe(cb, opts)),
     // Web-only extra (not on the portable MediaAPI): arm the animated frame source
-    // (SVG markup / animated raster / video — see media.ts AnimSourceSpec) for the
-    // next start(). Disarming with no impl is a no-op — nothing can be armed yet —
+    // (SVG markup / animated raster / video - see media.ts AnimSourceSpec) for the
+    // next start(). Disarming with no impl is a no-op - nothing can be armed yet - 
     // so only a real arm pays for the load.
     armAnimSource: (src: import('./media.ts').AnimSourceSpec | string | null) => {
       if (src === null) { mediaImpl?.armAnimSource(null); return; }
       void loadMedia().then((m) => m.armAnimSource(src));
     },
     // Web-only extra, same class as armAnimSource: deterministically render the armed
-    // anim source at tMs for the frame-accurate export path. MUST be forwarded — a
+    // anim source at tMs for the frame-accurate export path. MUST be forwarded - a
     // caller feature-detects `host.media.renderFrameAt` (views/tool-actions.ts), and a
     // facade that omitted it made that detect return undefined, so every export frame
     // silently fell back to the frozen base instead of the true source frame. The impl's
     // own guard returns null when nothing is armed, so an unconditional forward is safe.
     renderFrameAt: async (tMs: number) => (await loadMedia()).renderFrameAt(tMs),
   } as WebHost['media'];
-  // Device capture (v1.17) — mic (and optionally camera) recording + a live audio
+  // Device capture (v1.17) - mic (and optionally camera) recording + a live audio
   // level meter. Unlike media this IS capability-gated ('microphone'/'camera'),
   // because record() prompts for a grant; the meter/record affordances still
   // feature-detect host.recorder.isAvailable() at the point of use.
@@ -315,7 +315,7 @@ export async function createBridge(): Promise<WebHost> {
   } as WebHost['recorder'];
   // host.color (perceptual colour tools, v1.40) and host.geom (path booleans,
   // offset, stroke-to-fill, spline lowering, hit testing, v1.64) are pure engine
-  // math attached verbatim so web/CLI/Tauri can never drift — but they are also
+  // math attached verbatim so web/CLI/Tauri can never drift - but they are also
   // ~39 KB gz between them (makeColorApi eagerly reaches the ICC/gamut parsers;
   // makeGeomApi reaches the whole bezier/boolean kernel), and NOTHING in this
   // shell reads either one: `grep -rn 'host\.color\|host\.geom' shells/web/src`
@@ -323,10 +323,10 @@ export async function createBridge(): Promise<WebHost> {
   // before a runtime exists. So they are installed by installToolApis() below,
   // awaited at the single chokepoint every runtime goes through
   // (lib/mount-runtime.ts's createToolRuntime). Both contracts are SYNCHRONOUS
-  // (`deltaE` returns a number, `union` returns a path — not promises), so a
+  // (`deltaE` returns a number, `union` returns a path - not promises), so a
   // lazy facade like host.images is not available here; a pre-mount await is.
   // MilkDrop availability + preset attribution (v1.72). `isAvailable` is
-  // contractually SYNCHRONOUS, so — exactly like host.audio below — it is answered
+  // contractually SYNCHRONOUS, so - exactly like host.audio below - it is answered
   // here by the same lib/viz-support probe the real impl calls, imported directly
   // rather than re-typed so the two cannot drift; `presets` is async and lazy.
   const loadViz = memo(async () => (await import('./viz.ts')).createVizAPI());
@@ -336,7 +336,7 @@ export async function createBridge(): Promise<WebHost> {
   } as WebHost['viz'];
 
   // Lazy images facade (v1.60): decode/resize/re-encode wraps the upload path's
-  // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) — none of which
+  // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) - none of which
   // belongs in the boot chunk. Built + cached on first host.images call; every
   // ImagesAPI method is async, so the facade is transparent to callers.
   let imagesImpl: NonNullable<WebHost['images']> | null = null;
@@ -352,11 +352,11 @@ export async function createBridge(): Promise<WebHost> {
 
   // Lazy raster facade (v1.105): decode/measure/encode for tool hooks doing
   // their OWN canvas pixel work (the filter-* family, bitmap-studio, the logo
-  // composers, redact) — the bridge home for the canRaster()/loadImage() probes
+  // composers, redact) - the bridge home for the canRaster()/loadImage() probes
   // those hooks used to open-code against the DOM. Wraps the same codec glue as
   // host.images, so it's lazy for the same reason. `canRaster()` is contractually
-  // SYNCHRONOUS (a hook branches on it before deciding what to render), so — like
-  // host.viz.isAvailable / host.audio.isAvailable — it is answered here from the
+  // SYNCHRONOUS (a hook branches on it before deciding what to render), so - like
+  // host.viz.isAvailable / host.audio.isAvailable - it is answered here from the
   // same feature detection the module's own canRaster() makes, not behind the
   // import. Distinct from host.images (bytes→bytes convert, no pixel access).
   let rasterImpl: NonNullable<WebHost['raster']> | null = null;
@@ -373,11 +373,11 @@ export async function createBridge(): Promise<WebHost> {
     encode: async (source, opts) => (await loadRaster()).encode(source, opts),
   };
 
-  // Lazy audio facade (v1.71) — decode + per-frame analysis. Lazy for the same
+  // Lazy audio facade (v1.71) - decode + per-frame analysis. Lazy for the same
   // reason as images: it reaches the ZzFXM renderer and (for procedural song refs)
   // the sequence providers, none of which belongs in the boot chunk. `isAvailable`
   // is contractually SYNCHRONOUS, so it is answered here from feature detection
-  // rather than behind the import — the same two things audio.ts itself checks.
+  // rather than behind the import - the same two things audio.ts itself checks.
   let audioImpl: NonNullable<WebHost['audio']> | null = null;
   const loadAudio = async (): Promise<NonNullable<WebHost['audio']>> => {
     if (!audioImpl) { const { createAudioAPI } = await import('./audio.ts'); audioImpl = createAudioAPI(); }
@@ -390,12 +390,12 @@ export async function createBridge(): Promise<WebHost> {
     analyse: async (src, opts) => (await loadAudio()).analyse(src, opts),
   };
 
-  // Lazy speech facade (v1.96; transcription v1.99) — on-device Kokoro TTS and
+  // Lazy speech facade (v1.96; transcription v1.99) - on-device Kokoro TTS and
   // Whisper STT. Lazy for the same reason as audio: bridge/speech.ts owns
   // workers whose chunks drag transformers.js and the phonemizer, none of which
   // belongs in the boot chunk. The SYNCHRONOUS contract methods are answered
   // here without the import: the availability checks from the same feature
-  // detection speech.ts itself uses (wasm + Worker — the latter is what answers
+  // detection speech.ts itself uses (wasm + Worker - the latter is what answers
   // false under jsdom; transcription also needs the OfflineAudioContext its
   // main-thread decode rides), the byte totals from the pure constants modules
   // (lib/speech-kokoro.ts / lib/speech-whisper.ts, a few hundred bytes).
@@ -414,7 +414,7 @@ export async function createBridge(): Promise<WebHost> {
     transcribe: async (src, opts) => (await loadSpeech()).transcribe(src, opts),
   };
 
-  // Deep image codecs (v1.100) — a float pixel frame in, deep image bytes out
+  // Deep image codecs (v1.100) - a float pixel frame in, deep image bytes out
   // (16-bit PNG / EXR / Radiance / dithered 8-bit). Lazy facade: bridge/codec.ts
   // pulls the engine's off-barrel EXR/Radiance/PNG writers, which have no place
   // in the boot chunk (only a tool's exportStill deep path ever calls this).
@@ -426,7 +426,7 @@ export async function createBridge(): Promise<WebHost> {
     dither8: async (f, o) => (await loadCodec()).dither8(f, o),
   };
 
-  // Layered-bitmap write-back (v1.102) — host.layers.writePsd, the engine's own
+  // Layered-bitmap write-back (v1.102) - host.layers.writePsd, the engine's own
   // PSD writer behind a lazy import (psd-write.ts is off the boot chunk; only
   // the layer-stack tool's "Download layered PSD" action ever calls it). Blend
   // strings from the open contract are narrowed here: an unknown value writes
@@ -451,7 +451,7 @@ export async function createBridge(): Promise<WebHost> {
   // belongs in the boot chunk (only the picker's Upscale affordance ever calls it).
   // The SYNCHRONOUS contract methods are answered here without the import: the
   // availability check from the same feature detection upscale.ts uses (wasm +
-  // Worker — the latter answers false under jsdom/CLI), the catalogue + byte totals
+  // Worker - the latter answers false under jsdom/CLI), the catalogue + byte totals
   // from the pure constants module (lib/upscale-models.ts). `backend()` reflects the
   // resolved execution provider once a run/canRun has loaded the runner, else null
   // (the contract's "before one is probed" state).
@@ -464,7 +464,7 @@ export async function createBridge(): Promise<WebHost> {
   host.upscale = {
     isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
     backend: () => upscaleApi?.backend() ?? null,
-    // Only OFFER models whose weights are actually vendored — a placeholder-pinned
+    // Only OFFER models whose weights are actually vendored - a placeholder-pinned
     // model would promise a download that can never complete (honesty gate).
     models: () => stagedUpscaleModels(),
     modelBytes: (id) => UPSCALE_MODEL_BYTES[id],
@@ -478,7 +478,7 @@ export async function createBridge(): Promise<WebHost> {
   // letterbox/compose runner, off the boot budget (only a Remove-Background
   // affordance ever calls it). Sync methods answered here; models() offers only
   // STAGED (licence-verified) weights, so today it is EMPTY until a model is
-  // verified — isAvailable() still reports the capability so a tool can show the
+  // verified - isAvailable() still reports the capability so a tool can show the
   // affordance and the dialog explains the pending download.
   let matteApi: { backend(): 'webgpu' | 'wasm' | null } | null = null;
   const loadMatte = memo(async () => {
@@ -492,7 +492,7 @@ export async function createBridge(): Promise<WebHost> {
     // Offer only what THIS shell can actually run: the wasm-heavy full BiRefNet is
     // native-only, so it appears on the Tauri desktop shell (native ORT, no wasm32
     // ceiling) and is withheld on the web/PWA where it would OOM. matteModelsFor is
-    // the shared gate — the offline pre-download (model-prefetch.ts) uses the same one.
+    // the shared gate - the offline pre-download (model-prefetch.ts) uses the same one.
     models: () => matteModelsFor(isTauriShell()),
     modelBytes: (id) => MATTE_MODEL_BYTES[id],
     cached: async (id) => (await loadMatte()).cached(id),
@@ -530,14 +530,14 @@ export async function createBridge(): Promise<WebHost> {
 }
 
 /**
- * Install the three synchronous, tool-hook-only engine APIs — `host.color`
- * (v1.40), `host.geom` (v1.64) and `host.connectors` (v1.106) — that
+ * Install the three synchronous, tool-hook-only engine APIs - `host.color`
+ * (v1.40), `host.geom` (v1.64) and `host.connectors` (v1.106) - that
  * createBridge() deliberately leaves off the boot path (see the comment where
  * they used to be attached).
  *
  * Idempotent and safe to call concurrently: the in-flight promise is cached, so
  * N runtimes mounting at once share one import. Every path that mounts a tool
- * MUST await this first; do not call it directly — go through
+ * MUST await this first; do not call it directly - go through
  * lib/mount-runtime.ts's createToolRuntime(), which is the enforced chokepoint.
  *
  * Failure is non-fatal by design: both APIs are OPTIONAL in the v1 contract and

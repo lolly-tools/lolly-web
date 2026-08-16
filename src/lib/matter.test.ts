@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * host.matte runner — the PURE math (lib/matter.ts): letterbox geometry,
+ * host.matte runner - the PURE math (lib/matter.ts): letterbox geometry,
  * per-model normalization, and the mask activation. The ORT/canvas orchestration
  * around these is not testable headlessly (no weights, no onnxruntime-web in the
- * dev env — the module header's honesty ledger), so these three are what the
+ * dev env - the module header's honesty ledger), so these three are what the
  * suite pins. They are also where the roster's silent-degradation footguns live:
  * a wrong normalization or activation does not crash, it quietly ruins the matte.
  *

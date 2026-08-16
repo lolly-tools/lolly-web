@@ -2,9 +2,9 @@
 /**
  * What a form control displays (bridge/form-controls.ts).
  *
- * Table-driven and DOM-free on purpose: every case here — a password's bullets, a
+ * Table-driven and DOM-free on purpose: every case here - a password's bullets, a
  * placeholder standing in for an empty value, a multi-select, a range whose max is
- * below its min — is decidable without layout, so a browser would only make the
+ * below its min - is decidable without layout, so a browser would only make the
  * suite slower, not stricter. The walker's side of this (placement, clipping,
  * vertical centring) is covered in export-form-controls.test.ts, where a browser
  * genuinely is the oracle.

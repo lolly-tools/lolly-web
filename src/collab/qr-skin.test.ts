@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * qr-skin tests — plan 100 §6.1 (skin 2), §2.9, §11.27; wave 2.6.
+ * qr-skin tests - plan 100 §6.1 (skin 2), §2.9, §11.27; wave 2.6.
  * Run directly:  node --test shells/web/src/collab/qr-skin.test.ts
  *
  * A QR encoder is the kind of code that looks right and scans never, so almost none
@@ -26,7 +26,7 @@
  *  4. STRUCTURE: three finder patterns with separators, timing rows, the dark module,
  *     the 4-module quiet zone, the size formula.
  *  5. THE REAL PAYLOAD. A genuine `sdp-codec` invite is packed, dressed in the base32
- *     QR skin, encoded, decoded by leg 1 and fed back through `decodePayload` — and the
+ *     QR skin, encoded, decoded by leg 1 and fed back through `decodePayload` - and the
  *     sizes are printed as diagnostics, so a capacity regression shows up as a number.
  *
  * Plus: nothing throws (fuzz over random strings and hostile options), and the scan
@@ -70,7 +70,7 @@ function err(r: { ok: boolean; code?: string; reason?: string }, code: string, w
   assert.equal(typeof r.reason, 'string');
 }
 
-/** Deterministic PRNG — a failing fuzz case must be reproducible from its seed. */
+/** Deterministic PRNG - a failing fuzz case must be reproducible from its seed. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -82,7 +82,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-// ══ Published tables (ISO/IEC 18004) — this file's independent source of truth ══
+// ══ Published tables (ISO/IEC 18004) - this file's independent source of truth ══
 
 /** Table 9, level M: [blocks in group 1, data codewords each, blocks in group 2, each, EC per block]. */
 const PUBLISHED_M: Readonly<Record<number, readonly [number, number, number, number, number]>> = {
@@ -98,17 +98,17 @@ const PUBLISHED_M: Readonly<Record<number, readonly [number, number, number, num
   10: [4, 43, 1, 44, 26],
 };
 
-/** Table 7 — total codewords in the symbol, versions 1–10. */
+/** Table 7 - total codewords in the symbol, versions 1–10. */
 const PUBLISHED_TOTAL_CODEWORDS: Readonly<Record<number, number>> = {
   1: 26, 2: 44, 3: 70, 4: 100, 5: 134, 6: 172, 7: 196, 8: 242, 9: 292, 10: 346,
 };
 
-/** Table 1 — remainder bits that fall outside the codeword grid. */
+/** Table 1 - remainder bits that fall outside the codeword grid. */
 const PUBLISHED_REMAINDER_BITS: Readonly<Record<number, number>> = {
   1: 0, 2: 7, 3: 7, 4: 7, 5: 7, 6: 7, 7: 0, 8: 0, 9: 0, 10: 0,
 };
 
-/** Table E.1 — alignment pattern centre coordinates. */
+/** Table E.1 - alignment pattern centre coordinates. */
 const PUBLISHED_ALIGNMENT: Readonly<Record<number, readonly number[]>> = {
   1: [],
   2: [6, 18],
@@ -122,7 +122,7 @@ const PUBLISHED_ALIGNMENT: Readonly<Record<number, readonly number[]>> = {
   10: [6, 28, 50],
 };
 
-/** Table 25 — version information bit strings (MSB first), versions 7–10. */
+/** Table 25 - version information bit strings (MSB first), versions 7–10. */
 const PUBLISHED_VERSION_INFO: Readonly<Record<number, string>> = {
   7: '000111110010010100',
   8: '001000010110111100',
@@ -189,7 +189,7 @@ function maskAt(mask: number, x: number, y: number): boolean {
 
 /**
  * Which modules are function patterns, built from the spec's description of each region
- * and the PUBLISHED alignment table — deliberately not from the module under test.
+ * and the PUBLISHED alignment table - deliberately not from the module under test.
  */
 function functionMap(version: number): Uint8Array {
   const size = version * 4 + 17;
@@ -428,7 +428,7 @@ test('derived capacities match the published level-M tables', () => {
 
 test('the module grid holds exactly the codewords the table promises', () => {
   // Counts the free (non-function) modules the encoder actually left, using this
-  // file's own function map — a wrong alignment pattern or an unreserved format
+  // file's own function map - a wrong alignment pattern or an unreserved format
   // area changes this number even when the symbol still round-trips.
   for (let v = 1; v <= QR_MAX_VERSION; v++) {
     const size = v * 4 + 17;
@@ -527,7 +527,7 @@ test('every symbol has three finder patterns, separators, timing and the dark mo
     assertFinder(symbol, 0, 0, `${note} top-left`);
     assertFinder(symbol, n - 7, 0, `${note} top-right`);
     assertFinder(symbol, 0, n - 7, `${note} bottom-left`);
-    // The fourth corner must NOT hold a finder — three eyes is how a scanner orients,
+    // The fourth corner must NOT hold a finder - three eyes is how a scanner orients,
     // so a fourth would make the symbol's rotation ambiguous.
     let fourthMatches = true;
     for (let y = 0; y < 7 && fourthMatches; y++) {
@@ -646,8 +646,8 @@ test('forcing byte mode on alphanumeric text still round-trips (and costs a vers
  * A golden symbol, module for module.
  *
  * Its provenance is what makes it worth 21 lines: it is the output of the MIT
- * `qrcode-svg` build vendored inside `community/qr-code/hooks.js` — a widely used,
- * independently written encoder — for the same content at the same version, level and
+ * `qrcode-svg` build vendored inside `community/qr-code/hooks.js` - a widely used,
+ * independently written encoder - for the same content at the same version, level and
  * mask. The shell may not IMPORT tool data (that boundary is the point), but nothing
  * stops a one-off comparison, and this suite's development ran every fixture below
  * through it: with the mask pinned, every symbol this encoder produces is byte-
@@ -655,8 +655,8 @@ test('forcing byte mode on alphanumeric text still round-trips (and costs a vers
  * disagree only on which mask to CHOOSE, which is a quality heuristic rather than a
  * conformance question (§8.8.2 scoring differs between real implementations).
  *
- * So this fixture pins the whole pipeline — version choice, bit stream, ECC,
- * interleaving, function patterns, data walk, format bits, masking — to a foreign
+ * So this fixture pins the whole pipeline - version choice, bit stream, ECC,
+ * interleaving, function patterns, data walk, format bits, masking - to a foreign
  * reference. If a refactor changes one module, this is the test that says so.
  */
 const GOLDEN_HELLO_MASK2 = [
@@ -885,10 +885,10 @@ test('createQrElementRenderer matches the dialog callback and degrades to null',
   assert.equal(box.className, 'qr-skin');
   assert.match(box.attrs.style!, /max-width:200px/);
   assert.match(box.innerHTML, /^<svg /);
-  // Percentage width against the wrapper's max-width, auto height — never height:100%.
+  // Percentage width against the wrapper's max-width, auto height - never height:100%.
   assert.equal(child.attrs.style, 'display:block;width:100%;height:auto');
 
-  // Over capacity is a missing QR, not a throw — the dialog just shows the token.
+  // Over capacity is a missing QR, not a throw - the dialog just shows the token.
   assert.equal(render('x'.repeat(1000)), null);
   // No document anywhere (worker, CLI) is the same graceful null.
   assert.equal(createQrElementRenderer()('LOLLY'), null);

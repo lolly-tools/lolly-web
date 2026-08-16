@@ -4,13 +4,13 @@
  *
  * Measures how many live-camera frames a tool actually processes per second, so
  * the onFrame → OffscreenCanvas-in-a-Worker migration's "pixel work leaves the
- * main thread is a net win" claim is measured, not asserted — the SAME meter
+ * main thread is a net win" claim is measured, not asserted - the SAME meter
  * reads the in-realm and the worker path (it counts render emissions, which the
  * runtime fires once per applied onFrame patch), so the two are directly
  * comparable.
  *
  * OFF by default (localStorage `lolly.frameFps` !== '1'), and when off both
- * `fpsTick` and `startFrameFps` are ~free — no timer, no allocation — so it never
+ * `fpsTick` and `startFrameFps` are ~free - no timer, no allocation - so it never
  * touches the shipping live path. Turn on: `localStorage.lolly.frameFps = '1'`,
  * then Go live; each second logs `[fps] <toolId> <n>/s` and updates
  * `globalThis.__lollyFrameFps` for a test/automation read.
@@ -43,7 +43,7 @@ export function fpsTick(): void {
   if (meter) meter.count++;
 }
 
-/** Begin metering for `toolId` (no-op unless the dev flag is on). Idempotent —
+/** Begin metering for `toolId` (no-op unless the dev flag is on). Idempotent - 
  *  restarts cleanly. `clock` is injectable for tests; defaults to performance.now. */
 export function startFrameFps(toolId: string, clock: () => number = () => performance.now()): void {
   if (!enabled()) return;

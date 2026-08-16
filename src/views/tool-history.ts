@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The tool view's undo/redo model — pure, DOM-free, testable.
+ * The tool view's undo/redo model - pure, DOM-free, testable.
  *
  * Extracted from views/tool.ts for maintainability-2026-07-29.md item 2, the
  * second increment after views/catalog-filter.ts. Same shape as the pattern that
  * already works in this repo (free-canvas-math.ts, timeline-math.ts): the view
- * keeps the wiring — the runtime, the toasts, the button sync — and this module
+ * keeps the wiring - the runtime, the toasts, the button sync - and this module
  * owns the rules.
  *
  * WHY THIS CLUSTER. Its own comments in tool.ts record two bugs that already
@@ -14,7 +14,7 @@
  *   1. The recorded-value filter was once a `blob:` URL test, which silently
  *      disabled ALL undo in Design the moment any box image resolved
  *      through the asset-blob cache. The rule is about raw BYTES in memory, not
- *      about the URL scheme — an asset ref carrying a blob: URL is perfectly
+ *      about the URL scheme - an asset ref carrying a blob: URL is perfectly
  *      recordable because it re-derives its URL from a durable source + id.
  *   2. Coalescing keyed off the top entry rather than off the last RECORD meant a
  *      post-undo edit could merge into a stale entry and lose a state.
@@ -30,7 +30,7 @@ import type { InputValue } from '../../../../engine/src/inputs.js';
 /** One undoable edit: an input's value before and after a single gesture. */
 export interface HistoryEntry {
   id: string;
-  /** The input's human name — what the undo/redo toast shows. */
+  /** The input's human name - what the undo/redo toast shows. */
   label: string;
   before: InputValue;
   after: InputValue;
@@ -62,7 +62,7 @@ export function sameValue(a: InputValue, b: InputValue): boolean {
  *
  * Those are NOT recorded: the ref's object URL is revoked when the input is
  * replaced or cleared and there is no durable id to re-resolve from, so a
- * restored entry would point at a dead URL — and deep-cloning megabytes per
+ * restored entry would point at a dead URL - and deep-cloning megabytes per
  * entry is wasteful.
  *
  * Note what this does NOT test: the URL. A `blob:`/`data:` URL *without* bytes is
@@ -94,7 +94,7 @@ export interface HistoryModel {
   redo(): HistoryEntry | null;
   /**
    * End the current gesture, so the next edit starts a fresh step. The view
-   * calls this around an undo/redo application — without it, an edit made
+   * calls this around an undo/redo application - without it, an edit made
    * straight after an undo can coalesce into the entry that undo left on top.
    */
   endGesture(): void;
@@ -110,7 +110,7 @@ export function createHistory(opts: { limit?: number; coalesceMs?: number } = {}
 
   const undoStack: HistoryEntry[] = [];
   const redoStack: HistoryEntry[] = [];
-  // Keyed off the last RECORD, not off the top entry — see the header. undo/redo
+  // Keyed off the last RECORD, not off the top entry - see the header. undo/redo
   // leaves an old entry on top still carrying its original time, so keying off
   // the entry would let the next edit merge into it and lose a state.
   let lastRecordId: string | null = null;

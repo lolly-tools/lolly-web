@@ -71,11 +71,11 @@
  * HTML modal-dialog steps mark every node outside the dialog inert; an inert subtree is
  * excluded from the accessibility tree and there is no per-element opt-out from
  * UA-applied inertness. `a11y.ts`'s `data-a11y-live` marker only protects a region from
- * `lib/focus-trap.ts`'s hand-rolled sweep, which is for `role="dialog"` DIV overlays —
+ * `lib/focus-trap.ts`'s hand-rolled sweep, which is for `role="dialog"` DIV overlays - 
  * it buys nothing here, so every announcement made through it would be dropped.
  *
  * Focus moves only when the STEP changes, never on a countdown tick and never on a
- * validation notice — and a re-render restores the caret and the selection to whatever
+ * validation notice - and a re-render restores the caret and the selection to whatever
  * field held them, with the typed text intact. §11.25 already calls the reply leg the
  * ceremony's weak point; a dialog that wipes the paste field to tell you the paste was
  * wrong is what makes it one.
@@ -83,7 +83,7 @@
  * COPY. Every user-visible string lives in {@link STRINGS}, and every value in that map
  * IS its catalog key: `i18n.ts` looks a translation up by the English source, so the map
  * is both the copy and the extraction list (scripts/translate.ts's `collab` corpus slices
- * it out of this file). Rendering goes through `tRaw(STRINGS.x, params)` — `tRaw` rather
+ * it out of this file). Rendering goes through `tRaw(STRINGS.x, params)` - `tRaw` rather
  * than `t` because every string here lands in `textContent`, an attribute or the dialog's
  * live region, never an HTML sink, and t()'s param escaping would render a collaborator
  * called O'Brien as `O&#39;Brien`. Peer-supplied text (a display name, a tool id) only
@@ -235,7 +235,7 @@ export const STRINGS = {
   // instructing anyone to compare: the pair who read it out have already understood, and
   // the pair who do not are not made safer by being told to.
   plateBody: 'Both screens show the same plate when the connection is private.',
-  // What a screen reader says instead of the plate's own text — see `spokenPlate`, and
+  // What a screen reader says instead of the plate's own text - see `spokenPlate`, and
   // `plateSlot` for why the visible characters are hidden from it rather than doubled.
   plateSpoken: 'Connection plate {plate}',
   startEditing: 'Start editing',
@@ -282,7 +282,7 @@ export const STRINGS = {
     },
   },
 
-  // Nearby devices (plans/110 §3) — the tap-to-hand-over panel on the invite screen.
+  // Nearby devices (plans/110 §3) - the tap-to-hand-over panel on the invite screen.
   nearbyHeading: 'Nearby devices',
   nearbyMakeVisible: 'Make this device visible',
   nearbyHint: 'Make the other device visible too, and it will appear here to tap.',
@@ -300,7 +300,7 @@ export const STRINGS = {
  * verb they had. In English the two are the same function doing the same substitution;
  * in any other language `tRaw` looks the source up in the `collab` catalog first.
  *
- * @deprecated for new code — call {@link tRaw} directly.
+ * @deprecated for new code - call {@link tRaw} directly.
  */
 export const fill = tRaw;
 
@@ -321,7 +321,7 @@ export const INVITE_STAMP = 'data-cer-invite';
 /** How often the re-arm countdown repaints. One second: it shows m:ss. */
 export const COUNTDOWN_TICK_MS = 1000;
 
-// The three editable fields. Named because each is read from three places — the
+// The three editable fields. Named because each is read from three places - the
 // element, the value mirror that survives a re-render, and the focus restore.
 const NAME_FIELD = 'collab-cer-name';
 const REPLY_FIELD = 'collab-cer-reply';
@@ -350,7 +350,7 @@ export function resolveName(raw: string | undefined, role: CeremonyRole): string
  *
  * Not decoration. The plate exists to be compared CHARACTER BY CHARACTER against a voice
  * on the other end, and left as its own text a screen reader reads `LOL-123` as a word
- * and a number — "lol, one hundred and twenty-three" — which is unusable for that and
+ * and a number - "lol, one hundred and twenty-three" - which is unusable for that and
  * worse, sounds like a successful comparison. Spacing the characters is what makes the
  * spoken form and the printed form the same six symbols; the hyphen becomes a comma
  * because a pause is what a group break sounds like.
@@ -493,8 +493,8 @@ export interface CeremonyEffectsContext {
  * `ready` belongs here as much as the other two, and leaving it out was a slip rather than
  * a policy: it is the event that actually COMPLETES a pairing (ICE alone never does), the
  * real transport has always emitted it, and the dialog has always forwarded it. The
- * omission never broke the seam — `RtcCeremonyListener` is method-syntax, so the
- * assignment in `collab/join-route.ts` stays bivariant — but it did mean every test
+ * omission never broke the seam - `RtcCeremonyListener` is method-syntax, so the
+ * assignment in `collab/join-route.ts` stays bivariant - but it did mean every test
  * driving a fake transport the way the real one behaves was an error the typechecker had
  * to be ignored about.
  */
@@ -508,7 +508,7 @@ export type CeremonyTransportEvent = Extract<
  * members that make it a live object rather than a bag of functions.
  *
  * Both are optional so a stub that drives the machine by hand stays a plain
- * `CeremonyEffects` — but a REAL transport must implement both. See this file's header:
+ * `CeremonyEffects` - but a REAL transport must implement both. See this file's header:
  * without `events` no pairing reaches `connected`, and without `close` every cancelled
  * or retried ceremony leaks a peer connection and three data channels.
  */
@@ -523,7 +523,7 @@ export interface CeremonyEffectsBundle extends CeremonyEffects {
   events?(send: (event: CeremonyTransportEvent) => void): () => void;
   /**
    * Tear the transport down. Idempotent, and called for every ceremony this dialog
-   * still owns — cancel, Escape, a failure screen, and each `restart`. NOT called once
+   * still owns - cancel, Escape, a failure screen, and each `restart`. NOT called once
    * `onConnected` has fired: from that moment the channel is the session's.
    */
   close?(): void;
@@ -531,14 +531,14 @@ export interface CeremonyEffectsBundle extends CeremonyEffects {
    * The pairing's two DTLS certificate fingerprints, for the connection plate (§1).
    *
    * A LEVEL READ, exactly like the machine's `iceState`/`channelsReady` and asked the same
-   * way — on every render, rather than off an edge this dialog may have been in no screen
+   * way - on every render, rather than off an edge this dialog may have been in no screen
    * to catch. `null` means "no pairing to describe", which is what the transport answers
    * before both descriptions exist and after it is closed; the connected screen then shows
    * NOTHING, because a plate two people might read out is the one thing here that must not
    * be approximate.
    *
    * Optional for the same reason `events` and `close` are: a stub driving the machine by
-   * hand stays a plain `CeremonyEffects`. `createRtcTransport` satisfies it directly — its
+   * hand stays a plain `CeremonyEffects`. `createRtcTransport` satisfies it directly - its
    * `RtcCeremonyEffects` declares the same member as required.
    */
   plateMaterial?(): PlateMaterial | null;
@@ -591,7 +591,7 @@ export interface CollabCeremonyOptions {
   readonly onConnected?: (handle: CeremonyConnectedHandle) => void;
   /** Fires once, when the dialog is gone. `state` is absent if none was ever started. */
   readonly onClose?: (state: CeremonyState | undefined) => void;
-  /** Fires once with the acceptor's minted REPLY signal, the moment it exists — so a nearby
+  /** Fires once with the acceptor's minted REPLY signal, the moment it exists - so a nearby
    *  pairing can hand the reply back over its own channel rather than showing a QR to scan.
    *  Acceptor only; never fired for the inviter (plans/110 §3). */
   readonly onAnswer?: (signal: string) => void;
@@ -718,13 +718,13 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /**
    * What is typed in the two paste fields, mirrored out of the DOM so a re-render
    * cannot eat it. Every render rebuilds the screen, and a validation notice IS a
-   * render — the one moment the text matters most (§11.25).
+   * render - the one moment the text matters most (§11.25).
    */
   const pasted = new Map<string, string>();
   let notice = '';
   let copiedAct = '';
   let connectedFired = false;
-  // Nearby (plans/110 §3). The LAN provider, or null when discovery is off or unavailable —
+  // Nearby (plans/110 §3). The LAN provider, or null when discovery is off or unavailable - 
   // in which case none of the panel, the subscription or the handlers below do anything.
   const nearbyProvider = isFlagOnSync(NEARBY_DISCOVERY_FLAG) ? getNearbyProvider('lan') ?? null : null;
   let nearbyPeers: readonly NearbyPeer[] = [];
@@ -786,7 +786,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /** The screen, rebuilt per render. A wrapper, so the live region below survives it. */
   const screenEl = node('div', { attrs: { 'data-cer-screen': '' } });
   /**
-   * The dialog's own live region — see the header on why the shell's body-level
+   * The dialog's own live region - see the header on why the shell's body-level
    * `announce()` cannot be heard from inside a `showModal()` dialog. One `<span>` per
    * part rather than one joined sentence: `aria-atomic` reads the whole region either
    * way, and it keeps every rendered string individually checkable against STRINGS.
@@ -817,7 +817,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /**
    * Hand the transport back. A peer connection and three data channels are not
    * garbage the collector can reason about, and a `timeout` failure leaves one still
-   * gathering — so every ceremony this dialog still owns is closed here. The
+   * gathering - so every ceremony this dialog still owns is closed here. The
    * exception is the one that worked: after `onConnected` the session holds it.
    */
   function releaseEffects(): void {
@@ -933,7 +933,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
    *
    * A second window on this device (`collab/join-route.ts`, the own-invite ask) has one
    * question this dialog is the only thing that can answer: "did you make this invite?"
-   * The invite screen already renders the token, but that screen is step 1 — press "Next"
+   * The invite screen already renders the token, but that screen is step 1 - press "Next"
    * and the only evidence is gone, so the answer would flip from yes to no without the
    * invite changing at all. This is that fact, kept where a re-render cannot take it.
    *
@@ -957,14 +957,14 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /**
    * Keep {@link plateText} in step with the pairing the transport currently describes.
    *
-   * Driven from `render`, on the level read rather than an edge — the material becomes
+   * Driven from `render`, on the level read rather than an edge - the material becomes
    * available around `ready`, which for a LAN pair can land before the dialog has reached
    * a screen that could have caught an event (the same window `iceState`/`channelsReady`
    * exist for). Asking every render costs one comparison once the key is unchanged.
    *
    * Three failures all end the same way, with no plate rather than a wrong one: an effects
    * bundle with no `plateMaterial` (every hand-driven stub), a read that throws, and a
-   * digest that cannot be computed (a runtime with no Web Crypto — `plate.ts` refuses
+   * digest that cannot be computed (a runtime with no Web Crypto - `plate.ts` refuses
    * rather than reaching for something weaker). None of them is a ceremony failure: the
    * pairing is live and usable, it simply cannot be confirmed out loud on this device.
    */
@@ -991,12 +991,12 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
         if (closed || plateFor !== key) return;
         plateText = value;
         render();
-        // The step did not change, so `render` will not announce on its own — and a plate
+        // The step did not change, so `render` will not announce on its own - and a plate
         // that arrives a microtask after the screen is exactly the thing a live region is
         // for. Sighted or not, both people are told the same six characters.
         //
         // Only if it actually PAINTED, though. The material is there from `ready`, which
-        // for the inviter is the render that `applyRemote` triggers — a screen ("Looking
+        // for the inviter is the render that `applyRemote` triggers - a screen ("Looking
         // for a direct route…") that shows no plate. Announcing one there would read out
         // six characters the other person cannot yet see, and the reading-out is the
         // whole ceremony; it has to happen when both screens are showing it.
@@ -1208,7 +1208,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /**
    * An in-flight line. `role="status"` is kept as a second channel rather than the
    * primary one: it is built fresh with its text already in it, and a live region that
-   * arrives populated is the classic case screen readers announce inconsistently — which
+   * arrives populated is the classic case screen readers announce inconsistently - which
    * is what `speak()` and its persistent region exist to cover. Whether the two ever
    * double-speak needs a real browser to answer; both are polite, and a repeated short
    * line is a smaller failure than a missed one.
@@ -1276,7 +1276,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
    * as a word and a number. The visible characters stay exactly as they are for the eye.
    *
    * `data-dynamic` marks the text as a value rather than copy, like the invite/reply
-   * tokens — the plate is six characters of digest, and no catalog can contain it.
+   * tokens - the plate is six characters of digest, and no catalog can contain it.
    */
   function plateSlot(): HTMLElement | null {
     if (!plateText) return null;
@@ -1384,7 +1384,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   }
 
   /** The "tap a nearby device to hand over the invite" panel, or null when discovery is off
-   *  (no LAN provider — every plain web build). Peer names arrive over the wire, so they go
+   *  (no LAN provider - every plain web build). Peer names arrive over the wire, so they go
    *  in as `textContent` via `node({text})`, never a markup sink. */
   function buildNearby(): HTMLElement | null {
     if (!nearbyProvider) return null;
@@ -1496,13 +1496,13 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   }
 
   /**
-   * Connected — and the one screen in the ceremony that says something about the
+   * Connected - and the one screen in the ceremony that says something about the
    * connection's PRIVACY rather than its progress.
    *
    * The plate sits directly under "You are working with Sam", above the notes and the
    * button, for both roles: it is the last thing either person can act on before the
    * session starts, and putting it below a version warning would bury the check under the
-   * caveats. The sentence follows the plate rather than leading it — there is nothing to
+   * caveats. The sentence follows the plate rather than leading it - there is nothing to
    * explain until there are six characters to explain.
    *
    * When there is no plate, both nodes are absent and the screen is precisely the one it
@@ -1814,7 +1814,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   // loadNamespace: the repaint below would be pure churn in the language the map is
   // already written in, and skipping it keeps an English build byte-identical to the
   // one before this wave. Every other language paints English for one microtask and
-  // then repaints in place — the dialog has no motion and no focus move on a same-step
+  // then repaints in place - the dialog has no motion and no focus move on a same-step
   // render (see `render`'s stepKey), so the swap is silent.
   if (currentLang() !== 'en') {
     void loadNamespace('collab').then(() => { if (!closed) render(); });

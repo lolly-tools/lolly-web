@@ -57,7 +57,7 @@ const { _resetProfileCache } = await import('../lib/color-profiles.ts');
 // ── A host whose stored list the test writes directly ─────────────────────────
 //
 // `listProfiles` rebuilds a row from `meta` alone and never re-parses, so a row can be
-// stated here without any ICC bytes — which is exactly what the "already loaded" case
+// stated here without any ICC bytes - which is exactly what the "already loaded" case
 // needs to test, and keeps the test honest about where each behaviour lives.
 
 interface Stored { id: string; type: string; meta?: Record<string, unknown> }
@@ -131,7 +131,7 @@ test('every press-condition row is a keyboard-reachable button with an action in
 
 test('a condition whose profile is loaded charts against it and closes the panel', async () => {
   // The instant case: the profile is here, so pressing the row is the same act as
-  // pressing its intent pill — no extra step, no confirmation.
+  // pressing its intent pill - no extra step, no confirmation.
   const { host } = fakeHost([profileRow('a1b2c3d4a1b2c3d4', 'PSO Coated v3')]);
   const o = open(host);
   await settle();
@@ -159,7 +159,7 @@ test('an unfetchable condition opens the picker and names the file to look for',
   // that has none rather than asserting on today's SOURCES table.
   const noSource = PRESS_CONDITIONS.find(c => !fetchSourceFor(c));
   if (!noSource) {
-    // Every condition is fetchable today — assert the fallback still exists as data,
+    // Every condition is fetchable today - assert the fallback still exists as data,
     // since it is what an offline reader gets.
     for (const c of PRESS_CONDITIONS) assert.ok(c.files.length, `${c.id} names a filename`);
     return;
@@ -195,7 +195,7 @@ test('a fetch that fails names the file on this device instead of dead-ending', 
 });
 
 // The success path needs REAL profile bytes, since ingest parses them. macOS ships one;
-// elsewhere this is skipped rather than faked — a synthetic buffer would test the stub.
+// elsewhere this is skipped rather than faked - a synthetic buffer would test the stub.
 const SYSTEM_CMYK = '/System/Library/ColorSync/Profiles/Generic CMYK Profile.icc';
 test('a fetched profile is stored, mounted and charted in one press', { skip: !existsSync(SYSTEM_CMYK) && 'no system CMYK profile' }, async () => {
   const bytes = readFileSync(SYSTEM_CMYK);
@@ -290,7 +290,7 @@ test('a loaded profile is filed by its device class, not by its name', async () 
   assert.deepEqual(groupOf('print'), ['Screeny McScreen']);
   assert.deepEqual(groupOf('display'), ['Press-o-matic']);
   // A `spac` conversion profile and a `scnr` input profile characterise neither a press
-  // nor a screen, so neither is filed under Display — they are still listed and still
+  // nor a screen, so neither is filed under Display - they are still listed and still
   // chartable, which is the panel indicating rather than refusing.
   assert.deepEqual(groupOf('other'), ['sRGB v4 ICC preference', 'My Scanner']);
   assert.equal(document.querySelector<HTMLElement>('[data-labp-sec="other"]')!.hidden, false);
@@ -341,7 +341,7 @@ test('a display preset is a button that says what pressing it does, and fetches 
     click(btn);
     await settle();
     await settle();
-    // Only ever the ICC's own registry — the licence read for Apple's Display P3 says
+    // Only ever the ICC's own registry - the licence read for Apple's Display P3 says
     // never, and Elle Stone's CC-BY-SA set is undecided, so neither may appear here.
     assert.match(asked, /^https:\/\/registry\.color\.org\/rgb-registry\/profiles\/sRGB2014\.icc$/);
     // A failed fetch names the file on this device rather than the network's complaint.
@@ -378,7 +378,7 @@ test('a display preset already on this device charts against it instead of fetch
 
 test('the sections stylesheet is layered, sizes touch targets, and invites at the + pill', () => {
   const raw = readFileSync(new URL('../styles/parts/profiles-panel.css', import.meta.url), 'utf8');
-  // Declarations only — the sheet's comments discuss the dashed-border rule, and a guard
+  // Declarations only - the sheet's comments discuss the dashed-border rule, and a guard
   // that reads prose is a guard that fires on its own explanation.
   const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.match(css, /@layer views \{/, 'priority comes from the layer, not from load order');
@@ -387,7 +387,7 @@ test('the sections stylesheet is layered, sizes touch targets, and invites at th
   const add = css.slice(css.indexOf('.lab-limit .view-seg-btn.lab-limit-add {'));
   assert.match(add, /background: hsl\(var\(--primary\)/, 'filled in the brand hue');
   assert.match(add, /min-height: 44px/, 'and a real target on a phone');
-  // It must not claim to BE the charted target — that is the pressed segment's fill.
+  // It must not claim to BE the charted target - that is the pressed segment's fill.
   assert.ok(!/background: hsl\(var\(--primary\)\)/.test(add), 'a tint, not the pressed solid');
   assert.match(css, /@media \(pointer: coarse\)[^}]*\{[\s\S]*?\.labp-cond-btn \{ min-height: 44px/,
     'a preset row is a tap target');

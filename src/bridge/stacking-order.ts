@@ -7,7 +7,7 @@
  * `renderSvgFromHtml` (export.ts) paints strictly in DOM order: an element's
  * background/borders, then its block children, then its inline text, then its
  * generated content. CSS does not paint in DOM order. It paints in
- * **stacking-context order** — CSS 2.1 Appendix E, §E.2 — where every stacking
+ * **stacking-context order** - CSS 2.1 Appendix E, §E.2 - where every stacking
  * context lays down seven layers:
  *
  *   1. the context element's own background and borders
@@ -20,12 +20,12 @@
  *
  * DOM order agrees with that only when nothing is positioned or z-indexed. On
  * Lolly's own gallery page 99 elements carry a non-auto `z-index`, 22 of them
- * negative — so the walker paints tooltips under cards and scrims over content.
+ * negative - so the walker paints tooltips under cards and scrims over content.
  *
  * ## Why this is a whole module, and a table
  *
  * The dangerous failure is not "we mis-order something". It is "we hoist a node
- * OUT of a stacking context it should never have left" — content that is correct
+ * OUT of a stacking context it should never have left" - content that is correct
  * today becoming wrong. That can only happen if this file misses a
  * context-creating property. So detection is ONE auditable table with a spec
  * citation per clause and a test row per clause (stacking-order.test.ts), rather
@@ -46,7 +46,7 @@
  *  Layers 1 (the context element's own background/border) and 5 (in-flow inline
  *  content) are never deferred: the walker emits both in place, at the point it
  *  reaches them. 3 and 4 are listed because a unit must be classified as
- *  "stays where DOM order put it" explicitly — a silent default is how an
+ *  "stays where DOM order put it" explicitly - a silent default is how an
  *  ordering bug hides. */
 export type PaintLayer = 2 | 3 | 4 | 6 | 7;
 
@@ -89,13 +89,13 @@ export interface StackingStyle {
 export interface StackingRole {
   /** Does this element establish a stacking context for its descendants? */
   createsContext: boolean;
-  /** Which clause fired — surfaced in logs and asserted per-row by the tests.
+  /** Which clause fired - surfaced in logs and asserted per-row by the tests.
    *  `''` when no clause fired. */
   reason: string;
   /** Which Appendix E §E.2 layer this element's paint unit belongs to inside its
    *  PARENT's stacking context. */
   layer: PaintLayer;
-  /** Used z-index. 0 when `auto` — Appendix E sorts layer 6 (auto/0) together. */
+  /** Used z-index. 0 when `auto` - Appendix E sorts layer 6 (auto/0) together. */
   z: number;
   /** `order` (flex/grid), for order-modified document order. 0 when absent. */
   order: number;
@@ -111,7 +111,7 @@ function set(v: string | undefined, initial = 'none'): boolean {
 }
 
 /** Properties whose non-initial value makes a stacking context, so
- *  `will-change: <that>` makes one pre-emptively (CSS Will Change §3 — "if any
+ *  `will-change: <that>` makes one pre-emptively (CSS Will Change §3 - "if any
  *  non-initial value of a property would create a stacking context on the
  *  element, specifying that property in will-change must create one"). */
 const WILL_CHANGE_CREATORS = new Set([
@@ -122,7 +122,7 @@ const WILL_CHANGE_CREATORS = new Set([
 ]);
 
 /** `contain` keywords that include paint or layout containment. `style` alone
- *  does NOT create a stacking context (CSS Contain 2 §2) — a trap worth a test
+ *  does NOT create a stacking context (CSS Contain 2 §2) - a trap worth a test
  *  row, because a naive `contain !== 'none'` check gets it wrong. */
 const CONTAIN_CREATORS = ['layout', 'paint', 'content', 'strict'];
 
@@ -130,11 +130,11 @@ const CONTAIN_CREATORS = ['layout', 'paint', 'content', 'strict'];
  * Classify one element.
  *
  * @param s             its computed style subset
- * @param parentDisplay the PARENT's computed `display` — consulted only to decide
+ * @param parentDisplay the PARENT's computed `display` - consulted only to decide
  *                      whether this element is a flex/grid ITEM, and only when
  *                      `zIndex !== 'auto'` (so callers can skip the extra
  *                      `getComputedStyle` in the overwhelmingly common case).
- * @param isTopLayer    `el.matches(':modal, :popover-open')` — top-layer boxes
+ * @param isTopLayer    `el.matches(':modal, :popover-open')` - top-layer boxes
  *                      paint above everything, independent of tree position.
  */
 export function stackingRole(
@@ -146,7 +146,7 @@ export function stackingRole(
   const zRaw = (s.zIndex ?? 'auto').trim().toLowerCase();
   // TRAP: z-index computes to the STRING 'auto'. parseInt('auto') is NaN, and NaN
   // silently collapsing to 0 would turn every un-z-indexed element into an
-  // explicit layer-6 member — i.e. hoist the whole page. Keep the two apart.
+  // explicit layer-6 member - i.e. hoist the whole page. Keep the two apart.
   const zAuto = zRaw === 'auto' || zRaw === '';
   const zNum = zAuto ? 0 : (Number.parseInt(zRaw, 10) || 0);
   const order = Number.parseInt((s.order ?? '0').trim(), 10) || 0;
@@ -162,7 +162,7 @@ export function stackingRole(
     // Top layer (HTML `:modal` dialog, open popover). Painted above every other
     // context in the document, so it must at minimum be a context of its own.
     (isTopLayer && claim('top-layer')) ||
-    // CSS Position L3 §9.9.1. `fixed` and `sticky` create one UNCONDITIONALLY —
+    // CSS Position L3 §9.9.1. `fixed` and `sticky` create one UNCONDITIONALLY - 
     // an Appendix-E-literal reading misses this because CSS 2.1 predates sticky
     // and treated fixed as merely positioned.
     ((position === 'fixed' || position === 'sticky') && claim(`position:${position}`)) ||
@@ -173,7 +173,7 @@ export function stackingRole(
     (isFlexOrGridItem && claim('flex/grid item + z-index')) ||
     // CSS Color 3 §3.2: opacity less than 1.
     (Number.parseFloat(s.opacity ?? '1') < 1 && claim('opacity')) ||
-    // CSS Transforms 1 §3 — and the individual transform properties, whose
+    // CSS Transforms 1 §3 - and the individual transform properties, whose
     // INITIAL value is `none`. TRAP: `scale: 1` / `translate: 0px` are non-initial
     // and DO create a context while `transform` still computes to `none`.
     (set(s.transform) && claim('transform')) ||
@@ -216,7 +216,7 @@ function paintLayer(
 ): PaintLayer {
   if (positioned) {
     // Steps 3 / 8 / 9. Note `z-index: auto` on a positioned element lands in
-    // layer 6 alongside an explicit 0 — that is the spec, and it is why the
+    // layer 6 alongside an explicit 0 - that is the spec, and it is why the
     // walker must treat "positioned" and "creates a context" as different
     // questions (step 8's parenthetical).
     if (!zAuto && zNum < 0) return 2;
@@ -227,7 +227,7 @@ function paintLayer(
   // as inline blocks in order-modified document order, sorted by z-index. We map
   // that onto Appendix E's buckets by SIGN only, and deliberately leave `z: 0`
   // in layer 3 (where DOM order already puts it) rather than hoisting it past
-  // in-flow siblings — `auto` and `0` compare equal for flex items, so promoting
+  // in-flow siblings - `auto` and `0` compare equal for flex items, so promoting
   // one and not the other would invent an inversion that Chromium does not paint.
   if (isFlexOrGridItem && zNum < 0) return 2;
   if (isFlexOrGridItem && zNum > 0) return 7;
@@ -245,8 +245,8 @@ function paintLayer(
  * Stability IS the spec here, not an implementation detail: Appendix E §E.2
  * steps 3 and 9 order each layer "in z-index order (most negative first) then
  * tree order". `Array#sort` has been required-stable since ES2019, and every
- * engine this ships on predates that requirement's adoption by years — but the
- * dependency is load-bearing enough to name.
+ * engine this ships on predates that requirement's adoption by years - but the
+ * dependency is real and worth naming.
  *
  * Returns a NEW array; the caller's tree-order array is left alone.
  */
@@ -257,7 +257,7 @@ export function sortUnits<T extends { z: number }>(items: readonly T[]): T[] {
 /**
  * Order-modified document order (CSS Flexbox §5.4, CSS Grid §6): a flex/grid
  * container paints its items sorted by `order`, ties broken by document order.
- * A non-flex/grid parent must not call this — `order` has no effect there and
+ * A non-flex/grid parent must not call this - `order` has no effect there and
  * reordering would be a pure regression.
  */
 export function orderModifiedChildren<T>(kids: readonly T[], order: (k: T) => number): T[] {

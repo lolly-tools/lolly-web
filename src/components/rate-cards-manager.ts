@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The rate-cards manager — where a printer's own rate card, dropped on this
+ * The rate-cards manager - where a printer's own rate card, dropped on this
  * device, becomes a stored asset Lolly can later multiply COUNTED quantities by.
  *
  * Modelled on `profiles-manager.ts`: a `mountModal`, the `.updz` dropzone reused
  * verbatim, a list of rows with per-row Remove, escape-to-close inherited from the
  * native <dialog>, and refusals stated in one status line (never a nested modal).
- * It has NO preset/fetch section — a rate card has no registry to pull from,
- * nothing is ever fetched — and NO intent controls.
+ * It has NO preset/fetch section - a rate card has no registry to pull from,
+ * nothing is ever fetched - and NO intent controls.
  *
  * ## No money here
  *
  * This phase STORES and VALIDATES only. The modal shows the filename, the issuer's
  * own claim as reported speech, the currency, and "prices N of M lines". It NEVER
- * renders a currency figure — that is Phase 4's export panel. A number Lolly made
+ * renders a currency figure - that is Phase 4's export panel. A number Lolly made
  * up and presented as money is worse than showing nothing.
  *
  * ## Two layers kept apart (rule 5)
  *
  * Every row separates the FACTS Lolly knows (filename, digest, size, date added)
  * from the CLAIMS the file makes (issuer name / issue date). The claim is rendered
- * as reported speech — *"The file says: … Lolly has not verified this."* — never as
+ * as reported speech - *"The file says: … Lolly has not verified this."* - never as
  * a bare attribution merged into the facts.
  *
  * ## The create flow starts every rate EMPTY
@@ -45,7 +45,7 @@ import { t, tRaw } from '../i18n.ts';
 
 export interface RateCardsPanelOpts {
   host: RateCardsHost;
-  /** A card landed or left the library — the caller may want to refresh a picker. */
+  /** A card landed or left the library - the caller may want to refresh a picker. */
   onChange?(): void | Promise<void>;
 }
 
@@ -53,7 +53,7 @@ export interface RateCardsPanelOpts {
 
 /**
  * The scaffold "New card" downloads. Every line kind present, every `rate` an
- * EMPTY STRING — schema-invalid on purpose, so an unedited copy is refused on
+ * EMPTY STRING - schema-invalid on purpose, so an unedited copy is refused on
  * ingest. There is no numeric rate anywhere: Lolly ships structure, never a price.
  */
 export const EMPTY_RATECARD_TEMPLATE = JSON.stringify({
@@ -75,7 +75,7 @@ export const EMPTY_RATECARD_TEMPLATE = JSON.stringify({
   ],
 }, null, 2);
 
-/** Refusal copy, one line each — the same two refusals as ingest plus the example guard. */
+/** Refusal copy, one line each - the same two refusals as ingest plus the example guard. */
 export function refusalMessage(error: RateCardIngestFailure['error']): string {
   switch (error) {
     case 'not-a-rate-card':
@@ -100,7 +100,7 @@ function addedOn(ms: number): string {
 }
 
 /**
- * The FACT line — only things Lolly itself knows: the currency the card declares,
+ * The FACT line - only things Lolly itself knows: the currency the card declares,
  * its digest, its size, and when it was added. No claim from the file appears here.
  */
 export function factLine(e: RateCardEntry): string {
@@ -114,7 +114,7 @@ export function factLine(e: RateCardEntry): string {
 
 /**
  * The reported-speech line, or null when the file claims nothing. Deliberately a
- * QUOTE with an explicit "Lolly has not verified this" — an issuer name typed inside
+ * QUOTE with an explicit "Lolly has not verified this" - an issuer name typed inside
  * a JSON file is unverified, and rendering it as a bare attribution would launder a
  * claim into a fact.
  */
@@ -124,7 +124,7 @@ export function reportedSpeech(e: RateCardEntry): string | null {
   return tRaw('The file says: {said}. Lolly has not verified this.', { said });
 }
 
-/** "prices N of M lines" — a COUNT, never money. */
+/** "prices N of M lines" - a COUNT, never money. */
 export function pricedSummary(e: RateCardEntry): string {
   return t('Prices {n} of {m} lines', { n: String(e.pricedLineCount), m: String(e.lineCount) });
 }
@@ -215,7 +215,7 @@ export function openRateCardsPanel(opts: RateCardsPanelOpts): Promise<void> {
           say(refusalMessage(r.error), 'error');
           continue;
         }
-        // A stored card — state the COUNTS, never money.
+        // A stored card - state the COUNTS, never money.
         say(tRaw('Added {name} — {summary}.', { name: r.name, summary: pricedSummary(r).toLowerCase() }));
         await opts.onChange?.();
       }

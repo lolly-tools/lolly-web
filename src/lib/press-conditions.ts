@@ -5,7 +5,7 @@
  *
  * ## The gap this closes
  *
- * A Print PDF already declares its press condition in the OutputIntent — the
+ * A Print PDF already declares its press condition in the OutputIntent - the
  * export panel has picked from `CMYK_CONDITIONS` (FOGRA39 / FOGRA51 / SWOP /
  * GRACoL) for a long time. But that declaration is a *registry name*: it tells the
  * printer what you targeted and carries no measurements. So the Colour Lab, which
@@ -13,20 +13,20 @@
  * lookup tables, could say nothing about the very condition your export names.
  *
  * This module is the join. It lists the conditions the export path knows, says for
- * each one whether a usable profile is loaded, and — where a licence-clean source
- * exists — fetches it on demand.
+ * each one whether a usable profile is loaded, and - where a licence-clean source
+ * exists - fetches it on demand.
  *
  * ## Why nothing is bundled
  *
  * Following the Google Fonts path (`lib/google-fonts.ts`): the network is touched
- * at most once, at add time, and from then on the profile is a local user asset —
+ * at most once, at add time, and from then on the profile is a local user asset - 
  * offline, in the data backup, gone when the user deletes it. No colour data ships
  * in this repo, so there is no redistribution question to answer.
  *
  * ## What can actually be fetched, measured rather than assumed
  *
  * Probed 2026-07-28 with `curl -sSIL -H 'Origin: https://lolly.tools'`:
- * - **`registry.color.org/profile-registry/profiles/*.icc`** — the ICC's own profile
+ * - **`registry.color.org/profile-registry/profiles/*.icc`** - the ICC's own profile
  *   registry serves `application/vnd.iccprofile` with
  *   `access-control-allow-origin: *`. Every profile listed there corresponds to a
  *   registered printing condition and a published characterization data set, and each
@@ -38,12 +38,12 @@
  * - `color.org/cmyk-registry/<condition>` is a *description* of the condition. There
  *   is no profile to download there.
  * - ECI's own site (`eci.org`) answers a redirect chain with no CORS header at all,
- *   so a browser fetch cannot reach it — but ECI's `PSOcoated_v3` is in the ICC
+ *   so a browser fetch cannot reach it - but ECI's `PSOcoated_v3` is in the ICC
  *   registry, which can be reached, so that no longer blocks FOGRA51.
  *
  * Nothing is mirrored: the bytes come from the registry to the user's device, so
  * Lolly is never the redistributor. `licence` on each source quotes the provider's
- * own words from that profile's registry page — read it before adding an entry, and
+ * own words from that profile's registry page - read it before adding an entry, and
  * note that FOGRA51's forbids *distribution* specifically, which is exactly why a
  * direct fetch is the only acceptable route for it.
  *
@@ -57,18 +57,18 @@
 
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 
-/** A licence-clean URL that serves CORS `*` — we can fetch it on request. */
+/** A licence-clean URL that serves CORS `*` - we can fetch it on request. */
 export interface FetchSource {
   kind: 'fetch';
   url: string;
   /** The profile's own filename, so a row names the file it will get rather than
    *  implying the condition ships with one canonical profile. */
   name: string;
-  /** Bytes as served when probed — a rough size to expect, not a checksum. */
+  /** Bytes as served when probed - a rough size to expect, not a checksum. */
   bytes: number;
   /**
    * The characterization data set this profile was built from, as the registry states
-   * it — required of a press condition, absent on a reference profile that
+   * it - required of a press condition, absent on a reference profile that
    * characterises no press. NOT always the condition's own OutputIntent identifier:
    * SWOP's registered profile is built from CGATS TR003, while an export declares
    * CGATS TR 001. {@link sourceIsExact} is the honest test.
@@ -100,7 +100,7 @@ export interface PressCondition {
   match: readonly string[];
   /**
    * Filenames this condition's profile usually has on a machine that already has
-   * it. A filename is far more actionable than a folder — it is what the user types
+   * it. A filename is far more actionable than a folder - it is what the user types
    * into the file picker's search field.
    */
   files: readonly string[];
@@ -108,7 +108,7 @@ export interface PressCondition {
 
 /**
  * Where a user's existing press profiles live, per platform. Shown as a hint beside
- * the file picker — the fastest route to a real profile is almost always one already
+ * the file picker - the fastest route to a real profile is almost always one already
  * on the machine.
  */
 export const HINTS: Readonly<Record<string, string>> = {
@@ -141,7 +141,7 @@ const FILES: Readonly<Record<string, readonly string[]>> = {
   gracol: ['CoatedGRACoL2006.icc', 'GRACoL2006_Coated1v2.icc'],
 };
 
-/** The ICC's registry — the ONE host these profiles come from. Kept as a constant so
+/** The ICC's registry - the ONE host these profiles come from. Kept as a constant so
  *  a new entry cannot quietly point somewhere unprobed. */
 const ICC_REGISTRY = 'https://registry.color.org/profile-registry/profiles/';
 
@@ -176,7 +176,7 @@ const SOURCES: Readonly<Record<string, PressSource>> = {
     url: `${ICC_REGISTRY}SWOP2006_Coated3v2.icc`,
     name: 'SWOP2006_Coated3v2.icc',
     bytes: 2747952,
-    // TR003, not the TR 001 an export declares — see sourceIsExact.
+    // TR003, not the TR 001 an export declares - see sourceIsExact.
     charData: 'CGATS TR003',
     licence: 'Idealliance, with permission of X-Rite: “may be used, embedded, exchanged, and shared without restriction”.',
   },
@@ -194,7 +194,7 @@ const SOURCES: Readonly<Record<string, PressSource>> = {
  * The conditions, in the order the export panel lists them.
  *
  * Built FROM `CMYK_CONDITIONS` rather than beside it, so a condition added to the
- * engine's export list cannot silently go missing here — the identifiers and names
+ * engine's export list cannot silently go missing here - the identifiers and names
  * are read across, and only the source and the match strings are stated locally.
  */
 export const PRESS_CONDITIONS: readonly PressCondition[] = Object.entries(CMYK_CONDITIONS)
@@ -210,7 +210,7 @@ export const PRESS_CONDITIONS: readonly PressCondition[] = Object.entries(CMYK_C
     },
   }));
 
-/** The reference profiles the ICC itself publishes — fetchable, and useful as a
+/** The reference profiles the ICC itself publishes - fetchable, and useful as a
  *  comparison target even though none is a press condition. */
 export const REFERENCE_PROFILES: ReadonlyArray<{ id: string; name: string; source: FetchSource }> = [
   {
@@ -233,7 +233,7 @@ const normalise = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, 
  * Is the fetchable profile built from the very characterization data this condition's
  * OutputIntent names?
  *
- * FOGRA39, FOGRA51 and GRACoL: yes. SWOP: NO — an export declares `CGATS TR 001`, and
+ * FOGRA39, FOGRA51 and GRACoL: yes. SWOP: NO - an export declares `CGATS TR 001`, and
  * the registered profile is `CGATS TR003` (Grade #3 coated, the successor
  * characterization). Same press condition family, measurably different numbers, so the
  * row says which file it is getting rather than implying they are one thing.
@@ -268,7 +268,7 @@ export const defaultCondition = (): PressCondition =>
  * Fetch a profile's bytes. Only ever called for a `kind: 'fetch'` source, so the
  * URL is one of ours rather than anything a page supplied.
  *
- * Returns null rather than throwing on any failure — offline, CORS, a 404 after the
+ * Returns null rather than throwing on any failure - offline, CORS, a 404 after the
  * host reorganises. A profile that will not download is a thing the user can still
  * supply by hand, not an error state worth interrupting them for.
  */
@@ -282,7 +282,7 @@ export async function fetchPressProfile(
     const buf = new Uint8Array(await res.arrayBuffer());
     // A profile smaller than its header cannot be one; a wildly larger response is
     // a captive portal or an error page, not the file we asked for. The ceiling is
-    // generous because press profiles genuinely are large — the registry's
+    // generous because press profiles genuinely are large - the registry's
     // Coated_Fogra39L_VIGC_300 is 8.6 MB of lookup table, so an 8 MB cap would have
     // rejected the very profile this exists to fetch.
     if (buf.length < 132 || buf.length > 24 * 1024 * 1024) return null;

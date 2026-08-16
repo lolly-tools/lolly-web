@@ -22,7 +22,7 @@ export function setPendingVerify(handoff: VerifyHandoff): void {
   pending = handoff;
 }
 
-/** Consume the pending handoff (single use — cleared on read). */
+/** Consume the pending handoff (single use - cleared on read). */
 export function takePendingVerify(): VerifyHandoff | null {
   const p = pending;
   pending = null;

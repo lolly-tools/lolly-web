@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-launch.ts — the two-track collab-opener seam.
+ * collab-launch.ts - the two-track collab-opener seam.
  *
  * Pure, DOM-free: proves the dormant default (no opener on either slot ⇒
  * getCollabOpener is undefined and openCollabLaunch is a no-op returning
@@ -56,7 +56,7 @@ test('last register wins per track; unregister restores dormancy for that track 
   assert.equal(openCollabLaunch('private', { baseParts: [] }), false, 'unregister returns that track to dormant');
   openCollabLaunch('work', { baseParts: [] });
   assert.equal(workCalls, 1, 'the other track is untouched by the private-track unregister');
-  offA(); // already-superseded unregister — must be a safe no-op
+  offA(); // already-superseded unregister - must be a safe no-op
 });
 
 test('a throwing opener is swallowed (never breaks the caller)', () => {

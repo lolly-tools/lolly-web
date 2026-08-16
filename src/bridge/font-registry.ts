@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Which font file backs an outlined text run — the shell's answer to "vector
+ * Which font file backs an outlined text run - the shell's answer to "vector
  * export needs an actual sfnt, not a CSS family name".
  *
  * Exports vectorise text (`Vector = text-as-paths`): HarfBuzz shapes the run and
  * we emit a <path>. That needs the FONT FILE, and until now only the SUSE statics
- * were resolvable — so a brand wearing a Google font (or the platform default,
+ * were resolvable - so a brand wearing a Google font (or the platform default,
  * Outfit) silently fell back to an SVG <text> element naming a family the
  * recipient's machine probably doesn't have. This module closes that hole: it
  * resolves a computed `font-family` stack to a fetchable sfnt URL, in order:
@@ -17,22 +17,22 @@
  *
  * Two problems make (2) more than a lookup:
  *
- * **woff2 is not sfnt.** HarfBuzz cannot read it — feeding it a wOF2 blob yields
+ * **woff2 is not sfnt.** HarfBuzz cannot read it - feeding it a wOF2 blob yields
  * .notdef for every glyph (a silently blank export). Google Fonts serves woff2
  * to every browser and a browser cannot ask for anything else (`User-Agent` is a
  * forbidden fetch header), so we decompress on-device: `woff2-encoder/decompress`
  * is a lazily-imported ~127 KB-gz wasm module with the binary inlined as a data:
- * URI — no network, works offline, loads only when a vector export actually needs
+ * URI - no network, works offline, loads only when a vector export actually needs
  * it. The resulting sfnt is kept as an object URL for the session, never
  * persisted (it's ~2.5× the woff2 we already store).
  *
  * **Google's faces are variable and subsetted.** A family arrives as one file per
- * unicode subset, each carrying the whole `wght` axis — and the subsets are
+ * unicode subset, each carrying the whole `wght` axis - and the subsets are
  * DISJOINT: the `latin` file has no `Ł`, the `latin-ext` file has no ASCII, so
  * no single face can draw "Łódź". We therefore return an ordered CHAIN (the face
  * covering most of the run first) which host.text shapes segment by segment, the
  * way a browser resolves fallback. The run's computed weight rides along as a
- * variation (`wght=700`) — without it every weight would outline at the face's
+ * variation (`wght=700`) - without it every weight would outline at the face's
  * default instance.
  *
  * Resolution is async (a face may need decompressing) and memoised per asset.
@@ -74,8 +74,8 @@ interface RegistryFace {
 // the callers catches anything they can't draw.
 //
 // SUSE is the platform default face as of 2026-08-10 and BOTH slants are listed.
-// That completeness is load-bearing twice over. First, `pickFaces` is strict
-// about slant, so an italic run needs a real italic entry — Outfit has none
+// That completeness matters for two separate reasons. First, `pickFaces` is strict
+// about slant, so an italic run needs a real italic entry - Outfit has none
 // (upright-only family), which is exactly why italic runs used to fall back to
 // an SVG <text> element. Second, `buildRegistry` skips @font-face discovery for
 // any family already backed by bytes here: registering only the upright face
@@ -84,7 +84,7 @@ interface RegistryFace {
 //
 // Outfit stays registered (still on disk, still in fonts.css) so a saved session
 // or brand doc that names it keeps resolving to real outlines. It is no longer
-// the default, and it still cannot outline italic — the family has no such file.
+// the default, and it still cannot outline italic - the family has no such file.
 //
 // Exported for tests/platform-font-default.test.ts, which pins the two invariants
 // the paragraph above only ASSERTS in prose: the default family declares both
@@ -248,7 +248,7 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
       const family = String(r.meta?.family ?? '').trim();
       if (!family) continue;
       const key = family.toLowerCase();
-      // A user font SHADOWS a platform face of the same name — they installed it.
+      // A user font SHADOWS a platform face of the same name - they installed it.
       const list = byFamily.get(key)?.filter(f => f.assetId) ?? [];
       list.push({
         assetId: r.id,
@@ -262,14 +262,14 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
   } catch { /* IDB unavailable — platform faces still resolve */ }
 
   // Discover arbitrary @font-face families in the live document (brand fonts, system
-  // webfonts, embedded data: faces) so they vectorise too — not just SUSE/user/Outfit.
+  // webfonts, embedded data: faces) so they vectorise too - not just SUSE/user/Outfit.
   // Skip any family already backed by real bytes (SUSE's hardcoded branch, Outfit's
   // platform face, an installed user font): those take precedence and are complete.
   for (const f of discoverFontFaces()) {
     // SUSE Mono is NOT excluded here: its hardcoded /catalog static branch in
     // resolveVectorFont only holds under a brand that ships the TTFs, and under
     // lolly-start the shell-served SUSEMono woff2 discovered from fonts.css is
-    // the only outlineable source. (SUSE *sans* no longer relies on discovery —
+    // the only outlineable source. (SUSE *sans* no longer relies on discovery - 
     // it is a complete two-slant PLATFORM_FACES entry, so the check below skips
     // it deliberately.) The bytes-backed precedence check still lets a real
     // static win.
@@ -284,7 +284,7 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
 
 /** url → "these bytes are actually a font". A dev/dist server's SPA fallback
  *  answers a MISSING catalog font with 200 text/html, so `resp.ok` is not the
- *  question — "is it a font" is. Memoised per url. */
+ *  question - "is it a font" is. Memoised per url. */
 const urlProbes = new Map<string, Promise<boolean>>();
 export function isFontContentType(ct: string): boolean {
   const t = ct.toLowerCase();
@@ -316,7 +316,7 @@ export function bustFontRegistry(): void {
 /**
  * The face's bytes as a fetchable URL. A platform face is already an sfnt on
  * disk; a user face is a stored woff2 that must be decompressed first (once per
- * session, memoised — including the in-flight promise, so concurrent runs of an
+ * session, memoised - including the in-flight promise, so concurrent runs of an
  * export share the single decode).
  */
 async function faceUrl(face: RegistryFace): Promise<string> {
@@ -345,10 +345,10 @@ async function faceUrl(face: RegistryFace): Promise<string> {
     }
     // Already an sfnt (a hand-uploaded TTF/OTF, or a static webfont)? The woff2 magic is
     // 'wOF2'; anything else goes to HarfBuzz untouched. (woff1 'wOFF' isn't decompressed
-    // here — Google/brand @font-face serve woff2, and HarfBuzz can't read woff1 either, so
+    // here - Google/brand @font-face serve woff2, and HarfBuzz can't read woff1 either, so
     // a woff1-only face falls through to the caller's <text> fallback via a .notdef.)
     const isWoff2 = bytes[0] === 0x77 && bytes[1] === 0x4f && bytes[2] === 0x46 && bytes[3] === 0x32;
-    // Reject non-font bytes outright (an SPA fallback serves HTML at 200 — base64ing
+    // Reject non-font bytes outright (an SPA fallback serves HTML at 200 - base64ing
     // that into a Blob mints a "font" HarfBuzz chokes on far less legibly). sfnt
     // magics: 00 01 00 00 (TrueType), OTTO, true, ttcf; woff1 stays rejected as before.
     const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
@@ -371,7 +371,7 @@ async function faceUrl(face: RegistryFace): Promise<string> {
  * Resolve a computed style + the text it will render into the sfnt that can
  * outline it, or null when nothing can (the caller falls back to <text>).
  *
- * Families are tried IN CASCADE ORDER — the first one that resolves wins, which
+ * Families are tried IN CASCADE ORDER - the first one that resolves wins, which
  * is what the browser does when it picks a face. (The old SUSE-only resolver
  * substring-matched the whole stack, so a brand stack ending in the `--font-mono`
  * tail could wrongly claim a SUSE face for a run drawn in Inter.)
@@ -408,7 +408,7 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
         ...(rest.length ? { fallbacks: rest } : {}),
       };
     } catch {
-      continue; // this family's bytes are unreadable — try the next family
+      continue; // this family's bytes are unreadable - try the next family
     }
   }
   return null;

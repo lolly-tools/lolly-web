@@ -4,17 +4,17 @@
  * element per layer.
  *
  * The defect this pins: the gradient builders matched with `^linear-gradient\((.+)\)$`,
- * whose `.+` is greedy — so a computed `linear-gradient(a, b), linear-gradient(c, d)`
+ * whose `.+` is greedy - so a computed `linear-gradient(a, b), linear-gradient(c, d)`
  * matched as ONE gradient and the two stop lists were concatenated into a single
  * element. Stop offsets restart at the layer boundary, SVG clamps `<stop offset>`
  * monotonically, and the result is not a near-miss: on `docs/shots/brand-colours.svg`
  * every flat swatch chip (a colour layer under a gloss layer) painted as a
- * dark-to-white fade. Nothing failed — the SVG was valid, just wrong.
+ * dark-to-white fade. Nothing failed - the SVG was valid, just wrong.
  *
  * Asserted on the emitted markup, not pixels: layer COUNT and stop grouping are what
  * the CSS spec constrains here, and a pixel oracle would need fonts, a golden and a
  * tolerance to say something weaker. Same Chromium-gated pattern as
- * export-paint-order.test.ts — jsdom cannot resolve a computed multi-layer
+ * export-paint-order.test.ts - jsdom cannot resolve a computed multi-layer
  * `background-image`, so a fake computed style would only test the fake.
  */
 import test from 'node:test';
@@ -115,7 +115,7 @@ test('a single-layer gradient still emits exactly one gradient with its own stop
 
 // ── Layer-indexed background-size ────────────────────────────────────────────
 // `background-size`/`position`/`repeat` are per-layer lists too. Reading the whole
-// list as one value fed `placeBackground` a string like "40px 40px, cover" — the top
+// list as one value fed `placeBackground` a string like "40px 40px, cover" - the top
 // layer's geometry applied to every layer.
 test('each layer takes its OWN background-size, not the first entry in the list',
   { skip: SKIP }, async () => {

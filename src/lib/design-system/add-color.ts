@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Add a colour" — the Colours room's level-0 control (plan 97 §7.1).
+ * "Add a colour" - the Colours room's level-0 control (plan 97 §7.1).
  *
  * Two halves, deliberately separable:
  *
  *  - `parseColorEntries` is pure and DOM-free: it reads EVERY colour it can find
- *    in arbitrary pasted text — a hex list, a CSS blob, a paragraph out of a
- *    style guide — and hands back the notation as typed alongside a resolved
+ *    in arbitrary pasted text - a hex list, a CSS blob, a paragraph out of a
+ *    style guide - and hands back the notation as typed alongside a resolved
  *    `#rrggbb`. The scan is deliberately in the spirit of `engine/svg-colors.ts`:
  *    regex over raw text, no parser, never throws, every candidate gated before
- *    it is trusted. Hostile input is expected — this reads the clipboard.
+ *    it is trusted. Hostile input is expected - this reads the clipboard.
  *  - `mountAddColor` renders one input row over it. Nothing it parses reaches
  *    the design system on its own: a single colour needs Enter or Add, several
- *    need an explicit "Add all" / "Add selected". Principle 1 — additive, never
+ *    need an explicit "Add all" / "Add selected". Principle 1 - additive, never
  *    imposed. The caller decides what an add MEANS (`addSwatch`, a tray drop);
  *    this control only ever reports entries.
  *
@@ -22,7 +22,7 @@
  * WHAT IS NOT MERGED: dedupe keys on the resolved colour INCLUDING alpha, so a
  * translucent value and its opaque twin both survive as separate entries (they
  * are separate swatches; a palette that silently ate one would be lying). Their
- * `hex` field is the same opaque `#rrggbb` — it is the resolved colour, not an
+ * `hex` field is the same opaque `#rrggbb` - it is the resolved colour, not an
  * identity.
  */
 
@@ -34,14 +34,14 @@ import { icon } from '../icons.ts';
 
 /** One colour found in pasted text: the spelling as typed, and what it resolves to. */
 export interface ColorEntry {
-  /** Verbatim as it appeared in the text — `#7C3AED`, `rgb(124, 58, 237)`, `Tomato`. */
+  /** Verbatim as it appeared in the text - `#7C3AED`, `rgb(124, 58, 237)`, `Tomato`. */
   value: string;
   /** The resolved colour as `#rrggbb`, gamut-mapped, alpha dropped. */
   hex: string;
 }
 
 /** Upper bound on entries returned from one scan. A style-guide paste that finds
- *  more than this is a scan, not an add — the tray is where that belongs. */
+ *  more than this is a scan, not an add - the tray is where that belongs. */
 export const MAX_ENTRIES = 64;
 
 /** Upper bound on regex matches examined per call, so a pathological paste can't
@@ -55,7 +55,7 @@ const MAX_TEXT = 1_000_000;
 /**
  * The one scanner. Four alternatives, tried in this order at each position:
  *
- *  1. A `url(…)`, matched only to be THROWN AWAY — consuming it is what stops
+ *  1. A `url(…)`, matched only to be THROWN AWAY - consuming it is what stops
  *     `url(red.png)` from reporting red. Same call as `svg-colors.ts`, which
  *     refuses a paint-server reference outright. Both QUOTED forms are spelled
  *     out, because they are how CSS ordinarily writes one: a charset that
@@ -92,7 +92,7 @@ const hexByte = (n: number): string => n.toString(16).padStart(2, '0');
 /**
  * Every colour that can be read out of `text`, in first-seen order.
  *
- * Deduplicated on the resolved colour (alpha included — see the module note),
+ * Deduplicated on the resolved colour (alpha included - see the module note),
  * capped at `MAX_ENTRIES`, and tolerant of anything: prose, minified CSS, a
  * truncated file, an empty string, a non-string. Nothing it cannot resolve
  * through the engine's own parser is reported.
@@ -115,7 +115,7 @@ export function parseColorEntries(text: string): ColorEntry[] {
       if (!HEX_LENGTHS.has(raw.length - 1)) continue;
     } else if (!raw.endsWith(')')) {
       // A bare word. Reject it if it is a fragment of something larger, then
-      // require the engine's own table to know it as a CSS named colour — a
+      // require the engine's own table to know it as a CSS named colour - a
       // lowercase word alone proves nothing.
       const before = m.index > 0 ? src[m.index - 1] ?? '' : '';
       if (before !== '' && IDENT_BLOCKED_BEFORE.test(before)) continue;
@@ -151,12 +151,12 @@ export interface AddColorOpts {
   /** Called only from an explicit press: Enter/Add on a single colour, or
    *  "Add all" / "Add selected" on a group. Never from typing or the picker. */
   onAdd: (entries: ColorEntry[]) => void;
-  /** The shell's `t` — passed in so this module has no i18n import. Params are
+  /** The shell's `t` - passed in so this module has no i18n import. Params are
    *  escaped by `t` itself; the raw source string is trusted markup, as usual. */
   t: (source: string, params?: Record<string, string | number>) => string;
 }
 
-/** Example notations, shown as the placeholder. Values, not prose — untranslated
+/** Example notations, shown as the placeholder. Values, not prose - untranslated
  *  on purpose (the `PANTONE 186 C` precedent in the brand editor), so the row
  *  demonstrates the same thing in every locale. */
 const PLACEHOLDER = '#7c3aed, rgb(124 58 237), oklch(55% .24 292)';
@@ -165,7 +165,7 @@ const PLACEHOLDER = '#7c3aed, rgb(124 58 237), oklch(55% .24 292)';
  * Render the add-a-colour row into `el` and wire it. Returns a teardown.
  *
  * Behaviour, in one paragraph because it is one control: typing parses live. One
- * colour arms Add (and Enter). Several colours open a chips row — every chip
+ * colour arms Add (and Enter). Several colours open a chips row - every chip
  * starts picked, tapping one toggles it, and only "Add all" or "Add selected"
  * commits. The eyedropper fills the field, it does not add. Escape clears the
  * row, and only swallows the key when there was something to clear.
@@ -242,7 +242,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
   /**
    * Empty the row.
    *
-   * The field is re-focused ONLY when focus is still inside the row — Escape, or
+   * The field is re-focused ONLY when focus is still inside the row - Escape, or
    * a press of Add / Add all / Add selected that left it here. `onAdd` is
    * entitled to take focus somewhere better (adding one colour opens the swatch
    * popover on it and focuses the name field, which is the point of the flow),
@@ -278,7 +278,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
       return;
     }
     if (e.key === 'Escape' && (input.value !== '' || entries.length > 0)) {
-      // Only swallow Escape when it did something here — otherwise it belongs to
+      // Only swallow Escape when it did something here - otherwise it belongs to
       // whatever sheet or popover is hosting this row.
       e.preventDefault();
       e.stopPropagation();
@@ -305,7 +305,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
 
     if (target.closest('[data-ds-addc-drop]') && EyeDropper) {
       // The OS overlay samples anywhere on screen and swallows pointer events.
-      // A dismissal (Escape) rejects, and picking nothing is a normal outcome —
+      // A dismissal (Escape) rejects, and picking nothing is a normal outcome - 
       // hence the empty catch. The result FILLS the field; adding stays explicit.
       void new EyeDropper().open()
         .then(res => { input.value = res.sRGBHex; sync(); input.focus(); })

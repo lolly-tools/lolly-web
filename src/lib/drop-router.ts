@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Universal drop router — the "drop a file on the front door" seam (gallery +
+ * Universal drop router - the "drop a file on the front door" seam (gallery +
  * dashboard roots, the welcome dialog's file-picker fallback, and the Android
- * share-target ingest — see initShareTargetIngest below). A SCOPED
+ * share-target ingest - see initShareTargetIngest below). A SCOPED
  * drag-and-drop handler sniffs what landed and opens a chooser sheet offering
  * only the routes that genuinely apply:
  *
@@ -10,7 +10,7 @@
  *   token doc / .penpot / design-system pack zip → the Design System studio
  *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
  *                 the Design System studio (a guidelines PDF's colours, marks
- *                 and embedded faces — plan 97 §8)
+ *                 and embedded faces - plan 97 §8)
  *   PowerPoint  → slides → SVG library assets
  *   image/video/audio → the asset library · /verify (Content Credentials)
  *   unknown / C2PA-looking bytes → /verify
@@ -26,7 +26,7 @@
  * Deliberately light at module scope: the picker (storeUserUpload), pdf-import
  * and pptx-import chunks all load lazily at drop/choice time, so attaching the
  * router costs the gallery cold path nothing. The byte sniff here is a few
- * local magic-number checks (zip 'PK', '%PDF', '<svg', JUMBF/'c2pa' markers) —
+ * local magic-number checks (zip 'PK', '%PDF', '<svg', JUMBF/'c2pa' markers) - 
  * NOT a duplicate of design-import.ts's full format routing: real format
  * resolution (Penpot vs .fig vs IDML inside a zip, PDF page interpretation)
  * still happens solely in parseDesignFile once a design file reaches it.
@@ -35,7 +35,7 @@
  *
  * House rules honoured: handlers attach to the given root only (never window/
  * document), preventDefault fires only for actual file drags, the chooser is
- * mountModal-based (via choiceDialog — Escape/backdrop close), and the DOM
+ * mountModal-based (via choiceDialog - Escape/backdrop close), and the DOM
  * cost is one hint pill per attached root.
  */
 
@@ -51,7 +51,7 @@ import type { BeamPackHost } from './beam-pack.ts';
 
 type PickerModule = typeof import('../views/picker.ts');
 
-/** Everything the file-picker fallback should let through — a superset of the
+/** Everything the file-picker fallback should let through - a superset of the
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
   '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
@@ -65,7 +65,7 @@ const DESIGN_EXT_RE = /\.(fig|penpot|idml|indd|svg|zip)$/i;
 const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico|cur|mp4|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|mod|xm|it|s3m|stm|mtm|json|lottie)$/i;
 // Plain archives the shell can explode into member assets. EXCLUDES the design
 // bundles (.penpot/.fig/.idml/.indd) and the OOXML/OCF packages (.xlsx/.docx/.pptx/
-// .epub/.odt) — those are zips too but route to their own readers. This is a cheap
+// .epub/.odt) - those are zips too but route to their own readers. This is a cheap
 // name gate for the chooser; the authoritative byte check (never shred an office
 // file) lives in archive-ingest.readArchiveMembers, run when the user commits.
 const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
@@ -84,7 +84,7 @@ export const TOKENS_SNIFF_MAX_BYTES = 4 * 1024 * 1024;
 
 let pendingDesign: { file: File; scenes: boolean } | null = null;
 
-/** Consume the design file stashed by a drop route into Design — single use,
+/** Consume the design file stashed by a drop route into Design - single use,
  *  cleared on read. free-canvas checks this on mount. `scenes` carries the
  *  "as timed scenes vs replace the board" choice the drop door offered
  *  (plans/104 §337): the "Make a video from its frames" door sets it true. */
@@ -97,13 +97,13 @@ export function takePendingDesignImport(): { file: File; scenes: boolean } | nul
 let pendingDesignSystemFile: File | null = null;
 
 /**
- * Consume the file stashed by the "Use as the design system" route — single use,
+ * Consume the file stashed by the "Use as the design system" route - single use,
  * cleared on read, never written to disk. `views/start.ts` reads it on mount and
  * routes it by what it IS (a PDF opens the PDF source and scans it; a token
  * document, Penpot project or pack lands on the design-file card), so the studio
  * never asks a second time for a file the person already handed over.
  *
- * Every route below that reaches the studio arms it, including the PDF one — a
+ * Every route below that reaches the studio arms it, including the PDF one - a
  * guidelines PDF is design-system material even though the sniff files it under
  * `pdf` (its colours, marks and embedded faces are the whole point of plan 97 §8's
  * PDF source).
@@ -118,7 +118,7 @@ let pendingToolFile: { toolId: string; file: File } | null = null;
 
 /** Consume a file stashed for a specific tool (e.g. compress-pdf). Single use;
  *  returns null when the stash belongs to a different tool. NOTE: views/tool.ts
- *  does not consume this yet — until it does, the compress route simply lands
+ *  does not consume this yet - until it does, the compress route simply lands
  *  the user on the tool's own (empty) drop canvas. */
 export function takePendingToolFile(toolId: string): File | null {
   if (pendingToolFile?.toolId !== toolId) return null;
@@ -129,7 +129,7 @@ export function takePendingToolFile(toolId: string): File | null {
 
 let pendingToolSeed: { toolId: string; values: Record<string, unknown> } | null = null;
 
-/** Arm a one-shot initial-values seed for `toolId` — the layered-import route
+/** Arm a one-shot initial-values seed for `toolId` - the layered-import route
  *  (psd-import) parses + stores layer assets BEFORE navigating, then stashes
  *  the block rows here; views/tool.ts folds them into initialValues on mount. */
 export function setPendingToolSeed(toolId: string, values: Record<string, unknown>): void {
@@ -157,10 +157,10 @@ export interface Sniff {
   /** A plain archive (.zip/.tar/.tar.gz) we can explode into member assets. */
   archive: boolean;
   /** Design-system material (plan 97 §8): a DTCG/Tokens-Studio token document,
-   *  a Penpot project, or a zip whose parts say design-system pack. Additive —
+   *  a Penpot project, or a zip whose parts say design-system pack. Additive - 
    *  it never suppresses a route another flag already earned. */
   designSystem: boolean;
-  /** A `.lolly` share file (plans/114) — a saved session + its assets + provenance.
+  /** A `.lolly` share file (plans/114) - a saved session + its assets + provenance.
    *  It IS a zip, so it must be recognised before the generic design/archive routes
    *  claim it; it opens directly (no chooser), never "unpacks". */
   lolly: boolean;
@@ -172,14 +172,14 @@ const isMediaFile = (f: File): boolean =>
 /**
  * True when a zip's head lists the parts a design-system container is made of.
  * A zip's LOCAL FILE HEADERS store entry names uncompressed, so a bounded head
- * read can name a zip's first entries even when their bodies are deflated —
+ * read can name a zip's first entries even when their bodies are deflated - 
  * which is the whole reason this is affordable at drop time. The pairings
  * mirror what `design-system/sources/file.ts` keys on when it really opens the
  * archive: a Lolly pack (`manifest.json` + `tokens.json`), a Penpot project
  * (same pair, tokens per file), a loose token-set export (`$metadata.json` /
  * `$themes.json`). Deliberately a heuristic: the authoritative read happens in
  * the studio, and the cost of a wrong guess here is one extra route offered.
- * Pure — exported for the co-located test.
+ * Pure - exported for the co-located test.
  */
 export function zipListsDesignSystemParts(head: string): boolean {
   if (head.includes('$metadata.json') || head.includes('$themes.json')) return true;
@@ -193,10 +193,10 @@ export function zipListsDesignSystemParts(head: string): boolean {
  * ANY JSON object (it only rejects arrays/primitives), so a dropped Lottie or
  * GeoJSON would otherwise be offered as a design system.
  *
- * Bounded on purpose — a fixed node/depth budget, so the check costs the same
+ * Bounded on purpose - a fixed node/depth budget, so the check costs the same
  * on a 40-token file and on a huge unrelated document. A token doc puts its
  * leaves shallow, so the budget only ever truncates material we would not have
- * recognised anyway. Pure — exported for the co-located test.
+ * recognised anyway. Pure - exported for the co-located test.
  */
 export function looksLikeTokenDoc(doc: unknown, maxNodes = 4000, maxDepth = 8): boolean {
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return false;
@@ -237,12 +237,12 @@ async function looksLikeTokensFile(file: File, head: string): Promise<boolean> {
     const { doc } = coerceTokensDoc(JSON.parse(await file.text()));
     return !!doc && looksLikeTokenDoc(doc);
   } catch {
-    return false; // unreadable or not JSON after all — no route, no error
+    return false; // unreadable or not JSON after all - no route, no error
   }
 }
 
 /**
- * Classify one file by name/MIME plus (when `deep`) a bounded head read — 64 KB,
+ * Classify one file by name/MIME plus (when `deep`) a bounded head read - 64 KB,
  * enough for the zip/PDF/SVG magic and a C2PA marker scan, never the whole file.
  */
 async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promise<Sniff> {
@@ -251,25 +251,25 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   if (deep) {
     try {
       head = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer());
-    } catch { /* unreadable — fall back to name/MIME only */ }
+    } catch { /* unreadable - fall back to name/MIME only */ }
   }
   // latin1 keeps a 1:1 byte↔char mapping, so regex offsets equal byte offsets.
   const text = head ? new TextDecoder('latin1').decode(head) : '';
-  // "%PDF" within the first 1 KB (the spec permits a little leading junk) —
+  // "%PDF" within the first 1 KB (the spec permits a little leading junk) - 
   // mirrors design-import's isPdf window without pulling its chunk in.
   const pdf = picker.isPdfUpload(file) || text.slice(0, 1028).includes('%PDF');
   const zipMagic = !!head && head.length >= 4
     && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
   const svgText = /<svg[\s>]/i.test(text.slice(0, 4096));
   // A .lolly is a zip; recognise it by extension so the generic design/archive routes
-  // (which zip-magic would otherwise trigger) never claim it — it opens directly. Also
+  // (which zip-magic would otherwise trigger) never claim it - it opens directly. Also
   // accept the canonical MIME (LOLLY_MIME) for a share that arrives typed but with a
   // mangled name (e.g. Android ACTION_SEND of application/vnd.lolly+zip).
   const lolly = /\.lolly$/i.test(file.name) || file.type === 'application/vnd.lolly+zip';
-  // JUMBF box type / C2PA manifest label / PNG caBX chunk — a heuristic "this
+  // JUMBF box type / C2PA manifest label / PNG caBX chunk - a heuristic "this
   // carries Content Credentials" signal, not a verification (that's /verify's job).
   const c2pa = /jumb|c2pa|caBX/.test(text);
-  // Layered bitmaps: '8BPS' (PSD/PSB) or 'gimp xcf ' at offset 0 — the same
+  // Layered bitmaps: '8BPS' (PSD/PSB) or 'gimp xcf ' at offset 0 - the same
   // prefix check as the engine's sniffLayeredRaster, inlined so a JPEG drop
   // never pulls the engine chunk. Extension fallback for a blank OS MIME.
   const layers = head
@@ -283,7 +283,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   const archive = !lolly && !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
     && (ARCHIVE_EXT_RE.test(file.name) || (zipMagic && !DESIGN_EXT_RE.test(file.name)));
   // Design-system material (plan 97 §8), sniffed LAST and only on the deep
-  // (single-file) path — the route is a single-file journey, and every flag
+  // (single-file) path - the route is a single-file journey, and every flag
   // above is computed exactly as it was before this one existed. A .penpot is
   // one by extension; a zip needs its parts named; a .json has to parse.
   const designSystem = !lolly && deep && !pdf && !pptx && !layers
@@ -292,7 +292,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
       : zipMagic || /\.zip$/i.test(file.name)
         ? zipListsDesignSystemParts(text)
         : await looksLikeTokensFile(file, text));
-  // A PSD/XCF often carries an image/* MIME — the layered routes own it, not
+  // A PSD/XCF often carries an image/* MIME - the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
   return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly };
 }
@@ -304,7 +304,7 @@ const toolExists = (id: string): boolean =>
 // ── what the sheet offers, and what it says (pure) ─────────────────────────────
 // Extracted from openDropChooser so the routing decisions can be pinned by a node
 // test: which routes appear, which one LEADS, and which sentence names the
-// destination. Everything below is a function of the sniff — no DOM, no navigation.
+// destination. Everything below is a function of the sniff - no DOM, no navigation.
 
 /** The chooser's surroundings: how many files, whether they can all be ingested
  *  as media, and which tools this build actually has. */
@@ -321,7 +321,7 @@ export interface ChooserContext {
  *
  * A note on the archive route: it leads for a plain zip, because exploding it
  * into member assets is what a dropped archive usually means. It must NOT lead
- * for a zip the sniff positively identified as a design-system pack — unpacking
+ * for a zip the sniff positively identified as a design-system pack - unpacking
  * that shreds it into loose library files, which is the opposite of installing
  * it, and it is the one archive whose real destination we know (plan 97 §14.9:
  * a door names where it lands). So the studio goes first there, and unpack
@@ -377,12 +377,12 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   }
   if (single && s.pdf) {
     choices.push({ id: 'library', label: t('Add pages to your library') });
-    // A guidelines PDF is the richest design-system file most teams have — its
+    // A guidelines PDF is the richest design-system file most teams have - its
     // artwork carries the marks and the palette, and it embeds the real font
     // programs (plan 97 §8's PDF source). It sits with the other "what is inside
     // this document" routes and never LEADS: a PDF's first meaning is a document,
     // and the sniff cannot tell guidelines from an invoice. The guard is
-    // defensive — `sniffFile` never reports `designSystem` for a PDF, so the
+    // defensive - `sniffFile` never reports `designSystem` for a PDF, so the
     // branch above cannot have offered this door, but a door offered twice in one
     // sheet would be a worse bug than one line of belt and braces.
     if (!choices.some((c) => c.id === 'design-system')) {
@@ -398,7 +398,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   }
   const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media;
   // Provenance applies to media, to anything carrying C2PA-looking bytes, to
-  // unknown formats — and as the last resort when no other route landed.
+  // unknown formats - and as the last resort when no other route landed.
   if (s.media || s.c2pa || unknown || choices.length === 0) {
     choices.push({ id: 'verify', label: t('Check Content Credentials') });
   }
@@ -408,7 +408,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
 /**
  * The sentence above the routes. The ladder is ordered by how much it tells the
  * user: "an archive" says almost nothing, so a zip the sniff can actually name
- * (a design-system pack) is named first — otherwise the file's real destination
+ * (a design-system pack) is named first - otherwise the file's real destination
  * never appears in the copy at all.
  */
 export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext): string {
@@ -433,7 +433,7 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
 /**
  * Sniff the dropped/picked file(s) and offer the applicable routes. Built on
  * choiceDialog (mountModal + .btn primitives; Escape/backdrop cancel). Multi-file
- * drops keep only the batch routes (library / verify) — the design and PDF routes
+ * drops keep only the batch routes (library / verify) - the design and PDF routes
  * are single-file journeys.
  */
 /** Open a dropped/shared `.lolly`: land its assets + session (reusing the beam ingest
@@ -464,10 +464,10 @@ export async function openDropChooser(
   const first = files[0]!;
   const s = await sniffFile(first, single, picker);
   // A newer share superseded this one while the picker chunk / head read was in
-  // flight — don't mount a stale chooser next to (or after) the replacement's.
+  // flight - don't mount a stale chooser next to (or after) the replacement's.
   if (opts.superseded?.()) return;
 
-  // A .lolly opens directly — it is unambiguous (a saved session + its assets), so it
+  // A .lolly opens directly - it is unambiguous (a saved session + its assets), so it
   // skips the chooser entirely and lands the user in the tool at the imported session.
   if (s.lolly) { await importLollyDrop(first, host); return; }
   const allIngestable = files.every(
@@ -483,7 +483,7 @@ export async function openDropChooser(
     message,
     choices,
     // Scopes closeConfirmDialogs so a rapid next drop/share only supersedes a
-    // still-open chooser of THIS kind — never an unrelated confirm/prompt dialog
+    // still-open chooser of THIS kind - never an unrelated confirm/prompt dialog
     // open elsewhere in the app (see initShareTargetIngest's poll()).
     tag: 'drop-chooser',
   });
@@ -523,15 +523,15 @@ export async function openDropChooser(
       routeToConsumer('#/tool/design', onToolRoute('design'));
       break;
     case 'sequence':
-      // "Make a video from its frames" — the same design opens in Design, but each
+      // "Make a video from its frames" - the same design opens in Design, but each
       // frame becomes a timed scene (plans/104 §337; Sequence Studio's old home for
       // this route retired into Design).
       pendingDesign = { file: first, scenes: true };
       routeToConsumer('#/tool/design', onToolRoute('design'));
       break;
     case 'design-system':
-      // The studio's own import flow owns the parsing — colours, fonts, logos,
-      // the semantic-mapping review and the PDF scan all live there — so this
+      // The studio's own import flow owns the parsing - colours, fonts, logos,
+      // the semantic-mapping review and the PDF scan all live there - so this
       // route hands over the FILE and names the source it needs. views/start.ts
       // consumes the stash on mount (takePendingDesignSystemFile) and opens the
       // stage that file wants; the `?source=` is what it falls back to if the
@@ -578,7 +578,7 @@ export async function openDropChooser(
 
 // ── routing that survives the shell's same-route dedup ────────────────────────
 
-/** True when the CURRENT location is already inside tool `id` — either routing
+/** True when the CURRENT location is already inside tool `id` - either routing
  *  form (the #/tool/<id> hash, or the canonical /t/<id> path the tool view's
  *  syncUrl rewrites the address bar to). Tool ids are [a-z0-9-], regex-safe. */
 const onToolRoute = (id: string): boolean =>
@@ -587,7 +587,7 @@ const onToolRoute = (id: string): boolean =>
 
 /** Navigate to `hash`. Every stash this router arms is consumed at MOUNT time
  *  (free-canvas / views/tool.ts / valid.ts), but main.ts's navigate() dedupes a
- *  hash change resolving to the already-mounted route — and a share can arrive
+ *  hash change resolving to the already-mounted route - and a share can arrive
  *  while the user is ALREADY inside the destination view. In that case ask the
  *  shell for a forced remount via its 'lolly:remount' seam so the stash is
  *  still consumed; plain drops (gallery/dashboard only) never hit it. */
@@ -597,7 +597,7 @@ function routeToConsumer(hash: string, alreadyThere: boolean): void {
 }
 
 /**
- * The library route — the same sequential ingest loop as lib/upload-dropzone.ts:
+ * The library route - the same sequential ingest loop as lib/upload-dropzone.ts:
  * PDFs/decks convert page(s)/slide(s) to SVG assets via their lazy chunks,
  * everything else stores through storeUserUpload (downscale/sanitise/credential-
  * preserve). Sequential on purpose: parallel decodes of a big drop spike memory.
@@ -645,7 +645,7 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
     : t('Added {n} files to your library.', { n: stored }));
 }
 
-// The exports route — every shape marked for export in Penpot becomes stored
+// The exports route - every shape marked for export in Penpot becomes stored
 // library assets at its marked formats and scales. The heavy design-import chunk
 // loads lazily, same as the PDF/deck routes above.
 async function ingestExportsToLibrary(file: File, host: PickerHost): Promise<void> {
@@ -682,7 +682,7 @@ const ATTACHED = new WeakMap<HTMLElement, () => void>();
  * drags keep their browser defaults untouched); while one hovers, the root gains
  * `.is-file-drag` and a small hint pill (styled by the view's own stylesheet).
  * The shell reuses one #view element across routes, so the attachment tears
- * itself down on any navigation — a tool view can never inherit it. Returns the
+ * itself down on any navigation - a tool view can never inherit it. Returns the
  * teardown for callers that want it earlier.
  */
 export function attachDropRouter(rootEl: HTMLElement, host: PickerHost): () => void {
@@ -772,7 +772,7 @@ export function openDropFilePicker(host: PickerHost): void {
 
 /** The share-target half of the `LollyShare` JS interface the Android shell's
  *  MainActivity registers (the same object carries the export share-OUT verb
- *  shareFile used by tauri-mobile's export override — hence the per-verb
+ *  shareFile used by tauri-mobile's export override - hence the per-verb
  *  feature-detect in initShareTargetIngest, not a bare `window.LollyShare`
  *  check). Poll returns a JSON stash descriptor, or '' when nothing pends. */
 interface LollyShareBridge {
@@ -786,7 +786,7 @@ interface LollyShareBridge {
  * contiguous buffer. `read` is injected so chunks stream straight off the JS
  * interface without first materialising a string[]. Whitespace is stripped
  * before decode (android.util.Base64.DEFAULT wraps lines; browsers' forgiving
- * base64 tolerates that, Node's atob historically didn't). Pure — exported for
+ * base64 tolerates that, Node's atob historically didn't). Pure - exported for
  * the co-located test.
  */
 export function assembleShareChunks(count: number, read: (i: number) => string): Uint8Array<ArrayBuffer> {
@@ -810,10 +810,10 @@ export function assembleShareChunks(count: number, read: (i: number) => string):
  * exposes it over `LollyShare`; a share arriving while the WebView is alive
  * also dispatches 'lolly-share-target' on window. Feature-detected on the poll
  * verb, so everywhere except the Android app this is a cheap no-op. A pending
- * share runs through the exact chooser a dropped file gets — the sheet is
+ * share runs through the exact chooser a dropped file gets - the sheet is
  * body-mounted (mountModal) and every route is a hash navigation (or a forced
  * remount, see routeToConsumer), so it works from whichever view the share
- * lands on. Rapid successive shares: latest wins — a still-open chooser from
+ * lands on. Rapid successive shares: latest wins - a still-open chooser from
  * the previous share is dismissed (closeConfirmDialogs, scoped to the
  * 'drop-chooser' tag every openDropChooser sheet carries, so an unrelated
  * confirm/prompt dialog open elsewhere in the app is never swept up in it) or,

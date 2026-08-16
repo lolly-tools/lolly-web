@@ -2,7 +2,7 @@
 /**
  * `[hidden]` drift guard.
  *
- * A component that sets `display` on a class defeats `[hidden]` — the two
+ * A component that sets `display` on a class defeats `[hidden]` - the two
  * selectors tie on specificity (0,1,0), and base.css's `[hidden]` sits in the
  * `base` layer, below `primitives` / `chrome` / `views`, so the class wins on
  * layer rank no matter how the file loads. The app-wide fix is a single
@@ -13,7 +13,7 @@
  *   1. the rule exists, in a11y.css, with `!important`, at real specificity;
  *   2. a11y is still declared last in the layer order in app.css;
  *   3. a11y.css is still imported `layer(a11y)`;
- *   4. no sheet anywhere asks a `[hidden]` element to keep a `display` — the
+ *   4. no sheet anywhere asks a `[hidden]` element to keep a `display` - the
  *      one thing the fix would break, and the reason `!important` is safe.
  *
  * Run directly:  node --test shells/web/src/styles/hidden-attribute-guard.test.ts
@@ -48,7 +48,7 @@ function walkCss(dir: string, out: string[] = []): string[] {
 
 test('a11y.css carries the app-wide `[hidden] { display: none !important }`', () => {
   const body = stripComments(A11Y);
-  // Bare `[hidden]` selector — no class/element prefix, no :where() wrapper.
+  // Bare `[hidden]` selector - no class/element prefix, no :where() wrapper.
   const re = /(^|})\s*\[hidden\]\s*\{([^}]*)\}/;
   const m = body.match(re);
   assert.ok(
@@ -125,7 +125,7 @@ test('no stylesheet asks a `[hidden]` element to keep a display (the fix would b
     offenders.join('\n  '),
   );
 
-  // `hidden="until-found"` reveals via content-visibility, not display — the one
+  // `hidden="until-found"` reveals via content-visibility, not display - the one
   // legitimate use of the attribute that `display: none !important` would break.
   const tsFiles = walkTs(SRC_DIR);
   const untilFound = tsFiles.filter(f => /hidden\s*=\s*["']until-found/.test(readFileSync(f, 'utf8')));

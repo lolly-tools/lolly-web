@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * color-namer.ts — deterministic, human-readable colour NAMING for the brand
+ * color-namer.ts - deterministic, human-readable colour NAMING for the brand
  * generator. When a user picks a colour we show a friendly auto-name ("Deep
  * Ocean Blue", "Pale Amber", "Muted Slate", "Warm Grey", "Near Black", "Off
  * White") before it's added to the brand; they can rename it later.
@@ -10,7 +10,7 @@
  * we convert hex→OKLCH with `hexToOklch` and reason in that perceptual space so
  * "lightness" and "muted/vivid" match what a human sees, not raw sRGB bytes.
  *
- * Shape of a name (title-case, ≤3 words):
+ * Structure of a name (title-case, ≤3 words):
  *   • near-neutral (very low chroma)  → a grey-scale name by lightness, with an
  *     optional Warm/Cool temperature   ("Near Black" · "Charcoal" · "Cool Slate
  *     Grey" · "Warm Grey" · "Silver" · "Off White" · "White").
@@ -25,7 +25,7 @@ import { hexToOklch } from '@lolly/engine';
 /**
  * Curated hue anchors, name + centre hue in OKLCH degrees. Centres are
  * calibrated from real sRGB primaries/secondaries in OKLCH (e.g. #ff0000≈29°,
- * #0000ff≈264°, #00ff00≈143°), not the HSL wheel — OKLCH hue is perceptually
+ * #0000ff≈264°, #00ff00≈143°), not the HSL wheel - OKLCH hue is perceptually
  * spaced, so these are where each name actually reads true. A colour is named by
  * the nearest anchor via circular hue distance.
  */
@@ -108,7 +108,7 @@ function neutralName(l: number, c: number, h: number): string {
  * Friendly, deterministic, title-case name for a colour.
  * @param hex  `#rgb` / `#rrggbb` / `#rrggbbaa` (the leading `#` is optional).
  * @returns e.g. "Deep Blue", "Pale Amber", "Muted Teal", "Warm Grey",
- *          "Near Black", "Off White". Never empty — unparseable input → "Grey".
+ *          "Near Black", "Off White". Never empty - unparseable input → "Grey".
  */
 export function nameColor(hex: string): string {
   const o = hexToOklch(hex);

@@ -900,7 +900,7 @@ test('a countdown tick repaints the time without stealing focus from a half-type
 // the derivation and `rtc-transport.test.ts` pins the material; what is left for the
 // dialog is that it renders the plate for the pairing it is actually in, on both roles,
 // and renders nothing at all rather than something wrong. A dialog that shows a plate
-// derived from the wrong thing — or shows one role a plate and the other none — turns
+// derived from the wrong thing - or shows one role a plate and the other none - turns
 // every honest pairing into a suspected attack, which is the failure that matters here.
 
 /** One pairing's two certificate fingerprints, fixed so a plate can be pinned to them. */
@@ -912,7 +912,7 @@ const FP_OTHER = Uint8Array.from({ length: 32 }, (_, i) => (i * 13 + 5) & 0xff);
 const plateNode = (el: Element): HTMLElement | null => el.querySelector('[data-cer-plate]');
 
 /**
- * The plate on screen once the digest has landed — or `''` when none ever does.
+ * The plate on screen once the digest has landed - or `''` when none ever does.
  *
  * The derivation is async (Web Crypto), so a test that reads straight after the connected
  * render sees an empty screen whether the wiring works or not. Looping to a bound serves
@@ -928,7 +928,7 @@ async function settlePlate(el: Element): Promise<string> {
   return plateNode(el)?.textContent ?? '';
 }
 
-/** Assert sustained ABSENCE — the spent-pairing case. Absence cannot be proven by
+/** Assert sustained ABSENCE - the spent-pairing case. Absence cannot be proven by
  *  waiting, so this holds the door open long enough (50 real timer turns, far past
  *  any derivation latency) for a wrong plate to show up if the discard logic ever
  *  breaks, failing loudly the instant one paints. */
@@ -969,7 +969,7 @@ async function connectedAcceptor(over: Partial<CeremonyEffectsBundle>): Promise<
 }
 
 test('spokenPlate: the six symbols are said one at a time, with the groups apart', () => {
-  // "LOL-123" read as its own text is "lol, one hundred and twenty-three" — which is
+  // "LOL-123" read as its own text is "lol, one hundred and twenty-three" - which is
   // useless for comparing character by character and, worse, sounds like it matched.
   assert.equal(spokenPlate('ACD-234'), 'A C D, 2 3 4');
   assert.equal(spokenPlate('K7M-9PZ'), 'K 7 M, 9 P Z');
@@ -1012,7 +1012,7 @@ test('the plate is announced, spelled out, rather than left to be pronounced', a
   assert.equal(plate?.getAttribute('aria-label'), said);
 
   // The digest lands a microtask AFTER the connected screen was announced, so the live
-  // region has to speak a second time — otherwise the plate is the one thing on this
+  // region has to speak a second time - otherwise the plate is the one thing on this
   // screen a screen-reader user is never told.
   const live = [...h.el.querySelectorAll('[data-cer-live] span')].map((s) => s.textContent);
   assert.ok(live.includes(said), `the live region never said the plate: ${live.join(' | ')}`);
@@ -1022,7 +1022,7 @@ test('the plate is announced, spelled out, rather than left to be pronounced', a
 
 test('a plate is never read out on a screen that does not show it', async () => {
   // The inviter has both fingerprints the moment `applyRemote` returns, which is a render
-  // BEFORE the connected screen — "Step 3 of 3: Connecting". Announcing there would say
+  // BEFORE the connected screen - "Step 3 of 3: Connecting". Announcing there would say
   // six characters the other person cannot see yet, on the one screen where the point is
   // that both people are looking at the same thing.
   const h = open({
@@ -1053,7 +1053,7 @@ test('a plate is never read out on a screen that does not show it', async () => 
 });
 
 test('no material means no plate, and the connected screen is otherwise untouched', async () => {
-  // The plain stub declares no `plateMaterial` at all — every hand-driven effects bundle
+  // The plain stub declares no `plateMaterial` at all - every hand-driven effects bundle
   // in this suite, and any shell that predates the plate.
   const h = await connectedInviter({});
   assert.equal(headingText(h.el), STRINGS.connectedHeading);
@@ -1088,7 +1088,7 @@ test('a second pairing gets its own plate, never the spent one', async () => {
   assert.equal(await settlePlate(handle.el), await derivePlate(FP_HERE, FP_THERE));
 
   // The link drops. The machine re-mints, the transport opens a new peer connection, and
-  // for a moment it has one fingerprint or none — a plate for a connection that no longer
+  // for a moment it has one fingerprint or none - a plate for a connection that no longer
   // exists is exactly the number this whole mechanism exists to make impossible.
   pair = null;
   stub.set({ phase: 'reconnect-armed', invite: { signal: inviteToken(), toolId: 'qr-code' } });
@@ -1189,7 +1189,7 @@ test('STRINGS: every word the two flows render comes out of the map', async () =
   // The connected screen WITH a plate. The plate's own six characters are a value, not
   // copy (`data-dynamic`), but the sentence beside it and the `aria-label` a screen
   // reader hears in its place are both copy, and neither is reachable from the walk
-  // above — the stub effects there carry no fingerprints.
+  // above - the stub effects there carry no fingerprints.
   const plated = await connectedInviter({ plateMaterial: () => ({ local: FP_HERE, remote: FP_THERE }) });
   assert.notEqual(await settlePlate(plated.el), '', 'the plated capture must actually have a plate');
   capture(plated.el);

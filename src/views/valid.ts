@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * /valid — on-device Content Credentials check.
+ * /valid - on-device Content Credentials check.
  *
  * Drop any stamped export (pdf, png/apng, jpg, gif, svg, tiff, webp, mp4,
  * webm, mp3, wav) and the engine verifier (engine/src/c2pa-verify.js) re-checks the
@@ -8,8 +8,8 @@
  * signature, the certificate window and the hard binding. Nothing leaves the
  * device. When a Lolly CA root is pinned (src/ca-root.js) it is passed as a
  * trust anchor, so a signing chain that verifies against it upgrades the
- * result to a CA-verified identity — "signed by <email>"; otherwise a green
- * result means "the file is exactly what its credential signed" — integrity,
+ * result to a CA-verified identity - "signed by <email>"; otherwise a green
+ * result means "the file is exactly what its credential signed" - integrity,
  * not identity. Check codes mirror c2patool /
  * verify.contentauthenticity.org so the two reports read side-by-side.
  *
@@ -22,14 +22,14 @@
  * dashboard; the CLI exposes the same engine verifier as `validate <file>`.
  */
 
-import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
+import '../styles/parts/valid.css';   // async CSS chunk (lazy view - not on the landing)
 import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, appendedIsExpected, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, detectWatermarkSearch, analyzeLsb, isPptx, pptxMediaImages } from '@lolly/engine';
 import type { FileMetadata, MetaField, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
 import { looksLikePptxFile, inflatePptx, PPTX_MIME } from '../bridge/pptx.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
-// Aliased (not `icon`) — this file has function parameters named `icon` (fact(),
+// Aliased (not `icon`) - this file has function parameters named `icon` (fact(),
 // the change-history `section` builder) that would otherwise shadow the import.
 import { icon as glyph, type IconName } from '../lib/icons.ts';
 import { t, tRaw } from '../i18n.ts';
@@ -41,7 +41,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
-// The pure verdict/scorecard model — no DOM, no CSS import, so it's importable (and
+// The pure verdict/scorecard model - no DOM, no CSS import, so it's importable (and
 // tested) standalone. See valid-verdict.ts's header for why this lives apart from the
 // rendering below.
 import {
@@ -49,7 +49,7 @@ import {
   stateTone, STATE_COPY, hashFailed,
 } from './valid-verdict.ts';
 import type { Check, SignerIdentity, Signer, Claim, VerifyReport, Watermark, ScorecardItem } from './valid-verdict.ts';
-// The C2PA 2.4 text-binding models — same pure-module rule as valid-verdict.ts.
+// The C2PA 2.4 text-binding models - same pure-module rule as valid-verdict.ts.
 // The copy for every carrier state, the snippet cap, and the ONE url gate both
 // the paste path and the external-manifest fetch go through, all testable
 // without a browser (valid-text.test.ts).
@@ -58,7 +58,7 @@ import {
   verifyTextNotices, suppressModifiedBadge, aiDisclosureRows,
 } from './valid-text.ts';
 import type { VerifyNotice, NoticeContext } from './valid-text.ts';
-// Deep engine import, NOT the `@lolly/engine` barrel — the beam-pack.ts:125
+// Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
 // there to prevent. `sniffFormat` names a PASTED payload's file (pasted.html /
@@ -68,7 +68,7 @@ import { sniffFormat } from '../../../../engine/src/c2pa-extract.ts';
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
 // …), so a credential from a recognised signer upgrades from "valid" to a
-// named, CA-verified identity — "signed by <issuer>". A self-signed on-device
+// named, CA-verified identity - "signed by <issuer>". A self-signed on-device
 // export still reads as intact-but-untrusted (it chains to none of these).
 const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
   trustAnchors: [
@@ -84,18 +84,18 @@ const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
 const MAX_VERIFY_BYTES = 256 * 1024 * 1024;
 
 // Path data for all of these (including 'shield'/'chevronDown' below) lives in
-// lib/icons.ts — the shared registry (see plans/76-component-audit.md rec 5).
+// lib/icons.ts - the shared registry (see plans/76-component-audit.md rec 5).
 // 'globe', 'calendar', 'package' and 'image' are deduped there against
 // near-identical glyphs from catalog-summary.ts/category-icons.ts/profile.ts.
 const ICON_SHIELD = glyph('shield');
 const ICON_CHEVRON = glyph('chevronDown');
 
-// Small line icons, wrapped consistently — shared by the hero check scorecard
+// Small line icons, wrapped consistently - shared by the hero check scorecard
 // and the per-fact <dt> labels. /valid's icons are a hair thinner (1.9) than
 // the registry default (2).
 const svgIcon = (name: IconName): string => glyph(name, { strokeWidth: 1.9 });
 
-// One scorecard pip's markup — factored out of scorecardHtml so the
+// One scorecard pip's markup - factored out of scorecardHtml so the
 // deep-scan click handler (mountValid) can append a freshly-found TrustMark
 // pip to a LIVE `<ul class="valid-score">` after the fact, using the exact
 // same template rather than re-rendering (and losing scroll/expand state)
@@ -135,12 +135,12 @@ function fact(label: string, value: unknown, icon: IconName): string {
 }
 
 // The scalar-input digest recorded by the writer's tools.lolly.export assertion
-// (env.inputs) — "what this was made from": the colours, sizes, toggles and short
+// (env.inputs) - "what this was made from": the colours, sizes, toggles and short
 // text the tool rendered with. Boxed as its own panel (matching change-history/
 // assertion-log) and placed ABOVE change history so an inspected asset tells its
 // "what it's made from" story before its "what happened to it" story. Empty in →
 // nothing rendered (so panelsBlock silently drops this column when there's no digest).
-// `recreate` (the /verify path only — the catalog/gallery callers pass none) adds
+// `recreate` (the /verify path only - the catalog/gallery callers pass none) adds
 // the "Recreate with these settings" CTA: the anchor's plain href opens a blank
 // session as the fallback; mountValid's delegated [data-recreate] handler upgrades
 // the click into a digest-seeded link (lib/seed-url.ts). Settings-honest wording:
@@ -168,14 +168,14 @@ export function inputsDigestHtml(
 
 // ── Script (a synthetic-voice step's recorded text) ─────────────────────────
 // A recorded action whose `parameters` carry a `script` string is a generated
-// voice declaring its exact source text — the machine-readable Article 50 mark
+// voice declaring its exact source text - the machine-readable Article 50 mark
 // a TTS clip's credential writes at creation (views/script-audio.ts), riding
 // ingredient chains into composed exports. Surfaced as its own panel: the
 // script plus the voice/model/lang recipe, so anyone holding the file can read
 // what was said and recreate the clip in another voice or language. Collapsed
 // beyond ~6 lines ([data-script-expand]); [data-script-copy] copies the text.
 // The parameters value is raw CBOR (a Map from our decoder) or a plain object
-// from a foreign report — read both, strings only, everything escape()d.
+// from a foreign report - read both, strings only, everything escape()d.
 const paramRecord = (p: unknown): Record<string, unknown> | null => {
   if (p instanceof Map) {
     const o: Record<string, unknown> = {};
@@ -211,7 +211,7 @@ export function scriptHtml(report: VerifyReport): string {
 }
 
 // "Recreate in <tool>": env.tool records the tool's display NAME (the id only as
-// a fallback — engine/src/metadata.ts), and in whatever language the EXPORTER ran;
+// a fallback - engine/src/metadata.ts), and in whatever language the EXPORTER ran;
 // resolve it back to a live tool id against the loaded tool index by matching id,
 // name, and every i18n sidecar name, case-insensitively. No index yet, or no match
 // (a retired or foreign tool) → undefined and the CTA simply isn't offered.
@@ -229,23 +229,23 @@ function resolveRecreateTool(recorded: unknown): { toolId: string; toolName: str
 }
 
 // The "checked on this device" footnote, wrapped as a professional callout: a
-// lock chip (privacy — nothing left the device) beside the explanatory prose.
+// lock chip (privacy - nothing left the device) beside the explanatory prose.
 const deviceNote = (inner: string): string =>
   `<div class="valid-note">
     <span class="valid-note-ic" aria-hidden="true">${svgIcon('lock')}</span>
     <p class="valid-note-body">${inner}</p>
   </div>`;
 
-// "You made this here" — the checked bytes hash-match an entry in this device's
+// "You made this here" - the checked bytes hash-match an entry in this device's
 // own export history (lib/export-history.ts contentHash), so beyond anything the
 // credential claims we KNOW this exact file left this browser, and can reopen the
 // tool with the exact state it was downloaded with (the entry's reopen query).
-// Local knowledge only — independent of (and shown regardless of) the C2PA verdict.
+// Local knowledge only - independent of (and shown regardless of) the C2PA verdict.
 interface LocalExportMatch { href: string; at: number }
 const mineNote = (mine: LocalExportMatch): string =>
   `<div class="valid-note valid-note--mine">
     <span class="valid-note-ic" aria-hidden="true">${svgIcon('userCheck')}</span>
-    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — exportReopenHref() builds a fixed '#/tool/<id>' hash route from this device's own export history */ ''}
+    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - exportReopenHref() builds a fixed '#/tool/<id>' hash route from this device's own export history */ ''}
     <p class="valid-note-body">${t('<strong>You made this here.</strong> This exact file matches one you exported on this device ({when}).', { when: fmtDate(mine.at) })} <a href="${escape(mine.href)}">${t('Reopen it exactly as it was')}</a></p>
   </div>`;
 
@@ -254,7 +254,7 @@ const fmtDate = (iso: unknown): string => {
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-// Icon-only mirror of the hero scorecard for the collapsed summary — the "highlights
+// Icon-only mirror of the hero scorecard for the collapsed summary - the "highlights
 // showing when collapsed". Same eight pips, same colour = state, label as a tooltip.
 function miniScoreHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
   if (!report.found && !watermark?.present && !extra?.length) return '';
@@ -263,7 +263,7 @@ function miniScoreHtml(report: VerifyReport, watermark?: Watermark, extra?: Scor
 
 // The always-visible summary row of a collapsible report: state badge, filename,
 // signer identity (when CA-verified), and the mini scorecard glance.
-// The maker(s) behind a report — the active manifest's generator first, then any
+// The maker(s) behind a report - the active manifest's generator first, then any
 // distinct upstream makers from the provenance chain (preserved ingredients),
 // as short brand names. `lolly` when Lolly is anywhere in the mix. null when the
 // generator can't be read.
@@ -288,18 +288,18 @@ function reportMaker(report: VerifyReport): { names: string[]; lolly: boolean } 
 // The strongest POSITIVE signal to lead the summary badge / hero verdict with
 // when a file carries NO C2PA credential: an exact local-export match ("Made on
 // this device") or a detected Lolly Imprint. A bare "No Content Credentials"
-// reads at a glance as "nothing here" and buries these — so surface the real
+// reads at a glance as "nothing here" and buries these - so surface the real
 // signal instead. Returns null when a credential exists (its own verdict leads)
 // or there is nothing positive to show.
 function noCredentialSignal(report: VerifyReport, watermark?: Watermark, mine?: LocalExportMatch): string | null {
   if (report.found) return null;               // a C2PA credential exists → its verdict leads
-  if (mine) return t('Made on this device');   // exact byte-match to a local export — the strongest signal
+  if (mine) return t('Made on this device');   // exact byte-match to a local export - the strongest signal
   if (watermark?.present) return t('Lolly Imprint');
   return null;
 }
 
 // The format chip beside a filename. The three C2PA 2.4 text bindings are said
-// in words — 'code' is "an §A.9 manifest delimiter appeared in this text", and
+// in words - 'code' is "an §A.9 manifest delimiter appeared in this text", and
 // printing the token raw read as a claim about the file's LANGUAGE that the
 // sniffer never made. Every other format keeps its own token, exactly as before,
 // and both the collapsed summary and the full report use this one function so
@@ -317,13 +317,13 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
   const who = identity ? (identity.email || report.signer?.organization || report.signer?.commonName) : null;
   const tone = stateTone(report);
   const maker = reportMaker(report);
-  // An intact credential leads with WHO made it — "Made with Google" (grey),
+  // An intact credential leads with WHO made it - "Made with Google" (grey),
   // "Made with Lolly" (green), several vendors joined when a chain preserved
-  // ingredients — matching the timeline's maker pills. A broken / expired / no-
+  // ingredients - matching the timeline's maker pills. A broken / expired / no-
   // credential file leads with the verdict badge instead: the problem is the
   // headline, and its maker isn't something to vouch for.
   // A no-credential file with a strong positive signal (made on this device / a
-  // Lolly Imprint) leads with THAT, in green — not the grey "No Content
+  // Lolly Imprint) leads with THAT, in green - not the grey "No Content
   // Credentials" that reads as "nothing here".
   const signal = noCredentialSignal(report, watermark, mine);
   const lead = signal
@@ -352,7 +352,7 @@ const META_GROUP_ICON: Record<MetaGroup, IconName> = {
 };
 
 // An offline world locator: the photo's GPS fix plotted on an embedded land
-// outline (no tile server — the coordinates never leave the device). Rendered
+// outline (no tile server - the coordinates never leave the device). Rendered
 // full-width above the sections when a file records a position.
 function renderLocator(lat: number, lon: number): string {
   const { x, y } = projectLatLon(lat, lon);
@@ -367,7 +367,7 @@ function renderLocator(lat: number, lon: number): string {
     </svg>`;
 }
 
-// Formats the Redact tool can rebuild (image and PDF only — it repaints pixels,
+// Formats the Redact tool can rebuild (image and PDF only - it repaints pixels,
 // so it has nothing to offer video or audio containers). Peer of the strip-data
 // link below: strip-data removes what the file carries, redact removes what the
 // pixels show.
@@ -375,7 +375,7 @@ const REDACTABLE_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'SVG', 'PDF']);
 const isRedactableFormat = (format: string | undefined): boolean =>
   !!format && REDACTABLE_FORMATS.has(format.toUpperCase());
 
-// The embedded-metadata reveal — everything the file discloses about the device,
+// The embedded-metadata reveal - everything the file discloses about the device,
 // place, person, and software behind it, read on-device from its own bytes and
 // laid out clinically by section. Independent of the C2PA verdict: a file with no
 // credential can still be dense with EXIF. Empty in → nothing rendered.
@@ -401,7 +401,7 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
       ${renderLocator(meta.gps.lat, meta.gps.lon)}
       <div class="valid-meta-loc-read">
         ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — engine file-metadata.ts builds mapUrl as a literal 'https://www.openstreetmap.org/…' prefix over numeric EXIF lat/lon (toFixed), so no EXIF string reaches the scheme */ ''}
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - engine file-metadata.ts builds mapUrl as a literal 'https://www.openstreetmap.org/…' prefix over numeric EXIF lat/lon (toFixed), so no EXIF string reaches the scheme */ ''}
         ${meta.mapUrl ? `<a class="valid-meta-map" href="${escape(meta.mapUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap ↗</a>` : ''}
       </div>
     </section>` : '';
@@ -432,10 +432,10 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
 // a trained model, we say so in a purple, animated, unmissable banner. Two
 // declaration sources, two strengths of claim: a signed C2PA assertion
 // (report.aiGenerated), or the bare IPTC DigitalSourceType tag in the file's
-// embedded metadata (meta.ai) — the sidecar flag Gemini/Imagen, Midjourney and
+// embedded metadata (meta.ai) - the sidecar flag Gemini/Imagen, Midjourney and
 // Meta AI write alongside their invisible pixel watermarks. Either way the
 // banner also points at the invisible-watermark layer (SynthID, Video Seal…)
-// that we canNOT read on-device — declared honestly instead of over-claimed.
+// that we canNOT read on-device - declared honestly instead of over-claimed.
 interface AiOrigin { kind: 'generated' | 'composite'; via: 'credential' | 'metadata'; credit?: string }
 const AI_FLAG_COPY = {
   credential: {
@@ -460,14 +460,14 @@ const AI_FLAG_COPY = {
   },
 };
 // Matches the makers whose AI output carries Google's SynthID pixel watermark
-// (Gemini/Imagen/Veo — and "Nano Banana", Gemini's image-model brand).
+// (Gemini/Imagen/Veo - and "Nano Banana", Gemini's image-model brand).
 const SYNTHID_MAKERS = /google|gemini|imagen|veo|nano.?banana/i;
 function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
   if (!origin) return '';
   const c = AI_FLAG_COPY[origin.via][origin.kind];
   // The invisible-watermark layer: Google (and partners) stamp SynthID into the
   // pixels themselves. We can't read it on-device, so we just share what's likely
-  // — we don't route users to a maker's proprietary detector or make excuses for
+  // - we don't route users to a maker's proprietary detector or make excuses for
   // what we can't do.
   const note = SYNTHID_MAKERS.test(`${origin.credit ?? ''} ${makerHint}`)
     ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped.')
@@ -487,11 +487,11 @@ function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
 
 // ── C2PA 2.4 text-binding notes ──────────────────────────────────────────────
 // The sentences `state` cannot say. Every one of them is resolved in the pure
-// module (valid-text.ts) — this only paints. Two escaping rules hold here:
+// module (valid-text.ts) - this only paints. Two escaping rules hold here:
 // `t(source, params)` ESCAPES its params and returns markup-ready text, so it is
 // injected as-is (double-escaping would show `&amp;lt;` to the reader); anything
-// that came out of the checked FILE — the engine's `detail`, the credential's own
-// URL — is escape()'d at the point of use and never linkified. A reference
+// that came out of the checked FILE - the engine's `detail`, the credential's own
+// URL - is escape()'d at the point of use and never linkified. A reference
 // inside an untrusted document is a claim about where its credential lives, not
 // somewhere this page invites a click.
 const NOTE_ICON: Record<string, IconName> = {
@@ -534,7 +534,7 @@ function notesHtml(notes: VerifyNotice[], fileIndex: number): string {
 
 // ── §18.28 ai-disclosure ─────────────────────────────────────────────────────
 // CLAIM CONTENT, not a detection: the signer wrote down which model made this.
-// Worded as the declaration it is ("declares…"), attributed to whoever signed —
+// Worded as the declaration it is ("declares…"), attributed to whoever signed - 
 // which is the same posture as the selfnote line under the credential facts, and
 // the reason this never borrows the aiFlag's red-alert framing. It rides the
 // shared violet (--vf-ai-*, the GEN-AI pill family) because it IS the same
@@ -566,7 +566,7 @@ function aiDisclosureHtml(report: VerifyReport, identity: SignerIdentity | undef
 }
 
 // ── Lolly Imprint (our pixel watermark) ──────────────────────────────────────
-// Shown ONLY when the in-pixel mark is found (absence is uninformative — resize
+// Shown ONLY when the in-pixel mark is found (absence is uninformative - resize
 // erases it and non-Lolly rasters never carry it, so "not found" must never read
 // as "not made with Lolly"). Deliberately quiet and clearly secondary to the
 // C2PA verdict: a durable hint, not a cryptographic guarantee.
@@ -584,7 +584,7 @@ function watermarkNote(wm: Watermark | undefined): string {
     </div>`;
 }
 
-// The scorecard pip for a detected Lolly Imprint — the exact item scorecardModel
+// The scorecard pip for a detected Lolly Imprint - the exact item scorecardModel
 // seats beside the verdict, reused so a Tier-2 (opt-in resize search) recovery
 // injects an IDENTICAL pip. Presence is presence: the wording never depends on
 // which tier found it or on the scale/offset it was recovered at.
@@ -593,7 +593,7 @@ const lollyImprintPip = (): ScorecardItem => ({ icon: 'imprint', label: t('Lolly
 // ── Opt-in Tier-2 "resized Imprint" search ───────────────────────────────────
 // The automatic pixel pass (pixelChecks) runs Tier 0 (plain detect) + Tier 1 (the
 // cheap block-phase OFFSET search, crop recovery). It deliberately does NOT run
-// Tier 2 — the resample-heavy SCALE grid — because that costs a bilinear resample
+// Tier 2 - the resample-heavy SCALE grid - because that costs a bilinear resample
 // + detect per cell and the common case on a public /verify page is an unmarked
 // file, so paying it silently on every miss is unacceptable. Exactly like the
 // TrustMark deep-scan button, it's offered PER FILE, ONLY when nothing was found
@@ -614,18 +614,18 @@ function imprintRescanBlock(fileIndex: number, format: string | null, fileName: 
     </div>`;
 }
 
-// ── SEAL (hackerfactor) signature — byte-level cryptographic provenance ──────
+// ── SEAL (hackerfactor) signature - byte-level cryptographic provenance ──────
 // DISTINCT from Meta's "Content Seal" pixel watermark (contentSealPip/Note
 // below): SEAL signs the FILE BYTES and publishes its public key in DNS. It runs
-// on the DEFAULT verify path (byte-level, like the C2PA / metadata reads — NOT
+// on the DEFAULT verify path (byte-level, like the C2PA / metadata reads - NOT
 // the neural deep scan). Only a positive OR a present-but-failed result renders;
 // a file with no SEAL record shows nothing (absence is never "clean"). SEAL
-// proves DOMAIN control + byte integrity — not a CA-verified legal identity, and
+// proves DOMAIN control + byte integrity - not a CA-verified legal identity, and
 // nothing about the visual content.
 function sealPip(seal: SealVerifyResult | undefined): ScorecardItem | null {
   if (!seal?.found) return null;
   if (seal.valid && seal.keySource === 'dns') return { icon: 'seal', label: t('SEAL signature'), status: 'pass', statusWord: t('verified') };
-  // Valid but the key came from the file itself (no DNS confirmation) — integrity
+  // Valid but the key came from the file itself (no DNS confirmation) - integrity
   // without domain attribution, so it's an amber "present", not a green verdict.
   if (seal.valid) return { icon: 'seal', label: t('SEAL signature'), status: 'warn', statusWord: t('unconfirmed key') };
   return { icon: 'seal', label: t('SEAL signature'), status: 'fail', statusWord: t('failed') };
@@ -650,7 +650,7 @@ function sealNoteHtml(seal: SealVerifyResult | undefined): string {
     </div>`;
   }
   if (seal.valid) {
-    // Verified against the record's OWN inline key — internally consistent, but
+    // Verified against the record's OWN inline key - internally consistent, but
     // the key was never confirmed against DNS, so the domain is unattested.
     return `
     <div class="valid-wm valid-wm--warn" role="note">
@@ -675,9 +675,9 @@ function sealNoteHtml(seal: SealVerifyResult | undefined): string {
 // The steganalysis reader already surfaces trailing bytes as a metadata row
 // (see file-metadata.ts's `appended`); this callout goes one step further and
 // lets a viewer actually see and pull out what's riding after the container
-// ends — same "reveal, never launder" stance as the clean-copy action below.
+// ends - same "reveal, never launder" stance as the clean-copy action below.
 // Shown for EVERY appended payload, including the legitimate motion-photo
-// case (no warning pip there — see stegoPips — but "here's the trailing data"
+// case (no warning pip there - see stegoPips - but "here's the trailing data"
 // is still a neutral, useful action). The View/Download handlers themselves
 // live in mountValid (they need activeFiles); this only builds the markup.
 const PAYLOAD_EXT: Record<string, string> = {
@@ -700,7 +700,7 @@ export function appendedPayloadHtml(meta: FileMetadata | undefined, fileIndex: n
   // disclosed, not hidden data. The engine owns that judgement - never re-derive
   // it here by string-matching a kind.
   const expected = appendedIsExpected(meta.appended);
-  // Reuse the already-formatted "kind — size" string from the metadata row
+  // Reuse the already-formatted "kind - size" string from the metadata row
   // instead of reformatting the byte count here.
   const detail = meta.fields.find((f) => f.label === 'Appended data')?.value ?? meta.appended.kind;
   return `
@@ -717,11 +717,11 @@ export function appendedPayloadHtml(meta: FileMetadata | undefined, fileIndex: n
       </div>
     </div>`;
 }
-// Hex dump with an ASCII gutter — 16 bytes/row, classic layout. The payload is
+// Hex dump with an ASCII gutter - 16 bytes/row, classic layout. The payload is
 // attacker-controlled bytes; the caller escapes this output before it ever
 // touches innerHTML (see payloadPreviewHtml), so nothing here needs escaping
 // itself, but every byte is rendered as its numeric hex/period form, never as
-// a live character — there is no path from payload bytes to markup.
+// a live character - there is no path from payload bytes to markup.
 function hexDump(bytes: Uint8Array): string {
   const lines: string[] = [];
   for (let i = 0; i < bytes.length; i += 16) {
@@ -734,9 +734,9 @@ function hexDump(bytes: Uint8Array): string {
 }
 const PAYLOAD_PREVIEW_MAX = 2048;
 /** Renders the first ~2 KB of a (possibly hostile) payload as plain escaped
- *  text — a hex dump for anything binary, decoded UTF-8 for the `text` kind.
+ *  text - a hex dump for anything binary, decoded UTF-8 for the `text` kind.
  *  SECURITY: this is the only thing ever done with payload bytes on this
- *  page — no parsing, no rendering as an image/HTML/script, and the result is
+ *  page - no parsing, no rendering as an image/HTML/script, and the result is
  *  always passed through `escape()` before reaching innerHTML, so a payload
  *  crafted to look like markup can never execute or inject. */
 function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
@@ -752,7 +752,7 @@ function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
 // ── Deep scan for third-party watermarks (Adobe TrustMark + Meta Content Seal) ──
 // See plans/31-watermark-detectors.md. The two neural decoders (lib/trustmark.ts,
 // lib/contentseal.ts) each pull in onnxruntime-web + a model and must NEVER load
-// on the default verify path — they're lazily dynamic-imported. The scan runs
+// on the default verify path - they're lazily dynamic-imported. The scan runs
 // AUTOMATICALLY (scanOne/scanAllDecodable in mountValid) once the models are
 // on-device; the one-time ~90 MB download is offered once per batch via the
 // header banner (deepScanBannerHtml → enableDeepScan), so a single consent
@@ -761,7 +761,7 @@ function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
 const TRUSTMARK_DETECTED_PIP: ScorecardItem = {
   icon: 'imprint', label: '', status: 'pass', statusWord: '',
 };
-/** Builds the scorecard pip for a positive TrustMark decode — a real
+/** Builds the scorecard pip for a positive TrustMark decode - a real
  *  on-device, ECC-validated read, so (like the Lolly Imprint) it earns a
  *  green pass pip rather than the amber SynthID/Meta likelihood wording. */
 function trustmarkPip(): ScorecardItem {
@@ -777,17 +777,17 @@ function trustmarkNoteHtml(payloadHex: string, schema: string): string {
       </div>
     </div>`;
 }
-/** A positive read of Lolly's OWN durable mark — a TrustMark-format soft binding
+/** A positive read of Lolly's OWN durable mark - a TrustMark-format soft binding
  *  carrying Lolly's identifier, recognised on-device (engine readLollyDurable).
  *  It's a real, ECC-validated read, so (like the Lolly Imprint) a green pass pip
- *  — and it's the more specific answer, so it REPLACES the generic TrustMark pip
+ * - and it's the more specific answer, so it REPLACES the generic TrustMark pip
  *  when the payload is ours. See plans/28-durable-content-credentials.md. */
 function lollyDurablePip(): ScorecardItem {
   return { ...TRUSTMARK_DETECTED_PIP, label: t('Lolly durable mark'), statusWord: t('detected') };
 }
 // Honest scope: this states what it PROVES (a Lolly identifier is watermarked
 // into the pixels and error-corrected) and what it's FOR (re-linking after a
-// metadata strip). It does NOT claim a manifest was resolved — that lookup
+// metadata strip). It does NOT claim a manifest was resolved - that lookup
 // (CAI Soft Binding Resolution) is deferred to a SUSE-hosted deploy.
 function lollyDurableNoteHtml(schema: string): string {
   return `
@@ -799,7 +799,7 @@ function lollyDurableNoteHtml(schema: string): string {
       </div>
     </div>`;
 }
-/** The pip for a positive Content Seal read — a consistent message survived
+/** The pip for a positive Content Seal read - a consistent message survived
  *  four re-encodings on THIS device. Unlike TrustMark this has NO error-
  *  correcting gate (it's a statistical consensus that a flat/low-detail image
  *  can trip), so it reads as an amber "likely", not a green "detected". */
@@ -826,7 +826,7 @@ function contentSealNoteHtml(messageHex: string): string {
 }
 // Per-file deep-scan slot: the pip-injection anchor + a notes area, appended
 // below the hero scorecard. Gated to formats the pixel decode can read
-// (WM_DECODABLE) — omitted for PDF/video/TIFF/SVG. There is NO per-file button:
+// (WM_DECODABLE) - omitted for PDF/video/TIFF/SVG. There is NO per-file button:
 // the scan runs automatically once the detector models are on-device, and the
 // one-time download is offered ONCE per batch in the header banner
 // (deepScanBannerHtml) so every file benefits from a single consent.
@@ -863,9 +863,9 @@ function deepScanBannerHtml(count: number): string {
 // ── AI declaration + third-party watermark pip ──────────────────────────────
 // The AI declaration, from either source: the signed credential wins (stronger
 // claim), else the bare IPTC tag in the file's embedded metadata (meta.ai).
-// `makerHint` joins everything that names the maker — the claim generator, the
+// `makerHint` joins everything that names the maker - the claim generator, the
 // agents on AI-sourced history steps, and the software/credit fields read from
-// bare metadata — for the SynthID/Meta maker checks.
+// bare metadata - for the SynthID/Meta maker checks.
 function deriveAi(report: VerifyReport, meta: FileMetadata | undefined): { origin: AiOrigin | undefined; makerHint: string } {
   const origin: AiOrigin | undefined = report.aiGenerated
     ? { kind: report.aiGenerated.kind, via: 'credential' }
@@ -885,7 +885,7 @@ function deriveAi(report: VerifyReport, meta: FileMetadata | undefined): { origi
 
 // SynthID / Meta's in-pixel watermarks can't be read outside their makers, so
 // their scorecard pip states likelihood: an amber pip whose label carries the
-// whole claim (no status word — "passed"/"invalid" would both misword it),
+// whole claim (no status word - "passed"/"invalid" would both misword it),
 // shown when the file's own AI declaration names a maker whose policy is to
 // watermark all AI output. The Lolly Imprint pip (a real on-device detection)
 // is appended in scorecardModel; this one rides beside it.
@@ -898,10 +898,10 @@ function aiMarkPip(origin: AiOrigin | undefined, makerHint: string, isVideo: boo
   return null;
 }
 
-// Steganalysis pips — amber heuristics from the byte read (a payload appended
+// Steganalysis pips - amber heuristics from the byte read (a payload appended
 // after the image container ends) and the shell's pixel pass (chi-square LSB
 // analysis, engine steganalysis.ts). The legitimate motion-photo append stays
-// out of the scorecard — it's disclosed in the metadata panel instead.
+// out of the scorecard - it's disclosed in the metadata panel instead.
 export function stegoPips(meta: FileMetadata | undefined): ScorecardItem[] {
   const pips: ScorecardItem[] = [];
   if (meta?.appended && !appendedIsExpected(meta.appended)) {
@@ -939,18 +939,18 @@ const ACTION_ICON: Record<string, IconName> = {
 };
 // A composite source type reads as stacked layers regardless of the action code
 // carrying it (a created/opened step that merged multiple elements). Keyed on the
-// IPTC digitalSourceType slug — takes precedence over ACTION_ICON in stepsHtml().
+// IPTC digitalSourceType slug - takes precedence over ACTION_ICON in stepsHtml().
 const SOURCE_ICON: Partial<Record<string, IconName>> = {
   composite: 'layers',
   compositeWithTrainedAlgorithmicMedia: 'layers',
-  // Sensor origin — a live camera frame or a recording. A mic-only take is
+  // Sensor origin - a live camera frame or a recording. A mic-only take is
   // re-pointed to the mic glyph in stepsHtml() from its description.
   digitalCapture: 'camera',
   computationalCapture: 'camera',
-  // A display capture is its own origin — a screen, never a camera.
+  // A display capture is its own origin - a screen, never a camera.
   screenCapture: 'monitor',
 };
-// Friendly wording for an action's IPTC DigitalSourceType — see sourceTypeLabel
+// Friendly wording for an action's IPTC DigitalSourceType - see sourceTypeLabel
 // in valid-verdict.ts, which picks the produced-vs-ingested phrasing per action.
 const AI_SOURCE_SLUGS: Record<string, 'generated' | 'composite'> = {
   trainedAlgorithmicMedia: 'generated',
@@ -961,7 +961,7 @@ const sourceSlug = (a: { digitalSourceType?: unknown }): string =>
 
 // Tidy a verbose generator string into a short pill label. Known makers collapse
 // to their brand; anything else keeps its first token (truncated), so the pill
-// stays legible ("Google", "Lolly", "Adobe" — not "Google C2PA Core Generator…").
+// stays legible ("Google", "Lolly", "Adobe" - not "Google C2PA Core Generator…").
 const AGENT_BRANDS = ['Lolly', 'Nano Banana', 'Gemini', 'Google', 'Adobe', 'Photoshop', 'Firefly', 'OpenAI', 'DALL·E', 'Microsoft', 'Meta', 'Midjourney', 'Canva', 'Figma', 'Leica', 'Sony', 'Nikon', 'Canon'];
 function shortAgent(name: string): string {
   const s = name.trim();
@@ -1011,13 +1011,13 @@ export function stepsHtml(report: VerifyReport): string {
       desc ? escape(desc) : null,
       a.when ? escape(fmtDate(a.when)) : null,
     ].filter(Boolean).join('<span class="valid-step-dot" aria-hidden="true">·</span>');
-    // The source-type note (e.g. "Generated by AI") always gets its own line —
+    // The source-type note (e.g. "Generated by AI") always gets its own line - 
     // it's a distinct claim from the description/timestamp, not more list prose.
     const srcLine = src ? `<span class="valid-step-src">${isAi ? `${svgIcon('aiSpark')} ` : ''}${escape(src)}</span>` : '';
     return { agent, agentCls, label, icon, meta, srcLine };
   });
   // The rail segment spanning the FIRST through LAST step credited to Lolly reads
-  // green (matching the lolly pill's own colour) — so the "Lolly leg" of a file's
+  // green (matching the lolly pill's own colour) - so the "Lolly leg" of a file's
   // journey visually pops even when other makers' steps sit before/after it.
   const lollyIdxs = rowData.reduce<number[]>((acc, r, i) => (r.agentCls === 'lolly' ? [...acc, i] : acc), []);
   const firstLolly = lollyIdxs[0];
@@ -1041,7 +1041,7 @@ export function stepsHtml(report: VerifyReport): string {
     </div>`;
 }
 
-// The assertion/validation log, boxed as a panel matching Change history — the raw,
+// The assertion/validation log, boxed as a panel matching Change history - the raw,
 // per-check result behind the hero scorecard's eight collapsed pips (every
 // hashed-URI assertion, the claim signature, the certificate window, the hard
 // binding, trust). Paired with stepsHtml() into .valid-panels so "what happened"
@@ -1060,7 +1060,7 @@ function checksHtml(report: VerifyReport): string {
 // a smaller one beside the embedded metadata. Images and video render inline;
 // PDF gets the browser's native viewer; formats a browser can't decode (TIFF,
 // MKV) fall back to a labelled placeholder. The object URL is owned by handle().
-// A text payload has no pixels to show, so its "preview" is the text itself —
+// A text payload has no pixels to show, so its "preview" is the text itself - 
 // the first ~2 KB, escaped into a <pre>. That is the only faithful preview a
 // pasted HTML document or an armoured source file has, and rendering it as
 // MARKUP (in an iframe, say) would be showing the reader a browser's
@@ -1069,14 +1069,14 @@ type PreviewKind = 'image' | 'video' | 'pdf' | 'text' | 'none';
 interface Preview { url?: string; kind: PreviewKind; format: string; name: string; snippet?: { body: string; more: boolean }; }
 const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif']);
 const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
-// Raster formats a <canvas> can decode to RGBA — shared by the Lolly-Imprint/
+// Raster formats a <canvas> can decode to RGBA - shared by the Lolly-Imprint/
 // LSB pixel pass (mountValid's pixelChecks) AND the TrustMark deep-scan
 // button's gating (deepScanBlock below), so both agree on what's checkable.
 // SVG is deliberately excluded even though it's in PREVIEW_IMG: watermarks
 // live in RASTER pixels, and rasterising a vector for the sake of a scan
 // would be meaningless (there is no pixel grid to have carried a mark).
 // DELIBERATELY unchanged by the text-payload work: a watermark lives in raster
-// pixels, and there are none in a text file — no format below is text.
+// pixels, and there are none in a text file - no format below is text.
 const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp', 'avif']);
 // The three C2PA 2.4 text bindings. Keyed on the SNIFFED format only (never on
 // the file extension): 'code'/'text' mean "a C2PA carrier was found in this
@@ -1100,13 +1100,13 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   if (p.kind === 'pdf' && p.url && size === 'lg')
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
   // SECURITY: the payload reaches the page as ESCAPED text inside a <pre> and
-  // nowhere else — never parsed, never rendered as markup, never given a URL. A
+  // nowhere else - never parsed, never rendered as markup, never given a URL. A
   // pasted document written to look like a credential cannot execute here.
   if (p.kind === 'text' && p.snippet && size === 'lg')
     return `<figure class="${cls}"><pre class="valid-preview-text">${escape(p.snippet.body)}</pre>${p.snippet.more
       ? `<figcaption>${t('Only the first {n} characters are shown here.', { n: p.snippet.body.length })}</figcaption>`
       : ''}</figure>`;
-  // Not inline-previewable at this size — a quiet labelled placeholder (large only).
+  // Not inline-previewable at this size - a quiet labelled placeholder (large only).
   if (size === 'lg')
     return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon('image')}</span><figcaption>${t('No inline preview for {format}', { format: (p.format || t('this format')).toUpperCase() })}</figcaption></figure>`;
   return '';
@@ -1114,7 +1114,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
 
 // `notes` is the resolved text-binding/paste model (valid-text.ts), built by the
 // caller because it needs the page origin, the address the file was read from
-// and whether it arrived through the clipboard — none of which this renderer
+// and whether it arrived through the clipboard - none of which this renderer
 // should know about. Empty for every ordinary binary drop, which is why the
 // whole feature is invisible on those paths.
 function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult, notes: VerifyNotice[] = []): string {
@@ -1127,7 +1127,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
     ? `${claim.generatorInfo!.name}${claim.generatorInfo!.version ? ' ' + claim.generatorInfo!.version : ''}`
     : claim.claimGenerator;
   // AI declaration (credential or bare metadata) + the extra scorecard pips it
-  // and the steganalysis reads imply — see deriveAi/aiMarkPip/stegoPips.
+  // and the steganalysis reads imply - see deriveAi/aiMarkPip/stegoPips.
   const { origin: aiOrigin, makerHint } = deriveAi(report, meta);
   const pips = extraPips(aiOrigin, makerHint, preview?.kind === 'video', meta);
   // SEAL is a byte-level signal computed alongside C2PA (see sealPip): its pip
@@ -1137,25 +1137,25 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // Who signed: the device credential's OIDC email when present, else the
   // organisation / common name from a CA signer's certificate (Google, Adobe,
   // Microsoft… carry no SAN email). Only shown when the chain reached a pinned
-  // anchor (identity set) — an org name alone is never proof.
+  // anchor (identity set) - an org name alone is never proof.
   const signerWho = identity ? (identity.email || signer.organization || signer.commonName) : null;
   const identityLine = (identity && signerWho) ? `
           <p class="valid-identity-line">${report.trusted
     ? t('Signed by <strong>{who}</strong> — identity verified by <strong>{issuer}</strong>', { who: signerWho, issuer: identity!.issuer ?? t('a recognised C2PA root') })
     : t('Signed by <strong>{who}</strong> — identity was CA-verified; the certificate has since expired', { who: signerWho })}</p>` : '';
-  // "Made from", "what happened" and "what was checked" — distinct boxed panels,
+  // "Made from", "what happened" and "what was checked" - distinct boxed panels,
   // paired with the file/facts summary so they share one row wherever the page
   // has the room (see .valid-panels). madeFromBlock is placed ahead of stepsBlock
   // in panelsBlock below so it reads (and, on narrow viewports, stacks) directly
   // above change history.
   // The recreate CTA rides the digest panel only when the claim's own content is
-  // trustworthy (made / likely-made with Lolly — the digest IS a Lolly assertion)
+  // trustworthy (made / likely-made with Lolly - the digest IS a Lolly assertion)
   // AND the recorded tool name resolves against this build's tool index.
   const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool) : undefined;
   const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs, recreate ? { ...recreate, fileIndex } : undefined) : '';
   const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
   // A synthetic-voice step's recorded script (its own panel, between "made
-  // from" and "what happened" — it is source material, not an event).
+  // from" and "what happened" - it is source material, not an event).
   const scriptBlock = report.found && report.claim ? scriptHtml(report) : '';
   const checksBlock = checksHtml(report);
   const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
@@ -1194,7 +1194,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const metaBlock = renderMetadata(meta, preview, fileIndex);
   const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${scriptBlock}${stepsBlock}${checksBlock}${metaBlock}</div>`;
   // The two "key validations" + the signed-by caption shown under the "Made with
-  // Lolly" pill — only for the flagship lolly hero; every other good state keeps
+  // Lolly" pill - only for the flagship lolly hero; every other good state keeps
   // the single prose sub + identityLine above.
   const signedByCa = identity?.issuer || signer.organization || signer.commonName;
   const lollyValidationsHtml = state === STATE_COPY.lolly ? `
@@ -1206,8 +1206,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
     ? t('Signed with <strong>{ca}</strong> Certificate Authority.', { ca: signedByCa ?? t('a Certificate Authority') })
     : t('Signed with an on-device key, not a CA identity.')}</p>` : '';
   // Mirrors lollyValidationsHtml's badge treatment for the broken-credential
-  // verdict — three plain facts instead of one sentence to parse.
-  // The third badge is an INFERENCE, not a fact — and when a note below already
+  // verdict - three plain facts instead of one sentence to parse.
+  // The third badge is an INFERENCE, not a fact - and when a note below already
   // names the known innocent cause of this mismatch (a carrier re-serialized on
   // its way through the clipboard), stamping "Modified after signing" over the
   // top of it would be the page contradicting itself in favour of the accusation.
@@ -1217,7 +1217,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // support them: a failed hard binding. `resolveState` now routes the states
   // where no hash mismatch was established (a carrier problem, an exclusion
   // carve-out, an external credential) to their own heroes, but the gate is
-  // re-asserted here on the evidence itself rather than on the state identity —
+  // re-asserted here on the evidence itself rather than on the state identity - 
   // "Bytes no longer match" must never be printed over a report whose own check
   // list says the data hash is valid.
   const knownCauseMismatch = suppressModifiedBadge(notes);
@@ -1228,7 +1228,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             ${knownCauseMismatch ? '' : `<div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('pen')}</span><span>${t('Modified after signing')}</span></div>`}
           </div>` : '';
   // The middle-ground verdict: mixed tones in one badge group, unlike the pure
-  // pass (lolly) or pure fail (invalid) groups above — two green facts about
+  // pass (lolly) or pure fail (invalid) groups above - two green facts about
   // the MANIFEST's own content (still trustworthy) and one amber fact about
   // the FILE's current bytes (can't be vouched for).
   const likelyLollyBadgesHtml = state === STATE_COPY.likelyLolly ? `
@@ -1239,7 +1239,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           </div>` : '';
   // When there's no C2PA credential, lead the hero with the strongest positive
   // signal (made on this device / Lolly Imprint) as a green pill, rather than a
-  // bare grey "No Content Credentials" — the actual C2PA absence stays in the sub.
+  // bare grey "No Content Credentials" - the actual C2PA absence stays in the sub.
   const noCredSignal = noCredentialSignal(report, watermark, mine);
   const verdictHtml = report.madeWithLolly
     ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`
@@ -1251,7 +1251,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(noCredSignal)}</span>`
           : `<span class="valid-hero-verdict">${escape(t(state.title))}</span>`;
   // A file whose intact chain records Lolly steps without being a Lolly creation
-  // gets the amber lolly pill BESIDE the main verdict — credit for the Lolly leg
+  // gets the amber lolly pill BESIDE the main verdict - credit for the Lolly leg
   // without claiming the whole file (see engine partsMadeWithLolly).
   const partsPill = report.partsMadeWithLolly
     ? ` <span class="valid-hero-pill valid-hero-pill--likely-lolly" title="${escape(t('The provenance chain records steps made with Lolly, but the file as it stands was produced by another tool.'))}"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${t('Parts made with Lolly')}</span>`
@@ -1301,17 +1301,17 @@ const MASONRY_BREAKPOINT = '(min-width: 780px)';
 // True masonry: each card lands in whichever column is CURRENTLY shortest, not
 // wherever a fixed CSS column-count's strictly-sequential fill would put it.
 // column-count fills column 1 (in DOM order) up to a computed height before
-// spilling into column 2 — so one dominant card (a long change history / input
+// spilling into column 2 - so one dominant card (a long change history / input
 // record) can tip its ENTIRE column over while a short sibling column sits
 // mostly empty, stranding the next cards behind the tall one instead of beside
 // it. Greedy shortest-column placement is what actually keeps every card
 // visible near the top instead of trailing a long one.
 // Cards are tagged with their template order (data-m-idx) the first time this
 // runs, since shortest-column placement doesn't preserve a simple document-order
-// split — a later re-layout (crossing the column-count breakpoint) needs that
+// split - a later re-layout (crossing the column-count breakpoint) needs that
 // original order to rebuild from, not whatever order cards ended up in last time.
 function layoutMasonry(container: HTMLElement): void {
-  if (!container.offsetParent) return; // closed <details> body — re-runs once opened (see wireMasonry)
+  if (!container.offsetParent) return; // closed <details> body - re-runs once opened (see wireMasonry)
   const cols = window.matchMedia(MASONRY_BREAKPOINT).matches ? 2 : 1;
   if (container.dataset.masonryCols === String(cols)) return;
   const cards = Array.from(container.querySelectorAll<HTMLElement>('.valid-panel, .valid-meta'));
@@ -1319,7 +1319,7 @@ function layoutMasonry(container: HTMLElement): void {
   cards.forEach((c, i) => { if (c.dataset.mIdx === undefined) c.dataset.mIdx = String(i); });
   cards.sort((a, b) => Number(a.dataset.mIdx) - Number(b.dataset.mIdx));
   container.dataset.masonryCols = String(cols);
-  // Never open more columns than there are cards — a lone summary panel (no
+  // Never open more columns than there are cards - a lone summary panel (no
   // claim found, so made-from/steps/checks are all empty) should stay full-width
   // rather than sit at half-width beside a dead empty column.
   const activeCols = Math.min(cols, cards.length);
@@ -1345,7 +1345,7 @@ function layoutMasonry(container: HTMLElement): void {
 
 // Wires the column-count breakpoint (re-lays-out every currently-visible
 // .valid-panels on crossing it) and, since a batch report's cards start
-// collapsed (display:none — nothing to measure), a capture-phase `toggle`
+// collapsed (display:none - nothing to measure), a capture-phase `toggle`
 // listener: <details> doesn't bubble that event, but capture still reaches it
 // from an ancestor. Also fires for the "Expand all" button, which flips `.open`
 // programmatically (that still dispatches toggle).
@@ -1369,14 +1369,14 @@ function wireMasonry(viewEl: HTMLElement, reportEl: HTMLElement): void {
 // ─── Claim / add-your-credentials (the embed write flow, folded into /verify) ──
 //
 // /verify is no longer read-only: under each file's report a viewer can add their
-// OWN Content Credential — author, copyright, licence — which is layered ON TOP of
+// OWN Content Credential - author, copyright, licence - which is layered ON TOP of
 // whatever the file already carries (the existing chain is preserved as ingredients,
 // never replaced; see host.c2pa.sign + collectIngredients). This is the same signing
 // path the Embed, Imprint & Track tool uses; hosting it here means "inspect the
 // credentials, then claim the file" is one surface. The signed file downloads and
 // the panel re-verifies in place so the viewer immediately sees their claim on the chain.
 
-/** Licence options offered when claiming a file — mirrors community/embed-track-image
+/** Licence options offered when claiming a file - mirrors community/embed-track-image
  *  (option value = the exact string embedded as dc:rights, incl. the CC deed URL). */
 const CLAIM_LICENCES: Array<{ value: string; label: string }> = [
   { value: '', label: 'Proprietary — All rights reserved' },
@@ -1391,7 +1391,7 @@ const CLAIM_LICENCES: Array<{ value: string; label: string }> = [
 ];
 
 /** The engine format key + MIME + whether it takes the pixel Imprint, for a verify
- *  format string / filename — the claimable set (what host.c2pa.sign can carry a
+ *  format string / filename - the claimable set (what host.c2pa.sign can carry a
  *  credential in). Null → the file can't be credentialed, so no claim panel. Mirrors
  *  the embed tool's _formatKey so both surfaces agree on what is claimable. */
 function claimFormatFor(format: string | null | undefined, fileName: string): { key: string; mime: string; raster: boolean } | null {
@@ -1417,7 +1417,7 @@ function claimFormatFor(format: string | null | undefined, fileName: string): { 
 /** The per-file "Add your credentials" action card. Fields start blank; the
  *  author/contact are filled from the opted-in profile after mount (prefillClaim,
  *  which honours the profile's "Use my details" gate). Copyright + licence are
- *  NEVER auto-filled — they are user-asserted. A collapsible panel so it sits quietly
+ *  NEVER auto-filled - they are user-asserted. A collapsible panel so it sits quietly
  *  under the report until a viewer wants to claim the file. */
 function claimPanelHtml(fileIndex: number, format: string | null | undefined, fileName: string, hasCredential: boolean): string {
   const fk = claimFormatFor(format, fileName);
@@ -1517,10 +1517,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   wireMasonry(viewEl, reportEl);
 
   // Verify one file's bytes, returning its C2PA report, its embedded metadata
-  // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
+  // (EXIF/XMP/… - PDF via the shell's pdf bridge, everything else on the engine),
   // or an error message. Kept narrow so both the single- and multi-file paths
   // share the exact engine call. Bytes are read once and reused for both reads.
-  // `externalManifest` is only ever set by fetchExternalManifest below — the
+  // `externalManifest` is only ever set by fetchExternalManifest below - the
   // credential this page fetched, at the user's explicit request, from a
   // same-origin address the document itself named (engine 1.116.0). Every other
   // caller passes nothing and gets byte-identical behaviour.
@@ -1537,7 +1537,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       // still verifies completely offline; one whose key lives in DNS reports
       // "no key resolver" rather than reaching out to a third-party DoH service.
       // Browsers can't do raw DNS, so any web-side lookup would mean handing a
-      // resolver operator the domain plus the user's IP — see docs/privacy.md.
+      // resolver operator the domain plus the user's IP - see docs/privacy.md.
       // The Node shells (CLI/TUI/Tauri) can resolve natively and do.
       const seal = await verifySeal(bytes);
       const meta = await readMetadata(bytes, file.name);
@@ -1550,7 +1550,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         if (embedded?.present) watermark = embedded;
       }
       // The LSB verdict rides on the metadata object (it's "what the file
-      // quietly carries", same as the appended-payload read) — one object
+      // quietly carries", same as the appended-payload read) - one object
       // through the render pipeline instead of another parallel param.
       if (meta && lsb) {
         meta.lsb = lsb;
@@ -1561,7 +1561,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const mine = await localExportByHash(bytes);
       // The text bindings' stand-in for the image preview. Decoded from the
       // bytes we already hold (no second read), non-fatally, and only for the
-      // three formats the sniffer identified AS text — an extension never
+      // three formats the sniffer identified AS text - an extension never
       // decides this, and a binary file is never decoded as if it were text.
       let snippet: { body: string; more: boolean } | undefined;
       if (previewKind(report.format, file.name) === 'text') {
@@ -1582,7 +1582,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // "You made this here": match the checked bytes back to this device's own export
   // history by SHA-256 (the contentHash recordExport stores at download time). The
   // history is read once per mount; no hashing at all when no entry carries a hash
-  // (pre-hash records, insecure contexts). Best-effort — never fails a verify.
+  // (pre-hash records, insecure contexts). Best-effort - never fails a verify.
   let exportsByHash: Map<string, { href: string; at: number }> | null = null;
   async function localExportByHash(bytes: Uint8Array): Promise<LocalExportMatch | undefined> {
     try {
@@ -1604,9 +1604,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // Decode a raster file to RGBA once and run every pixel-domain check on it:
   // the engine's Lolly-Imprint detector, plus chi-square LSB steganalysis for
-  // PNG (the real-world LSB carrier — a lossy format's decoded LSBs are codec
+  // PNG (the real-world LSB carrier - a lossy format's decoded LSBs are codec
   // noise, not hidden bits, so the analysis would be meaningless there).
-  // NB: no downscale — the Imprint must see native-resolution pixels (a resize
+  // NB: no downscale - the Imprint must see native-resolution pixels (a resize
   // shifts the 8×8 grid and erases the mark). Best-effort; anything we can't
   // decode (TIFF, SVG, PDF, video) or that faults returns undefined.
   async function pixelChecks(file: File, format: string | null): Promise<{ watermark?: Watermark; lsb?: FileMetadata['lsb'] } | undefined> {
@@ -1624,10 +1624,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       ctx.drawImage(bmp, 0, 0);
       const { data } = ctx.getImageData(0, 0, w, h);
       // FAST PATH: a pristine (un-cropped, un-resized) Lolly export detects on this
-      // single pass at zero extra cost — the dominant real-world outcome. Only on a
+      // single pass at zero extra cost - the dominant real-world outcome. Only on a
       // MISS do we pay for the crop-recovery offset search (Tier 1: 64 block-phase
       // offsets, NO resample), so an un-resized file stays instant. The resample-
-      // heavy scale search (Tier 2) is opt-in per file — never run automatically here.
+      // heavy scale search (Tier 2) is opt-in per file - never run automatically here.
       const r = detectWatermark(data, { width: w, height: h });
       let present = r.present, score = r.score;
       if (!r.present) {
@@ -1656,14 +1656,14 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // A .pptx or PDF isn't a raster Lolly signs directly, but it can CARRY rasters
   // Lolly rendered (a rasterised slide, a baked CSS fallback) that hold the
   // pixel Imprint. We decode each embedded image at its NATIVE stored resolution
-  // (no resize — the mark rides an 8×8 grid a resize would shift) and run the
+  // (no resize - the mark rides an 8×8 grid a resize would shift) and run the
   // engine detector. Only a POSITIVE hit surfaces (absence is uninformative and
   // must never read as "not made with Lolly"); the unzip/pdf-parse + canvas
   // decode stay shell-side, the enumeration + detection math are engine-pure.
   const CONTAINER_IMG_CAP = 48; // hard bound on images decoded from one container
   const YIELD_EVERY = 6;        // cooperative yield so a big deck doesn't jank the tab
 
-  // Decode encoded image bytes (png/jpeg) to RGBA via a canvas — the same 4-step
+  // Decode encoded image bytes (png/jpeg) to RGBA via a canvas - the same 4-step
   // path pixelChecks uses, but from a byte blob rather than the dropped File.
   async function decodeBytesToRgba(bytes: Uint8Array, mime: string): Promise<{ data: Uint8ClampedArray; width: number; height: number } | undefined> {
     let bmp: ImageBitmap | undefined;
@@ -1685,7 +1685,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
-  // First embedded image whose pixels clear the Imprint threshold wins — we stop
+  // First embedded image whose pixels clear the Imprint threshold wins - we stop
   // there (presence-only; no count is claimed). Returns the strongest score seen
   // so the caller can log even a near-miss. Never throws.
   async function scanRgbaImages(items: Array<{ bytes: Uint8Array; mime: string }>): Promise<{ present: boolean; score: number; scanned: number }> {
@@ -1711,8 +1711,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const media = pptxMediaImages(parts, CONTAINER_IMG_CAP);
       if (!media.length) {
         // A native-vector deck (text boxes, roundRect shapes, gradient/solid fills)
-        // holds no raster in ppt/media at all — so there is nothing an 8×8-block
-        // pixel Imprint could ride. This is the EXPECTED shape of an ordinary
+        // holds no raster in ppt/media at all - so there is nothing an 8×8-block
+        // pixel Imprint could ride. This is the EXPECTED structure of an ordinary
         // deck-builder/deck-studio export, not a broken scan: absence stays
         // uninformative and surfaces NOTHING negative. Logged (neutral) so the
         // trail explains why a green deck reads clean.
@@ -1727,7 +1727,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const r = await scanRgbaImages(items);
       host.log('debug', 'valid: pptx imprint scan', { media: media.length, scanned: r.scanned, present: r.present, score: +r.score.toFixed(4) });
       // r.present === false here means the deck's rasters are byte-faithful USER
-      // uploads (photos, an SVG logo's PNG fallback) — correctly unmarked, not a
+      // uploads (photos, an SVG logo's PNG fallback) - correctly unmarked, not a
       // failed detect. Still surface nothing; never render absence as "clean".
       return r.present ? { present: true, score: r.score, embedded: true } : undefined;
     } catch { return undefined; }
@@ -1736,7 +1736,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // PDF → decode the DCTDecode (JPEG) + non-predictor Flate RGB/Gray image
   // XObjects at native resolution (extractPdfImageBytes, pdf-lib), detect.
   // GAP (logged, not faked): jsPDF's own FlateDecode-with-PNG-predictor rasters
-  // — what a future imprint-on-embed would write into a PDF — and JPX/CCITT/JBIG2
+  // - what a future imprint-on-embed would write into a PDF - and JPX/CCITT/JBIG2
   // images are NOT decodable by this path yet, so a mark inside one is invisible
   // here. A pure-VECTOR Lolly PDF (QR, lockup) carries no raster XObject at all,
   // so it can hold no pixel Imprint by construction. We surface only real hits
@@ -1768,7 +1768,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // ── Deep scan for watermarks (Adobe TrustMark) ──────────────────────────
-  // A SEPARATE decode from pixelChecks' — deliberately: pixelChecks always
+  // A SEPARATE decode from pixelChecks' - deliberately: pixelChecks always
   // runs (every verify), so keeping it free of anything that would pull in
   // onnxruntime-web is what makes the default /verify path stay instant.
   // This one only runs when the user clicks the button, and imports
@@ -1793,7 +1793,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
-  // Injects a detected deep-scan pip into the report's LIVE hero scorecard —
+  // Injects a detected deep-scan pip into the report's LIVE hero scorecard - 
   // positioned RIGHT AFTER the "Made with Lolly" verdict pip (always the first
   // pip), NOT appended after the eight C2PA checks: a real TrustMark/Content Seal
   // read is a top-line provenance signal and belongs beside the verdict. Multiple
@@ -1823,7 +1823,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       deepscanEl.insertAdjacentHTML('beforebegin',
         `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul>`);
     }
-    // Mirror into the collapsed row's MINI scorecard (multi-file cards only —
+    // Mirror into the collapsed row's MINI scorecard (multi-file cards only - 
     // single-file reports have no summary), so a hit shows in the summary without
     // expanding. Create the mini list if the summary had none. Same "after the
     // verdict pip" placement as the full scorecard.
@@ -1841,9 +1841,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // Passive per-file scan: decode the file's pixels ONCE, run BOTH detectors
-  // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads —
-  // that's the header banner's one-time job), and — ONLY on a positive
-  // detection — inject that maker's green/amber pip + note. Absence is never
+  // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads - 
+  // that's the header banner's one-time job), and - ONLY on a positive
+  // detection - inject that maker's green/amber pip + note. Absence is never
   // shown as a verdict (per plans/31-watermark-detectors.md): a negative or
   // not-installed scan stays silent. Runs at most once per file per batch.
   const scannedIndexes = new Set<number>();
@@ -1867,7 +1867,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       ]);
       let shown = false;
       if (tm.status === 'detected') {
-        // A Lolly-owned durable id is the more specific answer — show it INSTEAD
+        // A Lolly-owned durable id is the more specific answer - show it INSTEAD
         // of the generic TrustMark pip; otherwise fall back to the neutral one.
         if (tm.lolly) {
           injectDeepScanPip(block, lollyDurablePip());
@@ -1902,7 +1902,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // Opt-in Tier-2 "resized Imprint" search (imprintRescanBlock's button). Re-decode
-  // the file's pixels ONCE, run the full scale×offset grid, and — only on a hit —
+  // the file's pixels ONCE, run the full scale×offset grid, and - only on a hit - 
   // inject the standard Lolly-Imprint pip + note in place (injectDeepScanPip, same
   // DOM-mutation path as the deep-scan pips, so scroll/masonry/open-state survive).
   // A miss updates the button quietly; absence never reads as "not made with Lolly".
@@ -1945,7 +1945,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     return `${(bytes / (1000 * 1000)).toFixed(1)} MB`;
   }
 
-  // The header banner's one-time "Enable" — download the detectors ONCE (network
+  // The header banner's one-time "Enable" - download the detectors ONCE (network
   // allowed) so the whole batch benefits, then scan everything from cache.
   async function enableDeepScan(btn: HTMLButtonElement): Promise<void> {
     const banner = btn.closest<HTMLElement>('[data-deepscan-banner]');
@@ -1959,7 +1959,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
     // Combines BOTH downloads (TrustMark's ~90 MB decoders + Content Seal's
     // usually-absent extractor) into one running bar. `startedX` distinguishes
-    // "never fetched" (a 404 that fires before a single onProgress call — the
+    // "never fetched" (a 404 that fires before a single onProgress call - the
     // common Content Seal case) from "fetching, size unknown", so a model that
     // simply isn't vendored can't drag the whole bar into indeterminate.
     let loadedTm = 0, totalTm: number | null = null, startedTm = false;
@@ -2032,7 +2032,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // {label, detail, tone} rows from host.pdf.analyze).
   // The structural scan emits a FIXED label set (bridge/pdf-structure.ts), so it
   // routes by exact match rather than by the substring guessing the Info/XMP
-  // fields need — a new structural label should land deliberately, not by
+  // fields need - a new structural label should land deliberately, not by
   // accident of which keyword it happens to contain.
   // A Map, not an object literal: a bare `LOOKUP[label]` answers truthily for
   // 'constructor' and friends, and `label` here is data read out of a file.
@@ -2061,7 +2061,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   const REDACTION_PAGE_CAP = 30;
 
   /**
-   * Text an opaque shape is painted over — words present in the file that the
+   * Text an opaque shape is painted over - words present in the file that the
    * page does not show. The classic failed redaction: black bars are graphics,
    * and the sentence underneath is untouched.
    *
@@ -2081,7 +2081,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const words = findings.reduce((a, f) => a + (f.text.match(/\S+/g) ?? []).length, 0);
       const pages = new Set(findings.map((f) => f.page ?? 0)).size;
       const scope = scanned < handle.pageCount ? t(' (first {n} pages checked)', { n: scanned }) : '';
-      // The words themselves are the evidence — quoting a couple of them is what
+      // The words themselves are the evidence - quoting a couple of them is what
       // turns "a warning" into "look what is still in your file". Bounded, and
       // the whole recovered text is available in the extraction view.
       const sample = findings.slice(0, 2).map((f) => `“${f.text}”`).join(', ');
@@ -2101,7 +2101,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // PDF is parsed by the shell (pdf-lib, via host.pdf.analyze); every other format
-  // is read by the DOM-free engine extractor. Never throws — worst case, undefined.
+  // is read by the DOM-free engine extractor. Never throws - worst case, undefined.
   async function readMetadata(bytes: Uint8Array, fileName = ''): Promise<FileMetadata | undefined> {
     const isPdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
     if (!isPdf) return extractFileMetadata(bytes);
@@ -2141,16 +2141,16 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // The File objects behind the current batch of reports, indexed exactly like the
-  // cards/reportBody calls below — so a "download a cleaned copy" click (delegated
+  // cards/reportBody calls below - so a "download a cleaned copy" click (delegated
   // on reportEl, see wireCleanCopy) can re-read the right file's bytes on demand
   // rather than holding every batch's bytes in memory between renders.
   let activeFiles: File[] = [];
-  // Each report's scalar-input digest, same indexing — what a [data-recreate]
+  // Each report's scalar-input digest, same indexing - what a [data-recreate]
   // click (the "Recreate with these settings" CTA) seeds the tool link from.
   let activeDigests: Array<Record<string, string> | undefined> = [];
   // How the CURRENT batch arrived, which two of the text-binding sentences
   // depend on: `activeSourceUrl` is the address the file was read from (the
-  // `?src=`/dropped-link paths — a relative credential reference only means
+  // `?src=`/dropped-link paths - a relative credential reference only means
   // something next to it), and `activePasted` marks the clipboard path, where a
   // hash mismatch on markup has a known innocent cause. Both are per-batch and
   // reset by handle(), so they can never leak onto a later drop.
@@ -2160,7 +2160,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   let pendingSourceUrl: string | null = null;
   let pendingPasted = false;
 
-  /** The text-binding/paste notes for one report — see valid-text.ts. */
+  /** The text-binding/paste notes for one report - see valid-text.ts. */
   const notesFor = (report: VerifyReport, i: number): VerifyNotice[] => verifyTextNotices(report, {
     origin: location.origin,
     base: activeSourceUrl,
@@ -2181,10 +2181,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     activePasted = list.length === 1 && pendingPasted;
     pendingSourceUrl = null;
     pendingPasted = false;
-    scannedIndexes.clear(); // fresh batch — allow each file to be scanned again
+    scannedIndexes.clear(); // fresh batch - allow each file to be scanned again
     reportEl.hidden = false;
 
-    // One file reads exactly as before — the full report inline, no collapse chrome.
+    // One file reads exactly as before - the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
@@ -2199,7 +2199,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
       // AI-generated content, the bright "signing" chirps mark an intact Lolly make.
       // A file that's BOTH gets the chirps over the ooo; any OTHER AI file gets the
-      // ooo alone (no chirps); a non-AI file keeps the usual verdict — chirps if
+      // ooo alone (no chirps); a non-AI file keeps the usual verdict - chirps if
       // intact, a soft cautionary "uh-oh" if broken, missing, or unreadable.
       if (report?.aiGenerated || meta?.ai) {
         if (report?.madeWithLolly) playSfx('sign');
@@ -2230,7 +2230,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     reportEl.querySelector('[data-collapse]')!.addEventListener('click', () => setAll(false));
 
     // Place every card up-front in drop order (busy), so the list doesn't reflow as
-    // each result lands. Verify sequentially — bounds memory to one file's bytes at a
+    // each result lands. Verify sequentially - bounds memory to one file's bytes at a
     // time and fills the cards top-to-bottom as a visible progress cue.
     const cards = list.map((file, i) => {
       const card = document.createElement('details');
@@ -2254,7 +2254,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       activeDigests[i] = report?.environment?.inputs;
       if (report) {
         // A no-credential file with a positive signal (made here / imprint) gets
-        // the good (green) stripe, matching its badge — not the neutral grey.
+        // the good (green) stripe, matching its badge - not the neutral grey.
         const cardTone = noCredentialSignal(report, watermark, mine) ? 'good' : stateTone(report);
         card.className = `valid-item is-${cardTone}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal, mine)}</summary>` +
@@ -2276,7 +2276,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     } else {
       playSfx(allValid ? 'sign' : 'warn');
     }
-    // Arm deep scanning for the batch — auto if the models are on-device, else a
+    // Arm deep scanning for the batch - auto if the models are on-device, else a
     // single header banner so one download serves every file.
     void armDeepScan(list.some((f) => isDeepScannable(null, f.name)));
     void prefillClaim();  // fill every card's claim form from the opted-in profile
@@ -2289,7 +2289,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   };
   const CLEAN_MIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml' };
 
-  // The quiet "download a cleaned copy" action beside the metadata reveal — same
+  // The quiet "download a cleaned copy" action beside the metadata reveal - same
   // lossless byte surgery as the Hidden Data tool (JPEG/PNG/SVG in-engine,
   // PDF via host.pdf.strip), offered right where a viewer just saw what the file
   // discloses, without sending them off to a separate tool.
@@ -2324,7 +2324,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
   // Append "-payload" before an extension derived from the sniffed kind:
   // report.jpg → report-payload.zip (for an appended zip), report-payload.bin
-  // for anything unrecognised — never a name that invites a double-click.
+  // for anything unrecognised - never a name that invites a double-click.
   const payloadFileName = (name: string, kind: string): string => {
     const dot = name.lastIndexOf('.');
     const base = dot > 0 ? name.slice(0, dot) : name;
@@ -2333,7 +2333,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // Re-reads the file fresh and re-runs the same deterministic byte-offset
   // detection (engine/src/file-metadata.ts) rather than threading the offset
-  // through dataset attributes — mirrors downloadCleanCopy's re-read-on-demand
+  // through dataset attributes - mirrors downloadCleanCopy's re-read-on-demand
   // pattern, and keeps a single source of truth for "where the payload starts".
   async function rereadAppended(fileIndex: number): Promise<{ file: File; bytes: Uint8Array; appended: NonNullable<FileMetadata['appended']> } | undefined> {
     const file = activeFiles[fileIndex];
@@ -2345,7 +2345,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // Toggles the inline hex/text preview on the appended-payload callout.
   // SECURITY: payloadPreviewHtml only ever escape()s a hex dump or decoded
-  // text into this panel — there is no path from the (untrusted) payload
+  // text into this panel - there is no path from the (untrusted) payload
   // bytes to rendered/executed markup.
   async function viewPayload(btn: HTMLButtonElement): Promise<void> {
     const fileIndex = Number(btn.dataset.payloadView);
@@ -2369,7 +2369,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
-  // The extraction download — same on-device re-read, sliced from the recorded
+  // The extraction download - same on-device re-read, sliced from the recorded
   // offset and handed to host.export.file untouched (no parsing, no re-encode).
   async function downloadPayload(btn: HTMLButtonElement): Promise<void> {
     const fileIndex = Number(btn.dataset.payloadDownload);
@@ -2392,11 +2392,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
-  // "Recreate with these settings in <tool>" — turn the credential's scalar-input
-  // digest back into a seeded tool link (lib/seed-url.ts — the same URL shape a
+  // "Recreate with these settings in <tool>" - turn the credential's scalar-input
+  // digest back into a seeded tool link (lib/seed-url.ts - the same URL shape a
   // share of that look produces). The digest stores every value as a display
   // string (engine summarizeInputs): numbers may carry a unit ("12 mm"), booleans
-  // are 'true'/'false' — coerce them per the manifest's input types before
+  // are 'true'/'false' - coerce them per the manifest's input types before
   // seeding, or serializeUrlState would mis-encode them (a truthy 'false' string
   // serialises as boolean ON). Failure falls back to the anchor's blank-session href.
   async function recreateFromDigest(a: HTMLAnchorElement): Promise<void> {
@@ -2424,13 +2424,13 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       }
       window.location.hash = await toolSeedHref(toolId, values);
     } catch {
-      window.location.hash = `#/tool/${toolId}`;   // seeding failed — open a blank session
+      window.location.hash = `#/tool/${toolId}`;   // seeding failed - open a blank session
     }
   }
 
   // ─── Claim flow: prefill from profile, sign a new credential, re-verify in place ──
 
-  // Prefill the author/contact fields of every visible claim form from the profile —
+  // Prefill the author/contact fields of every visible claim form from the profile - 
   // ONLY when the user opted in ("Use my details"), and NEVER copyright/licence (those
   // are user-asserted, never auto-derived; same policy as buildExportMeta). Never
   // clobbers a field the user already typed. Read once, cached for the mount.
@@ -2464,7 +2464,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   /** Swap one file's rendered report for a freshly-verified one, led by a banner.
    *  Extracted unchanged from rerenderClaimed so the external-manifest re-check
-   *  (fetchExternalManifest) lands its result exactly the same way — single-file
+   *  (fetchExternalManifest) lands its result exactly the same way - single-file
    *  and batch layouts, tone, masonry and claim prefill all in one place. */
   function repaintCard(
     i: number,
@@ -2493,7 +2493,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     void prefillClaim();
   }
 
-  // ── "Fetch and check" — the §A.7.1.2 / §A.9.3 external credential ───────────
+  // ── "Fetch and check" - the §A.7.1.2 / §A.9.3 external credential ───────────
   //
   // A text asset may REFERENCE its Content Credential instead of carrying it.
   // The engine reports that honestly and never fetches (plans/105 M1); this is
@@ -2501,7 +2501,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // to hold: the user clicked, the address came from the file's OWN reference
   // (re-classified here, never trusted from the DOM attribute alone), and it
   // resolves to a same-origin path under the exact `?src=` policy. A
-  // cross-origin reference is refused in words — reaching out to it would hand a
+  // cross-origin reference is refused in words - reaching out to it would hand a
   // third party the fact that you are checking this file, which is the promise
   // this page is built on.
   async function fetchExternalManifest(btn: HTMLButtonElement): Promise<void> {
@@ -2532,7 +2532,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // Sign a fresh Content Credential into one file, PRESERVING any existing chain as
-  // ingredients (host.c2pa.sign appends the new claim as the active manifest on top —
+  // ingredients (host.c2pa.sign appends the new claim as the active manifest on top - 
   // the exact path the Embed tool uses). Raster essence also gets the pixel Imprint.
   async function claimSign(btn: HTMLButtonElement): Promise<void> {
     const i = Number(btn.dataset.claimSign);
@@ -2554,7 +2554,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       if (!host.c2pa?.sign) throw new Error(t('Signing isn’t available in this app.'));
       if (file.size > MAX_VERIFY_BYTES) throw new Error(t('File is too large to sign here.'));
       const bytes = new Uint8Array(await file.arrayBuffer());
-      // Read the EXISTING chain BEFORE any pixel rewrite — the imprint re-encode drops
+      // Read the EXISTING chain BEFORE any pixel rewrite - the imprint re-encode drops
       // the embedded manifest, so reading after would orphan it.
       let ingredients: unknown[] = [];
       try { ingredients = (await host.c2pa.readIngredients?.(bytes)) ?? []; } catch { ingredients = []; }
@@ -2566,7 +2566,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
           if (marked && marked.length && marked !== bytes) { stamped = marked; imprinted = true; }
         } catch { /* imprint is best-effort — sign the un-imprinted bytes */ }
       }
-      // "Email or site for licensing" — an @-token becomes the author email, a
+      // "Email or site for licensing" - an @-token becomes the author email, a
       // dotted non-@ token the contact site; both land in the manifest's creator
       // entry and come back as /verify's Produced-by/Contact facts.
       const contactTokens = contact.split(/[\s·,;]+/).filter(Boolean);
@@ -2607,7 +2607,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     const fetchManifest = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-fetch-manifest]');
     if (fetchManifest) void fetchExternalManifest(fetchManifest);
     // Script panel: expand the clamped script / copy it. Both act on the pre
-    // in the SAME panel — a batch report renders one panel per file.
+    // in the SAME panel - a batch report renders one panel per file.
     const sx = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-script-expand]');
     if (sx) {
       sx.closest('.valid-script')?.querySelector('[data-script-text]')?.classList.remove('is-clamped');
@@ -2636,7 +2636,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     e.preventDefault();
     drop.classList.remove('is-over');
     if (e.dataTransfer?.files?.length) { void handle(e.dataTransfer.files); return; }
-    // No File objects — an image dragged straight off another page (even our own
+    // No File objects - an image dragged straight off another page (even our own
     // docs) arrives as a LINK, not bytes. Silently ignoring it reads as a broken
     // drop zone, so resolve the link or say why we can't.
     void handleDroppedLink(e.dataTransfer);
@@ -2644,15 +2644,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // ── The paste path ─────────────────────────────────────────────────────────
   //
-  // C2PA 2.4 puts credentials in text — an HTML document (§A.7), an armour block
-  // in source (§A.9), invisible variation selectors in prose (§A.8) — and text
+  // C2PA 2.4 puts credentials in text - an HTML document (§A.7), an armour block
+  // in source (§A.9), invisible variation selectors in prose (§A.8) - and text
   // arrives by CLIPBOARD far more often than as a file. A page that could only
   // take files would tell someone holding a signed paragraph to invent a file
   // for it, and would lose the §A.8 wrapper on the way if they retyped it.
   //
   // Bound at the document (the upscale-dialog precedent) and removed on view
-  // teardown. Two rules: FILES win — pasting a screenshot has always been free
-  // here and stays that way — and a paste aimed at a real text field is never
+  // teardown. Two rules: FILES win - pasting a screenshot has always been free
+  // here and stays that way - and a paste aimed at a real text field is never
   // taken, so the claim form and the fallback textarea below type normally. The
   // default is only prevented when the payload is actually adopted.
   const isTypingTarget = (el: EventTarget | null): boolean =>
@@ -2672,7 +2672,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   /**
    * Verify a text payload from the clipboard (or a dragged selection).
    *
-   * Pasted text that IS an address is followed instead of checked — but only
+   * Pasted text that IS an address is followed instead of checked - but only
    * under the same gate `?src=` uses, and a cross-origin one is refused in
    * words. Everything else becomes a File of the EXACT bytes pasted (never
    * trimmed, never normalised: §A.8's wrapper and §15.12.1.3's NFC hash both
@@ -2722,7 +2722,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     el._cleanup = () => { prev?.(); document.removeEventListener('paste', onPaste); };
   }
 
-  // The visible fallback. The clipboard is NEVER read programmatically here —
+  // The visible fallback. The clipboard is NEVER read programmatically here - 
   // navigator.clipboard.readText() would raise a permission prompt for a page
   // that has not been asked to read anything, and on the platforms where the
   // paste event is awkward (an iPad without a keyboard, a locked-down browser)
@@ -2754,7 +2754,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   });
 
   // A cross-page image drag carries text/uri-list (and text/html with the <img>),
-  // never the pixels. Fetching the URL is the only way to get bytes — it happens
+  // never the pixels. Fetching the URL is the only way to get bytes - it happens
   // solely on this explicit user drop, same-origin drops (our own docs images)
   // always work, and a cross-origin server that refuses CORS gets a plain
   // explanation instead of dead air.
@@ -2775,7 +2775,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const blob = await res.blob();
       // The one path where the checked file HAS an address. A credential
       // reference inside it may be relative, and relative to this is the only
-      // thing it can be relative to — see NoticeContext.base.
+      // thing it can be relative to - see NoticeContext.base.
       pendingSourceUrl = url;
       await handle([new File([blob], name, { type: blob.type })]);
     } catch {
@@ -2795,7 +2795,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       if (/^https?:\/\//i.test(text)) url = text;
     }
     if (!/^https?:\/\//i.test(url)) {
-      // No file, no link — but text/plain with something in it IS the payload:
+      // No file, no link - but text/plain with something in it IS the payload:
       // dragging a selection out of an editor is the same gesture as pasting it,
       // and a C2PA text credential travels in exactly that kind of selection.
       // Read raw (never trimmed): the invisible characters §A.8 hides a manifest
@@ -2808,12 +2808,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     await verifyFromUrl(url, (h) => tRaw('Dragging an image between pages hands over a link, not the file — and {host} would not let this page fetch it. Save the image to your device and drop that file here instead.', { host: h }));
   }
 
-  // `#/verify?src=/path/to/file` — verify a file this site already serves, on load.
+  // `#/verify?src=/path/to/file` - verify a file this site already serves, on load.
   // SAME-ORIGIN ONLY, and deliberately so: it must start with a single `/`. This
   // page's promise is that nothing is uploaded and nothing is fetched on your
   // behalf, so a link must not be able to make your browser reach a third-party
   // host (`//evil.example/x` is a protocol-relative URL and is rejected with the
-  // rest). It makes a report shareable and reproducible — the docs screenshot of
+  // rest). It makes a report shareable and reproducible - the docs screenshot of
   // a real change history is captured from exactly such a link.
   const src = new URLSearchParams(params).get('src');
   if (src) {

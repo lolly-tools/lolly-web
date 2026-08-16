@@ -6,7 +6,7 @@
  *
  *  1. COLOUR. Two thirds of the ~1750 converted community presets compute their
  *     final colour inside an HLSL `comp` shader, and another third assign the
- *     colour variables from their own per-frame equations — so overriding a
+ *     colour variables from their own per-frame equations - so overriding a
  *     preset's `baseVals` colours (the only hook there is) gets silently ignored
  *     by most of them. A brand-coloured visualizer has to come from presets whose
  *     equations we wrote.
@@ -14,12 +14,12 @@
  *     converter; the presets themselves are community MilkDrop works, mostly
  *     without an explicit licence. Ours carry no such question.
  *  3. NO `new Function`. `loadPreset` only string-compiles equations when
- *     `init_eqs` isn't already a function (butterchurn 2.6.7) — so authoring the
+ *     `init_eqs` isn't already a function (butterchurn 2.6.7) - so authoring the
  *     equations as REAL functions means the whole visualizer runs without
  *     `unsafe-eval`, keeps type-checking, and stays lintable like any other module.
  *  4. WEIGHT. Five presets as code cost a couple of KB; the stock packs are 12 MB.
  *
- * Colour is SEEDED, not reproduced — see lib/viz-palette.ts. Each preset closes
+ * Colour is SEEDED, not reproduced - see lib/viz-palette.ts. Each preset closes
  * over the palette and walks it per-frame, so the same preset reads green under
  * SUSE and reads whatever the loaded brand is otherwise.
  *
@@ -70,13 +70,13 @@ export interface VizPreset {
   baseVals: Record<string, number>;
   init_eqs: Eqs;
   frame_eqs: Eqs;
-  /** '' when the preset needs no per-pixel pass — butterchurn tests for it. */
+  /** '' when the preset needs no per-pixel pass - butterchurn tests for it. */
   pixel_eqs: Eqs | '';
   /**
    * Custom HLSL warp shader source, or '' to use butterchurn's built-in warp path.
    *
    * REQUIRED, and required as a STRING, because butterchurn's renderer does a bare
-   * `this.preset.warp.trim()` with no guard — omitting the key throws inside
+   * `this.preset.warp.trim()` with no guard - omitting the key throws inside
    * `loadPreset` before a single frame renders, which presents as a black canvas
    * with no console error anywhere near the cause. '' selects the built-in path;
    * ours carry generated GLSL from lib/viz-glsl.ts.
@@ -87,7 +87,7 @@ export interface VizPreset {
    */
   warp: string;
   /** Custom HLSL composite shader source, or '' for the built-in path. Same
-   *  unguarded `.trim()` as `warp` — see above. */
+   *  unguarded `.trim()` as `warp` - see above. */
   comp: string;
   shapes: PresetPart[];
   waves: PresetPart[];
@@ -95,7 +95,7 @@ export interface VizPreset {
 
 /**
  * Shorthand for a preset's shader pair. Every Lolly preset now carries REAL GLSL (see
- * lib/viz-glsl.ts) rather than '' — '' selects butterchurn's built-in path, which is
+ * lib/viz-glsl.ts) rather than '' - '' selects butterchurn's built-in path, which is
  * the limited look the first version was stuck with.
  *
  * `comp` re-derives colour from luminance through the brand ramp, so the picture can't
@@ -127,7 +127,7 @@ export function rampAt(p: VizPalette, t: number): VizRgb {
   return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 }
 
-/** Pick a CORE accent by index, wrapping — shapes index this so a thin palette still
+/** Pick a CORE accent by index, wrapping - shapes index this so a thin palette still
  *  fills every shape. These are the brand's own hue at different lightnesses. */
 export function accentAt(p: VizPalette, i: number): VizRgb {
   const n = p.accents.length;
@@ -135,7 +135,7 @@ export function accentAt(p: VizPalette, i: number): VizRgb {
 }
 
 /**
- * A SUPPORTING colour — an off-family brand hue (SUSE: persimmon, waterhole), or the
+ * A SUPPORTING colour - an off-family brand hue (SUSE: persimmon, waterhole), or the
  * palette's light end when the brand has none. Only for accents that trim a shape
  * rather than fill it: the core family carries the effects, and these are the "if they
  * can play a supporting role" colours, kept to edges and highlights.
@@ -169,7 +169,7 @@ function paintBare(vals: Record<string, number>, c: VizRgb, suffix = ''): void {
  *
  * butterchurn copies `mdVSFrame.q1`..`q32` into the `_qa`..`_qh` uniforms every frame,
  * which is the supported way to get a number from a preset's equations into its GLSL.
- * Using it means the audio logic stays here — typed, readable and unit-tested — while
+ * Using it means the audio logic stays here - typed, readable and unit-tested - while
  * the shader just consumes three scalars:
  *
  *   q1  exposure push      (composite: lifts the whole field)
@@ -206,7 +206,7 @@ function setShaderQs(m: MdVars, q: ShaderQs): void {
   m.q8 = q.prismSplit ?? 0;
 }
 
-/** A shape/wave that needs no equations of its own — static baseVals only.
+/** A shape/wave that needs no equations of its own - static baseVals only.
  *  `frame_eqs` is called unguarded by the renderer, so it can't be omitted. */
 function staticPart(baseVals: Record<string, number>, wave = false): PresetPart {
   const part: PresetPart = { baseVals, init_eqs: (m) => m, frame_eqs: (m) => m };
@@ -219,7 +219,7 @@ function staticPart(baseVals: Record<string, number>, wave = false): PresetPart 
  * custom-waveform objects ONCE and then iterates THOSE, indexing into the preset:
  * `this.customShapes.forEach((shape, i) => shape.drawCustomShape(…, preset.shapes[i], …))`.
  * So a preset that declares fewer than four hands `undefined` to the draw call and
- * throws mid-frame — which kills the render loop, i.e. another silent black screen.
+ * throws mid-frame - which kills the render loop, i.e. another silent black screen.
  * (It's why every stock converted preset carries exactly 4 shapes and 4 waves,
  * most of them `enabled: 0`.)
  */
@@ -246,14 +246,14 @@ function normalize(preset: VizPreset): VizPreset {
 //
 // MilkDrop's field starts black and each frame is: warp the PREVIOUS frame (zoom,
 // rotate, translate, warp-field) and redraw it multiplied by `decay`, then draw this
-// frame's marks on top. So "fills the screen" is not about drawing bigger — it's
+// frame's marks on top. So "fills the screen" is not about drawing bigger - it's
 // about the feedback loop:
 //
 //   decay near 1        trails persist instead of dying within a few frames
 //   zoom away from 1    every frame pushes the image outward (or inward), smearing
 //                       marks across the whole field rather than leaving them put
 //   warp                bends that flow so it doesn't just look like a zoom
-//   gammaadj > 1        a straight multiply in the composite shader — lifts everything
+//   gammaadj > 1        a straight multiply in the composite shader - lifts everything
 //   brighten            `ret = sqrt(ret)` in the composite: pulls midtones up hard
 //   darken_center: 0    the default 1 punches a permanent dark hole in the middle
 //
@@ -262,13 +262,13 @@ function normalize(preset: VizPreset): VizPreset {
 // screen instead of filling it.
 const FILL: Record<string, number> = {
   // Crisper than the previous pass. decay 0.982 + brighten made everything a bright
-  // grey haze — "smokey". Pulling decay down and dropping `brighten` (which is
+  // grey haze - "smokey". Pulling decay down and dropping `brighten` (which is
   // `ret = sqrt(ret)`, lifting every dark pixel towards white) trades fog for
   // contrast: fewer, brighter, more separated marks over a dark brand ground.
   decay: 0.955,
   // NOTE gammaadj / brighten / darken / solarize / invert are read by butterchurn's
   // BUILT-IN composite shader. Every Lolly preset now ships its own comp shader, which
-  // replaces that body — so these are inert and exposure/contrast live in the shader's
+  // replaces that body - so these are inert and exposure/contrast live in the shader's
   // CompOptions instead. Left at neutral values so nothing depends on them.
   gammaadj: 1.0,
   brighten: 0,
@@ -289,7 +289,7 @@ const FILL: Record<string, number> = {
 };
 
 /**
- * A full-bleed brand ground — the reason the field reads as the brand instead of as
+ * A full-bleed brand ground - the reason the field reads as the brand instead of as
  * black.
  *
  * There is no way to tint MilkDrop's composite globally: the built-in composite
@@ -301,7 +301,7 @@ const FILL: Record<string, number> = {
  * basic waveform), so shape slot 0 makes an ideal ground: an oversized radial
  * gradient, brand hero at the centre falling to the ramp's dark end at the edge,
  * redrawn every frame under everything else. Alpha stays well below 1 so the decay
- * trails still show through and accumulate — an opaque ground would wipe the feedback
+ * trails still show through and accumulate - an opaque ground would wipe the feedback
  * loop and flatten the whole preset.
  *
  * `rad` is 2.0: a shape radius of ~0.71 would only just touch the corners of the
@@ -335,7 +335,7 @@ function brandGround(p: VizPalette, opts: { alpha?: number; edgeAlpha?: number; 
   };
 }
 
-/** An additive accent ring — the marks that pop against the ground. */
+/** An additive accent ring - the marks that pop against the ground. */
 function accentRing(p: VizPalette, i: number, opts: { rad?: number; sides?: number; alpha?: number; swell?: number; spin?: number } = {}): PresetPart {
   const { rad = 0.3, sides = 6, alpha = 0.5, swell = 0.22, spin = 0.06 } = opts;
   const inner = accentAt(p, i);
@@ -365,7 +365,7 @@ function accentRing(p: VizPalette, i: number, opts: { rad?: number; sides?: numb
 // ── The presets ──────────────────────────────────────────────────────────────
 
 /**
- * Brand Pulse — the default. A centred waveform over the brand ground, with the warp
+ * Brand Pulse - the default. A centred waveform over the brand ground, with the warp
  * field and zoom both swelling hard on bass so each beat throws the image outward and
  * fills the frame. Colour walks the ramp, nudged by treble.
  */
@@ -397,7 +397,7 @@ function brandPulse(p: VizPalette): VizPreset {
 }
 
 /**
- * Tunnel — a constant hard outward zoom that accelerates with radius, so the field
+ * Tunnel - a constant hard outward zoom that accelerates with radius, so the field
  * reads as flying down a brand-coloured tube. The most literally screen-filling of
  * the set: everything drawn is immediately dragged to the edges.
  */
@@ -413,13 +413,13 @@ function tunnel(p: VizPalette): VizPreset {
       setShaderQs(m, {
         exposure: 0.18 * Math.max(0, m.bass_att - 0.85),
         warp: 0.9 * Math.max(0, m.mid_att - 0.85),
-        // Rays reach further on a beat — the tunnel appears to lengthen.
+        // Rays reach further on a beat - the tunnel appears to lengthen.
         streak: 0.9 * Math.max(0, m.bass_att - 0.8),
       });
       return m;
     },
     pixel_eqs: (m) => {
-      // Zoom grows with radius — the depth cue that makes it a tunnel, not a zoom.
+      // Zoom grows with radius - the depth cue that makes it a tunnel, not a zoom.
       m.zoom = (m.zoom as number) + (m.rad as number) * 0.045;
       return m;
     },
@@ -430,7 +430,7 @@ function tunnel(p: VizPalette): VizPreset {
 }
 
 /**
- * Vortex — heavy rotation against a slow inward pull, which winds every mark into
+ * Vortex - heavy rotation against a slow inward pull, which winds every mark into
  * brand-coloured spiral arms that reach the corners.
  */
 function vortex(p: VizPalette): VizPreset {
@@ -458,7 +458,7 @@ function vortex(p: VizPalette): VizPreset {
 }
 
 /**
- * Kaleidoscope — the composite shader's echo, blended at half strength against a
+ * Kaleidoscope - the composite shader's echo, blended at half strength against a
  * rotating field, so the image nests inside itself. Fills the frame by construction:
  * the echo copy is always covering whatever the main copy isn't.
  */
@@ -493,7 +493,7 @@ function kaleidoscope(p: VizPalette): VizPreset {
 
 
 /**
- * Aurora — the field stretched vertically and drifting upward, with a wide additive
+ * Aurora - the field stretched vertically and drifting upward, with a wide additive
  * line low in the frame. Reads as slow brand-coloured curtains rather than a beat
  * response.
  */
@@ -524,7 +524,7 @@ function aurora(p: VizPalette): VizPreset {
 
 
 /**
- * Bloom — three additive accent rings opening on bass over the ground. The most
+ * Bloom - three additive accent rings opening on bass over the ground. The most
  * explicitly "brand palette" preset: each ring is a different brand accent rather
  * than another step of one ramp.
  */
@@ -557,7 +557,7 @@ function bloom(p: VizPalette): VizPreset {
 
 
 /**
- * Lattice — the motion-vector grid turned up and lit in brand colours, over a dotted
+ * Lattice - the motion-vector grid turned up and lit in brand colours, over a dotted
  * waveform. A structured, textural fill instead of a flowing one.
  */
 function lattice(p: VizPalette): VizPreset {
@@ -590,7 +590,7 @@ function lattice(p: VizPalette): VizPreset {
 }
 
 /**
- * Spectrum — the literal one: a dotted frequency-domain wave with the motion-vector
+ * Spectrum - the literal one: a dotted frequency-domain wave with the motion-vector
  * grid behind it. Reads as an instrument rather than as art, which is what some
  * listeners actually want. Calm enough for reduced motion.
  */
@@ -621,7 +621,7 @@ function spectrum(p: VizPalette): VizPreset {
 }
 
 /**
- * Drift — the quiet one, and what reduced motion opens on: a brand-coloured field
+ * Drift - the quiet one, and what reduced motion opens on: a brand-coloured field
  * that fills the screen and barely moves. Bass lifts brightness only; the geometry is
  * deliberately audio-INDEPENDENT so nothing ever lurches.
  */
@@ -634,7 +634,7 @@ function drift(p: VizPalette): VizPreset {
     },
     init_eqs: (m) => m,
     frame_eqs: (m) => {
-      // No audio term on zoom/warp/rot — only alpha responds.
+      // No audio term on zoom/warp/rot - only alpha responds.
       m.zoom = 1.0025;
       m.rot = 0.0015;
       m.wave_a = 0.22 + 0.2 * Math.min(1, Math.max(0, m.bass_att - 0.9));
@@ -644,14 +644,14 @@ function drift(p: VizPalette): VizPreset {
     },
     pixel_eqs: '',
     ...shaders(warpBrandFlow(p, { strength: 0.0025, scale: 0.8, swirl: 0.15 }), compBrandTone(p, { glow: 0.62, contrast: 1.22, grain: 0.008, vignette: 0.45, lift: 0.05 })),
-    // The ground carries this preset almost entirely — it's what's on screen.
+    // The ground carries this preset almost entirely - it's what's on screen.
     shapes: [brandGround(p, { alpha: 0.44, edgeAlpha: 0.55 })],
     waves: [],
   };
 }
 
 /**
- * Foil — bump-mapped lighting over a slow flow, so the field reads as a brushed metallic
+ * Foil - bump-mapped lighting over a slow flow, so the field reads as a brushed metallic
  * surface catching a moving light. The only preset that reconstructs a surface normal,
  * which is what makes it feel physical rather than luminous.
  */
@@ -686,7 +686,7 @@ function foil(p: VizPalette): VizPreset {
 }
 
 /**
- * Solar — the solarize curve, where midtones peak and BOTH ends fall away, so the field
+ * Solar - the solarize curve, where midtones peak and BOTH ends fall away, so the field
  * separates into hard bands instead of a smooth gradient. Inverted as well, which makes
  * the bright core read as ink. Nothing else in the set looks remotely like it.
  */
@@ -721,7 +721,7 @@ function solar(p: VizPalette): VizPreset {
 }
 
 /**
- * Watercolour — pigment bleeding along the gradient of its own blurred self, curling as it
+ * Watercolour - pigment bleeding along the gradient of its own blurred self, curling as it
  * goes, with dark rims pooling at the edges. The softest and slowest of the set, and the
  * only one that reads as a painted surface rather than a lit one. Calm enough for reduced
  * motion: no audio term touches its geometry, only the wash's exposure.
@@ -736,7 +736,7 @@ function watercolour(p: VizPalette): VizPreset {
     },
     init_eqs: (m) => m,
     frame_eqs: (m) => {
-      // Geometry is audio-INDEPENDENT — the paint's own motion is the subject, and a
+      // Geometry is audio-INDEPENDENT - the paint's own motion is the subject, and a
       // beat-driven lurch would break the illusion of a wet surface.
       m.zoom = 1.0015;
       m.rot = 0.0022 * Math.sin(m.time * 0.037);
@@ -758,7 +758,7 @@ function watercolour(p: VizPalette): VizPreset {
 }
 
 /**
- * Negative — the edge composite with its tone INVERTED, so the field reads as dark ink on a
+ * Negative - the edge composite with its tone INVERTED, so the field reads as dark ink on a
  * pale brand ground rather than light on dark. The only preset that inverts, and it changes
  * the whole character: graphic and printed instead of luminous.
  */
@@ -788,7 +788,7 @@ function negative(p: VizPalette): VizPreset {
 }
 
 /**
- * Prism — chromatic dispersion: three radial taps, each read at its own point on the brand
+ * Prism - chromatic dispersion: three radial taps, each read at its own point on the brand
  * ramp, so edges fringe through the palette like light through glass. Splits wider on the
  * beat, which makes transients read as the image separating rather than merely brightening.
  */
@@ -807,7 +807,7 @@ function prism(p: VizPalette): VizPreset {
       setShaderQs(m, {
         exposure: 0.2 * Math.max(0, bass - 0.8),
         warp: 0.9 * Math.max(0, m.mid_att - 0.85),
-        // Dispersion widens hard on a transient — the image pulls apart, then knits back.
+        // Dispersion widens hard on a transient - the image pulls apart, then knits back.
         prismSplit: 2.4 * Math.max(0, m.treb_att - 0.78),
       });
       return m;
@@ -838,7 +838,7 @@ function define(id: string, name: string, calm: boolean, make: (p: VizPalette) =
   return { id, name, calm, build: (p) => normalize(make(p)) };
 }
 
-/** Every Lolly preset, in menu order — Pulse first because it's the default.
+/** Every Lolly preset, in menu order - Pulse first because it's the default.
  *  Deliberately spread across characters: beat-reactive (pulse, radiate, bloom),
  *  flowing (tunnel, vortex, plasma), slow (aurora, ribbon, drift), and structural
  *  (lattice, spectrum), so auto-cycling keeps finding something different. */
@@ -872,7 +872,7 @@ export function defaultVizPresetId(reducedMotion: boolean): string {
 
 /**
  * The preset to cycle to after `current`. Under reduced motion it only ever offers
- * the calm ones — auto-cycling through Vortex would be exactly the motion that mode
+ * the calm ones - auto-cycling through Vortex would be exactly the motion that mode
  * exists to avoid. Sequential rather than random so the rotation is predictable and
  * every preset gets seen.
  */

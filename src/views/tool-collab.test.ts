@@ -4,17 +4,17 @@
  * (plan 100 §4.6, §5).
  *
  * `views/tool.ts` cannot be mounted outside Vite, so its own guards are source
- * scans — but the thing those scans guard CAN be mounted, which is half the reason
+ * scans - but the thing those scans guard CAN be mounted, which is half the reason
  * `tool-collab.ts` is a module. This suite drives the real composition against a
  * real (jsdom) tool layout with a scripted transport, and pins the four properties
  * a reviewer would otherwise have to take on trust:
  *
  *  1. THE EXPORT INVARIANT. Not one node, class or attribute appears inside the
- *     render surface — the pill is a child of the stage and the overlay layer is a
+ *     render surface - the pill is a child of the stage and the overlay layer is a
  *     sibling of the canvas. A collaborator's presence must not be able to change a
  *     byte of an exported PNG (§4.6, §8), and "we were careful" is not a check.
  *  2. PRESENCE ACTUALLY LANDS. A peer's frame becomes an avatar, a sidebar ring in
- *     that peer's colour, and a cursor node — through the same wiring the tool view
+ *     that peer's colour, and a cursor node - through the same wiring the tool view
  *     uses, not a test-only path.
  *  3. TEARDOWN IS COMPLETE. A navigation away mid-collab leaves ZERO timers, zero
  *     listeners, zero pending frames and zero nodes: the injected clock counts every
@@ -53,9 +53,9 @@ globalThis.MouseEvent = dom.window.MouseEvent;
 // jsdom ships no rAF unless it is pretending to be visual, and `announce()` (a11y.ts)
 // defers its live-region write through one. Without this the FIRST thing the focus
 // layer does on a roster change throws, the session swallows it (a subscriber's
-// failure is its own), and the cursor layer downstream of it silently never runs —
-// which is exactly the shape of bug this suite exists to catch, so it must not be
-// the shape of the harness.
+// failure is its own), and the cursor layer downstream of it silently never runs - 
+// which is exactly the kind of bug this suite exists to catch, so it must not be
+// caused by the harness itself.
 globalThis.requestAnimationFrame ??= ((cb: FrameRequestCallback) =>
   setTimeout(() => { cb(Date.now()); }, 0) as unknown as number) as typeof globalThis.requestAnimationFrame;
 globalThis.cancelAnimationFrame ??= ((h: number) => {
@@ -71,7 +71,7 @@ const { liveSessionState, mountToolCollab, pillLaneOffset, PILL_LANE_GAP_PX } = 
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
-/** A clock whose armed timers can be counted — the only honest way to prove a
+/** A clock whose armed timers can be counted - the only honest way to prove a
  *  teardown left nothing behind. */
 function fakeClock() {
   const live = new Map<number, () => void>();
@@ -86,7 +86,7 @@ function fakeClock() {
   };
 }
 
-/** The two OPTIONAL lanes a real transport publishes beyond the session contract —
+/** The two OPTIONAL lanes a real transport publishes beyond the session contract - 
  *  `RtcCollabHandle.opsIn`/`roleIn` on Track A, `WorkCollabSessionHandle.opsIn` on
  *  Track B. The composition duck-types them, so the fake declares them the same way. */
 interface FakeLanes {
@@ -241,12 +241,12 @@ test('a §11.19 observer downgrade republishes, so the pill stops claiming you c
     roleIn: {
       subscribe: (fn) => {
         demote = fn;
-        fn(role);   // both tracks REPLAY on subscribe — this must not cause a republish
+        fn(role);   // both tracks REPLAY on subscribe - this must not cause a republish
         return () => { demote = null; };
       },
     },
   });
-  // Live, exactly as both real handles expose it — `rtc-handle.ts` and
+  // Live, exactly as both real handles expose it - `rtc-handle.ts` and
   // `org/collab-handle.ts` both define `role` as a GETTER, never a snapshot, and
   // `CollabSessionState.role` is rebuilt from it on every notify. (Defined rather than
   // spread: an object spread copies a getter's VALUE, which would freeze it here.)
@@ -432,7 +432,7 @@ test('in RTL there is nothing to clear — the HUD is physical, the pill is logi
 // is the whole of its judgement about what may leave. Both halves are pinned here: what
 // travels (the model, by value) and what must not (the user's own file bytes, §3).
 
-/** An `InputFile` as the runtime holds one — real bytes, plus a blob URL that means
+/** An `InputFile` as the runtime holds one - real bytes, plus a blob URL that means
  *  nothing on another origin. */
 const pickedFile = (bytes: number): Record<string, unknown> => ({
   __file: true,
@@ -448,7 +448,7 @@ test('a picked FILE never leaves the device, however the input is shaped', () =>
     { id: 'headline', type: 'text', value: 'Berlin' },
     { id: 'doc', type: 'file', value: pickedFile(64) },
     { id: 'pages', type: 'file', value: [pickedFile(8), pickedFile(8)] },
-    // A hook can put anything in any input, so the VALUE shape is checked too — the
+    // A hook can put anything in any input, so the VALUE shape is checked too - the
     // property is "no bytes leave", not "the manifest was honest".
     { id: 'sneaky', type: 'text', value: pickedFile(8) },
     { id: 'logo', type: 'asset', value: { source: 'user', id: 'user/upload/9-logo.png' } },
@@ -467,7 +467,7 @@ test('a picked FILE never leaves the device, however the input is shaped', () =>
 test('what survives is JSON, which is what the pack actually sends', () => {
   // The failure this prevents is not abstract. `buildBeamOffer` ends in
   // `JSON.stringify(sessionData)`, and JSON.stringify renders a Uint8Array as
-  // `{"0":137,"1":80,…}` — roughly 12 chars per byte, under a 100 MB pick cap and a 1 GB
+  // `{"0":137,"1":80,…}` - roughly 12 chars per byte, under a 100 MB pick cap and a 1 GB
   // item ceiling that would both wave it through. Before that, the asset-ref walk
   // recurses into `Object.values()` of the byte array, once per byte.
   const json = JSON.stringify(liveSessionState([
@@ -511,7 +511,7 @@ test('a throw DURING construction leaves no timer, no listener and no wrapped se
   const runtime = fakeRuntime();
   const originalSetInput = runtime.setInput;
 
-  // A measurement that blows up midway through the mount — the pill's lane sync is
+  // A measurement that blows up midway through the mount - the pill's lane sync is
   // the last thing construction does before subscribing, so by this point the session
   // has already armed its heartbeat + sweep timers, added `visibilitychange` on the
   // document, added the sidebar's focusin/focusout pair and wrapped runtime.setInput.

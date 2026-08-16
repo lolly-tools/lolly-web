@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * User-supplied ICC profiles: ingest, storage, mounting, removal — and the
+ * User-supplied ICC profiles: ingest, storage, mounting, removal - and the
  * refusals.
  *
  * DOM-free. The host is an in-memory stand-in for the user-asset store with the
@@ -11,7 +11,7 @@
  *
  * The fuzz block is the point of the module's contract: `parseIccProfile` returns
  * null rather than throwing on ANY input, and this proves the layer above turns
- * that into one clean refusal with nothing written — a hostile `.icc` must not
+ * that into one clean refusal with nothing written - a hostile `.icc` must not
  * leave a row in the panel or bytes in the storage meter.
  *
  * Run directly:  node --test shells/web/src/lib/color-profiles.test.ts
@@ -36,8 +36,8 @@ import type { ColorProfilesHost, ProfileEntry } from './color-profiles.ts';
 
 /**
  * A four-ink printer profile that can be asked a gamut question. It carries the
- * perceptual (0) and relative (1) tables and NOT the saturation (2) one — the
- * ordinary shape of a real press profile, and what makes the disabled-intent
+ * perceptual (0) and relative (1) tables and NOT the saturation (2) one - the
+ * ordinary structure of a real press profile, and what makes the disabled-intent
  * case testable without a second fixture.
  */
 const pressBytes = (tint = 0x4000): Uint8Array => buildProfile({
@@ -52,7 +52,7 @@ const pressBytes = (tint = 0x4000): Uint8Array => buildProfile({
   ],
 });
 
-/** An RGB display profile — mounts fine, simply has no ink to report. */
+/** An RGB display profile - mounts fine, simply has no ink to report. */
 const displayBytes = (): Uint8Array => buildProfile({
   deviceClass: 'mntr', space: 'RGB ',
   tags: [
@@ -234,7 +234,7 @@ test('listing is newest first and ignores every other kind of user asset', async
   host.store.get(old.assetId)!.meta!.addedAt = 1;
   const fresh = ok(await ingestProfile(host, asFile(pressBytes(0x5000), 'new.icc')));
   host.store.get(fresh.assetId)!.meta!.addedAt = 2;
-  // The store also holds fonts, palettes and images — none of them are profiles.
+  // The store also holds fonts, palettes and images - none of them are profiles.
   host.store.set('user/fonts/inter/0', { id: 'user/fonts/inter/0', type: 'font', format: 'woff2', blob: new Blob() });
   host.store.set('user/uploads/1', { id: 'user/uploads/1', type: 'raster', format: 'png', blob: new Blob() });
 

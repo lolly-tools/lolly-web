@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — render the whole batch, sequentially.
+ * Pro / Batch mode - render the whole batch, sequentially.
  *
  * Rows are rendered one at a time (concurrency 1) on purpose: tool templates
  * run arbitrary scripts that may touch window globals and the document font
@@ -8,7 +8,7 @@
  * keeps memory bounded and avoids cross-tool interference; the export work is
  * the bottleneck regardless, so parallelism buys little here.
  *
- * Failures are isolated — one bad row is recorded and the batch continues.
+ * Failures are isolated - one bad row is recorded and the batch continues.
  */
 import { renderRowToBlob, getTool, isExportable } from './render-export.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -21,13 +21,13 @@ export interface BatchRow {
    * row uid; a folder row's path + session ref + ordinal). NEVER an index:
    * `BatchProgress.index` / `BatchResult.index` are positions in the array handed to
    * {@link runBatch}, and `planBatch` COMPACTS the array, so an index captured before
-   * it points at a different row afterwards. Anything that names a row to a HUMAN — a
-   * log line, a preflight finding, a skipped-row report — keys on `uid`; only the
+   * it points at a different row afterwards. Anything that names a row to a HUMAN - a
+   * log line, a preflight finding, a skipped-row report - keys on `uid`; only the
    * queue's own arithmetic (seq prefix, `n / total`) uses the index.
    *
    * Optional so every existing call site keeps compiling; deliberately NOT added to
    * `render-export.ts`'s local `BatchRow` (identity must not cross the render
-   * boundary — that file's "add a field to all three row declarations" rule has this
+   * boundary - that file's "add a field to all three row declarations" rule has this
    * as its one documented exception).
    */
   uid?: string;
@@ -43,7 +43,7 @@ export interface BatchRow {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
@@ -62,7 +62,7 @@ export interface BatchFile {
  */
 export interface BatchRowRef {
   /**
-   * 0-based position in the array handed to {@link runBatch} — the RUNNER index, not
+   * 0-based position in the array handed to {@link runBatch} - the RUNNER index, not
    * the row number the user sees and not a stable identity. `planBatch` compacts, so
    * translate through {@link BatchPlan.srcIndex} before showing a number to a human,
    * and key persistent things on {@link BatchRow.uid}.
@@ -75,7 +75,7 @@ export interface BatchRowRef {
  *
  * Deliberately NOT a `Finding`: that type is Phase 1's (future home
  * `packages/core/src/preflight.ts`) and does not exist yet. Nothing in this module
- * ever inspects an element — it only guarantees WHICH row an entry belongs to. When
+ * ever inspects an element - it only guarantees WHICH row an entry belongs to. When
  * Phase 1 lands, call sites instantiate `runBatch<Finding>(…)` and every consumer
  * types through automatically, with no cast to delete anywhere.
  */
@@ -86,7 +86,7 @@ export type RowNotes<F = unknown> = readonly F[];
  * `notes[i]` describes `rows[i]`, and `notes.length === rows.length`.
  *
  * A parallel array rather than a Map keyed by index precisely because its length can
- * be asserted against `rows.length` — an index-space mismatch is the failure mode this
+ * be asserted against `rows.length` - an index-space mismatch is the failure mode this
  * channel exists to prevent, and a Map cannot detect one. {@link notesFromFindings}
  * builds it from {@link BatchPlan.findings}.
  */
@@ -139,25 +139,25 @@ export interface RunBatchOpts<F = unknown> {
   /**
    * Per-row diagnostics, PARALLEL to `rows` (see {@link BatchNotes}). Re-emitted on the
    * `done`/`error` events and on each {@link BatchResult}, by reference and never
-   * inspected. A length mismatch is logged, not thrown — a wrong-row diagnostic is worse
+   * inspected. A length mismatch is logged, not thrown - a wrong-row diagnostic is worse
    * than none, but it must not take a render down.
    */
   notes?: BatchNotes<F>;
   /** AES-256 lock applied to any pdf/pdf-cmyk rows (ignored for other formats). */
   strongPassword?: string;
   /**
-   * RUN-LEVEL print settings — the batch grid's toolbar defaults, exactly like
+   * RUN-LEVEL print settings - the batch grid's toolbar defaults, exactly like
    * `format`/`unit`/`dpi` above: a row that carries its own value wins, a row that
    * does not inherits these. `renderRowToBlob` reads all three off the ROW, so
    * {@link resolvePrintSettings} merges them onto a copy of the row at the render
-   * boundary (the row object the caller handed in is never mutated — progress and
+   * boundary (the row object the caller handed in is never mutated - progress and
    * results keep reporting the row as the user declared it).
    *
    * `profile` is a CMYK press condition (engine CMYK_CONDITIONS ids), `bleed` a
    * dimension string ("3mm"), `marks` the `marks` CSV (lib/print-marks-csv.ts).
    *
    * Callers may pass them unconditionally because {@link printSettingsFor} GATES them
-   * on the row's resolved format — they are NOT "ignored by every non-print format".
+   * on the row's resolved format - they are NOT "ignored by every non-print format".
    * A raster row handed a bleed renders no bleed and no marks (only renderPdf /
    * renderCmykPdf / renderCmykTiff call `printGeometry`) but the export bridge still
    * builds a C2PA `c2pa.edited` action from the same opts, so an ungated merge signed
@@ -168,12 +168,12 @@ export interface RunBatchOpts<F = unknown> {
   bleed?: string;
   marks?: string;
   /**
-   * Lolly pixel imprint, forwarded to every row (renderRowToBlob opts.imprint —
+   * Lolly pixel imprint, forwarded to every row (renderRowToBlob opts.imprint - 
    * the bridge embeds it on raster formats and ignores it elsewhere). Opt-in
    * only, never a default: unlike c2pa/watermark (policy defaults renderRowToBlob
    * applies itself), imprint mirrors the export panel's toggle (tool-actions
    * [data-action="imprint"], seeded by ?imprint=). Sessions don't persist it
-   * (sessionSnapshot writes no __export_imprint), so there's no per-row channel —
+   * (sessionSnapshot writes no __export_imprint), so there's no per-row channel - 
    * callers thread the live toggle's run-level value here.
    */
   imprint?: boolean;
@@ -185,12 +185,12 @@ export interface PrintSettings {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
 /**
- * Per-row print settings win over the run-level defaults — the same precedence
+ * Per-row print settings win over the run-level defaults - the same precedence
  * `runBatch` already applies to `format`, `unit` and `dpi`, stated once here so
  * the rule has a single home and a test can pin it.
  *
@@ -226,19 +226,19 @@ const PRINT_FORMATS = new Set(['pdf', 'pdf-cmyk', 'cmyk-tiff']);
  * This is the gate, and it exists because "the non-print formats ignore these" was
  * false. `renderRowToBlob` turns `profile`/`bleed`/`marks` into `exportOpts`
  * (`colorProfile`/`bleed`/`cropMarks`/…) for every format, and the export bridge builds
- * the signed C2PA `c2pa.edited` action out of those opts — so a PNG rendered under a
+ * the signed C2PA `c2pa.edited` action out of those opts - so a PNG rendered under a
  * run-level 3mm bleed shipped a cryptographically signed claim that bleed and crop
  * marks were applied, when the raster path never applied either. The same row's
  * recreate URL carried `bleed=3mm&marks=…` for a PNG. Gating in ONE place covers the
  * run-level values, the per-row values inherited from a batch snapshot, and the URL,
  * because all three are serialised from the row copy this produces.
  *
- * When the format cannot be resolved here (no per-row format and no run format — the
+ * When the format cannot be resolved here (no per-row format and no run format - the
  * folder/selection paths, where `chooseFormat` picks the tool's native format later),
  * the row's OWN settings are kept and the run-level defaults are not applied: a value
  * the user attached to that one row is evidence, a toolbar default is not. Gating on
  * the finally-chosen `fmt` inside `render-export.ts` would close that last gap; that
- * file's export internals are owned elsewhere — see the hand-off note in the return.
+ * file's export internals are owned elsewhere - see the hand-off note in the return.
  */
 export function printSettingsFor(row: PrintSettings & { format?: string }, run: PrintSettings = {}, runFormat?: string): PrintSettings {
   const resolved = String(row.format || runFormat || '').toLowerCase();
@@ -256,7 +256,7 @@ const sanitizeSeg = (s: string): string => s.replace(/[^\w.-]+/g, '-').replace(/
 /**
  * Ensure unique, filesystem-safe names within the zip. With `pathAware`, the
  * base may carry `/` separators (a grouped/folder export wants nested zip
- * directories) — each path segment is sanitized but the separators are kept, so
+ * directories) - each path segment is sanitized but the separators are kept, so
  * fflate writes a real folder tree. Without it, slashes are flattened to `-`
  * exactly as before, so ordinary grid runs are unchanged.
  */
@@ -291,7 +291,7 @@ export async function runBatch<F = unknown>(
   const total = rows.length;
   // The channel's one invariant, checked where both lengths are in hand. Nothing may
   // filter, sort or splice the array between planBatch returning and runBatch receiving
-  // it (see planBatch's JSDoc) — this is what catches a caller that did.
+  // it (see planBatch's JSDoc) - this is what catches a caller that did.
   if (notes && notes.length !== rows.length) {
     host.log?.('warn', `runBatch: notes/rows length mismatch (${notes.length} vs ${rows.length}) — per-row diagnostics dropped rather than mis-attributed`);
     notes = undefined;
@@ -301,7 +301,7 @@ export async function runBatch<F = unknown>(
     return n?.length ? n : undefined;
   };
   // Every file is prefixed with its 1-based position in the batch, zero-padded to
-  // the batch size, so the names sort in row order in the zip / file explorer —
+  // the batch size, so the names sort in row order in the zip / file explorer - 
   // named rows included. Pad width tracks the count so e.g. row 100 sorts after
   // row 99 (a fixed 2-digit pad would order "100" before "99" lexically).
   const seqWidth = Math.max(2, String(total).length);
@@ -332,7 +332,7 @@ export async function runBatch<F = unknown>(
         format: row.format || format, width: row.outWidth, height: row.outHeight, unit: rowUnit as NonNullable<Parameters<typeof renderRowToBlob>[2]>['unit'], dpi: rowDpi, strongPassword, imprint,
       });
       const ms = Date.now() - t0; // render time, surfaced in the zip manifest
-      // Per-row filename wins for the stem (extension stripped — we add the
+      // Per-row filename wins for the stem (extension stripped - we add the
       // format's); else the tool id. Either way it's prefixed with the row number
       // so files always sort the way the rows appeared in the table.
       const stem = row.filename?.trim()
@@ -349,7 +349,7 @@ export async function runBatch<F = unknown>(
       files.push({ name, blob, ms, fmt, url }); // fmt distinguishes pdf-cmyk from pdf; url = reopen-in-Lolly link
       results.push({ index: i, row, ok: true, name, size: blob.size, ms, notes: notesFor(i) });
       onProgress?.({ index: i, total, status: 'done', row, name, blob, fmt, ms, notes: notesFor(i) });
-      playSfx('ding'); // a quiet, satisfying "one done" — fires for EVERY render path through runBatch
+      playSfx('ding'); // a quiet, satisfying "one done" - fires for EVERY render path through runBatch
     } catch (err) {
       // `err` is unknown in a strict catch; read `.message` off it exactly as the
       // JS did (cast is erased, runtime behaviour unchanged).
@@ -370,7 +370,7 @@ export async function runBatch<F = unknown>(
 export interface PlanBatchDeps<F = unknown> {
   /**
    * Per-row pre-pass producing an opaque findings payload. SEAM: the element type `F`
-   * is supplied by the caller — Phase 1's `Finding` (future home:
+   * is supplied by the caller - Phase 1's `Finding` (future home:
    * `packages/core/src/preflight.ts`) slots in as `planBatch<Finding>(rows, …)` with
    * no other change here. This module deliberately declares no findings shape.
    *
@@ -393,7 +393,7 @@ export interface BatchPlan<F = unknown> {
   renderable: BatchRow[];
   /** Rows dropped before the run, each with the source position + identity it had. */
   skipped: Array<{ row: BatchRow; reason: string; srcIndex: number; uid?: string }>;
-  /** `renderable[k]` came from `rows[srcIndex[k]]` — the mapping compaction erases. */
+  /** `renderable[k]` came from `rows[srcIndex[k]]` - the mapping compaction erases. */
   srcIndex: number[];
   /**
    * Opaque per-row findings. `rowIndex` is an index into `renderable` (exactly what
@@ -408,7 +408,7 @@ export interface BatchPlan<F = unknown> {
  * { renderable, skipped } so the UI can warn before committing to a batch.
  *
  * **This function COMPACTS**: `renderable[k]` is not `rows[k]`. Two properties are
- * load-bearing and both are now pinned by `batch.test.ts` — it never CLONES (every
+ * required and both are now pinned by `batch.test.ts` - it never CLONES (every
  * pushed row is reference-identical to its input), and it now reports the mapping it
  * destroys (`srcIndex`, and `srcIndex`/`uid` on each skipped entry). See
  * {@link BatchRow.uid}: the index is a queue position, the uid is the row.
@@ -422,7 +422,7 @@ export async function planBatch<F = unknown>(
   const srcIndex: number[] = [];
   const findings: BatchPlan<F>['findings'] = [];
   // Both numbers are known only here, inside the one loop that sees the input
-  // position and the queue position at the same time — so they are captured together.
+  // position and the queue position at the same time - so they are captured together.
   const record = (row: BatchRow, rowIndex: number, srcIdx: number, skippedReason?: string) => {
     if (!check) return;
     const items = check(row, rowIndex, { srcIndex: srcIdx, skippedReason });

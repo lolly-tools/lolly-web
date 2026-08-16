@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The cost panel — "Cost, worked out from your rate card"
+ * The cost panel - "Cost, worked out from your rate card"
  * (plans/65-preflight-and-cost.md §6, Phases 4/5).
  *
  * The engine owns the ARITHMETIC (`engine/src/rate-card.ts` `computeCost`, integer
@@ -11,23 +11,23 @@
  * the card, computes the working, and builds the {@link CostPanelContext}.
  *
  * The invariant above all: **never invent money.** Every figure here is
- * `formatMoney(minorUnits, card.currency)` — a rate the user supplied times a
+ * `formatMoney(minorUnits, card.currency)` - a rate the user supplied times a
  * quantity Lolly counted. There is no default currency, no placeholder, no zero
  * stand-in. When money may not be shown (`canShowMoney` is false), the working table
- * is NOT rendered — the panel degrades to a plain explanation, never to a hidden or
+ * is NOT rendered - the panel degrades to a plain explanation, never to a hidden or
  * greyed-out figure.
  *
- * Decisions carried from the preflight card and made load-bearing here:
+ * Decisions carried from the preflight card and required here:
  *
  *  1. **Chrome, never the export.** The card carries `data-export-hide` and is a real
- *     `<details>`; it must never move a pixel of the exported PNG/SVG/PDF — a render
+ *     `<details>`; it must never move a pixel of the exported PNG/SVG/PDF - a render
  *     is the user's creative output and its geometry is shared with the CLI.
  *  2. **Format first, interpolate second.** Every amount is formatted by
  *     `Intl.NumberFormat` (via `formatMoney`) BEFORE it enters a translated string.
  *     The `t()` strings live in `lib/cost-strings.ts`; a currency symbol in any of
  *     them is a bug, and the amount, issuer and date never split across strings.
  *  3. **A link cannot show money.** `canShowMoney` withholds the figure for any mount
- *     reached via a link until an explicit per-device reveal — see `costView`'s gate
+ *     reached via a link until an explicit per-device reveal - see `costView`'s gate
  *     and `cost-panel.test.ts`, which proves the working table is unreachable from a
  *     link-provenance context.
  */
@@ -45,22 +45,22 @@ import {
   showCostsPrompt, ratesExpired, useExpiredAnyway, figureExpiredNote,
 } from '../lib/cost-strings.ts';
 
-// ─── The view model (pure — this is the tested half) ────────────────────────
+// ─── The view model (pure - this is the tested half) ────────────────────────
 
 /** One priced multiplication, already formatted. */
 export interface CostRowVM {
-  /** `plate-setup (perPlate)` — the card line id + kind, so a reader can point at it. */
+  /** `plate-setup (perPlate)` - the card line id + kind, so a reader can point at it. */
   readonly line: string;
-  /** `4 plate × €35.00` — the counted quantity times the card's rate, formatted. */
+  /** `4 plate × €35.00` - the counted quantity times the card's rate, formatted. */
   readonly calc: string;
-  /** `up to €140.00` — the subtotal, `up to …` when the count is a ceiling (rule 4). */
+  /** `up to €140.00` - the subtotal, `up to …` when the count is a ceiling (rule 4). */
   readonly amount: string;
 }
 
 /** A visible adjustment row (the minimum charge), already formatted (rule 3). */
 export interface CostAdjustmentVM {
   readonly label: string;
-  /** `+ €30.00` — a string-free amount cell (no translatable content). */
+  /** `+ €30.00` - a string-free amount cell (no translatable content). */
   readonly amount: string;
 }
 
@@ -77,7 +77,7 @@ export interface CostView {
   readonly revealPrompt?: string;
   /** The opt-in-to-expired action label, present only when expiry withheld money. */
   readonly expiredAction?: string;
-  /** `The file says: …. Lolly has not verified this.` — reported speech (§5). */
+  /** `The file says: …. Lolly has not verified this.` - reported speech (§5). */
   readonly reportedSource?: string;
   readonly rows?: readonly CostRowVM[];
   readonly adjustments?: readonly CostAdjustmentVM[];
@@ -93,7 +93,7 @@ export interface CostView {
   readonly total?: string | null;
   /**
    * The expiry stamp on a figure computed from opted-in expired rates (§5). Present
-   * only on the working path when the card had lapsed and the user opted in — the
+   * only on the working path when the card had lapsed and the user opted in - the
    * caveat rides WITH the figure so a lapsed total is never read as a current one.
    */
   readonly expiredNote?: string;
@@ -104,7 +104,7 @@ export interface CostView {
 export interface CostPanelContext {
   /** The job produced at least one count a rate card could price. Off → hide entirely. */
   readonly costable: boolean;
-  /** The `canShowMoney` inputs — the degrade decision keys entirely on these. */
+  /** The `canShowMoney` inputs - the degrade decision keys entirely on these. */
   readonly money: MoneyContext;
   /** The issuer name the card CLAIMS (reported speech, unverified). */
   readonly issuerName?: string;
@@ -130,9 +130,9 @@ export interface CostPanelContext {
  */
 export interface CostAuthoringContext {
   /** The user-asset store the authoring UI reads/writes cards through (consumption
-   *  plumbing that stays in core — the furniture never re-implements storage). */
+   *  plumbing that stays in core - the furniture never re-implements storage). */
   readonly host: RateCardsHost;
-  /** A card landed or left the library — re-run the cost pass so the panel reprices. */
+  /** A card landed or left the library - re-run the cost pass so the panel reprices. */
   onChange(): void | Promise<void>;
 }
 
@@ -184,7 +184,7 @@ const rowVM = (r: CostRow, currency: string): CostRowVM => {
 /**
  * Turn a computed working (or its absence) into everything the card renders. Pure:
  * no DOM, no globals beyond the i18n catalog. This is the half worth testing, and
- * the half that PROVES the degrade — a link-provenance `ctx.money` never reaches the
+ * the half that PROVES the degrade - a link-provenance `ctx.money` never reaches the
  * `working` branch, so a formatted figure is unreachable from a link.
  */
 export function costView(working: CostWorking | null, ctx: CostPanelContext): CostView {
@@ -193,7 +193,7 @@ export function costView(working: CostWorking | null, ctx: CostPanelContext): Co
   // Not a costable job → nothing to say; do not clutter the export panel.
   if (!ctx.costable) return { show: false, heading, mode: 'no-card' };
 
-  // Rule 1 — no card on this device → hide the panel entirely. There is no in-app way
+  // Rule 1 - no card on this device → hide the panel entirely. There is no in-app way
   // to load a rate card yet, so the count-only explanation was just clutter on every
   // export. (noCardBody stays available for when card loading ships and this returns
   // show:true again.)
@@ -256,7 +256,7 @@ export function costView(working: CostWorking | null, ctx: CostPanelContext): Co
   }
 
   // §5: if money is shown despite an expired card, it was reached only by the explicit
-  // opt-in, so the figure is stamped with the expiry date — inseparable from the total.
+  // opt-in, so the figure is stamped with the expiry date - inseparable from the total.
   const expiredNote = ctx.money.expired && ctx.money.useExpiredAnyway
     ? figureExpiredNote(claimedDate(ctx.validUntil, ctx.locale) || (ctx.validUntil ?? ''))
     : undefined;

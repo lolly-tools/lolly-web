@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The pure Kokoro logic moved to engine/src/speech-text.ts (roadmap §4's
- * one-synthesis-layer rule) and its unit tests moved with it —
+ * one-synthesis-layer rule) and its unit tests moved with it - 
  * tests/speech-text.test.ts in the repo-root suite. What is left to pin HERE
  * is this shell's contract: lib/speech-kokoro.ts must re-export the engine
- * module's implementation, identically — the worker and bridge import from it
+ * module's implementation, identically - the worker and bridge import from it
  * by path, and a fork (a copy, a "small local fix") would put the web shell's
  * words out of step with every other surface.
  */

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — saved batch sessions.
+ * Pro / Batch mode - saved batch sessions.
  *
  * A session is a snapshot of the whole grid: every row (its template + values +
  * per-row format/filename/dimensions/height) plus the view state (chosen format,
  * zip name, collapsed columns, column widths). It is persisted through the host
- * state bridge — the same IndexedDB store and asset-retention path that backs
- * single-tool saves — so library assets referenced by a saved batch are kept
+ * state bridge - the same IndexedDB store and asset-retention path that backs
+ * single-tool saves - so library assets referenced by a saved batch are kept
  * alive by sync just like a regular session's assets.
  *
  * Batch slots are namespaced with BATCH_SLOT_PREFIX so the rest of the app can
@@ -22,7 +22,7 @@ import type { ToolManifest } from '../../../../engine/src/loader.ts';
 
 // Distinctive prefix; single-tool slots are `<toolId>:<timestamp>` so they
 // never start with this. The literal + predicate are the shared lib module now
-// (finding #13) — imported above for this module's use and re-exported here.
+// (finding #13) - imported above for this module's use and re-exported here.
 export { BATCH_SLOT_PREFIX, isBatchSlot };
 
 /** A live batch row (what the grid holds and sessions read/write). */
@@ -41,7 +41,7 @@ export interface SessionRow {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
@@ -51,7 +51,7 @@ export interface SessionStateInput {
   unit?: string;
   dpi?: number;
   /**
-   * RUN-LEVEL print settings — the toolbar defaults every row inherits, stored
+   * RUN-LEVEL print settings - the toolbar defaults every row inherits, stored
    * beside `format`/`unit`/`dpi` because they are the same kind of thing: a run
    * default a row may override. Without them a saved print batch reopened
    * trim-sized, unmarked and profile-less.
@@ -80,7 +80,7 @@ export interface SnapshotRow {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
@@ -93,7 +93,7 @@ export interface BatchSnapshot {
   /**
    * RUN-LEVEL print settings. Optional (not defaulted like unit/dpi) because
    * "no bleed / no marks / no press profile" is the correct reading of a snapshot
-   * written before this field existed — an absent field is never an asserted zero,
+   * written before this field existed - an absent field is never an asserted zero,
    * and equally never a fabricated 3mm.
    */
   profile?: string;
@@ -123,8 +123,8 @@ export interface SessionStore {
 
 /**
  * Pure: distil the live batch state into a serializable snapshot. Drops the
- * transient/derived bits — each row's `uid` (regenerated on load) and `manifest`
- * (reloaded from the tool id) — and keeps only rows that picked a template.
+ * transient/derived bits - each row's `uid` (regenerated on load) and `manifest`
+ * (reloaded from the tool id) - and keeps only rows that picked a template.
  */
 export function snapshotFromState(state: SessionStateInput): BatchSnapshot {
   return {
@@ -162,9 +162,9 @@ export function snapshotFromState(state: SessionStateInput): BatchSnapshot {
 
 /**
  * Rebuild live rows from a snapshot, reloading each row's manifest (same path
- * the CSV import uses). A row whose tool no longer loads — OR is no longer
+ * the CSV import uses). A row whose tool no longer loads - OR is no longer
  * batch-renderable (a render-only / on-device utility, now hidden from the
- * picker) — is kept but cleared to an empty row rather than dropped, so positions
+ * picker) - is kept but cleared to an empty row rather than dropped, so positions
  * stay stable. Clearing (rather than leaving a dead toolId) keeps the grid honest:
  * the template cell would otherwise read as blank while the row still contributed
  * orphan columns and got silently skipped at render.
@@ -206,7 +206,7 @@ export async function rowsFromSnapshot<R extends SessionRow>(
 }
 
 /**
- * Storage facade over host.state, scoped to batch slots. Mirrors the shape of a
+ * Storage facade over host.state, scoped to batch slots. Mirrors the structure of a
  * little CRUD store: list / save / load / delete.
  */
 export function createSessionStore(host: HostV1): SessionStore {

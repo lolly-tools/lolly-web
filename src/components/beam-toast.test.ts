@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-toast (plan 100 §6.4, §4.6 point 6) — driven entirely from a scripted
+ * beam-toast (plan 100 §6.4, §4.6 point 6) - driven entirely from a scripted
  * {@link BeamEventSource}, exactly the way a real adapter over
  * `collab/beam-protocol.ts`'s `BeamSender`/`BeamReceiver` would drive it. No
  * transport, no worker, no beam-protocol instance anywhere in this file.
  *
  * What is pinned:
  *  - the consent prompt states the size (item count + bytes) and the sender's name
- *    BEFORE anything moves, and Accept/Decline each fire their action exactly once —
+ *    BEFORE anything moves, and Accept/Decline each fire their action exactly once - 
  *    a second click (even one that defeats the disabled attribute directly) is a
  *    no-op, because the toast never decides anything itself; it only ever reacts to
  *    the next event;
  *  - `progress` events move both the per-item and the running-total bar's
- *    `aria-valuenow`, and the current item's label — but only for a beam that has
+ *    `aria-valuenow`, and the current item's label - but only for a beam that has
  *    already been accepted: an out-of-order `progress`/`item-done` never promotes a
  *    card past the consent sheet, which is the only place Accept/Decline exist;
  *  - Cancel fires the same way, once;
- *  - a second beam's offer is queued, not shown, while the first is still live —
+ *  - a second beam's offer is queued, not shown, while the first is still live - 
  *    it only appears once the first reaches a terminal state AND is dismissed;
  *  - `complete` and `cancelled` render the plan's own terminal copy (a receiver's
  *    "Saved to your library - Assets: N", a sender's "Sent - Assets: N", and every
- *    typed reason's own line — `user` reads as "Declined." before an accept and
+ *    typed reason's own line - `user` reads as "Declined." before an accept and
  *    "Cancelled." after one);
- *  - `announce()` fires on the consent request, on completion, and on failure —
+ *  - `announce()` fires on the consent request, on completion, and on failure - 
  *    checked against the real shared live region, not a mock;
  *  - every string the toast renders comes out of {@link STRINGS}, checked from both
- *    ends (the rendered DOM, and this module's own source outside the map) — the
+ *    ends (the rendered DOM, and this module's own source outside the map) - the
  *    same two-sided check `components/collab-ceremony.test.ts` runs on its own
  *    STRINGS map, adapted here.
  *
@@ -66,7 +66,7 @@ type BeamProgress = import('../collab/beam-protocol.ts').BeamProgress;
 // ── Harness ───────────────────────────────────────────────────────────────────
 
 /** A scripted {@link BeamEventSource}: `emit` plays events into every subscriber,
- *  and every dispatched action is recorded rather than acted on — the toast is
+ *  and every dispatched action is recorded rather than acted on - the toast is
  *  tested purely against what IT does with the stream, never against a real
  *  beam-protocol state machine. */
 function fakeSource() {
@@ -119,7 +119,7 @@ function progressOf(over: Partial<BeamProgress> = {}): BeamProgress {
 
 // A FRESH element per test/case, not a shared one just cleared: `mountBeamToast`
 // attaches its click listener to the container itself, which `el.innerHTML = ''`
-// does not remove — reusing one node would stack listeners from every earlier
+// does not remove - reusing one node would stack listeners from every earlier
 // mount, and a stale listener's own `render()` (still reachable, still live)
 // would blow away the current test's DOM mid-click.
 function host(): HTMLElement {
@@ -134,7 +134,7 @@ function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Text of every visually-hidden live region `announce()` maintains, concatenated —
+/** Text of every visually-hidden live region `announce()` maintains, concatenated - 
  *  there are two (polite/assertive), created lazily, so this reads whichever exist. */
 function announced(): string {
   return [...dom.window.document.querySelectorAll('[data-a11y-live]')]
@@ -169,8 +169,8 @@ test('the consent prompt states the size and the sender, and Accept/Decline each
   assert.deepEqual(acceptCalls, ['beam-a']);
   assert.deepEqual(declineCalls, []);
 
-  // A second click — even one that defeats the `disabled` attribute the first click
-  // set — must not fire a second time: the guard is in the code, not just the DOM.
+  // A second click - even one that defeats the `disabled` attribute the first click
+  // set - must not fire a second time: the guard is in the code, not just the DOM.
   const acceptAgain = btn(el, 'accept')!;
   assert.equal(acceptAgain.disabled, true, 'Accept disables itself once pressed');
   acceptAgain.disabled = false;
@@ -387,7 +387,7 @@ const TYPED_REASONS: Array<[BeamEndReason, keyof typeof STRINGS]> = [
 test('every typed cancel/decline reason renders its own plain-copy line', async () => {
   // Completeness against the real `BeamCancelReason | BeamDeclineReason` union is
   // enforced at COMPILE time inside beam-toast.ts (its `REASON_COPY` is typed
-  // `Record<Exclude<BeamEndReason, 'user'>, string>`) — this list mirrors it so each
+  // `Record<Exclude<BeamEndReason, 'user'>, string>`) - this list mirrors it so each
   // one is checked end to end, not so it re-derives completeness at runtime.
   for (const [reason, key] of TYPED_REASONS) {
     const el = host();
@@ -419,7 +419,7 @@ const STRING_PATTERNS = stringValues(STRINGS).map((v) => new RegExp(`^${escapeRe
 const fromStrings = (text: string): boolean => STRING_PATTERNS.some((re) => re.test(text));
 
 /** Leaf text plus the attributes a screen reader speaks. `data-dynamic` elements
- *  (byte counts, a peer-supplied item label) carry real data, not app copy — see
+ *  (byte counts, a peer-supplied item label) carry real data, not app copy - see
  *  beam-toast.ts's own comments at each site that sets it. */
 function renderedStrings(root: Element): string[] {
   const out: string[] = [];
@@ -510,7 +510,7 @@ test('STRINGS: every word the toast renders comes out of the map', () => {
   assert.deepEqual(stray, [], `strings rendered from outside STRINGS:\n${stray.join('\n')}`);
 });
 
-/** String literals in TS source, skipping comments — mirrors
+/** String literals in TS source, skipping comments - mirrors
  *  `collab-ceremony.test.ts`'s own scanner exactly. */
 function stringLiterals(src: string): string[] {
   const out: string[] = [];
@@ -554,7 +554,7 @@ function stringLiterals(src: string): string[] {
   return out;
 }
 
-// Non-copy literals that read like a sentence, each with its reason — mirrors
+// Non-copy literals that read like a sentence, each with its reason - mirrors
 // collab-ceremony.test.ts's own escape hatch. Empty here: nothing in beam-toast.ts's
 // own source (outside STRINGS) currently needs one, but the hatch stays so a future
 // addition (a CSS value, a selector with a space) has somewhere to go rather than

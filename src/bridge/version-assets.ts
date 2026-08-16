@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * version-assets.ts — copy-on-write preservation for pinned assets (plans/97 §6a).
+ * version-assets.ts - copy-on-write preservation for pinned assets (plans/97 §6a).
  *
  * A published design-system version records the assets its tokens document named
  * as `{id, version, sha256}`. Publishing copies NO bytes: the overwhelmingly
@@ -13,16 +13,16 @@
  * asset id, the bridge calls this preserver first (the four chokepoint methods in
  * bridge/assets.ts, and nowhere else). If any published version pins those exact
  * bytes, they are written to a content-keyed frozen id and the version's pin
- * learns where they went. The version ASSET and its checksum are never touched —
+ * learns where they went. The version ASSET and its checksum are never touched - 
  * that is what keeps "a published version is immutable" literally true.
  *
  * The cost of all this on a system that never published is one head-document
- * read — memoised by the tokens bridge, so a property read after the first — and
+ * read - memoised by the tokens bridge, so a property read after the first - and
  * then step 3 returns before any IndexedDB read or hashing. On an install with no
  * tokens document at all the bridge deliberately does not memoise (it retries),
  * so the ABSENCE is memoised here instead; see NO_HEAD_TTL_MS.
  *
- * Fonts are recorded in a version's manifest but never frozen — see step 6a for
+ * Fonts are recorded in a version's manifest but never frozen - see step 6a for
  * why bytes nothing can resolve are not worth the user's storage.
  *
  * Re-entrancy terminates by construction: upload(logo) → preserve → upload(frozen)
@@ -71,8 +71,8 @@ export interface PinPreserverHost {
  *
  * The head read is not memoised by the tokens bridge when it comes back null (by
  * design: a document that was not synced yet must be retried), so a bulk restore
- * would re-run full discovery — an IndexedDB miss and a `cache: 'no-store'` index
- * fetch — once per asset, on exactly the installs that get nothing from
+ * would re-run full discovery - an IndexedDB miss and a `cache: 'no-store'` index
+ * fetch - once per asset, on exactly the installs that get nothing from
  * versioning. A null head provably has no ledger and therefore no pins, so the
  * only thing this window can miss is a design system becoming READABLE inside it;
  * any design system that is WRITTEN clears it immediately (step 1 below), which
@@ -87,7 +87,7 @@ const NO_HEAD_TTL_MS = 1500;
  * Throwing refuses the write, which is the right trade in exactly one direction:
  * a user can retry a replacement, but nothing can recover a version's bytes once
  * they are gone. A version whose pinned bytes have ALREADY drifted (they changed
- * before this hook existed) is warned about and left alone — inventing a frozen
+ * before this hook existed) is warned about and left alone - inventing a frozen
  * copy of the wrong bytes would be worse than an honest gap.
  */
 export function createPinPreserver(
@@ -133,7 +133,7 @@ export function createPinPreserver(
     //     (applyPinnedAssets); a face is resolved by FAMILY out of the user font
     //     store, which no `user/frozen/*` id can join. A frozen copy would be
     //     bytes nothing can read, billed to the user under a line that says they
-    //     buy fidelity — so the pin stays a truthful record of what the version
+    //     buy fidelity - so the pin stays a truthful record of what the version
     //     used and falls back to the live face, which is what the panel says.
     if (rec.type === 'font') return;
 
@@ -166,7 +166,7 @@ export function createPinPreserver(
     }
 
     // 9. Point the pins at the copy. Only the head's LEDGER learns where the
-    //    bytes went — the version asset and its checksum are untouched, which is
+    //    bytes went - the version asset and its checksum are untouched, which is
     //    what keeps a published version immutable.
     const versions: VersionEntry[] = index.versions.map(entry => {
       if (!entry.assets?.some(p => p.id === id && p.sha256 === hex && !p.frozenId)) return entry;

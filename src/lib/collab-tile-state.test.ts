@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-tile-state.ts — the registry (mirrors session-source.test.ts's shape)
- * plus the badge renderer's two load-bearing claims:
+ * collab-tile-state.ts - the registry (mirrors session-source.test.ts's shape)
+ * plus the badge renderer's two essential claims:
  *
  *  1. ABSENT PROVIDER = ZERO DOM. A tile that never has a live collab must come
  *     out of `renderCollabBadge` byte-identical to a tile that function was
- *     never called on — every build of this repo today, since nothing
+ *     never called on - every build of this repo today, since nothing
  *     registers a provider yet.
  *  2. WITH PEERS, the badge reflects the roster: avatar count (capped, "+N"
  *     overflow), the away modifier, and a count-correct aria-label.
@@ -76,7 +76,7 @@ test('last registration wins; a stale unregister is a no-op', () => {
   const off1 = registerCollabTileProvider(stubProvider([peer({ id: 'a' })]));
   registerCollabTileProvider(stubProvider([peer({ id: 'b' }), peer({ id: 'c' })]));
   assert.equal(getCollabTileProvider()?.peersFor('x').length, 2);
-  off1(); // stale — must NOT clear the current (second) registration
+  off1(); // stale - must NOT clear the current (second) registration
   assert.equal(getCollabTileProvider()?.peersFor('x').length, 2);
 });
 
@@ -189,7 +189,7 @@ test('renderCollabBadge never disturbs sibling tile chrome (.tile-primary, .tile
 // `.collab-av`, `.collab-ring*`, `.collab-chip*` and `.collab-cursor*` class
 // names (see collab.css's header for why an unlayered sheet always beats this
 // file's `@layer chrome` rules). The tile badge must never emit any of those
-// bare names — every class it writes has to carry the `collab-tile-` prefix, or
+// bare names - every class it writes has to carry the `collab-tile-` prefix, or
 // a future page that has ALSO mounted one of those components (their injected
 // `<style>` persists for the SPA session, past a route change) would silently
 // re-skin this badge with a stranger's CSS.
@@ -219,7 +219,7 @@ test('a hostile peer colour cannot inject CSS declarations onto the tile', () =>
   // `&<>"'` and nothing else, so a colour interpolated into a `style=` attribute would
   // carry a `;` straight through and land arbitrary declarations on the avatar. Every
   // other collab surface writes this value through `style.setProperty`, which rejects
-  // the whole thing rather than parsing it as a declaration list — and so does this.
+  // the whole thing rather than parsing it as a declaration list - and so does this.
   const { document } = dom();
   const tile = realTile(document);
   renderCollabBadge(tile, [peer({ color: 'red;background-image:url(https://x/?leak)' })]);

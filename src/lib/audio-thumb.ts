@@ -4,11 +4,11 @@
 //
 // An audio asset used to render as `<img src="…mp3">` in the picker (a broken-image
 // icon) or a single static music-note glyph in the catalog. This module draws the
-// asset's REAL overview peaks — `host.audio.analyse(...).peaks` — as an SVG tile.
+// asset's REAL overview peaks - `host.audio.analyse(...).peaks` - as an SVG tile.
 //
 // The one rule that governs everything here: the id hash chooses the SHAPE, never the
-// DATA. A synthesised waveform from an id hash would look convincing and be a lie —
-// it would claim to be the shape of a sound nothing ever measured. When no peaks
+// DATA. A synthesised waveform from an id hash would look convincing and be a lie - 
+// it would claim to be the form of a sound nothing ever measured. When no peaks
 // exist yet the caller gets `audioThumbPlaceholder()`, an honest glyph.
 //
 // Output is a self-contained SVG string: no external stylesheet, all paint expressed
@@ -28,7 +28,7 @@ const SHAPES: readonly AudioThumbShape[] = ['bars', 'mirror', 'wave', 'ring', 'b
 const VB = 64;
 
 /**
- * Deterministic shape for an asset id — the same asset always gets the same form, so a
+ * Deterministic shape for an asset id - the same asset always gets the same form, so a
  * grid of 52 music beds does not read as 52 identical tiles.
  *
  * FNV-1a/32 rather than a cheap char-sum: catalog ids share long prefixes
@@ -48,7 +48,7 @@ export function audioThumbShape(id: string): AudioThumbShape {
 
 /**
  * Clamp one stored peak into 0..1. A corrupt or half-written cache can hand us NaN,
- * Infinity, or a negative — those must become 0 rather than reach the path builder,
+ * Infinity, or a negative - those must become 0 rather than reach the path builder,
  * where they would emit `d="M NaN NaN"` and render nothing at all.
  */
 function lvl(v: unknown): number {
@@ -195,7 +195,7 @@ function drawBlob(p: number[]): string {
     let r = 1;
     // Built from SINUSOIDS, not by sampling the data per angle. The audiogram tool
     // learned this the hard way: per-angle sampling snaps to discrete indices, giving
-    // flat runs joined by vertical walls — a cog, not a blob. Every term here is
+    // flat runs joined by vertical walls - a cog, not a blob. Every term here is
     // 2π-periodic, so the curve is smooth and closes exactly with no seam.
     for (let k = 0; k < BLOB_HARMONICS.length; k++) {
       const harm = BLOB_HARMONICS[k];
@@ -219,7 +219,7 @@ const DRAW: Record<AudioThumbShape, (p: number[]) => string> = {
  * Wrap body markup in the shared root `<svg>`.
  *
  * Decorative by default (`aria-hidden`) because these sit inside an already-labelled
- * card button — matching `videoThumb`/`lottieThumb` in views/picker.ts, which do the
+ * card button - matching `videoThumb`/`lottieThumb` in views/picker.ts, which do the
  * same. A caller that uses the tile on its own passes `label` and gets `role="img"`
  * plus a `<title>`.
  */
@@ -248,7 +248,7 @@ export function audioThumbSvg(
   opts: { shape?: AudioThumbShape; className?: string; id?: string; label?: string } = {}
 ): string {
   const src: ArrayLike<number> = peaks ?? [];
-  // No data is not "a flat waveform" — a flat line would assert silence we never
+  // No data is not "a flat waveform" - a flat line would assert silence we never
   // measured. Fall back to the honest glyph.
   if (!src.length) return audioThumbPlaceholder({ className: opts.className, label: opts.label });
   const shape: AudioThumbShape =

@@ -5,7 +5,7 @@
  * Run directly:  node --test shells/web/src/bridge/export-pdf-vector.test.ts
  *
  * The jsPDF handle these helpers drive is a plain object, so a recording mock
- * captures the exact operator stream — the tests assert the emitted geometry
+ * captures the exact operator stream - the tests assert the emitted geometry
  * (including the hard-won SVG-spec behaviours: Z resetting the current point to
  * the subpath start, and smooth-curve control-point reflection surviving Q/T).
  * The DOM walkers that call these stay in export.ts, untested here.
@@ -427,7 +427,7 @@ test('substitutePdfRgb: spot lock switches to the /Separation colourspace at ful
   const jsPdfStream = '0.05 0.2 0.17 rg 0.05 0.2 0.17 RG';
   assert.equal(cmykKey(0.05, 0.2, 0.17), cmykKey(0x0C / 255, 0x32 / 255, 0x2C / 255), stream);
   const out = substitutePdfRgb(jsPdfStream, map, spotNames, undefined, usedSpots);
-  // An ordinary (non-finish) spot knocks out — GSfk fill, GSsk stroke.
+  // An ordinary (non-finish) spot knocks out - GSfk fill, GSsk stroke.
   assert.equal(out, '/GSfk gs /CS1 cs 1 scn /GSsk gs /CS1 CS 1 SCN');
   assert.deepEqual([...usedSpots], ['Pine']);
 });
@@ -450,7 +450,7 @@ test('brandSwatchPalette: normalises to 0–1, keeps labels/spot names, dedupes 
 // A finish is a press instruction with its own plate, not a colour. Before this,
 // `finish` was dropped at the BrandPaletteEntry type boundary, so a declared foil
 // separated as an ordinary /Separation whose tint transform resolved to the
-// swatch's own screen hex — i.e. a flattening RIP printed plausible metallic
+// swatch's own screen hex - i.e. a flattening RIP printed plausible metallic
 // gold and nothing in the file said otherwise. These pin the mask build at every
 // CMYK sink at once: hit.spot.cmyk is the PDF Separation's tint-transform C1,
 // hit.cmyk is what the flat TIFF and EPS paths paint.
@@ -523,8 +523,8 @@ test('brandSwatchPalette: a finish cell is the mask and names the finish', () =>
 });
 
 test('substitutePdfRgb: a finish switches to its /Separation and OVERPRINTS', () => {
-  // The mask build must not demote a finish to flat process ink in the PDF path —
-  // the named plate is the one thing a printer can actually act on — and a finish
+  // The mask build must not demote a finish to flat process ink in the PDF path - 
+  // the named plate is the one thing a printer can actually act on - and a finish
   // OVERPRINTS (GSfo fill / GSso stroke) so it sits on the artwork, not through it.
   const map = buildCmykPaletteMap([{ hex: '#0C322C', spot: { name: 'Emboss', finish: 'emboss' } }]);
   const spotNames = assignSpotResourceNames(map);
@@ -545,7 +545,7 @@ test('substitutePdfRgb: overprint policy — 100% K overprints, rich black + whi
   assert.deepEqual([...gs].sort(), ['GSfo', 'GSso']);
   // White / paper (all-zero build) KNOCKS OUT so it never vanishes.
   assert.equal(substitutePdfRgb('1 1 1 rg', map, spotNames), '/GSfk gs 0 0 0 0 k');
-  // A rich black lock (carries CMY) KNOCKS OUT — overprinting it would double-print.
+  // A rich black lock (carries CMY) KNOCKS OUT - overprinting it would double-print.
   const rich = buildCmykPaletteMap([{ hex: '#0A0A0A', cmyk: [40, 30, 30, 100] }]);
   const richOut = substitutePdfRgb('0.0392 0.0392 0.0392 rg', rich, assignSpotResourceNames(rich));
   assert.match(richOut, /^\/GSfk gs /, richOut);

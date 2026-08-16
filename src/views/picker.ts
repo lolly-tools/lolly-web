@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Asset Picker — a host-owned modal UI.
+ * Asset Picker - a host-owned modal UI.
  *
  * Why this is a host concern, not a tool concern: tools have no business
  * rendering picker chrome. They declare what they want; the host owns the
@@ -14,26 +14,26 @@
  *   - user-asset upload          → stores blob in IDB, returns user/* AssetRef
  *
  * Three ways in beyond the library, all producing an ordinary image AssetRef:
- *   - "Saved creations" — a previous saved single-tool session, re-rendered to an image
- *   - "Tools"           — any local tool, configured first (opts.editTool) then inserted
+ *   - "Saved creations" - a previous saved single-tool session, re-rendered to an image
+ *   - "Tools" - any local tool, configured first (opts.editTool) then inserted
  *   - paste a Lolly link in the search box (the original smart-paste flow)
  *
  * Exported function: openPicker(host, opts) → Promise<AssetRef | null>
- *   opts.editTool?(toolUrl, mode?) → Promise<AssetRef|null> — when present, choosing a
+ *   opts.editTool?(toolUrl, mode?) → Promise<AssetRef|null> - when present, choosing a
  *   tool opens the full input editor (the caller wires it to tool.js's openEmbedEditor)
  *   so the user can configure the tool before it's inserted. Absent (e.g. batch mode) →
  *   the picker falls back to its inline format/size render card.
- *   opts.currentToolUrl / opts.currentToolName — when the slot being changed already
+ *   opts.currentToolUrl / opts.currentToolName - when the slot being changed already
  *   holds a Lolly render (the AssetRef's meta.toolUrl), the picker shows an "edit the
  *   tool you're already using" banner that re-opens its inputs pre-filled (mode 'edit');
  *   the grids below still offer choosing a different image instead.
  */
 
-import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
+import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
 import DOMPurify from 'dompurify';
 import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
-// Format + embeddability rules — pure and unit-tested in ./picker-formats.test.ts.
+// Format + embeddability rules - pure and unit-tested in ./picker-formats.test.ts.
 import {
   extFromMime, audioFormatOf, formatsForType, isEmbeddable, imageFormatSeed,
   relTime as relTimeAt, VIDEO_FMTS, RASTER_MOTION_FMTS, IMG_FORMATS,
@@ -77,7 +77,7 @@ import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { Folder, FolderItem, FolderHost } from '../folders.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 
-/** Every file kind the upload surfaces can ingest — the `accept` list for any
+/** Every file kind the upload surfaces can ingest - the `accept` list for any
  *  affordance that feeds storeUserUpload (the picker's footer input, the catalog's
  *  drop area). Images (raster + SVG), short video, Lottie, and audio all flow
  *  through storeUserUpload; audio (the user's own music) is stored verbatim as a
@@ -87,7 +87,7 @@ import type { WebStateAPI } from '../bridge/state.ts';
  *  isPdfUpload / isPptxUpload. */
 export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-/** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
+/** A PDF - or an Illustrator .ai, which saved PDF-compatible IS a PDF - that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
  *  chunk-free on purpose: callers decide the route before lazy-loading pdf-import. */
 export const isPdfUpload = (file: File): boolean =>
@@ -109,7 +109,7 @@ export interface PickerTool {
   preview?: string;
   formats?: readonly string[];
   exportable?: boolean;
-  // Canvas dimensions (from the catalog index) — used to fit an animated card.html banner
+  // Canvas dimensions (from the catalog index) - used to fit an animated card.html banner
   // to the fixed-height preview slot at the right aspect. See toolCard / previewMedia.
   width?: number;
   height?: number;
@@ -132,7 +132,7 @@ interface Tab {
   label: string;
 }
 
-/** The picker-facing shape of bridge/compose.ts's `_describeUrl` result (the
+/** The picker-facing structure of bridge/compose.ts's `_describeUrl` result (the
  *  detected-tool card). Local: `_describeUrl` is web-only host-UI chrome with no
  *  exported type. */
 interface ToolUrlDescription {
@@ -141,7 +141,7 @@ interface ToolUrlDescription {
   formats: string[];
   format: string;
   /** Subset of `formats` that carries movement (webm/mp4/gif/apng the tool
-   *  supports and this browser can produce) — a motion pick renders a live clip. */
+   *  supports and this browser can produce) - a motion pick renders a live clip. */
   motion: string[];
   width: number | null;
   height: number | null;
@@ -165,8 +165,10 @@ interface UserAssetRecordInput {
 }
 
 /** Outcome of a collect-mode add, driving the transient per-tile feedback. A bare
- *  boolean is shorthand for `{ ok }`. */
-export interface CollectResult { ok: boolean; label?: string }
+ *  boolean is shorthand for `{ ok }`. `silent` suppresses the ✓/✗ flash entirely -
+ *  used when the user dismissed a sub-chooser, so nothing was added and there is
+ *  nothing to report. */
+export interface CollectResult { ok: boolean; label?: string; silent?: boolean }
 
 /**
  * "Collect into a folder" mode. When present, the picker stops being a fill-one-slot
@@ -181,7 +183,7 @@ export interface CollectResult { ok: boolean; label?: string }
  */
 export interface CollectOpts {
   folderName: string;
-  /** Tools to list in the Tools tab. Projects passes every non-utility creative tool —
+  /** Tools to list in the Tools tab. Projects passes every non-utility creative tool - 
    *  a superset of the image-embeddable set the slot picker uses. */
   tools?: PickerTool[];
   onAsset(ref: AssetRef): Promise<CollectResult | boolean>;
@@ -216,7 +218,7 @@ interface PickerOpts {
   /**
    * The calling slot's TOOL can consume moving pictures (it declares an onFrame
    * hook, so the live frame loop plays a video pick through the render). Widens an
-   * `image` pick to also offer the user's video uploads — capability-driven, never
+   * `image` pick to also offer the user's video uploads - capability-driven, never
    * a per-tool special case. Ignored for every other `type`.
    */
   motion?: boolean;
@@ -229,7 +231,7 @@ interface PickerOpts {
    * fully usable, so the user can move off it immediately. A tab this pick doesn't
    * offer (`tools` with no embeddable tools, `projects` on a slot that shows none)
    * degrades to Library rather than opening a pane that isn't there. Absent keeps the
-   * historical default — collect mode opens on Tools, everything else on Library.
+   * historical default - collect mode opens on Tools, everything else on Library.
    * Callers use it to match the pane to the ADD KIND the user chose: "add a tool"
    * lands on Tools, "add audio" lands on the (already type-filtered) library.
    */
@@ -240,7 +242,7 @@ interface PickerOpts {
 
 /** The web compose surface the picker uses: the v1 ComposeAPI plus the web-only
  *  `_describeUrl` host-UI helper, with `renderUrl` pinned present (the web shell
- *  always provides it — see bridge/compose.ts). */
+ *  always provides it - see bridge/compose.ts). */
 type WebComposeAPI = NonNullable<HostV1['compose']> & {
   renderUrl(url: string, opts?: ComposeUrlOpts): Promise<AssetRef | null>;
   _describeUrl(url: string): Promise<ToolUrlDescription | null>;
@@ -266,13 +268,13 @@ type WindowWithToolIndex = typeof window & { __toolIndex?: { tools?: PickerTool[
 
 let modalEl: HTMLDivElement | null = null;
 
-// Per-open gate for the per-card raster "Upscale" button. Set in render() below —
+// Per-open gate for the per-card raster "Upscale" button. Set in render() below - 
 // the card renderers (card / userCard / projectImageCard) that read it are
 // module-level and can't see render()'s closure, and the picker is a singleton
 // (one modalEl), so a shared flag is safe.
 let upscaleEnabled = false;
 // True when the on-device background remover (host.matte) is present AND at least
-// one model is STAGED — models() is empty until a model's licence + weights are
+// one model is STAGED - models() is empty until a model's licence + weights are
 // verified, so the affordance stays hidden rather than opening a dead dialog.
 let matteEnabled = false;
 
@@ -336,7 +338,7 @@ async function render(
     assetCategoryOverrides = loadAssetCategories(p);
   }).catch(() => { /* no profile → empty overlays */ });
   // Folders the user has organized their images into (in the gallery overlay).
-  // Browse-only here — the picker reflects the grouping; it doesn't edit it.
+  // Browse-only here - the picker reflects the grouping; it doesn't edit it.
   // host.profile (HostV1's ProfileAPI) is a superset of FolderHost's narrower
   // profile shape at runtime; the cast is type-only (FolderHost's structural
   // subset isn't inferable from HostV1's declared ProfileAPI).
@@ -348,17 +350,17 @@ async function render(
 
   // "Take a photo" is offered on the same terms as upload (the slot accepts the
   // user's own images) for raster-capable slots, when the browser exposes a camera.
-  // It produces an ordinary raster AssetRef — no engine/bridge involvement, purely a
+  // It produces an ordinary raster AssetRef - no engine/bridge involvement, purely a
   // shell affordance like upload. Pixels are captured + stored on-device.
   const canWebcam = showUserAssets && opts.type !== 'vector'
     && typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
   // Would a raster screenshot serve this slot at all? Shared gate for both capture
-  // sources below — same terms as webcam: upload-capable, not a vector slot.
+  // sources below - same terms as webcam: upload-capable, not a vector slot.
   const captureCouldServe = showUserAssets && opts.type !== 'vector';
 
   // "Capture screen" beside it, feature-detected on getDisplayMedia (absent on most
-  // mobile browsers). A picker-level source like webcam — NOT gated on any tool
+  // mobile browsers). A picker-level source like webcam - NOT gated on any tool
   // capability flag: the browser's own share picker is the whole selection UI, and
   // recorder.still() releases the stream the moment the frame is grabbed.
   const canScreencap = captureCouldServe
@@ -367,23 +369,23 @@ async function render(
 
   // "Script audio" beside them: type a script, synthesize speech on-device via the
   // optional host.speech bridge (v1.96), and store the clip as a user audio asset.
-  // Offered when the slot can take the user's own audio — an audio slot, or an
+  // Offered when the slot can take the user's own audio - an audio slot, or an
   // untyped upload slot. Feature-detected on the bridge, not capability-gated.
   const canScriptAudio = showUserAssets && (opts.type === 'audio' || opts.type === undefined)
     && host.speech?.isAvailable() === true;
 
   // "Upscale" beside it: enlarge a raster image on-device via the optional
   // host.upscale bridge (v1.101), saving the result as a user raster asset.
-  // Offered for a slot that accepts rasters — 'raster', the raster-or-vector
+  // Offered for a slot that accepts rasters - 'raster', the raster-or-vector
   // 'image' superset, or an untyped upload slot (never vector/audio/video).
   // Feature-detected on the bridge, not capability-gated.
   const canUpscale = showUserAssets && (opts.type === 'raster' || opts.type === 'image' || opts.type === undefined)
     && host.upscale?.isAvailable() === true;
-  // Background removal — same slot gate as upscale; hidden until a model is staged.
+  // Background removal - same slot gate as upscale; hidden until a model is staged.
   const canMatte = showUserAssets && (opts.type === 'raster' || opts.type === 'image' || opts.type === undefined)
     && host.matte?.isAvailable() === true && (host.matte.models().length > 0);
 
-  // The per-card "Upscale" affordance (a hover-revealed button on RASTER cards —
+  // The per-card "Upscale" affordance (a hover-revealed button on RASTER cards - 
   // library assets AND the user's own uploads) is a distinct entry point from the
   // footer shortcut above: it upscales an image the user ALREADY has as the source,
   // without re-uploading it. Gated purely on the on-device upscaler being present;
@@ -392,11 +394,11 @@ async function render(
   matteEnabled = host.matte?.isAvailable() === true && (host.matte.models().length > 0);
 
   // A pasted https URL that is NOT a Lolly link can still become an image where the
-  // shell can capture pages (extension installed / Tauri) — see showUrlFallback.
+  // shell can capture pages (extension installed / Tauri) - see showUrlFallback.
   const canCaptureUrl = captureCouldServe && (host.capabilities ?? []).includes('capture');
 
   // Smart-paste / compose: any image slot can render a Lolly tool (or a previous
-  // saved creation) AS the image — available whenever the shell can compose and the
+  // saved creation) AS the image - available whenever the shell can compose and the
   // slot isn't video-only. The toolId in any link/tool must resolve to a real local
   // tool, so this can only ever render a tool that ships in this build.
   const allowToolUrl = Boolean((host.compose as Partial<WebComposeAPI> | undefined)?.renderUrl
@@ -425,7 +427,7 @@ async function render(
   const toolIndex = ((typeof window !== 'undefined' && (window as WindowWithToolIndex).__toolIndex?.tools) || []) as PickerTool[];
   const toolById  = new Map(toolIndex.map((t): [string, PickerTool] => [t.id, t]));
   // In collect mode the Tools tab starts a SESSION (open editor or quick-add), not an
-  // image render — so it lists whatever creative tools the caller passed (Projects sends
+  // image render - so it lists whatever creative tools the caller passed (Projects sends
   // every non-utility tool), not just the image-embeddable subset the slot picker needs.
   const embedTools = collect?.tools
     ? [...collect.tools].sort((a, b) => a.name.localeCompare(b.name))
@@ -434,8 +436,8 @@ async function render(
       : [];
 
   // The slot's current image may itself be a Lolly render (meta.toolUrl on the
-  // AssetRef). Offer an edit path back into that tool's own inputs — pre-filled
-  // with the values already in use — without giving up the normal pick-another-
+  // AssetRef). Offer an edit path back into that tool's own inputs - pre-filled
+  // with the values already in use - without giving up the normal pick-another-
   // image grids below. Needs editTool (the caller's embed editor) to mean anything.
   const currentToolUrl = (opts.editTool && typeof opts.currentToolUrl === 'string' && opts.currentToolUrl) || null;
 
@@ -447,7 +449,7 @@ async function render(
   // pairing chosen here. The pairings come from the catalog's icon-themes
   // palette asset via host.assets._iconThemes(); the strip mounts only when the
   // library actually contains themable icons. The first pairing is the default
-  // (identical to the fills baked into every icon) — choosing it keeps the plain
+  // (identical to the fills baked into every icon) - choosing it keeps the plain
   // asset id, so default picks stay class-overridable when inlined.
   // A non-default choice is carried in the picked id (`<id>?theme=<themeId>`).
   let iconThemes: IconTheme[] = [];
@@ -455,7 +457,7 @@ async function render(
   const { theme: currentTheme } = parseThemedAssetId(String(opts.current ?? ''));
   let activeTheme: string | null | undefined = currentTheme;
   // Two-colour icons (tag 'themable', c1/c2 swap) AND multi-colour illustrations
-  // (tag 'illustration', monochromatic remap) both take a colour theme here — the
+  // (tag 'illustration', monochromatic remap) both take a colour theme here - the
   // engine's restyle/apply pick the right recolour per SVG shape.
   const isThemableRef = (ref: AssetRef | undefined): ref is AssetRef => {
     const tags = ref?.meta?.tags as string[] | undefined;
@@ -481,7 +483,7 @@ async function render(
   if (embedTools.length) tabs.push({ id: 'tools', label: 'Tools' });
   // Which pane opens first. The caller's `initialTab` wins when this pick actually
   // offers that tab (so "add a tool" opens on Tools and "add audio" opens on the
-  // type-filtered library); it's only a default — the strip below stays live, so the
+  // type-filtered library); it's only a default - the strip below stays live, so the
   // user can switch away at once. A requested tab that isn't in `tabs` is ignored
   // rather than honoured into an empty pane.
   // Absent, the historical rule stands: collect mode (the Projects "+ New asset" flow)
@@ -567,7 +569,7 @@ async function render(
   // torn down with the dialog so an in-flight decode can't paint into a dead grid.
   let audioThumbs: { destroy(): void } | null = null;
   // Answers an open trim-to-content card on the user's behalf (keeping the original
-  // margins) if the dialog goes away while it is still asking — see offerTrim below.
+  // margins) if the dialog goes away while it is still asking - see offerTrim below.
   let pendingTrim: (() => void) | null = null;
   let trap: FocusTrap | undefined;
   const close = (value: AssetRef | null): void => {
@@ -583,8 +585,8 @@ async function render(
     resolve(value);
   };
   // A route change under the open dialog (browser Back, an in-app link elsewhere)
-  // closes it: the picker is body-mounted, so it would otherwise keep covering —
-  // and, via trapFocus's inert background, keep unusable — the freshly-mounted
+  // closes it: the picker is body-mounted, so it would otherwise keep covering - 
+  // and, via trapFocus's inert background, keep unusable - the freshly-mounted
   // view, with the openPicker promise never settling (NAV_EVENTS contract, utils.ts).
   const onNav = (): void => close(null);
   NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
@@ -595,7 +597,7 @@ async function render(
   const body         = root.querySelector<HTMLElement>('.asset-picker-body')!;
   const currentEl    = root.querySelector<HTMLElement>('.asset-picker-current');
   const libraryPane  = root.querySelector<HTMLElement>('.asset-picker-pane[data-pane="library"]')!;
-  // (Re)arm the lottie autoplayer over the library pane — its favourites, user-uploads, and
+  // (Re)arm the lottie autoplayer over the library pane - its favourites, user-uploads, and
   // library grids all render inside it. Called after each of those grids (re)renders so newly
   // built [data-lottie-src] markers get observed; destroys the prior observer to avoid stacking.
   const refreshLottieThumbs = (): void => {
@@ -634,7 +636,7 @@ async function render(
   const collectOk = (r: CollectResult | boolean): boolean => typeof r === 'boolean' ? r : r.ok;
   const collectLabel = (r: CollectResult | boolean): string =>
     (typeof r === 'object' && r.label) || (collectOk(r) ? t('Added') : t('Couldn’t add'));
-  // Flash a tile as added (green ✓ overlay) or failed, then restore — the dialog stays
+  // Flash a tile as added (green ✓ overlay) or failed, then restore - the dialog stays
   // open so several items can be gathered in a row. The card owns `position:relative`
   // already (the format badge sits on it), so the overlay pins cleanly.
   function flashCard(el: HTMLElement, r: CollectResult | boolean): void {
@@ -679,7 +681,7 @@ async function render(
   // ── Keyboard navigation over the (responsive) card grid ────────────────────
   // Cards flow left-to-right then wrap, so DOM order == visual reading order:
   // Left/Right step through that order. The column count is unknown (responsive),
-  // so Up/Down can't index by row — instead they pick the geometrically nearest
+  // so Up/Down can't index by row - instead they pick the geometrically nearest
   // card in the row above/below by comparing on-screen centres. Scoped to the
   // currently visible pane so arrows never jump into a hidden one.
   const visiblePane = (): HTMLElement | null => root.querySelector<HTMLElement>('.asset-picker-pane:not([hidden])');
@@ -733,7 +735,7 @@ async function render(
   });
 
   // Tab strip: click switches which source pane is visible; Arrow keys rove focus
-  // between tabs (Home/End jump to the ends), activating each as it's reached — the
+  // between tabs (Home/End jump to the ends), activating each as it's reached - the
   // ARIA tabs pattern, which is lib/tabs.ts's whole job (it also picks up Up/Down,
   // which the hand-rolled copy this replaced dropped). wireTabs owns the button
   // state (is-active / aria-selected / roving tabindex) and the focus move; setTab
@@ -754,7 +756,7 @@ async function render(
   // One delegated handler serves every region: choose an icon colour, pick a
   // library/user asset, delete a user image, embed a saved session, or open a tool.
   body.addEventListener('click', async (e) => {
-    // Icon colour pairing — the strip lives inside the (re-rendered) Icons group,
+    // Icon colour pairing - the strip lives inside the (re-rendered) Icons group,
     // so it's handled by delegation rather than a per-render listener.
     const theme = (e.target as HTMLElement).closest<HTMLElement>('[data-theme-id]');
     if (theme) {
@@ -768,7 +770,7 @@ async function render(
       retintThemableCards();
       return;
     }
-    // Photo colour treatment — same delegation story as the icon strip above.
+    // Photo colour treatment - same delegation story as the icon strip above.
     const treat = (e.target as HTMLElement).closest<HTMLElement>('[data-treatment-id]');
     if (treat) {
       // The "None" button carries an empty id → the plain photo, no suffix.
@@ -816,7 +818,7 @@ async function render(
       updateCatbar(); // manually opening/closing a section moves the row's indicator too
       return;
     }
-    // Projects tab: drill into a folder (or a breadcrumb) — empty id = the top level.
+    // Projects tab: drill into a folder (or a breadcrumb) - empty id = the top level.
     const fo = (e.target as HTMLElement).closest<HTMLElement>('[data-folder-open]');
     if (fo) {
       projectFolder = fo.dataset.folderOpen || null;
@@ -828,7 +830,7 @@ async function render(
     if (del) {
       const id = del.dataset.deleteId!;
       const name = (userAssets.find(a => a.id === id)?.meta?.name as string | undefined) ?? t('this image');
-      // Deleting a user image is destructive and can't be undone — confirm first
+      // Deleting a user image is destructive and can't be undone - confirm first
       // (shared modal, matching the Catalog/Projects delete flows).
       const ok = await confirmDialog({
         title: t('Delete this image?'),
@@ -854,7 +856,7 @@ async function render(
         announce(tRaw('Deleted {name}.', { name }));
       } catch (err) {
         host.log('error', 'Failed to delete user image', { id, error: String(err) });
-        // The card is still on screen (the delete threw) — surface the failure beside
+        // The card is still on screen (the delete threw) - surface the failure beside
         // it rather than leaving the user staring at a card that wouldn't go away.
         if (card) {
           const msg = document.createElement('p');
@@ -892,7 +894,7 @@ async function render(
       }
       return;
     }
-    // Remove-background card affordance — the exact mirror of the upscale one: take
+    // Remove-background card affordance - the exact mirror of the upscale one: take
     // the ref the user already has as the source, cut it out on-device, treat the
     // returned cutout like a normal pick. Must return before the pick branch below.
     const cut = (e.target as HTMLElement).closest<HTMLElement>('[data-matte-id]');
@@ -919,7 +921,10 @@ async function render(
     const quick = (e.target as HTMLElement).closest<HTMLElement>('[data-quickadd-tool]');
     if (quick && collect) {
       e.preventDefault(); e.stopPropagation();
-      flashCard(quick, await collect.onQuickAddTool(quick.dataset.quickaddTool!));
+      const r = await collect.onQuickAddTool(quick.dataset.quickaddTool!);
+      // A silent result (the user dismissed a variation sub-chooser, so nothing was added)
+      // shows no ✓/✗ feedback - there is nothing to report.
+      if (!(typeof r === 'object' && r.silent)) flashCard(quick, r);
       return;
     }
     const sess = (e.target as HTMLElement).closest<HTMLElement>('[data-session-slot]');
@@ -953,7 +958,7 @@ async function render(
       } catch (err) {
         host.log('error', 'Failed to resolve asset', { id: pickId, error: String(err) });
         announce(tRaw('Could not resolve asset: {message}', { message: (err as Error).message }), { assertive: true });
-        // The picked card is still on screen — surface the failure beside it rather than
+        // The picked card is still on screen - surface the failure beside it rather than
         // blocking on a native alert (same inline note as the delete path above).
         const card = pick.closest<HTMLElement>('.asset-picker-card');
         card?.querySelector('.asset-picker-card-error')?.remove(); // clear any prior failure note
@@ -971,7 +976,7 @@ async function render(
 
   // A tool preview is a build artifact (catalog/previews/) that, though committed, can
   // be missing on a fresh checkout / before `npm run previews`, or drift from the index
-  // — when one 404s, reveal the tool's inline icon instead of a broken image. Error
+  // - when one 404s, reveal the tool's inline icon instead of a broken image. Error
   // events don't bubble, so listen in the capture phase, scoped to tool previews so
   // library/session thumbs are untouched (mirrors gallery.ts).
   body.addEventListener('error', (e) => {
@@ -987,7 +992,7 @@ async function render(
   // the now-visible pane with the current query, and land focus on its first card.
   // Public entry point: routes through wireTabs so the strip's own state
   // (is-active / aria-selected / roving tabindex) is applied exactly once, in one
-  // place. With a single source there's no strip at all — apply the pane switch direct.
+  // place. With a single source there's no strip at all - apply the pane switch direct.
   function setTab(id: TabId): void {
     if (selectTab) selectTab(id);
     else applyTab(id, true);
@@ -1004,7 +1009,7 @@ async function render(
     searchInput.placeholder = placeholderFor(id);
     const raw = searchInput.value.trim();
     const q = raw.toLowerCase();
-    // A URL in the box is a paste-to-render intent, handled by the search listener —
+    // A URL in the box is a paste-to-render intent, handled by the search listener - 
     // don't fight it by re-filtering a list underneath.
     if (!(allowToolUrl && /^https?:\/\//i.test(raw))) {
       if (id === 'library') restoreLibrary(q);
@@ -1024,7 +1029,7 @@ async function render(
 
     // Group the loaded images by the folder each belongs to (if any), preserving
     // the newest-first order within each group. Cards keep their existing markup
-    // so pick/delete/keyboard-nav are unchanged — only headings are added.
+    // so pick/delete/keyboard-nav are unchanged - only headings are added.
     const folderOf = new Map<string, Folder>();
     for (const f of folders) for (const it of f.items) if (it.type === 'image') folderOf.set(it.ref, f);
     const groups = new Map<string, { name: string; items: AssetRef[] }>();   // folderId → { name, items }
@@ -1057,7 +1062,7 @@ async function render(
   }
 
   function updateUploadAffordance(): void {
-    // No upload cap any more — the affordance is always available. Kept as a hook
+    // No upload cap any more - the affordance is always available. Kept as a hook
     // so the label stays correct if a section re-render leaves it disabled.
     const labelEl   = root.querySelector<HTMLElement>('.asset-picker-upload-label');
     const fileInput = root.querySelector<HTMLInputElement>('.asset-picker-upload input[type="file"]');
@@ -1067,7 +1072,7 @@ async function render(
   }
 
   /**
-   * The trim-to-content offer on the picker's upload flow (plan 97 §7.3) — the path
+   * The trim-to-content offer on the picker's upload flow (plan 97 §7.3) - the path
    * EVERY tool's asset input goes through, so a padded logo dropped straight into a
    * tool gets the same before/after card as one added in the design-system studio.
    *
@@ -1080,7 +1085,7 @@ async function render(
    * abandoned, nothing is stored and the picker stays open on the library where
    * they left it. A dismissal must not quietly ingest the file it was asking about.
    *
-   * MUST run before storeUserUpload — its normaliser strips an SVG's root
+   * MUST run before storeUserUpload - its normaliser strips an SVG's root
    * width/height, leaving a viewBox rewrite nothing to bite on. Never rejects: a
    * failed measurement is not a reason to fail an upload.
    *
@@ -1094,7 +1099,7 @@ async function render(
     // second pick would otherwise overwrite the mount and strand the first upload on
     // a promise nothing settles. That file just ingests as it arrived.
     if (pendingTrim) return file;
-    // Lazy chunk — the measure/crop code loads only when a file actually arrives.
+    // Lazy chunk - the measure/crop code loads only when a file actually arrives.
     const trim = await import('../lib/design-system/trim-offer.ts').catch(() => null);
     if (!trim) return file;
     const proposal = await trim.prepareTrim(file).catch(() => null);
@@ -1134,7 +1139,7 @@ async function render(
       if (!file) return;
       try {
         // A PDF/.ai becomes an SVG asset of one chosen page (the picker fills a single
-        // slot, so single-select). The converter is a lazy chunk — pdf-lib only loads
+        // slot, so single-select). The converter is a lazy chunk - pdf-lib only loads
         // when a PDF actually arrives. A cancelled page pick returns no refs: stay open.
         if (isPdfUpload(file)) {
           // Collect mode can file every chosen page into the folder (multi-select);
@@ -1148,7 +1153,7 @@ async function render(
           if (refs[0]) close(refs[0]);
           return;
         }
-        // A .pptx deck routes the same way — chosen slide(s) become SVG assets via
+        // A .pptx deck routes the same way - chosen slide(s) become SVG assets via
         // the lazy pptx-import chunk. Same collect/slot semantics as the PDF branch.
         if (isPptxUpload(file)) {
           const { ingestPptxAsSvgAssets } = await import('./pptx-import.ts');
@@ -1160,7 +1165,7 @@ async function render(
           if (refs[0]) close(refs[0]);
           return;
         }
-        // The trim question, then the ingest — and with the answer's file, never the
+        // The trim question, then the ingest - and with the answer's file, never the
         // one the input handed over (offerTrim's doc comment says why the order matters).
         const answered = await offerTrim(file);
         if (!answered) return;   // backed out of the card: nothing stored, dialog stays open
@@ -1187,7 +1192,7 @@ async function render(
     close(ref);
   });
 
-  // "Capture screen": the browser's own display picker IS the selection UI —
+  // "Capture screen": the browser's own display picker IS the selection UI - 
   // recorder.still() prompts it, grabs one frame, and stops the share immediately.
   // The frame takes the SAME ingest path as a webcam shot (storeUserUpload), so
   // resize/metadata/provenance handling stays identical across capture sources.
@@ -1241,17 +1246,17 @@ async function render(
 
   // Library sections + bucketing live in lib/asset-category.ts (shared with the Catalog
   // view so both group identically). A per-user override (profile.assetCategories) layers
-  // over the tag inference — loaded once per open, refreshed on each render() below.
+  // over the tag inference - loaded once per open, refreshed on each render() below.
   const cat = (ref: AssetRef): string => libCategory(ref, assetCategoryOverrides);
   const collapsedGroups = new Set<string>(); // group keys the user collapsed; persists across re-render
-  // The present top-level library category keys, in display order — the model behind
+  // The present top-level library category keys, in display order - the model behind
   // the category filter row. Refreshed on every renderLibrary (search narrows it).
   let libraryGroupKeys: string[] = [];
   // Seed the "one category open" default exactly once, on the first full render.
   let catFilterSeeded = false;
   const CHEVRON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
 
-  // One collapsible section shell — used by the library groups, their nested
+  // One collapsible section shell - used by the library groups, their nested
   // sub-groups, and the "Your images" section, so the delegated toggle handler
   // and collapse-state Set serve all of them identically. `collapsed` defaults to
   // the persisted state but callers can override it (the library forces every
@@ -1361,8 +1366,8 @@ async function render(
     // photos. A group is one or the other, never both.
     const themableOf = (items: AssetRef[]) => iconThemes.length > 1 && items.some(isThemableRef);
     const treatableOf = (items: AssetRef[]) => photoTreatments.length > 0 && items.some(isTreatableRef);
-    // Every picker gets the same section chrome — even a single-category one
-    // (e.g. a raster-only field) — so a narrow slot's picker matches the full
+    // Every picker gets the same section chrome - even a single-category one
+    // (e.g. a raster-only field) - so a narrow slot's picker matches the full
     // catalog selector: collapsible folders, nested sub-groups (Headshots), and
     // the colour strip whenever themable icons / treatable photos are present.
     libraryEl.innerHTML = present.map(g => {
@@ -1396,7 +1401,7 @@ async function render(
   }
 
   // Live-preview the chosen pairing on every themable thumbnail. Restyle (class
-  // contract kept) rather than bake — each thumb is its own <img> document, so
+  // contract kept) rather than bake - each thumb is its own <img> document, so
   // there is no cross-icon CSS collision here. SVG text is fetched once per
   // asset and finished data URLs are cached per pairing, so a rebuild (every
   // search keystroke re-renders the grid) just reassigns strings; a seq guard
@@ -1408,7 +1413,7 @@ async function render(
     const def = activeTheme ? iconThemes.find(t => t.id === activeTheme) : null;
     const seq = ++retintSeq;
     // Scope to the whole library PANE (not just libraryEl) so themable icons pinned in
-    // the Favourites section retint too — they share candidateById with the grid.
+    // the Favourites section retint too - they share candidateById with the grid.
     for (const cardEl of libraryPane.querySelectorAll<HTMLElement>('[data-asset-id]')) {
       const ref = candidateById.get(cardEl.dataset.assetId!);
       if (!isThemableRef(ref)) continue;
@@ -1455,7 +1460,7 @@ async function render(
   }
 
   // Live-preview the chosen treatment on every photo thumbnail via a CSS filter
-  // that points at an injected SVG <filter> def — cheap, no re-encode (the real
+  // that points at an injected SVG <filter> def - cheap, no re-encode (the real
   // bake happens once, at resolve, when the photo is actually picked). Mirrors
   // retintThemableCards but for raster cards.
   function retreatPhotoCards(): void {
@@ -1490,12 +1495,12 @@ async function render(
   // pane keeps its exact field set at the call site. `q` arrives trimmed +
   // lowercased from the search box; tokenize() folds it the rest of the way
   // (diacritics), so "café" finds "cafe" and the reverse. Empty query matches
-  // everything — search is a filter here, not a mode.
+  // everything - search is a filter here, not a mode.
   let lastQ = '';
   let lastQTokens: string[] = [];
   const searchMatches = (q: string, ...fields: Array<string | null | undefined>): boolean => {
     if (!q) return true;
-    // The pane render filters many items against ONE query — memoise its tokens.
+    // The pane render filters many items against ONE query - memoise its tokens.
     if (q !== lastQ) { lastQ = q; lastQTokens = tokenize(q); }
     return scoreHaystack(
       fields.filter((f): f is string => !!f).map(text => ({ text: fold(text), weight: 1 })),
@@ -1515,9 +1520,9 @@ async function render(
     renderLibrary(libraryCandidates.filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)));
   }
 
-  // ── Favourites — a pinned, collapsible section at the top of the library pane ──
+  // ── Favourites - a pinned, collapsible section at the top of the library pane ──
   // Unions the user's starred LIBRARY assets and starred USER images (keyed by base id,
-  // so a themed icon starred once shows once). Read-only pins here — a favourite is
+  // so a themed icon starred once shows once). Read-only pins here - a favourite is
   // picked like any other card (delegated [data-asset-id] handler resolves it, incl.
   // user ids). Starring itself happens in the Catalog view. Rebuilt whenever the sources
   // or the favourites set change; unaffected by the search box (it's a fixed shortcut).
@@ -1587,7 +1592,7 @@ async function render(
       </button>`;
   }
 
-  // An image inside a folder — a plain pick tile (no delete affordance; deletion
+  // An image inside a folder - a plain pick tile (no delete affordance; deletion
   // lives in the Your images list). Picking routes through the shared [data-asset-id] handler.
   function projectImageCard(ref: AssetRef): string {
     const name = String(ref.meta?.name ?? t('Image'));
@@ -1763,7 +1768,7 @@ async function render(
     let posterRef: AssetRef | null = null;   // the still shown in the card (a still pick commits this as-is)
     let renderSeq = 0;      // drop a stale render when controls change again
     // A child whose preview ever took longer than this stops auto-rendering on
-    // control changes — the user triggers each render instead (click-to-render),
+    // control changes - the user triggers each render instead (click-to-render),
     // so a heavy child (a 3D scene, a big PDF) can't make the card feel hung.
     const SLOW_RENDER_MS = 1000;
     let slowTool = false;
@@ -1797,7 +1802,7 @@ async function render(
     };
 
     // Idle click-to-render state (slow tools only). Entering it also invalidates
-    // any in-flight render — the controls just changed, so its poster is stale.
+    // any in-flight render - the controls just changed, so its poster is stale.
     const showRenderButton = (): void => {
       renderSeq++;
       posterRef = null;
@@ -1806,7 +1811,7 @@ async function render(
       previewEl.querySelector('.tc-render')!.addEventListener('click', () => { void renderPreview(); });
     };
 
-    // Resolve the picker with the committed ref — frozen (baked into a static
+    // Resolve the picker with the committed ref - frozen (baked into a static
     // data: asset that never live-re-renders and consumes no nesting depth) when
     // the toggle is on. A render the engine refuses to bake (too large / not
     // self-contained) is placed LIVE instead, with a brief inline note so the
@@ -1822,7 +1827,7 @@ async function render(
       try { deliver(bakeAssetRef(ref)); }
       catch (e) {
         host.log?.('warn', `freeze failed (${(e as { code?: string }).code ?? (e as Error).message}) — placing live`);
-        // Freeze the card while the note shows — a back/edit click here would
+        // Freeze the card while the note shows - a back/edit click here would
         // race the delayed commit below.
         cardEl.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = true; });
         previewEl.insertAdjacentHTML('beforeend',
@@ -1875,15 +1880,15 @@ async function render(
         ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image — install it, then reload.')}`
         : ''}</p>
       ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsAppHref() returns a build-time `#/docs/…` route from a literal slug */ ''}
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() returns a build-time `#/docs/…` route from a literal slug */ ''}
         <a class="tc-back" href="${escapeHtml(docsAppHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
       </div>` : ''}`);
   }
 
   // The "Screenshot this page" card. The capture bridge does the real work (extension
-  // DevTools / Tauri webview); the shot is stored through storeUserUpload — the same
+  // DevTools / Tauri webview); the shot is stored through storeUserUpload - the same
   // ingest as an upload/webcam frame, so it lands in "Your images" with identical
-  // metadata/provenance handling — then fills the slot (or the collect folder).
+  // metadata/provenance handling - then fills the slot (or the collect folder).
   function showUrlCaptureCard(url: string): void {
     showTakeover(`
       <div class="asset-picker-toolcard">
@@ -1907,7 +1912,7 @@ async function render(
       goBtn.textContent = t('Capturing page…');
       errEl.hidden = true;
       try {
-        // Viewport-shaped (the url-shot default) — the slot's true box isn't known here.
+        // Viewport-shaped (the url-shot default) - the slot's true box isn't known here.
         const shot = await host.capture!.page({ url, width: 1280, height: 800 });
         const blob = await (await fetch(shot.url)).blob();
         const file = new File([blob], `screenshot-${Date.now()}.png`, { type: blob.type || 'image/png' });
@@ -1928,7 +1933,7 @@ async function render(
   // Open a saved single-tool session as an image: reconstruct its canonical embed
   // URL from the stored values (the same createRuntime → serializeUrlState → buildEmbedUrl
   // recipe the in-place editor uses) and hand it to the render card. Pre-configured,
-  // so it goes straight to preview/size — with an Edit-inputs escape hatch.
+  // so it goes straight to preview/size - with an Edit-inputs escape hatch.
   async function embedSession(slot: string): Promise<void> {
     const entry = (sessions ?? []).find(s => s.slot === slot);
     if (!entry) return;
@@ -1972,7 +1977,7 @@ async function render(
   }
 
   // Load the user's saved images (filtered to the requested type) in parallel with
-  // the library — they don't depend on each other.
+  // the library - they don't depend on each other.
   if (showUserAssets) {
     Promise.all([
       host.assets._listUserAssets(),
@@ -1982,14 +1987,14 @@ async function render(
       .then(([list]) => {
         // An `image` slot accepts raster OR vector (SVG); every other type is exact.
         // An `image` slot whose caller declared `motion` (the tool has an onFrame
-        // hook, so the live frame loop can PLAY a video through the effect — see
+        // hook, so the live frame loop can PLAY a video through the effect - see
         // tool-inputs.ts) also accepts the user's video uploads. Lottie stays out
         // even then: the frame loop has no lottie lane, and a pick that can only
         // ever render "Could not read this image" is worse than absence.
         //
         // An UNTYPED pick used to accept everything, which tiled the engine-data
         // assets that share this rail as broken images: an installed font, and
-        // since 1.73 an ICC profile — with a delete button that removed the bytes
+        // since 1.73 an ICC profile - with a delete button that removed the bytes
         // behind the Colour Lab's back, leaving a registered gamut and picker tab
         // for a file that was gone. A caller that names a data type still gets it;
         // it is only "everything" that means "everything with a picture".
@@ -2002,7 +2007,7 @@ async function render(
         renderUserAssets();
         renderFavourites();
         updateUploadAffordance();
-        // Images just landed — refresh Projects so folder item tiles + counts fill in.
+        // Images just landed - refresh Projects so folder item tiles + counts fill in.
         if (activeTab === 'projects') renderProjects(searchInput.value.trim().toLowerCase());
       })
       .catch(e => host.log('warn', 'Failed to list user images', { error: String(e) }));
@@ -2046,18 +2051,18 @@ async function render(
   }
 
   try {
-    // Only visual assets are pickable images — palette / tokens / font entries are
+    // Only visual assets are pickable images - palette / tokens / font entries are
     // engine data (JSON), never something a user places in a slot, so keep them out
     // of the library (a `type`-scoped pick already excludes them; this covers `any`).
     // Lottie counts as visual: it thumbnails as a static poster and plays live once
-    // placed. It only surfaces for untyped/`any`/`lottie` picks — an `image` slot is
+    // placed. It only surfaces for untyped/`any`/`lottie` picks - an `image` slot is
     // already narrowed to raster/vector upstream by query()'s typeMatches().
     // …with ONE exception: an explicit `type: 'audio'` pick (Sequence Studio's music
     // bed) is asking for the catalog's audio assets by name, so widen the set for
     // exactly that request. query()'s typeMatches has already narrowed the result to
-    // `audio`, and this stays keyed on opts.type — an untyped / `any` / `image` pick
+    // `audio`, and this stays keyed on opts.type - an untyped / `any` / `image` pick
     // is unchanged, so audio never leaks into a slot that didn't ask for it. (The
-    // user-uploads path filters too — see its own typeOk, which for an untyped
+    // user-uploads path filters too - see its own typeOk, which for an untyped
     // pick asks the same lib/asset-kinds.ts question.)
     const pickableTypes = opts.type === 'audio' ? new Set([...VISUAL_TYPES, 'audio']) : VISUAL_TYPES;
     // opts widens AssetPickerOpts with a web-only `type: 'image'` value; query only
@@ -2071,7 +2076,7 @@ async function render(
     candidateById = new Map(candidates.map((c): [string, AssetRef] => [c.id, c]));
     libraryLoaded = true;
 
-    // Colour pairings for themable icons — only worth mounting when this
+    // Colour pairings for themable icons - only worth mounting when this
     // library actually contains some and the bridge can supply pairings.
     if (candidates.some(isThemableRef) && typeof host.assets._iconThemes === 'function') {
       iconThemes = await host.assets._iconThemes().catch(() => []);
@@ -2079,7 +2084,7 @@ async function render(
       // renderLibrary renders the strip inside the Icons group when iconThemes.length > 1.
     }
 
-    // Colour treatments for raster photos — mounted only when this library holds
+    // Colour treatments for raster photos - mounted only when this library holds
     // some and the bridge can supply them (same discipline as icon themes).
     if (candidates.some(isTreatableRef) && typeof host.assets._photoTreatments === 'function') {
       photoTreatments = await host.assets._photoTreatments().catch(() => []);
@@ -2091,7 +2096,7 @@ async function render(
 
     // Land focus on an asset (the current one if provided) so the keyboard can
     // drive the picker straight away. A themed current id matches its base card.
-    // Only when Library is the active pane — in collect mode we've already switched
+    // Only when Library is the active pane - in collect mode we've already switched
     // to Tools and landed focus there, so don't yank it back to a hidden card.
     if (activeTab === 'library') {
       const libCards = [...libraryEl.querySelectorAll<HTMLElement>('[data-asset-id]')];
@@ -2116,7 +2121,7 @@ async function render(
       }
       detectSeq++; // invalidate any in-flight detection now that it's not a URL
       const q = raw.toLowerCase();
-      // Resuming typing after a paste/embed takeover returns to the active pane —
+      // Resuming typing after a paste/embed takeover returns to the active pane - 
       // without stealing focus out of the search field (so don't go via setTab).
       if (!toolcardHost.hidden) {
         toolcardHost.hidden = true;
@@ -2169,7 +2174,7 @@ function videoThumb(url: string, className: string): string {
 }
 
 // A looping Lottie thumbnail: an on-screen-gated player (autoplayLottieThumbs, wired by the
-// picker) mounts over the still poster while the tile is on screen — the poster background, or
+// picker) mounts over the still poster while the tile is on screen - the poster background, or
 // a ▶ for a posterless user upload, is the resting frame. Returns null when no json url is
 // resolvable, so the caller keeps its own stub. A library lottie's url is the poster and the
 // json lives on meta.animationUrl; a user upload's url IS the json.
@@ -2184,16 +2189,16 @@ function lottieThumb(ref: AssetRef, className: string): string | null {
 // An audio thumbnail: the honest glyph now, a REAL waveform once peaks exist.
 //
 // An <img src="…mp3"> can never load, so every audio tile used to render the broken-image
-// icon — and in the lolly-start profile that is 20 of 23 assets, i.e. nearly the whole
+// icon - and in the lolly-start profile that is 20 of 23 assets, i.e. nearly the whole
 // picker. What ships in the markup is `audioThumbPlaceholder` (a glyph, never a fabricated
 // waveform); `mountAudioThumbs` swaps in `audioThumbSvg` drawn from measured peaks when
 // they arrive. The shape is derived from the asset id so a given track always looks the
-// same and a grid of 52 doesn't read as 52 identical tiles — the id picks the FORM only,
+// same and a grid of 52 doesn't read as 52 identical tiles - the id picks the FORM only,
 // never the data.
 //
 // The wrapper span carries the id (the observer's handle) and reuses
 // .asset-picker-thumb-motion, whose `> svg { width:100%; height:100% }` rule already sizes
-// an inline SVG into the 100px thumb box — the same job it does for a Lottie player.
+// an inline SVG into the 100px thumb box - the same job it does for a Lottie player.
 function audioThumb(ref: AssetRef, className: string): string {
   const label = String(ref.meta?.name ?? ref.id);
   return `<span class="${className} asset-picker-thumb-motion asset-picker-thumb-audio" data-audio-thumb="${escapeHtml(ref.id)}" data-audio-fp="${escapeHtml(peaksFingerprint(ref))}">`
@@ -2206,13 +2211,13 @@ function audioThumb(ref: AssetRef, className: string): string {
  * what the user actually looks at.
  *
  * Two gates, because decoding is the expensive part and a catalog holds 52 tracks:
- *   - ON SCREEN — an IntersectionObserver, like autoplayLottieThumbs. This is the gate
+ *   - ON SCREEN - an IntersectionObserver, like autoplayLottieThumbs. This is the gate
  *     audio-peaks CANNOT provide: its own queue, once a tile has asked, will eventually
  *     decode everything asked for, so a fast scroll past 52 tiles would still decode 52
- *     songs — just later. Leaving the viewport pulls a tile back OUT of the queue.
- *   - BOUNDED PARALLELISM — MAX_CONCURRENT_DERIVES workers drain that queue, matching
+ *     songs - just later. Leaving the viewport pulls a tile back OUT of the queue.
+ *   - BOUNDED PARALLELISM - MAX_CONCURRENT_DERIVES workers drain that queue, matching
  *     audio-peaks' own ceiling so a grid fills in visibly without ever holding more than
- *     that many decoded files. Cached peaks skip the queue entirely — no decode, nothing
+ *     that many decoded files. Cached peaks skip the queue entirely - no decode, nothing
  *     to bound.
  *
  * `destroy()` is mandatory before a re-render or on close: it disconnects the observer and
@@ -2221,7 +2226,7 @@ function audioThumb(ref: AssetRef, className: string): string {
  *
  * Exported because the catalog grid needs exactly this behaviour, and it already pulls this
  * module in (lib/upload-dropzone.ts imports storeUserUpload from here), so sharing it costs
- * no extra chunk — whereas a second copy would be a second thing to keep correct.
+ * no extra chunk - whereas a second copy would be a second thing to keep correct.
  */
 export function mountAudioThumbs(
   root: Element,
@@ -2234,7 +2239,7 @@ export function mountAudioThumbs(
   const done = new WeakSet<HTMLElement>();
   let workers = 0;
 
-  // The brand's colour pool, resolved ONCE per mount and shared by every tile — a
+  // The brand's colour pool, resolved ONCE per mount and shared by every tile - a
   // per-tile resolve would re-read the tokens doc dozens of times for one grid. Starts
   // empty so the first paints are simply uncoloured (inheriting currentColor, exactly
   // as before) rather than deferred; the fill lands well within a scroll.
@@ -2255,7 +2260,7 @@ export function mountAudioThumbs(
     }
   };
 
-  /** Which tile surface we are actually on, MEASURED rather than named — the theme
+  /** Which tile surface we are actually on, MEASURED rather than named - the theme
    *  attribute has three values and a `brand` theme can be either. */
   const measuredTheme = (): ThumbTheme => {
     try {
@@ -2276,19 +2281,19 @@ export function mountAudioThumbs(
   void (async () => {
     // The pool is theme-dependent: a colour is judged against the surface it will
     // actually sit on, so the light and dark pools legitimately differ.
-    // The app has THREE themes — light, dark and `brand` — so `=== 'dark'` was wrong: it
+    // The app has THREE themes - light, dark and `brand` - so `=== 'dark'` was wrong: it
     // classified a brand theme (usually dark) as light, then chose colours legible on
     // WHITE, i.e. near-black maroons on a dark tile. Measure the real surface instead of
     // inferring it from a name; a future theme then needs no change here.
     const theme = measuredTheme();
-    // `host` is `unknown` here on purpose — this helper is called from three views with
+    // `host` is `unknown` here on purpose - this helper is called from three views with
     // three different host shapes. Both callees take a narrow structural slice and
     // feature-detect what they read, so the assertion asserts nothing they do not check.
     const h = host as Parameters<typeof livePalette>[0] & Parameters<typeof audioThumbPool>[1];
     try { pool = audioThumbPool(await livePalette(h), h, theme); } catch { pool = []; }
     try { covers = loadAudioCovers(await (h as { profile?: { get(): Promise<unknown> } }).profile?.get() as never); } catch { covers = new Map(); }
     // The pool arrives AFTER the first tiles have painted, and a tile painted without it
-    // silently inherits `--muted-foreground` — the grey tiles sitting among coloured ones.
+    // silently inherits `--muted-foreground` - the grey tiles sitting among coloured ones.
     // Repaint what already landed rather than leaving a half-coloured grid.
     repaintPainted();
   })();
@@ -2304,9 +2309,9 @@ export function mountAudioThumbs(
     // common case is untouched.
     const look = resolveAudioLook(id, pool, covers);
     if (look.ink) el.style.setProperty('--audio-thumb-ink', look.ink.hex);
-    // A MilkDrop cover is the one look that cannot be drawn here — it needs a GL context
+    // A MilkDrop cover is the one look that cannot be drawn here - it needs a GL context
     // and a grid cannot hold one per tile. Its BAKE is fetched instead; until that lands
-    // (or if it never does — no WebGL2, an evicted cache, a fresh device) the tile shows
+    // (or if it never does - no WebGL2, an evicted cache, a fresh device) the tile shows
     // the asset's generated waveform, which is a real cover rather than a blank box.
     el.innerHTML = audioThumbSvg(peaks, {
       shape: look.shape,
@@ -2317,7 +2322,7 @@ export function mountAudioThumbs(
   };
 
   /** Swap in a MilkDrop cover's baked image, if one has been rendered for this asset,
-   *  preset and brand. A pure cache read — never renders, so a grid can never trigger a
+   *  preset and brand. A pure cache read - never renders, so a grid can never trigger a
    *  GL mount. Missing simply means the waveform underneath stays. */
   const paintBakedCover = async (el: HTMLElement, id: string, presetId: string): Promise<void> => {
     try {
@@ -2375,7 +2380,7 @@ export function mountAudioThumbs(
 
   const els = Array.from(root.querySelectorAll<HTMLElement>('[data-audio-thumb]'));
   if (typeof IntersectionObserver !== 'function') {
-    // No observer (jsdom, ancient browsers): still never decode a whole grid — read the
+    // No observer (jsdom, ancient browsers): still never decode a whole grid - read the
     // cache for every tile, but leave uncached ones on the glyph rather than eagerly
     // decoding 52 songs nobody asked for.
     for (const el of els) {
@@ -2391,7 +2396,7 @@ export function mountAudioThumbs(
       if (e.isIntersecting) consider(el);
       else {
         const i = queue.indexOf(el);
-        if (i >= 0) queue.splice(i, 1);   // scrolled away before its turn — don't decode it
+        if (i >= 0) queue.splice(i, 1);   // scrolled away before its turn - don't decode it
       }
     }
   }, { rootMargin: '200px' });
@@ -2405,19 +2410,19 @@ export function mountAudioThumbs(
   };
 }
 
-// The hover/focus-revealed "Upscale" affordance for a still-raster card — a SIBLING
+// The hover/focus-revealed "Upscale" affordance for a still-raster card - a SIBLING
 // of the pick button (never nested; nested buttons are invalid HTML and break the
 // delegated click handler, same reasoning as the user card's delete button), carrying
 // data-upscale-id for the body delegation. Empty string for anything that shouldn't
 // offer it: the host has no on-device upscaler (upscaleEnabled), or the ref isn't a
-// still raster — vector/video/lottie/audio, or an animated raster (gif/apng/animated
+// still raster - vector/video/lottie/audio, or an animated raster (gif/apng/animated
 // webp) whose motion a single-frame upscale would silently flatten.
 function upscaleButton(ref: AssetRef, name: string): string {
   if (!upscaleEnabled || ref.type !== 'raster' || ref.meta?.animated) return '';
   return `<button type="button" class="asset-picker-card-upscale" data-upscale-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Upscale'))}" aria-label="${escapeHtml(tRaw('Upscale {name}', { name }))}">${icon('aiSpark', { size: 14 })}</button>`;
 }
 
-// The hover/focus-revealed "Remove background" affordance — same rules as
+// The hover/focus-revealed "Remove background" affordance - same rules as
 // upscaleButton (a sibling, still-raster only, hidden for animated rasters whose
 // per-frame alpha a single cut-out can't represent), gated on a staged matte model.
 function matteButton(ref: AssetRef, name: string): string {
@@ -2428,10 +2433,10 @@ function matteButton(ref: AssetRef, name: string): string {
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
-  // A user-uploaded lottie's url is JSON (no still poster), so an <img> would 404 — show
+  // A user-uploaded lottie's url is JSON (no still poster), so an <img> would 404 - show
   // a play glyph, matching userCard. (Catalog lotties resolve to a poster url upstream.)
   // A video plays itself in a muted looping <video>; audio draws its own waveform
-  // (audioThumb — an <img> at an .mp3 is the broken-image icon); everything else is an
+  // (audioThumb - an <img> at an .mp3 is the broken-image icon); everything else is an
   // <img> (gif/apng/animated-webp animate natively there).
   const thumb = isPlaceholder
     ? `<div class="asset-picker-thumb asset-picker-thumb-stub">${escapeHtml(ref.type)}</div>`
@@ -2472,10 +2477,10 @@ function card(ref: AssetRef): string {
 
 // A tool the user can render to an image. Preview-forward like the gallery: show the
 // tool's rendered preview thumbnail, falling back to its inline icon. The `preview` is
-// a build artifact (catalog/previews/ — committed, but absent on a fresh checkout or
-// after index drift) that can still 404 — so the icon is always rendered too, revealed
+// a build artifact (catalog/previews/ - committed, but absent on a fresh checkout or
+// after index drift) that can still 404 - so the icon is always rendered too, revealed
 // by a capture-phase error handler (see render). The index ships the icon as trusted
-// inline SVG (built from tools/<id>/icon.svg) — inlined so it themes via currentColor.
+// inline SVG (built from tools/<id>/icon.svg) - inlined so it themes via currentColor.
 function toolCard(t: PickerTool, quickAdd = false): string {
   const hasPreview = Boolean(t.preview);
   // The preview slot is a fixed 84px-tall box (picker.css). A card.html banner renders in
@@ -2488,7 +2493,7 @@ function toolCard(t: PickerTool, quickAdd = false): string {
     : 'width:100%;height:100%';
   // A `<div>` wrapper (not a bare <button>) when the quick-add affordance is present:
   // the "+ Add" control is a SIBLING of the open-primary, never nested (nested buttons
-  // are invalid HTML and break the delegated handler — same reasoning as userCard).
+  // are invalid HTML and break the delegated handler - same reasoning as userCard).
   const openBtn = `<button type="button" class="asset-picker-card asset-picker-toolitem${hasPreview ? '' : ' no-preview'}${quickAdd ? ' asset-picker-toolitem--collect' : ''}" data-tool-id="${escapeHtml(t.id)}" title="${escapeHtml(t.description ?? t.name)}">
       ${hasPreview ? previewMedia(t.preview!, 'asset-picker-toolitem-preview', iframeSize) : ''}
       <span class="asset-picker-toolitem-icon" aria-hidden="true">${t.icon ?? ''}</span>
@@ -2532,7 +2537,7 @@ function sessionThumb(thumb: string | null, iconSvg: string | null): string {
 
 // m:ss for a clip length in milliseconds, rolling over to h:mm:ss past an hour (the
 // audio cap allows a ~60-minute upload, and "62:30" reads as broken or as 62 seconds).
-// Rounds to the nearest second — the badge has no room for sub-second precision, and
+// Rounds to the nearest second - the badge has no room for sub-second precision, and
 // neither ffprobe-style tools nor a user glancing at a thumbnail need it.
 function fmtDur(ms: number): string {
   const totalSec = Math.round(ms / 1000);
@@ -2544,16 +2549,16 @@ function fmtDur(ms: number): string {
 }
 
 function formatBadge(ref: AssetRef): string {
-  // Generative-AI provenance badge — a sparkle-circle top-left (the format badge owns
+  // Generative-AI provenance badge - a sparkle-circle top-left (the format badge owns
   // bottom-right). Authored on catalog entries; auto-detected on uploads via C2PA.
   const ai = assetAiKind(ref);
   const aiBadge = ai ? genAiPill(ai, true) : '';
-  // Playback length, shown in the same corner badge as the format — video, lottie
+  // Playback length, shown in the same corner badge as the format - video, lottie
   // and audio only, and only when a duration actually resolved at ingest time.
   const durMs = typeof ref.meta?.durationMs === 'number' && Number.isFinite(ref.meta.durationMs) && ref.meta.durationMs > 0
     ? ref.meta.durationMs : undefined;
   const durSuffix = durMs != null ? ` · ${fmtDur(durMs)}` : '';
-  // A lottie card thumbnails as its static poster — badge the motion, not the
+  // A lottie card thumbnails as its static poster - badge the motion, not the
   // misleading underlying file format.
   if (ref.type === 'lottie') return `<span class="asset-picker-fmt">▶ LOTTIE${durSuffix}</span>${aiBadge}`;
   // Video and animated rasters (gif/apng/animated-webp) get a play glyph so their
@@ -2563,7 +2568,7 @@ function formatBadge(ref: AssetRef): string {
   return (ref.format ? `<span class="asset-picker-fmt">${escapeHtml(String(ref.format).toUpperCase())}${durSuffix}</span>` : '') + aiBadge;
 }
 
-// A user image: a pick button plus a delete affordance (siblings, not nested —
+// A user image: a pick button plus a delete affordance (siblings, not nested - 
 // nested buttons are invalid HTML and break the delegated click handler).
 function userCard(ref: AssetRef): string {
   const name = ref.meta?.name ?? t('Image');
@@ -2600,7 +2605,7 @@ function userCard(ref: AssetRef): string {
 /**
  * Make an uploaded SVG scale by its `viewBox`: strip the root `width`/`height` so it renders
  * at the display size (crisp at any zoom, in any container) instead of pinning a fixed
- * intrinsic size — an icon authored at `width="10.58"` was otherwise a ~11px bitmap that any
+ * intrinsic size - an icon authored at `width="10.58"` was otherwise a ~11px bitmap that any
  * larger render just magnified. If there's no `viewBox` but numeric dimensions exist, we
  * synthesise one first so the art is never left sizeless (which collapses to the 300×150
  * default). An SVG with neither a viewBox nor derivable dimensions is returned untouched.
@@ -2611,7 +2616,7 @@ function normalizeSvg(svgText: string): { svg: string; width?: number; height?: 
     const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
     const svg = doc.documentElement;
     if (!svg || svg.tagName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return { svg: svgText };
-    // Plain number, optionally with an absolute unit — rejects `%`, `calc()`, `em`, etc.
+    // Plain number, optionally with an absolute unit - rejects `%`, `calc()`, `em`, etc.
     const num = (v: string | null): number | null => {
       const m = v && /^\s*(-?[\d.]+)\s*(px|pt|pc|mm|cm|in|q)?\s*$/i.exec(v);
       return m ? parseFloat(m[1]!) : null;
@@ -2638,7 +2643,7 @@ async function sanitizeSvgFile(file: Blob): Promise<{ blob: Blob; width?: number
   let text = '';
   try {
     text = await file.text();
-    // Sanitise to a DOM NODE, then serialise with XMLSerializer — NOT DOMPurify's own
+    // Sanitise to a DOM NODE, then serialise with XMLSerializer - NOT DOMPurify's own
     // string output. DOMPurify's default HTML serialiser turns a literal U+00A0
     // (non-breaking space, common in a tool-exported licence/caption line) into the HTML
     // named entity `&nbsp;`, which is undefined in XML; normalizeSvg's strict
@@ -2646,8 +2651,8 @@ async function sanitizeSvgFile(file: Blob): Promise<{ blob: Blob; width?: number
     // whole SVG stores blank. XMLSerializer keeps U+00A0 a literal character, so the
     // markup stays well-formed XML. (Switching DOMPurify's parser to
     // application/xhtml+xml also avoids the entity, but its strict XML parse silently
-    // drops content from some real SVGs — measured: it blanked a clip-path-heavy colour
-    // atlas — so the DOM+XMLSerializer round-trip under the default HTML parser is the
+    // drops content from some real SVGs - measured: it blanked a clip-path-heavy colour
+    // atlas - so the DOM+XMLSerializer round-trip under the default HTML parser is the
     // combination that renders every file.)
     const dom = DOMPurify.sanitize(text, { USE_PROFILES: { svg: true, svgFilters: true }, RETURN_DOM: true }) as unknown as ParentNode;
     const svgEl = dom.querySelector('svg');
@@ -2662,17 +2667,17 @@ async function sanitizeSvgFile(file: Blob): Promise<{ blob: Blob; width?: number
   } catch { /* fall through */ }
   // Fallback for a valid SVG that DOMPurify threw on or emptied: re-wrap the ORIGINAL
   // text with the SVG mime so it still renders. The previous `return { blob: file }`
-  // kept the source blob's blank/octet-stream mime — and an <img>/object-URL refuses to
+  // kept the source blob's blank/octet-stream mime - and an <img>/object-URL refuses to
   // render SVG bytes served as octet-stream, which left every such upload a broken image
   // (only the ones DOMPurify passed cleanly showed up). Scripts in an SVG are inert under
   // <img>, which is how assets render, so the un-sanitised fallback is no worse than the
-  // blob it replaces — it just renders.
+  // blob it replaces - it just renders.
   const raw = text || await file.text().catch(() => '');
   if (/<svg[\s>]/i.test(raw)) {
     const { svg, width, height } = normalizeSvg(raw);
     return { blob: new Blob([svg], { type: SVG_MIME }), width, height };
   }
-  return { blob: file }; // genuinely not an SVG — hand back the bytes untouched
+  return { blob: file }; // genuinely not an SVG - hand back the bytes untouched
 }
 
 /**
@@ -2681,7 +2686,7 @@ async function sanitizeSvgFile(file: Blob): Promise<{ blob: Blob; width?: number
  * A live <video> preview of the user's camera with a Capture button; the captured
  * frame becomes a raster user asset via the SAME storeUserUpload path as an upload
  * (downscale + on-device store), so the rest of the app treats it identically. This
- * is a pure shell affordance — no engine/bridge/runtime involvement — which is why
+ * is a pure shell affordance - no engine/bridge/runtime involvement - which is why
  * "webcam as a still image" needs no architectural change. The camera stream is torn
  * down on every exit path (capture, cancel, Escape, backdrop, error) so no track
  * outlives the dialog. Pixels never leave the device.
@@ -2727,7 +2732,7 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
     const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
     document.addEventListener('keydown', onKey);
-    // A route change cancels the sheet like Escape/backdrop — camera torn down, the
+    // A route change cancels the sheet like Escape/backdrop - camera torn down, the
     // trap's inert released (the picker beneath nav-closes on the same events).
     const onNav = (): void => done(null);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
@@ -2735,7 +2740,7 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
     overlay.querySelector('.webcam-capture-close')?.addEventListener('click', () => done(null));
     overlay.querySelector('.webcam-capture-cancel')?.addEventListener('click', () => done(null));
     // Contain focus over the (already-modal) picker; Escape is handled above. Nested
-    // traps stack — this inerts the picker beneath while the camera sheet is open.
+    // traps stack - this inerts the picker beneath while the camera sheet is open.
     trap = trapFocus(overlay, { initialFocus: overlay.querySelector<HTMLElement>('.webcam-capture-cancel') });
 
     const showError = (msg: string): void => {
@@ -2787,7 +2792,7 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
 // A .lottie is a ZIP (dotLottie): manifest.json + animations/<id>.json (+ optional
 // images/). lottie-web only understands raw Bodymovin JSON, so unzip, pull the first
 // animation out, and inline any zip-embedded images as data URIs so the stored JSON is
-// self-contained. fflate (the shell's zip lib) is dynamic-imported — only paid for when
+// self-contained. fflate (the shell's zip lib) is dynamic-imported - only paid for when
 // someone actually uploads a .lottie. Returns the animation JSON as text.
 async function dotLottieToJson(file: File): Promise<string> {
   const { unzipSync, strFromU8 } = await import('fflate');
@@ -2810,7 +2815,7 @@ async function dotLottieToJson(file: File): Promise<string> {
   if (!animPath) throw new Error(t('That .lottie file has no animation inside.'));
   const data = JSON.parse(strFromU8(entries[animPath]!)) as { assets?: Array<Record<string, unknown>> };
   // Inline embedded images (assets with e:0 that reference a file inside the zip) so
-  // the animation renders once stored — otherwise those image refs would 404.
+  // the animation renders once stored - otherwise those image refs would 404.
   if (Array.isArray(data.assets)) {
     for (const a of data.assets) {
       if (!a || typeof a.p !== 'string' || a.e === 1) continue;
@@ -2831,7 +2836,7 @@ async function dotLottieToJson(file: File): Promise<string> {
   return JSON.stringify(data);
 }
 
-// Base64 a byte array in chunks — String.fromCharCode(...bigArray) overflows the call
+// Base64 a byte array in chunks - String.fromCharCode(...bigArray) overflows the call
 // stack on large images, so feed it fixed-size slices.
 function u8ToBase64(u8: Uint8Array): string {
   let bin = '';
@@ -2840,7 +2845,7 @@ function u8ToBase64(u8: Uint8Array): string {
   return btoa(bin);
 }
 
-// Verbatim uploads — animated rasters (gif/apng/animated-webp) and video — bypass
+// Verbatim uploads - animated rasters (gif/apng/animated-webp) and video - bypass
 // downscaleRaster's implicit shrink (re-encoding would flatten the animation), so
 // they need an EXPLICIT byte ceiling here or one large clip/gif could blow the
 // IndexedDB quota. "Very small video" by design; a friendly error asks the user to
@@ -2848,18 +2853,18 @@ function u8ToBase64(u8: Uint8Array): string {
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;         // 15 MB
 const MAX_ANIMATED_RASTER_BYTES = 20 * 1024 * 1024; // 20 MB
 // Audio is stored verbatim too (no re-encode), so it needs its own ceiling. A little
-// roomier than video — a few minutes of compressed music (opus/mp3/m4a) sits well
+// roomier than video - a few minutes of compressed music (opus/mp3/m4a) sits well
 // under this; an uncompressed wav/flac can blow past it, and the friendly error asks
 // the user to compress rather than the store throwing QuotaExceededError mid-write.
 const MAX_AUDIO_BYTES = 30 * 1024 * 1024;         // 30 MB
-const MAX_DATA_BYTES = 16 * 1024 * 1024;          // 16 MB — a spreadsheet/CSV data asset
+const MAX_DATA_BYTES = 16 * 1024 * 1024;          // 16 MB - a spreadsheet/CSV data asset
 // Credential preservation reads the ORIGINAL bytes whole (the only branch that
-// does — rasters otherwise stream through createImageBitmap without a JS-heap
+// does - rasters otherwise stream through createImageBitmap without a JS-heap
 // copy). Skip the scan for outsized originals rather than buffer them: a real
 // credentialed asset is nowhere near this, and preservation is best-effort.
 const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024; // 64 MB
-// Only a genuinely HUGE raster — a heavy file, or well past 2× the resize target on its
-// longest edge — prompts the keep/resize decision. A merely-large "good size" image is
+// Only a genuinely HUGE raster - a heavy file, or well past 2× the resize target on its
+// longest edge - prompts the keep/resize decision. A merely-large "good size" image is
 // stored verbatim without asking (see storeUserUpload's raster branch).
 const HUGE_UPLOAD_BYTES = 40 * 1024 * 1024;         // 40 MB
 
@@ -2893,16 +2898,16 @@ function videoFormatOf(file: File): string {
 const MEDIA_PROBE_MS = 1500;
 
 // Probe a video's or audio file's real playback length in ms. Loads only METADATA
-// into a detached element on a blob URL — never the whole file into memory twice,
+// into a detached element on a blob URL - never the whole file into memory twice,
 // and (for audio) never a decode: decodeAudioData would expand a 30 MB Opus podcast
 // to gigabytes of Float32 PCM (2 ch × 48 kHz × 7500 s × 4 B ≈ 2.9 GB) to learn one
 // number, which is an OOM tab crash on mobile. A MediaRecorder-produced WebM reports
-// duration=Infinity until it's seeked to the end — the same force-seek workaround
+// duration=Infinity until it's seeked to the end - the same force-seek workaround
 // export.ts uses for its composited-body duration probe (see stitchTakes's
 // `play.currentTime = 1e7` + `ontimeupdate` wait), attempted only when the metadata
 // load actually succeeded (an undecodable container would otherwise burn the whole
 // seek budget on an element that will never load). Never throws; resolves undefined
-// on any failure so a bad probe can't block the upload — element construction
+// on any failure so a bad probe can't block the upload - element construction
 // included. Always revokes the object URL and detaches the element on every path.
 async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promise<number | undefined> {
   let url: string | undefined;
@@ -2945,7 +2950,7 @@ async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promis
  * throws, and the extra guard here means even a broken import can't turn a
  * successful upload into a failed one. The measured duration/dimensions from the
  * ingest probe ride along as a hint so the common case skips a second container
- * walk. A skipped or failed proxy is invisible — the timeline scrubs the original.
+ * walk. A skipped or failed proxy is invisible - the timeline scrubs the original.
  */
 function scheduleProxyBuild(
   assetId: string,
@@ -2976,9 +2981,9 @@ const PROXY_IDLE_TIMEOUT_MS = 5000;
 export async function storeUserUpload(host: PickerHost, file: File): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
-  // same lookup path as library assets — uniform from the tool's POV.
+  // same lookup path as library assets - uniform from the tool's POV.
   const id = `user/upload/${Date.now()}-${file.name.replace(/[^a-z0-9.-]/gi, '_')}`;
-  // A Lottie is JSON, not an image — accepted for motion, stored verbatim (no
+  // A Lottie is JSON, not an image - accepted for motion, stored verbatim (no
   // raster resize, which would choke on non-image bytes). Both the raw Bodymovin
   // JSON and dotLottie (.lottie, a zip) land here; the latter is unwrapped to JSON.
   const isDotLottie = /\.lottie$/i.test(file.name);
@@ -2988,20 +2993,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // into a tiny bitmap. As a vector it's sanitised + normalised to a viewBox-only SVG that
   // scales crisply everywhere (sanitizeSvgFile below).
   const isVector = !isLottie && (file.type.includes('svg') || /\.svg$/i.test(file.name));
-  // A short video (webm/mp4/mov) — kept for motion. Stored verbatim (no raster
+  // A short video (webm/mp4/mov) - kept for motion. Stored verbatim (no raster
   // re-encode, which can't handle a video container at all). `let` because the byte
   // backstop below can promote a mislabelled clip to video.
   let isVideo = !isLottie && !isVector && (/^video\//i.test(file.type) || /\.(mp4|m4v|mov|webm)$/i.test(file.name));
   // Music the browser can't decode from an <audio> element, handled before the
   // verbatim-audio test below. MIDI is CONVERTED on the way in: a Standard MIDI File
-  // becomes a tiny ZzFXM song (engine midiToZzfxm) stored as a format:'zzfxm' asset —
+  // becomes a tiny ZzFXM song (engine midiToZzfxm) stored as a format:'zzfxm' asset - 
   // the same synthesised-on-device path as the catalog's generated tracks, so it
   // plays and previews everywhere. A .mid commonly arrives as audio/midi, which would
   // otherwise pass the generic audio test, so it's detected first (ext, MIME, or the
   // 'MThd' header magic) and excluded from isAudio.
   const head4 = new Uint8Array(await file.slice(0, 4).arrayBuffer());
   // Layered bitmaps (Photoshop '8BPS' / GIMP 'gimp xcf ') reaching THIS funnel
-  // (an asset picker, a dropToAdd zone — the front-door drop router offers the
+  // (an asset picker, a dropToAdd zone - the front-door drop router offers the
   // layered journeys itself) store as their FLATTENED composite, so a PSD works
   // anywhere an image does. Delegated to psd-import.ts's lazy chunk, which
   // re-enters this function with an ordinary PNG.
@@ -3060,34 +3065,34 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     && (/\.midi?$/i.test(file.name) || /^audio\/(x-)?midi?$/i.test(file.type)
         || (head4[0] === 0x4d && head4[1] === 0x54 && head4[2] === 0x68 && head4[3] === 0x64)); // 'MThd'
   // Tracker modules (.mod/.xm/.it/.s3m/…) are tiny sample-based songs no browser
-  // <audio> can decode — but libopenmpt (WASM) renders them to PCM for the player and
+  // <audio> can decode - but libopenmpt (WASM) renders them to PCM for the player and
   // video exports (mod-render.ts), so they're stored VERBATIM as a format:'mod'
   // type:'audio' asset (the decoder sniffs the real format from the bytes; the tiny
   // original is kept, not a bloated transcode). Detected before isAudio because a .mod
   // can arrive as audio/x-mod, which would otherwise match the generic audio test.
   const isModule = !isLottie && !isVector && !isVideo && !isMidi
     && (/\.(mod|xm|it|s3m|stm|mtm)$/i.test(file.name) || /audio\/(x-)?(mod|it|s3m|xm)/i.test(file.type));
-  // The user's own music (opus/mp3/wav/ogg/m4a/aac/flac) — stored verbatim as a
+  // The user's own music (opus/mp3/wav/ogg/m4a/aac/flac) - stored verbatim as a
   // type:'audio' asset (a canvas re-encode can't touch audio bytes). Detected by
   // MIME or extension; .oga/.ogg both map to ogg. Checked after video so a container
-  // MIME collision (audio/mp4 vs video/mp4) can't misroute — .m4a carries audio/mp4
+  // MIME collision (audio/mp4 vs video/mp4) can't misroute - .m4a carries audio/mp4
   // but its extension isn't a video one, so the isVideo test above already excluded it.
   const isAudio = !isLottie && !isVector && !isVideo && !isMidi && !isModule
     && (/^audio\//i.test(file.type) || /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/i.test(file.name));
 
-  // A tabular DATA file (.xlsx/.csv/.tsv) — stored VERBATIM as a type:'data' asset so a
+  // A tabular DATA file (.xlsx/.csv/.tsv) - stored VERBATIM as a type:'data' asset so a
   // spreadsheet lives in the catalogue and drops into a tool's data input later (plan 87,
   // the "Add data → From your library" source). Kept as-is (no raster/text processing);
-  // .json is deliberately NOT claimed here — it is ambiguous with a Lottie animation and
+  // .json is deliberately NOT claimed here - it is ambiguous with a Lottie animation and
   // stays on the Lottie path. Detected after every media test so a real media file wins.
   const isData = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio
     && /\.(xlsx|csv|tsv)$/i.test(file.name);
 
-  // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video —
+  // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video - 
   // both from the HEADER BYTES, since an animated raster shares its MIME with the
   // still form and an OS can hand over a blank/wrong type or extension. The magic
   // bytes are the source of truth (that is the whole reason to byte-sniff); MIME/name
-  // only widen which files we bother to read. (Audio is verbatim — nothing to sniff.)
+  // only widen which files we bother to read. (Audio is verbatim - nothing to sniff.)
   let animatedKind: 'gif' | 'apng' | 'webp' | null = null;
   if (!isLottie && !isVector && !isAudio && !isMidi && !isModule && !isData) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
@@ -3117,7 +3122,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   let format = extFromMime(file.type);
   let width: number | undefined, height: number | undefined;
   let animated = false;
-  // Playback length, ms — video/lottie/audio only, resolved at ingest so the picker
+  // Playback length, ms - video/lottie/audio only, resolved at ingest so the picker
   // badge never has to re-probe a stored blob. `fps` accompanies a lottie's duration
   // (its own frame rate, not a video/audio concept). Absent (not 0) on failure.
   let durationMs: number | undefined, fps: number | undefined;
@@ -3139,7 +3144,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     format = 'json';
     if (typeof data!.w === 'number') width = data!.w;
     if (typeof data!.h === 'number') height = data!.h;
-    // op/ip are frame numbers, fr is frames-per-second — a Bodymovin/Lottie standard.
+    // op/ip are frame numbers, fr is frames-per-second - a Bodymovin/Lottie standard.
     const op = data!.op, ip = data!.ip, fr = data!.fr;
     if (typeof op === 'number' && typeof ip === 'number' && typeof fr === 'number'
         && Number.isFinite(op) && Number.isFinite(ip) && Number.isFinite(fr) && fr > 0) {
@@ -3147,15 +3152,15 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       if (ms > 0) { durationMs = ms; fps = fr; }
     }
   } else if (isVector) {
-    // Vectors are resolution-independent — no raster resize. But an uploaded SVG
+    // Vectors are resolution-independent - no raster resize. But an uploaded SVG
     // can carry <script>, on*= handlers or external refs, so sanitize on ingest
-    // (belt-and-suspenders — assets render via <img>/object-URL, where scripts
+    // (belt-and-suspenders - assets render via <img>/object-URL, where scripts
     // are already inert). sanitizeSvgFile also normalises to a viewBox-only SVG so
     // it scales crisply everywhere, and hands back the intrinsic aspect for metadata.
     const cleaned = await sanitizeSvgFile(file);
     blob = cleaned.blob;
     // Every other branch sets `format`; this one must too. The default above is
-    // extFromMime(file.type), which returns 'bin' for a blank/octet-stream MIME — and an
+    // extFromMime(file.type), which returns 'bin' for a blank/octet-stream MIME - and an
     // SVG dragged in (or exploded from a zip, or named .bin) routinely has no svg MIME,
     // so it was stored as a "BIN" vector: the badge said BIN and renameExt produced a
     // ".bin" filename, even though the bytes are a sanitised SVG (the id kept .svg).
@@ -3181,7 +3186,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       : await probeMediaDurationMs(file, 'video');
   } else if (isMidi) {
     // Convert the SMF to a ZzFXM song on device and store the JSON (a few KB) as a
-    // format:'zzfxm' audio asset — the browser can't play raw MIDI, but it renders
+    // format:'zzfxm' audio asset - the browser can't play raw MIDI, but it renders
     // ZzFXM to PCM (zzfxm.ts) for the player and the catalog preview. A file with no
     // notes / an unsupported time division throws with a user-ready message.
     assertVerbatimSize(file, MAX_AUDIO_BYTES, t('MIDI file'));
@@ -3196,9 +3201,9 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     format = 'zzfxm';
   } else if (isModule) {
     // Verbatim: a tracker module is already tiny (sample-based song data) and no
-    // canvas/audio re-encode applies — libopenmpt decodes the original bytes on demand
+    // canvas/audio re-encode applies - libopenmpt decodes the original bytes on demand
     // (mod-render.ts). Stored as format:'mod' so the player and video exporter route it
-    // through the WASM decoder. No dimensions — audio has none.
+    // through the WASM decoder. No dimensions - audio has none.
     assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
     // Keep the real tracker extension (mod/xm/s3m/it/…) so the badge and filename stay
     // honest; libopenmpt sniffs the actual format from the bytes regardless. A
@@ -3207,20 +3212,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   } else if (isAudio) {
     // Verbatim: keep the original encoded bytes (there is no raster/canvas path for
     // audio). Bounded by an explicit cap since downscaleRaster's implicit shrink is
-    // skipped. No dimensions — audio has none.
+    // skipped. No dimensions - audio has none.
     assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
     format = audioFormatOf(file);
     durationMs = await probeMediaDurationMs(file, 'audio');
   } else if (isData) {
-    // Verbatim: a spreadsheet/CSV is kept byte-for-byte (an .xlsx is a zip — a canvas
+    // Verbatim: a spreadsheet/CSV is kept byte-for-byte (an .xlsx is a zip - a canvas
     // path would destroy it). It becomes a type:'data' catalogue asset the "Add data →
     // From your library" source reads back through readXlsx/parseDataRows. No dimensions.
     assertVerbatimSize(file, MAX_DATA_BYTES, t('data file'));
     format = /\.xlsx$/i.test(file.name) ? 'xlsx' : /\.tsv$/i.test(file.name) ? 'tsv' : 'csv';
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
-    // to a single frame, so store the original bytes. It stays type:'raster' — it
-    // animates natively in <img> and can fill any image slot — but is marked
+    // to a single frame, so store the original bytes. It stays type:'raster' - it
+    // animates natively in <img> and can fill any image slot - but is marked
     // `animated` so the UI badges the motion (and export knows it flattens to a still).
     assertVerbatimSize(file, MAX_ANIMATED_RASTER_BYTES, t('animation'));
     animated = true;
@@ -3232,20 +3237,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // keep theirs too). The "strip metadata on upload" flag (default OFF) governs OTHER metadata:
     // ON → scrub EXIF/XMP/GPS (in place for png/jpeg, preserving any C2PA store; via re-encode
     // for other formats). OFF → keep the bytes exactly. ONLY when an image is genuinely HUGE do
-    // we prompt + advise (Keep original / Resize) — giving the user the choice rather than
+    // we prompt + advise (Keep original / Resize) - giving the user the choice rather than
     // silently shrinking; resizing a credentialed original re-signs it as a c2pa.resized
     // derivative so its provenance still validates to its best extent.
     const raw = new Uint8Array(await file.arrayBuffer());
-    // Scan for a credential structurally (no size cap — a large signed image can still
+    // Scan for a credential structurally (no size cap - a large signed image can still
     // preserve its chain on resize; `raw` is already read, so this parse is ~free).
     const ex = extractC2paStore(raw);
-    // Opt-in privacy flag (default OFF — we keep uploads as they arrive unless asked).
+    // Opt-in privacy flag (default OFF - we keep uploads as they arrive unless asked).
     const stripMeta = isFlagOn(await host.profile.get(), STRIP_UPLOAD_META_FLAG);
     if (ex) format = ex.format;
     const dims = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number });
     const longest = Math.max(dims.width ?? 0, dims.height ?? 0);
     const isHuge = file.size > HUGE_UPLOAD_BYTES || longest > MAX_LONGEST_EDGE * 2;
-    // Keep the exact bytes — but honour the privacy flag: strip-on png/jpeg drops EXIF/XMP/GPS
+    // Keep the exact bytes - but honour the privacy flag: strip-on png/jpeg drops EXIF/XMP/GPS
     // IN PLACE (no quality loss, C2PA store preserved so a credential still verifies).
     const keepBytes = async (): Promise<void> => {
       let out: Uint8Array = raw;
@@ -3255,7 +3260,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
         } catch {
           // The in-place strip couldn't verify a clean result. A privacy opt-in must
           // never fall back to storing the original with its metadata intact, so
-          // re-encode instead — a guaranteed scrub, same as the not-strippable branch.
+          // re-encode instead - a guaranteed scrub, same as the not-strippable branch.
           await reencode();
           return;
         }
@@ -3265,7 +3270,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     };
     // Downscale + re-encode to WebP (the space-saver; also the only way to scrub metadata from a
     // format stripMetadata can't touch). Re-signs a CREDENTIALED original as a c2pa.resized
-    // derivative — the original rides in as a preserved ingredient — so a good credential still
+    // derivative - the original rides in as a preserved ingredient - so a good credential still
     // validates to its best extent instead of just breaking.
     const reencode = async (): Promise<void> => {
       const resized = await downscaleRaster(file);
@@ -3319,7 +3324,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
     // Depth honesty (plans/61-deeprichpixels.md Phase A): every editing/export
     // surface downstream of ingest is 8 bits per channel today, so a deeper
-    // source (a 16-bit PNG/TIFF) is flattened the first time it is drawn — even
+    // source (a 16-bit PNG/TIFF) is flattened the first time it is drawn - even
     // a verbatim-kept file. Same class of notice as profileHint's "no profile,
     // read as sRGB" caveat: say what happened, once, at ingest. Fire-and-forget
     // so the sniff can never delay or fail the upload it reports on.
@@ -3332,7 +3337,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     }).catch(() => { /* depthHint never throws by contract; belt and braces */ });
   }
 
-  // The depth of what we are actually STORING — the twin of the catalog label
+  // The depth of what we are actually STORING - the twin of the catalog label
   // scripts/checksum-assets.ts writes, so a user's own image carries the same
   // written origin a pack asset does (plans/61-deeprichpixels.md §10 item 6).
   //
@@ -3348,13 +3353,13 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     try { storedDepth = (await depthHint(blob)).bitsPerChannel; } catch { storedDepth = null; }
   }
 
-  // Content Credentials for the STORED bytes — the raw C2PA manifest store only (no
+  // Content Credentials for the STORED bytes - the raw C2PA manifest store only (no
   // pixels/EXIF), so `host.assets.credential(id)` can serve it as an export ingredient.
   // Prefer the stored blob's own credential: a verbatim/stripped copy keeps the original's
   // (the binding survives), and a resized upload was re-signed as a derivative that embeds a
-  // fresh one. Fall back to the ORIGINAL file when a plain re-encode dropped it — SVG
+  // fresh one. Fall back to the ORIGINAL file when a plain re-encode dropped it - SVG
   // sanitisation strips the in-file manifest, so the record still carries the original's
-  // chain. Lottie/audio/MIDI carry nothing to scan. Best-effort — absent = nothing to preserve.
+  // chain. Lottie/audio/MIDI carry nothing to scan. Best-effort - absent = nothing to preserve.
   let credential: Uint8Array | undefined, credentialFormat: string | undefined;
   if (!isLottie && !isAudio && !isMidi) {
     try {
@@ -3374,10 +3379,10 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     version: '1.0.0',
     ...(credential && credentialFormat ? { credential, credentialFormat } : {}),
     // Rasters get re-encoded (usually to WebP), so the original extension can
-    // lie — a "photo.jpg" now holds WebP bytes. Show a name whose extension
+    // lie - a "photo.jpg" now holds WebP bytes. Show a name whose extension
     // matches what we actually stored so the filename and format badge agree.
     // (Verbatim animated/video/audio keep their real bytes, so the name stays true.)
-    // Audio — verbatim uploads AND MIDI-converted songs — carries `tags` so it can
+    // Audio - verbatim uploads AND MIDI-converted songs - carries `tags` so it can
     // surface as focus music: `neurospicy` is the focus-set tag, `audio` groups it
     // with the music beds. (The player lists ANY user audio regardless, but the tags
     // keep grouping/search consistent with catalog audio.)
@@ -3385,7 +3390,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       name: renameExt(file.name, format),
       ...(animated ? { animated: true } : {}),
       ...(isAudio || isMidi || isModule ? { tags: ['audio', 'neurospicy'] } : {}),
-      // Playback length — video (probed, incl. the MediaRecorder-webm force-seek
+      // Playback length - video (probed, incl. the MediaRecorder-webm force-seek
       // workaround), lottie (derived from op/ip/fr), or pure-audio (decodeAudioData).
       // Never 0/bogus: only ever set when resolved to a finite positive value.
       ...(durationMs != null ? { durationMs } : {}),
@@ -3397,10 +3402,10 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   };
 
   // Reach into the underlying IDB the bridge owns. The bridge exposes a
-  // narrow upload helper rather than full DB access — keeps surface tight.
+  // narrow upload helper rather than full DB access - keeps surface tight.
   await host.assets._uploadUserAsset(record);
 
-  // A new audio track should appear in the Neurospicy player right away — drop its
+  // A new audio track should appear in the Neurospicy player right away - drop its
   // cached track list; a mounted player rebuilds via the 'lolly:neuro-tracks' event.
   if (record.type === 'audio') invalidateNeurospicyTracks();
 
@@ -3413,7 +3418,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // never be in front of the picker returning, and a failure is a silent no-op
   // (the timeline just scrubs the original, exactly as it did before phase 4).
   // The record is already durably written at this point, so the job can safely
-  // outlive this call. EXPORT NEVER SEES THIS — see lib/clip-proxy.ts's header.
+  // outlive this call. EXPORT NEVER SEES THIS - see lib/clip-proxy.ts's header.
   if (record.type === 'video') scheduleProxyBuild(id, blob, durationMs, width, height);
 
   // Re-resolve via the public API so we get a proper AssetRef with object URL.
@@ -3421,8 +3426,8 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 }
 
 /**
- * Persist a freshly-captured asset — the Record tool's camera take, or a screencap
- * screenshot (png, v1.54) — as a durable user asset, so a SAVED session restores it
+ * Persist a freshly-captured asset - the Record tool's camera take, or a screencap
+ * screenshot (png, v1.54) - as a durable user asset, so a SAVED session restores it
  * after a reload: a blob: URL dies on navigation and a bare `recording.mp4` id can't
  * be re-resolved.
  *
@@ -3431,32 +3436,32 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
  * raster/animation sniffing needed). The only guard is _uploadUserAsset's
  * device-quota check. The `user/recording/*` id namespace marks these as
  * tool-generated so a re-capture can retire the PREVIOUS one (prevId) without
- * touching an asset the user picked from their own library — it reads as
+ * touching an asset the user picked from their own library - it reads as
  * "tool-generated capture", which a screenshot is, so stills share it rather than
  * forking a parallel namespace the manage-uploads UI would have to learn.
  * `meta.bytes` rides along so the save/exit dialog can show the stored size
  * without a re-read.
  *
  * A still also stores its pixel dimensions: the AssetRef carries them to the tool,
- * whose crop maths needs the shot's true size (it has no other way to learn it — a
+ * whose crop maths needs the shot's true size (it has no other way to learn it - a
  * hook is DOM-free and can't measure an image).
  *
  * `credential` (the C2PA manifest store extracted from the just-signed asset) is
- * persisted on the record so host.assets.credential(id) serves it — `user/`
- * lookups read the stored store, not the bytes — letting the capture chain as an
+ * persisted on the record so host.assets.credential(id) serves it - `user/`
+ * lookups read the stored store, not the bytes - letting the capture chain as an
  * ingredient when composited, exactly like a credentialed upload.
  *
  * `opts.audio` marks an AUDIO-ONLY take (the timeline panel's record-in-place
  * voiceover): the container is still webm/mp4, but the asset's TYPE is 'audio', so
- * every consumer that dispatches on type — the picker's filters, a tool hook asking
- * "is this box a sound?" — reads it as a sound rather than a silent video.
+ * every consumer that dispatches on type - the picker's filters, a tool hook asking
+ * "is this box a sound?" - reads it as a sound rather than a silent video.
  *
  * `opts.durationMs` is the take's MEASURED length. It matters far more than it looks:
  * an audio asset has no element a caller can ask for `.duration`, so the timeline's
  * media clamp (trim, "fit to media", promote's default length) has nothing to work
  * with unless the length is stored here. It must come from the caller's own elapsed
- * measurement — a fresh MediaRecorder blob routinely reports duration Infinity/0, the
- * same lesson `data-clip-ms` records on the video side — so this function takes the
+ * measurement - a fresh MediaRecorder blob routinely reports duration Infinity/0, the
+ * same lesson `data-clip-ms` records on the video side - so this function takes the
  * number rather than probing the bytes. Ignored when it is not a finite positive.
  */
 export async function storeRecordingAsset(

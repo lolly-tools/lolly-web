@@ -2,7 +2,7 @@
 // Minimal client-navigation helper shared across the shell.
 //
 // A tool's canonical address-bar URL is the crawler-visible PATH form /t/<id> (so a
-// copied link carries the per-tool OG preview — see scripts/build-tool-og.ts). The
+// copied link carries the per-tool OG preview - see scripts/build-tool-og.ts). The
 // router (main.js parseRoute) understands both that and the legacy #/tool/<id> hash;
 // this helper keeps the one History-API write that leaves a tool in a single place.
 
@@ -13,7 +13,7 @@ import { noteLeavingHref } from './lib/back-nav.ts';
 // in-app links that leave a tool (→ gallery): the old hash-clearing trick
 // (location.hash = '') is a no-op against a path URL, so it wouldn't route.
 export function navigateTo(url: string): void {
-  noteLeavingHref(window.location.href); // pushState fires no event with an oldURL — capture it here
+  noteLeavingHref(window.location.href); // pushState fires no event with an oldURL - capture it here
   history.pushState(null, '', url);
   window.dispatchEvent(new Event('lolly:navigate'));
 }

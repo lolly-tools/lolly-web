@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * media.ts — tests for the PURE exported helpers only.
+ * media.ts - tests for the PURE exported helpers only.
  *
  * `stampComputedTransforms` is the commitStyles bypass behind the anim frame
  * source: commitStyles is known-flaky for `transform` on SVG targets (transform
- * is a presentation attribute there — Chrome can refuse the commit), and the
+ * is a presentation attribute there - Chrome can refuse the commit), and the
  * field symptom was a mark whose hue keyframes animated while its rotate
  * keyframes froze (Andy, 2026-08-10, repo-root icon.svg). The helper copies each
  * animated target's RESOLVED matrix (+ origin/box) onto the corresponding node
@@ -13,8 +13,8 @@
  * Driven with fake elements (tree order + identity + style.setProperty are the
  * whole contract) so the test needs no jsdom CSS support and cannot pass
  * vacuously through a css shim. NOT covered here (needs a real browser): the
- * bake loop itself — getAnimations/commitStyles/getComputedStyle over a live
- * SVG — and the ImageDecoder/video grab paths. Real-browser check: play the
+ * bake loop itself - getAnimations/commitStyles/getComputedStyle over a live
+ * SVG - and the ImageDecoder/video grab paths. Real-browser check: play the
  * animated icon through a filter and confirm the ROTATION animates, not just
  * the hue shift.
  *
@@ -41,7 +41,7 @@ function el(name: string, children: FakeEl[] = []): FakeEl {
       props: {},
       setProperty(k: string, v: string) { this.props[k] = v; },
     },
-    // Depth-first preorder over descendants — the same document order a real
+    // Depth-first preorder over descendants - the same document order a real
     // querySelectorAll('*') walks.
     querySelectorAll: () => {
       const out: FakeEl[] = [];
@@ -64,7 +64,7 @@ function twinTrees() {
 
 test('stamps the resolved matrix (+ origin/box) onto the tree-order twin of each target', () => {
   const { src, clone } = twinTrees();
-  const target = src.children[1]!; // second <g> — index 4 in [root, ...descendants]
+  const target = src.children[1]!; // second <g> - index 4 in [root, ...descendants]
   const styles = new Map<FakeEl, { transform: string; transformOrigin: string; transformBox: string }>([
     [target, { transform: 'matrix(0, 1, -1, 0, 0, 0)', transformOrigin: '64px 64px', transformBox: 'fill-box' }],
   ]);
@@ -75,7 +75,7 @@ test('stamps the resolved matrix (+ origin/box) onto the tree-order twin of each
   assert.equal(twin.style.props.transform, 'matrix(0, 1, -1, 0, 0, 0)');
   assert.equal(twin.style.props['transform-origin'], '64px 64px');
   assert.equal(twin.style.props['transform-box'], 'fill-box');
-  // Nothing else was touched — the stamp is target-exact, not tree-wide.
+  // Nothing else was touched - the stamp is target-exact, not tree-wide.
   const others = [clone, clone.children[0]!, ...clone.children[0]!.children, ...twin.children];
   for (const o of others) assert.deepEqual(o.style.props, {}, `${o.name} untouched`);
 });

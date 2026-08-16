@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * THE TWO BLUR LANES — how a composited layer gets blurred on a canvas (plan 104
+ * THE TWO BLUR LANES - how a composited layer gets blurred on a canvas (plan 104
  * §5.5, and the answer to §11 S1).
  *
  * The sequence compositor owns the whole blur now: `PlanItem.blur` is authored +
  * keyframe `b` + depth-of-field, plates are shot with the element's own `filter`
  * neutralised, and the executor applies the number exactly once. Which leaves one
- * question — HOW does a canvas blur?
+ * question - HOW does a canvas blur?
  *
  *   • THE FILTER LANE. `ctx.filter = 'blur(Npx) drop-shadow(...)'`, one property
  *     write, the engine's own separable Gaussian. Available wherever
- *     `lib/canvas-filter-probe.ts` says it is — and ONLY there. §11 S1 measured
+ *     `lib/canvas-filter-probe.ts` says it is - and ONLY there. §11 S1 measured
  *     WebKit 26.5 with no `ctx.filter` on any of the three context kinds, and with an
  *     assign-and-read-back check that reports success anyway (the value is stored as
  *     an expando). The probe is the only support truth in this codebase.
  *
  *   • THE MIP LANE. Downscale to a mip level whose residual blur is a couple of
  *     pixels, run a three-pass box blur there (three boxes approximate a Gaussian to
- *     within ~3 % — Wells' construction), and scale back up. This is the SAFARI
+ *     within ~3 % - Wells' construction), and scale back up. This is the SAFARI
  *     MAINLINE, not a legacy corner: on a WebKit build it is the only lane there is,
  *     so it is built to the same bar and golden-compared against the filter lane
  *     (`tests/canvas-blur-lanes.browser.test.ts` states the measured tolerance).
@@ -27,13 +27,13 @@
  * other image. That is deliberate and it is the reason the filter lane bothers with a
  * scratch at all: `ctx.filter` inside a `ctx.scale(...)` is interpreted differently by
  * different engines (user space vs device space), which would make the two lanes
- * disagree the moment a layer had a scale transition — and would make the tolerance
+ * disagree the moment a layer had a scale transition - and would make the tolerance
  * golden meaningless. Blurring at plate resolution also matches the CSS the DOM
  * evaluator writes, where `filter` applies in the element's own box before `transform`
  * magnifies the result.
  *
  * WHAT THE MIP LANE REPRODUCES. The authored vocabulary is exactly `blur(Npx)` and
- * `drop-shadow(x y b color)` — those are the only two filter functions the tool hooks
+ * `drop-shadow(x y b color)` - those are the only two filter functions the tool hooks
  * ever write (`blurCss`, `shadowCss`, merged blur-first so the shadow follows the
  * blurred silhouette). Both are reproduced. Any OTHER filter function in the authored
  * remainder rides the filter lane verbatim and is DROPPED on the mip lane; that is a
@@ -47,7 +47,7 @@
  * here and the halving happens in exactly one place.
  *
  * DOM-FREE AT IMPORT. Every global is reached behind a `typeof` guard inside a
- * function, so this module loads in a Worker, in jsdom and in bare Node — which is
+ * function, so this module loads in a Worker, in jsdom and in bare Node - which is
  * what lets `canvas-blur.test.ts` drive the whole decision table headlessly, and what
  * lets the executor import it without giving up its DOM-free contract.
  */
@@ -93,7 +93,7 @@ function defaultFactory(w: number, h: number): BlurCanvas | null {
 let factory: BlurCanvasFactory = defaultFactory;
 
 /**
- * Replace the canvas factory. TESTS ONLY — it is what lets the Node tier drive the
+ * Replace the canvas factory. TESTS ONLY - it is what lets the Node tier drive the
  * restructured `drawItem` against a recording canvas and assert the ORDER of the
  * passes, which is the part of §5.5 that is a contract rather than a pixel.
  */
@@ -118,7 +118,7 @@ const READ_POOL: BlurStage[] = [];
  *
  * Sized for the DEEPEST chain, not the average one: a sigma-30 blur walks five levels
  * down and five back up, and a pool shorter than that re-allocates the difference on
- * every frame — which is the exact cost pooling exists to avoid. The chain's own sizes
+ * every frame - which is the exact cost pooling exists to avoid. The chain's own sizes
  * fall away geometrically (w, w/2, w/4, …), so twelve slots is well under three
  * full-size canvases in the steady state, and the whole pool is dropped at the end of
  * a render (`releaseBlurScratches`) rather than kept warm for a frame that is not
@@ -212,7 +212,7 @@ export interface DropShadow {
   color: string;
 }
 
-/** A drop-shadow's Gaussian standard deviation — the radius halved, once, here. */
+/** A drop-shadow's Gaussian standard deviation - the radius halved, once, here. */
 export function shadowSigma(s: DropShadow): number {
   return s.blur > 0 ? s.blur / 2 : 0;
 }
@@ -262,7 +262,7 @@ function argTokens(args: string): string[] {
 /**
  * Every `drop-shadow()` in a filter declaration, in authored order.
  *
- * Lengths are read as px — the only unit the hooks author, and the only one a
+ * Lengths are read as px - the only unit the hooks author, and the only one a
  * compositor could resolve without a layout box. A missing length is 0 and a missing
  * colour is black, matching the CSS initial values.
  */
@@ -302,7 +302,7 @@ export function serialiseDropShadow(s: DropShadow): string {
  * An authored filter remainder scaled from stage-native px to EXPORT px, in order.
  *
  * The authored `drop-shadow(0px 2px 10px …)` is written against the stage's own
- * coordinates. It used to be scaled for free — the plate was photographed at S with the
+ * coordinates. It used to be scaled for free - the plate was photographed at S with the
  * filter still on the element, so the engine scaled it. Now the plate is shot clean and
  * the compositor owns the effect, so the lengths have to be scaled here or every export
  * above 1× would draw a shadow at 1× while the picture around it grew.
@@ -340,7 +340,7 @@ export const BLUR_SPREAD_SIGMAS = 3;
 
 /**
  * The margin, in the SAME px as the inputs, that a layer's effects paint outside its
- * own box — the pad `drawItem` grows its scratch by, and the number the plate budget
+ * own box - the pad `drawItem` grows its scratch by, and the number the plate budget
  * prices (plan 104 §5.5).
  *
  * `max(blur spill, shadow spill)`, where the shadow's reach is measured from the
@@ -364,7 +364,7 @@ export function spillPad(sigma: number, shadows: readonly DropShadow[] = []): nu
  *
  * The plate budget prices plates; the blur lanes' scratches live in the same heap and
  * nothing prices those. `pad = spillPad(sigma)` is `3σ` with σ up to `KF_MAX_BLUR ×
- * S` — a 640×360 box at S = 2 with a 300 px blur asks for a 4880×4320 scratch (~84 MB)
+ * S` - a 640×360 box at S = 2 with a 300 px blur asks for a 4880×4320 scratch (~84 MB)
  * that the per-plate cap never sees, and `takeStage`'s failure mode is a silent
  * unfiltered draw. Clipping the spill at a stated distance is the better failure: it
  * is what every export before this feature did anyway (the spill was clipped at the
@@ -384,7 +384,7 @@ export const BLUR_SCRATCH_MAX_PIXELS = 16 << 20;
  * The largest pad that keeps a `w × h` scratch inside both caps. Floors at 0.
  *
  * The area constraint is the quadratic `4p² + 2p(w+h) + (wh − A) ≤ 0`, solved for its
- * positive root — a padded scratch grows on both axes, so its cost is quadratic in the
+ * positive root - a padded scratch grows on both axes, so its cost is quadratic in the
  * pad and a side-only cap would let a modest box with a huge blur through.
  */
 export function scratchPadCap(
@@ -423,12 +423,12 @@ export const BLUR_DIRECT_PIXELS = 1 << 20;
  * `shrink` supplies `MIP_RESAMPLE_SIGMA_PER_SHRINK · shrink` of blur on its own, so the
  * residual `sqrt((sigma/shrink)² − 0.5²)` is real precisely while
  * `shrink ≤ sigma / 0.5 = 2·sigma`. AT the bound the residual is exactly zero: the two
- * resamples ARE the blur, and the box pass — the expensive one, `getImageData` plus two
- * `Float32Array(w·h·4)` — is skipped entirely.
+ * resamples ARE the blur, and the box pass - the expensive one, `getImageData` plus two
+ * `Float32Array(w·h·4)` - is skipped entirely.
  *
  * It was 1.8, a safety margin below the real bound, and that margin was the whole
  * defect: a sigma of 1 on a 3840×2160 layer got `kHard = floor(log2(1.8)) = 0`, so the
- * area rule could not fire at all and the box pass ran at FULL resolution — 8 M mip px
+ * area rule could not fire at all and the box pass ran at FULL resolution - 8 M mip px
  * against a 1 M budget and ~265 MB of transient Float32, per layer per frame, on the
  * lane that IS the Safari mainline. At 2.0 the same case takes one level (2 M px, no
  * box pass) and sigma 2 takes two (518 k px). Nothing over-blurs: the bound is derived
@@ -443,7 +443,7 @@ export const BLUR_AREA_SHRINK_PER_SIGMA = 2;
  *
  * MEASURED 2026-08-11 (plans/104 §9.2 M1 obligation 2, both engines on macOS 27 via
  * Playwright 1.62.1): a step edge through the chain with the box pass suppressed,
- * fitted to a gaussian, averaged in VARIANCE over every edge phase — because what the
+ * fitted to a gaussian, averaged in VARIANCE over every edge phase - because what the
  * round trip delivers depends on where the edge falls on the mip grid, and real content
  * lands on all of them.
  *
@@ -453,7 +453,7 @@ export const BLUR_AREA_SHRINK_PER_SIGMA = 2;
  *     per-phase range (both engines): 0.27 .. 0.65
  *
  * So the model is within 10 % of both engines at every depth, and the phase spread is
- * six times wider than the error — a per-engine constant would be fitting noise. It
+ * six times wider than the error - a per-engine constant would be fitting noise. It
  * stays 0.5, for three reasons beyond the 10 %: the delivered sigma end to end
  * (residual + resample) came out 1.02–1.07× of the request, inside the "good to
  * roughly a tenth of a sigma" claim; the integer three-box construction quantises the
@@ -461,7 +461,7 @@ export const BLUR_AREA_SHRINK_PER_SIGMA = 2;
  * 512 px layer at sigma 4: `[1,1,3]` either way); and `BLUR_AREA_SHRINK_PER_SIGMA` is
  * derived as `1/this`, so raising it to the measured 0.55 would drop the area bound to
  * 1.82 and reinstate exactly the full-resolution box pass that bound was fixed to
- * remove. The browser tier keeps measuring what the model is worth
+ * remove. The browser tier keeps measuring the model's value
  * (tests/canvas-blur-lanes.browser.test.ts).
  */
 export const MIP_RESAMPLE_SIGMA_PER_SHRINK = 0.5;
@@ -481,7 +481,7 @@ export interface BlurLadder {
  * (3² − 1)/12 = 2/3.
  *
  * Below it the construction has nothing between "identity" and this, which is what
- * makes the band below load-bearing rather than a rounding detail.
+ * makes the band below required rather than a rounding detail.
  */
 export const BOX_MIN_SIGMA = Math.sqrt(2 / 3);
 
@@ -489,20 +489,20 @@ export const BOX_MIN_SIGMA = Math.sqrt(2 / 3);
  * Box widths whose n-fold convolution best approximates a Gaussian of `sigma`
  * (Wells 1986, in the integer form popularised by Ivan Kutskir).
  *
- * Three boxes is the standard trade — the error against a true Gaussian is a few
+ * Three boxes is the standard trade - the error against a true Gaussian is a few
  * tenths of a percent, and a box blur is O(1) per pixel regardless of width.
  *
  * THE DEGENERATE BAND, and why it is not simply `[]` (plans/104 P1 obligation 5a,
  * measured in M1's browser-verify run). The Wells construction collapses to all-width-1
- * boxes — i.e. to the identity — for every sigma ≤ 0.577, and returning `[]` there means
+ * boxes - i.e. to the identity - for every sigma ≤ 0.577, and returning `[]` there means
  * the caller's residual is DROPPED. That is invisible while the residual is tiny and
  * very visible when the area rule put it there: a 3840×2160 layer asking for sigma 3
  * takes shrink 4, leaving a residual of 0.559 that landed exactly in this band, so the
  * two resamples became the whole blur and the layer was delivered at 0.72× / 0.82× the
  * asked-for softness (Chromium / WebKit).
  *
- * So the band picks the NEAREST of the two answers the quantiser can give — nothing, or
- * one width-3 box (sigma 0.8165) — and it measures nearness in SIGMA, the quantity the
+ * So the band picks the NEAREST of the two answers the quantiser can give - nothing, or
+ * one width-3 box (sigma 0.8165) - and it measures nearness in SIGMA, the quantity the
  * caller asked for and the quantity an eye compares, rather than in variance.
  *
  * `carried` is what makes that comparison honest, and it is the P1 review's correction
@@ -511,7 +511,7 @@ export const BOX_MIN_SIGMA = Math.sqrt(2 / 3);
  * `MIP_RESAMPLE_SIGMA_PER_SHRINK` of blur, in quadrature, and it will be there whichever
  * answer is picked. So the two candidates are `carried` and `hypot(carried, 0.8165)`,
  * and the crossover between them sits where those two are equidistant from
- * `hypot(carried, sigma)` — at `carried = 0.5` that is a residual of ≈ 0.530, not the
+ * `hypot(carried, sigma)` - at `carried = 0.5` that is a residual of ≈ 0.530, not the
  * bare `BOX_MIN_SIGMA / 2` ≈ 0.408. Comparing residuals alone made the promotion fire
  * across the whole band, including the low end where it is far WORSE than doing nothing:
  * at residual 0.41 it delivered 1.48× the request where the identity delivers 0.78×.
@@ -522,17 +522,17 @@ export const BOX_MIN_SIGMA = Math.sqrt(2 / 3);
  * that the first version's comment claimed it did: at residual 0.559 the two candidates
  * are 0.72× and 1.31× of the request on the MEASURED resample constant (0.541 at
  * shrink 4), i.e. |error| 0.28 → 0.31. The quantiser has no third answer there. The one
- * exact answer is to drop a mip level — at shrink 2 the same case leaves a residual of
- * 1.41, which is expressible, and delivers 1.00× — and it is NOT taken on purpose: that
+ * exact answer is to drop a mip level - at shrink 2 the same case leaves a residual of
+ * 1.41, which is expressible, and delivers 1.00× - and it is NOT taken on purpose: that
  * level is where `BLUR_DIRECT_PIXELS` put the ladder in the first place, so going back
  * up costs 4× the box-pass pixels (2.07 Mpx against a 1 Mpx budget) plus ~66 MB of
  * transient Float32, per layer per frame, on the lane that IS the Safari mainline. Cost,
- * not quality, is the reason — stated here rather than implied.
+ * not quality, is the reason - stated here rather than implied.
  *
  * Below the crossover the answer is still `[]`, and that is honest: it IS the closest
  * expressible blur, and it costs nothing to deliver (no scratch, no readback). It is
  * also the documented sub-`BLUR_MIN_SIGMA` divergence from the `ctx.filter` lane, which
- * the same run measured as smaller than the comment used to claim — Chromium's own
+ * the same run measured as smaller than the comment used to claim - Chromium's own
  * filter delivers nothing below sigma 0.7 either. What does NOT become continuous is the
  * delivered blur: the step from nothing to one width-3 box is 0.8165 wide wherever the
  * crossover is put, because that is the smallest thing three integer boxes can say.
@@ -550,7 +550,7 @@ export function boxSizesForGauss(sigma: number, n = 3, carried = 0): number[] {
   for (let i = 0; i < n; i++) out.push(i < m ? wl : wu);
   if (!out.every((v) => v <= 1)) return out;
   // Degenerate: every box came out width 1, which convolves to nothing. Pick whichever
-  // of the two expressible DELIVERED blurs lands nearer the one that was asked for —
+  // of the two expressible DELIVERED blurs lands nearer the one that was asked for - 
   // which is the same `BOX_MIN_SIGMA / 2` midpoint when nothing is carried.
   const c = Number.isFinite(carried) && carried > 0 ? carried : 0;
   const want = Math.hypot(c, sigma);
@@ -571,13 +571,13 @@ export function boxSizesForGauss(sigma: number, n = 3, carried = 0): number[] {
  * softness) except under the pixel-budget rule, which is itself capped at
  * `BLUR_AREA_SHRINK_PER_SIGMA · sigma`; and never takes an axis below 2 px, because a
  * 1 px mip level has no gradient left to blur. The residual is
- * `sqrt((sigma/shrink)² − resample²)` — the asked-for variance minus the variance the
+ * `sqrt((sigma/shrink)² − resample²)` - the asked-for variance minus the variance the
  * round trip supplies for free.
  *
  * Null means "this lane cannot express that blur", and there are two ways to get it.
  * Below `BLUR_MIN_SIGMA` nothing moves an 8-bit level anywhere. Between it and
  * `BOX_MIN_SIGMA / 2` (≈ 0.41) the ladder cannot shrink (any level would over-blur) and
- * the three-box construction's nearest expressible answer IS the identity — so the mip
+ * the three-box construction's nearest expressible answer IS the identity - so the mip
  * lane applies no blur where a filter lane would apply a sub-pixel one. That is a
  * stated, bounded divergence between the lanes, not a hidden one: returning null makes
  * it cost nothing (no scratch, no copy) instead of allocating a full-size canvas to
@@ -587,7 +587,7 @@ export function boxSizesForGauss(sigma: number, n = 3, carried = 0): number[] {
  *
  * THE RESIDUAL IS NEVER STRANDED (plans/104 P1 obligation 5a). `shrink` is chosen by
  * the area rule up to `BLUR_AREA_SHRINK_PER_SIGMA · sigma`, and at that bound the
- * residual is only exactly zero when `2·sigma` happens to be a power of two — otherwise
+ * residual is only exactly zero when `2·sigma` happens to be a power of two - otherwise
  * a real residual is left over, and before the band fix a residual under 0.577 was
  * silently dropped and the two resamples became the whole blur. That is the measured
  * 0.72× / 0.82× under-delivery on a 3840×2160 layer at sigma 3. The fix is in the
@@ -596,7 +596,7 @@ export function boxSizesForGauss(sigma: number, n = 3, carried = 0): number[] {
  *
  * The quantiser is told what the resample already CARRIES (`resample`, in quadrature),
  * because the choice it makes in the band is between two DELIVERED blurs, not between
- * two residuals — see `boxSizesForGauss`. And the ladder deliberately does not climb
+ * two residuals - see `boxSizesForGauss`. And the ladder deliberately does not climb
  * back down a level to make the residual expressible: at sigma 3 on 3840×2160 that is
  * exact (1.00×) and costs 4× the box-pass pixels against a budget this same function
  * enforces two lines up. The trade is stated in the quantiser's docblock; the level
@@ -714,9 +714,9 @@ function boxPassV(src: Float32Array, dst: Float32Array, w: number, h: number, r:
 export interface FxSpec {
   /** Gaussian standard deviation of the layer blur (authored + kf `b` + DOF) × S. */
   sigma: number;
-  /** The authored filter remainder, verbatim and already scaled — the filter lane's string. */
+  /** The authored filter remainder, verbatim and already scaled - the filter lane's string. */
   rest: string;
-  /** `rest` as drop-shadow terms, scaled — the mip lane's reproduction of it. */
+  /** `rest` as drop-shadow terms, scaled - the mip lane's reproduction of it. */
   shadows: DropShadow[];
 }
 
@@ -749,7 +749,7 @@ export function laneFor(dst: BlurCtx | null | undefined): BlurLane {
  * Every intermediate is pushed onto `held` and released by the caller AFTER the result
  * has been consumed. Releasing them as the chain walks would be tempting and wrong:
  * a released scratch is immediately re-takeable, and the next level's `takeStage`
- * would hand back — and CLEAR — the very canvas the next `drawImage` reads from.
+ * would hand back - and CLEAR - the very canvas the next `drawImage` reads from.
  */
 function mipBlurStage(src: BlurCanvas, sigma: number, held: BlurStage[]): BlurCanvas {
   const w = src.width;
@@ -820,14 +820,14 @@ function smooth(ctx: BlurCtx): void {
 /**
  * `src` with the effects applied, on a scratch the caller must `releaseStage`.
  *
- * Returns null when this realm has no canvas to work on — the caller then draws the
+ * Returns null when this realm has no canvas to work on - the caller then draws the
  * unfiltered picture, which is a visibly softer-than-intended frame rather than a
  * missing layer.
  *
  * THE PASS ORDER IS THE CONTRACT (§5.5). The content arrives already clipped (radius /
  * clip-path applied by the caller into `src`), the blur is applied to the clipped
  * result, and each drop-shadow is cast by everything before it and painted UNDER it.
- * That is the DOM's own order — clip first, filter after — which is why a blurred
+ * That is the DOM's own order - clip first, filter after - which is why a blurred
  * rounded box spills softly OUTSIDE its radius instead of being shaved off at it.
  */
 export function renderFx(src: BlurCanvas, fx: FxSpec, lane: BlurLane): BlurStage | null {
@@ -856,7 +856,7 @@ export function renderFx(src: BlurCanvas, fx: FxSpec, lane: BlurLane): BlurStage
     if (cur === src) {
       // Nothing was reproduced (sub-threshold blur, no shadows, or a shadow pass that
       // could not allocate): hand back a copy so the caller's release contract stays
-      // uniform. `drop()` FIRST — `shadowPass` pushes its silhouette onto `held` before
+      // uniform. `drop()` FIRST - `shadowPass` pushes its silhouette onto `held` before
       // it can fail to allocate its output, so this path is reachable with scratches
       // still held, and leaving them would garbage-collect plate-sized canvases the
       // pool exists to keep.
@@ -885,7 +885,7 @@ function shadowPass(src: BlurCanvas, shadow: DropShadow, held: BlurStage[]): Blu
   if (!sil) return null;
   held.push(sil);
   sil.ctx.drawImage(src as CanvasImageSource, 0, 0);
-  // `source-in` keeps the fill only where the silhouette has alpha — the alpha shape of
+  // `source-in` keeps the fill only where the silhouette has alpha - the alpha outline of
   // the layer tinted with the shadow colour, which is exactly what drop-shadow casts.
   sil.ctx.globalCompositeOperation = 'source-in';
   sil.ctx.fillStyle = shadow.color;

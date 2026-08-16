@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — render one row to an export Blob, fully offscreen.
+ * Pro / Batch mode - render one row to an export Blob, fully offscreen.
  *
  * Reuses the SAME engine render path as the single-tool view: loadTool →
  * createRuntime → hydrate → host.export.render. The only difference is that the
@@ -22,7 +22,7 @@ import type { CanvasCommitEl } from '../lib/canvas-commit.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import type { Unit } from '../../../../engine/src/units.ts';
 
-// Absolute short-form tool URL — `https://lolly.tools/t/<id>?<inputs>`, the human
+// Absolute short-form tool URL - `https://lolly.tools/t/<id>?<inputs>`, the human
 // "open this tool" address (mirrors views/tool.js TOOL_URL_BASE + the domain
 // buildEmbedUrl hardcodes). `query` is the already-encoded input/export params.
 const LOLLY_ORIGIN = 'https://lolly.tools';
@@ -34,7 +34,7 @@ const toolShareUrl = (toolId: string, query: string): string => `${LOLLY_ORIGIN}
 // route (views/tool.js) runs expandQuery on load, so a packed `/t/<id>?z=…` reopens
 // identically. Threshold is LOWER than the address bar's ~1800 (see tool.js AUTO_PACK_MIN):
 // a lolly.txt link is copied, not hand-edited, so shortness beats readability. Never
-// regresses — the packed form is only swapped in when it's strictly shorter.
+// regresses - the packed form is only swapped in when it's strictly shorter.
 const PACK_QUERY_MIN = 256;
 async function preferCompactQuery(query: string): Promise<string> {
   if (!query || query.length < PACK_QUERY_MIN || !isPackAvailable()) return query;
@@ -58,7 +58,7 @@ export { getTool, chooseFormat, isExportable };
 
 const CANVAS_CLASS = 'pro-export-canvas';
 
-// Motion export formats — captured as a live clip, not a single frame. When one of
+// Motion export formats - captured as a live clip, not a single frame. When one of
 // these is requested, the offscreen render feeds the tool's own clip settings
 // (render.video) to the exporter's frame loop. Everything else exports one still.
 // Single source of truth lives in folder-rows (also used by the batch exporter).
@@ -69,12 +69,12 @@ const EMBED_MAX_DURATION = 6;
 // Post-mount settle before capture. Batch path historically settled a touch faster
 // than the live view (350 vs the shared 400ms default); preserved explicitly so the
 // extraction into mountToolCanvas changed nothing. Overridable per render via
-// RenderRowOpts.settleMs — see the constraint documented there.
+// RenderRowOpts.settleMs - see the constraint documented there.
 const SETTLE_MS = 350;
 
 /** One batch row: which tool to render and the input values to seed it with,
  *  plus the per-row PRINT settings (kept structurally compatible with
- *  pro/batch.ts `BatchRow` and pro/folder-rows.ts `ExportRow` — the row shape is
+ *  pro/batch.ts `BatchRow` and pro/folder-rows.ts `ExportRow` - the row shape is
  *  declared in three places today, so a field added for the batch path has to be
  *  added here too or it is silently dropped at the render boundary). */
 interface BatchRow {
@@ -84,7 +84,7 @@ interface BatchRow {
   profile?: string;
   /** Bleed as a dimension string, e.g. "3mm". */
   bleed?: string;
-  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  /** Print marks as the `marks` CSV - decoded by lib/print-marks-csv.ts. */
   marks?: string;
 }
 
@@ -102,7 +102,7 @@ interface RenderRowOpts {
   /**
    * Resolve raster catalog assets to their small `thumb` derivative instead of the
    * full-res original. ONLY for gallery/preview thumbnails (featured row, personalized
-   * tile previews) — NOT compose/batch/real exports, which need full resolution. Safe
+   * tile previews) - NOT compose/batch/real exports, which need full resolution. Safe
    * for any asset: pickFormat falls back to the original when no thumb exists, and
    * vector/lottie/video assets ignore the hint. See scripts/build-thumbnails.ts.
    */
@@ -111,20 +111,20 @@ interface RenderRowOpts {
   strongPassword?: string;
   /**
    * Content Credentials for THIS render. Unset → the shared default policy
-   * (lib/c2pa-policy.ts) — the same rule the tool view's Export button applies —
+   * (lib/c2pa-policy.ts) - the same rule the tool view's Export button applies - 
    * so batch/zip members are signed like single exports. A compose/preview
    * caller that passes embedMeta:false is never stamped regardless.
    */
   c2pa?: boolean;
   /**
-   * Lolly pixel watermark (bridge/export.ts opts.imprint) — lets a batch/zip run
+   * Lolly pixel watermark (bridge/export.ts opts.imprint) - lets a batch/zip run
    * carry the export panel's toggle per row. Forwarded only when true; the bridge
    * embeds it on raster formats and ignores it elsewhere.
    */
   imprint?: boolean;
   /**
    * Override the post-mount settle (default SETTLE_MS). Only for a caller that
-   * KNOWS the child mounts no image/lottie/video — the default exists to give
+   * KNOWS the child mounts no image/lottie/video - the default exists to give
    * that media time to decode, and a short settle would capture it blank.
    */
   settleMs?: number;
@@ -134,7 +134,7 @@ interface RenderRowOpts {
  * A shallow host wrapper whose asset resolver defaults raster lookups to the `thumb`
  * derivative format. The engine runtime resolves example photos via host.assets.get
  * during hydration; wrapping it here means a preview render ingests a ~30 KB thumbnail
- * instead of a 400 KB original — cutting both the fetch weight and the main-thread
+ * instead of a 400 KB original - cutting both the fetch weight and the main-thread
  * rasterise cost of the gallery's featured row. host.assets methods are closures (not
  * `this`-bound), so a spread copy is safe.
  */
@@ -154,7 +154,7 @@ function withThumbAssets(host: HostV1): HostV1 {
  * Per-mount net enforcement, mirroring the live view (views/tool.ts mountTool): a
  * tool whose manifest declares `network.allowlist` renders with a host clone whose
  * `net` is scoped to exactly that list. The shared boot host keeps its fail-closed
- * empty allowlist — never mutated. Wrapping here covers every offscreen path
+ * empty allowlist - never mutated. Wrapping here covers every offscreen path
  * (batch row, composed child, preview), so a nested render can't fetch beyond its
  * OWN manifest grant. Same spread-copy safety rationale as withThumbAssets.
  */
@@ -167,7 +167,7 @@ function withToolNet(host: HostV1, manifest: ToolManifest): HostV1 {
  * Mount a tool's hydrated template into a fresh off-viewport stage and run the
  * shared post-paint settle. Both renderRowToBlob and renderToolPages go through
  * this so the offscreen lifecycle can't drift between them (they were two near-
- * identical copies), and — like the live view (views/tool.ts paint()) — BOTH
+ * identical copies), and - like the live view (views/tool.ts paint()) - BOTH
  * lottie AND <video> players are mounted: mountVideoPlayers resolves only once a
  * clip has a decoded frame, so a batch/compose/preview export snapshots a real
  * frame instead of a blank one (previously only lottie was mounted here, so a
@@ -188,7 +188,7 @@ async function mountToolCanvas(
   stage.setAttribute('aria-hidden', 'true');
   // `contain:paint` makes the stage the containing block for `position:fixed` descendants (and
   // clips its paint to this box). Without it, a tool template's fixed element (e.g. text-helper's
-  // Copy pill) positions against the VIEWPORT — not this left:-100000px stage — and flashes
+  // Copy pill) positions against the VIEWPORT - not this left:-100000px stage - and flashes
   // on-screen for the ~350ms it's mounted; a viewport-unit-sized one flashes huge. Paint
   // containment doesn't contain size, so an auto-height stage still lays out fully.
   const heightCss = fixedHeight !== undefined ? `height:${fixedHeight}px;` : '';
@@ -203,11 +203,11 @@ async function mountToolCanvas(
   canvas.style.cssText = fixedHeight !== undefined ? `width:${layoutW}px;height:${fixedHeight}px;` : `width:${layoutW}px;`;
   // Neutralise any lolly.tools embed URLs BEFORE insertion so this off-screen node
   // (batch row / composed child / single export) never fires a network request for
-  // them — the live-preview wiring in views/tool.ts isn't on this path.
+  // them - the live-preview wiring in views/tool.ts isn't on this path.
   canvas.innerHTML = neutralizeEmbeds(hydrated);
   // Contain the template's OWN <style> blocks, exactly as views/tool.ts and multi-edit.ts
   // do after their innerHTML swap. This stage is mounted in the LIVE document, so an
-  // unscoped template <style> is not merely untidy — it is UNLAYERED, and unlayered CSS
+  // unscoped template <style> is not merely untidy - it is UNLAYERED, and unlayered CSS
   // beats every @layer in styles/app.css regardless of specificity. Several shipped templates
   // open with `*, *::before, *::after { margin:0; padding:0 }` and one (pose-geeko)
   // declares a bare `svg { width:100%; height:100% }`, so for the ~350ms a
@@ -224,7 +224,7 @@ async function mountToolCanvas(
     // Brand semantic vars (--brand-primary, …) must reach EVERY path that mounts
     // tool markup (plans/archive/brand-token-contract.md §3). This offscreen stage serves
     // /pro batch rows, compose children, featured renders and personalize
-    // previews — the live view applies the same vars in mountTool (views/tool.ts),
+    // previews - the live view applies the same vars in mountTool (views/tool.ts),
     // so without this call a batch/compose render of a semantic-var template
     // would fall back to the template defaults and mismatch its direct export.
     // Awaited (unlike the live mount): an offscreen render exports immediately,
@@ -232,7 +232,7 @@ async function mountToolCanvas(
     await applyBrandVars(canvas, host);
     // A tool that keeps its declared inputs as a pure DATA channel (render.sidebar:false,
     // e.g. Run Web Code) never references them in its markup, so this off-screen render's
-    // hydrated string carries none of the row's values — the template's own script would
+    // hydrated string carries none of the row's values - the template's own script would
     // fall back to the shared-origin IndexedDB draft (the user's LAST pen) and render the
     // wrong content. Hand it the model READ channel the live view exposes (canvas-commit.ts)
     // so its boot-seed reads THIS render's values. Write-only here: an off-screen render is
@@ -298,7 +298,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   const nativeW = tool.manifest.render.width;
   const nativeH = tool.manifest.render.height;
 
-  // Establish the requested ASPECT at canvas creation — not at export. When both
+  // Establish the requested ASPECT at canvas creation - not at export. When both
   // dimensions are given we render the (responsive) tool into a box of that
   // aspect, in CSS px, so its layout adapts correctly. The export then does a
   // uniform unit→medium scale (no squashing). Blank → the tool's native size.
@@ -307,7 +307,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   const layoutH = bothGiven ? Math.max(1, Math.round(toCssPx({ value: height as number, unit }))) : nativeH;
 
   // Feed the layout size to a tool's width/height inputs (if it declares them),
-  // so hook-driven responsive tools recompute — mirrors the single-tool preview.
+  // so hook-driven responsive tools recompute - mirrors the single-tool preview.
   const seeded: Record<string, InputValue> = { ...(row.values ?? {}) };
   const inputIds = new Set((tool.manifest.inputs ?? []).map(i => i.id));
   if (bothGiven) {
@@ -334,10 +334,10 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // values encode the same compact way the address bar does. Surfaced in the zip's
     // lolly.txt (see creditText in pro/zip.js); ignored on the compose/thumbnail paths.
     // Thumbnail/preview callers discard `url`, so skip serialising (+ its occasional
-    // native DEFLATE) entirely on that path — only real exports (batch, compose child) need it.
+    // native DEFLATE) entirely on that path - only real exports (batch, compose child) need it.
     const url = thumbnail ? '' : toolShareUrl(tool.manifest.id, await preferCompactQuery(serializeUrlState(runtime.getModel(), {
       format: fmt, width, height, unit, dpi: unit !== 'px' ? dpi : undefined,
-      // Print settings belong in the recreate link too — a zip recipient opening
+      // Print settings belong in the recreate link too - a zip recipient opening
       // lolly.txt should land on the file they were sent, bleed and marks included.
       profile: row.profile, bleed: row.bleed, marks: row.marks,
     })));
@@ -351,10 +351,10 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // Content Credentials: a REAL batch/zip render signs by default under the same
     // policy as the tool view's Export button (previously the whole batch pipeline
     // silently skipped signing). Compose children (embedMeta:false) and thumbnails
-    // are intermediates — never stamped; an explicit opts.c2pa always wins.
+    // are intermediates - never stamped; an explicit opts.c2pa always wins.
     const wantC2pa = c2pa ?? (embedMeta === false || thumbnail ? false : c2paDefaultOn(tool.manifest));
     if (wantC2pa) exportOpts.c2pa = true;
-    // Pixel watermark: opt-in only, never a default — the bridge embeds it on
+    // Pixel watermark: opt-in only, never a default - the bridge embeds it on
     // raster formats and ignores it elsewhere.
     if (imprint) exportOpts.imprint = true;
     // Print settings carried on the row (from the saved session / batch CSV). The
@@ -393,12 +393,12 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
 }
 
 /**
- * Render a PAGED tool (manifest render.paged — a document that lays out several
+ * Render a PAGED tool (manifest render.paged - a document that lays out several
  * `[data-pdf-page]` boxes, e.g. multi-page-pdf) and return ONE export blob PER PAGE, so
  * a caller can show each page as its own preview. Mirrors renderRowToBlob's offscreen
  * mount, but the canvas is left auto-height (every page box is laid out and measured,
  * not clipped to one page) and each page element is exported individually. A single
- * page's geometry is simple — it renders cleanly and, unlike the whole stacked-pages
+ * page's geometry is simple - it renders cleanly and, unlike the whole stacked-pages
  * SVG, doesn't choke resvg. Falls back to a single whole-canvas export for a tool that
  * declares no page boxes.
  */

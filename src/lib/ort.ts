@@ -10,11 +10,11 @@
 // that race impossible no matter how many detectors run concurrently.
 //
 // Config choices, all deliberate:
-//  - `wasmPaths = '/ort/'` — the WASM runtime is served SAME-ORIGIN from
+//  - `wasmPaths = '/ort/'` - the WASM runtime is served SAME-ORIGIN from
 //    shells/web/public/ort/ (populated once at setup from
 //    node_modules/onnxruntime-web/dist/*.{wasm,mjs}). NEVER a CDN: offline-first
 //    is a hard project rule and the CSP + service worker refuse cross-origin.
-//  - `numThreads = 1`, `proxy = false` — single-threaded, no worker proxy.
+//  - `numThreads = 1`, `proxy = false` - single-threaded, no worker proxy.
 //    Threaded ORT needs cross-origin isolation (COOP/COEP) we don't set, and the
 //    worker proxy pulls in yet another dynamically-imported .mjs; a deep scan is
 //    a one-shot user action where simplicity beats the marginal speed.
@@ -28,7 +28,7 @@
 // and the two canvas/tensor helpers their preprocessing shares. Those used to be
 // copy-pasted per detector (identical bodies, different log tag and IDB store);
 // they now live here, parameterised, so a fix lands once. Each detector keeps its
-// OWN documented developer switches (localStorage key + global flag) — those are
+// OWN documented developer switches (localStorage key + global flag) - those are
 // deliberately NOT unified, they're how you trace one detector without the other.
 
 import { openDB } from '../bridge/db.ts';
@@ -44,19 +44,19 @@ let ortPromise: Promise<OrtModule> | null = null;
 // `resp.arrayBuffer()`, reporting {loaded,total} as chunks arrive so the /verify
 // banner (views/valid.ts's enableDeepScan) can show a real download bar instead
 // of a static "downloading…" string. `total` is the Content-Length header when
-// present and parseable, else null — an INDETERMINATE download (chunked
+// present and parseable, else null - an INDETERMINATE download (chunked
 // transfer, or a proxy that strips the header), never a guessed number.
 //
 // Caveat: if these files were ever served content-encoded (gzip/br), the header
 // reflects the on-wire (compressed) size while the reader yields decoded bytes,
 // so `loaded` could transiently exceed `total`. Callers must clamp any
-// percentage they render — `total` is a best-effort denominator, not a hard cap.
+// percentage they render - `total` is a best-effort denominator, not a hard cap.
 export interface FetchProgress { loaded: number; total: number | null }
 
 /** Reads `resp`'s body to a single ArrayBuffer, calling `onProgress` after each
  *  chunk. Falls back to a plain `resp.arrayBuffer()` (no progress) when the body
- *  isn't a readable stream — e.g. an older browser, or a response already
- *  consumed — so callers always get the same bytes either way. */
+ *  isn't a readable stream - e.g. an older browser, or a response already
+ *  consumed - so callers always get the same bytes either way. */
 export async function readResponseWithProgress(
   resp: Response, onProgress?: (p: FetchProgress) => void,
 ): Promise<ArrayBuffer> {
@@ -97,7 +97,7 @@ export function loadOrt(): Promise<OrtModule> {
 // Serialises the FIRST session creation across all detectors. ORT's initWasm
 // runs on the first `InferenceSession.create()`; two concurrent first-creates
 // trip the "multiple calls" error. Every detector wraps its create() in this so
-// only one create is ever in flight at a time (cheap — deep scan is one-shot).
+// only one create is ever in flight at a time (cheap - deep scan is one-shot).
 let sessionGate: Promise<unknown> = Promise.resolve();
 export function serializeSessionCreate<T>(create: () => Promise<T>): Promise<T> {
   const run = sessionGate.then(create, create);
@@ -109,7 +109,7 @@ export function serializeSessionCreate<T>(create: () => Promise<T>): Promise<T> 
 // ─── Gated diagnostics ────────────────────────────────────────────────────────
 //
 // `host.log` isn't in scope in these lazy modules, so detectors trace via
-// console.debug — GATED so a normal deep scan is silent. Each detector declares
+// console.debug - GATED so a normal deep scan is silent. Each detector declares
 // its own switch pair, e.g. for TrustMark:
 //   localStorage.setItem('lolly:trustmark:debug', '1')
 //   window.__TRUSTMARK_DEBUG__ = true
@@ -124,7 +124,7 @@ export function createDebugLogger(
     try {
       if (typeof localStorage !== 'undefined' && localStorage.getItem(storageKey) === '1') return true;
     } catch {
-      // localStorage can throw in a sandboxed/partitioned context — ignore.
+      // localStorage can throw in a sandboxed/partitioned context - ignore.
     }
     return typeof globalThis !== 'undefined'
       && (globalThis as Record<string, unknown>)[globalFlag] === true;
@@ -149,11 +149,11 @@ export interface ModelCacheOptions {
   /** URL directory under `/models/` the bytes are fetched from. */
   dir: string;
   /** Bump to invalidate every cached entry (a retrained/reconverted model, or a
-   *  poisoned cache — see the HTML guard below). */
+   *  poisoned cache - see the HTML guard below). */
   version: number;
   /** This detector's tracer (createDebugLogger). */
   dbg: (stage: string, ctx?: object) => void;
-  /** Ran after a successful cache write, inside the same best-effort try — lets a
+  /** Ran after a successful cache write, inside the same best-effort try - lets a
    *  detector stamp extra bookkeeping (TrustMark's readiness marker) without
    *  duplicating the whole fetch. */
   afterCache?: (fileName: string, db: Awaited<ReturnType<typeof openDB>>) => Promise<void>;
@@ -161,7 +161,7 @@ export interface ModelCacheOptions {
 
 /**
  * Builds this detector's `fetchModelBytes(fileName, cacheOnly?, onProgress?)`.
- * Returns null — never throws — for every "no bytes on device" case, which the
+ * Returns null - never throws - for every "no bytes on device" case, which the
  * callers turn into 'not-installed' (NEVER "no watermark found"):
  *   - `cacheOnly` (the passive background scan) and nothing cached: a multi-MB
  *     model download is opt-in, gated behind the explicit "Deep scan" button.
@@ -193,14 +193,14 @@ export function createModelFetcher(
       dbg('fetch', { file: fileName, url, status: 'network-error', error: (err as Error)?.message });
       return null; // offline, or the dev server has nothing mounted at /models/
     }
-    // Not vendored yet (the fetch/convert script hasn't been run) — a plain 404,
+    // Not vendored yet (the fetch/convert script hasn't been run) - a plain 404,
     // never an error surfaced to the user.
     if (!resp.ok) {
       dbg('fetch', { file: fileName, url, status: resp.status });
       return null;
     }
     const bytes = await readResponseWithProgress(resp, onProgress);
-    // Vite's dev server answers a MISSING model with the SPA fallback index.html —
+    // Vite's dev server answers a MISSING model with the SPA fallback index.html - 
     // a 200, so resp.ok above is true. Handing that HTML to ORT yields "protobuf
     // parsing failed"; caching it poisons every later run. Reject anything that
     // isn't the binary model: an HTML content-type, or a body starting with '<'
@@ -225,7 +225,7 @@ export function createModelFetcher(
   };
 }
 
-// ─── Shared pixel plumbing (all canvas/DOM — the engine stays DOM-free) ───────
+// ─── Shared pixel plumbing (all canvas/DOM - the engine stays DOM-free) ───────
 
 /** An OffscreenCanvas where available, else a detached <canvas>. */
 export function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement {

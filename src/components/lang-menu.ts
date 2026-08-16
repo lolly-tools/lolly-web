@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Language switcher FAB — a bare 32×32 icon (no button chrome, unlike the
+ * Language switcher FAB - a bare 32×32 icon (no button chrome, unlike the
  * filter/history FABs) that sits in the gallery-topright cluster on Tools,
  * Catalog, and Projects. Clicking it behaves like the filter FAB: a body-mounted
  * popover menu listing every supported language, current one checked.
@@ -8,11 +8,11 @@
  * langFabHtml() renders the trigger; attachLangMenu(trigger, host) wires it.
  * Mirrors profile-menu.ts's conventions (body-mounted popover positioned off the
  * trigger's rect, focus trap, Escape + outside-pointerdown + route-change close)
- * but — unlike that menu — is active at every viewport width, not folded behind
+ * but - unlike that menu - is active at every viewport width, not folded behind
  * a mobile-only gate.
  *
- * A tiny sort toggle sits at the top of the menu — "Speakers" (default) vs
- * "A–Z" — persisted to localStorage 'langSort' and shared with the /info site's
+ * A tiny sort toggle sits at the top of the menu - "Speakers" (default) vs
+ * "A–Z" - persisted to localStorage 'langSort' and shared with the /info site's
  * nav language menu (same origin, same key).
  */
 import { LANG_META, currentLang, switchLang, t, LANG_ICON_SVG, flagEmoji, sortedLangs } from '../i18n.ts';
@@ -27,7 +27,7 @@ function langSortPref(): 'speakers' | 'az' {
   try { return localStorage.getItem('langSort') === 'az' ? 'az' : 'speakers'; } catch { return 'speakers'; }
 }
 
-/** The trigger button markup — drop directly into a .gallery-topright cluster. */
+/** The trigger button markup - drop directly into a .gallery-topright cluster. */
 export function langFabHtml(): string {
   return `<button type="button" class="lang-fab" aria-label="${escape(t('Language'))}" aria-haspopup="menu" aria-expanded="false" title="${escape(t('Language'))}">${LANG_ICON_SVG}</button>`;
 }
@@ -88,7 +88,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     const listHtml = (s: 'speakers' | 'az'): string => sortedLangs(s).map(code =>
       `<button type="button" class="lang-menu-item" role="menuitemradio" data-lang="${code}" aria-checked="${code === active}">${flagsHtml(code)}<span class="lang-menu-name">${escape(LANG_META[code].nativeName)}</span></button>`,
     ).join('');
-    // "A–Z" is deliberately untranslated — it reads the same in every locale.
+    // "A–Z" is deliberately untranslated - it reads the same in every locale.
     el.innerHTML = `<div class="lang-sort-tabs" role="tablist" aria-label="${escape(t('Sort languages'))}">`
       // № prefix lives OUTSIDE the t() key: every locale gets the same
       // "count of" mark, translators only ever see the bare noun.
@@ -114,7 +114,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
       list.innerHTML = listHtml(next);
       rove(collectItems(), false);
     };
-    // Shared ARIA-tabs machinery (lib/tabs.ts) — arrow/Home/End roving between
+    // Shared ARIA-tabs machinery (lib/tabs.ts) - arrow/Home/End roving between
     // the two sort tabs; the initial programmatic select just establishes the
     // single tab stop on the persisted sort.
     const selectSortTab = wireTabs(el.querySelector<HTMLElement>('.lang-sort-tabs')!, {
@@ -130,7 +130,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
       if (tab) {
         // wireTabs (listening on the tablist, which fires first) already applied
         // the sort. Browsers that don't focus buttons on click (macOS Safari/
-        // Firefox) can leave focus on a just-destroyed list item — falling to
+        // Firefox) can leave focus on a just-destroyed list item - falling to
         // <body> would kill the focus trap and arrow keys while the popover is
         // still open.
         if (!el.contains(document.activeElement)) tab.focus();

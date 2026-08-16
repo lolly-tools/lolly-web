@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // ─── World locator map ────────────────────────────────────────────────────────
 // A low-detail world land outline (amCharts "worldLow"; ~1k points, one path) used
-// to plot a photo's GPS fix inline on /verify — fully offline, no tile server, no
+// to plot a photo's GPS fix inline on /verify - fully offline, no tile server, no
 // network disclosure of the coordinates. The source outline is an equirectangular
 // (Plate Carrée) projection with Antarctica cropped; the calibrated bounds below
 // map (lat, lon) → the path's own coordinate space so a pin lands on the right
 // land. (Longitude is linear across the frame; latitude is linear in this
-// projection — empirically fit against a dozen known cities.)
+// projection - empirically fit against a dozen known cities.)
 //
 // Frame (from the source viewBox): x 151.67‥808.33, y 242.58‥531.42.
 

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Proof for the hook-Worker executor core (hook-worker.worker.ts) — M2,
+ * Proof for the hook-Worker executor core (hook-worker.worker.ts) - M2,
  * plans/86-worker-isolation-hooks.md §13.1.
  *
  * Drives `createHookWorkerCore` with a stub port + a mock main-thread host
  * dispatcher, exactly as sequence-render-worker.test.ts drives its worker core,
  * so the whole message protocol + host-proxy construction is verified in plain
- * Node — no real Worker, no DOM. Proves the three buckets:
+ * Node - no real Worker, no DOM. Proves the three buckets:
  *   - CO-LOCATE: host.color.* runs locally in the core (real makeColorApi).
  *   - TOKEN SNAPSHOT: host.tokens.colors()/resolve() answer from a local
- *     createTokenSet built off a shipped doc — no round-trip.
+ *     createTokenSet built off a shipped doc - no round-trip.
  *   - RPC: host.assets.get(...) round-trips through the stub port to a mock host.
  * Plus: an ABSENT optional namespace stays absent (feature-detect survives), and
  * the REAL chart-creator hooks.js compiles + runs onInit/onInput in the core.
@@ -121,7 +121,7 @@ test('worker core: a hook error surfaces as a failed invoke, not a crash', async
 });
 
 test('worker core: seeded feature-detects answer synchronously, never a Promise', async () => {
-  // The sync isAvailable family must come from the seed, not the RPC stub — a
+  // The sync isAvailable family must come from the seed, not the RPC stub - a
   // Promise would stringify to [object Promise] and break a hook that branches on it.
   const source = `
     function onInit({ host }) {
@@ -169,13 +169,13 @@ test('worker core: a compile error is reported so the client can fall back', asy
 });
 
 test('worker core: the REAL chart-creator hooks.js runs onInit + onInput in the worker', async () => {
-  // The M2 first opt-in tool — proves a shipping, DOM-free tool executes unchanged
+  // The M2 first opt-in tool - proves a shipping, DOM-free tool executes unchanged
   // through the worker executor and produces its chartSvg patch.
   let source: string;
   try {
     source = readFileSync(join(REPO, 'community', 'chart-creator', 'hooks.js'), 'utf8');
   } catch {
-    // community submodule not mounted in this environment — skip rather than fail.
+    // community submodule not mounted in this environment - skip rather than fail.
     return;
   }
   const { core, posted, pump } = harness({
@@ -200,7 +200,7 @@ test('worker core: the REAL chart-creator hooks.js runs onInit + onInput in the 
   const patch = (done!.patch ?? {}) as Record<string, unknown>;
   assert.equal(typeof patch.chartSvg, 'string', 'onInit produced a chartSvg extra');
   // With an empty model chart-creator emits its placeholder group (the <svg> wrapper
-  // lives in template.html, not this extra) — distinctive real chart-creator markup,
+  // lives in template.html, not this extra) - distinctive real chart-creator markup,
   // proving the shipping tool executed unchanged inside the worker.
   assert.match(patch.chartSvg as string, /<svg|<g|data-canvas-input/i, 'the chartSvg is real chart-creator markup');
 });

@@ -3,7 +3,7 @@
  * The transport's seams with everything above it (plan 100 §6.1, §11.3, §11.23, §11.27).
  *
  * `rtc-transport.test.ts` pins the wire. This file pins the three places where a value
- * this module accepts has to actually REACH somebody, plus the scan loop's abort — each
+ * this module accepts has to actually REACH somebody, plus the scan loop's abort - each
  * one a defect whose symptom appears in a different module from its cause:
  *
  *  - the session `seed`. It has no slot in the QR-sized invite blob and never will, so it
@@ -12,13 +12,13 @@
  *    canvas.
  *  - the display `name`. The acceptor names itself AFTER the tool probe, i.e. after its
  *    transport exists, so the identity has to be read at mint time and not at
- *    construction — otherwise the peer sees the profile prefill, whatever the human typed.
+ *    construction - otherwise the peer sees the profile prefill, whatever the human typed.
  *  - `reconnecting`. A UDP blip recovers through `checking`, and the data channels never
  *    close, so the naive read flickers back to live halfway through (§11.3).
  *  - an aborted scan. A dialog that has already closed must not receive a decoded token
  *    from the frame that was in flight when it closed.
  *
- * Fake `RTCPeerConnection`, injected clock, real codec — the same discipline as the main
+ * Fake `RTCPeerConnection`, injected clock, real codec - the same discipline as the main
  * suite, kept to the minimum each seam needs.
  *
  * Run directly:  node --test shells/web/src/collab/transport-seams.test.ts
@@ -255,7 +255,7 @@ function rig(over: Parameters<typeof createRtcTransport>[0] extends infer T ? Pa
   return { transport, stack, logs };
 }
 
-/** Mint an invite and open the three lanes — the point where the hello goes out. */
+/** Mint an invite and open the three lanes - the point where the hello goes out. */
 async function mintAndOpen(r: Rig): Promise<string> {
   const offer = await r.transport.effects.createOffer({ attempt: 0 });
   assert.equal(offer.ok, true, offer.ok ? '' : (offer.detail ?? 'the invite would not mint'));
@@ -365,7 +365,7 @@ test('a UDP blip stays reconnecting all the way back, never flickering through l
   assert.equal(r.transport.state().connection, 'reconnecting');
 
   // Chrome's real recovery path: the ICE transport goes back through `checking`, and
-  // the SCTP channels never closed — so the lane test alone would read `live` here.
+  // the SCTP channels never closed - so the lane test alone would read `live` here.
   r.stack.pc().setIce('checking');
   assert.equal(r.transport.state().connection, 'reconnecting', 'the avatar stays grey for the whole reconnect');
 
@@ -395,7 +395,7 @@ test('a re-invite is a fresh pairing, not the tail of the old one blip', async (
   assert.equal(r.transport.state().connection, 'reconnecting');
 
   // Sticky means sticky to THIS connection. A re-invite builds a new one, and it is
-  // connecting from scratch — the old blip must not hold the pill grey for ever.
+  // connecting from scratch - the old blip must not hold the pill grey for ever.
   const again = await r.transport.effects.createOffer({ attempt: 1 });
   assert.equal(again.ok, true);
   assert.equal(r.transport.state().connection, 'connecting');
@@ -430,7 +430,7 @@ test('an abort that lands while a frame is decoding resolves null, not a token',
   const scan = scanQrFromVideo(readyVideo, { scope, intervalMs: 0, signal: controller.signal });
   await settle();
 
-  // The dialog closes. The frame in flight then decodes perfectly — and must not be
+  // The dialog closes. The frame in flight then decodes perfectly - and must not be
   // delivered to a step nobody is on any more.
   controller.abort();
   frame.resolve([{ rawValue: 'LOLLYTOKEN' }]);

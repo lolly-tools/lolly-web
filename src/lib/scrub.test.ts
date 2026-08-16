@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * Drag-to-scrub — lib/scrub.ts.
+ * Drag-to-scrub - lib/scrub.ts.
  *
  * Run directly:  node --test shells/web/src/lib/scrub.test.ts
  *
  * Two things matter here. First that generalising this for Colour Lab did not change
  * Pro's behaviour, since Pro's Width/Height cells were the original caller and every
  * new option defaults to what they already had. Second that the float path actually
- * quantises — an unquantised scrub writes 0.13600000000000001 into a field showing
+ * quantises - an unquantised scrub writes 0.13600000000000001 into a field showing
  * 0.1360, and the commit then re-rounds to a different number than the one the user
  * released on.
  */
@@ -69,7 +69,7 @@ test('Pro’s defaults are unchanged: integers, min 1, mouse only', async () => 
   assert.deepEqual(f.commits, ['140']);
   f.off();
 
-  // min defaults to 1 — a big negative drag stops there, not at 0 or below.
+  // min defaults to 1 - a big negative drag stops there, not at 0 or below.
   const g = field({ value: '5' }, {});
   await g.drag(0, -500);
   assert.equal(g.el.value, '1');
@@ -116,7 +116,7 @@ test('touch is opt-in, and the modifiers coarsen and refine', async () => {
 
 test('a press that does not travel is a click, and bounds are honoured', async () => {
   const f = field({ value: '0.2000' }, { min: 0, max: 0.4, unitPerPx: 0.001, decimals: 4, onDrag: undefined });
-  // Under the 3px threshold: no scrub, no commit — the field stays focusable for typing.
+  // Under the 3px threshold: no scrub, no commit - the field stays focusable for typing.
   await f.drag(0, 2);
   assert.equal(f.el.value, '0.2000');
   assert.deepEqual(f.commits, []);

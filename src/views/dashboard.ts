@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Dashboard view (#/d) — the "instrument panel" for the whole platform. It merges
- * what used to be two pages (#/platform and #/capabilities) and pulls read-only
- * glances of your own data (activity + storage) from the Profile — nothing here
- * is removed from Profile; this is a mirror, not a move.
- * The Design-system tab is deliberately READ-ONLY: it renders the loaded brand
- * — name, logo, primary colour, the faces in force, the palette and the token
- * primitives — *wearing* the brand's own variables (see brandHero()), and, when
- * the catalogue isn't locked, points at #/start where the brand is actually
- * adjusted. Nothing on this page writes brand state; personal preferences
- * (theme, sound) live on #/profile.
+ * Dashboard view (#/d) - the "instrument panel" for the whole platform. It
+ * merges what used to be two pages (#/platform and #/capabilities) and pulls
+ * read-only glances of your own data (activity + storage) from the Profile.
+ * Nothing here is removed from Profile; this is a mirror, not a move.
+ * The Design-system tab is deliberately READ-ONLY: it renders the loaded
+ * brand (name, logo, primary colour, the faces in force, the palette and the
+ * token primitives) wearing the brand's own variables (see brandHero()), and,
+ * when the catalogue isn't locked, points at #/start where the brand is
+ * actually adjusted. Nothing on this page writes brand state; personal
+ * preferences (theme, sound) live on #/profile.
  *
- * The layout is deliberate: the brand hero leads (full-width, never collapsible),
- * then the bento of instrument tiles (palette wheel, type in motion), the palette
- * ink-ribbon, the brand-token chips and the print reference — with THIS DEVICE
- * (the live machine readout people find genuinely interesting), the full
- * capability map, and activity/storage on the other tabs. Each primary section
- * folds to its title bar with a soft hydraulic cue (see the toggle listener in
- * mountDashboard). Apart from the sound switch, everything here is a snapshot of
- * what this session currently knows.
+ * The layout is deliberate: the brand hero leads (full-width, never
+ * collapsible), then the bento of instrument tiles (palette wheel, type in
+ * motion), the palette ink-ribbon, the brand-token chips and the print
+ * reference, with THIS DEVICE (the live machine readout people find
+ * genuinely interesting), the full capability map, and activity/storage on
+ * the other tabs. Each primary section folds to its title bar with a soft
+ * hydraulic cue (see the toggle listener in mountDashboard). Apart from the
+ * sound switch, everything here is a snapshot of what this session currently
+ * knows.
  *
- * Data sources (single sources of truth, imported — never duplicated):
+ * Data sources (single sources of truth, imported, never duplicated):
  *   brand     → host.assets discovery (USER_TOKENS_ID) + host.tokens resolve/raw,
  *               read-only: the hero's name/logo/primary and the token chips
  *   device    → lib/device-info.ts        (live session snapshot)
@@ -31,7 +32,7 @@
  *   caps      → lib/capabilities-data.ts
  *   CMYK      → engine/src/color.ts (CMYK_CONDITIONS)
  *   fonts     → the LIVE --font-brand/--font-mono vars (lib/type-demo.ts
- *               loadedFaces — brand/user fonts included)
+ *               loadedFaces - brand/user fonts included)
  */
 
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
@@ -72,32 +73,32 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 // The deep-link destination registry (plans/99 M2): every section's data-flag
-// keyword set lives THERE, interpolated here via dashFlag() — never as a string
-// literal in this file — so the spotlight settings provider and applyDeepLink
+// keyword set lives THERE, interpolated here via dashFlag(), never as a string
+// literal in this file, so the spotlight settings provider and applyDeepLink
 // read the same single source (dashboard-registry.test.ts pins it both ways).
 import { DASH_SECTIONS, dashFlag } from './dashboard-registry.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
-// The Capabilities search field's leading glyph — from the shared registry, not
+// The Capabilities search field's leading glyph - from the shared registry, not
 // inlined (see the R3 guard in primitive-guards.test.ts). Sized in CSS off
 // --a11y-fs like every other chrome icon, so no `size` is passed here.
 const SEARCH_GLYPH = icon('search');
 
 // ── Primary tabs ─────────────────────────────────────────────────────────────
-// The dashboard splits into four tabbed panels. Every section keeps its own id /
-// data-flag / classes, so all the existing wiring (brand hydration, device
-// probe, storage, type demo, deep links) works unchanged whichever tab is showing
-// — inactive panels are `hidden`, not removed. The `key` doubles as the ?tab=
-// deep-link value and the /b · /brand alias target (Design system).
+// The dashboard splits into four tabbed panels. Every section keeps its own
+// id / data-flag / classes, so all the existing wiring (brand hydration,
+// device probe, storage, type demo, deep links) works unchanged whichever tab
+// is showing. Inactive panels are `hidden`, not removed. The `key` doubles as
+// the ?tab= deep-link value and the /b · /brand alias target (Design system).
 const TAB_ICON: Record<string, string> = {
-  // Monitor — this device.
+  // Monitor - this device.
   device: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
-  // Palette — the design system (colour, type, brand).
+  // Palette - the design system (colour, type, brand).
   brand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.05 0 1.5-.86 1.5-1.75 0-1.16-.98-2.1-.98-2.1s1.98.35 3.98.35A4.5 4.5 0 0 0 21 12.5C21 7 17 3 12 3z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="10.5" r="1"/></svg>`,
-  // App grid — the full feature set.
+  // App grid - the full feature set.
   caps: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
-  // Bars — activity & stats.
+  // Bars - activity & stats.
   activity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><rect x="5" y="11" width="3.4" height="6" rx="0.6"/><rect x="10.3" y="7" width="3.4" height="10" rx="0.6"/><rect x="15.6" y="4" width="3.4" height="13" rx="0.6"/></svg>`,
 };
 // Derived from the registry's tab rows (the flagless entries) so the tab bar
@@ -128,13 +129,14 @@ function panel(key: string, active: string, inner: string): string {
   return `<section role="tabpanel" id="dpanel-${key}" class="dash-panel" data-dash-panel="${key}" aria-labelledby="dtab-${key}" tabindex="0"${key === active ? '' : ' hidden'}>${inner}</section>`;
 }
 
-// A collapsible primary section — the whole card folds to its title bar, reusing the
-// reference-panel <details> chrome (.plat-section-summary / .plat-section-body handle
-// the chevron rotation + padding). `half` sizes it for the two-up palette/catalogue row.
-// Marked data-dash-collapse so the mount wires a soft open/close cue on toggle.
-// `iconSlot`/`chipsSlot` render EMPTY hooks (data-dash-collapse-icon/-chips) rather than
-// real content — some callers' icon/facts are only known after an async client-side
-// probe (see collectDevice()), so they hydrate in later exactly like the hero stats do.
+// A collapsible primary section: the whole card folds to its title bar,
+// reusing the reference-panel <details> chrome (.plat-section-summary /
+// .plat-section-body handle the chevron rotation + padding). `half` sizes it
+// for the two-up palette/catalogue row. Marked data-dash-collapse so the
+// mount wires a soft open/close cue on toggle. `iconSlot`/`chipsSlot` render
+// EMPTY hooks (data-dash-collapse-icon/-chips) instead of real content: some
+// callers' icon/facts are only known after an async client-side probe (see
+// collectDevice()), so they hydrate in later exactly like the hero stats do.
 function collapse(o: {
   id: string; title: string; body: string; desc?: string; flag?: string; open?: boolean; half?: boolean; cls?: string;
   iconSlot?: boolean; chipsSlot?: boolean;
@@ -163,15 +165,16 @@ function sectionHead(title: string, id: string, desc = ''): string {
   }</div>`;
 }
 
-// ── Brand hero: the Design-system tab's opening statement — a READ-ONLY card
+// ── Brand hero: the Design-system tab's opening statement, a READ-ONLY card
 // that literally wears the loaded brand. Its surface/text/edge come from the
-// brand's semantic slots (applyBrandVars paints --brand-* onto the section just
-// after first paint; every consumer in dashboard.css keeps a shell-token
-// fallback, so an unbranded install — or a doc with no semantic slots, like
-// SUSE's — reads perfectly in both themes). The name, logo, primary colour and
-// status line hydrate async (IDB reads); when the catalogue isn't locked, a
-// single CTA points at #/start, where the brand is actually adjusted. Never
-// collapsible — this is the one section that must always show.
+// brand's semantic slots (applyBrandVars paints --brand-* onto the section
+// just after first paint; every consumer in dashboard.css keeps a
+// shell-token fallback, so an unbranded install, or a brand with no semantic
+// slots like SUSE's, reads perfectly in both themes). The name, logo,
+// primary colour and status line hydrate async (IDB reads); when the
+// catalogue isn't locked, a single CTA points at #/start, where the brand is
+// actually adjusted. Never collapsible: this is the one section that must
+// always show.
 function brandHero(): string {
   const { brand, mono } = loadedFaces();
   const faces = ([
@@ -205,11 +208,11 @@ function brandHero(): string {
     </section>`;
 }
 
-// ── Brand tokens: read-only chips for the brand's non-colour primitives — the
+// ── Brand tokens: read-only chips for the brand's non-colour primitives, the
 // corner radius plus anything lib/token-studio.ts manages (spacing, sizing,
-// stroke, opacity, rotation, numbers, shadows, gradients). Rendered hidden and
-// filled by the async brand hydration; a doc carrying none of these keeps the
-// whole section off the page.
+// stroke, opacity, rotation, numbers, shadows, gradients). Rendered hidden
+// and filled by the async brand hydration; a doc carrying none of these keeps
+// the whole section off the page.
 function tokensSection(): string {
   return `
     <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="${escape(dashFlag('dash-tokens'))}" hidden>
@@ -218,7 +221,7 @@ function tokensSection(): string {
     </section>`;
 }
 
-// A CSS length as this page will render into a style attribute — same
+// A CSS length as this page will render into a style attribute - same
 // defence-in-depth stance as brand-vars.ts's RADIUS_RE, widened to allow the
 // negative offsets a shadow may carry. Anything else simply drops its preview.
 const TOKEN_LEN_RE = /^-?\d+(\.\d+)?(px|rem|em)$/;
@@ -238,7 +241,7 @@ function tokenChip(o: { name: string; kind: string; value: string; preview: stri
 
 /** A studio token's tiny visual: bar / rule / translucency / needle / shadow /
  *  gradient. Values come from an untrusted imported doc and land in a style
- *  attribute, so every branch validates before it renders — a chip whose value
+ *  attribute, so every branch validates before it renders. A chip whose value
  *  can't be shown safely just shows none. `resolve` answers gradient stops'
  *  `{path}` alias colours (gradientCss re-validates whatever it returns). */
 function studioPreview(tok: StudioToken, resolve?: (ref: string) => unknown): string {
@@ -267,7 +270,7 @@ function studioPreview(tok: StudioToken, resolve?: (ref: string) => unknown): st
       return css ? `<span class="dash-token-grad" style="background:${escape(css)}"></span>` : '';
     }
     default:
-      return ''; // number — the value line carries it
+      return ''; // number - the value line carries it
   }
 }
 
@@ -283,7 +286,7 @@ function shadowCss(raw: unknown): string | null {
   return `${dim(r.offsetX) ?? '0px'} ${dim(r.offsetY) ?? '0px'} ${dim(r.blur) ?? '0px'} ${dim(r.spread) ?? '0px'} ${color}`;
 }
 
-/** A studio token's display value — the contract's formatter first, else the
+/** A studio token's display value - the contract's formatter first, else the
  *  raw string/number itself (shadows/gradients read from their preview). */
 function studioValue(tok: StudioToken): string {
   const formatted = formatStudioValue(tok);
@@ -302,7 +305,7 @@ function cssRgbToHex(css: string): string | null {
 
 // ── Palette: the compact "ink ribbon" ──────────────────────────────────────
 // Every colour as one thin bar, grouped by family; hover/focus drives a single
-// mono readout (the instrument), click copies the hex. No value is lost — the
+// mono readout (the instrument), click copies the hex. No value is lost - the
 // full name/hex/CMYK grid is one click away under "All values".
 function inkBar(c: PaletteEntry): string {
   const trans = isTransparent(c.hex);
@@ -341,7 +344,7 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
       <span class="dash-readout-cmyk" data-ro-cmyk></span>
     </div>`;
 
-  // Full values, disclosed on demand — the classic grouped swatch grid so no
+  // Full values, disclosed on demand: the classic grouped swatch grid so no
   // hex / CMYK figure is ever hidden, only tucked away.
   const fullGrid = `
     <details class="dash-values">
@@ -390,15 +393,17 @@ function wireCopyButtons(root: ParentNode): void {
 }
 
 // ── Capabilities: grouped; each card POPS its detail open in a dialog ────────
-// A card is a button that opens the shared dialog with its feature list, rather than an
-// inline <details> that reflows the whole section as it expands. The detail markup rides
-// in a sibling <template> (inert until cloned into the popup on click).
-// Every string on a card comes from lib/capabilities-data.ts, so its t() keys are
-// DYNAMIC — they aren't picked up by scripts/translate.ts's literal-call-site scan.
-// They're translated by that script's own `caps` corpus (which reads the data module
-// directly) into the lazily-loaded `caps` namespace, merged into the catalog by the
-// loadNamespace('caps') below. A feature's `desc` carries authored inline HTML, so it
-// stays raw — its translation preserves the same tags (the pipeline validates that).
+// A card is a button that opens the shared dialog with its feature list,
+// instead of an inline <details> that reflows the whole section as it
+// expands. The detail markup rides in a sibling <template> (inert until
+// cloned into the popup on click).
+// Every string on a card comes from lib/capabilities-data.ts, so its t() keys
+// are DYNAMIC: they aren't picked up by scripts/translate.ts's
+// literal-call-site scan. They're translated by that script's own `caps`
+// corpus (which reads the data module directly) into the lazily-loaded
+// `caps` namespace, merged into the catalog by the loadNamespace('caps')
+// below. A feature's `desc` carries authored inline HTML, so it stays raw;
+// its translation preserves the same tags (the pipeline validates that).
 function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string; shot?: string }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
@@ -408,18 +413,19 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   const peek = `<ul class="dash-cap-peek" aria-hidden="true">${
     card.features.map((f) => `<li>${escape(t(f.name))}</li>`).join('')
   }</ul>`;
-  // The search haystack, built HERE rather than scraped from the DOM at wire time —
-  // the feature descriptions live in an inert <template> whose text a querySelector
-  // sweep would have to clone to read, and the untranslated `keywords` have no
-  // rendered home at all. Lowercased once at build so the filter is a plain
-  // substring test per keystroke. Descriptions are stripped of their inline tags,
-  // else a search for "code" would match every <code> element on the page.
+  // The search haystack, built HERE instead of scraped from the DOM at wire
+  // time: the feature descriptions live in an inert <template> whose text a
+  // querySelector sweep would have to clone to read, and the untranslated
+  // `keywords` have no rendered home at all. Lowercased once at build so the
+  // filter is a plain substring test per keystroke. Descriptions are
+  // stripped of their inline tags, or a search for "code" would match every
+  // <code> element on the page.
   const haystack = [
     t(card.title),
     ...card.features.map((f) => `${t(f.name)} ${t(f.desc)}`),
     card.keywords ?? '',
   ].join(' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
-  // The shot is NOT rendered here — only carried on the item, so the dialog can
+  // The shot is NOT rendered here - only carried on the item, so the dialog can
   // build an <img> at open time. A 264px card has no room for a screenshot, and
   // eagerly emitting ~45 <img> tags would fetch ~45 SVGs for a panel where most
   // are never opened. One image, on demand, for the card you actually clicked.
@@ -444,14 +450,15 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
 }
 
 async function capabilitiesSection(): Promise<string> {
-  // The copy and its translations load together — the data module and the `caps`
-  // string namespace it's keyed by. Both are lazy: this panel is one tab of one
-  // view, and its ~300 prose strings have no business in the boot bundle.
+  // The copy and its translations load together: the data module and the
+  // `caps` string namespace it's keyed by. Both are lazy: this panel is one
+  // tab of one view, and its ~300 prose strings have no business in the boot
+  // bundle.
   const [{ CAPABILITY_SECTIONS }] = await Promise.all([
     import('../lib/capabilities-data.ts'),
     loadNamespace('caps'),
   ]);
-  // Each group is its own collapsible accordion panel — the section desc stays
+  // Each group is its own collapsible accordion panel - the section desc stays
   // visible in the summary as a table-of-contents, and the card grid expands below.
   // The first opens by default; the rest are folded so the whole map is scannable
   // at a glance. data-dash-collapse wires the shared fold sound cue.
@@ -469,13 +476,15 @@ async function capabilitiesSection(): Promise<string> {
       </summary>
       <div class="dash-cap-grid">${s.cards.map(capCard).join('')}</div>
     </details>`).join('');
-  // Search. This map is long by design — eleven sections, ~60 cards — so the one
-  // thing it must not require is reading it top to bottom to find "does this do
-  // CMYK". The field filters cards live and force-opens whichever sections still
-  // hold a match, so a query turns the accordion into a flat result list.
+  // Search. This map is long by design (eleven sections, ~60 cards), so the
+  // one thing it must not require is reading it top to bottom to find "does
+  // this do CMYK". The field filters cards live and force-opens whichever
+  // sections still hold a match, so a query turns the accordion into a flat
+  // result list.
   //
-  // It is deliberately NOT wrapped in a <form>: an Enter keypress inside a lone
-  // text input in a form triggers implicit submission and would reload the view.
+  // It is deliberately NOT wrapped in a <form>: an Enter keypress inside a
+  // lone text input in a form triggers implicit submission and would reload
+  // the view.
   const totalCards = CAPABILITY_SECTIONS.reduce((n, s) => n + s.cards.length, 0);
   const search = `
       <div class="dash-cap-search">
@@ -489,14 +498,15 @@ async function capabilitiesSection(): Promise<string> {
                 aria-label="${escape(t('Clear search'))}">✕</button>
       </div>
       <p class="dash-cap-count" id="dash-cap-results" data-cap-count role="status" aria-live="polite" hidden></p>`;
-  // Shown only when a query matches nothing — an accordion of collapsed, empty
+  // Shown only when a query matches nothing - an accordion of collapsed, empty
   // sections reads as "broken", so say so in words.
   const empty = `
       <p class="dash-cap-empty" data-cap-empty hidden>${escape(t('Nothing matches that. Try a format (“svg”, “pptx”), a task (“print”, “share”) or a tool name.'))}</p>`;
   // The dialog is two-pane on a wide screen: the screenshot carries the left
-  // (the thing being described), the feature list the right (what is true about
-  // it). On a card with no shot the figure is removed entirely and the dialog
-  // narrows to a single reading column — an empty pane would be worse than none.
+  // (the thing being described), the feature list the right (what is true
+  // about it). On a card with no shot the figure is removed entirely and the
+  // dialog narrows to a single reading column: an empty pane would be worse
+  // than none.
   const modal = `
       <dialog class="dash-cap-modal" data-cap-modal>
         <div class="dash-cap-modal-card">
@@ -534,11 +544,12 @@ function refPanel(flag: string, defaultOpen: boolean, id: string, title: string,
     </details>`;
 }
 
-// A compact "type facts" strip for the Type-in-motion tile — the fonts IN FORCE,
-// resolved from the live --font-brand / --font-mono vars (platform defaults, the
-// brand's font tokens, or a user-installed primary — whatever is actually set),
-// with each row rendered in its own face. "Manage fonts" points at the Start
-// studio's Type step, where fonts are added and the primary is chosen.
+// A compact "type facts" strip for the Type-in-motion tile: the fonts IN
+// FORCE, resolved from the live --font-brand / --font-mono vars (platform
+// defaults, the brand's font tokens, or a user-installed primary, whatever is
+// actually set), with each row rendered in its own face. "Manage fonts"
+// points at the Start studio's Type step, where fonts are added and the
+// primary is chosen.
 function typeFacts(): string {
   const { brand, mono } = loadedFaces();
   const rootStyle = getComputedStyle(document.documentElement);
@@ -558,8 +569,8 @@ function typeFacts(): string {
     </ul>`;
 }
 
-// Reuses the shared swatch() tile (chip + name + hex + ink readout, same as the
-// "All values" grid below) rather than a bespoke list — a locked-ink brand
+// Reuses the shared swatch() tile (chip + name + hex + ink readout, same as
+// the "All values" grid below) instead of a bespoke list: a locked-ink brand
 // colour should look identical wherever it's shown.
 function printBody(palette: readonly PaletteEntry[]): string {
   const locked = palette.filter((c) => isLockedInk(c) && !isTransparent(c.hex));
@@ -681,15 +692,16 @@ function renderStorageGlance(m: StorageGlance): string {
 export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise<void> {
   document.title = t('Dashboard — Lolly');
 
-  // Deep links: `#/d?print`, `#/d?formats`, … force-open a reference panel or a
-  // capability group and scroll to it. Read straight off the hash — no router change.
-  // `?tab=<key>` picks the starting tab (the /b · /brand aliases land here as
-  // ?tab=brand); it is NOT a section flag, so keep it out of the flag set.
+  // Deep links: `#/d?print`, `#/d?formats`, ... force-open a reference panel
+  // or a capability group and scroll to it. Read straight off the hash, no
+  // router change. `?tab=<key>` picks the starting tab (the /b - /brand
+  // aliases land here as ?tab=brand); it is NOT a section flag, so keep it
+  // out of the flag set.
   const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
   const flags = new Set([...params.keys()].filter((k) => k !== 'tab'));
   const tabParam = params.get('tab') ?? '';
-  // Design System is the landing tab — the brand is what people come here to set;
-  // ?tab=<key> (and the deep-link handler) override it.
+  // Design System is the landing tab: the brand is what people come here to
+  // set; ?tab=<key> (and the deep-link handler) override it.
   const initialTab = DASH_TAB_KEYS.has(tabParam) ? tabParam : 'brand';
 
   const tools = (window as Window & { __toolIndex?: { tools: CatalogTool[] } }).__toolIndex?.tools ?? [];
@@ -698,19 +710,21 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   const capsHtml = await capabilitiesSection();
 
-  // The active brand's palette (SUSE's measured inks, or whichever catalog is
-  // mounted) — not the tokenless PALETTE fallback, so this page always shows
-  // the profile that's actually running. See lib/live-palette.ts.
+  // The active brand's palette (SUSE's measured inks, or whichever catalog
+  // is mounted), not the tokenless PALETTE fallback, so this page always
+  // shows the profile that's actually running. See lib/live-palette.ts.
   const palette = await livePalette(host);
 
-  // The whole palette on the wheel, each dot labelled with its canonical scale-token name
-  // — jungle-6, pine-2, persimmon-5 — not the display label ("Jungle 6"). The tint ramps
-  // (jungle-1..8, pine-1..8, …) are what carry those numbered tokens, so they're plotted
-  // too, not just the base colours. The palette aliases some hexes (base Persimmon IS
-  // persimmon-5, base Jungle IS jungle-4), so dedup by hex: a same-family scale token
-  // supersedes its bare base name (persimmon → persimmon-5), while a cross-family alias
-  // keeps its distinct brand name (Mint is #90ebcd, which is also pine-6 — it stays "mint").
-  // 'transparent' has no hue to plot, so it's skipped.
+  // The whole palette on the wheel, each dot labelled with its canonical
+  // scale-token name (jungle-6, pine-2, persimmon-5), not the display label
+  // ("Jungle 6"). The tint ramps (jungle-1..8, pine-1..8, ...) are what carry
+  // those numbered tokens, so they're plotted too, not just the base
+  // colours. The palette aliases some hexes (base Persimmon IS persimmon-5,
+  // base Jungle IS jungle-4), so dedup by hex: a same-family scale token
+  // supersedes its bare base name (persimmon becomes persimmon-5), while a
+  // cross-family alias keeps its distinct brand name (Mint is #90ebcd, which
+  // is also pine-6; it stays "mint"). 'transparent' has no hue to plot, so
+  // it's skipped.
   const tokenName = (label: string): string => label.toLowerCase().replace(/\s+/g, '-'); // "Jungle 6" → "jungle-6"
   const familyOf = (name: string): string => name.replace(/-\d+$/, '');                  // "jungle-6" → "jungle"
   const isScaleToken = (name: string): boolean => /-\d+$/.test(name);
@@ -721,8 +735,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const name = tokenName(c.label);
     const prev = byHex.get(key);
     if (!prev) { byHex.set(key, { hex: c.hex, label: name }); continue; }
-    // Base colours list first, so a same-family scale token (persimmon-5) arriving after its
-    // bare base (persimmon) upgrades it; a cross-family alias (pine-6 vs mint) does not.
+    // Base colours list first, so a same-family scale token (persimmon-5)
+    // arriving after its bare base (persimmon) upgrades it; a cross-family
+    // alias (pine-6 vs mint) does not.
     if (isScaleToken(name) && !isScaleToken(prev.label) && familyOf(name) === prev.label) {
       byHex.set(key, { hex: c.hex, label: name });
     }
@@ -841,9 +856,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       </div>
     </div>`;
 
-  // Include the read-only foot note (now inside the Design system panel) in the
-  // reveal ladder so it settles in with that panel's other sections instead of
-  // snapping in at full opacity beneath the cascade.
+  // Include the read-only foot note (now inside the Design system panel) in
+  // the reveal ladder so it settles in with that panel's other sections
+  // instead of snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
@@ -852,29 +867,31 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
-  // Universal drop front door — the same scoped router as the gallery (design →
-  // Design, PDF → import/compress, media → library or /verify). Torn down
-  // on navigation; the cast is erased (the concrete web host carries the picker's
-  // upload surface).
+  // Universal drop front door: the same scoped router as the gallery (design
+  // to Design, PDF to import/compress, media to library or /verify). Torn
+  // down on navigation; the cast is erased (the concrete web host carries the
+  // picker's upload surface).
   attachDropRouter(viewEl, host as unknown as PickerHost);
 
-  // "This device" starts collapsed (the server-rendered default, above) everywhere,
-  // then opens itself right away when the tab actually lays out as two columns
-  // (≥900px, matching .dash-device-grid's breakpoint in dashboard.css) — there's
-  // room to just show it there, whereas mobile's single column wants everything
-  // folded by default. Runs before the toggle-cue listener below is attached, so
-  // this doesn't play the fold sound on page load.
+  // "This device" starts collapsed (the server-rendered default, above)
+  // everywhere, then opens itself right away when the tab actually lays out
+  // as two columns (≥900px, matching .dash-device-grid's breakpoint in
+  // dashboard.css). There's room to just show it there, whereas mobile's
+  // single column wants everything folded by default. Runs before the
+  // toggle-cue listener below is attached, so this doesn't play the fold
+  // sound on page load.
   const deviceDetails = viewEl.querySelector<HTMLDetailsElement>('#dash-device');
   if (deviceDetails && window.matchMedia('(min-width: 900px)').matches) deviceDetails.open = true;
 
-  // Primary tabs (lib/tabs.ts's shared roving-tabindex machinery — component
-  // audit rec 1). Returns a `selectTab(key)` so the deep-link handler can jump
-  // to the panel that owns a flagged section. Wiring the tabs before the deep
-  // link means a `?print`/`?formats` link both switches to the right tab AND
-  // scrolls. `onSelect` owns everything view-specific: showing the matching
-  // panel, and — for a live click/arrow-key selection, not the initial paint
-  // or a deep link — the toggle sound + mirroring the tab into the URL
-  // (replaceState, so it fires no hashchange and doesn't re-mount the view).
+  // Primary tabs (lib/tabs.ts's shared roving-tabindex machinery, component
+  // audit rec 1). Returns a `selectTab(key)` so the deep-link handler can
+  // jump to the panel that owns a flagged section. Wiring the tabs before the
+  // deep link means a `?print`/`?formats` link both switches to the right
+  // tab AND scrolls. `onSelect` owns everything view-specific: showing the
+  // matching panel, and, for a live click/arrow-key selection (not the
+  // initial paint or a deep link), the toggle sound plus mirroring the tab
+  // into the URL (replaceState, so it fires no hashchange and doesn't
+  // re-mount the view).
   const dashPanels = [...viewEl.querySelectorAll<HTMLElement>('[data-dash-panel]')];
   const dashTabsEl = viewEl.querySelector<HTMLElement>('.dash-tabs');
   const selectTab = dashTabsEl ? wireTabs(dashTabsEl, {
@@ -890,10 +907,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // Establish the initial state without rewriting the URL (aliases already set it).
   selectTab(initialTab);
 
-  // The brand hero + token chips, hydrated just after first paint rather than
+  // The brand hero + token chips, hydrated just after first paint instead of
   // blocking it (IDB reads: brand discovery, tokens, the raw doc). Everything
-  // here READS — the hero's only affordances are the #/start CTA and a
-  // copy-to-clipboard on the primary field — so there is nothing to tear down.
+  // here READS: the hero's only affordances are the #/start CTA and a
+  // copy-to-clipboard on the primary field, so there is nothing to tear down.
   // Guarded after every await: a route change mid-read must not paint a
   // detached node.
   void (async () => {
@@ -905,15 +922,16 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       isLocked?(): Promise<boolean>;
     } | undefined;
 
-    // Dress the hero in the brand's own semantic slots: applyBrandVars resolves
-    // color.semantic.* onto the section as --brand-* custom properties. Every
-    // consumer in dashboard.css keeps a shell-token fallback, so a doc without
-    // semantic slots (SUSE's) or no doc at all reads perfectly in both themes.
+    // Dress the hero in the brand's own semantic slots: applyBrandVars
+    // resolves color.semantic.* onto the section as --brand-* custom
+    // properties. Every consumer in dashboard.css keeps a shell-token
+    // fallback, so a doc without semantic slots (SUSE's) or no doc at all
+    // reads perfectly in both themes.
     void applyBrandVars(hero, host as Parameters<typeof applyBrandVars>[1]).catch(() => { /* cosmetic */ });
 
-    // Name + status — the tokens asset's metadata (a user install's own label,
-    // else the catalogue asset's name with its "… tokens" suffix trimmed for
-    // display: "SUSE Brand Design Tokens" reads as "SUSE" up here).
+    // Name + status: the tokens asset's metadata (a user install's own
+    // label, else the catalogue asset's name with its "... tokens" suffix
+    // trimmed for display: "SUSE Brand Design Tokens" reads as "SUSE" up here).
     let rec: { id: string; name?: string; meta?: Record<string, unknown> } | null = null;
     try {
       rec = (await (host.assets as unknown as {
@@ -938,16 +956,17 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             ? t('Running the catalogue’s built-in brand. Make it yours — pick a colour and Lolly derives the rest. It stays on this device.')
             : t('This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.');
     }
-    // The one action: adjust the brand at Start. A locked catalogue's brand is
-    // part of its identity, so the CTA never shows there (the status line above
-    // is the fixed-brand note).
+    // The one action: adjust the brand at Start. A locked catalogue's brand
+    // is part of its identity, so the CTA never shows there (the status line
+    // above is the fixed-brand note).
     const cta = hero.querySelector<HTMLElement>('[data-hero-cta]');
     if (cta) cta.hidden = locked;
 
-    // A locked brand gets a seal rather than a disabled-looking editor: a metal
-    // disc struck in the brand's own inks, padlocked. It only exists when the
-    // catalogue's tokens asset is authoritative (brandLock — see bridge/tokens.ts),
-    // which is also the only case where the editor at #/start refuses to open.
+    // A locked brand gets a seal instead of a disabled-looking editor: a
+    // metal disc struck in the brand's own inks, padlocked. It only exists
+    // when the catalogue's tokens asset is authoritative (brandLock, see
+    // bridge/tokens.ts), which is also the only case where the editor at
+    // #/start refuses to open.
     const lockEl = viewEl.querySelector<HTMLElement>('#dash-lock');
     if (lockEl && locked) {
       const brandLabel = nameEl?.textContent?.trim() || t('This brand');
@@ -960,11 +979,11 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       lockEl.hidden = false;
     }
 
-    // The horizontal-primary logo, when the brand carries one — resolved from
+    // The horizontal-primary logo, when the brand carries one, resolved from
     // its asset token to the stored asset's url and rendered via <img>, so an
-    // uploaded SVG's markup is drawn, never executed. On a dark-leaning theme
-    // (dark/brand) the reverse form is preferred when present. The bridge owns
-    // the object URL (its cache), so nothing here revokes it.
+    // uploaded SVG's markup is drawn, never executed. On a dark-leaning
+    // theme (dark/brand) the reverse form is preferred when present. The
+    // bridge owns the object URL (its cache), so nothing here revokes it.
     try {
       const wantReverse = currentTheme() !== 'light';
       const refs = wantReverse
@@ -975,17 +994,18 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         if (typeof id !== 'string' || !id || id.startsWith('{')) continue;
         const asset = await host.assets.get(id).catch(() => null);
         if (!viewEl.contains(hero)) break;
-        if (!asset?.url) continue; // stale token / missing asset — try the next form
+        if (!asset?.url) continue; // stale token / missing asset - try the next form
         const img = hero.querySelector<HTMLImageElement>('[data-hero-logo]');
         if (img) { img.src = asset.url; img.hidden = false; }
         break;
       }
     } catch { /* no logo installed — the name carries the hero */ }
 
-    // The primary field's quiet instrument line: hex · oklch, plus click-to-copy
-    // (wireCopyButtons reads data-copy at click time). Resolved from the brand's
-    // semantic primary; when the doc declares none, read the chip's painted
-    // fallback (the shell accent) so the readout always tells the truth.
+    // The primary field's quiet instrument line: hex + oklch, plus
+    // click-to-copy (wireCopyButtons reads data-copy at click time).
+    // Resolved from the brand's semantic primary; when the doc declares
+    // none, read the chip's painted fallback (the shell accent) so the
+    // readout always tells the truth.
     const chip = hero.querySelector<HTMLButtonElement>('[data-hero-primary]');
     if (chip && viewEl.contains(chip)) {
       let hex: string | null = null;
@@ -1000,9 +1020,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       }
     }
 
-    // Brand tokens — the read-only chip grid: the corner radius (same token the
-    // Start studio's slider writes) plus every studio-managed primitive in the
-    // raw doc. A doc carrying none keeps the section hidden entirely.
+    // Brand tokens: the read-only chip grid, the corner radius (same token
+    // the Start studio's slider writes) plus every studio-managed primitive
+    // in the raw doc. A doc carrying none keeps the section hidden entirely.
     try {
       const radius = await tokensApi?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
       let studio: StudioToken[] = [];
@@ -1011,7 +1031,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         const doc = await tokensApi?.raw?.();
         if (doc) {
           studio = listStudioTokens(doc);
-          // Gradient stops may alias palette swatches — resolve against the
+          // Gradient stops may alias palette swatches - resolve against the
           // same doc, in the theme the page is showing.
           const set = createTokenSet(doc, { theme: currentTheme() === 'dark' ? 'dark' : 'light' });
           resolveTok = (ref: string) => set.resolve(ref);
@@ -1034,9 +1054,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   })();
 
   // Fold cue: a soft hydraulic open/close whenever a primary section (device,
-  // palette, catalogue, capabilities) is collapsed or revealed. Capture phase —
-  // the <details> `toggle` event does not bubble, so a bubble-phase delegated
-  // listener never sees it. Respects the global mute (playSfx no-ops when muted).
+  // palette, catalogue, capabilities) is collapsed or revealed. Capture
+  // phase: the <details> `toggle` event does not bubble, so a bubble-phase
+  // delegated listener never sees it. Respects the global mute (playSfx
+  // no-ops when muted).
   viewEl.addEventListener('toggle', (e) => {
     const d = e.target;
     if (d instanceof HTMLDetailsElement && d.hasAttribute('data-dash-collapse')) {
@@ -1093,12 +1114,13 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           mShot.classList.remove('is-dark-shot');
           if (slug) {
             const light = `/info/shots/${slug}.svg`;
-            // Under any non-light theme (dark, brand) prefer the dark twin the
-            // docs pipeline captured — `<slug>.dark.svg`. Not every shot has one
-            // (a light-only recipe like auth-url-render, whose bare canvas has no
-            // chrome to theme), so a one-shot onerror falls back to the light
-            // file — which also flips the frame pad back, so a light image is
-            // never left sitting on the dark pad meant for a dark capture.
+            // Under any non-light theme (dark, brand) prefer the dark twin
+            // the docs pipeline captured, `<slug>.dark.svg`. Not every shot
+            // has one (a light-only recipe like auth-url-render, whose bare
+            // canvas has no chrome to theme), so a one-shot onerror falls
+            // back to the light file, which also flips the frame pad back,
+            // so a light image is never left sitting on the dark pad meant
+            // for a dark capture.
             mImg.onerror = () => {
               mImg.onerror = null;
               mShot.classList.remove('is-dark-shot');
@@ -1130,21 +1152,21 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   }
 
   // ── Capabilities search ───────────────────────────────────────────────────
-  // Filters the cards live and force-opens the sections that still hold a match,
-  // so a query flattens the accordion into a result list. Every card's haystack
-  // was baked into data-cap-hay at render time (see capCard) — including the
-  // untranslated `keywords` and the feature prose that otherwise only exists
-  // inside an inert <template> — so a keystroke costs one substring test per
-  // card and never touches a template's content.
+  // Filters the cards live and force-opens the sections that still hold a
+  // match, so a query flattens the accordion into a result list. Every
+  // card's haystack was baked into data-cap-hay at render time (see
+  // capCard), including the untranslated `keywords` and the feature prose
+  // that otherwise only exists inside an inert <template>, so a keystroke
+  // costs one substring test per card and never touches a template's content.
   const capSearch = viewEl.querySelector<HTMLInputElement>('[data-cap-search]');
   if (capSearch) {
     const groups = [...viewEl.querySelectorAll<HTMLDetailsElement>('.dash-cap-group')];
     const countEl = viewEl.querySelector<HTMLElement>('[data-cap-count]');
     const emptyEl = viewEl.querySelector<HTMLElement>('[data-cap-empty]');
     const clearBtn = viewEl.querySelector<HTMLButtonElement>('[data-cap-search-clear]');
-    // The fold state to restore when the query is cleared, captured once at wire
-    // time. Without this, clearing a search would leave every section hanging
-    // open — the user's own folding silently replaced by the filter's.
+    // The fold state to restore when the query is cleared, captured once at
+    // wire time. Without this, clearing a search would leave every section
+    // hanging open, the user's own folding silently replaced by the filter's.
     const wasOpen = new Map(groups.map((g) => [g, g.open]));
 
     const apply = (raw: string): void => {
@@ -1181,18 +1203,19 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     };
 
     capSearch.addEventListener('input', () => apply(capSearch.value));
-    // Esc clears rather than closing anything — the field is inside a <dialog>-free
-    // panel, so the key is free, and a filtered page with no visible way back is
-    // the trap this avoids.
+    // Esc clears instead of closing anything: the field is inside a
+    // <dialog>-free panel, so the key is free, and a filtered page with no
+    // visible way back is the trap this avoids.
     capSearch.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && capSearch.value) { e.stopPropagation(); capSearch.value = ''; apply(''); }
     });
     clearBtn?.addEventListener('click', () => { capSearch.value = ''; apply(''); capSearch.focus(); });
   }
 
-  // Build-up: the capability cards start hidden and float in, staggered, when their grid
-  // scrolls into view. Opt-in via [data-build] so that WITHOUT this JS (or under
-  // reduced-motion) the cards are simply visible — never a blank grid.
+  // Build-up: the capability cards start hidden and float in, staggered,
+  // when their grid scrolls into view. Opt-in via [data-build] so that
+  // WITHOUT this JS (or under reduced-motion) the cards are simply visible,
+  // never a blank grid.
   const reduceMotion = prefersReducedMotion();
   if (!reduceMotion && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries, obs) => {
@@ -1215,16 +1238,18 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   // ── Deferred hydration ────────────────────────────────────────────────────
   // Fill the pieces kept off the first-paint path (device probe + a network
-  // round-trip for assets + storage measurers). Guarded by a per-mount token so a
-  // stale fill from a superseded same-view remount can't wire onto the current one.
+  // round-trip for assets + storage measurers). Guarded by a per-mount token
+  // so a stale fill from a superseded same-view remount can't wire onto the
+  // current one.
   const mountEl = viewEl as HTMLElement & { _dashMount?: number };
   const myMount = (mountEl._dashMount = (mountEl._dashMount || 0) + 1);
   const isCurrent = <T extends Element>(node: T | null): node is T =>
     mountEl._dashMount === myMount && !!node && viewEl.contains(node);
 
-  // Recent creations — reuse the session preview thumbnails the Projects/gallery tiles
-  // already cache (host.state.list().thumb); no re-render. Tool sessions only (they
-  // reopen cleanly via ?slot=), newest first, into the interactive swipe stack.
+  // Recent creations: reuse the session preview thumbnails the
+  // Projects/gallery tiles already cache (host.state.list().thumb); no
+  // re-render. Tool sessions only (they reopen cleanly via ?slot=), newest
+  // first, into the interactive swipe stack.
   (host.state.list() as Promise<Array<{ slot: string; toolId?: string; label?: string; thumb?: string | null; updatedAt?: string }>>)
     .then((rows) => {
       const recent = rows
@@ -1241,9 +1266,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     })
     .catch(() => { /* no recent sessions — the section stays hidden */ });
 
-  // Latest exports — the downloads log (export-history.ts), newest first, into its own
-  // swipe stack. Distinct from Recent creations: these are files you downloaded, not
-  // sessions you saved.
+  // Latest exports: the downloads log (export-history.ts), newest first,
+  // into its own swipe stack. Distinct from Recent creations: these are
+  // files you downloaded, not sessions you saved.
   import('../lib/export-history.ts')
     .then(({ listExports }) => listExports(12))
     .then((exports) => {
@@ -1278,7 +1303,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       if (isCurrent(chipsSlot) && snap.chips.length) {
         chipsSlot.innerHTML = snap.chips.map((c) => `<span class="dash-chip">${escape(c)}</span>`).join('');
       }
-      // Only wire the live rows if THIS mount is still the current one — a
+      // Only wire the live rows if THIS mount is still the current one - a
       // superseded same-view remount whose probe resolves late must not attach a
       // second listener set (and re-chain _cleanup) onto the live mount's nodes.
       if (mountEl._dashMount === myMount) wireLive(viewEl); // [data-live] rows now exist
@@ -1311,14 +1336,14 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   }
 }
 
-// Share action for the Latest-exports stack: a pill beside the deck's Open link
-// that hands whichever export is at the FRONT to the shared Share-link dialog
-// (components/share-dialog.ts — extracted exactly to be callable anywhere) with
-// the entry's toolId + serialized reopen state. The stack keeps its [data-open]
-// href aimed at the front card (recent-stack layout()), so that href keys back to
-// the export entry; the cards' own reopen links stay untouched. A duplicate href
-// (same tool + state downloaded twice) resolves to the newest entry — same link
-// either way.
+// Share action for the Latest-exports stack: a pill beside the deck's Open
+// link that hands whichever export is at the FRONT to the shared Share-link
+// dialog (components/share-dialog.ts, extracted exactly to be callable
+// anywhere) with the entry's toolId + serialized reopen state. The stack
+// keeps its [data-open] href aimed at the front card (recent-stack
+// layout()), so that href keys back to the export entry; the cards' own
+// reopen links stay untouched. A duplicate href (same tool + state
+// downloaded twice) resolves to the newest entry: same link either way.
 function wireExportShare(stackMount: HTMLElement, entries: ExportEntry[], hrefs: string[]): void {
   const openEl = stackMount.querySelector<HTMLAnchorElement>('[data-open]');
   const ui = stackMount.querySelector<HTMLElement>('.dash-stack-ui');
@@ -1352,11 +1377,12 @@ function wireExportShare(stackMount: HTMLElement, entries: ExportEntry[], hrefs:
   });
 }
 
-// Open + scroll to a deep-linked panel/group. Reference panels AND capability
-// groups are <details> now, so force the match open — plus every ancestor <details>
-// (a capability group lives inside the outer "What Lolly can do" panel), or the
-// linked content would be folded away and the scroll would land on nothing. The
-// target may live in an inactive tab, so switch to its panel first.
+// Open + scroll to a deep-linked panel/group. Reference panels AND
+// capability groups are <details> now, so force the match open, plus every
+// ancestor <details> (a capability group lives inside the outer "What Lolly
+// can do" panel), or the linked content would be folded away and the scroll
+// would land on nothing. The target may live in an inactive tab, so switch
+// to its panel first.
 function applyDeepLink(viewEl: HTMLElement, flags: Set<string>, selectTab?: (key: string) => void): void {
   let target: HTMLElement | null = null;
   viewEl.querySelectorAll<HTMLElement>('[data-flag]').forEach((el) => {
@@ -1369,15 +1395,17 @@ function applyDeepLink(viewEl: HTMLElement, flags: Set<string>, selectTab?: (key
     }
   });
   if (target) {
-    // Reveal the tab that owns the target before measuring/scrolling — a hidden
-    // panel has no layout box, so scrollIntoView on it would be a no-op.
+    // Reveal the tab that owns the target before measuring/scrolling: a
+    // hidden panel has no layout box, so scrollIntoView on it would be a no-op.
     const panelKey = (target as HTMLElement).closest<HTMLElement>('[data-dash-panel]')?.dataset.dashPanel;
     if (panelKey && selectTab) selectTab(panelKey);
-    // Sections above the target (palette wheel, catalogue summary) mount async and keep
-    // growing the page for up to ~1.5s after this runs, shoving the target down — a
-    // one-shot scroll lands on its pre-expansion spot. Re-land on a short repeating
-    // beat while the layout settles so the deep-linked group reliably ends up in view.
-    // Each re-land just re-aims at the target (idempotent once it's already at the top).
+    // Sections above the target (palette wheel, catalogue summary) mount
+    // async and keep growing the page for up to ~1.5s after this runs,
+    // shoving the target down, so a one-shot scroll lands on its
+    // pre-expansion spot. Re-land on a short repeating beat while the
+    // layout settles so the deep-linked group reliably ends up in view.
+    // Each re-land just re-aims at the target (idempotent once it's already
+    // at the top).
     const land = (): void => { target!.scrollIntoView({ block: 'start', behavior: 'auto' }); };
     requestAnimationFrame(land);
     let n = 0;
@@ -1386,7 +1414,7 @@ function applyDeepLink(viewEl: HTMLElement, flags: Set<string>, selectTab?: (key
   }
 }
 
-// Palette readout instrument — one shared mono line driven by whichever ink bar
+// Palette readout instrument - one shared mono line driven by whichever ink bar
 // is hovered or focused. Delegated so it survives nothing (static markup) and
 // costs one listener pair.
 function wireReadout(viewEl: HTMLElement): void {
@@ -1417,11 +1445,11 @@ function wireReadout(viewEl: HTMLElement): void {
   ribbon.addEventListener('focusin', (e) => show(e.target as Element));
 }
 
-// Keep the live device rows (viewport, orientation) current while mounted. The
-// wiring itself is the shared one in lib/device-info.ts (Colour Lab shows the
-// same rows); this only chains its disposer onto viewEl._cleanup, since the
-// device panel is never collapsed here and so the listeners run for the view's
-// whole life.
+// Keep the live device rows (viewport, orientation) current while mounted.
+// The wiring itself is the shared one in lib/device-info.ts (Colour Lab
+// shows the same rows); this only chains its disposer onto viewEl._cleanup,
+// since the device panel is never collapsed here, so the listeners run for
+// the view's whole life.
 function wireLive(viewEl: HTMLElement): void {
   const dispose = wireDeviceLive(viewEl);
   const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;

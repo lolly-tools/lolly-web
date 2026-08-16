@@ -7,16 +7,16 @@
  * "supported" for every caller, so the raster escape hatch never fired and the effect
  * was simply absent from the file. No warning, no degraded version, nothing. That made
  * design's DOF blur and its `shadow: content` / `shadow: depth` silhouettes
- * PDF-invisible — the two effects plan 104's depth work is built out of.
+ * PDF-invisible - the two effects plan 104's depth work is built out of.
  *
  * The oracle is the PDF's object structure, not pixels. "Did the effect survive into the
  * file at all" is exactly answerable by counting embedded image XObjects, and it is the
  * question that was wrong; how CLOSE the result is to the browser is already measured,
  * per-effect and against real pixels, by export-pdf-shadow-fidelity.test.ts.
  *
- * The SVG assertions are the other half. The fix is a capability SIGNAL — the SVG walker
+ * The SVG assertions are the other half. The fix is a capability SIGNAL - the SVG walker
  * declares `cssFilter` because it emits the chain, the PDF walker declines it because it
- * cannot — so the thing that could go wrong is the signal leaking and turning crisp SVG
+ * cannot - so the thing that could go wrong is the signal leaking and turning crisp SVG
  * filters into bitmaps. Every fixture is therefore checked in both sinks: raster in PDF,
  * still real `<filter>` primitives and NO `<image>` in SVG.
  *
@@ -78,7 +78,7 @@ async function bundle(): Promise<string> {
  * and one box carrying BOTH, which is what a blurred box with a depth shadow computes to
  * (compute() merges them into a single `filter` declaration, blur first).
  *
- * Declared in ASCENDING spill order — 24, 42, 105, 120 CSS px — because the walker paints
+ * Declared in ASCENDING spill order - 24, 42, 105, 120 CSS px - because the walker paints
  * in DOM order, which makes the emitted images' own /Width a per-box readout of the
  * padding each one was captured with. The mixed box's blur is deliberately large enough
  * to out-reach its own drop-shadow (40·3 = 120 > 30·3+15 = 105), so its number can only
@@ -141,8 +141,8 @@ test('blur, shadow:content and shadow:depth each reach the PDF as an embedded im
     const off = await renderBoth(false);
 
     // The premise. Four plain rounded rects are pure vector, so ANY image object in the
-    // filtered render is one the escape hatch put there — which is what makes the count
-    // below load-bearing rather than a description of what the walker already did.
+    // filtered render is one the escape hatch put there - which is what makes the count
+    // below essential rather than a description of what the walker already did.
     assert.equal(embeddedImages(off.pdf).length, 0,
       'premise: the same four boxes without a filter emit no image objects at all');
 
@@ -153,7 +153,7 @@ test('blur, shadow:content and shadow:depth each reach the PDF as an embedded im
       `expected one embedded image per filtered box (${Object.keys(BOXES).join(', ')})`);
 
     // Identical boxes, so the ONLY thing that can vary their capture size is the spill
-    // padding — and BOXES is declared in ascending spill order. Strictly increasing
+    // padding - and BOXES is declared in ascending spill order. Strictly increasing
     // widths is therefore a per-box readout that each capture was actually grown to hold
     // the effect that paints outside the box, rather than all four being sized to the
     // bare rect and shearing it off (which measured 2.1% mean / 32% worst-pixel).
@@ -169,7 +169,7 @@ test('the same filters stay VECTOR in SVG — the PDF cap must not leak across w
     const on = await renderBoth(true);
 
     // blur(8px): CSS blur(N) is a Gaussian of stdDeviation N (unlike backdrop-filter's
-    // and box-shadow's radius conventions, this one is 1:1 — css-filter.ts).
+    // and box-shadow's radius conventions, this one is 1:1 - css-filter.ts).
     assert.match(on.svg, /<feGaussianBlur[^>]*stdDeviation="8"/,
       'expected the layer blur as a real SVG filter primitive');
     // content + depth are drawn as geometry, which also survives EMF/EPS.
@@ -177,7 +177,7 @@ test('the same filters stay VECTOR in SVG — the PDF cap must not leak across w
       'expected shadow:content and shadow:depth as <feDropShadow> primitives');
     // The mixed chain has always rasterised in SVG too (parseDropShadowFilter refuses a
     // chain containing blur, and parseCssFilter cannot tokenise the nested rgba()), so
-    // exactly ONE <image> is expected — not zero, and emphatically not four.
+    // exactly ONE <image> is expected - not zero, and emphatically not four.
     assert.equal(count(on.svg, '<image'), 1,
       'expected only the mixed blur+drop-shadow chain to rasterise in SVG');
   });
@@ -193,9 +193,9 @@ test('a mixed blur + drop-shadow chain is measured for spill, not silently writt
     assert.equal(spill.content, 42, 'drop-shadow blur 12px·3 + 6px offset = 42px');
     assert.equal(spill.depth, 105, 'drop-shadow blur 30px·3 + 15px offset = 105px');
 
-    // The regression this pins. A mixed chain defeats BOTH parsers — parseDropShadowFilter
+    // The regression this pins. A mixed chain defeats BOTH parsers - parseDropShadowFilter
     // refuses a chain containing a non-drop-shadow function, and parseCssFilter's flat
-    // tokeniser cannot see past the nested rgba() of the computed drop-shadow colour — so
+    // tokeniser cannot see past the nested rgba() of the computed drop-shadow colour - so
     // the chain that spills FURTHEST used to measure exactly zero and get cropped at the
     // box edge. 120 is the blur half winning over the shadow half (40·3 vs 30·3+15): it
     // cannot be produced by either parser reading the whole value, only by per-function

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Studio split pane — the Colour tab's draggable divider between the main
+ * Studio split pane - the Colour tab's draggable divider between the main
  * column and the sticky palette side pane (≥1100px; below that the divider is
  * display:none, so it can't be dragged or focused, and the side content just
  * follows in flow). Cloned from the tool view's sidebar drag (views/tool.ts):
- * pointer capture, a CSS width var, snap-collapse, localStorage persist — plus
+ * pointer capture, a CSS width var, snap-collapse, localStorage persist - plus
  * keyboard support, since this handle is a focusable `role="separator"`.
  *
  * `el` is the split grid itself (`.be-tab--split`); this writes `--be-side-w`
  * onto it and toggles `.is-collapsed`. It must never set z-index/transform/
- * contain on the side pane — the swatch popover (.be-editor) positions against
+ * contain on the side pane - the swatch popover (.be-editor) positions against
  * `.be` and has to keep beating the sticky action row (the fixed-popover
  * containing-block trap).
  */
 
 const STORE_KEY = 'brandStudioPaneW';
-// MUST equal the CSS track floor — brand-studio.css's `minmax(280px, …)`. A
+// MUST equal the CSS track floor - brand-studio.css's `minmax(280px, …)`. A
 // smaller clamp here would let keyboard End / a drag park the logical width in
 // a 220–279px dead zone the rendered track can't follow (aria-valuenow and the
 // persisted width would disagree with what's on screen).
@@ -31,10 +31,10 @@ export function mountStudioSplit(el: HTMLElement): () => void {
   const maxW = (): number => Math.round(el.getBoundingClientRect().width * 0.6);
   const clamp = (w: number): number => Math.max(SIDE_MIN, Math.min(w, maxW()));
 
-  // Default = EXPANDED at the CSS track's own 50% (no inline var at all —
+  // Default = EXPANDED at the CSS track's own 50% (no inline var at all - 
   // brand-studio.css's `var(--be-side-w, 50%)` fallback carries it). Width goes
   // pixel-explicit only once the user drags/keys a size, and stays persisted
-  // from then on. `0` persisted = collapsed — but ONLY an explicit stored '0'
+  // from then on. `0` persisted = collapsed - but ONLY an explicit stored '0'
   // (a user's own snap/Enter) reads as that sentinel: a missing key maps to
   // NaN (Number(null) is 0, which used to boot fresh profiles collapsed), and
   // any unusable value falls back to the open 50% default.
@@ -43,7 +43,7 @@ export function mountStudioSplit(el: HTMLElement): () => void {
   let width: number | null = Number.isFinite(saved) && saved >= SIDE_MIN ? saved : null;
   let collapsed = raw != null && saved === 0;
 
-  /** The pane's effective width — the explicit px when set, else the live
+  /** The pane's effective width - the explicit px when set, else the live
    *  rendered width of the 50% default track (for keyboard steps to build on). */
   const currentWidth = (): number => {
     if (width != null) return width;
@@ -94,7 +94,7 @@ export function mountStudioSplit(el: HTMLElement): () => void {
     apply(); // commit + persist
   };
 
-  // ── Keyboard (Left grows the pane — the separator moves left) ─────────────
+  // ── Keyboard (Left grows the pane - the separator moves left) ─────────────
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'ArrowLeft') { collapsed = false; width = clamp(currentWidth() + KEY_STEP); }
     else if (e.key === 'ArrowRight') { if (!collapsed) width = clamp(currentWidth() - KEY_STEP); }

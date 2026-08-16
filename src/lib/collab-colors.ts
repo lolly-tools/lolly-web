@@ -2,11 +2,11 @@
 /**
  * Collaborator colours, derived from the active design system (plans/100 §4.4).
  *
- * A collab paints one colour per person — the focus ring on a sidebar row, the
+ * A collab paints one colour per person - the focus ring on a sidebar row, the
  * cursor and focus region on the canvas overlay, the avatar in the collab pill.
  * Andy's ruling is that those colours come from the pack that is installed, not
  * from a hardcoded rainbow: "the brand flavours the presence". This module is
- * the whole of that derivation, and it is pure — palette in, ordered colours
+ * the whole of that derivation, and it is pure - palette in, ordered colours
  * out. No DOM, no host, no module-level state, so the same input yields the same
  * colours in the web shell, in a test, and (when a Track B server ever needs to
  * label a screenshot) anywhere else.
@@ -14,7 +14,7 @@
  * THE THREE CONSTRAINTS, AND WHY THEY FIGHT EACH OTHER.
  *
  *   1. LEGIBLE IN BOTH THEMES AT ONCE. A person's colour must not change when
- *      they switch to dark mode — it is their identity for the session — so one
+ *      they switch to dark mode - it is their identity for the session - so one
  *      colour has to clear a contrast floor against light chrome AND dark chrome.
  *      That is what pins the OKLCH lightness: a brand's own dark navy vanishes on
  *      the dark theme and its pastel vanishes on the light one, so the brand's
@@ -22,13 +22,13 @@
  *      hue is what a viewer actually reads as "that's Priya".
  *   2. TELLABLE APART. Two collaborators whose rings differ by 15° of hue are one
  *      collaborator to anybody not staring. ΔH ≥ 50° is the plan's number.
- *   3. NOT MISTAKEN FOR A STATE. The chrome already speaks in red/amber/green —
+ *   3. NOT MISTAKEN FOR A STATE. The chrome already speaks in red/amber/green - 
  *      the collab pill's own connection dot goes green when live. A ring in those
  *      hues reads as a status, not a person, so their neighbourhoods are skipped.
  *
  * WHY THIS DEPARTS FROM `lib/audio-thumb-colour.ts`'s "never invent a hue the
  * brand does not own". That rule is right where LIGHTNESS is free to carry the
- * variety — a greyscale brand gets light and dark blobs and stays itself.
+ * variety - a greyscale brand gets light and dark blobs and stays itself.
  * Here lightness is spent on constraint 1 before anything else is decided, so
  * hue is the only axis left, and a one-accent pack (lolly-start ships exactly
  * one, an indigo ramp at 260°) would otherwise seat six people in six copies of
@@ -36,7 +36,7 @@
  * is who", presence needs the second one solved. The accent still anchors every
  * spun hue, so the set reads as a family around the brand rather than a preset.
  *
- * COLOUR IS NEVER THE ONLY DIFFERENTIATOR — that is what makes the trade
+ * COLOUR IS NEVER THE ONLY DIFFERENTIATOR - that is what makes the trade
  * affordable. Rings and cursors carry a 1px theme-contrast halo (the
  * selection-handle convention) and a name chip, and the roster spells everyone
  * out; §4.8 of the plan makes it an a11y requirement, not a nicety. This module
@@ -61,7 +61,7 @@ import { apcaContrast } from '../../../../engine/src/color-tools.ts';
  * over all hues rises against dark chrome and falls against light chrome, so the
  * usable range is bounded at both ends; against the enumerated surfaces (see
  * CHROME_SURFACES) the two curves cross at L ≈ 0.686 (|Lc| 41.5 both ways), and
- * the band sits a hair above it at 0.69 — light 40.9, dark 42.1, still clear of
+ * the band sits a hair above it at 0.69 - light 40.9, dark 42.1, still clear of
  * the floor at every hue and worth the half point because the two themes that are
  * measured-but-not-enforced (high contrast, brand) are both dark grounds and gain
  * what the light side gives up. Chroma 0.12 is as saturated as the band stays
@@ -80,7 +80,7 @@ export const COLLAB_BAND: Readonly<Oklch> = { l: 0.69, c: 0.12, h: 0 };
  *
  * 40, and here is the reasoning rather than a number pulled from the air. APCA's
  * own published bands (`APCA_BANDS`) put 30 at "icons and borders only" and 45 at
- * "headlines" — a 2px focus ring and a 12px cursor arrow are squarely icon-and-
+ * "headlines" - a 2px focus ring and a 12px cursor arrow are squarely icon-and-
  * border furniture, so 30 is the honest floor for the shape. 40 is that floor
  * plus ten points of margin, and it is very nearly all the band can deliver for
  * every hue against every enumerated surface at once (40.9 measured, on light
@@ -91,7 +91,7 @@ export const COLLAB_BAND: Readonly<Oklch> = { l: 0.69, c: 0.12, h: 0 };
  * enforced (HIGH_CONTRAST_SURFACES, BRAND_THEME_SURFACES) land in the 30s and are
  * documented rather than chased.
  *
- * APCA rather than WCAG 2.1 on the house rule — APCA first for anything
+ * APCA rather than WCAG 2.1 on the house rule - APCA first for anything
  * perceptual, and this is exactly the mid-tone/dark-mode territory where WCAG 2
  * misjudges.
  */
@@ -100,7 +100,7 @@ export const COLLAB_APCA_FLOOR = 40;
 /**
  * The chrome surfaces the floor is enforced against, per theme: EVERY surface
  * token in `styles/tokens.css` a presence affordance can land on, resolved to hex
- * — `--background`, `--card` (`--popover` is identical to it in both themes),
+ * - `--background`, `--card` (`--popover` is identical to it in both themes),
  * `--muted` (`--secondary` is identical to it) and `--accent`.
  *
  * `--accent` earns its place the hard way. It is the hover/active fill under a
@@ -111,14 +111,14 @@ export const COLLAB_APCA_FLOOR = 40;
  * the circle: |Lc| 40.9 on light (at 189°) and 42.1 on dark (at 346°).
  *
  * The whole set is listed rather than just those two, because WHICH surface is
- * the extreme is a property of the tokens and not a constant — and
+ * the extreme is a property of the tokens and not a constant - and
  * `collab-colors.test.ts` derives all of them back out of `tokens.css` and
  * compares, so a token edit that moves a surface fails a test rather than
  * quietly shaving the margin off a cursor nobody can see. That guard is the
  * whole reason this constant is allowed to be a frozen copy.
  *
  * Deliberately NOT here: the tool canvas. A canvas is the user's artwork and can
- * be any colour at all — no palette can be guaranteed against it, which is
+ * be any colour at all - no palette can be guaranteed against it, which is
  * precisely why the plan pairs every ring and cursor with a contrast halo.
  */
 export const CHROME_SURFACES = {
@@ -129,12 +129,12 @@ export const CHROME_SURFACES = {
 export type CollabTheme = keyof typeof CHROME_SURFACES;
 
 /**
- * The `highContrast` a11y preference's own surfaces — measured, NOT enforced.
+ * The `highContrast` a11y preference's own surfaces - measured, NOT enforced.
  *
  * Its light block only ever lightens (`--card` 99% → 97% is still lighter than
  * `--muted`), so light chrome under the preference is covered by the enforced
- * band with room to spare. Its dark block lifts every surface — `--accent` goes
- * L 18% → 26%, #1f2a3d → #2c3d58 — and that costs about five points: the band
+ * band with room to spare. Its dark block lifts every surface - `--accent` goes
+ * L 18% → 26%, #1f2a3d → #2c3d58 - and that costs about five points: the band
  * lands at |Lc| 37.2 at worst there, above APCA's 30 "icons and borders" mark
  * but under our 40.
  *
@@ -156,12 +156,12 @@ export const HIGH_CONTRAST_SURFACES = {
  * NOT part of the enforced floor.
  *
  * It is a third theme, not one of the two the plan names, and it is a coloured
- * mid-dark ground that costs about nine points of Lc against the shipped band —
+ * mid-dark ground that costs about nine points of Lc against the shipped band - 
  * the colours land at 32.3 at worst (on `--accent`, #1d534b), above APCA's 30
  * "icons and borders" mark but under our 40. Stated rather than hidden, and
  * pinned by a test so the claim cannot rot: the halo is what carries that theme.
  * (`html[data-a11y-contrast="high"][data-theme="brand"]` moves no surface at
- * all — it repairs inks, edges and the accent PAIR — so this is both brand
+ * all - it repairs inks, edges and the accent PAIR - so this is both brand
  * cases.)
  */
 export const BRAND_THEME_SURFACES = ['#0c322c', '#14433c', '#1b4b44', '#1c4f48', '#1d534b'] as const;
@@ -174,7 +174,7 @@ export const COLLAB_MIN_DELTA_H = 50;
  * red (27°, the OKLCH hue of `--destructive` #dc2626), warning amber (70°,
  * #f59e0b) and success green (149°, #16a34a).
  *
- * These are the conventional state hues rather than tokens the shell declares —
+ * These are the conventional state hues rather than tokens the shell declares - 
  * `tokens.css` names only `--destructive`, and the live/away dot, toast states
  * and validation copy reach for the other two by convention. Listing the
  * conventional centres is the honest version: it keeps a collaborator ring out
@@ -186,7 +186,7 @@ export const SEMANTIC_HUES = [27, 70, 149] as const;
  * Half-width of the skipped arc around each semantic hue, in degrees.
  *
  * 16° is the widest guard that still leaves room for six mutually 50°-separated
- * hues on the circle — three 32° exclusions plus six 50° gaps is 396° of demand
+ * hues on the circle - three 32° exclusions plus six 50° gaps is 396° of demand
  * against 360°, so the gaps have to overlap the slack exactly, and they only
  * just do. Widening this is not free: it costs a collaborator.
  *
@@ -199,7 +199,7 @@ export const SEMANTIC_GUARD_DEG = 16;
 
 /**
  * Chroma below which a swatch has no usable hue. Near-greys carry a hue value
- * that is numerically real and perceptually meaningless — lolly-start's neutral
+ * that is numerically real and perceptually meaningless - lolly-start's neutral
  * ramp is a faint 0.024 lean toward its indigo, and reading that as "the brand
  * owns 275°" would seat a collaborator on a colour nobody chose.
  */
@@ -207,8 +207,8 @@ export const HUE_CHROMA_FLOOR = 0.04;
 
 /**
  * Where the spin starts when a pack offers no chromatic colour at all (a pure
- * greyscale design system). 260° is the platform's own indigo — lolly-start's
- * single accent — so the neutral fallback is the product's colour rather than an
+ * greyscale design system). 260° is the platform's own indigo - lolly-start's
+ * single accent - so the neutral fallback is the product's colour rather than an
  * arbitrary one.
  */
 export const DEFAULT_ANCHOR_HUE = 260;
@@ -218,7 +218,7 @@ export const DEFAULT_ANCHOR_HUE = 260;
  *
  * Six is not a preference, it is the geometry: ΔH ≥ 50° caps the circle at seven
  * hues before any exclusions, and the three semantic guards take one of those
- * back. A collab with more than six people therefore reuses colours — see
+ * back. A collab with more than six people therefore reuses colours - see
  * `assignColor`, which says so out loud instead of quietly handing out
  * near-duplicates.
  */
@@ -228,20 +228,20 @@ export const COLLAB_COLOR_COUNT = 6;
 
 /** One assignable collaborator colour. */
 export interface CollabColor {
-  /** The colour to paint — sRGB hex, gamut-mapped out of the band. */
+  /** The colour to paint - sRGB hex, gamut-mapped out of the band. */
   hex: string;
   /** Its OKLCH hue in degrees, kept so a caller can reason about separation. */
   hue: number;
   /** `palette` when the pack owned this hue; `spun` when it was generated. */
   source: 'palette' | 'spun';
-  /** Worst-case |Lc| against each theme's chrome surfaces — the measured margin
+  /** Worst-case |Lc| against each theme's chrome surfaces - the measured margin
    *  over {@link COLLAB_APCA_FLOOR}, not a promise. */
   lc: Record<CollabTheme, number>;
 }
 
 /**
  * A palette entry as the caller has it. A bare hex/`oklch()` string, or anything
- * with a `value` — which is the engine's `ColorSwatch` shape, so
+ * with a `value` - which is the engine's `ColorSwatch` shape, so
  * `await host.tokens.colors()` can be passed straight through.
  */
 export type CollabPaletteEntry = string | { readonly value?: unknown } | null | undefined;
@@ -280,7 +280,7 @@ export function hueGap(a: number, b: number): number {
 }
 
 /**
- * A colour's OKLCH hue, or null when it has none worth reading — unparseable,
+ * A colour's OKLCH hue, or null when it has none worth reading - unparseable,
  * or flatter than {@link HUE_CHROMA_FLOOR}. Accepts the two forms brand tokens
  * are stored in (hex and `oklch()`/`lch()`), matching `color-tools.ts`.
  */
@@ -369,16 +369,16 @@ const admissible = (ctx: Ctx, hue: number, taken: readonly number[]): boolean =>
 
 /**
  * Fill `hues` up to `count` by walking the circle from `anchor` in 1° steps and
- * taking the FIRST admissible hue each time. Offsets are measured FROM the
+ * taking the FIRST valid hue each time. Offsets are measured FROM the
  * anchor rather than from 0°, so the whole set is a family around the brand's
  * own colour; the anchor itself is offset 0, and is simply skipped by the
  * separation test when a pack hue already sits there.
  *
- * First-admissible, deliberately, not farthest-from-everything. Maximin looks
+ * First-valid, deliberately, not farthest-from-everything. Maximin looks
  * like the better algorithm and seats fewer people: spreading each new hue into
  * the middle of the widest gap halves two gaps at once and strands both below
  * 50°, which measured out at five colours where tight forward packing gets six.
- * Packing forward from the anchor also keeps the result stable — an extra colour
+ * Packing forward from the anchor also keeps the result stable - an extra colour
  * appended later never moves the ones already handed out.
  */
 function spinFill(ctx: Ctx, hues: number[], anchor: number, count: number): void {
@@ -396,7 +396,7 @@ function spinFill(ctx: Ctx, hues: number[], anchor: number, count: number): void
 /**
  * The ordered collaborator colours for a design system.
  *
- * The recipe, in the plan's order — pack hues first, spin to fill:
+ * The recipe, in the plan's order - pack hues first, spin to fill:
  *
  *  1. Read every palette entry's hue, drop the near-greys, and greedily keep the
  *     ones that clear the guards, the floor and the 50° separation. The accent
@@ -405,13 +405,13 @@ function spinFill(ctx: Ctx, hues: number[], anchor: number, count: number): void
  *  3. If that comes up short, DROP A PACK HUE AND TRY AGAIN. This is the step
  *     that is easy to miss and that a rich palette needs: three brand hues can
  *     be individually perfect and collectively ruinous. SUSE's pine (181°),
- *     persimmon (44°) and midnight (271°) leave gaps of 137°, 90° and 133° —
+ *     persimmon (44°) and midnight (271°) leave gaps of 137°, 90° and 133° - 
  *     the 90° gap seats nobody, and the whole circle tops out at five. Give up
  *     midnight and six fit. So the loop tries the largest palette budget first
  *     and steps down, keeping as much of the brand as can still seat everyone.
  *
  * Deterministic and side-effect free: same inputs, same colours, in the same
- * order, on every client — which is the property the whole assignment scheme
+ * order, on every client - which is the property the whole assignment scheme
  * rests on.
  */
 export function collabPalette(opts: CollabPaletteOptions = {}): CollabColor[] {
@@ -471,10 +471,10 @@ export function collabPalette(opts: CollabPaletteOptions = {}): CollabColor[] {
 // ── Assignment ───────────────────────────────────────────────────────────────
 
 /**
- * The colour for a collaborator, keyed by join order — first-unused-wins.
+ * The colour for a collaborator, keyed by join order - first-unused-wins.
  *
  * Start at `joinOrder mod n` and walk forward to the first colour nobody has
- * taken. Two properties fall out, and both are load-bearing:
+ * taken. Two properties fall out, and both are essential:
  *
  *  - **Same user, same colour, on every client.** Nothing here reads local
  *    state, a clock, or a random source. Every peer that agrees on the join
@@ -482,15 +482,15 @@ export function collabPalette(opts: CollabPaletteOptions = {}): CollabColor[] {
  *    teal while Priya sees herself as amber.
  *  - **A gap in the roster does not shuffle everyone.** Keying on join order
  *    rather than scanning from zero means the third person keeps their colour
- *    when the second one leaves — and, in the window where a late presence
+ *    when the second one leaves - and, in the window where a late presence
  *    packet has not landed yet, two clients do not both hand out colour #1.
  *
- * `taken` is what the OTHER collaborators hold — the asker's own colour must not
+ * `taken` is what the OTHER collaborators hold - the asker's own colour must not
  * be in it, or the walk steps over the very colour it is being asked to confirm.
  *
  * Past `n` collaborators the walk wraps and returns a duplicate: `taken` cannot
  * be satisfied and the honest answer is the preferred slot. Six is the circle's
- * capacity at ΔH ≥ 50° (see COLLAB_COLOR_COUNT) — the name chip, the halo and
+ * capacity at ΔH ≥ 50° (see COLLAB_COLOR_COUNT) - the name chip, the halo and
  * the roster are what keep a seventh person distinguishable, which is why colour
  * is never allowed to be the only signal.
  *

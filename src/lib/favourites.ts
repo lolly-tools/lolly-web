@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Favourite tools — the user's starred collection, surfaced as a "Favourites"
+ * Favourite tools - the user's starred collection, surfaced as a "Favourites"
  * category in the gallery filter.
  *
- * Stored on the user PROFILE (`profile.favourites`), alongside the feature flags —
+ * Stored on the user PROFILE (`profile.favourites`), alongside the feature flags - 
  * so it persists across reloads AND travels in the portable backup / any future
  * profile sync, not just this device. Every caller goes through these two functions,
  * so the storage location stays swappable.
@@ -22,10 +22,10 @@ export function loadFavourites(profile: Profile | null | undefined): Set<string>
 /**
  * Write the favourites set back onto the profile and persist it. Mutates the passed
  * profile object (the same cached instance host.profile.get() returned) so later reads
- * see the change, then flushes via host.profile.set. Best-effort — a failed write just
+ * see the change, then flushes via host.profile.set. Best-effort - a failed write just
  * means the star doesn't survive a reload.
  */
 export async function saveFavourites(host: FavHost, profile: Profile, favourites: Set<string>): Promise<void> {
   profile.favourites = [...favourites];
-  try { await host.profile.set(profile); } catch { /* storage off / quota — non-fatal */ }
+  try { await host.profile.set(profile); } catch { /* storage off / quota - non-fatal */ }
 }

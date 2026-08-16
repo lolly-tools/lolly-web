@@ -6,7 +6,7 @@
  * escape hatch cannot substitute for one: dom-to-image serialises the node into a
  * `<foreignObject>`, and the backdrop is by definition OUTSIDE that subtree, so a
  * frosted panel rasterised on its own comes back transparent. That is why this is
- * reconstructed instead — the content already emitted behind the element is cloned,
+ * reconstructed instead - the content already emitted behind the element is cloned,
  * clipped to the element's shape, and blurred.
  *
  * The oracle is the emitted SVG's structure, not pixels: the question "did the
@@ -14,7 +14,7 @@
  * pixel diff of a blur needs fonts, goldens and a tolerance and would still pass on
  * a panel that merely looks hazy for the wrong reason.
  *
- * Real Chromium, self-skipping when one isn't installed — `getComputedStyle` has to
+ * Real Chromium, self-skipping when one isn't installed - `getComputedStyle` has to
  * resolve `backdrop-filter` (jsdom returns '') and the geometry has to be real
  * layout, so a hand-fed computed style would only test the fake. Same gated pattern
  * as export-paint-order.test.ts (tests/README.md).
@@ -63,7 +63,7 @@ async function bundle(): Promise<string> {
  * Render `#root` and return the SVG text.
  *
  * rasterFallback:false throughout: it keeps the output pure vector, and it makes the
- * flag-off premise unambiguous — with no hatch to fire, an unhandled backdrop-filter
+ * flag-off premise unambiguous - with no hatch to fire, an unhandled backdrop-filter
  * leaves NO blur in the output at all, so the flag-on assertions can't pass by
  * accident.
  */
@@ -101,7 +101,7 @@ test('a blurred backdrop is reconstructed: content behind is cloned, clipped and
     assert.match(svg, /<feGaussianBlur[^>]*stdDeviation="3"/,
       'expected a feGaussianBlur at half the CSS blur radius');
 
-    // The duplication: the stripe behind the panel must now appear TWICE — once as
+    // The duplication: the stripe behind the panel must now appear TWICE - once as
     // itself, once inside the blurred copy. One occurrence means the backdrop was
     // never cloned and the filter is blurring nothing.
     assert.equal(count(svg, 'rgb(220,38,38)') + count(svg, 'rgb(220, 38, 38)'), 2,
@@ -112,7 +112,7 @@ test('a blurred backdrop is reconstructed: content behind is cloned, clipped and
     assert.match(svg, /clip-path="url\(#fcbdclip-/, 'expected the blurred copy to be clipped to it');
 
     // Premise: none of this is present without the flag, so the assertions above are
-    // load-bearing rather than describing what the walker already did.
+    // essential rather than describing what the walker already did.
     const off = await render(fixture(), false);
     assert.doesNotMatch(off, /feGaussianBlur/, 'premise: flag off leaves no blur in the output');
     assert.equal(count(off, 'rgb(220,38,38)') + count(off, 'rgb(220, 38, 38)'), 1,
@@ -122,7 +122,7 @@ test('a blurred backdrop is reconstructed: content behind is cloned, clipped and
 test('the filter region is scoped to the element box, not the duplicated backdrop',
   { skip: SKIP }, async () => {
     // objectBoundingBox units would size the filter to the bbox of the whole cloned
-    // backdrop — near page-sized — making the blur cost scale with the page rather
+    // backdrop - near page-sized - making the blur cost scale with the page rather
     // than the panel.
     const svg = await render(fixture(), true);
     const m = /<filter id="fcbd-\d+"([^>]*)>/.exec(svg);
@@ -136,7 +136,7 @@ test('the filter region is scoped to the element box, not the duplicated backdro
 test('a rotated frosted panel is left alone rather than double-transformed',
   { skip: SKIP }, async () => {
     // The clone is in root user space. Under a rotation wrapper it would be rotated a
-    // second time, putting the "backdrop" somewhere the backdrop never was — visibly
+    // second time, putting the "backdrop" somewhere the backdrop never was - visibly
     // worse than not reconstructing it. Such panels fall through to the raster hatch.
     const svg = await render(fixture('transform:rotate(12deg)'), true);
     assert.doesNotMatch(svg, /feGaussianBlur/,
@@ -159,7 +159,7 @@ test('a backdrop-filter that is more than a plain blur is not faked',
 // i.e. "the caller ASKED for reconstruction", regardless of whether the clone was
 // actually appended. A rotated or over-cap panel therefore skipped the clone AND told
 // detectUnsupportedCss the property was supported, so it never reached the raster
-// hatch either — the frost vanished with nothing emitted and nothing said. These run
+// hatch either - the frost vanished with nothing emitted and nothing said. These run
 // with rasterFallback ON, which the tests above deliberately keep off, so the oracle
 // is "did the hatch fire" rather than "is there no blur".
 

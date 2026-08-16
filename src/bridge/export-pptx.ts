@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PowerPoint (.pptx) export — DOM page(s) -> OOXML slides. Extracted verbatim from
+ * PowerPoint (.pptx) export - DOM page(s) -> OOXML slides. Extracted verbatim from
  * bridge/export.ts. Self-contained apart from a small set of shared render helpers
  * it imports back from export.ts (pureRotationDeg / detectUnsupportedCss /
  * inlineBlobUrlsInEl / rasterizeNodeToDataUrl / stripCommentNodes + the ExportOpts
@@ -51,7 +51,7 @@ function pptxGradientFill(bgImage: string | null | undefined): PptxFill | null {
     const c = s.colorStr ? parseCssColorFull(s.colorStr) : null;
     if (!c) return;
     const pos = s.offset.endsWith('%') ? parseFloat(s.offset) / 100 : (stopArgs.length > 1 ? i / (stopArgs.length - 1) : 0);
-    // The stop's alpha lives on `opacity`, not inside `colorStr` — parseGradientStop
+    // The stop's alpha lives on `opacity`, not inside `colorStr` - parseGradientStop
     // returns an OPAQUE colour precisely so an SVG consumer cannot apply the alpha
     // twice. Reading only c[3] therefore dropped per-stop transparency from PPTX
     // fills; take the lower of the two so either carrier works.
@@ -70,7 +70,7 @@ function sniffImgExt(buf: Uint8Array, url: string): 'png' | 'jpeg' | 'svg' | nul
 }
 // Rasterise SVG bytes to a PNG (the fallback blip a PowerPoint svgBlip requires).
 // `imprint` (the per-export ImprintState sink) is threaded ONLY for the tool's own
-// inline <svg> art (svgPic) — never for a fetched background / user-logo SVG, whose
+// inline <svg> art (svgPic) - never for a fetched background / user-logo SVG, whose
 // PNG fallback must stay byte-faithful (those callers pass undefined).
 async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number, imprint?: ImprintState): Promise<Uint8Array | null> {
   if (typeof document === 'undefined') return null;
@@ -95,7 +95,7 @@ async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number, imprint
 const PPTX_INLINE_TAGS = new Set(['span', 'b', 'strong', 'i', 'em', 'a', 'u', 's', 'strike',
   'small', 'sub', 'sup', 'mark', 'code', 'abbr', 'cite', 'q', 'time', 'label', 'wbr', 'bdi', 'bdo', 'font']);
 
-// True when el's content is only text + inline elements (no block/asset descendants) —
+// True when el's content is only text + inline elements (no block/asset descendants) - 
 // i.e. one flowing text block that should become a single text box, not many.
 function pptxIsInlineTextTree(el: Element): boolean {
   for (const nd of Array.from(el.childNodes)) {
@@ -120,7 +120,7 @@ function pptxRunStyle(text: string, cs: CSSStyleDeclaration): PptxRunDraft {
   };
 }
 
-// Flatten an inline text tree into styled runs — each text node carries its OWN parent's
+// Flatten an inline text tree into styled runs - each text node carries its OWN parent's
 // computed font style, so <b>/<i>/coloured spans keep their formatting in one text box.
 function pptxCollectRuns(el: Element): PptxRunDraft[] {
   const runs: PptxRunDraft[] = [];
@@ -167,7 +167,7 @@ function pptxFitInto(box: { x: number; y: number; cx: number; cy: number }, aw: 
   const { ox, oy } = pptxObjOffset(style.objectPosition, box.cx - cx, box.cy - cy);
   return { x: box.x + ox, y: box.y + oy, cx, cy };
 }
-// object-fit:cover — the box stays full; the SOURCE is cropped (srcRect) so the visible
+// object-fit:cover - the box stays full; the SOURCE is cropped (srcRect) so the visible
 // aspect matches without distorting. Returns per-edge crop fractions, or null when no
 // crop is needed. object-position places the crop window.
 function pptxCoverSrcRect(boxCx: number, boxCy: number, aw: number, ah: number, style: CSSStyleDeclaration): { l: number; t: number; r: number; b: number } | null {
@@ -185,7 +185,7 @@ function pptxCoverSrcRect(boxCx: number, boxCy: number, aw: number, ah: number, 
 }
 
 // Per-side CSS borders → thin rect shapes. A uniform 4-side border returns one outline
-// (via `line`); otherwise each visible side becomes its own edge rect — so a heading's
+// (via `line`); otherwise each visible side becomes its own edge rect - so a heading's
 // `border-bottom` accent rule survives (the earlier top-side-only check missed it).
 type PptxEdgeRect = { x: number; y: number; cx: number; cy: number; fill: PptxFill };
 function pptxBorderRects(style: CSSStyleDeclaration, box: { x: number; y: number; cx: number; cy: number }, E: number): { outline?: { color: string; w: number }; edges: PptxEdgeRect[] } {
@@ -243,7 +243,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     const pxW = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.width * scale)));
     const pxH = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.height * scale)));
     // rasterPic always bakes a LIVE DOM subtree (rotated el / canvas / video /
-    // CSS-fallback / treated <img>) — Lolly-rendered content, so it carries the
+    // CSS-fallback / treated <img>) - Lolly-rendered content, so it carries the
     // imprint (opts.imprint gated + size-floored inside rasterizeNodeToDataUrl).
     const dataUrl = await rasterizeNodeToDataUrl(el, pxW, pxH, undefined, opts._imprintSink);
     if (dataUrl) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(dataUrlToBytes(dataUrl), 'png'), name });
@@ -254,13 +254,13 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     stripCommentNodes(clone);
     if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     // NATIVE first: a flat SVG becomes editable custGeom shapes (no blob-url inline
-    // needed — the lowering bails on <image>/anything raster). Rich SVG → raster below.
+    // needed - the lowering bails on <image>/anything raster). Rich SVG → raster below.
     if (tryNativeSvg(new XMLSerializer().serializeToString(clone), boxOf(r))) return;
     await inlineBlobUrlsInEl(clone);
     const svgBytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone));
-    // svgPic handles a literal <svg> DOM node — the tool's OWN inline art (icons /
+    // svgPic handles a literal <svg> DOM node - the tool's OWN inline art (icons /
     // illustrations / charts), so its PNG fallback carries the imprint. The raw SVG
-    // bytes (addMedia below) stay untouched — vector, outside pixel-watermark's domain.
+    // bytes (addMedia below) stay untouched - vector, outside pixel-watermark's domain.
     const png = await svgBytesToPng(svgBytes, r.width * 2, r.height * 2, opts._imprintSink);
     if (!png) { await rasterPic(el as HTMLElement, r, 'vector'); return; }  // no fallback raster → bake
     const pngIdx = addMedia(png, 'png');
@@ -284,7 +284,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     } catch { /* asset unreachable — skip */ }
   }
 
-  // An <img>. A SVG-sourced logo (the common case in Lolly — assets arrive as
+  // An <img>. A SVG-sourced logo (the common case in Lolly - assets arrive as
   // <img src="blob:…svg">) is embedded as a REAL vector (svgBlip) so it extracts crisp;
   // an untreated raster embeds its ORIGINAL bytes (native res, no re-encode); a treated
   // image (CSS filter / blend) is rasterised so the treatment is baked in.
@@ -324,7 +324,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     if (tag === 'style' || tag === 'script') return;
     // Speaker notes travel as slide.notes (read below), never as a shape. The
     // display:none guard underneath already drops them, but that leans on the
-    // tool's CSS surviving — this makes it structural.
+    // tool's CSS surviving - this makes it structural.
     if (el.hasAttribute('data-slide-notes')) return;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return;
@@ -339,14 +339,14 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     if (tag === 'canvas' || tag === 'video') { await rasterPic(el as HTMLElement, rect, tag); return; }
 
     // Effects the shape/text walkers can't express → bake the subtree to a picture.
-    // (background-image:url() is handled specially below — it's an extractable asset.)
+    // (background-image:url() is handled specially below - it's an extractable asset.)
     // NO vectorCaps at all, including the `cssFilter` one the SVG walker declares: a
     // .pptx shape carries no CSS filter, so a blurred or drop-shadowed box bakes to a
     // picture here rather than shipping as a flat shape with the effect quietly gone.
-    // (It used to ship flat — detectUnsupportedCss declared any parseable filter
+    // (It used to ship flat - detectUnsupportedCss declared any parseable filter
     // supported for every caller. Same silent drop the PDF walker had; plan 104 P1d.)
     // The picture is captured at the element's own rect with no spill padding, so an
-    // effect that paints outside the box is clipped at its edge — visible degradation,
+    // effect that paints outside the box is clipped at its edge - visible degradation,
     // which is the point, and better than the effect not being there at all.
     const reason = detectUnsupportedCss(el, style);
     if (reason && reason !== 'background-image:url()') { await rasterPic(el as HTMLElement, rect, reason); return; }
@@ -384,7 +384,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
           style.textAlign === 'center' ? 'ctr' : style.textAlign === 'right' ? 'r' : style.textAlign === 'justify' ? 'just' : 'l';
         shapes.push({ kind: 'text', ...boxOf(rect), anchor: 't', paras: [{ align, runs }] });
       }
-      return;   // inline children are consumed as runs — don't recurse into them
+      return;   // inline children are consumed as runs - don't recurse into them
     }
 
     // Otherwise recurse block children (each stacks above this element's background).
@@ -414,8 +414,8 @@ async function zipPptxParts(parts: Record<string, string | Uint8Array>): Promise
 }
 
 // ─── authored deck model (tool-driven NATIVE pptx) ───────────────────────────
-// A tool may emit its OWN deck as inline JSON — <script type="application/json"
-// data-pptx-deck>{…}</script> — instead of relying on the DOM walk above. That is how a
+// A tool may emit its OWN deck as inline JSON - <script type="application/json"
+// data-pptx-deck>{…}</script> - instead of relying on the DOM walk above. That is how a
 // tool gets NATIVE tables + precise editable text/theme into PowerPoint. The PURE lowering
 // (css→hex, px→EMU, native tables, defensive coercion of the untrusted tool JSON) lives in
 // ./pptx-deck.ts (node-tested); this file keeps only the async image fetch + orchestration.
@@ -425,7 +425,7 @@ const MAX_DECK_SLIDES = 500;         // upper bound on an authored deck
 const MAX_DECK_ELEMENTS = MAX_PPTX_SHAPES; // elements processed per slide (bounds the fetch storm)
 const MAX_DECK_IMG_BYTES = 32 * 1024 * 1024; // 32 MB per embedded image (`src` is tool-controlled)
 
-// An image element — the sole async lowering (it fetches bytes). SVG rides in as a real
+// An image element - the sole async lowering (it fetches bytes). SVG rides in as a real
 // vector (svgBlip + PNG fallback); raster embeds its original bytes; an unreachable/oversized
 // asset drops the element but keeps the deck.
 async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number): Promise<PptxShape | null> {
@@ -506,7 +506,7 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
     const slide = await pptxSlideFromPage(el, opts);
     // Speaker notes: a display:none [data-slide-notes] node inside the page (the
     // convention any tool can emit). Hidden from the shape walk above and from
-    // every rasteriser, but readable here — and it is NOT [data-export-hide], so
+    // every rasteriser, but readable here - and it is NOT [data-export-hide], so
     // detachExportHidden can't have pulled it out from under us.
     const note = (el.querySelector?.('[data-slide-notes]')?.textContent ?? '').trim();
     if (note) slide.notes = note;

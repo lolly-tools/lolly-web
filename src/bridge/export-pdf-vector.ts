@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * DOM-free helpers for the vector PDF/SVG export walkers, extracted verbatim
- * from bridge/export.ts (stage 1 of the export.ts split — same precedent as
+ * from bridge/export.ts (stage 1 of the export.ts split - same precedent as
  * export-css.ts): SVG-path → jsPDF operator emission (drawSvgPathToPdf /
- * svgArcToBeziers), jsPDF graphics-state wrappers (clip / alpha / rotation —
+ * svgArcToBeziers), jsPDF graphics-state wrappers (clip / alpha / rotation - 
  * the `pdf` handle is a plain object, no DOM), SVG colour parsing, and the
  * brand-palette CMYK / spot-colour machinery behind the CMYK PDF
  * content-stream rewrite. The DOM walkers themselves (drawHtmlVectors /
@@ -19,7 +19,7 @@ import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts'
 type Rgb = [number, number, number];
 
 // The shell's brand palette entries fed via opts.palette (hex + CMYK 0–100).
-// spot: a named spot/Pantone lock, independent of cmyk — a swatch may carry
+// spot: a named spot/Pantone lock, independent of cmyk - a swatch may carry
 // either, both, or neither. cmyk (when set) is always the process-colour
 // fallback used for preview / non-PDF export / the PDF Separation
 // tint-transform's alternate space, whether or not a spot is also set; when a
@@ -28,7 +28,7 @@ type Rgb = [number, number, number];
 //
 // The spot type is the CANONICAL host-v1 `SpotColor`, not a local restatement,
 // so a field added to the contract (v1.91's `finish`) can never again be
-// silently dropped at this boundary — which is exactly how a declared foil used
+// silently dropped at this boundary - which is exactly how a declared foil used
 // to separate as an ordinary colour plate. See FINISH_MASK_CMYK.
 export type { BrandPaletteEntry };
 
@@ -43,9 +43,9 @@ export type { BrandPaletteEntry };
 export { FINISH_MASK_CMYK };
 
 // The HTML→vector walkers position every element by its axis-aligned
-// getBoundingClientRect, which drops any CSS rotate() — a free-canvas box would
+// getBoundingClientRect, which drops any CSS rotate() - a free-canvas box would
 // export unrotated at its enlarged bounding box. To render rotation faithfully we
-// detect a PURE rotation (orthonormal matrix, det +1 — NOT a scaleX(-1) flip or a
+// detect a PURE rotation (orthonormal matrix, det +1 - NOT a scaleX(-1) flip or a
 // scale, which the walkers handle separately), then temporarily neutralise it on
 // the live element, walk the now-axis-aligned subtree, and wrap the result in a
 // rotation about the element's transform-origin. Returns 0 for anything that isn't
@@ -85,7 +85,7 @@ export function sampleGradientMidpoint(bgImage: string): Rgb | null {
   ];
 }
 
-// A CSS linear/radial gradient resolved into a jsPDF ShadingPattern spec — true VECTOR
+// A CSS linear/radial gradient resolved into a jsPDF ShadingPattern spec - true VECTOR
 // output for the PDF walker (preferred over rasterising). Coords are in the box's own pt
 // space (top-left, matching the walker); `matrix` carries a radial ellipse's y-scale, else
 // null. `hasAlpha` flags any transparent stop: PDF axial/radial shading has NO per-stop
@@ -121,7 +121,7 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
     const len = (Math.abs(w * sinA) + Math.abs(h * cosA)) / 2;
     const coords = [cx - sinA * len, cy + cosA * len, cx + sinA * len, cy - cosA * len];
     // `len` is in POINTS (x/y/w/h are pt) while stop offsets are CSS px, so convert
-    // the line length back to px before dividing — otherwise the fraction is off by
+    // the line length back to px before dividing - otherwise the fraction is off by
     // the pt/px scale. Falls back to 0 (no conversion) when the caller omits it.
     const { stops, hasAlpha } = gradientStopList(raw, cssToPt > 0 ? 2 * len / cssToPt : 0);
     return stops.length >= 2 ? { type: 'axial', coords, stops, matrix: null, hasAlpha } : null;
@@ -134,7 +134,7 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
   for (const st of g.stops) {
     // Alpha is recorded BEFORE the stop can be discarded. A fully transparent stop has
     // no RGB triple to keep (parseSvgColor reports "nothing to paint"), but its very
-    // existence is what makes the gradient need the alpha-correct raster path — drop it
+    // existence is what makes the gradient need the alpha-correct raster path - drop it
     // first and `hasAlpha` stays false, so the PDF paints an opaque shading and the
     // transparent waist silently vanishes while SVG and PNG still show it.
     if (st.opacity < 1) hasAlpha = true;
@@ -156,7 +156,7 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
 function gradientStopList(
   raw: string[],
   /** Gradient-line length in CSS px, so an absolute stop position can be turned into
-   *  a fraction of it. 0 for radial — that caller pre-divides by rx. */
+   *  a fraction of it. 0 for radial - that caller pre-divides by rx. */
   lineCssPx = 0,
 ): { stops: { offset: number; color: Rgb }[]; hasAlpha: boolean } {
   const out: { offset: number; color: Rgb }[] = [];
@@ -165,14 +165,14 @@ function gradientStopList(
   raw.forEach((r, i) => {
     const { colorStr, opacity, offset } = parseGradientStop(r.trim(), i, n);
     if (!colorStr) return;
-    // Record alpha BEFORE discarding the stop — see the radial loop above for why a
+    // Record alpha BEFORE discarding the stop - see the radial loop above for why a
     // fully transparent stop must still set the flag it can no longer carry a colour for.
     if (opacity < 1) hasAlpha = true;
     const rgb = parseSvgColor(colorStr);
     if (!rgb) { hasAlpha = true; return; }
     // A px stop is a distance along the gradient LINE, so it must become a fraction
     // of that line. Unconverted it fell through as a raw number and the clamp below
-    // pinned every absolute stop to 1 — the far end.
+    // pinned every absolute stop to 1 - the far end.
     let off = offset.endsWith('%') ? parseFloat(offset) / 100
       : offset.endsWith('px') && lineCssPx > 0 ? parseFloat(offset) / lineCssPx
       : parseFloat(offset);
@@ -186,10 +186,10 @@ function gradientStopList(
 let gradKeySeq = 0;
 
 // Fill the current box with a true-vector jsPDF ShadingPattern (axial/radial). `pathOps`
-// adds the box outline (rounded/sharp) as a path — no paint — inside the advanced-API
+// adds the box outline (rounded/sharp) as a path - no paint - inside the advanced-API
 // block; the pattern then fills it. jsPDF requires advancedAPI() for shading patterns
 // (its coordinate space stays top-left in practice, verified), so the whole fill is wrapped
-// there. Returns false (caller rasterises) when the shading API is unavailable or throws —
+// there. Returns false (caller rasterises) when the shading API is unavailable or throws - 
 // so a fill is never silently dropped.
 export function fillPdfShading(pdf: any, spec: PdfGradientSpec, pathOps: (doc: any) => void): boolean {
   if (typeof pdf.advancedAPI !== 'function' || typeof pdf.ShadingPattern !== 'function' || typeof pdf.Matrix !== 'function') return false;
@@ -219,7 +219,7 @@ export function gradStopToRgb(raw: string, index: number, total: number): Rgb | 
 
 // Normalise the shell's brand palette (hex + CMYK 0–100, and/or an independent
 // spot lock) into the engine's colour-bar form: { rgb, cmyk } both 0–1, plus a
-// label and — for a spot-locked swatch — its ink name, so the shell's bar
+// label and - for a spot-locked swatch - its ink name, so the shell's bar
 // renderer can annotate the pair with the name instead of raw CMYK numbers.
 // Only entries with a declared CMYK anchor or a spot lock qualify (the others
 // fall back to generic RGB→CMYK at render time and so have nothing to verify);
@@ -326,7 +326,7 @@ export async function withPdfRoundedClip(pdf: any, x: number, y: number, w: numb
 
 // Set the current jsPDF clip region to a CSS basic-shape / polygon clip-path. `shape`
 // geometry is box-local CSS px; (ox,oy) is the box's top-left in pt and (sx,sy) the
-// px→pt scale (per axis — a CSS circle under a non-uniform scale becomes an ellipse).
+// px→pt scale (per axis - a CSS circle under a non-uniform scale becomes an ellipse).
 // Must be called inside a saveGraphicsState()/restoreGraphicsState() pair. Mirrors the
 // SVG walker's vector <clipPath> so both formats clip identically.
 export function pdfApplyClip(pdf: any, shape: ClipShape, ox: number, oy: number, sx: number, sy: number): void {
@@ -376,7 +376,7 @@ export async function withPdfRotation(pdf: any, deg: number, cx: number, cy: num
 }
 
 // Run `draw` with an arbitrary 2-D affine (rotate+scale / skew / matrix) applied about
-// the pivot (cx, cy) in pt — the general form of withPdfRotation for the vector walker's
+// the pivot (cx, cy) in pt - the general form of withPdfRotation for the vector walker's
 // matrix branch. `m` is the CSS transform matrix: a,b,c,d are unitless; e,f are the
 // translation ALREADY scaled to pt by the caller (rotate about (cx,cy):
 // M' = T(cx,cy)·m·T(-cx,-cy)). Degrades to an untransformed draw inside the saved state
@@ -403,7 +403,7 @@ export async function withPdfMatrix(
 export function drawSvgPathToPdf(pdf: any, d: string, tx: (v: number) => number, ty: (v: number) => number): void {
   const cmdRe = /([MLHVCSQTAZmlhvcsqtaz])([^MLHVCSQTAZmlhvcsqtaz]*)/g;
   let cx = 0, cy = 0;
-  let sx = 0, sy = 0;   // current subpath start — Z returns the current point here (SVG spec)
+  let sx = 0, sy = 0;   // current subpath start - Z returns the current point here (SVG spec)
   let lastCmd = '';
   let lastCpx = 0, lastCpy = 0;
   let m: RegExpExecArray | null;
@@ -505,7 +505,7 @@ export function drawSvgPathToPdf(pdf: any, d: string, tx: (v: number) => number,
       case 'Z':
         pdf.close();
         // SVG: after closepath the current point returns to the subpath's start, so a
-        // following relative command (`z m…`) is offset from there — not the last drawn
+        // following relative command (`z m…`) is offset from there - not the last drawn
         // point. Without this the mono-white SUSE wordmark mangled (hourglass 'S').
         cx = sx; cy = sy;
         break;
@@ -594,7 +594,7 @@ export function svgArcToBeziers(x1: number, y1: number, rx: number, ry: number, 
   return results;
 }
 
-// Dash pattern for a dashed/dotted border stroke of width `w` (in the target unit —
+// Dash pattern for a dashed/dotted border stroke of width `w` (in the target unit - 
 // SVG px or PDF pt). Approximates the browser's implementation-defined pattern: dotted →
 // round dots on a 1:1 gap (dash=[w,w] + round caps); dashed → [3w,2w] butt caps. Returns
 // null for solid/none/other styles (the caller strokes solid). Shared by both walkers so
@@ -607,8 +607,8 @@ export function borderDashArray(borderStyle: string | undefined | null, w: numbe
 }
 
 // Apply CSS text-transform to a display string. CSS transforms text only at paint
-// time (textContent is unchanged), so the vector walkers — which read textContent
-// — must apply it themselves or vector exports show the original case. upper/lower
+// time (textContent is unchanged), so the vector walkers - which read textContent
+// - must apply it themselves or vector exports show the original case. upper/lower
 // are 1:1 so they don't disturb per-line substring offsets; capitalize upcases the
 // first letter of each whitespace-separated word (locale-default).
 export function applyTextTransform(str: string, transform: string | null | undefined): string {
@@ -620,11 +620,11 @@ export function applyTextTransform(str: string, transform: string | null | undef
   }
 }
 
-// A resolved brand-palette hit: the CMYK 4-tuple (0–1) to substitute — a plain
+// A resolved brand-palette hit: the CMYK 4-tuple (0–1) to substitute - a plain
 // process-locked (or auto-derived-and-measured) swatch's own cmyk, or, for a
-// swatch with no explicit cmyk lock, one derived from its screen hex — plus,
+// swatch with no explicit cmyk lock, one derived from its screen hex - plus,
 // when the swatch is ALSO spot-locked, the spot's name for a true /Separation
-// colourspace substitution in the PDF path (the other CMYK paths — TIFF, EPS —
+// colourspace substitution in the PDF path (the other CMYK paths - TIFF, EPS - 
 // only ever use .cmyk; see their own scope notes). cmyk and spot are
 // independent locks (see BrandPaletteEntry's doc comment): an explicit cmyk
 // lock is never overridden by a spot lock's derived equivalent, so a
@@ -634,7 +634,7 @@ export function applyTextTransform(str: string, transform: string | null | undef
 // ENGINE now (engine/src/cmyk-palette.ts) and are re-exported here so every
 // existing importer under shells/web is unchanged. They moved because the CLI's
 // eps-cmyk sink is a fourth CMYK sink in a different shell, and while the builder
-// was shell-local it could not reach it — so the finish fix was web-only and a
+// was shell-local it could not reach it - so the finish fix was web-only and a
 // declared foil still separated as gold from `lolly … --export=eps-cmyk`. One
 // implementation, reachable from every shell.
 export type { PaletteSpotHit, PaletteHit };
@@ -642,7 +642,7 @@ export { buildCmykPaletteMap, cmykKey };
 
 // Deterministic /CSn resource names for every spot-locked entry in a palette map,
 // assigned up front so substitutePdfRgb can write the final name into the content
-// stream before the matching PDF colourspace object exists — renderCmykPdf only
+// stream before the matching PDF colourspace object exists - renderCmykPdf only
 // actually creates that object, lazily, for a spot a content stream really used.
 export function assignSpotResourceNames(paletteMap: Map<string, PaletteHit>): Map<string, string> {
   const names = new Map<string, string>();
@@ -653,7 +653,7 @@ export function assignSpotResourceNames(paletteMap: Map<string, PaletteHit>): Ma
 }
 
 // (cmykKey lives in engine/src/cmyk-palette.ts and is re-exported above, beside
-// buildCmykPaletteMap — the quantisation and the map it keys must move together.)
+// buildCmykPaletteMap - the quantisation and the map it keys must move together.)
 
 // The quantised key a palette entry is matched on (mirrors buildCmykPaletteMap),
 // so usedKeys recorded during substitution can be filtered back to entries.
@@ -696,10 +696,10 @@ export const OVERPRINT_GS_DEFS: Record<string, Record<string, boolean | number>>
   GSsk: { OP: false },
 };
 
-// Replaces `r g b rg` / `r g b RG` operators with their CMYK equivalents — a plain
+// Replaces `r g b rg` / `r g b RG` operators with their CMYK equivalents - a plain
 // DeviceCMYK "k"/"K" operator for a process-locked (or auto-derived, or naive
 // fallback) match, or, for a spot-locked match, a switch to that spot's
-// /Separation colourspace at full tint ("/CSn cs 1 scn" / "/CSn CS 1 SCN" — the
+// /Separation colourspace at full tint ("/CSn cs 1 scn" / "/CSn CS 1 SCN" - the
 // resource name comes from spotNames, assigned by assignSpotResourceNames). `used`
 // collects the brand palette keys that matched (for the colour bar); `usedSpots`
 // collects the spot names actually referenced, so renderCmykPdf only materialises
@@ -761,7 +761,7 @@ export function svgLen(val: string | number | null | undefined, total: number): 
 // Map a CSS object-position to the equivalent SVG preserveAspectRatio alignment keyword
 // (xMin/xMid/xMax + YMin/YMid/YMax), so an <image> / nested <svg> in an SVG export
 // anchors to the same edge/corner as on screen and in the PDF path. Reuses the same
-// fraction parse: a fraction ≤¼ → Min, ≥¾ → Max, else Mid — exact for the nine anchors
+// fraction parse: a fraction ≤¼ → Min, ≥¾ → Max, else Mid - exact for the nine anchors
 // the editor offers (0 / 0.5 / 1).
 export function preserveAspectRatioAlign(objectPosition: string | null | undefined): string {
   const [px, py] = objectPositionFractions(objectPosition);
@@ -772,7 +772,7 @@ export function preserveAspectRatioAlign(objectPosition: string | null | undefin
 
 // Parse an SVG/CSS colour to sRGB bytes, or null for none/transparent/unparseable.
 // Delegates to the engine's CSS Color 4 parser (the single source of truth), which
-// also owns THE named-colour table — this file used to carry its own 148-entry copy,
+// also owns THE named-colour table - this file used to carry its own 148-entry copy,
 // and its own legacy-rgb regex that dropped every oklch()/oklab()/color() paint.
 export function parseSvgColor(color: string | null): Rgb | null {
   const c = parseColorToSrgb8(color);

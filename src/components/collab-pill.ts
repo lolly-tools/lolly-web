@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-pill — the floating collaborator cluster over the stage (plan 100 §4.6).
+ * collab-pill - the floating collaborator cluster over the stage (plan 100 §4.6).
  *
  * The plan calls this "the anchor component", and the reason it is built before any
  * transport exists is Andy's: "we can't build this and not have the realestate
  * ready". It is the one place a person looks to answer *who is here, can they see
- * what I see, and is the connection alive* — so it holds an avatar stack (3 + "+N"),
+ * what I see, and is the connection alive* - so it holds an avatar stack (3 + "+N"),
  * a connection-state dot, an optional invite affordance and a roster popover, and
  * nothing else. Cursors, focus rings and the projects badge are separate surfaces
  * that read the same session state.
@@ -15,7 +15,7 @@
  * The stage HUD (`.stage-nav`, `styles/parts/editor.css`): a translucent `--card`
  * capsule at 0.85 alpha over a 6px backdrop blur, a hairline `--border`, a 999px
  * radius, sized off the shared `--chrome-*` row tokens so it lines up with the back
- * pill at every width. That module is NOT touched — this is its own component with
+ * pill at every width. That module is NOT touched - this is its own component with
  * its own injected sheet, the `music-player.ts`/`neuro-dock.ts` pattern, because a
  * collab is lazy chrome that must cost a single-player build nothing.
  *
@@ -32,15 +32,15 @@
  *
  * ── Colour is never the only differentiator (§4.8) ────────────────────────────
  *
- * Three rules follow from that, and each is load-bearing rather than decorative:
+ * Three rules follow from that, and each is required rather than decorative:
  *
  *  - the connection dot pairs its colour with a SHAPE (filled disc / hollow ring /
- *    split disc / barred ring) and a `title`, plus a visually-hidden live label —
+ *    split disc / barred ring) and a `title`, plus a visually-hidden live label - 
  *    green-vs-red alone fails for the ~8% of men who would read them as one colour;
  *  - every avatar carries a 1px halo in the theme ground plus an outer hairline in
  *    the theme ink (the selection-handle convention, §4.4), so a collaborator colour
  *    that happens to match the artwork behind it still reads as a separate object;
- *  - initials are `aria-hidden` and the accessible name is the full roster — two
+ *  - initials are `aria-hidden` and the accessible name is the full roster - two
  *    letters in a 24px disc are an identifier for people who can already see the
  *    colour, never the accessible one.
  *
@@ -59,12 +59,12 @@
  * It never imports the launch registry, the ceremony or a transport: `onInvite` is a
  * callback slot, and the invite button exists only when a caller supplies one. It
  * renders no markup into `.tool-canvas`/`#tool-content` and touches no export stage
- * — a render must stay byte-identical whether or not anyone is watching (§4.6, §8).
+ * - a render must stay byte-identical whether or not anyone is watching (§4.6, §8).
  */
 
 import { announce as announceLive } from '../a11y.ts';
 // `tRaw` throughout, not `t`: every string in this file lands in `textContent`, an
-// attribute or `announce()` — never an HTML sink — and t()'s param escaping would
+// attribute or `announce()` - never an HTML sink - and t()'s param escaping would
 // render an apostrophe in a collaborator's name as `O&#39;Brien`.
 import { currentLang, loadNamespace, tRaw } from '../i18n.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -75,7 +75,7 @@ import type { BodyPopoverHandle, PopoverAnchor } from './body-popover.ts';
 
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
-// One map, one namespace — the house shape (`components/collab-ceremony.ts`,
+// One map, one namespace - the house shape (`components/collab-ceremony.ts`,
 // `components/beam-toast.ts`, `lib/beam-pack.ts`). Every value IS its own catalog key:
 // `i18n.ts` looks a translation up by the English source, so this map is both the copy
 // and the extraction list scripts/translate.ts's `collab` corpus slices out of the file.
@@ -89,7 +89,7 @@ export const STRINGS = {
   group: 'Collaboration',
   /** The invite button (its label and its tooltip are the same words). */
   invite: 'Invite someone',
-  /** The beam control (§6.4): hand the whole session — and the uploads it uses — down
+  /** The beam control (§6.4): hand the whole session - and the uploads it uses - down
    *  the channel that is already up. */
   sendSession: 'Send this session',
   /** A send that never reached the toast, announced. Everything that fails AFTER the
@@ -97,7 +97,7 @@ export const STRINGS = {
   sendFailed: 'That could not be sent.',
   /** The roster popover. */
   roster: 'Collaborators',
-  /** The avatar stack's accessible name — everyone here, by name. */
+  /** The avatar stack's accessible name - everyone here, by name. */
   stack: 'Collaborators: {names}',
 
   // §4.5's role fallbacks, for anyone who did not choose a name.
@@ -133,7 +133,7 @@ const STYLE_ID = 'collab-pill-styles';
  *
  * `tokens.css` names only `--destructive` of the three; the live/away dot, toast
  * states and validation copy have always reached for green and amber by convention.
- * Naming the convention here is the honest version — and it is the same convention
+ * Naming the convention here is the honest version - and it is the same convention
  * `collab-colors.ts` guards a 32° arc around (`SEMANTIC_HUES`), so no collaborator's
  * colour can ever be mistaken for this dot.
  */
@@ -356,8 +356,8 @@ export type CollabDotState = 'connecting' | 'live' | 'reconnecting' | 'away' | '
 /**
  * What the dot shows.
  *
- * `away` is not a connection state on the wire — the transport is perfectly healthy
- * — but it IS what a person needs to know, so a live session in which every peer has
+ * `away` is not a connection state on the wire - the transport is perfectly healthy
+ * - but it IS what a person needs to know, so a live session in which every peer has
  * a hidden tab reads as away rather than as live (§11.4: a background tab is not a
  * dead tab, and it is not an attending one either). With nobody else here at all the
  * dot stays live: being alone is not being away.
@@ -389,7 +389,7 @@ export function collabDisplayName(p: CollabParticipant): string {
  * sliced into a lone surrogate; and the first letter of each of the first two
  * WORDS, which is what makes "Priya Fernandes" read as PF rather than PR. A name
  * with no letters at all (only punctuation, only spaces) yields '' and the disc is
- * then colour + halo only — which is fine, because the initials were never the
+ * then colour + halo only - which is fine, because the initials were never the
  * accessible name.
  */
 export function collabInitials(name: string): string {
@@ -427,8 +427,8 @@ export interface CollabPillSource {
  * A kind rather than a caller-supplied string, and that is the whole design: every
  * word this component renders has to live in {@link STRINGS} above, or the
  * translation corpus cannot see it (`collab-i18n.test.ts` scans this file's map and
- * nothing else). So a caller supplies BEHAVIOUR — what to run, and whether it is
- * available right now — and the pill supplies the copy, the glyph and the a11y name.
+ * nothing else). So a caller supplies BEHAVIOUR - what to run, and whether it is
+ * available right now - and the pill supplies the copy, the glyph and the a11y name.
  */
 export type CollabPillActionKind = 'send-session';
 
@@ -440,7 +440,7 @@ export interface CollabPillAction {
   /**
    * Re-read on EVERY render: `false` hides the control.
    *
-   * Not a constant, because the answer changes under the user — a beam's lane dies
+   * Not a constant, because the answer changes under the user - a beam's lane dies
    * with the pair, and leaving a button that can only fail is the dead control §4.6
    * refuses. The session's own state stream is what re-renders the pill, so a
    * connection dropping to `closed` takes the action with it in the same paint.
@@ -453,7 +453,7 @@ export interface CollabPillOptions {
   /** The live session state. */
   source: CollabPillSource;
   /**
-   * The invite slot. The button is rendered ONLY when this is supplied — a session
+   * The invite slot. The button is rendered ONLY when this is supplied - a session
    * nobody may invite into (an org room, a joined pair) must not show a dead
    * control. Wiring it to the launch registry is the stitch pass's job; this
    * component deliberately imports nothing from it.
@@ -468,7 +468,7 @@ export interface CollabPillOptions {
    * what exists; this component decides what it is called.
    */
   actions?: readonly CollabPillAction[];
-  /** Extra class on the root — pass `'collab-pill--stage'` for the §4.6 placement. */
+  /** Extra class on the root - pass `'collab-pill--stage'` for the §4.6 placement. */
   className?: string;
   /** Screen-reader announcer. Injected so a test can assert the join/leave copy
    *  without a live region (and so /pro's isolated tree could pass its own). */
@@ -512,7 +512,7 @@ function tagEl(text: string): HTMLElement {
  * The dot's label, as KEY NAMES rather than copy.
  *
  * A table of resolved strings would be five `STRINGS.x` references sitting outside any
- * `tRaw()` — indistinguishable, to a reviewer or to the scan in `collab-i18n.test.ts`,
+ * `tRaw()` - indistinguishable, to a reviewer or to the scan in `collab-i18n.test.ts`,
  * from five sites that forgot to translate. Holding `keyof typeof STRINGS` keeps the
  * single translation at the render site and still has TypeScript check both the state
  * coverage and the key spelling.
@@ -525,7 +525,7 @@ const DOT_LABEL_KEYS: Record<CollabDotState, keyof typeof STRINGS> = {
   closed: 'closed',
 };
 
-/** An action's copy and glyph, by kind — key NAMES for the reason above, and one
+/** An action's copy and glyph, by kind - key NAMES for the reason above, and one
  *  exhaustive record per concern so a new kind fails the typecheck three times rather
  *  than rendering nameless. */
 const ACTION_LABEL_KEYS: Record<CollabPillActionKind, keyof typeof STRINGS> = {
@@ -541,7 +541,7 @@ const ACTION_ICONS: Record<CollabPillActionKind, IconName> = {
 /**
  * `icon()` markup as a real node, so this file holds no raw-HTML sink (primitive-guards
  * R10). `icon()` returns one of this repo's own path constants, so this was never a
- * safety problem — it is the inventory rule: an `innerHTML` line is a line a reviewer
+ * safety problem - it is the inventory rule: an `innerHTML` line is a line a reviewer
  * re-checks on every edit, and this one never had to be one. The parse yields the same
  * element tree the HTML parser built, so the rendered DOM is unchanged; a host with no
  * DOMParser (or an unregistered glyph) leaves the button with its accessible name and
@@ -561,7 +561,7 @@ function iconNode(name: IconName): Element | null {
  * Position the roster popover under the pill, aligned to its inline-END edge.
  *
  * `body-popover.ts`'s default aligns to the physical right, which mirrors wrong in
- * RTL — the popover would hang off the far side of the cluster it belongs to. The
+ * RTL - the popover would hang off the far side of the cluster it belongs to. The
  * document direction decides which physical edge "inline-end" is, and the 8px floor
  * on both sides keeps it inside the viewport either way.
  */
@@ -654,7 +654,7 @@ export function mountCollabPill(container: HTMLElement, opts: CollabPillOptions)
    * Run one action, exactly once at a time.
    *
    * The disable is the whole guard: a beam is a transfer, and a second one started by
-   * an impatient second click is refused by the session as `busy` — a refusal the
+   * an impatient second click is refused by the session as `busy` - a refusal the
    * human would read as "it didn't work". A failure that never reached the toast (no
    * lane, nothing to send, a build that threw) is announced here, because the toast
    * only exists from the offer frame onward.
@@ -730,7 +730,7 @@ export function mountCollabPill(container: HTMLElement, opts: CollabPillOptions)
 
   // ── render ──────────────────────────────────────────────────────────────────
 
-  /** Who was here last render, and what they were called — the join/leave
+  /** Who was here last render, and what they were called - the join/leave
    *  announcements are its diff. */
   let seen: Map<string, string> | null = null;
 
@@ -767,12 +767,12 @@ export function mountCollabPill(container: HTMLElement, opts: CollabPillOptions)
     );
 
     tags.textContent = '';
-    // The observer banner is about THIS client — "you can watch but not edit" is a
+    // The observer banner is about THIS client - "you can watch but not edit" is a
     // fact about the person reading it, so it rides the pill, not only the roster.
     if (state.role === 'observer') tags.appendChild(tagEl(tRaw(STRINGS.observing)));
 
     // Availability, re-read every paint. A throwing predicate hides its control
-    // rather than taking the roster down with it — the same containment rule the
+    // rather than taking the roster down with it - the same containment rule the
     // announcements below and `tool-collab.ts`'s two overlays are written to.
     for (const slot of actionSlots) {
       let shown = true;
@@ -787,7 +787,7 @@ export function mountCollabPill(container: HTMLElement, opts: CollabPillOptions)
 
     // Join/leave, announced once each. The first render is the roster as found, not
     // a burst of arrivals, so it seeds the map silently. Names are carried in that
-    // map rather than looked up on the way out — by the time someone has left, the
+    // map rather than looked up on the way out - by the time someone has left, the
     // roster entry that knew what to call them is gone.
     const now = new Map(state.peers.map(p => [p.clientId, collabDisplayName(p)] as const));
     if (seen) {
@@ -812,7 +812,7 @@ export function mountCollabPill(container: HTMLElement, opts: CollabPillOptions)
   // The pill's copy is in the lazy `collab` namespace (i18n.ts). English is skipped
   // OUTRIGHT rather than relying on loadNamespace's own early return, so an English
   // build behaves exactly as it did before this wave; every other language paints
-  // English for one microtask and then repaints in place. Repainting is safe here —
+  // English for one microtask and then repaints in place. Repainting is safe here - 
   // `render` is a pure function of the source's state, and the two static labels
   // (`aria-label` on the group, the invite button) are re-stamped with it.
   if (currentLang() !== 'en') {

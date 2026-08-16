@@ -85,7 +85,7 @@ test("the 'batch' keyword surfaces batch sessions, opening in /pro", async () =>
 });
 
 test('token-AND spans fields; ranking is best-first; limit slices', async () => {
-  // 'qr badge' — both tokens must hit (tool name + label) on s1 only.
+  // 'qr badge' - both tokens must hit (tool name + label) on s1 only.
   const both = await provider.search(tokenize('qr badge'), 8);
   assert.deepEqual(both.map((h) => h.href), ['#/tool/qr-code?slot=s1']);
   // A broad single-letter query matches several; the cap holds.

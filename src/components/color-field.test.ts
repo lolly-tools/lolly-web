@@ -116,7 +116,7 @@ function type(field: HTMLElement, text: string): void {
 test('wiring a field emits NOTHING — no mount-time echo, in any configuration', () => {
   // The bug this pins: the picker used to emit an onChange while wiring up,
   // carrying the sRGB hex it had just been handed. A host that treats that as a
-  // user edit overwrites its own state — in Colour Lab it made EVERY colour report
+  // user edit overwrites its own state - in Colour Lab it made EVERY colour report
   // "sRGB" regardless of what was authored. jsdom never fires `input`, so this
   // assertion is the only guard there is.
   for (const opts of [
@@ -200,7 +200,7 @@ test('one flat tablist, grouped into three labelled families, wired to its panel
 test('a field with no space tabs still renders the OKLCH panel as a popover child', () => {
   const { field } = mount('#30ba78', { float: true });
   assert.equal(field.querySelectorAll('[role="tablist"]').length, 0);
-  // A DIRECT child of .color-popover, hidden — that pair is what the value-field
+  // A DIRECT child of .color-popover, hidden - that pair is what the value-field
   // focus handler expands and what measuredFullHeight measures.
   const panel = field.querySelector<HTMLElement>('.color-popover > .color-lch')!;
   assert.ok(panel);
@@ -219,7 +219,7 @@ test('dials follow their own option, defaulting to inline', () => {
   assert.ok(mount('#30ba78', { float: true, dials: true }).field.querySelector('.color-dials'));
   // …and an inline panel can decline them.
   assert.equal(mount('#30ba78', { inline: true, dials: false }).field.querySelectorAll('.color-dials').length, 0);
-  // Every dial stays out of the tab order and out of the a11y tree — the slider
+  // Every dial stays out of the tab order and out of the a11y tree - the slider
   // beneath it is the control of record.
   const { field } = mount('#30ba78', { inline: true });
   for (const d of field.querySelectorAll<HTMLElement>('.color-dial')) {
@@ -378,7 +378,7 @@ test('a modes-less field shows a hex and still accepts any CSS colour', () => {
   const input = valueInput(field);
   assert.equal(input.getAttribute('maxlength'), null,
     'a 9-character cap truncated every CSS colour the field itself can now read');
-  // The live update path used to write the active space's notation into this box —
+  // The live update path used to write the active space's notation into this box - 
   // 'oklch(70.085% 0.15123 157.2 / 0.7843)' in an input hinted '#rrggbbaa', which the
   // user could then not re-enter.
   const alpha = field.querySelector<HTMLInputElement>('.color-alpha-slider')!;
@@ -408,7 +408,7 @@ test('the dragged channel keeps painting its dial needle', async () => {
   drag(field, 'oklch', 'l', 20);
   await settlePaint();
   // The repaint skips the dragged channel's TRACK (its own ramp did not change), and
-  // used to drop that channel from the dial paint entirely — so the needle froze
+  // used to drop that channel from the dial paint entirely - so the needle froze
   // while the slider moved, and a dial drag stopped following the finger.
   assert.notEqual(needle('l'), before, 'the L needle never moved');
   assert.equal(needle('l'), 'rotate(72.0deg)', 'L=20 of 0–100 is 72° from 12 o’clock');
@@ -422,7 +422,7 @@ test('the dragged channel keeps painting its dial needle', async () => {
 // ── The boundary hairlines on the dials ───────────────────────────────────────
 
 /** Every stop fraction in a gradient, in percent. Positions are the only numbers
- *  followed by a ',' or the closing ')' — a colour's own `62.00%` lightness is
+ *  followed by a ',' or the closing ')' - a colour's own `62.00%` lightness is
  *  followed by a space. (Same trick as the tier test above.) */
 const stopFracs = (bg: string): number[] =>
   [...bg.matchAll(/(\d+\.\d\d)%(?=[,)]|$)/g)].map(m => Number(m[1]));
@@ -431,7 +431,7 @@ const stopFracs = (bg: string): number[] =>
  * Where a run list' gradient actually BREAKS, read off the gradient itself: each
  * run closes at the fraction the next one opens at, so a boundary is the one place
  * a position repeats. Deriving the expectation this way rather than by recomputing
- * `channelRuns` is the point — it pins the hairline to the same edge the eye sees.
+ * `channelRuns` is the point - it pins the hairline to the same edge the eye sees.
  */
 const gradientBreaks = (bg: string): number[] => {
   const f = stopFracs(bg);
@@ -450,12 +450,12 @@ const breakAngles = (bg: string): number[] =>
   gradientBreaks(bg).map(p => p / 100 * 360);
 
 /**
- * Same boundaries, same order, same angles — within the width of the gradient's own
+ * Same boundaries, same order, same angles - within the width of the gradient's own
  * quantisation. A stop position is printed at two decimals of a percent, so a
  * fraction read back out of the gradient can differ from the one the hairline was
  * rotated by by 0.036° (0.01% of 360°), and the rotation itself is written to a tenth
  * of a degree (±0.05°). Anything past their sum is a hairline sitting beside its own
- * edge, which is the thing being pinned — and 0.09° of a 3.25rem ring is a tenth of a
+ * edge, which is the thing being pinned - and 0.09° of a 3.25rem ring is a tenth of a
  * device pixel.
  */
 const assertSameAngles = (got: number[], want: number[], what: string): void => {
@@ -490,7 +490,7 @@ test('a dial marks every gamut crossing with a hairline, at the gradient’s own
   const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
 
   // 1. The full colour, both sides. The ring pours the SAME runs as the slider, at
-  //    the same fractions, but with no tier wash on it — the ladder is the
+  //    the same fractions, but with no tier wash on it - the ladder is the
   //    sliders' answer, not the dials'.
   const c = ringBg(field, 'c');
   const track = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="c"]')!.style.background;
@@ -519,14 +519,14 @@ test('the hairlines move with the ramp they mark', async () => {
   const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
   const before = edgeAngles(field, 'c');
   // Lightness up near white: the chroma axis reaches far less, so its sRGB edge
-  // moves. The repaint has to rebuild the hairlines with the gradient — a stale set
+  // moves. The repaint has to rebuild the hairlines with the gradient - a stale set
   // would sit beside its own edge.
   drag(field, 'oklch', 'l', 95);
   await settlePaint();
   const after = edgeAngles(field, 'c');
   assert.notDeepEqual(after, before, 'the chroma hairlines never moved');
   assertSameAngles(after, breakAngles(ringBg(field, 'c')), 'chroma after L=95');
-  // The needle and the hub survive the rebuild — they are siblings of the hairline
+  // The needle and the hub survive the rebuild - they are siblings of the hairline
   // container, which is the only innerHTML target.
   const dial = field.querySelector<HTMLElement>('[data-space-group="oklch"] .color-dial[data-dial-ch="c"]')!;
   assert.ok(dial.querySelector('.color-dial-needle') && dial.querySelector('.color-dial-hub'));
@@ -537,7 +537,7 @@ test('the dial hairline is a rotated element, styled entirely from CSS', () => {
   const rule = /\.color-dial-edge::before \{([^}]*)\}/.exec(css);
   assert.ok(rule, 'the dial hairline rule moved — find it before deleting this test');
   const body = rule![1]!;
-  // Not dashed (that means DROP AREA here) and not a border — it is a mark of its own.
+  // Not dashed (that means DROP AREA here) and not a border - it is a mark of its own.
   assert.ok(!/dashed/.test(body), `no dashed hairline: ${body.trim()}`);
   assert.ok(!/\bborder\s*:/.test(body), `not a border: ${body.trim()}`);
   // Tunable the way the tier opacities are: JS writes the rotation and nothing else.
@@ -546,7 +546,7 @@ test('the dial hairline is a rotated element, styled entirely from CSS', () => {
     assert.match(css, new RegExp(`${v}:\\s*\\S`), `${v} has a value declared in this file`);
   }
   // A stop pair inside the conic would be a wedge (thin at the hub, wide at the
-  // rim) — the width has to be a length, not an angle.
+  // rim) - the width has to be a length, not an angle.
   assert.match(body, /width:\s*var\(--dial-edge-w/);
   const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
   const emit = /function dialEdgesHtml\([^)]*\): string \{([\s\S]*?)\n\}/.exec(src);
@@ -558,7 +558,7 @@ test('the dial hairline is a rotated element, styled entirely from CSS', () => {
 
 test('the caution line names the space just switched to, on the leading edge', () => {
   const { field } = mount('#30ba78', { inline: true, modes: true });
-  // Wiring writes the note, priming the throttle — so a switch inside 300ms used to
+  // Wiring writes the note, priming the throttle - so a switch inside 300ms used to
   // be deferred and this role="status" line kept naming the space the user left.
   selectSpace(field, 'cmyk');
   assert.equal(noteText(field), 'CMYK — exact');
@@ -573,7 +573,7 @@ test('a superseded caution never lands on top of the colour that contradicts it'
   drag(field, 'oklch', 'c', 0.39);                 // far outside sRGB
   await wait(400);
   assert.equal(noteText(field), 'Outside sRGB');
-  drag(field, 'oklch', 'c', 0.05);                 // queues 'OKLCH — exact'
+  drag(field, 'oklch', 'c', 0.05);                 // queues 'OKLCH - exact'
   drag(field, 'oklch', 'c', 0.39);                 // same text as on screen: early return
   await wait(400);
   // The queued write used to survive the early return, so the line settled on
@@ -601,7 +601,7 @@ test('the CMYK value field states the ink split its own sliders state', () => {
   selectSpace(field, 'cmyk');
   for (const ch of ['c', 'm', 'y']) drag(field, 'cmyk', ch, 100);
   const inks = sliderValues(field, 'cmyk');
-  // c=m=y=100% composes to black, which DECOMPOSES as k=100% — so re-deriving the
+  // c=m=y=100% composes to black, which DECOMPOSES as k=100% - so re-deriving the
   // text made the field read 'cmyk(0% 0% 0% 100%)' under sliders reading 100/100/100/38.
   assert.equal(valueInput(field).value, 'cmyk(100% 100% 100% 38%)');
   // …and a round trip through another tab must not rewrite the split either.
@@ -630,7 +630,7 @@ test('the interaction ends when focus leaves the field, however it got there', (
   // drag-suppression is what keeps the picker alive through a slider drag.
   field.querySelector<HTMLElement>('[data-mode="hsl"]')!.focus();
   assert.deepEqual(events, ['start'], 'a hop inside the field is not the end of the interaction');
-  // …but leaving the field must, and used to not — the blur handler sat on the value
+  // …but leaving the field must, and used to not - the blur handler sat on the value
   // input, which by then had long since lost focus, so the host stayed latched.
   document.getElementById('away')!.focus();
   assert.deepEqual(events, ['start', 'end']);
@@ -645,7 +645,7 @@ test('unparsable text is marked invalid and put back when focus leaves', () => {
   const good = input.value;
   input.value = 'not-a-colour';
   fire(input);
-  // Held, not applied — but no longer silently: the field used to display a string
+  // Held, not applied - but no longer silently: the field used to display a string
   // that was not the colour while the caution line called that colour exact.
   assert.equal(seen.length, 0, 'junk must not emit');
   assert.equal(input.getAttribute('aria-invalid'), 'true');
@@ -697,7 +697,7 @@ test('a long value keeps its whole string reachable', () => {
   const input = valueInput(field);
   assert.ok(input.value.length > 22, `expected a long notation, got ${input.value}`);
   // The narrow hosts (a 316px swatch editor) cut this off at the hue with no ellipsis
-  // and no title — the string the field itself wrote was unreadable and unrecoverable.
+  // and no title - the string the field itself wrote was unreadable and unrecoverable.
   assert.ok(input.classList.contains('color-input--long'));
   assert.equal(input.title, input.value);
   // A hex is short, so it is not stepped down.
@@ -709,7 +709,7 @@ test('a long value keeps its whole string reachable', () => {
 test('the stretches the gamut cannot show are painted as fainter rings, not holes', () => {
   // What Andy asked for: the transparent regions stay VISIBLE, with opacity dropping
   // onion-ring style as you go up gamuts. The tier tokens carry the opacity, so the
-  // assertions are about STRUCTURE — a ring exists, an outer ring is fainter than an
+  // assertions are about STRUCTURE - a ring exists, an outer ring is fainter than an
   // inner one, and the numbers themselves live in CSS where they can be tuned.
   const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
   const track = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="c"]')!;
@@ -717,7 +717,7 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
   assert.ok(bg.includes('color-mix(in oklab,'), `a chroma axis past sRGB must paint washes: ${bg}`);
   assert.ok(bg.includes('var(--track-tier-1'), 'the first ring out reads its own token');
   // The dial above it is the SAME run list poured into a conic gradient, so it breaks
-  // at the same fractions — that is what keeps the ring and the slider in register.
+  // at the same fractions - that is what keeps the ring and the slider in register.
   const dial = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-dial-ch="c"] .color-dial-ring')
     ?? field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-dial-ch="c"]')!;
   const ring = dial.style.background || dial.querySelector<HTMLElement>('[style*="conic"]')?.style.background || '';
@@ -726,7 +726,7 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
   assert.deepEqual(fracs(ring), fracs(bg), 'the dial and its slider must break at the same fractions');
 
   // A hue axis at high chroma crosses more than one gamut, so more than one ring is
-  // named on the same track — the onion.
+  // named on the same track - the onion.
   const { field: wide } = mount('oklch(60% 0.22 0)', { inline: true, modes: true, dials: true });
   const hue = wide.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="h"]')!.style.background;
   assert.ok(hue.includes('var(--track-tier-1') && hue.includes('var(--track-tier-2'),
@@ -748,7 +748,7 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
 
   // The boost for dark grounds covers EVERY dark theme. `brand` declares
   // `color-scheme: dark` (statically, and in every block brand-vars.ts generates), so
-  // left off this selector it paid the light amounts over a near-black rail — the
+  // left off this selector it paid the light amounts over a near-black rail - the
   // faintest rings of the three shipped themes, in the one that is the pre-JS default.
   const boost = /(\[data-theme[^{]*)\{[^}]*--track-tier-1:/.exec(tokens);
   assert.ok(boost, 'the dark tier boost moved — find it before deleting this test');
@@ -760,13 +760,13 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
 
 test('the color-mix support probe can actually fail', () => {
   // It could not before: the probe string carried a `var()`, and a declaration holding
-  // one cannot be validated until substitution — so CSS.supports answers TRUE for it
+  // one cannot be validated until substitution - so CSS.supports answers TRUE for it
   // unconditionally (it says yes to `totally-not-a-color(in oklab, red var(--x),
   // transparent)` as well). The fallback the probe exists to reach was unreachable,
-  // and on a browser without color-mix the whole `background` shorthand — rail
-  // included — would have been dropped.
+  // and on a browser without color-mix the whole `background` shorthand - rail
+  // included - would have been dropped.
   // Asserted against the source because jsdom has no CSS.supports to ask (which is why
-  // the caller optional-chains it), and Chromium — where it was verified both ways —
+  // the caller optional-chains it), and Chromium - where it was verified both ways - 
   // is not available here.
   const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
   const arg = /CSS\.supports\?\.\(\s*'background', '([^']+)'/.exec(src);
@@ -784,7 +784,7 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   // must not be a dashed border: in this design language dashed means DROP AREA and
   // nothing else, so a dashed rail is a false affordance on every slider in the app.
   // The rail is therefore a faint bottom background layer, and the clamp mark an inset
-  // ring — NOT an `outline`, see the focus assertion below.
+  // ring - NOT an `outline`, see the focus assertion below.
   //
   // It cannot be a background-color: JS assigns the `background` SHORTHAND for the
   // track gradient, which would wipe one declared here. Nor an inset box-shadow: an
@@ -798,12 +798,12 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   assert.ok(!/dashed/.test(body), `no dashed border on a slider, got "${body.trim()}"`);
   assert.ok(!/box-shadow:\s*inset/.test(body), 'an inset rail would paint over the runs');
   // The rail colour itself is a :root token, because the Colour Lab sliders' wells
-  // need the SAME rail — the stretch beyond every gamut paints nothing at all, so
+  // need the SAME rail - the stretch beyond every gamut paints nothing at all, so
   // the rail is the only thing left saying the axis continues there.
   const tokenCss = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
   assert.match(tokenCss, /--track-rail:\s*hsl\(var\(--muted\)/, 'a faint rail colour is present');
 
-  // …and every track carries it, empty axis or not, always UNDER the runs — which is
+  // …and every track carries it, empty axis or not, always UNDER the runs - which is
   // the claim that still holds. An axis with nothing reachable is no longer bare: it
   // paints the onion-ring washes for the gamuts that could show it, over the rail.
   const { field } = mount('color(display-p3 1 0 0)', { inline: true, modes: true, dials: true });
@@ -826,7 +826,7 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   assert.match(clamp![1]!, /#d97706/, 'the clamp mark still marks in amber');
   // …and it must not be an `outline`. An element has exactly one, this selector is more
   // specific than :focus-visible, and that outline is the sliders' ONLY focus
-  // affordance — so an amber outline silently removed the keyboard focus ring from
+  // affordance - so an amber outline silently removed the keyboard focus ring from
   // precisely the sliders an out-of-gamut colour is being dragged on.
   assert.ok(!/outline/.test(clamp![1]!),
     `the clamp mark must not use outline — it would eat the focus ring: "${clamp![1]!.trim()}"`);

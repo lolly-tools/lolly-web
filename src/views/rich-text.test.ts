@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Unit tests for the Design rich-text char model (rich-text.js).
 // charsFromDom is DOM-agnostic (nodeType/nodeName/childNodes/nodeValue only),
-// so these tests feed it plain object trees — no jsdom.
+// so these tests feed it plain object trees - no jsdom.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -151,7 +151,7 @@ test('setColor / rangeColor over a range (skips newlines, clears on null)', () =
 });
 
 // The run-colour wire format is hex, deliberately, and the colour picker's emitted
-// value stays a lowercase #rrggbb(aa) — free-canvas pipes it straight into setColor
+// value stays a lowercase #rrggbb(aa) - free-canvas pipes it straight into setColor
 // via applyRunColor. This pins both halves: a hex survives into the char model AND
 // into the markdown serialiser, and a wider CSS colour is REFUSED rather than stored
 // half-way (setColor's isHex gate reads it as "clear the run"). Widening the markup

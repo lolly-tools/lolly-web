@@ -8,8 +8,8 @@
  * predicates that gate it are pure and tested directly, with the fixtures taken
  * from the real tool shapes they have to separate:
  *
- *   take it   — audiogram (bottom/center/minimal), url-shot, 3d, booth-studio
- *   refuse it — audiogram layout=overlay (caption over a full-bleed canvas),
+ *   take it - audiogram (bottom/center/minimal), url-shot, 3d, booth-studio
+ *   refuse it - audiogram layout=overlay (caption over a full-bleed canvas),
  *               slides / deck-builder (CSS keyframes off an inert clock),
  *               filter-* (the clock rewrites an SVG overlay → DOM mutations)
  */
@@ -91,7 +91,7 @@ test('staticChromeVerdict: the measured audiogram case takes the fast path', () 
 });
 
 test('staticChromeVerdict: the Tier-B screenshot path never takes it', () => {
-  // Chromium paints the live node in one genuine shot there — nothing to cache.
+  // Chromium paints the live node in one genuine shot there - nothing to cache.
   const v = staticChromeVerdict({ ...ok, externalScreenshot: true });
   assert.equal(v.ok, false);
   assert.match(v.reason, /screenshot/);
@@ -158,7 +158,7 @@ test('countToolMutations: our own swap pair drains to zero, a tool write survive
   const swapPair = [rec({}), rec({})];                       // hide, then unhide
   assert.equal(countToolMutations(swapPair, ours), 0);
   assert.equal(countToolMutations([...swapPair, rec({ type: 'characterData', attributeName: null, target: { tag: 'clock-text' } })], ours), 1);
-  // With no set of our own targets nothing is exempt — the probe's pre-shot drain.
+  // With no set of our own targets nothing is exempt - the probe's pre-shot drain.
   assert.equal(countToolMutations(swapPair, new Set()), 2);
 });
 

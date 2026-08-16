@@ -4,7 +4,7 @@
  * keys concurrent decodes by request id, and turns module bytes into an AudioBuffer on
  * any AudioContext. Shared by the Neurospicy player (live AudioContext) and the video
  * exporter (WAV blob URL for the URL-driven muxer) so both take the identical
- * "module → PCM" path — a direct mirror of zzfxm-render.ts.
+ * "module → PCM" path - a direct mirror of zzfxm-render.ts.
  */
 import type { RenderedPcm } from '../../../../engine/src/zzfxm.ts';
 import { pcmToWavBlob } from './pcm-wav.ts';
@@ -55,7 +55,7 @@ function ensureWorker(): Worker {
 }
 
 /** Decode module bytes to stereo PCM in the worker, at the given sample rate. The bytes
- *  buffer is transferred — callers pass a fresh fetch() result each time. */
+ *  buffer is transferred - callers pass a fresh fetch() result each time. */
 export function renderMod(bytes: Uint8Array, sampleRate: number): Promise<RenderedPcm> {
   const w = ensureWorker();
   const id = ++seq;
@@ -68,7 +68,7 @@ export function renderMod(bytes: Uint8Array, sampleRate: number): Promise<Render
 /**
  * Decode module bytes and wrap them in a stereo AudioBuffer on the given context.
  * Rendered at the context's own sample rate so playback needs no resampling. Throws
- * if the module decodes empty. (Neurospicy live path — see neurospicy.ts loadBuffer.)
+ * if the module decodes empty. (Neurospicy live path - see neurospicy.ts loadBuffer.)
  */
 export async function renderModToAudioBuffer(ctx: BaseAudioContext, bytes: Uint8Array): Promise<AudioBuffer> {
   const { left, right, sampleRate } = await renderMod(bytes, Math.round(ctx.sampleRate) || 48000);
@@ -82,7 +82,7 @@ export async function renderModToAudioBuffer(ctx: BaseAudioContext, bytes: Uint8
 }
 
 /**
- * Fetch a tracker module, decode it, and return a WAV blob URL — the shape the
+ * Fetch a tracker module, decode it, and return a WAV blob URL - the shape the
  * video-export music picker feeds to the muxer for a 'mod'-format track (mirrors
  * songUrlToWavBlobUrl for zzfxm). Rendered at 48 kHz to match the exporter's encoder.
  */

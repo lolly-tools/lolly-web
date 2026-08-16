@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * color-namer.ts — deterministic human-readable colour names.
+ * color-namer.ts - deterministic human-readable colour names.
  * Run: node --test "shells/web/src/lib/color-namer.test.ts"
  */
 

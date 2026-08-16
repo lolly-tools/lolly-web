@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Jelly effects — the flag-gated soft-body chrome controls (vendored Jelly UI,
+ * Jelly effects - the flag-gated soft-body chrome controls (vendored Jelly UI,
  * `src/vendor/jelly/`). One entry point: `ensureJelly()` lazily imports the
  * bundle (defining every <jelly-*> element) the first time a surface wants it,
  * so users who turn the flag off never pay for the chunk.
@@ -9,7 +9,7 @@
  * properties re-read from computed style on each repaint, with its own oklch
  * defaults injected under `@layer jelly`. The bridge below is UNLAYERED (like
  * tokens.css), so it outranks those defaults and maps the shell's semantic
- * triples onto them — theme cycling and runtime brand re-injection
+ * triples onto them - theme cycling and runtime brand re-injection
  * (brand-vars.ts rewriting --primary) flow through with no further wiring.
  * Named-palette entries (rose/amber/azure/mint/white) and the shadow triple are
  * deliberately left to Jelly's own light/dark defaults, keyed by the
@@ -95,7 +95,7 @@ export function jellyEnabled(): boolean {
 }
 
 /**
- * Flag on AND bundle loaded — the synchronous gate for surfaces that build
+ * Flag on AND bundle loaded - the synchronous gate for surfaces that build
  * markup in one pass (dialogs, topbars, sidebars) and can't await a chunk.
  * main.ts idle-preloads the bundle when the flag is on, so by interaction time
  * this is effectively `jellyEnabled()`; before that the surface renders its
@@ -108,7 +108,7 @@ export function jellyActive(): boolean {
 /**
  * Load the Jelly UI bundle and install the token bridge if (and only if) the
  * flag is on. Resolves `true` when <jelly-*> elements are ready to render.
- * Safe to call from any surface on every mount — the import happens once.
+ * Safe to call from any surface on every mount - the import happens once.
  * A caller holding the canonical profile can pass the flag state itself
  * (e.g. right after a toggle, when the sync mirror hasn't been written yet).
  */
@@ -124,7 +124,7 @@ export async function ensureJelly(on: boolean = jellyEnabled()): Promise<boolean
       }
       // The import injected @layer jelly defaults keyed off [data-jelly-mode];
       // theme.ts stamps it on every applyTheme, but the first load can happen
-      // after the last theme apply — sync it now so unbridged defaults match.
+      // after the last theme apply - sync it now so unbridged defaults match.
       syncJellyMode();
       installLabelForwarder();
       ready = true;
@@ -134,7 +134,7 @@ export async function ensureJelly(on: boolean = jellyEnabled()): Promise<boolean
     await loading;
     return true;
   } catch (err) {
-    loading = null; // a failed chunk load may be transient — allow a retry
+    loading = null; // a failed chunk load may be transient - allow a retry
     console.warn('jelly: bundle failed to load', err);
     return false;
   }
@@ -146,7 +146,7 @@ export async function ensureJelly(on: boolean = jellyEnabled()): Promise<boolean
  * synthesized click lands on the inert host), so clicks on a label's text are
  * forwarded to the jelly control inside it. Direct hits on the control (its own
  * pointer handling toggles), or on interactive elements like the (i) help tips,
- * are left alone — mirroring how a native label ignores nested interactives.
+ * are left alone - mirroring how a native label ignores nested interactives.
  * Installed once when the bundle loads; delegated, so it covers every surface.
  */
 function installLabelForwarder(): void {
@@ -160,7 +160,7 @@ function installLabelForwarder(): void {
     if (!sw) return;
     e.preventDefault();
     // jelly-switch exposes setChecked (its shadow checkbox swallows clicks);
-    // jelly-checkbox's shadow checkbox is a real one — click it so the toggle
+    // jelly-checkbox's shadow checkbox is a real one - click it so the toggle
     // takes the same pop-and-emit path as a direct hit.
     if (typeof sw.setChecked === 'function') sw.setChecked(!sw.checked, true);
     else sw.shadowRoot?.querySelector('input')?.click();
@@ -169,7 +169,7 @@ function installLabelForwarder(): void {
 
 /**
  * Pin Jelly's light/dark mode to the shell theme (brand chrome is dark-surfaced,
- * see tokens.css). Attribute-only — no import, so theme.ts can call this
+ * see tokens.css). Attribute-only - no import, so theme.ts can call this
  * unconditionally; it is inert until the bundle's stylesheet exists.
  */
 export function syncJellyMode(theme?: string): void {

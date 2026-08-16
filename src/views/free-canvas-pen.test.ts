@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The canvas editor's PEN TOOL (Stage D) — drawing, node editing, and the spline-kind
+ * The canvas editor's PEN TOOL (Stage D) - drawing, node editing, and the spline-kind
  * switcher.
  *
  * Two halves, in one file because they are two views of the same claim. The pure half
  * drives free-canvas-pen.ts directly and checks the geometric promises (an insert lands on
  * the curve, `enforceContinuity` really is applied, a kind switch is lossless in one
  * direction and lossy in the other). The wired half mounts the real `initFreeCanvas` against
- * a jsdom stage and an in-memory runtime that echoes `setInput` back through `getModel` — a
- * real round trip, not a stubbed answer — and checks the overlay's contract: one commit per
+ * a jsdom stage and an in-memory runtime that echoes `setInput` back through `getModel` - a
+ * real round trip, not a stubbed answer - and checks the overlay's contract: one commit per
  * user action, one undo step per drawn path, no commit at all when a draw is abandoned, and
  * chrome that is repositioned rather than rebuilt.
  *
@@ -113,7 +113,7 @@ function mount(initial: Box[]): Fixture {
   dom.window.document.body.appendChild(viewEl);
   canvasEl.style.width = NATIVE + 'px';
   canvasEl.style.height = NATIVE + 'px';
-  // 1 screen px per native px, origin at the client origin — client coordinates ARE canvas
+  // 1 screen px per native px, origin at the client origin - client coordinates ARE canvas
   // coordinates, so a test's numbers read as the geometry they mean.
   stageEl.getBoundingClientRect = () => rect(0, 0, NATIVE, NATIVE);
   canvasEl.getBoundingClientRect = () => rect(0, 0, NATIVE, NATIVE);
@@ -203,7 +203,7 @@ const decodedAll = (b: Box): AuthoredPath[] => {
   return ps;
 };
 
-/** A box's frame AS THE RENDERER READS IT — `boxCss`/`penFrame`'s rounding, re-stated here
+/** A box's frame AS THE RENDERER READS IT - `boxCss`/`penFrame`'s rounding, re-stated here
  *  rather than imported, so a refit test is not checking the module against itself. */
 interface TFrame { x: number; y: number; w: number; h: number; rot: number }
 const frameOf = (b: Box): TFrame => ({
@@ -229,7 +229,7 @@ function localCubics(b: Box): Cubic[] {
   return decodedAll(b).flatMap((p) => lowerAuthored(denormNodes(p, fr.w, fr.h)).cubics);
 }
 
-/** The whole shape sampled in NATIVE canvas px — decode → denormalise → lower → place. This
+/** The whole shape sampled in NATIVE canvas px - decode → denormalise → lower → place. This
  *  is the only space in which "the shape did not move" is a meaningful claim, since a refit
  *  changes every one of x/y/w/h and every stored fraction at once. */
 function nativeSamples(b: Box, per = 24): Array<{ x: number; y: number }> {
@@ -274,7 +274,7 @@ function contourNodes(b: Box, ci: number): Array<{ x: number; y: number }> {
   return denormNodes(decodedAll(b)[ci]!, fr.w, fr.h).nodes.map((n) => toNative(fr, n.x, n.y));
 }
 
-/** Every HANDLE tip in NATIVE px, for the contour being edited — `undefined` where a node has
+/** Every HANDLE tip in NATIVE px, for the contour being edited - `undefined` where a node has
  *  none on that side (the codec drops a zero component). */
 function nativeHandle(b: Box, i: number, which: 'in' | 'out'): { x: number; y: number } | null {
   const fr = frameOf(b);
@@ -315,7 +315,7 @@ const penNodEls = (f: Fixture): number => penNodeEls(f).length;
 
 // The three points every drawing test places. Chosen clear of 0 / 500 / 1000 on both axes,
 // because a pen click snaps to the artboard edges and centre exactly as an armed create
-// does — within SNAP_PX (6 native px here) the placed node would not be where we clicked.
+// does - within SNAP_PX (6 native px here) the placed node would not be where we clicked.
 const P: Array<[number, number]> = [[200, 200], [400, 300], [300, 450]];
 
 /** The frame + normalised nodes those three points MUST produce, worked out from the engine
@@ -331,7 +331,7 @@ function expectedTriangle(closed: boolean): { x: number; y: number; w: number; h
   return { x, y, w, h, nodes: P.map(([px, py]) => ({ x: (px - x) / w, y: (py - y) / h })) };
 }
 
-/** Sample a lowered path at a fixed parameterisation — an order-independent shape probe
+/** Sample a lowered path at a fixed parameterisation - an order-independent shape probe
  *  that does not go anywhere near a `d` string. */
 function samples(cubics: Cubic[], per = 12): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = [];
@@ -341,11 +341,11 @@ function samples(cubics: Cubic[], per = 12): Array<{ x: number; y: number }> {
 
 /** A handle component AS DECODED. The wire format writes a zero component as "absent" (so a
  *  node with no handle round-trips as one), which means `hOutY` is `undefined` rather than 0
- *  for a horizontal handle — reading it raw gives NaN out of `Math.hypot`. */
+ *  for a horizontal handle - reading it raw gives NaN out of `Math.hypot`. */
 const hv = (n: SplineNode, k: 'hInX' | 'hInY' | 'hOutX' | 'hOutY'): number => n[k] ?? 0;
 const hLen = (n: SplineNode, which: 'in' | 'out'): number =>
   (which === 'in' ? Math.hypot(hv(n, 'hInX'), hv(n, 'hInY')) : Math.hypot(hv(n, 'hOutX'), hv(n, 'hOutY')));
-/** sin of the angle between a node's two handles — the scale-free collinearity measure. The
+/** sin of the angle between a node's two handles - the scale-free collinearity measure. The
  *  raw cross product is not usable against a stored path: the codec rounds each coordinate
  *  to six decimals of a FRACTION of the frame, so an exactly-collinear pair comes back a
  *  little bent, by an amount that depends on how long the handles are. */
@@ -372,7 +372,7 @@ function maxDeviation(a: Array<{ x: number; y: number }>, b: Array<{ x: number; 
 // ── choosing the spline type BEFORE drawing ───────────────────────────────────
 //
 // The pen bar's switcher only exists once there is a draft, so the type used to be
-// something you discovered after drawing in the wrong one — and only `hyperbezier → cubic`
+// something you discovered after drawing in the wrong one - and only `hyperbezier → cubic`
 // converts losslessly. Press-and-hold (or right-click) the rail button instead.
 
 const penBtn = (f: Fixture): HTMLButtonElement =>
@@ -459,7 +459,7 @@ test('penCommitFromNative frames the LOWERED curve, not the node polygon', () =>
   assert.equal(made!.w, want.w);
   assert.equal(made!.h, want.h);
   // A hyperbezier's control arms overshoot the polygon, so the frame is genuinely bigger
-  // than the points' own bounding box — the property a naive implementation gets wrong and
+  // than the points' own bounding box - the property a naive implementation gets wrong and
   // then clips the curve in `hooks.js`.
   const polyW = Math.max(...P.map((p) => p[0])) - Math.min(...P.map((p) => p[0]));
   assert.ok(made!.w > polyW, `frame width ${made!.w} exceeds the polygon's ${polyW}`);
@@ -490,7 +490,7 @@ test('a handle drag on a smooth node keeps the handles collinear, lengths indepe
   // Collinear and opposed: the cross product vanishes and the dot product is negative.
   assert.ok(Math.abs(next.hOutX! * next.hInY! - next.hOutY! * next.hInX!) < 1e-9, 'collinear');
   assert.ok(next.hOutX! * next.hInX! + next.hOutY! * next.hInY! < 0, 'opposed');
-  // Length preserved at 40 — 'smooth' constrains direction only.
+  // Length preserved at 40 - 'smooth' constrains direction only.
   assert.ok(Math.abs(Math.hypot(next.hInX!, next.hInY!) - 40) < 1e-9, 'the incoming length is untouched');
 });
 
@@ -544,7 +544,7 @@ test('inserting a node on a cubic is EXACT — on the curve, and the shape does 
   const dev = maxDeviation([{ x: mid.x, y: mid.y }], samples(before, 400));
   assert.ok(dev < 1e-6, `inserted node is on the path (deviation ${dev})`);
 
-  // And the shape is the same curve, split — de Casteljau, so this is exact.
+  // And the shape is the same curve, split - de Casteljau, so this is exact.
   const after = lowerAuthored(res!.path).cubics;
   assert.equal(after.length, 2);
   const both = maxDeviation(samples(after, 40), samples(before, 800));
@@ -565,7 +565,7 @@ test('inserting a node on a hyperbezier lands on the curve; the shape only shift
   assert.equal(res!.path.nodes.length, 5);
   const mid = res!.path.nodes[1]!;
   assert.ok(maxDeviation([{ x: mid.x, y: mid.y }], samples(before, 600)) < 1e-6, 'the node is on the old curve');
-  // The solve re-runs with one more knot, so the curve moves — but by a fraction of the
+  // The solve re-runs with one more knot, so the curve moves - but by a fraction of the
   // shape, not by a redraw. 200 units across, so 4 units is 2%.
   const dev = maxDeviation(samples(res!.path && lowerAuthored(res!.path).cubics, 30), samples(before, 600));
   assert.ok(dev < 4, `the shape is essentially unchanged (deviation ${dev})`);
@@ -663,7 +663,7 @@ test('Enter finishes an OPEN path; Escape mid-draw commits nothing and leaves th
   assert.deepEqual(f.boxes(), before, 'the model is byte-for-byte what it was');
   assert.equal(penNodEls(f), 0, 'and the draft chrome is gone');
 
-  // Enter, by contrast, commits — and the path stays open.
+  // Enter, by contrast, commits - and the path stays open.
   for (const [x, y] of P) { place(f, x, y); frames(); }
   key('Enter');
   frames();
@@ -739,12 +739,12 @@ test('Alt-DRAG breaks the pair — it steers the outgoing arm and leaves the inc
 
 // `hyperbezier` reads a handle as a tangent PIN and discards its length, and `hbArm`'s
 // signed shape function reverses the control arm once that pin is more than a right angle
-// from its chord — so a pull "backwards" rendered the curve leaving the OPPOSITE way. The
+// from its chord - so a pull "backwards" rendered the curve leaving the OPPOSITE way. The
 // pen promotes to `cubic` on the first real pull instead, which honours the handle exactly.
 test('a handle pull promotes a hyperbezier draft to cubic, losslessly', () => {
   const f = mount([]);
   armPen(f);
-  place(f, 200, 200);                              // click only — still the smooth-auto kind
+  place(f, 200, 200);                              // click only - still the smooth-auto kind
   frames();
   place(f, 400, 300, { drag: [360, 340] });        // pull BACK past a right angle of the chord
   frames();
@@ -899,7 +899,7 @@ test('dragging a handle applies enforceContinuity, and commits once', () => {
   // no longer 200ths of anything fixed.
   assertClose(nativeHandle(after, 1, 'out')!, { x: 430, y: 360 }, 1e-3, 'the out handle followed the pointer');
   // A square frame is what makes "collinear in the STORED form" meaningful (normalising by
-  // w and h separately is a non-uniform scale) — and a refit can make the frame non-square,
+  // w and h separately is a non-uniform scale) - and a refit can make the frame non-square,
   // so the constraint is checked on the DENORMALISED nodes, in px, where it is a real angle.
   const fr = frameOf(after);
   const n = denormNodes(decodedAll(after)[0]!, fr.w, fr.h).nodes[1]!;
@@ -908,7 +908,7 @@ test('dragging a handle applies enforceContinuity, and commits once', () => {
   assert.ok(handleSin(n) < 1e-5, `collinear (sin ${handleSin(n)})`);
   assert.ok(handleDot(n) < 0, 'opposed');
   assert.ok(Math.abs(hLen(n, 'in') - 40) < 1e-2, `and the incoming length is unchanged (${hLen(n, 'in')}px)`);
-  // A handle drag that pushes the CURVE out of the frame grows it — and this one does, since
+  // A handle drag that pushes the CURVE out of the frame grows it - and this one does, since
   // node 1's in-handle now points up out of the old top edge.
   assertTightFrame(after, 'after a handle drag');
   assert.ok(frameOf(after).y < 300, `the frame grew upward to contain the curve (y ${frameOf(after).y})`);
@@ -929,7 +929,7 @@ test('clicking the curve inserts a node there; the payload grows by one node and
   const after = decoded(f.boxes()[0]!);
   assert.equal(after.nodes.length, before.nodes.length + 1);
   const afterCubics = lowerAuthored(denormNodes(after, 200, 200)).cubics;
-  // On the curve, and the curve is unchanged — an exact cubic split.
+  // On the curve, and the curve is unchanged - an exact cubic split.
   const dev = maxDeviation(samples(afterCubics, 40), samples(beforeCubics, 600));
   assert.ok(dev < 1e-6, `shape unchanged (deviation ${dev})`);
   assert.equal(penNodEls(f), 4, 'and the chrome grew to match');
@@ -1041,7 +1041,7 @@ test('distributeNodes equalises spacing by COORDINATE, holding the extremes stil
   const p = { kind: 'cubic' as const, closed: false, nodes: [
     { x: 0, y: 0 }, { x: 90, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 },
   ] };
-  // Selected out of path order and out of coordinate order — the sort is by x, so the
+  // Selected out of path order and out of coordinate order - the sort is by x, so the
   // extremes are node 0 (x=0) and node 1 (x=90).
   const out = distributeNodes(p, [0, 1, 2, 3], 'h');
   assert.deepEqual(out.nodes.map((n) => n.x), [0, 90, 30, 60], 'evenly spaced in x, in place');
@@ -1109,7 +1109,7 @@ test('a marquee selects several nodes and moves them together, in one commit', (
   ], closed: true })]);
   enterNodeEdit(f, [400, 400]);
   const nodesBefore = nativeNodes(f.boxes()[0]!);
-  // Marquee the TOP two nodes only — native (300,300) and (500,300) — starting well off the
+  // Marquee the TOP two nodes only - native (300,300) and (500,300) - starting well off the
   // curve so the drag is a marquee rather than an insert.
   drag(f, [250, 250], [550, 320]);
   const commits = f.commits();
@@ -1224,7 +1224,7 @@ test('hyperbezier → cubic needs no warning, and preserves the shape', () => {
   const after = f.boxes()[0]!;
   assert.equal(decoded(after).kind, 'cubic');
   // Compared in NATIVE px, since baking to cubic changes the lowering slightly and the frame
-  // refits with it — the promise is about where the shape is on the canvas, not about which
+  // refits with it - the promise is about where the shape is on the canvas, not about which
   // fractions are stored.
   const dev = maxDeviation(nativeSamples(after, 24), before);
   // 1e-2 native px: the wire format stores six decimals of a FRACTION, the refit re-rounds
@@ -1239,7 +1239,7 @@ test('hyperbezier → cubic needs no warning, and preserves the shape', () => {
 // The reported bug: "the shape is clipped to a viewbox that doesn't grow when points are
 // moved or created outside of that area." Nodes are stored as fractions of the box frame and
 // `hooks.js` lowers them into a viewBox of exactly that size, so a frame that does not follow
-// the curve clips it — and a frame that does not SHRINK leaves selection chrome, marquee
+// the curve clips it - and a frame that does not SHRINK leaves selection chrome, marquee
 // hit-testing and align/distribute addressing empty space. Both directions are asserted here.
 
 test('a node dragged far OUTSIDE the frame: the frame grows, the shape does not move', () => {
@@ -1247,7 +1247,7 @@ test('a node dragged far OUTSIDE the frame: the frame grows, the shape does not 
   enterNodeEdit(f, [400, 480]);
   const before = f.boxes()[0]!;
   const nodesBefore = nativeNodes(before);
-  // Node 1 is at native (400, 300) — the frame is 200×200 at (300,300). Drag it 260px right
+  // Node 1 is at native (400, 300) - the frame is 200×200 at (300,300). Drag it 260px right
   // and 240px up, i.e. well outside on both axes: the old frame ends at x=500, y=300.
   drag(f, [400, 300], [660, 60], { alt: true });
   const after = f.boxes()[0]!;
@@ -1266,14 +1266,14 @@ test('a node dragged far OUTSIDE the frame: the frame grows, the shape does not 
 
 test('a node INSERTED outside the frame is contained too, and the curve is unmoved', () => {
   // A `line` path, so the insert is on a straight segment and the whole shape is a polyline
-  // whose bbox is its nodes' — the case where "outside" is unambiguous.
+  // whose bbox is its nodes' - the case where "outside" is unambiguous.
   const f = mount([cubicBox({ nodes: [
     { x: 0, y: 0, continuity: 'corner' }, { x: 1, y: 1, continuity: 'corner' },
   ] })]);
   enterNodeEdit(f, [350, 350]);
   const frameBefore = frameOf(f.boxes()[0]!);
-  // Insert at the segment's midpoint (native 400,400). The split is exact — that the SHAPE
-  // does not move is the dedicated cubic-split test's claim — so the refit is a no-op and the
+  // Insert at the segment's midpoint (native 400,400). The split is exact - that the SHAPE
+  // does not move is the dedicated cubic-split test's claim - so the refit is a no-op and the
   // frame must come out identical rather than nudged by the renormalisation.
   place(f, 400, 400);
   frames();
@@ -1281,12 +1281,12 @@ test('a node INSERTED outside the frame is contained too, and the curve is unmov
   assert.deepEqual(frameOf(f.boxes()[0]!), frameBefore, 'an exact insert refits to the same frame');
   assertTightFrame(f.boxes()[0]!, 'after an exact insert');
 
-  // Now drag the new node well below the frame — the reported bug's other half.
+  // Now drag the new node well below the frame - the reported bug's other half.
   drag(f, [400, 400], [400, 700], { alt: true });
   const after = f.boxes()[0]!;
   assertNoNaN(after, 'after an insert-then-drag past the frame');
   assertTightFrame(after, 'a node inserted then dragged below the frame');
-  // At least to the node — the split gave it handles, so the curve bulges a little past it.
+  // At least to the node - the split gave it handles, so the curve bulges a little past it.
   assert.ok(frameOf(after).y + frameOf(after).h >= 700,
     `the frame reaches the new node (bottom edge ${frameOf(after).y + frameOf(after).h})`);
   // The two ORIGINAL endpoints are still exactly where they were.
@@ -1298,14 +1298,14 @@ test('a node INSERTED outside the frame is contained too, and the curve is unmov
 test('a handle pulled far outside does NOT inflate the frame — the curve does not follow the hull', () => {
   // The reason the refit uses `pathBounds` (the tight bbox, from the derivative's roots) and
   // not the control hull. A cubic reaches only ~3/4 of the way to a control point, so a
-  // handle can sit a long way outside the frame with the CURVE barely leaving it — and
+  // handle can sit a long way outside the frame with the CURVE barely leaving it - and
   // fitting the hull would make every smooth shape's box visibly too big.
   const f = mount([cubicBox({ nodes: [
     { x: 0, y: 0.5, hOutX: 0.25, hOutY: 0, continuity: 'corner' },
     { x: 1, y: 0.5, hInX: -0.25, hInY: 0, continuity: 'corner' },
   ] })]);
   enterNodeEdit(f, [400, 400]);
-  // Node 0's out handle is at native (350, 400). Pull it 600px straight up — 3× the frame.
+  // Node 0's out handle is at native (350, 400). Pull it 600px straight up - 3× the frame.
   drag(f, [350, 400], [350, -200]);
   const after = f.boxes()[0]!;
   assertNoNaN(after, 'after a huge handle pull');
@@ -1323,7 +1323,7 @@ test('a handle pulled far outside does NOT inflate the frame — the curve does 
 });
 
 test('a node dragged INWARD shrinks the frame, and so does a delete', () => {
-  // A diamond, so exactly ONE node touches each frame edge — which is what makes "pull it in
+  // A diamond, so exactly ONE node touches each frame edge - which is what makes "pull it in
   // and the frame follows" an unambiguous claim.
   const f = mount([cubicBox({ nodes: [
     { x: 0.5, y: 0, continuity: 'corner' }, { x: 1, y: 0.5, continuity: 'corner' },
@@ -1397,7 +1397,7 @@ test('a rotated path box survives a node drag through the real overlay', () => {
   boxes[0]!.rot = 45;
   enterNodeEdit(f, [400, 400]);
   const before = nativeNodes(f.boxes()[0]!);
-  // Grab node 1 where it actually IS on screen — through the frame's rotation — and pull it
+  // Grab node 1 where it actually IS on screen - through the frame's rotation - and pull it
   // outward along the rotated x axis.
   const grab = before[1]!;
   const to = { x: grab.x + 90, y: grab.y + 90 };
@@ -1418,7 +1418,7 @@ test('a rotated path box survives a node drag through the real overlay', () => {
 test('a DEGENERATE extent gets a 1px axis, no NaN, and still does not move', () => {
   // A zero-extent axis is real: a horizontal line, a vertical one, two coincident nodes, an
   // all-collinear path. `w`/`h` clamp up to 1 (the renderer divides by them) and the curve
-  // keeps its native position — see refitFrame's degenerate note.
+  // keeps its native position - see refitFrame's degenerate note.
   const cases: Array<{ why: string; nodes: SplineNode[]; flat: 'w' | 'h' | 'both' }> = [
     { why: 'horizontal line', nodes: [{ x: 100, y: 300 }, { x: 400, y: 300 }], flat: 'h' },
     { why: 'vertical line', nodes: [{ x: 250, y: 100 }, { x: 250, y: 500 }], flat: 'w' },
@@ -1448,7 +1448,7 @@ test('a DEGENERATE extent gets a 1px axis, no NaN, and still does not move', () 
     const wire = encodeAuthoredPath(made!.path);
     assert.ok(wire && !/NaN|Infinity/.test(wire), `${c.why}: wire form ${wire}`);
   }
-  // A ONE-node draft is not a path at all, so there is nothing to frame — the refusal, not a
+  // A ONE-node draft is not a path at all, so there is nothing to frame - the refusal, not a
   // 1×1 box the user would have to find and delete.
   assert.equal(penCommitFromNative({ kind: 'line', closed: false, nodes: [{ x: 5, y: 5 }] }), null);
 });
@@ -1456,7 +1456,7 @@ test('a DEGENERATE extent gets a 1px axis, no NaN, and still does not move', () 
 /**
  * One `penEditWrite`, reproduced exactly: mutate the first contour, refit, renormalise,
  * encode, then decode and denormalise as the next edit would. The encode/decode is the point
- * — the wire format quantises to six decimals of a FRACTION of the frame, and a refit
+ * - the wire format quantises to six decimals of a FRACTION of the frame, and a refit
  * renormalises, so each edit re-quantises against a different divisor.
  */
 interface Stored { frame: TFrame; value: string }
@@ -1500,7 +1500,7 @@ test('an edit and its inverse, 20 times, does not creep the shape', () => {
   for (let i = 0; i < 20; i++) {
     st = applyEdit(st, (p) => ({ ...p, nodes: p.nodes.map((n, k) => (k === 1 ? { ...n, x: n.x + D, y: n.y - D } : n)) }));
     st = applyEdit(st, (p) => ({ ...p, nodes: p.nodes.map((n, k) => (k === 1 ? { ...n, x: n.x - D, y: n.y + D } : n)) }));
-    // The frame comes back to exactly where it started every single cycle — a refit of an
+    // The frame comes back to exactly where it started every single cycle - a refit of an
     // unchanged shape is a fixed point, which is what stops the drift being unbounded.
     assert.deepEqual(st.frame, start.frame, `cycle ${i}: the frame returned`);
   }
@@ -1509,7 +1509,7 @@ test('an edit and its inverse, 20 times, does not creep the shape', () => {
   for (let i = 0; i < before.length; i++) worst = Math.max(worst, Math.hypot(after[i]!.x - before[i]!.x, after[i]!.y - before[i]!.y));
   // 0.01 native px over 40 encode/decode round trips. The bound is the quantisation budget
   // and nothing else: the frame is a fixed point (asserted above) and the local offset is
-  // back-solved from it, so the frame's rounding contributes ZERO — all that is left is
+  // back-solved from it, so the frame's rounding contributes ZERO - all that is left is
   // 1e-6 of a fraction × a ~250px frame = 2.5e-4px per coordinate per encode, and 40 of
   // those cannot exceed 1e-2 even if every one rounded the same way. Measured: 3.1e-4px,
   // i.e. a third of a thousandth of a pixel, so it is one encode's worth and not 40.
@@ -1621,7 +1621,7 @@ test('a 40-node path: node chrome is built once and only repositioned across a d
   const first = penNodeEls(f);
   assert.equal(first.length, 40, 'one element per node');
 
-  // A whole drag on node 0 — at normalised (0.95, 0.5) of a 600 frame at (200,200).
+  // A whole drag on node 0 - at normalised (0.95, 0.5) of a 600 frame at (200,200).
   const start: [number, number] = [200 + 0.95 * 600, 200 + 0.5 * 600];
   f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: start[0], y: start[1] }));
   for (let i = 1; i <= 12; i++) {
@@ -1669,7 +1669,7 @@ test('the warm start is what makes a 40-node hyperbezier drag cheap', () => {
   const warmIters: number[] = [];
   const FRAMES = 40;
   for (let step = 1; step <= FRAMES; step++) {
-    // One node travelling under the pointer, ~3px per frame — what a drag actually looks
+    // One node travelling under the pointer, ~3px per frame - what a drag actually looks
     // like, and the case the warm start was added for.
     const moved: AuthoredPath = {
       ...path,
@@ -1682,7 +1682,7 @@ test('the warm start is what makes a 40-node hyperbezier drag cheap', () => {
   }
   const sum = (a: number[]): number => a.reduce((x, y) => x + y, 0);
   const cold = sum(coldIters), hot = sum(warmIters);
-  // Measured: 5.75 Newton iterations per frame cold against 3.30 warm — 0.16 ms/frame down
+  // Measured: 5.75 Newton iterations per frame cold against 3.30 warm - 0.16 ms/frame down
   // to 0.12 for solve + lower of 40 nodes. The assertion is a ratio, not a time, because a
   // shared CI box will not honour a wall clock and the iteration count is what the time is a
   // proxy for.
@@ -1713,7 +1713,7 @@ test('drawing works with touch pointers', () => {
   f.destroy();
 });
 
-/** Two fingers down, optionally moved, then both up — Stage E's recogniser, verbatim. */
+/** Two fingers down, optionally moved, then both up - Stage E's recogniser, verbatim. */
 function twoFinger(f: Fixture, o: { a: [number, number]; b: [number, number]; moveA?: [number, number]; moveB?: [number, number] }): void {
   const t0 = 1000;
   f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: o.a[0], y: o.a[1], id: 1, pointerType: 'touch', time: t0 }));

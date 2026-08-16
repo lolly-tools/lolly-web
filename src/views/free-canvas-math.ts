@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// free-canvas-math.js — DOM-free geometry for the WYSIWYG "editor" layout.
+// free-canvas-math.js - DOM-free geometry for the WYSIWYG "editor" layout.
 //
 // The web shell's free-canvas overlay (free-canvas.js) is the only DOM here; ALL
 // coordinate math lives in this module so it can be unit-tested at the repo root,
@@ -17,11 +17,11 @@
 
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 // The lift ladder is written in MAGNIFICATION and stored as depth; the engine owns
-// the conversion (plans/104 §4.3 — `eff` and `z` are only the same sentence at one
+// the conversion (plans/104 §4.3 - `eff` and `z` are only the same sentence at one
 // perspective, so nobody re-types the formula).
 import { depthForEff } from '../../../../engine/src/keyframes.ts';
 
-/** A flat row of a `blocks` input, keyed by field id — the shape of one "box". */
+/** A flat row of a `blocks` input, keyed by field id - the structure of one "box". */
 export type Box = { [key: string]: InputValue | undefined };
 
 /** Which sub-fields of a box carry its geometry (from the input's `canvas` flag). */
@@ -45,7 +45,7 @@ export interface Rect {
   rot: number;
 }
 
-/** Partial geometry to write back via {@link withRect} — only present fields change. */
+/** Partial geometry to write back via {@link withRect} - only present fields change. */
 export type PartialRect = { x?: number; y?: number; w?: number; h?: number; rot?: number };
 
 /** A world-space (native px) point. */
@@ -100,7 +100,7 @@ export interface SnapPointResult {
   guides: Guide[];
 }
 
-/** A resize-handle name — the 8 compass points around a box. */
+/** A resize-handle name - the 8 compass points around a box. */
 export type HandleName = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 /** Options for {@link resizeRect}. */
@@ -115,7 +115,7 @@ export interface ScaleOpts {
   minSize?: number;
 }
 
-/** The rect a resize gesture started from — `rot` may be absent (treated as 0). */
+/** The rect a resize gesture started from - `rot` may be absent (treated as 0). */
 export interface StartRect {
   x: number;
   y: number;
@@ -222,7 +222,7 @@ export function selectionAABB(boxes: Box[], indices: number[], cfg: BoxFieldConf
 /**
  * Topmost box index under a native point, honouring rotation. -1 if none.
  * `skip` excludes a box from hit-testing entirely (the click falls through to
- * whatever is below) — the sequence editor passes "hidden at the playhead", so
+ * whatever is below) - the sequence editor passes "hidden at the playhead", so
  * a user can only ever select what they can currently see.
  */
 export function hitTest(boxes: Box[], px: number, py: number, cfg: BoxFieldConfig, skip?: (i: number) => boolean): number {
@@ -436,19 +436,19 @@ export function reorderZ(boxes: Box[], indices: number[], op: ZOp): Box[] {
 
 // ── Lift layers (plans/104 §7 P3) ────────────────────────────────────────────
 //
-// The engine enumerates an SVG's layers (`enumerateSvgLayers`); this is the other
-// half — turning those layers into the rows that REPLACE the source box. It lives
+// The engine enumerates an SVG's layers (`enumerateSvgLayers`). This module is the other
+// half: it turns those layers into the rows that REPLACE the source box. It lives
 // here rather than in timeline-math.ts because its neighbours are `seedBox`,
-// `withRect` and `reorderZ`: it is box synthesis in the canvas's flat model, and
+// `withRect`, and `reorderZ`. It is box synthesis in the canvas's flat model, and
 // it touches no clock. The `z` it writes is the per-box DEPTH FIELD (§5.3, the
-// slider), not a keyframe track — a lifted stack is a static arrangement until
+// slider), not a keyframe track: a lifted stack is a static arrangement until
 // someone animates it.
 
 /** One enumerated layer, resolved to something a box can point at. */
 export interface LiftLayerSource {
   /**
    * What goes in the image field: the derived per-layer SVG as a `data:` URL, or
-   * any asset ref the shell has already stored. The caller owns getting here —
+   * any asset ref the shell has already stored. The caller owns getting here - 
    * the per-layer markup goes through the SAME sanitise path an upload does
    * (picker.ts → DOMPurify → blob/data URL), because a derived document is still
    * made of bytes that arrived from a stranger.
@@ -458,19 +458,19 @@ export interface LiftLayerSource {
   id: string | number;
   /**
    * The crop the engine gave this layer's document (`SvgLayer.viewBox`), in the
-   * SOURCE SVG's user units — absent when the layer kept the whole stage.
+   * SOURCE SVG's user units - absent when the layer kept the whole stage.
    *
    * With {@link LiftOptions.viewBox} it is the affine map from the source box's
    * rect to this row's, which is what makes a row CONTENT-SIZED: the 16 px icon
-   * gets a 16 px box, so its depth shadow is a 16 px gaussian and not a
-   * full-frame one (plans/104 §9 P3.1 item 1 — eleven full-stage shadows abort
+   * gets a 16 px box, so its depth shadow is a 16 px gaussian, not a
+   * full-frame one (plans/104 §9 P3.1 item 1: eleven full-stage shadows abort
    * the encoder watchdog).
    */
   crop?: { x: number; y: number; w: number; h: number } | null;
   /**
    * The layer's INK EXTENT as the engine measured it (`SvgLayer.bbox`), in the
    * same units as {@link crop}. Used only to decide which rows are geometric
-   * peers ({@link liftSlots}) — never for placement.
+   * peers ({@link liftSlots}) - never for placement.
    *
    * It is a different rectangle from the crop and both are needed: a crop is
    * intersected with the source viewBox, so three identical cards half off the
@@ -495,12 +495,12 @@ export interface LiftFieldConfig {
   fitField?: string;
   /** `object-position`. Anything but centred takes cropping off the table. */
   imgPosField?: string;
-  /** A shape clip on the box — per-row clips are not one clip, so: no cropping. */
+  /** A shape clip on the box - per-row clips are not one clip, so: no cropping. */
   clipField?: string;
 }
 
 export interface LiftOptions {
-  /** Clamp for the depth field — pass `KF_Z_FIELD_CLAMP` from the engine. */
+  /** Clamp for the depth field - pass `KF_Z_FIELD_CLAMP` from the engine. */
   zClamp?: readonly [number, number];
   /** Group id shared by every lifted row, minted by the caller (freshGroupId). */
   group?: string;
@@ -510,14 +510,14 @@ export interface LiftOptions {
   kind?: string;
   /**
    * The source SVG's own viewBox (`enumerateSvgLayers().viewBox`). Without it
-   * every row keeps the source's rect, exactly as 1.119 did — there is no map
+   * every row keeps the source's rect, exactly as 1.119 did - there is no map
    * from a layer's crop to a rect on the canvas.
    */
   viewBox?: { x: number; y: number; w: number; h: number } | null;
   /** How the source box renders the image: `contain` (default), `cover`, `fill`. */
   fit?: string;
   /**
-   * Depth-intensity multiplier for the derived stack (audit A5#2) — one of
+   * Depth-intensity multiplier for the derived stack (audit A5#2) - one of
    * {@link LIFT_STRENGTH}. Absent / 1 is the shipped taste ceiling, so a lift with no
    * strength chosen is byte-identical to every lift before the control existed.
    */
@@ -528,39 +528,39 @@ export interface LiftOptions {
 
 /**
  * How much bigger than the page the FIRST lifted layer reads, at the default
- * camera — the ladder's rung height where there is room for a full one.
+ * camera. This is the ladder's rung height where there is room for a full one.
  *
  * The ladder is written in magnification, not in depth, because magnification
  * is the thing a person sees and depth is the thing a file stores. `z` is only
  * meaningful against a perspective: at P = 1200 a step of 40 px is +3.4 %, and
  * the same 40 px is +0.7 % at P = 6000. So the step is 2 % and the engine
- * ({@link depthForEff}) says what that costs in z — 23.53 px today.
+ * ({@link depthForEff}) says what that costs in z - 23.53 px today.
  */
 export const LIFT_EFF_STEP = 0.02;
 
 /**
  * The magnification the TOP of a lifted stack reaches, and never passes,
- * however many layers there are — plans/104 §5.3's taste ceiling (the "tasteful
- * eff 1.05–1.2 band"), which is z = 200 at P = 1200.
+ * however many layers there are. This is plans/104 §5.3's taste ceiling (the "tasteful
+ * eff 1.05-1.2 band"), which is z = 200 at P = 1200.
  *
  * This is the fix for a content-blind ladder. A fixed 40 px per layer is fine
- * for three layers and absurd for thirty: the acceptance pass measured a
+ * for three layers and absurd for thirty. The acceptance pass measured a
  * 54-layer lift where 31 rows sat pinned at the field clamp (z = 900) with NO
- * relative parallax at all, and the layers that did move spread 125× apart —
+ * relative parallax at all, and the layers that did move spread 125x apart:
  * a "stack" whose top plate flew past the camera at eff 10 while its bottom
- * crawled at 1.2. Above ~11 layers the rung shrinks so the top rung still lands
- * here; below it, every rung is a full {@link LIFT_EFF_STEP}.
+ * crawled at 1.2. Above roughly 11 layers the rung shrinks so the top rung still lands
+ * here; below that, every rung is a full {@link LIFT_EFF_STEP}.
  */
 export const LIFT_EFF_CEIL = 1.2;
 
 /**
- * Depth-intensity presets for the Lift dialog (audit A5#2) — a multiplier on the
+ * Depth-intensity presets for the Lift dialog (audit A5#2), a multiplier on the
  * per-rung magnification `liftDepths` derives. `medium` is 1: the tasteful ceiling this
  * feature shipped with, so a Medium lift is BYTE-IDENTICAL to every lift before this
  * control existed. `subtle` flattens it for busy artwork; `dramatic` pushes past the
- * ceiling for real parallax on a sparse hero shot — the "less flat" the audit asked for,
+ * ceiling for real parallax on a sparse hero shot, the "less flat" the audit asked for,
  * as an opt-in rather than a moved default. The numbers stay well clear of collapsing the
- * 0.01 px depth quantum even at the 64-layer cap (closest rungs ~0.24 px × 0.6 ≈ 0.14 px).
+ * 0.01 px depth quantum even at the 64-layer cap (closest rungs about 0.24 px x 0.6, about 0.14 px).
  */
 export const LIFT_STRENGTH: Readonly<Record<string, number>> = Object.freeze({
   subtle: 0.6,
@@ -572,15 +572,15 @@ export const LIFT_STRENGTH: Readonly<Record<string, number>> = Object.freeze({
  * The depth for each row of a stack, given each row's DEPTH SLOT.
  *
  * Slots rather than positions, because {@link liftSlots} puts several rows on one
- * rung — a 3 × 3 grid of cards is one surface at one height, and staggering its
+ * rung: a 3x3 grid of cards is one surface at one height, and staggering its
  * cells reads as a bug, not as depth.
  *
- * Rows sharing a rung do NOT share a depth exactly: they spread across that one
- * rung, in paint order, by a fraction of it. plans/104 P3.2's "one depth, or a
- * whisper apart — at most one band step", and the whisper is doing real work.
+ * Rows sharing a rung do NOT share a depth exactly. They spread across that one
+ * rung, in paint order, by a fraction of it. plans/104 P3.2 says "one depth, or a
+ * whisper apart, at most one band step", and the whisper is doing real work.
  * Equal depths would make the depth sort (§4.2) a tie broken by DOM order, which
  * is correct but leaves two plates at one z and a stack with no ordering of its
- * own; a nine-hundredth of a magnification between them keeps every depth
+ * own. A nine-hundredth of a magnification between them keeps every depth
  * DISTINCT and monotone in paint order while the grid still reads as one
  * surface. Nothing else in the feature has to know about peers at all.
  *
@@ -588,16 +588,16 @@ export const LIFT_STRENGTH: Readonly<Record<string, number>> = Object.freeze({
  * absence of: every depth inside the band (so nothing reaches the guard, nothing
  * reaches the field clamp), rungs of equal magnification (so the parallax
  * between neighbours is even), and every depth DISTINCT (measured on all six
- * banked shots; at the 64-layer cap the closest two rungs are ~0.24 px apart
+ * banked shots; at the 64-layer cap the closest two rungs are about 0.24 px apart
  * against the 0.01 px quantum, so distinctness survives the rounding).
  *
  * ⚑ NOT "strictly increasing depth per row", which this docstring used to claim
- * and which is false on half the banked shots — `ai-stance-change-history` reads
+ * and which is false on half the banked shots. `ai-stance-change-history` reads
  * `0, 14.16, …, 80.22, 48.14, 92.56, …`. It is monotone in RUNG, and a rung is
  * monotone in paint order only where no rows are peers: {@link liftSlots} puts
- * peers on one rung and peer sets interleave in DOM order, so their rungs
+ * peers on one rung, and peer sets interleave in DOM order, so their rungs
  * interleave with them. That is the behaviour three paragraphs up asks for
- * ("interleaving is allowed, inversions are not") — the guarantee list simply
+ * ("interleaving is allowed, inversions are not"). The guarantee list simply
  * over-stated it.
  */
 export function liftDepths(
@@ -615,7 +615,7 @@ export function liftDepths(
     return base + rank / Math.max(1, size.get(s) ?? 1);
   });
   const top = rungs.reduce((a, b) => Math.max(a, b), 0);
-  // `strength` scales the per-rung magnification (audit A5#2 — the Lift dialog's Depth
+  // `strength` scales the per-rung magnification (audit A5#2 - the Lift dialog's Depth
   // intensity). Default 1 is the shipped ceiling, so an unscaled lift is byte-identical.
   // Guarded so a junk value can never zero the ladder (which would TIE every depth and
   // collapse the paint order) or invert it: <=0 / non-finite falls back to 1.
@@ -639,10 +639,10 @@ export const LIFT_PEER_ALIGN_TOL = 0.25;
  * larger one's size, and still be neighbours.
  *
  * Union-find chains, so a row of ten icons still links end to end at one hop
- * each — this only stops the hop that is not a neighbour at all. Measured on
+ * each - this only stops the hop that is not a neighbour at all. Measured on
  * `seq-studio-timeline`: a 16 px toolbar icon and an 18 px clip icon 146 px
  * below it are the same size and the same column, and chaining them dragged the
- * toolbar's whole row down among the clip bars — where the inversions it caused
+ * toolbar's whole row down among the clip bars - where the inversions it caused
  * then dissolved the row entirely. A grid is a local thing.
  */
 export const LIFT_PEER_GAP = 4;
@@ -655,7 +655,7 @@ export const LIFT_PEER_GAP = 4;
  * 66 px on a 55 px pitch and each carries a drop shadow, so every row of that
  * grid overlaps its neighbour a little and each chip kisses the NEXT well by
  * about 4 % of its own area. At a zero threshold that hairline is enough to
- * refuse coherence on the one piece of content coherence exists for — fifty
+ * refuse coherence on the one piece of content coherence exists for - fifty
  * swatches, fifty depths. At a quarter, an edge that two anti-aliased pixels
  * wide is tolerated and a card genuinely sitting on a panel is not.
  */
@@ -666,7 +666,7 @@ export const LIFT_PEER_OVERLAP_TOL = 0.25;
  *
  * A lift reads its stack out of paint order, which is a fine default and a poor
  * description of a grid. The nine cards of `cc-verify-mobile`'s 3 × 3 block are
- * one surface — same size, same rows, same columns — and a ladder that lifts
+ * one surface - same size, same rows, same columns - and a ladder that lifts
  * each one 40 px above the last turns a grid into a staircase. So rows that are
  * the same size AND share a row band or a column band are one rung.
  *
@@ -678,7 +678,7 @@ export const LIFT_PEER_OVERLAP_TOL = 0.25;
  *   • **Interleaving is allowed, inversions are not.** A swatch grid alternates
  *     66 px wells and 48 px chips, so the two peer sets interleave in paint
  *     order and their rungs necessarily do too. That is fine while the rows it
- *     inverts do not overlap — draw order only matters where ink meets ink.
+ *     inverts do not overlap - draw order only matters where ink meets ink.
  *     Where an inversion WOULD flip overlapping ink, the group causing it gives
  *     up its coherence (its members become singletons) rather than repaint the
  *     picture. plans/104 §4.2 sorts paint order by resolved depth, so this is a
@@ -735,8 +735,8 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
     const a = box(i), b = box(j);
     // ⚑ An unmeasured row does NOT veto coherence, which is the one place this
     // function guesses instead of refusing. A row is unmeasured because it holds
-    // `<text>` or `<use>` — a glyph run, whose ink is a fraction of any box it
-    // sits in — and the alternative was measured on the P3 demo: four identical
+    // `<text>` or `<use>` - a glyph run, whose ink is a fraction of any box it
+    // sits in - and the alternative was measured on the P3 demo: four identical
     // cards, each followed by its own caption, lost their grid entirely because
     // an unmeasurable caption sat between every pair of them. The cost of being
     // wrong is a label drawn under a card it does not belong to, in a proposal
@@ -780,7 +780,7 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
       if (count > worstCount) { worstCount = count; worst = root; }
     }
     // Nothing left to give up: the inversions are between rows that were never
-    // merged, so coherence is not what caused them — fall back to one rung each.
+    // merged, so coherence is not what caused them - fall back to one rung each.
     if (worst < 0) break;
     for (let i = 0; i < n; i++) if (box(i) && !dropped.has(i) && find(i) === worst) dropped.add(i);
   }
@@ -790,7 +790,7 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
 /**
  * The rows that replace a lifted box: one per layer, same geometry, staggered depth.
  *
- * Pure. Everything with a source of truth elsewhere is an argument — ids and the
+ * Pure. Everything with a source of truth elsewhere is an argument - ids and the
  * group id are minted by the caller (they are the shell's counters), the derived
  * markup arrives already sanitised, and the depth clamp is the engine's
  * `KF_Z_FIELD_CLAMP` rather than a re-typed −300/900.
@@ -799,7 +799,7 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * box paints background → image → text, so splitting one box into N cannot just
  * copy all three onto every row: the background would composite N times and the
  * caption would be printed N times. Instead the source's own paint is
- * distributed the way the stack rebuilds it —
+ * distributed the way the stack rebuilds it - 
  *
  *   • the BOTTOM row keeps the background (fill/gradient), which paints first;
  *   • the TOP row keeps the text, which paints last;
@@ -813,9 +813,9 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * ## Rows are SIZED TO THEIR INK where the engine could crop safely
  *
  * A row whose layer came back with a `crop` gets the rect that crop maps to
- * inside the source box, not the source's own rect. Same picture — the derived
+ * inside the source box, not the source's own rect. Same picture - the derived
  * document's viewBox is that same crop, so a smaller window over a
- * proportionally smaller box is an identity — and everything that follows the
+ * proportionally smaller box is an identity - and everything that follows the
  * BOX rather than the ink stops being charged for the whole stage: a depth
  * shadow becomes a shadow of the thing, a plate becomes the size of the thing,
  * and the fx cache stops evicting itself (measured on the six banked shots: the
@@ -826,22 +826,22 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * up to half a pixel away from where the original drew it, and the identity
  * property is measured against a real renderer.
  *
- * Which rows crop is not this function's decision — it is
+ * Which rows crop is not this function's decision - it is
  * {@link liftCanCrop}'s, asked BEFORE the documents were derived, because a
  * cropped document needs a cropped row and the two are decided in different
  * places. Here a layer that arrived with a crop is placed at it, and a layer
  * that did not keeps the source's rect; the only refusal left is geometric (no
- * viewBox to map through, or a `cover` fit whose content overflows the box —
+ * viewBox to map through, or a `cover` fit whose content overflows the box - 
  * a sub-rect row would reveal what the box was clipping).
  *
  * ⚑ AND IT IS NOT RE-ASKED HERE, which an earlier version of this comment claimed.
  * It cannot usefully be: by the time `liftRows` runs the DOCUMENTS already carry the
  * crop as their viewBox, so answering "no" now would place a cropped document in a
- * full-stage row — the layer blown up to the whole box, which is worse than the thing
+ * full-stage row - the layer blown up to the whole box, which is worse than the thing
  * the predicate was refusing. The geometric half IS re-derived (via
  * {@link liftContentRect} above), because that half is about the row and can still be
- * honoured. The paint half — a corner radius, a shape clip, an off-centre
- * `object-position`, a background fill, a gradient, a caption — is decided once, at the
+ * honoured. The paint half - a corner radius, a shape clip, an off-centre
+ * `object-position`, a background fill, a gradient, a caption - is decided once, at the
  * dialog. KNOWN WINDOW, small and stated rather than papered over: `runLift` re-reads
  * `getBoxes()` and tolerates the box having moved while the assets were written, so a
  * box that GAINS a caption or a background between opening the dialog and confirming it
@@ -849,7 +849,7 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * ink). Closing it means re-deriving the documents at commit time, not re-asking here.
  *
  * Note on `shadow: depth` at z = 0: the derivation is a pure function of z
- * (§12.5), and at z = 0 it is still a 10 px ground shadow — the bottom layer is
+ * (§12.5), and at z = 0 it is still a 10 px ground shadow - the bottom layer is
  * lifted off the surface too, which is the look §7 asks for. Pass `shadow: ''`
  * for a lift that changes nothing but the layering.
  */
@@ -899,13 +899,13 @@ export function liftRows(
 interface LiftContent { x: number; y: number; sx: number; sy: number; vx: number; vy: number }
 
 /**
- * Is this box one whose layers may be cropped to their ink? — ASK BEFORE
+ * Is this box one whose layers may be cropped to their ink? - ASK BEFORE
  * ENUMERATING (`enumerateSvgLayers(markup, { cropToInk: liftCanCrop(…) })`).
  *
  * The decision has to be made before the documents are derived, because a
  * cropped document and a full-stage row are not the same picture: the crop is
  * the document's viewBox, so a row that ignores it renders the layer blown up to
- * the whole box. ⚑ ONE CALLER — the Lift dialog, which asks this to configure the
+ * the whole box. ⚑ ONE CALLER - the Lift dialog, which asks this to configure the
  * engine (and {@link liftCropScale} beside it, for the scale the crop is snapped
  * to). `liftRows` does NOT ask it again: see its own docstring for why re-asking
  * at commit time would be actively wrong, which half it does re-derive, and the
@@ -913,7 +913,7 @@ interface LiftContent { x: number; y: number; sx: number; sy: number; vx: number
  *
  * It refuses on geometry it cannot map ({@link liftContentRect}) and on paint the
  * split would move: a corner radius or a shape clip (per-row clips are not one
- * clip), an `object-position` that is not centred, and — the two that surprise —
+ * clip), an `object-position` that is not centred, and - the two that surprise - 
  * a background fill or a caption, because `liftRows` leaves those on the bottom
  * and top rows, and a background confined to one layer's crop is not a
  * background. Such a box lifts exactly as it did in 1.119: full-stage rows.
@@ -940,7 +940,7 @@ export function liftCanCrop(
 }
 
 /**
- * The scale a cropped row will be PLACED at — user units → canvas px, per axis —
+ * The scale a cropped row will be PLACED at - user units → canvas px, per axis - 
  * or null when there is no map (the same refusal {@link liftCanCrop} makes).
  *
  * Handed to `enumerateSvgLayers`'s `cropScale` so the engine can snap each crop
@@ -990,7 +990,7 @@ function liftPlaceRow(
   const x = c.x + (crop.x - c.vx) * c.sx;
   const y = c.y + (crop.y - c.vy) * c.sy;
   // A rotated box rotates about ITS OWN centre, so a sub-rect that inherits the
-  // angle has to have its CENTRE carried round the source's centre first —
+  // angle has to have its CENTRE carried round the source's centre first - 
   // otherwise every row spins in place and the picture comes apart.
   const centre = rectCentre(src);
   const v = rotateVec(x + w / 2 - centre.x, y + h / 2 - centre.y, src.rot);
@@ -1004,7 +1004,7 @@ function liftPlaceRow(
 }
 
 /**
- * Splice lifted rows in where the source box was — ONE commit, one undo step.
+ * Splice lifted rows in where the source box was - ONE commit, one undo step.
  *
  * In place, not appended: the stack has to keep the source's position in the
  * array, because array order IS z-order on this canvas (`reorderZ`), and a lift
@@ -1016,13 +1016,13 @@ export function applyLift(boxes: Box[], index: number, rows: Box[]): Box[] {
 }
 
 /**
- * Does this image-field value hold an SVG — i.e. is "Lift layers" offered at all?
+ * Does this image-field value hold an SVG - i.e. is "Lift layers" offered at all?
  *
  * The ref's own metadata first, on `precheckAnimatedRef`'s terms (lib/anim-detect.ts):
  * a catalog vector and a `.svg` upload both come back with `type: 'vector'`, and the
  * picker records `format: 'svg'`. The URL is the fallback for a ref assembled by
- * something that recorded neither — a hook patch, a hand-written share link, an older
- * saved session — because the file extension and the `data:` MIME are the only other
+ * something that recorded neither - a hook patch, a hand-written share link, an older
+ * saved session - because the file extension and the `data:` MIME are the only other
  * honest signals available WITHOUT fetching. The markup sniff proper happens later and
  * elsewhere: `enumerateSvgLayers` is the thing that decides whether bytes really are a
  * liftable SVG, and it says so in words the dialog prints (§7). This predicate only
@@ -1041,7 +1041,7 @@ export function isSvgImageRef(v: unknown): boolean {
   const url = typeof ref.url === 'string' ? ref.url : '';
   if (!url) return false;
   if (/^data:image\/svg\+xml[;,]/i.test(url)) return true;
-  // Extension test on the PATH only — a `?v=2` cache-buster or a `#frag` must not
+  // Extension test on the PATH only - a `?v=2` cache-buster or a `#frag` must not
   // hide a `.svg`, and a `?x=.svg` query must not promote a PNG.
   return /\.svg$/i.test(url.split(/[?#]/)[0] || '');
 }
@@ -1071,7 +1071,7 @@ export function normDragRect(x0: number, y0: number, x1: number, y1: number, min
 }
 
 // ── Group transforms (multi-selection: scale + rotate about a pivot) ──────────
-// A group / multi-selection scales UNIFORMLY (shear-free — a rotated box can't
+// A group / multi-selection scales UNIFORMLY (shear-free - a rotated box can't
 // represent a non-uniform scale) about a fixed `anchor`, and rotates rigidly about
 // a fixed `centre`. Text size + corner radius scale with the group so it reads as
 // real scaling. Both return NEW boxes arrays.
@@ -1137,7 +1137,7 @@ function pickSnap(edges: number[], targets: SnapTarget[], threshold: number): Sn
 
 /**
  * Snap a rigidly-translating selection: `active` and `others` are AABBs
- * {minX,minY,maxX,maxY}. Returns { dx, dy, guides:[{x1,y1,x2,y2}] } — the extra
+ * {minX,minY,maxX,maxY}. Returns { dx, dy, guides:[{x1,y1,x2,y2}] } - the extra
  * translation that lands an edge/centre on a target, plus guide segments.
  */
 export function snapMove(active: AABB, others: AABB[], canvas: Canvas, threshold: number): SnapMoveResult {
@@ -1194,7 +1194,7 @@ export function clampBoxToCanvas(box: Box, cfg: BoxFieldConfig, canvas: Canvas):
   return withRect(box, { x: r.x + (cx - c.x), y: r.y + (cy - c.y) }, cfg);
 }
 
-// ── Connector / edge geometry — re-exported from the engine (plan 90 R1) ──────────
+// ── Connector / edge geometry - re-exported from the engine (plan 90 R1) ──────────
 // The routing, arrowheads, endpoint model, and the committed-SVG builder now live in
 // engine/src/connectors.ts as the ONE source, so the editor preview here, the committed
 // export, and the CLI all emit identical geometry. Re-exported so every existing
@@ -1203,17 +1203,17 @@ export {
   edgeAnchor, edgeBorderPt, edgeWaypoints, edgeNested, connectorRoute,
   roundedEdgePath, smoothEdgePath, edgeArrowHead, edgeHeadInset,
   isEdgePoint, parseEdgePoint, formatEdgePoint, edgeEndRect, buildConnectorSvg,
-  // plan 96 P3/P5 — the ONE routed-line renderer (a legacy edge and a bound path both end
+  // plan 96 P3/P5 - the ONE routed-line renderer (a legacy edge and a bound path both end
   // up here) and the ONE spline-kind → route mapping the editor and the pack hooks share.
   routedLineSvg, pathRouteStyle, isConnectorRouteStyle, CONNECTOR_ROUTE_STYLES,
 } from '@lolly/engine';
 export type { EdgeRect, EdgeAnchor, ConnectorRoute, ConnectorRenderOpts, ConnectorDecor } from '@lolly/engine';
 
-// ── path end tangents (plan 96 P1 — arrowheads on an authored path) ──────────
+// ── path end tangents (plan 96 P1 - arrowheads on an authored path) ──────────
 //
 // An arrowhead needs a tip and a direction. On a connector the direction comes out of the
 // route (`ConnectorRoute.tux/tuy`); on an AUTHORED path there is no route, so it is read
-// off the lowered curve — which is the only honest source, since the same nodes lower to
+// off the lowered curve - which is the only honest source, since the same nodes lower to
 // different tangents under different spline kinds.
 //
 // Both vectors point OUT of the path, i.e. the way a head at that end faces: `start` is
@@ -1232,7 +1232,7 @@ function unitFrom(ax: number, ay: number, bx: number, by: number): Point | null 
 
 /**
  * The outward unit tangents at a lowered path's two ends, or null when the whole path is
- * degenerate (every control point coincident — a "path" with no direction anywhere).
+ * degenerate (every control point coincident - a "path" with no direction anywhere).
  *
  * A zero-length control leg is stepped over rather than trusted: a cubic whose second
  * control point sits exactly on its endpoint is ordinary (it is what a straight segment
@@ -1270,11 +1270,11 @@ export function pathEndPoints(cubics: CubicTuple[]): { start: Point; end: Point 
   return { start: { x: a[0]!, y: a[1]! }, end: { x: z[6]!, y: z[7]! } };
 }
 
-// ── authored dash arrays (plan 96 P0 — the power-user dash field) ─────────────
+// ── authored dash arrays (plan 96 P0 - the power-user dash field) ─────────────
 //
 // A path box's dash STYLE is a keyword (solid/dashed/dotted) whose pattern the tool's
 // hook derives from the stroke width. A power user wants the actual numbers, so the
-// stroke panel offers a text field alongside — "6 4", "8 4 2 4" — and this is the
+// stroke panel offers a text field alongside - "6 4", "8 4 2 4" - and this is the
 // parse that decides whether what was typed is a pattern at all.
 //
 // The canonical stored form is SPACE-separated, deliberately: the compact blocks URL
@@ -1295,11 +1295,11 @@ export const DASH_ARRAY_MAX = 16;
 /**
  * A typed dash pattern → its numbers, or null when it is not one.
  *
- * Rejects — rather than repairs — anything that is not a plain list of non-negative
+ * Rejects - rather than repairs - anything that is not a plain list of non-negative
  * finite numbers, because the caller's answer to null is "show the error and write
  * NOTHING to the box". A pattern of nothing but zeros is rejected too: it paints an
  * invisible stroke, which reads as a broken shape rather than as a style choice.
- * An empty/blank string is not an error — it is "no authored array" — and returns [].
+ * An empty/blank string is not an error - it is "no authored array" - and returns [].
  */
 export function parseDashArray(text: string | null | undefined): number[] | null {
   const s = String(text ?? '').trim();
@@ -1342,7 +1342,7 @@ export interface GradientLine {
  * line is centred on the box and long enough that its ends sit exactly where the
  * first and last stop colours become solid.
  *
- * That length is not the box diagonal — CSS defines it as the projection of the
+ * That length is not the box diagonal - CSS defines it as the projection of the
  * box onto the gradient direction, |w·sin θ| + |h·cos θ|, which is what makes a
  * 45° gradient reach the corners of a rectangle rather than stopping short. Using
  * the diagonal instead is the classic off-by-a-bit that makes on-canvas handles
@@ -1378,7 +1378,7 @@ export function gradientPosAt(w: number, h: number, angleDeg: number, px: number
 }
 
 /**
- * The CSS gradient angle that points from the box centre toward (px, py) — what a
+ * The CSS gradient angle that points from the box centre toward (px, py) - what a
  * drag on the direction handle means. Snaps to the nearest `snap` degrees when
  * given one (the Shift-key affordance), so 0/45/90 are reachable exactly.
  */
@@ -1392,12 +1392,12 @@ export function gradientAngleAt(w: number, h: number, px: number, py: number, sn
   return ((deg % 360) + 360) % 360;
 }
 
-// ── Frame primitive — membership + cascade geometry (plan 93 §5/§10) ──────────
+// ── Frame primitive - membership + cascade geometry (plan 93 §5/§10) ──────────
 //
 // A "frame" is an ordinary box (kind === 'frame') that OWNS the boxes whose centre
 // falls inside it. Membership is derived here, DOM-free, so the carousel strip is
 // reproducible as N side-by-side frames: a frame at global x is the reference
-// origin for its members' local coordinates. Pure — geometry read via `num`, no
+// origin for its members' local coordinates. Pure - geometry read via `num`, no
 // mutation of inputs, no assumption beyond flat x/y/w/h + kind/id/frame fields.
 
 /** id of the LAST (topmost, z = array order) frame whose rect contains `box`'s centre; '' if none. A frame box never nests, so it resolves to ''. */
@@ -1439,7 +1439,7 @@ export function seedFrameOrder(frameBoxes: Box[]): Box[] {
 }
 
 /**
- * Renumber the `order` field of frame-kind boxes densely 0..n-1 to match `seq` — an
+ * Renumber the `order` field of frame-kind boxes densely 0..n-1 to match `seq` - an
  * ordered list of frame ids (the new page sequence). Non-frame boxes, and frame boxes
  * whose id is absent from `seq`, are returned unchanged; a frame already carrying its
  * target rank keeps its identity (no needless re-render churn). Field names are injected
@@ -1470,12 +1470,12 @@ export function renumberFrameOrder(
   });
 }
 
-// ── Carousel → Design frame migration (plan 92 — folding carousel-maker into Design) ─
+// ── Carousel → Design frame migration (plan 92 - folding carousel-maker into Design) ─
 //
 // A saved carousel-maker session stores a FLAT global-strip boxes array (global x across the
 // whole N-page strip; NO kind:'frame' boxes) plus the input values pages/pageW/pageH. Design
 // renders per-artboard [data-pdf-page] pages ONLY when boxes carry kind:'frame' + a `frame`
-// membership field, and its render reads the STORED `frame` field — it never re-resolves
+// membership field, and its render reads the STORED `frame` field - it never re-resolves
 // geometry. So a bare resume of a carousel session into Design shows one flat wide strip and
 // loses image-sequence / multi-page PDF / PPTX export. This shim converts the record into
 // Design frame shape so those paths work again.
@@ -1490,10 +1490,10 @@ export function renumberFrameOrder(
 /** Which entries the carousel record carries + a boxes array, all optional (defensive). */
 export type CarouselRecord = { [key: string]: unknown };
 
-/** GAP between carousel artboards — render.pages.gap in carousel-maker/tool.json. */
+/** GAP between carousel artboards - render.pages.gap in carousel-maker/tool.json. */
 const CAROUSEL_GAP = 56;
 
-/** carousel-maker/hooks.js safeColor (the shared copy) — lets through only shapes CSS can't
+/** carousel-maker/hooks.js safeColor (the shared copy) - lets through only shapes CSS can't
  *  be smuggled past, so a hand-edited record can't inject a style property. */
 function carouselSafeColor(v: unknown, fallback: string): string {
   const s = String(v == null ? '' : v).trim();
@@ -1511,7 +1511,7 @@ function clampNum(v: number, a: number, b: number): number {
 
 /**
  * Pick a deterministic frame-id prefix so that `prefix + (1..count)` collides with NO existing
- * box id. Escalates by prepending 'p' until clear — deterministic and collision-free.
+ * box id. Escalates by prepending 'p' until clear - deterministic and collision-free.
  */
 function carouselFramePrefix(existingIds: Set<string>, count: number): string {
   let prefix = 'page-';
@@ -1528,10 +1528,10 @@ function carouselFramePrefix(existingIds: Set<string>, count: number): string {
 /**
  * Convert a resumed carousel-maker session record into Design frame shape:
  *   • synthesize one kind:'frame' artboard box per page (x=i*stride, y=0, w=pw, h=ph, bg=pageBg,
- *     a stable unique id, order=i, clipChildren:true) — mirroring Design's frame addKind seed;
+ *     a stable unique id, order=i, clipChildren:true) - mirroring Design's frame addKind seed;
  *   • stamp every original box with `frame` = the artboard id for its pageOf() bucket, keeping
- *     GLOBAL x/y (Design's frame render does child.x − frame.x itself — do NOT pre-subtract);
- *   • return a NEW record whose boxes array is [ ...frames, ...originals ] — frames FIRST so they
+ *     GLOBAL x/y (Design's frame render does child.x − frame.x itself - do NOT pre-subtract);
+ *   • return a NEW record whose boxes array is [ ...frames, ...originals ] - frames FIRST so they
  *     paint BEHIND their children (Design paints in array order, later = on top).
  *
  * ADDITIVE + defensive. Returns the record UNCHANGED when:
@@ -1564,7 +1564,7 @@ export function migrateCarouselToFrames(record: CarouselRecord): CarouselRecord 
   const prefix = carouselFramePrefix(existingIds, count);
   const frameIdFor = (page: number): string => prefix + (page + 1);
 
-  // pageOf — carousel-maker/hooks.js verbatim (round to nearest artboard column, clamp to strip).
+  // pageOf - carousel-maker/hooks.js verbatim (round to nearest artboard column, clamp to strip).
   const pageOf = (b: Box): number => {
     const cx = num(b?.x, 0) + Math.max(1, num(b?.w, 1)) / 2;
     return clampNum(Math.round((cx - pw / 2) / stride), 0, count - 1);
@@ -1596,27 +1596,27 @@ export function migrateCarouselToFrames(record: CarouselRecord): CarouselRecord 
   return { ...record, boxes: [...frames, ...stamped] };
 }
 
-// ── Frames AS scenes — turn frame order into a timeline sequence (plan 92 §Frames) ─
+// ── Frames AS scenes - turn frame order into a timeline sequence (plan 92 §Frames) ─
 //
 // "Frames are scenes": the frame ORDER is a slideshow. Sequencing a frame doc lays every
 // frame end-to-end in TIME on a scenes lane, so the sequence clock can gate the canvas to
 // ONE frame at the playhead (a slide at a time) while spatial view still shows them side
-// by side. Pure — reads the frame boxes, returns a NEW boxes array, never mutates. Writes
+// by side. Pure - reads the frame boxes, returns a NEW boxes array, never mutates. Writes
 // ONLY the timeline fields (start/dur/lane/enter/exit); the committed geometry
 // (x/y/w/h/order) is untouched, so a sequenced deck still exports as the same pages.
 //
-// UNITS: the timeline fields store SECONDS — the same contract timeline-math.ts and the
+// UNITS: the timeline fields store SECONDS - the same contract timeline-math.ts and the
 // tool hook's startSeconds/seqDurationMs read (a frame's start*1000 becomes its
 // data-t-start ms). `defaultDurMs` is expressed in MILLISECONDS for the caller's
 // convenience and converted to seconds here, so a 3000 ms default is 3 s in the field and
 // 3000 in the emitted data-t-dur. Storing ms straight into the field would read back as
-// 3000 s and clamp to the hour ceiling — the conversion is load-bearing, not cosmetic.
+// 3000 s and clamp to the hour ceiling - the conversion is essential, not cosmetic.
 
 /** Ceiling for an authored time value, seconds. Mirrors timeline-math.ts MAX_TIME_S. */
 const FRAME_MAX_TIME_S = 3600;
 /** Floor for a scene's length, seconds. Mirrors timeline-math.ts MIN_DUR. */
 const FRAME_MIN_DUR_S = 0.1;
-/** ms grid for accumulated starts — mirrors timeline-math.ts r3 / packOrder. */
+/** ms grid for accumulated starts - mirrors timeline-math.ts r3 / packOrder. */
 const r3s = (v: number): number => Math.round(v * 1000) / 1000;
 
 /** Field names + defaults for {@link sequenceFramesInOrder}. */
@@ -1647,7 +1647,7 @@ export interface FramesSequencedCfg {
   durField: string;
 }
 
-/** Absent / empty / 'none' — the three spellings of "no transition authored". */
+/** Absent / empty / 'none' - the three spellings of "no transition authored". */
 function noTransition(v: InputValue | undefined): boolean {
   return v == null || v === '' || v === 'none';
 }
@@ -1660,7 +1660,7 @@ function finiteField(v: InputValue | undefined): boolean {
 }
 
 /**
- * Are the doc's frames already SEQUENCED — i.e. has any frame been given timing? A frame
+ * Are the doc's frames already SEQUENCED - i.e. has any frame been given timing? A frame
  * counts as sequenced once it carries a scene length (dur>0) OR an authored start. Used to
  * decide whether to OFFER "play in order": offer only when frames exist and none are timed
  * yet, so the prompt never nags once the user has sequenced (or declined) them.
@@ -1676,7 +1676,7 @@ export function framesAreSequenced(boxes: Box[], cfg: FramesSequencedCfg): boole
 }
 
 /**
- * Sequence every FRAME box end-to-end in time, in play order (order asc, then x asc — the
+ * Sequence every FRAME box end-to-end in time, in play order (order asc, then x asc - the
  * exact key frameGroupsFor / seedFrameOrder use, so the timeline order matches the editor's
  * frame numbering). Each frame gets:
  *   • start = cumulative sum of the prior frames' durations (gapless from 0),
@@ -1724,8 +1724,8 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
   }
 
   // The first frame in play order (cumulative start === 0) is the slide the deck OPENS on.
-  // A slideshow's first slide must appear IMMEDIATELY at t=0 — transitions happen BETWEEN
-  // slides — so it takes enter "none" (full opacity at local=0) rather than the default
+  // A slideshow's first slide must appear IMMEDIATELY at t=0 - transitions happen BETWEEN
+  // slides - so it takes enter "none" (full opacity at local=0) rather than the default
   // "fade" that would leave it mid fade-in (opacity 0) and open the deck on a blank frame.
   // Later frames keep the default enter; the first frame still gets `defExit` so it fades
   // OUT into the second. An explicitly-authored enter is untouched (noTransition guard).

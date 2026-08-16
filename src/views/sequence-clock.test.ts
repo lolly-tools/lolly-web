@@ -4,15 +4,15 @@
  *
  * Three layers, all reachable without a browser:
  *   • the pure readers/composers (readTiming, isActiveAt, transitionAt,
- *     composeTransform/Opacity) — the half-open window and the authored-style
+ *     composeTransform/Opacity) - the half-open window and the authored-style
  *     composition are the two things a regression here would silently break;
- *   • applyTimeToElements against a jsdom element list — visibility class,
+ *   • applyTimeToElements against a jsdom element list - visibility class,
  *     transform/opacity composition around an AUTHORED rotate, and the exact
  *     restore when the playhead leaves a transition or the clip goes off screen;
  *   • the per-element seek queue, driven by a mock media element and an injected
- *     waitFrame — never two seeks in flight, latest-wins scrub coalescing, exactly
+ *     waitFrame - never two seeks in flight, latest-wins scrub coalescing, exactly
  *     one nudge retry, and a confirmation timeout that resolves instead of hanging;
- *   • the preview audio mix, against a fake AudioContext and an injected loader —
+ *   • the preview audio mix, against a fake AudioContext and an injected loader - 
  *     the (when, offset, duration) triple each box is scheduled with, which boxes are
  *     refused (muted, speed ≠ 1, over the memory ceiling, undecodable), and that every
  *     exit from playback leaves nothing running.
@@ -314,7 +314,7 @@ test('seek queue: never two seeks in flight, and queued targets are latest-wins'
     await new Promise((r) => setImmediate(r));
   }
   assert.equal(v.maxLive(), 1, 'the queue never overlapped two confirmations');
-  // 2 was superseded by 3 while 1 was still in flight — the playhead's latest
+  // 2 was superseded by 3 while 1 was still in flight - the playhead's latest
   // position is the only one worth decoding.
   assert.deepEqual(v.calls.map((c) => c.t), [1, 3]);
   assert.equal(seeker.inFlight(), false);
@@ -360,7 +360,7 @@ test('seek queue: a landing short of the target is nudged exactly once', async (
   assert.equal(v.calls.length, 2, 'one nudge issued');
   assert.equal(v.calls[1]!.t, 5 + SEEK_NUDGE_S);
   assert.equal(seeker.nudges(), 1);
-  v.calls[1]!.d.resolve(4.0);                  // still short — must NOT nudge again
+  v.calls[1]!.d.resolve(4.0);                  // still short - must NOT nudge again
   await new Promise((r) => setImmediate(r));
   assert.equal(v.calls.length, 2, 'the nudge is never retried');
   assert.equal(seeker.nudges(), 1);
@@ -371,7 +371,7 @@ test('seek queue: a landing within tolerance is not nudged', async () => {
   const v = mockVideo();
   const seeker = createVideoSeeker(v.el, { waitFrame: v.waitFrame, now: () => 0 });
   seeker.request(5);
-  v.calls[0]!.d.resolve(5 + 1 / 30);           // one frame out — inside 1.5 frames
+  v.calls[0]!.d.resolve(5 + 1 / 30);           // one frame out - inside 1.5 frames
   await new Promise((r) => setImmediate(r));
   assert.equal(v.calls.length, 1);
   assert.equal(seeker.nudges(), 0);
@@ -491,7 +491,7 @@ test('clock: an untimed composition (no data-seq-ms) reports duration 0 and stay
  * property through a CSSStyleDeclaration makes the engine re-serialise the whole
  * `style` attribute (`a:b;c:d` → `a: b; c: d;`), so a byte comparison would fail a
  * restore that is exactly right. What the clock owes is the same declarations with
- * the same values — nothing added, nothing dropped, nothing changed.
+ * the same values - nothing added, nothing dropped, nothing changed.
  */
 function decls(style: string | null | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -610,7 +610,7 @@ test('clock: a video orphaned by a canvas repaint is paused and un-muted, never 
   art.appendChild(box({ start: 0, dur: 6000 }));
   clock.reapply();
   // Dropping the record without releasing left a DETACHED element playing its audio
-  // until GC — one more overlapping soundtrack per repaint during playback.
+  // until GC - one more overlapping soundtrack per repaint during playback.
   assert.equal(v.pauses, 1, 'the orphan was paused');
   assert.equal(v.muted, false, 'and its authored mute flag restored');
   clock.destroy();
@@ -692,7 +692,7 @@ test('seek queue: a stale landing never nudges past a NEWER in-flight seek', asy
   clock += 1000;
   seeker.request(20);                      // authoritative, queued behind it
   assert.equal(v.calls.length, 1);
-  v.calls[0]!.d.resolve(4.0);              // lands a full second short — would earn a nudge
+  v.calls[0]!.d.resolve(4.0);              // lands a full second short - would earn a nudge
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(seeker.nudges(), 0, 'no nudge toward the stale target');
@@ -704,7 +704,7 @@ test('seek queue: a stale landing never nudges past a NEWER in-flight seek', asy
 //
 // What a headless test can honestly pin is the SCHEDULING DECISION: which sources are
 // created at all, and the (when, offset, duration) triple each one is handed. That
-// triple is the whole contract with the audio thread — get it right and the sound is
+// triple is the whole contract with the audio thread - get it right and the sound is
 // sample-accurate by construction; get it wrong and no amount of frame-loop cleverness
 // recovers it. Everything below therefore asserts on those three numbers, on which
 // boxes are refused, and on what is left running after each exit from playback.
@@ -749,7 +749,7 @@ function fakeAudioCtx() {
   return { ctx, sources, live: (): FakeSource[] => sources.filter((s) => s.started && !s.stops) };
 }
 
-/** A decoded track: 97 s stereo at 48k — the catalog's loops, which is the point. */
+/** A decoded track: 97 s stereo at 48k - the catalog's loops, which is the point. */
 const fakeBuffer = (durationSec = 97): AudioBuffer => ({
   duration: durationSec,
   length: Math.round(durationSec * 48_000),
@@ -938,7 +938,7 @@ test('audio: pause stops every source, and resuming re-places it at the held pla
     clock.pause();
     assert.equal(a.sources[0]!.stops, 1, 'the source was stopped, not left running');
     assert.equal(a.live().length, 0);
-    // Resume: the playhead is at 2 s, so the source restarts 2 s into the track — and
+    // Resume: the playhead is at 2 s, so the source restarts 2 s into the track - and
     // the decode is NOT repeated, the buffer is cached for the life of the clock.
     clock.play();
     await settle();
@@ -1076,7 +1076,7 @@ test('audio: destroy stops every source, aborts the in-flight fetch and drops th
       canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
       loadAudio: (url, signal) => {
         seen.push(signal);
-        // one.ogg lands; two.mp3 never does — a slow CDN at the moment of teardown.
+        // one.ogg lands; two.mp3 never does - a slow CDN at the moment of teardown.
         return url === 'one.ogg' ? Promise.resolve(fakeBuffer()) : new Promise(() => { /* never */ });
       },
     });
@@ -1212,7 +1212,7 @@ test('module detection: MODULE_EXTENSIONS has not drifted from the shipped rende
   assert.deepEqual([...MODULE_EXTENSIONS].sort(), [...MODULE_FORMATS].sort());
 });
 
-/** An IT header — the shortest honest module fixture. */
+/** An IT header - the shortest honest module fixture. */
 const itBytes = (): Uint8Array => {
   const b = new Uint8Array(64);
   for (const [i, c] of [...'IMPM'].entries()) b[i] = c.charCodeAt(0);
@@ -1239,7 +1239,7 @@ function withFetch<T>(bytes: Uint8Array, fn: (calls: string[]) => T): T {
       ok: true,
       headers: { get: () => String(bytes.byteLength) },
       // No `body`: readBounded falls back to arrayBuffer(), its documented path for a
-      // polyfilled fetch. The copy matters — the renderer transfers what it is given.
+      // polyfilled fetch. The copy matters - the renderer transfers what it is given.
       arrayBuffer: () => Promise.resolve(bytes.slice().buffer),
     });
   };
@@ -1386,10 +1386,10 @@ test('seam: withAuthoredDom stands the clock down, and hands the frame back afte
 
   const inside = await withAuthoredDom(canvas, async () => {
     // A rAF tick landing mid-export must not re-pose the stage between two plate
-    // shots — the whole reason the pause is a flag rather than a one-off restore.
+    // shots - the whole reason the pause is a flag rather than a one-off restore.
     // (400 rather than a later time on purpose: `recTransition`'s fade reaches full
     // alpha before its window ends, so a "mid-fade" t too near the end is at rest and
-    // would compose the authored value back — a passing assertion that proved nothing.)
+    // would compose the authored value back - a passing assertion that proved nothing.)
     clock.seek(400);
     q.flush();
     await Promise.resolve();
@@ -1419,7 +1419,7 @@ test('seam: a destroyed clock deregisters — nothing answers authored reads for
 });
 
 test('seam: a clean composition is never written to, so the scope has nothing to undo', async () => {
-  // The byte-identity floor: no transition, no depth — the applier composes nothing,
+  // The byte-identity floor: no transition, no depth - the applier composes nothing,
   // the registry answers null, and an export sees the document it always saw.
   const { canvas, els } = stage(4000, [{ start: 0, dur: 4000, style: 'opacity:0.6;' }]);
   const clock = createSequenceClock({ canvasEl: canvas, ...syncRaf });

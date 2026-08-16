@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Docs spotlight provider (plans/99 M3) — searches the /info site.
+ * The Docs spotlight provider (plans/99 M3) - searches the /info site.
  *
  * The haystack is the static site's own per-locale search index, loaded through
  * the shared lib/search/docs-index.ts module (the record shape, the /info base
  * path and the heading>title>body weights all live there now, so this provider
- * and the Ask help pipeline cannot drift — plans/103 M0). Federating over it at
+ * and the Ask help pipeline cannot drift - plans/103 M0). Federating over it at
  * runtime keeps plans/99 principle 2 (no build-time unified index) since it is
  * already per-locale static data the client can reach.
  *
  * LAZY: nothing is fetched until the first search() call, so a user who never
  * searches pays nothing (the same first-interaction rule the docs sidebar
  * follows). The fetch promise is cached PER PROVIDER; ANY failure resolves to an
- * empty record set forever, with no logging — offline is a normal state for this
+ * empty record set forever, with no logging - offline is a normal state for this
  * app, not an error.
  *
  * Scoring mirrors the docs sidebar's ladder (heading beats page title beats
@@ -27,7 +27,7 @@ import type { SearchHit, SearchProvider } from '../registry.ts';
 /**
  * The docs pages' own sidebar-icon keys (docs/build.ts SIDEBAR_ICON → DOC_ICONS)
  * mapped to this shell's icon() names, so a Docs hit wears its PAGE's glyph
- * rather than one generic help mark (plans/103) — sections from different pages
+ * rather than one generic help mark (plans/103) - sections from different pages
  * are then distinguishable at a glance. A handful of docs glyphs have no exact
  * shell twin and map to the nearest (code→cpu, server→building, home→dashboard,
  * eyeoff→eye); an unknown or missing key falls back to a neutral page glyph.
@@ -51,7 +51,7 @@ export function docsIconName(key: string | undefined): IconName {
 }
 
 export function createDocsProvider(): SearchProvider {
-  // Cached across searches — settled once, kept forever (locale is fixed for
+  // Cached across searches - settled once, kept forever (locale is fixed for
   // the session: switchLang reloads the whole app). Per-provider, not the
   // shared module cache, so each instance fetches once (its own contract test).
   let loaded: Promise<PreparedRecord[]> | null = null;

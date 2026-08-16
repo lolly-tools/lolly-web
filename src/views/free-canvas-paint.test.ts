@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The canvas editor's PAINT controls for a vector path box — stroke colour, stroke width,
+ * The canvas editor's PAINT controls for a vector path box - stroke colour, stroke width,
  * stroke style, line ends, corners, fill rule.
  *
  * This exists because of one bug report: "there is also no way to change stroke width type
  * or color". A pen shape carried `stroke` / `strokeW` / `fillRule` in the model with no
- * control anywhere on the canvas — and in `render.layout: "editor"` there is NO SIDEBAR, so
+ * control anywhere on the canvas - and in `render.layout: "editor"` there is NO SIDEBAR, so
  * a field with no canvas control is a field the user cannot reach at all. The second half of
  * the same report is the regression: the pen's node-editing bar REPLACED `ctxbar.innerHTML`
  * with its kind switcher, so the one paint control that did exist (Fill) vanished at exactly
@@ -15,10 +15,10 @@
  *
  * 1. every control is present for a path selection, absent where it means nothing (a mixed
  *    or non-path selection), and writes the field it names;
- * 2. one user action is one `setInput` — with two path boxes selected as well, because a
+ * 2. one user action is one `setInput` - with two path boxes selected as well, because a
  *    per-box commit would be two undo steps for one click;
  * 3. the pen bar carries the kind switcher AND the paint controls at the same time;
- * 4. a token-linked colour ({ ref, value }) writes the plain colour into the model — the
+ * 4. a token-linked colour ({ ref, value }) writes the plain colour into the model - the
  *    known repo gotcha `unwrapColor` exists for, where the wrapper object reaches the box
  *    and every renderer downstream reads `[object Object]` as a colour;
  * 5. the bar still rebuilds only when the SELECTION changes, so adding controls to it did
@@ -68,7 +68,7 @@ function frames(n = 3): void {
   ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} });
 (globalThis as Record<string, unknown>).ResizeObserver = class { observe() {} disconnect() {} };
 // jsdom ships no `CSS` object, and the shared colour field uses CSS.escape to build the
-// selector for a field's hidden value input. Environment gap, not product behaviour — so it
+// selector for a field's hidden value input. Environment gap, not product behaviour - so it
 // is filled with the spec's own rule (escape anything outside [A-Za-z0-9_-]) rather than
 // worked around in the module under test.
 (globalThis as Record<string, unknown>).CSS = {
@@ -360,7 +360,7 @@ test('with TWO path boxes selected, one click writes both in ONE commit', () => 
 test('a token swatch writes the plain colour, never the { ref, value } wrapper', () => {
   // The known repo gotcha (see the brand-editor colour-tab notes): the shared colour field
   // emits `{ ref, value }` for a swatch linked to a design token, and a caller that stores
-  // it unchanged puts an OBJECT in the box — which every renderer downstream stringifies to
+  // it unchanged puts an OBJECT in the box - which every renderer downstream stringifies to
   // '[object Object]' and paints as nothing. `unwrapColor` is why this passes.
   setSwatches([
     { value: '#30ba78', label: 'Jungle', group: 'Brand', ref: '{color.brand.jungle}' },
@@ -394,7 +394,7 @@ test('the pen node-editing bar shows the kind switcher AND the paint controls at
   dblClickAt(f, ...at);
   assert.ok(f.stageEl.classList.contains('fc-node-editing'), 'node editing is on');
   const bar = ctxbar(f);
-  // Both, simultaneously — this is the whole bug: the pen bar replaces innerHTML, so
+  // Both, simultaneously - this is the whole bug: the pen bar replaces innerHTML, so
   // before it shared `paintCtxHtml` the fill and stroke fields disappeared here.
   assert.ok(bar.querySelector('[data-pen="kind"]'), 'the spline-kind switcher');
   assert.ok(bar.querySelector('.fc-seg[data-seg="pen-cont"]'), 'and the continuity control');

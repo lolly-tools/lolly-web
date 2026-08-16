@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * vector-ops.ts — the pure operations behind the canvas editor's vector-operations
+ * vector-ops.ts - the pure operations behind the canvas editor's vector-operations
  * context menu: boolean combine, offset, outline-stroke and simplify on a selection.
  *
  * DOM-free and synchronous, like free-canvas-math.ts, and for the same reason: the
  * overlay (free-canvas.ts) owns gestures and chrome, this module owns geometry, and only
- * geometry can be unit-tested. It may import the engine — shell code is allowed to, tools
- * are not — so the whole cubic kernel is available here without a bridge.
+ * geometry can be unit-tested. It may import the engine - shell code is allowed to, tools
+ * are not - so the whole cubic kernel is available here without a bridge.
  *
  * Everything operates on a FLAT array of "box" records (rows of a `blocks` input) in
  * NATIVE canvas pixels. Array order is z-order: later = on top.
  *
  * ## boxToPath has to agree with the renderer, exactly
  *
- * A selection is arbitrary boxes — rects with a corner radius, pills, ellipses, rotated
+ * A selection is arbitrary boxes - rects with a corner radius, pills, ellipses, rotated
  * anything, and pen paths. Each is lowered to a contour before it can be combined, and if
  * the lowering disagrees with what `hooks.js` paints even slightly, a union visibly does
  * not match the shapes the user selected. So `boxToPath` reproduces `boxCss`/`radiusFor`
  * in brands/<brand>/tools/design/hooks.js term for term, including the parts that
  * look like noise:
  *
- * - `x`/`y` are rounded to whole px and `w`/`h` are `max(1, round(v))` — a zero-width box
+ * - `x`/`y` are rounded to whole px and `w`/`h` are `max(1, round(v))` - a zero-width box
  *   paints as a 1px sliver, so that is what it lowers to.
  * - `rot` is rounded to one decimal, because the hook writes `rotate(<1dp>deg)`.
  * - `border-radius` is CLAMPED by CSS, and the clamp is the whole reason `pill` works:
@@ -28,7 +28,7 @@
  *   `f = min(side / sum of that side's two radii)`, which for a uniform radius is
  *   `min(w,h) / 2r`, so the painted radius is `min(r, min(w,h)/2)`. `pill` is therefore
  *   not a special shape at all, it is `min(9999, min(w,h)/2)`. See the repo note on the
- *   border-radius pill clamp — this has bitten before.
+ *   border-radius pill clamp - this has bitten before.
  * - `ellipse`/`circle` are `border-radius: 50%`, i.e. a true inscribed ellipse (the 50%
  *   radii sum to exactly the side length, so nothing clamps).
  *
@@ -43,13 +43,13 @@
  * silhouette is glyph outlines or an image's alpha, and neither is available here; a
  * frame rect would union in a rectangle the user cannot see, which is exactly the
  * "silently wrong path" this module must never return. Callers get an explicit
- * `no-outline` failure (or a `skipped` list) instead — see `boxOutlineKind`.
+ * `no-outline` failure (or a `skipped` list) instead - see `boxOutlineKind`.
  *
  * ## Coordinate convention for path boxes (fixed by plans/57-pen-tool-and-vector-ops.md)
  *
  * A path box's nodes are stored NORMALISED to the box frame: `x`/`y`/`w`/`h` is the
  * reference rectangle and node coordinates are fractions of it, legally outside [0,1].
- * That is what makes every existing gesture work unchanged — move writes x/y, resize
+ * That is what makes every existing gesture work unchanged - move writes x/y, resize
  * writes w/h, rotate writes rot, and the path follows.
  *
  * Nodes are scaled into box-local PIXELS first and lowered second. For `cubic`, `line`
@@ -130,7 +130,7 @@ function fields(cfg: VectorFieldConfig | undefined): ResolvedFields {
 /** The one control-arm length that makes a cubic best-approximate a quarter circle:
  *  4(√2 − 1)/3 = 0.5522847498307936. The approximation is high on radius by ~2.7e-4·r at
  *  its worst, which is finer than any raster device and finer than `toSvgPathData`
- *  prints — but it is NOT zero, so an area assertion against πr² needs a tolerance. */
+ *  prints - but it is NOT zero, so an area assertion against πr² needs a tolerance. */
 const KAPPA = (4 * (Math.SQRT2 - 1)) / 3;
 
 /** Shorter than this and an edge is not an edge. A square with `pill` has zero-length
@@ -175,7 +175,7 @@ function boxFrame(box: Box | undefined, f: ResolvedFields): Frame {
   };
 }
 
-/** Painted corner radius, CSS clamp included — see the file header. */
+/** Painted corner radius, CSS clamp included - see the file header. */
 function paintedRadius(box: Box | undefined, f: ResolvedFields, w: number, h: number): number {
   const shape = str(box?.[f.shapeField]);
   const half = Math.min(w, h) / 2;
@@ -185,7 +185,7 @@ function paintedRadius(box: Box | undefined, f: ResolvedFields, w: number, h: nu
 }
 
 /** Local (box-relative, unrotated) → world, honouring `rot` about the box centre. This is
- *  `transform: rotate()` with the default 50%/50% origin, clockwise in screen y-down —
+ *  `transform: rotate()` with the default 50%/50% origin, clockwise in screen y-down - 
  *  the same convention as free-canvas-math's `rotateVec`. */
 function framePlacer(fr: Frame): (x: number, y: number) => [number, number] {
   if (!fr.rot) return (x, y) => [fr.x + x, fr.y + y];
@@ -259,8 +259,8 @@ function ellipseCurves(w: number, h: number): Cubic[] {
  * What the `path` sub-field carries: one `AuthoredPath`, or an array of them.
  *
  * The plan names a single `AuthoredPath`, which is right for a pen-drawn shape, but a
- * boolean result generally is not one contour — a subtract punches a hole, an xor of two
- * rings is four loops — and an `AuthoredPath` holds exactly one `nodes` run. So the array
+ * boolean result generally is not one contour - a subtract punches a hole, an xor of two
+ * rings is four loops - and an `AuthoredPath` holds exactly one `nodes` run. So the array
  * form is the superset, and accepting both is a convenience for the caller: on the WIRE
  * there is one form, and a one-path value is byte-identical whichever way it was passed.
  */
@@ -269,7 +269,7 @@ export type PathPayload = AuthoredPath | AuthoredPath[];
 /**
  * ONE codec, and it is the engine's (`engine/src/geom/authored-url.ts`).
  *
- * This file used to carry its own — percent-encoded JSON — written independently of the
+ * This file used to carry its own - percent-encoded JSON - written independently of the
  * engine's under the same two names. They did not interoperate, so a path the editor
  * wrote would not decode in `hooks.js` and a path from a share link would not decode in
  * the editor: a pen shape that draws fine and renders as nothing. Nothing failed to
@@ -277,14 +277,14 @@ export type PathPayload = AuthoredPath | AuthoredPath[];
  *
  * The engine's form wins on the merits, not just by seniority. JSON is nothing but
  * commas, and `encodeBlocksCompact` refuses to emit a compact string at all when any
- * value contains `,` or `~` (they cannot be escaped — `URLSearchParams` percent-DECODES
+ * value contains `,` or `~` (they cannot be escaped - `URLSearchParams` percent-DECODES
  * the query before the block splitter runs), so a JSON path field would silently push
  * EVERY design link containing one pen shape onto the lossless JSON fallback: the
  * whole `boxes` array, every field of every box, re-encoded. The engine's grammar emits
  * only unreserved characters minus `~`, so it costs zero bytes to percent-encode.
  *
- * These two wrappers exist only to keep the shell-side signatures — `InputValue` in,
- * `'malformed'` / `'too-complex'` out — that the overlay is written against.
+ * These two wrappers exist only to keep the shell-side signatures - `InputValue` in,
+ * `'malformed'` / `'too-complex'` out - that the overlay is written against.
  */
 export function encodeAuthoredPath(payload: PathPayload): string {
   return encodeAuthoredPaths(Array.isArray(payload) ? payload : [payload]);
@@ -307,7 +307,7 @@ export function decodeAuthoredPath(raw: InputValue | undefined): AuthoredPath[] 
   return decodeAuthoredPathsResult(s);
 }
 
-/** Nodes scaled from box fractions into box-local pixels — see the header on why this
+/** Nodes scaled from box fractions into box-local pixels - see the header on why this
  *  happens BEFORE lowering. */
 function denormalise(p: AuthoredPath, w: number, h: number): AuthoredPath {
   return {
@@ -332,7 +332,7 @@ export type OutlineKind =
   | 'shape'
   /** An authored pen path in the `path` sub-field. */
   | 'path'
-  /** Nothing this module can express — a text or image box (see the header). */
+  /** Nothing this module can express - a text or image box (see the header). */
   | 'none';
 
 export function boxOutlineKind(box: Box | undefined, cfg?: VectorFieldConfig): OutlineKind {
@@ -379,7 +379,7 @@ function lowerBox(box: Box | undefined, f: ResolvedFields): Lowered {
 /**
  * A box's painted outline in native canvas coordinates, or `null` when it has none.
  *
- * `null` is the sentinel for "this box does not bound a region I can express" — a text or
+ * `null` is the sentinel for "this box does not bound a region I can express" - a text or
  * image box, an unusable `path` sub-field, or a spline kind with no lowering. It is never
  * a fallback rectangle. Callers that need to tell those cases apart (to explain a refusal)
  * should ask `boxOutlineKind` first; the operations below do exactly that.
@@ -442,7 +442,7 @@ export interface PathToBoxOptions {
  * The frame is written ROUNDED, because `boxCss` rounds it and `boxToPath` therefore reads
  * it rounded: normalising against the un-rounded bbox would put the round trip off by up
  * to half a pixel per side. Paint (`bg`, `opacity`, `blend`, `stroke`, `strokeW`,
- * `fillRule`) is inherited from `template`; text, image, shadow, clip and group are NOT —
+ * `fillRule`) is inherited from `template`; text, image, shadow, clip and group are NOT - 
  * the result is a new vector object, and inheriting a `clip` that points at a box this
  * operation is about to consume is precisely the dangling reference `replaceBoxes` exists
  * to resolve.
@@ -476,7 +476,7 @@ export function pathToBox(path: GeomPath, template: Box | null | undefined, opts
   box[f.wField] = w;
   box[f.hField] = h;
   box[f.rotationField] = 0;
-  // The codec THROWS on a path it cannot represent — for this caller that is only ever
+  // The codec THROWS on a path it cannot represent - for this caller that is only ever
   // the node ceiling (a result with more than 20k nodes across all its contours), since
   // the kind is `cubic` and every coordinate was checked finite above. A result too big
   // to persist is not a box: `null` is what every other refusal here returns, and the
@@ -503,11 +503,11 @@ export function pathToBox(path: GeomPath, template: Box | null | undefined, opts
 
 /** Why an operation refused. Each maps to one thing a UI can tell a human, and the three
  *  the plan insists stay apart do:
- *  - `too-complex` — the kernel's `GeomLimitError`: bounded work ran out, so there is no
+ *  - `too-complex` - the kernel's `GeomLimitError`: bounded work ran out, so there is no
  *    honest answer (as opposed to an empty one).
- *  - `no-outline` — the selected boxes bound no region (text/image, or a spline kind with
+ *  - `no-outline` - the selected boxes bound no region (text/image, or a spline kind with
  *    no lowering yet).
- *  - `internal` — a bug here or in the kernel. Never used for either of the above. */
+ *  - `internal` - a bug here or in the kernel. Never used for either of the above. */
 export type VectorOpReason =
   | 'no-outline'
   | 'not-applicable'
@@ -523,7 +523,7 @@ export interface VectorOpSuccess {
    *  which returns one per simplified operand, in operand order. */
   boxes: Box[];
   /** Indices into the operand array that were left alone (no outline, or nothing to
-   *  simplify) — so the UI can say what it ignored instead of quietly dropping it. */
+   *  simplify) - so the UI can say what it ignored instead of quietly dropping it. */
   skipped: number[];
   /** The result geometry, for a preview or a follow-up operation. */
   path: GeomPath;
@@ -626,7 +626,7 @@ export type BooleanOpName = 'union' | 'intersect' | 'difference' | 'xor';
  * and take the TOPMOST operand's paint, which is Illustrator's rule for those.
  *
  * A `GeomLimitError` from the kernel surfaces as `too-complex`, never as a plausible
- * wrong answer — difference, intersection and xor have nothing honest to return past the
+ * wrong answer - difference, intersection and xor have nothing honest to return past the
  * bounded-work ceiling, which is exactly why they throw.
  */
 export function booleanBoxes(boxes: Box[], op: BooleanOpName, opts: VectorOpOptions = {}): VectorOpResult {
@@ -668,7 +668,7 @@ export interface OffsetBoxesOptions extends VectorOpOptions {
  * Multiple operands are unioned first, so "offset the selection" offsets the silhouette
  * the user is looking at rather than each shape separately (which would leave seams
  * wherever two shapes overlap). An inward offset deeper than the local inradius erodes to
- * nothing and comes back as `empty-result` — it must never come back as a shape that grew,
+ * nothing and comes back as `empty-result` - it must never come back as a shape that grew,
  * which is what the kernel's fold-handedness defect used to produce.
  */
 export function offsetBoxes(boxes: Box[], distance: number, opts: OffsetBoxesOptions = {}): VectorOpResult {
@@ -697,7 +697,7 @@ export interface StrokeBoxesOptions extends VectorOpOptions {
 }
 
 /**
- * The outline of the selection's stroked edges, as a filled path — "outline stroke".
+ * The outline of the selection's stroked edges, as a filled path - "outline stroke".
  *
  * Each operand is stroked on its OWN boundary and the outlines are then unioned: stroking
  * the merged silhouette instead would drop the strokes along edges that happen to be
@@ -713,8 +713,8 @@ export function strokeBoxesToPath(boxes: Box[], opts: StrokeBoxesOptions = {}): 
   if (!Number.isFinite(width) || width <= 0) return fail('bad-input', 'the stroke width must be a positive number');
   // CORNERS default to the top operand's own `strokeJoin`, so the outline has the
   // silhouette the user was looking at rather than the kernel's (miter). Read through a
-  // whitelist: the box carries whatever the model holds — a URL can write anything into
-  // it — and an unrecognised value means "the default", never a refused operation.
+  // whitelist: the box carries whatever the model holds - a URL can write anything into
+  // it - and an unrecognised value means "the default", never a refused operation.
   //
   // ENDS deliberately do NOT get the same treatment. `lowerOperands` canonicalises every
   // operand through `selfUnion`, so each one is a CLOSED region by the time it is stroked
@@ -754,7 +754,7 @@ export function strokeBoxesToPath(boxes: Box[], opts: StrokeBoxesOptions = {}): 
  * ellipse are already exact and minimal, and converting one to a path box to "simplify"
  * it would trade an exact primitive for an approximation of itself.
  *
- * One result box per simplified operand, in operand order — so the caller applies them
+ * One result box per simplified operand, in operand order - so the caller applies them
  * one at a time (`replaceBoxes` with that operand's id) and every box keeps its own place
  * in the stack. `id` is therefore only used for the FIRST result; ids for the rest are the
  * caller's to allocate.
@@ -800,7 +800,7 @@ function mergeRegions(operands: Operand[], tol: number | undefined): GeomPath {
 // ── committing the result ─────────────────────────────────────────────────────
 
 /** Mirrors free-canvas's `idOf`: the id field's value, or the array index as a string when
- *  it is empty — which is how a box with no id is addressed everywhere else in the
+ *  it is empty - which is how a box with no id is addressed everywhere else in the
  *  overlay, so it has to be how it is addressed here. */
 function boxId(box: Box | undefined, i: number, f: ResolvedFields): string {
   const v = box?.[f.idField];
@@ -815,7 +815,7 @@ export interface ReplaceBoxesOptions {
 }
 
 /**
- * Swap the consumed boxes for the result — the array edit a menu entry commits.
+ * Swap the consumed boxes for the result - the array edit a menu entry commits.
  *
  * Three things this has to decide, all of which the plan names:
  *
@@ -826,7 +826,7 @@ export interface ReplaceBoxesOptions {
  * **Dangling clips.** `clip` holds another box's id, and consuming that box leaves the
  * reference pointing at nothing. Default is to RETARGET it to the result box: `hooks.js`
  * treats an unresolvable clip id as no clip at all, so clearing it and doing nothing look
- * identical to the renderer — both dump the full, unmasked artwork onto the canvas, which
+ * identical to the renderer - both dump the full, unmasked artwork onto the canvas, which
  * is the loudest possible surprise and the hardest to undo by hand. Retargeting keeps the
  * masking relationship the user set up, aimed at the shape that now describes the same
  * region. It is only wrong when the result's region genuinely differs from the old mask's
@@ -835,7 +835,7 @@ export interface ReplaceBoxesOptions {
  * data says what happened.
  *
  * **Group membership.** A consumed box may have been in a group. The result inherits the
- * group of the topmost consumed box — the same box whose z-position it takes — unless the
+ * group of the topmost consumed box - the same box whose z-position it takes - unless the
  * consumed boxes all shared one group, in which case that group wins regardless of order.
  * Groups left with a single surviving member are NOT touched: a one-member group selects
  * and drags exactly like an ungrouped box, so dissolving it would be an edit to boxes the
@@ -869,7 +869,7 @@ export function replaceBoxes(
   });
   // Retarget to the result's REAL id, never to `boxId`'s index fallback: `clipCss` indexes
   // masks by the id field only, so an index-derived id would resolve to nothing and read
-  // as "no clip" — the same silent unmasking clearing it causes, but disguised as a fix.
+  // as "no clip" - the same silent unmasking clearing it causes, but disguised as a fix.
   const resultId = resolved.length ? str(resolved[0]![f.idField]) : '';
   const retarget = (opts.clip ?? 'retarget') === 'retarget' ? resultId : '';
 

@@ -2,12 +2,12 @@
 // Unit tests for i18n.ts's persist-time URL handling (and the RTL dir stamp).
 //
 // A `lang` URL override is session-only and out-ranks the saved preference in
-// initI18n's precedence chain — so an explicit picker choice must strip it from
+// initI18n's precedence chain - so an explicit picker choice must strip it from
 // the address bar (both places peekUrlLang reads: the search string and the
 // hash query), or the switch appears not to stick on any ?lang= link.
 //
 // i18n.ts only touches window/document/localStorage inside functions, so plain
-// object stubs installed before the dynamic import are enough — no jsdom. The
+// object stubs installed before the dynamic import are enough - no jsdom. The
 // 'en' switch is used for the strip cases because it skips the locale-chunk
 // dynamic import entirely; the 'ar' case relies on that import's .catch(() =>
 // ({default:{}})) fallback (node can't import .json without attributes), which
@@ -31,7 +31,7 @@ const { setActiveLang, t, tRaw } = await import('./i18n.ts');
 // t()'s result is routinely assigned to innerHTML, so param escaping must be the
 // DEFAULT rather than a thing each caller remembers. tRaw() keeps the old
 // behaviour for text sinks and markup params. The catalog string stays raw in
-// both — locale files carry markup on purpose (docs/threat-model.md).
+// both - locale files carry markup on purpose (docs/threat-model.md).
 
 test('t() HTML-escapes interpolated params', () => {
   assert.equal(
@@ -113,7 +113,7 @@ test('non-persist switches never touch the URL', async () => {
 
 test('<html dir> stamps rtl for Arabic and restores ltr on the way back', async () => {
   const doc = document.documentElement;
-  await setActiveLang('ar', { persist: false }); // catalog import fails under node — caught, empty catalog
+  await setActiveLang('ar', { persist: false }); // catalog import fails under node - caught, empty catalog
   assert.equal(doc.lang, 'ar');
   assert.equal(doc.dir, 'rtl');
   await setActiveLang('de', { persist: false });

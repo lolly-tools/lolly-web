@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-mount — the registry between a connected ceremony and the thing that makes it a
+ * collab-mount - the registry between a connected ceremony and the thing that makes it a
  * live session (plan 100 §5, §6.2a, §11.17).
  *
  * What is worth pinning here is not "a setter sets": it is the RACE the parking surface
  * exists for. The acceptor arrives on `#/join` from a link, cold, with no tool view ever
- * having mounted — so a pairing can genuinely complete before anything has registered a
+ * having mounted - so a pairing can genuinely complete before anything has registered a
  * mount, and dropping it would cost two people a whole fresh ceremony (§6.1). So:
  * dormant returns false and parks, a registrant takes it, and a late registrant can
  * still adopt what was parked.
@@ -40,7 +40,7 @@ interface Fake extends CollabConnection {
  *
  * That IS the seam now: since wave 2.5 the connection carries a built session handle and
  * a transport-agnostic `close()` rather than an `RtcTransport`, so a fake needs neither a
- * peer connection nor a document to stand in for a live pair — which is the point of the
+ * peer connection nor a document to stand in for a live pair - which is the point of the
  * widening. Track A wraps its transport inside that close; Track B wraps its provider.
  */
 function fake(label: string, role: CollabConnection['role'] = 'acceptor'): Fake {
@@ -103,7 +103,7 @@ test('a late registrant adopts what was parked, and the drain is one-shot', () =
 
   const adopted: CollabConnection[] = [];
   registerCollabMount((c) => { adopted.push(c); });
-  // Registration deliberately does not drain by itself — the registrant decides when.
+  // Registration deliberately does not drain by itself - the registrant decides when.
   assert.equal(parkedCount(), 2, 'registering does not fire re-entrantly during an import');
 
   for (const conn of takeParked()) void adopted.push(conn);

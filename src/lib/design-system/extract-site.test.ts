@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * extract-site.test.ts — the website source's parser, against a realistic page
+ * extract-site.test.ts - the website source's parser, against a realistic page
  * and against a hostile one.
  *
  * Run with:
@@ -94,7 +94,7 @@ test('a realistic page reads out as one exact census', () => {
 test('the page’s own paint is read, and nothing else is', () => {
   const { census } = extractSite({ html: SITE_HTML, cssTexts: [SITE_CSS], baseUrl: 'https://northwind.example/' });
   const hexes = census.colors.map(c => c.hex);
-  // `background-image: url(/img/hero-red.jpg)` — "red" is a named colour, but it
+  // `background-image: url(/img/hero-red.jpg)` - "red" is a named colour, but it
   // is a filename here; url() is stripped before the value is tokenised.
   assert.ok(!hexes.includes('#ff0000'), 'a colour word inside url() is not paint');
   // The <script> body is skipped wholesale, so a JS literal is not a declaration.

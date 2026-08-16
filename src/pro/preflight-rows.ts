@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — the BATCH PREFLIGHT COLLECTOR.
+ * Pro / Batch mode - the BATCH PREFLIGHT COLLECTOR.
  *
  * The third fact collector, beside `views/tool-actions.ts` (`refreshPreflight`, the
  * mounted single-tool panel) and `shells/cli/src/preflight.ts` (headless, one job).
@@ -13,7 +13,7 @@
  *
  * Three channels come out, and they are not interchangeable: the per-row findings on
  * the plan (queue-space, for the runner), `runFindings` (properties of the platform or
- * the brand — see {@link RUN_LEVEL_IDS} — emitted ONCE), and {@link skippedFindings}
+ * the brand - see {@link RUN_LEVEL_IDS} - emitted ONCE), and {@link skippedFindings}
  * (the dropped rows, which have no queue position and are keyed by identity).
  *
  * ## Tier 1 only. Nothing here renders, mounts, or exports.
@@ -35,11 +35,11 @@
  * every setting below is resolved by the SAME helpers `runBatch` calls, in the same
  * order, and nothing is re-derived:
  *
- *   - format  → `chooseFormat(manifest, row.format || run.format)` — the exact call
+ *   - format  → `chooseFormat(manifest, row.format || run.format)` - the exact call
  *     `renderRowToBlob` makes, including its fall-through to the tool's first
  *     declared format when neither level named one (the folder/selection paths).
  *   - unit/dpi → `row.unit ?? run.unit ?? 'px'`, and DPI only for a physical unit,
- *     `row.dpi ?? run.dpi ?? 300` — `runBatch`'s two lines, restated nowhere.
+ *     `row.dpi ?? run.dpi ?? 300` - `runBatch`'s two lines, restated nowhere.
  *   - bleed/marks/press profile → `printSettingsFor(row, run, run.format)`, the
  *     GATE itself, imported from `./batch.ts`. Row-beats-run precedence and the
  *     "non-print formats carry none of these" rule therefore hold by construction:
@@ -63,7 +63,7 @@ import { printSettingsFor, type BatchPlan, type BatchRow, type PrintSettings } f
 import { chooseFormat, getTool } from './render-export.ts';
 
 /**
- * The RUN-LEVEL settings a row inherits — the /pro toolbar's defaults, or the
+ * The RUN-LEVEL settings a row inherits - the /pro toolbar's defaults, or the
  * folder exporter's arguments. Structurally the subset of `RunBatchOpts` that
  * affects what a row renders as; named separately so a call site cannot pass a
  * progress callback and think it was preflighted.
@@ -90,7 +90,7 @@ export interface BatchRunSettings {
  *
  * The palette is the reason this type exists. `host.tokens.colors()` is async and
  * is a property of the BRAND, not of the job (`plans/65-preflight-and-cost.md` §4), so
- * resolving it per row would be N awaits for one answer — and `check` is
+ * resolving it per row would be N awaits for one answer - and `check` is
  * synchronous, so it could not await at all. One resolve, one shared `Fact`.
  */
 export interface BatchPreflightEnv {
@@ -104,10 +104,10 @@ export interface BatchPreflightEnv {
   source?: PreflightSource;
 }
 
-/** The context `planBatch` hands its `check` — restated so this module can be
+/** The context `planBatch` hands its `check` - restated so this module can be
  *  driven without importing the planner's private shape. */
 export interface RowCheckCtx {
-  /** The row's position in the array passed IN to `planBatch` — the number the
+  /** The row's position in the array passed IN to `planBatch` - the number the
    *  grid shows and the only one a human can act on. */
   srcIndex: number;
   /** Present only for a row `planBatch` dropped. */
@@ -120,7 +120,7 @@ export interface RowCheckCtx {
  * Narrowed explicitly rather than passed through, for the same reason
  * `tool-actions.ts` narrows it: `RenderSpec.video` is a `Record<string, unknown>`
  * bag and the two numbers preflight wants have to be PROVED to be numbers here.
- * Keep this in step with `views/tool-actions.ts`'s `preflightManifest` — they are
+ * Keep this in step with `views/tool-actions.ts`'s `preflightManifest` - they are
  * the same slice taken from the same type, and a member added to one belongs in
  * the other.
  */
@@ -147,7 +147,7 @@ export function toPreflightManifest(manifest: ToolManifest): PreflightManifest {
 }
 
 /**
- * True when this row's still raster will be scaled by `RASTER_DEFAULT_SCALE` — i.e.
+ * True when this row's still raster will be scaled by `RASTER_DEFAULT_SCALE` - i.e.
  * when it goes through `rasterStyle`'s not-requested branch.
  *
  * The base set is the bridge's own ({@link SUPERSAMPLED_EXPORT_FORMATS}); the one
@@ -169,7 +169,7 @@ function isSupersampled(format: string, print: PrintSettings): boolean {
  * The output size THIS ROW will render at, as `renderRowToBlob` and the export
  * bridge together resolve it.
  *
- * Three properties are load-bearing and none of them is obvious:
+ * Three properties are required and none of them is obvious:
  *
  * 1. **One declared dimension IS a declaration.** `renderRowToBlob` computes
  *    `bothGiven` for LAYOUT only; `outW`/`outH` are built independently
@@ -178,7 +178,7 @@ function isSupersampled(format: string, print: PrintSettings): boolean {
  *    `width: '210mm'`, and the PDF page really is 210mm wide. Reporting the
  *    manifest's pixel canvas for it made the engine say "no physical page size was
  *    declared" about a job that declared one. So any positive dimension is
- *    `declaredBy: 'row'` and the missing one is left at 0 — the CLI's `sizeFacts`
+ *    `declaredBy: 'row'` and the missing one is left at 0 - the CLI's `sizeFacts`
  *    shape exactly, which drives `print.trim-partially-declared`, the truthful
  *    finding, and blocks every area/pixel derivation (`physicalTrim` requires both
  *    `> 0`).
@@ -190,7 +190,7 @@ function isSupersampled(format: string, print: PrintSettings): boolean {
  *    too small on the commonest batch row there is. Vector/PDF rows keep the
  *    unscaled box: `toPoints` is applied to the node box and `rasterStyle` never
  *    runs for them.
- * 3. **`unitDeclared` is true only when a unit was SPELLED OUT** — by the row's own
+ * 3. **`unitDeclared` is true only when a unit was SPELLED OUT** - by the row's own
  *    `unit` cell or by the run's toolbar unit. `runBatch` defaults to `'px'` when
  *    neither did, and a `px` fallback is not a declaration: with `unitDeclared`
  *    false the engine refuses to derive a print area rather than trusting a unit
@@ -229,7 +229,7 @@ export function rowSize(
     };
   }
   return {
-    // The dimension that was NOT declared stays 0 — never zero-filled from the
+    // The dimension that was NOT declared stays 0 - never zero-filled from the
     // manifest, never mirrored from the other one. Zero is what `physicalTrim` and
     // `checkRasterPixels` both refuse to derive from, which is the point.
     width: { value: w > 0 ? w : 0, unit: u },
@@ -245,7 +245,7 @@ export function rowSize(
 /**
  * Build the `PreflightJob` for ONE row. Pure, synchronous, no DOM, no I/O.
  *
- * `rowIndex` is stamped with `ctx.srcIndex`, the SOURCE position — NOT the queue
+ * `rowIndex` is stamped with `ctx.srcIndex`, the SOURCE position - NOT the queue
  * position `planBatch` passes in. Every finding carries its `rowIndex` into an
  * artifact that outlives the run (the zip's report, a retry, a log line), and the
  * queue position is a position in a COMPACTED array: for a skipped row it is `-1`,
@@ -263,10 +263,10 @@ export function preflightJobForRow(
 ): PreflightJob {
   const { run } = env;
   // The format the RENDERER will pick: the row's own, else the run's, else the
-  // tool's first declared format. `chooseFormat` is imported, not restated — it
+  // tool's first declared format. `chooseFormat` is imported, not restated - it
   // also holds the jpg/jpeg equivalence.
   const format = chooseFormat(manifest as ToolManifest, row.format || run.format || null);
-  // The GATE, called with exactly the arguments `runBatch` calls it with — the raw
+  // The GATE, called with exactly the arguments `runBatch` calls it with - the raw
   // `row.format || runFormat`, not the chosen one, because that is what the gate
   // sees at the render boundary. Row beats run; a non-print format keeps none.
   const print = printSettingsFor(row, { profile: run.profile, bleed: run.bleed, marks: run.marks }, run.format);
@@ -283,8 +283,8 @@ export function preflightJobForRow(
 
   // The declared model, built WITHOUT a runtime.
   //
-  // `buildInputModel` is the engine's own declared-model builder — the same one the
-  // CLI collector falls back to when `onInit` cannot run — so this is not a
+  // `buildInputModel` is the engine's own declared-model builder - the same one the
+  // CLI collector falls back to when `onInit` cannot run - so this is not a
   // fabricated model, it is the documented `modelPhase: 'declared'` phase, and the
   // engine downgrades every hook-patchable count to a ceiling because of it. The
   // user profile is threaded in so `bindToProfile` inputs hold what a render would
@@ -315,7 +315,7 @@ export function preflightJobForRow(
       format,
       size: rowSize(row, manifest, run, { format, print }),
       bleed,
-      // `csvToMarks` returns null for an absent CSV — "the export applies none",
+      // `csvToMarks` returns null for an absent CSV - "the export applies none",
       // which is a known null. All-false ("card on, nothing ticked") stays a
       // distinct, real state.
       marks: { known: true, value: print.marks ? csvToMarks(print.marks) : null },
@@ -333,7 +333,7 @@ export function preflightJobForRow(
       ...(row.filename ? { filename: row.filename } : {}),
     },
     palette: env.palette,
-    // No mounted artwork exists yet — this runs before the first row is rendered.
+    // No mounted artwork exists yet - this runs before the first row is rendered.
     // A NAMED GAP in the report, never an omission from it, and never an all-false
     // StageFacts that would read as "measured, and there is nothing there".
     stage: { known: false, why: 'needs-mount' },
@@ -345,13 +345,13 @@ export function preflightJobForRow(
  * One collector caveat: this row will not render at all.
  *
  * A skipped row has no queue position, but it is the case preflight most needs to
- * explain — "nothing about row 7 was counted, because row 7 has no template" is the
+ * explain - "nothing about row 7 was counted, because row 7 has no template" is the
  * finding, and it can only be said here. Appended by the collector rather than
  * emitted by the engine, exactly like the CLI's `collect.*` caveats: it is a fact
  * about the COLLECTION, not a rule over the job, and the engine must stay unable to
  * know it.
  *
- * `needs` set means `severity: 'info'` and no `count` — the gap invariant, held by
+ * `needs` set means `severity: 'info'` and no `count` - the gap invariant, held by
  * hand here because the engine only enforces it for findings it produced itself.
  */
 function skipCaveat(ctx: RowCheckCtx, uid?: string): Finding {
@@ -371,9 +371,9 @@ function skipCaveat(ctx: RowCheckCtx, uid?: string): Finding {
  *
  * `chooseFormat` is a SUBSTITUTION, not a resolution: handed `pdf` for a tool whose
  * manifest offers `svg, png, …`, it silently returns the tool's first declared
- * format. Reporting the substituted format as `settings.format` is right — that IS
+ * format. Reporting the substituted format as `settings.format` is right - that IS
  * what renders, and a preflight about settings the renderer will not use is worse
- * than none — but it also makes `settings.format-not-offered` structurally
+ * than none - but it also makes `settings.format-not-offered` structurally
  * unreachable in a batch, while `lolly preflight --export=pdf` (which never calls
  * `chooseFormat`) exits 1 on the same logical job. So the collector says the part
  * the engine cannot see: the request was changed, and here is what it became.
@@ -395,16 +395,16 @@ function formatCaveat(requested: string, chosen: string, manifest: PreflightMani
 /**
  * The findings that are properties of the PLATFORM or of the BRAND, never of a row.
  *
- * `checkRefusals` emits `refuse.output-file-size` with no gate at all — it is true of
- * every job Lolly will ever run — and the plate/palette ones are facts about the
+ * `checkRefusals` emits `refuse.output-file-size` with no gate at all - it is true of
+ * every job Lolly will ever run - and the plate/palette ones are facts about the
  * brand's token set. Left in the per-row channel they put a note chip on all 50 rows
- * of a clean 50-row batch, the headline read "Done — 50 files, 50 with notes", and
+ * of a clean 50-row batch, the headline read "Done - 50 files, 50 with notes", and
  * `lolly.txt` carried "Lolly cannot predict the output file size" fifty times. That is
  * exactly the noise `plans/65-preflight-and-cost.md` §6 names ("noise is how a real gap
  * gets skipped"): after one such run nobody reads the chips, and the one row with a
  * real `input.required-blank` is indistinguishable from the 49 without.
  *
- * They are not dropped — dropping a named gap is the one thing preflight may never do.
+ * They are not dropped - dropping a named gap is the one thing preflight may never do.
  * They are emitted ONCE at run level (see {@link createBatchRowCheck}'s `runFindings`).
  */
 export const RUN_LEVEL_IDS: ReadonlySet<FindingId> = new Set<FindingId>([
@@ -419,13 +419,13 @@ export const RUN_LEVEL_IDS: ReadonlySet<FindingId> = new Set<FindingId>([
 /**
  * Findings for ONE row: build the job, run the engine's rules, return the list.
  *
- * `manifest` is null when the tool could not be loaded (or the row names none) —
+ * `manifest` is null when the tool could not be loaded (or the row names none) - 
  * the row `planBatch` dropped with 'No template selected' / 'Failed to load
  * template'. There is then no job to build and none is invented: the row carries
  * the skip caveat alone, which is still a finding against that row.
  *
  * `onRunLevel` receives the findings partitioned out by {@link RUN_LEVEL_IDS}. A
- * caller that passes none is saying "this is a single row, there is no run" — the
+ * caller that passes none is saying "this is a single row, there is no run" - the
  * run-invariant findings are then dropped from the row rather than reattached to it,
  * because a per-row channel is the one place they must not be.
  */
@@ -439,12 +439,12 @@ export function preflightRow(
 ): Finding[] {
   const caveats = ctx.skippedReason ? [skipCaveat(ctx, row.uid)] : [];
   if (!manifest) return caveats;
-  // `preflight()` is TOTAL — it never throws, on any input — so there is no guard
+  // `preflight()` is TOTAL - it never throws, on any input - so there is no guard
   // here by design. The one thing that could still throw is the job assembly
   // above, and `createBatchRowCheck` catches that so a broken row cannot take the
   // whole plan down.
   const job = preflightJobForRow(row, manifest, rowIndex, ctx, env);
-  // jpg/jpeg are the SAME request — `chooseFormat` holds that equivalence, so a tool
+  // jpg/jpeg are the SAME request - `chooseFormat` holds that equivalence, so a tool
   // offering `jpeg` and a row asking for `jpg` is not a substitution.
   const alias = (f: string): string => (f === 'jpeg' ? 'jpg' : f);
   const requested = String(row.format || env.run.format || '').toLowerCase();
@@ -462,7 +462,7 @@ export function preflightRow(
 }
 
 /**
- * The brand palette, or a named refusal — the CLI collector's rule, restated
+ * The brand palette, or a named refusal - the CLI collector's rule, restated
  * because there is no shared home for it: `host.tokens.colors()` is called
  * DIRECTLY, never through `livePalette`, which silently substitutes the neutral
  * starter palette when tokens throw OR answer with nothing and carries no
@@ -503,7 +503,7 @@ export interface PreflightHost {
  */
 export interface BatchRowCheck {
   check: (row: BatchRow, rowIndex: number, ctx: RowCheckCtx) => Finding[];
-  /** Run-invariant findings, deduplicated by id — see {@link RUN_LEVEL_IDS}. */
+  /** Run-invariant findings, deduplicated by id - see {@link RUN_LEVEL_IDS}. */
   runFindings: Finding[];
 }
 
@@ -512,7 +512,7 @@ export interface BatchRowCheck {
  * queue position they do not have.
  *
  * A skipped row's findings are filed under `rowIndex: -1`, which `notesFromFindings`
- * discards by design (correctly — the runner's channel is queue-space). Without this
+ * discards by design (correctly - the runner's channel is queue-space). Without this
  * they reached no surface at all: `buildPreflightReport` hard-coded `findings: []` for
  * every unmade row with no runner index, so the one case plan §7 says preflight most
  * exists for ("the skipped, the errored and the cancelled are precisely the set a
@@ -533,8 +533,8 @@ export function skippedFindings(
 /**
  * Build the `check` for `planBatch<Finding>(rows, { check })`.
  *
- * Async because the two RUN-INVARIANT facts — the brand palette and the user
- * profile — are async and `check` is not; both are resolved once here and shared by
+ * Async because the two RUN-INVARIANT facts - the brand palette and the user
+ * profile - are async and `check` is not; both are resolved once here and shared by
  * every row. The tool manifests are pre-loaded for the same reason: `planBatch`
  * loads them itself but does not hand them to `check`, and `getTool` is CACHED
  * per tool id (`bridge/tool-loader.ts`), so this costs one fetch per DISTINCT

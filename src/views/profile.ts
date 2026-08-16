@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Profile view — personal details + appearance preferences.
+ * Profile view - personal details + appearance preferences.
  *
  * Theme selection auto-saves on click (it's a preference, not a form field), as
  * do the sound switch and the Accessibility card's four prefs (Reduce motion,
- * Hide colourful previews, High contrast, Large text — A11Y_ROWS below).
+ * Hide colourful previews, High contrast, Large text - A11Y_ROWS below).
  * The other personal details save on form submit.
  *
  * Activity / Storage / Feature flags / Content Credentials are collapsible
@@ -15,8 +15,8 @@
  * headshot.
  */
 
-import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
-import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles — shared chunk with the
+import '../styles/parts/profile.css';   // async CSS chunk (lazy view - not on the landing)
+import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles - shared chunk with the
                                          // tool view, same reuse the .tool-inputs sheet already gets
                                          // from multi-edit.ts (component audit rec 13)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
@@ -84,7 +84,7 @@ import type { FeatureFlag } from '../feature-flags.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 
-/** A saved session as the web state bridge lists it — StateEntry plus the
+/** A saved session as the web state bridge lists it - StateEntry plus the
  *  export filename and the thumbnail this view renders. */
 interface SessionEntry extends StateEntry {
   filename?: string | null;
@@ -121,7 +121,7 @@ interface CaHealth { ok?: boolean; devProvider?: boolean; configured?: { github?
  * concrete web-only APIs (WebHost declares them). The profile setter, the
  * user-asset helpers and `state.sizes` live on the web bridge at runtime but
  * aren't in the shared HostV1 types, so they're modelled as optional here (and
- * asserted present at the call sites, which only ever run in the web shell —
+ * asserted present at the call sites, which only ever run in the web shell - 
  * this keeps main.ts's `mountProfile(view, WebHost)` call type-correct).
  */
 interface ProfileHost extends HostV1 {
@@ -153,14 +153,14 @@ interface StorageModel {
   images: { bytes: number; count: number; list: AssetRef[] };
   cache: { bytes: number };
   previews: PreviewsMeasure;
-  /** Tools pinned "available offline" — their cached FILE bytes (lib/offline-pins.ts).
+  /** Tools pinned "available offline" - their cached FILE bytes (lib/offline-pins.ts).
    *  Their prefetched catalog asset blobs are counted by the `cache` slice. */
   pins: { bytes: number; count: number };
   /** The on-device voice models (Kokoro, later Whisper) in the speech Cache
-   *  Storage buckets — filled by the 'speech' offline part OR the Script-audio
+   *  Storage buckets - filled by the 'speech' offline part OR the Script-audio
    *  dialog's consent download, so this measures the caches, not a record. */
   speech: { bytes: number; files: number };
-  /** On-device AI image models in their IndexedDB stores — filled by the matching
+  /** On-device AI image models in their IndexedDB stores - filled by the matching
    *  offline part OR the Upscale / Remove-background dialogs' on-demand download, so
    *  these measure the stores, not a record (twin of `speech`). */
   upscale: { bytes: number; files: number };
@@ -180,7 +180,7 @@ const FIELD_LABELS: Record<string, string> = {
   phone: 'Phone', city: 'City', country: 'Country',
 };
 
-// Per-field input semantics — the right keyboard on mobile, native validation
+// Per-field input semantics - the right keyboard on mobile, native validation
 // and autofill where it helps. Anything not listed falls back to a plain text
 // input (autocomplete off, as before).
 const FIELD_ATTRS: Record<string, Record<string, string>> = {
@@ -200,45 +200,45 @@ const fieldAttrs = (f: string): string => {
 const HEADSHOT_ID = 'user/headshot';
 
 // The Storage manager's own ad-hoc mountModal dialogs (clear/hoard/keep-active/import
-// gates + the user-image lightbox) — tracked here, mirroring confirm-dialog.ts's
+// gates + the user-image lightbox) - tracked here, mirroring confirm-dialog.ts's
 // openDialogs, so mountProfile's _cleanup can close them on a view swap. A real
 // <dialog> sits in the top layer, so an orphan left open would block the next view
 // (unlike the body-level overlay divs these replaced).
 const openProfileModals = new Set<ModalHandle<any>>();
 
 // Live "export and render everything" progress toasts. They're body-level like the
-// dialogs above, so mountProfile's _cleanup drains them too — matching the Projects
+// dialogs above, so mountProfile's _cleanup drains them too - matching the Projects
 // view, which has always torn its batch-export toasts down on navigate-away.
 const openProfileToasts = new Set<HTMLElement>();
 
 // Randomised word the user must type to confirm the irreversible "clear all my
-// data" action — a deliberate speed-bump against an accidental wipe.
+// data" action - a deliberate speed-bump against an accidental wipe.
 const CLEAR_CONFIRM_WORDS = ['lolly', 'open', 'free', 'privacy', 'choice', 'thank you', 'security', 'goodbye'];
 
 // Playful word the user types to confirm the (heavy but SAFE) "export everything AND
-// render it all" action. A speed-bump for a big job — potentially many renders + a large
-// download — but the mood is celebratory data-ownership, NOT the sombre clear-data gate,
+// render it all" action. A speed-bump for a big job - potentially many renders + a large
+// download - but the mood is celebratory data-ownership, NOT the sombre clear-data gate,
 // so the two word pools never overlap. Kept short + lowercase for easy typing.
 const HOARD_CONFIRM_WORDS = ['hoard', 'mine', 'stash', 'vault', 'archive', 'homeward', 'liberate', 'agency', 'to the drive', 'own it', 'my data', 'keep it all'];
 
 // Chevron for a collapsible section's summary (rotates 90° when open via CSS).
-// Path data lives in lib/icons.ts as 'chevronRight' — was a <polyline>, same shape as
+// Path data lives in lib/icons.ts as 'chevronRight' - was a <polyline>, same shape as
 // the (deduped) <path> chevrons in gallery.ts/projects.ts (component-audit rec 5).
 // `section-card-chev`/`-summary`/`-title`/`-body` ride alongside every
-// `profile-collapse-*` class below — the shared fold primitive's sub-part
+// `profile-collapse-*` class below - the shared fold primitive's sub-part
 // names (disclosure.css, component audit rec 7). profile.css's own, more
 // specific `.profile-view .profile-collapse …` rules still govern every
 // pixel (this is prep for a later pass that thins profile.css onto the
 // primitive, not a visual change today).
 const COLLAPSE_CHEV = icon('chevronRight', { size: 16, strokeWidth: 2.5, className: 'profile-collapse-chev section-card-chev' });
-// Shield-with-check — the same glyph the gallery's green Verify button uses (deduped
+// Shield-with-check - the same glyph the gallery's green Verify button uses (deduped
 // against footer-nav.ts's identical NAV_ICONS.shield as 'shieldCheck').
 const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
-// Jump to the Verify view — styled to match the gallery's green Verify button.
+// Jump to the Verify view - styled to match the gallery's green Verify button.
 // A function (not a module const) so t() runs at render time, after the catalog loads.
 const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
 
-// The settings-view section index — one entry per card, in page order. Drives the
+// The settings-view section index - one entry per card, in page order. Drives the
 // left nav rail, the scroll-spy active state, and the search filter. `id` MUST match
 // the `id` on the corresponding `.profile-card`/`<details>` in the render below
 // (pinned by profile-nav.test.ts); `keywords` are extra (untranslated) search terms
@@ -246,7 +246,7 @@ const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-
 // (e.g. "dark" → Appearance). The label is passed through t() at render time;
 // keywords stay as an English aid.
 // EXPORTED for the spotlight settings provider (lib/search/providers/settings.ts,
-// plans/99 §2b — settings findability is first-class): every entry becomes a
+// plans/99 §2b - settings findability is first-class): every entry becomes a
 // search hit deep-linking to #/profile?focus=<id>, which the handler below
 // honours for ANY section here, not just the collapsibles.
 export interface ProfileNavSection {
@@ -267,10 +267,10 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
 ];
 
-// A small "i" badge with a hover/focus tooltip — used beside storage headings.
+// A small "i" badge with a hover/focus tooltip - used beside storage headings.
 // Was a bespoke .info-dot/.info-tip pair; now the shared help-tip button
 // (component audit rec 13), wrapped in its own positioning host so the pop
-// anchors to the badge rather than stretching to match a page-width row —
+// anchors to the badge rather than stretching to match a page-width row - 
 // `.help-tip-host`'s default (`left:0;right:0`, sized to the host) assumes a
 // wide host like a sidebar `.input-row`, so the pop gets an inline auto-width
 // override here (same recipe as tool.css's `.block-control > .help-tip-pop`)
@@ -292,30 +292,30 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Jelly effects (flag-gated soft-body switches): decide from the canonical
   // profile, not the sync mirror, and load the lazy bundle before first paint so
   // the flag rows render their final control with no post-mount swap. `jellyOn`
-  // and `liveProfile` are mutable — the flag list re-renders in place when the
+  // and `liveProfile` are mutable - the flag list re-renders in place when the
   // jelly flag itself is toggled (see the change listener below).
   // isFlagOn (not flagEnabled): the Jelly flag's built-in default is brand-aware
-  // (OFF on a locked brand — see setJellyDefault in main.ts), and only the
+  // (OFF on a locked brand - see setJellyDefault in main.ts), and only the
   // default-aware read honours it. The capture-neutral pin must be consulted
   // here too: it only rewrites the flag MIRROR, which this canonical-profile
-  // read bypasses — without the check, every docs baseline of this view carried
+  // read bypasses - without the check, every docs baseline of this view carried
   // jelly controls despite the pin.
   let jellyOn = await ensureJelly(isFlagOn(profile, JELLY_FLAG) && !captureNeutralPinned());
   let liveProfile = profile;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   // The theme in force right now (applied at boot from the profile; localStorage
-  // is only its FOUC mirror) — seeds the Appearance card's active preview.
+  // is only its FOUC mirror) - seeds the Appearance card's active preview.
   const activeTheme = currentTheme();
   // '' = bundled with this app (the default everywhere but a Tauri shell that
-  // connected elsewhere) — see components/instance-sheet.ts + lib/instance.ts.
+  // connected elsewhere) - see components/instance-sheet.ts + lib/instance.ts.
   const instanceBase = getInstanceBase();
-  // Instance-admin affordance — null unless the org session's role is admin/owner
+  // Instance-admin affordance - null unless the org session's role is admin/owner
   // (so it never renders on a plain deployment).
   const adminHref = orgAdminHref();
   // Changing the instance base is a DESKTOP capability, not a browser one. A
   // remote base makes every catalogue, tool, asset and org request cross-origin,
   // and the shell's Content-Security-Policy allows a fixed host list that cannot
-  // contain an origin the user types at runtime — so in a browser those fetches
+  // contain an origin the user types at runtime - so in a browser those fetches
   // are refused and the feature fails with a console-only error. Tauri routes
   // cross-origin traffic through tauri-plugin-http and serves no CSP, so it works
   // there. Offering a control that cannot work is worse than not offering it, so
@@ -330,7 +330,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   const focusFlags = focusParam === 'feature-flags';
   const focusUseDetails = focusParam === 'use-details';
   // Remember which sections were left open, across visits (a UI preference, so it
-  // lives in localStorage like the theme — read synchronously before render).
+  // lives in localStorage like the theme - read synchronously before render).
   const OPEN_KEY = 'lolly-profile-open';
   let openState: Record<string, boolean> = {};
   try { openState = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}') || {}; } catch { /* storage blocked */ }
@@ -338,16 +338,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   // One toggle row for a feature flag (closes over `profile` for its checked state). Honours
   // a flag's `default` (opt-in flags start off) and shows an (i) explainer when it has `info`.
-  // The explainer is the shared help-tip button too (component audit rec 13) — kept on
+  // The explainer is the shared help-tip button too (component audit rec 13) - kept on
   // `.feature-flag-info` as its positioning host (it already carries the right
   // position:relative/margin) with `help-tip-host` added alongside so the shared
   // hover/focus-reveal CSS (tool.css) recognises it. The pop's placement is a real,
   // deliberate delta worth keeping: this row sits at the *bottom* of a long list, so
   // it opens upward/centred (inline style override) rather than help-tip-pop's default
-  // "drop below, span the host" — which here would spill past the list, off-screen.
+  // "drop below, span the host" - which here would spill past the list, off-screen.
   const flagRow = (f: FeatureFlag) => {
     // A control plane can hide a flag's toggle (a staged surprise, or a policy the
-    // deployment owns): drop the row entirely — the resolved default still applies,
+    // deployment owns): drop the row entirely - the resolved default still applies,
     // the user just never sees a switch. Dormant / shown ⇒ rendered as ever.
     if (flagHidden(f.id)) return '';
     const info = f.info ? helpTip(t(f.info)) : null;
@@ -357,13 +357,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ) : '';
     // Jelly mode swaps the CSS switch for a <jelly-switch> (vendored web
     // component, lib/jelly.ts). Its hidden native checkbox lives in shadow DOM,
-    // so the visible row label can't name it — the `label` attribute carries the
+    // so the visible row label can't name it - the `label` attribute carries the
     // accessible name instead. It reflects `.checked` and re-dispatches a
     // bubbling `change` on the host, so the generic [data-flag] save listener
     // below works identically for both control kinds.
     //
     // The label→control link is EXPLICIT (`for`/id): with no `for`, a label
-    // activates its FIRST labelable descendant — and on rows with an (i)
+    // activates its FIRST labelable descendant - and on rows with an (i)
     // explainer that's the help-tip <button>, not the switch, so row clicks
     // opened the tip instead of toggling (the "mouse-blocked toggle" bug).
     const ctlId = `ff-${f.id}`;
@@ -382,7 +382,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     </li>`;
   };
 
-  // One identity-form control — <jelly-input> in jelly mode (form-associated:
+  // One identity-form control - <jelly-input> in jelly mode (form-associated:
   // its ElementInternals.setFormValue keeps it in the form's FormData under the
   // host's `name`, so the submit handler below reads both kinds identically).
   // The visible .profile-field-label span stays either way; `label` doubles it
@@ -398,7 +398,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       : `<input ${fieldAttrs(f)}${ro} name="${f}" value="${escape(value)}" placeholder=" ">`;
   };
 
-  // The Save button — <jelly-button type="submit"> drives the closest light-DOM
+  // The Save button - <jelly-button type="submit"> drives the closest light-DOM
   // form via requestSubmit(), so the same submit listener fires. It must NOT
   // carry .profile-btn-primary (those border/fill styles would paint a second
   // box behind the jelly canvas).
@@ -406,7 +406,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ? `<jelly-button type="submit" class="profile-btn-jelly">${t('Save Profile')}</jelly-button>`
     : `<button type="submit" class="profile-btn-primary">${t('Save Profile')}</button>`;
 
-  // The Feature-flags card's <ul> contents — a function so the jelly-flag toggle
+  // The Feature-flags card's <ul> contents - a function so the jelly-flag toggle
   // can re-render the list in place (its switches change kind on the spot).
   const flagListHtml = () => `
             ${CATEGORY_FLAGS.map(f =>
@@ -429,8 +429,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // plain always-open card beside Appearance (both answer "how does the app dress
   // for me"), and their state lives on profile.a11y rather than in the flag map.
   //
-  // Initial checked state comes from currentA11yPrefs() — what is APPLIED to
-  // <html> right now — not from profile.a11y. The two normally agree (main.ts
+  // Initial checked state comes from currentA11yPrefs() - what is APPLIED to
+  // <html> right now - not from profile.a11y. The two normally agree (main.ts
   // hydrates the profile value into the attributes at boot, after the index.html
   // FOUC script applied the localStorage mirror), but they can diverge: an
   // untouched/absent profile.a11y leaves a device-local mirror choice standing on
@@ -457,7 +457,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       label: 'High contrast',
       info: 'Strengthens the borders, text and focus rings of the app around your work. Your brand colours and everything on the canvas stay exactly as you set them.',
     },
-    // Large text multiplies CHROME font sizes only (--a11y-fs, styles/parts/a11y.css) —
+    // Large text multiplies CHROME font sizes only (--a11y-fs, styles/parts/a11y.css) - 
     // px paddings and control heights are untouched, and the root font-size never moves
     // so `rem`-styled tools export byte-identically. The copy promises exactly that and
     // no more: over-promising "bigger controls" is the one claim this mechanism can't keep.
@@ -469,17 +469,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   ];
   // Same markup contract as flagRow: the .feature-flag primitives (so there is one
   // toggle-row look in this view), the explicit label `for`/id link (without it a
-  // row click lands on the help-tip <button> instead of the switch — the
+  // row click lands on the help-tip <button> instead of the switch - the
   // "mouse-blocked toggle" bug), and a control that carries `.checked` + emits a
   // bubbling `change` in both jelly and CSS-switch modes. The pop takes its own
   // width here (the (i) host is a few px wide, and help-tip-pop's default
-  // `left:0;right:0` would size to it) — see .a11y-pref-info in profile.css.
+  // `left:0;right:0` would size to it) - see .a11y-pref-info in profile.css.
   //
   // The scope text is also wired as the switch's accessible DESCRIPTION, which the
   // generic linkHelpDescriptions() can't do for a row like this (it looks for a
   // control inside the tip's own host, and the host here holds only the button +
   // pop). Native control only: a <jelly-switch>'s real checkbox lives in shadow
-  // DOM, so an aria-describedby on the host would never reach it — the same
+  // DOM, so an aria-describedby on the host would never reach it - the same
   // boundary the `label` attribute works around for the accessible name.
   const a11yRow = (row: { key: keyof A11yPrefs; label: string; info: string }) => {
     const tip = helpTip(t(row.info));
@@ -621,7 +621,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="store-manage--row">
           <span class="store-manage-name">${escape(instanceBase || t('Bundled with this app'))}</span>
           <span style="display:flex;gap:8px">
-            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — orgAdminHref() returns the '/admin' literal or null; no control-plane value reaches it */ ''}
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - orgAdminHref() returns the '/admin' literal or null; no control-plane value reaches it */ ''}
             ${adminHref ? `<a class="btn" id="instance-console-link" href="${escape(adminHref)}">${t('Instance console')}</a>` : ''}
             ${canChangeInstance ? `<button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>` : ''}
             ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>` : ''}
@@ -662,7 +662,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </div>
     </div>
   `;
-  // (The old two-button .profile-footer is retired — the shell's persistent search
+  // (The old two-button .profile-footer is retired - the shell's persistent search
   // bar (components/search-bar.ts, plans/99 M1) shows on this route and carries the
   // same Dashboard/Verify links plus the search field. Profile makes no claim, so
   // the bar keeps its global default placeholder.)
@@ -699,7 +699,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
     }
 
-    // Scroll-spy — highlight the section whose top is nearest the rail. rootMargin
+    // Scroll-spy - highlight the section whose top is nearest the rail. rootMargin
     // biases the "active" band to the upper third so a section lights up as its
     // heading reaches the top, not only when it fills the viewport.
     const setActive = (id: string | null) => {
@@ -732,14 +732,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       mo.observe(viewEl, { childList: true });
     }
 
-    // Search — filter the rail by label + keywords; hide non-matching cards while a
+    // Search - filter the rail by label + keywords; hide non-matching cards while a
     // query is present so the page itself narrows to what you're looking for.
-    // Matching is lib/search (plans/99 M3 — the shared matcher replaces the old
+    // Matching is lib/search (plans/99 M3 - the shared matcher replaces the old
     // single `.includes()` here). Two behaviour changes ride along, both wanted:
     // a multi-word query ANDs across tokens ("large text" needs both words to
     // land, in any field), and diacritics fold ("accessibilité" finds the
-    // Accessibility card). Same haystack as before — t(label) + English label +
-    // keywords — scored > 0 as a plain filter; the rail keeps page order.
+    // Accessibility card). Same haystack as before - t(label) + English label +
+    // keywords - scored > 0 as a plain filter; the rail keeps page order.
     if (search) {
       const panes = viewEl.querySelector<HTMLElement>('.profile-panes');
       const apply = () => {
@@ -754,7 +754,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             { text: fold(s.keywords), weight: 1 },
           ], tokens) > 0;
           if (btn) btn.hidden = !hit;
-          // Only narrow the cards while actively searching — an empty query restores
+          // Only narrow the cards while actively searching - an empty query restores
           // the full page (never leaves a card orphaned hidden).
           if (card) card.classList.toggle('is-filtered-out', tokens.length > 0 && !hit);
           if (hit) matches++;
@@ -763,7 +763,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (empty) empty.hidden = matches > 0;
       };
       search.addEventListener('input', apply);
-      // Enter jumps to the first (only) remaining match — the quickest path to a
+      // Enter jumps to the first (only) remaining match - the quickest path to a
       // setting you searched for.
       search.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
@@ -774,7 +774,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     }
   })();
 
-  // Feature flags — auto-save each toggle (a preference, like the theme picker).
+  // Feature flags - auto-save each toggle (a preference, like the theme picker).
   // `[data-flag]` is either the native checkbox or a <jelly-switch> host; both
   // carry `.checked` and emit a bubbling `change`, so one handler covers both.
   viewEl.querySelector('#feature-flags')?.addEventListener('change', async e => {
@@ -791,7 +791,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // Toggling the Neurospicy feature: silence any loop when turning it off (the UI is
     // gone, so leave no invisible audio), and show/hide the bottom-right dock to match.
     if (flagId === NEUROSPICY_FLAG.id) {
-      // Atmosphere lives in the same player, so it goes quiet on the same terms —
+      // Atmosphere lives in the same player, so it goes quiet on the same terms - 
       // its controls disappear with the dock and audio must not outlive them.
       if (!input.checked) { stopNeurospicy(); stopAtmosphere(); }
       syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);
@@ -807,7 +807,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         list.querySelector<HTMLElement>(`[data-flag="${flagId}"]`)?.focus();
       }
       // The Accessibility card's rows use the same two control kinds, so they swap
-      // with the flag rows — otherwise the page would show both looks at once.
+      // with the flag rows - otherwise the page would show both looks at once.
       // Rebuilt from a11yState (not the DOM), which the pref listener keeps current.
       const a11yList = viewEl.querySelector('#a11y-prefs');
       if (a11yList) a11yList.innerHTML = a11yListHtml();
@@ -826,7 +826,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 
-  // Accessibility prefs — auto-save each toggle, same shape as the flag listener
+  // Accessibility prefs - auto-save each toggle, same shape as the flag listener
   // above (and its own container, so a pref never lands in profile.featureFlags).
   // setA11yPref switches the <html> attribute FIRST and persists after, so the
   // change is visible on the same frame even if the profile write is slow or fails.
@@ -839,10 +839,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 
-  // Label-click forwarding for the jelly switches is app-wide now — the one
+  // Label-click forwarding for the jelly switches is app-wide now - the one
   // delegated forwarder installed by lib/jelly.ts when the bundle loads. (A
   // second, view-local forwarder here would run on the same click and toggle the
-  // switch straight back — reading as a dead toggle.)
+  // switch straight back - reading as a dead toggle.)
 
   // Deep-link target: the gallery's empty state links here (#/profile?focus=feature-flags)
   // to nudge re-enabling categories. The section is opened above; scroll it into view.
@@ -866,10 +866,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   // ANY settings section is deep-linkable: #/profile?focus=<section-id> scrolls
   // it into view, expanding a collapsible first (setting `open` fires the toggle
-  // that lazy-loads storage/images — and the initial-open check at the bottom
+  // that lazy-loads storage/images - and the initial-open check at the bottom
   // catches it too). Same open+scroll the rail's jump() does. Was collapsibles
   // only; widened for the spotlight settings provider (plans/99 §2b), which
-  // links every NAV_SECTIONS id here — so a share link, a screenshot recipe or
+  // links every NAV_SECTIONS id here - so a share link, a screenshot recipe or
   // a search hit can land on Appearance or Accessibility too.
   if (focusParam && NAV_SECTIONS.some(s => s.id === focusParam)) {
     const sec = viewEl.querySelector<HTMLElement>('#' + CSS.escape(focusParam));
@@ -877,14 +877,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (sec instanceof HTMLDetailsElement) sec.open = true;
       requestAnimationFrame(() => {
         sec.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-        // Focus the heading for screen-reader/keyboard continuity — the same
+        // Focus the heading for screen-reader/keyboard continuity - the same
         // move the rail's nav buttons make (a no-op where it isn't focusable).
         sec.querySelector<HTMLElement>('h2')?.focus?.();
       });
     }
   }
 
-  // Appearance — theme preview cards (moved here from the dashboard). Each preview
+  // Appearance - theme preview cards (moved here from the dashboard). Each preview
   // applies the theme app-wide immediately (applyTheme mirrors to localStorage +
   // updates the PWA chrome colour) and persists it to the profile (canonical). The
   // active preview is flagged; a soft theme cue plays on switch.
@@ -903,7 +903,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     await setTheme(host, next);
   });
 
-  // Lolly instance — "Change" re-opens the sheet (views/profile.ts is one of
+  // Lolly instance - "Change" re-opens the sheet (views/profile.ts is one of
   // its two callers; see components/instance-sheet.ts's header). "Disconnect"
   // skips the sheet (there's nothing to choose) but takes the same
   // setInstanceBase → resync → remount path as a successful connect, so the
@@ -925,7 +925,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     window.dispatchEvent(new Event('lolly:remount')); // re-navigates the current route with the fresh (bundled) catalogue
   });
 
-  // Language FAB menu — same control as gallery/catalog/projects, so switching
+  // Language FAB menu - same control as gallery/catalog/projects, so switching
   // the language is consistent across views. switchLang saves to profile.lang +
   // localStorage, then reloads so the whole app re-renders in the new language.
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
@@ -933,13 +933,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
 
-  // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
+  // Sound switch - the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,
   // inside wireSoundSwitch), a preference like the theme picker.
   wireSoundSwitch(viewEl, host as unknown as Parameters<typeof wireSoundSwitch>[1]);
 
   // Every info-dot + feature-flag explainer on the page is a shared help-tip now
-  // (component audit rec 13) — one delegated wiring on the view root handles all
+  // (component audit rec 13) - one delegated wiring on the view root handles all
   // of them (click/tap toggle, Escape, outside-click dismiss), and survives the
   // per-section innerHTML rebuilds below since it's attached to viewEl itself.
   wireHelpTips(viewEl);
@@ -953,12 +953,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const on = useDetailsInput!.checked;
     if (optInTag) optInTag.textContent = on ? t('Opted-in') : t('opt-in');
     if (optInText) optInText.textContent = on ? t('Using my details') : t('Use my details to create');
-    // Opting in is the app's most magical moment — a cascade up and back down; opting out is
-    // genuinely sad. (The checkbox's press-tick already played via the global click cue.)
+    // Opt-in plays a rising-then-falling chime, the app's most expressive sound cue; opt-out
+    // plays a sad one. (The checkbox's press-tick already played via the global click cue.)
     playSfx(on ? 'optIn' : 'optOut');
   });
 
-  // Headshot — upload → circular crop → save as a user asset → store the ref.
+  // Headshot - upload → circular crop → save as a user asset → store the ref.
   const headshotFileInput = viewEl.querySelector<HTMLInputElement>('#headshot-file');
   const paintHeadshot = (url: string) => {
     headshotUrl = url || '';
@@ -996,7 +996,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       await refreshCounter();
     } catch (err) {
       host.log?.('error', 'Headshot save failed', { error: String(err) });
-      // Inline + announced, matching the import-dialog error pattern — not a
+      // Inline + announced, matching the import-dialog error pattern - not a
       // blocking alert(). e.g. the storage-cap message.
       const msg = String((err as { message?: unknown })?.message ?? err);
       if (errEl) { errEl.textContent = msg; errEl.hidden = false; }
@@ -1012,7 +1012,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     await refreshCounter();
   });
 
-  // Live storage refresh — re-render the Storage meter IF it's loaded. The headshot
+  // Live storage refresh - re-render the Storage meter IF it's loaded. The headshot
   // upload/remove paths change user-asset bytes and call this; it no-ops while the
   // Storage section is still collapsed (loadStorage sets refreshStorageMeter).
   let refreshStorageMeter: (() => Promise<void>) | null = null;
@@ -1036,7 +1036,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // The FormData rows are dynamic string/File pairs; the merged record is a Profile.
       await host.profile.set!({ ...current, ...data, useDetails } as unknown as Profile);
       if (btn) btn.textContent = t('Saved');
-      playSfx('saveProfile');   // a warm, lovely "all set" chime on a successful save
+      playSfx('saveProfile');   // an "all set" confirmation chime on a successful save
       announce(t('Profile saved'));
       // Stay on the page; restore the button shortly after so users can keep editing.
       setTimeout(() => { if (btn) { btn.textContent = label; btn.toggleAttribute('disabled', false); } }, 1600);
@@ -1064,7 +1064,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Tool display names + a glyph for sessions saved without a thumbnail.
   const toolNameById = new Map((window.__toolIndex?.tools ?? []).map(t => [t.id, t.name] as [string, string]));
   const toolNameOf = (id: string) => toolNameById.get(id) || id || t('Saved session');
-  // 'image' glyph — deduped against catalog-summary.ts's "raster" and valid.ts's
+  // 'image' glyph - deduped against catalog-summary.ts's "raster" and valid.ts's
   // ICONS.image (near-identical circle-radius/path-endpoint roundings of the same
   // Lucide "image" icon; component-audit rec 5).
   const SESS_PLACEHOLDER_ICON = icon('image', { strokeWidth: 1.8 });
@@ -1095,7 +1095,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   }
 
   // Read every measurer + the browser's ground-truth estimate into one model. The
-  // four measured slices never sum to estimate().usage — the honest remainder is
+  // four measured slices never sum to estimate().usage - the remainder is labelled
   // "Other" = max(0, usage − measured), so measured + Other == usage by construction.
   async function measure(): Promise<StorageModel> {
     const estP = navigator.storage?.estimate
@@ -1120,12 +1120,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // slice rather than given a row of their own: they are the same promise to the
     // user ("derived bytes, safe to clear, they come back on demand"), the existing
     // Clear cache button already evicts them, and folding keeps them OUT of the
-    // unlabelled "Other" remainder — which is the honesty requirement. A dedicated
+    // unlabelled "Other" remainder, so the total stays accurate. A dedicated
     // row would need new UI strings, and the locale catalogs are owned elsewhere
     // this cycle; splitting the slice out later is a display-only change.
     const cacheBytes = blobCacheBytes + derivedBytes;
     // The grid shows visual uploads only: the headshot is hidden, and the non-visual
-    // user assets (brand tokens doc, font faces — managed in the Adjust your brand card)
+    // user assets (brand tokens doc, font faces - managed in the Adjust your brand card)
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
@@ -1170,7 +1170,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   }
 
   // One selectable, deletable session row. Largest-first by default. Built on
-  // folder-tiles.ts's sessionRow() — the shared row primitive behind this
+  // folder-tiles.ts's sessionRow() - the shared row primitive behind this
   // Storage manager list AND the gallery's per-tool history list
   // (component-audit rec 6). Only this view's chrome (the select checkbox, the
   // inline "batch" tag, the classes its own stylesheet keys off) lives here.
@@ -1213,12 +1213,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // open managed list (multi-select state) is never rebuilt out from under the user.
   function renderSection(m: StorageModel, sort: string) {
     const hasPrev = m.previews.available;
-    // Pinned-tools slice only renders once something is pinned — a permanent
+    // Pinned-tools slice only renders once something is pinned - a permanent
     // "0 B" row would be noise for the (default) never-pinned user.
     const hasPins = m.pins.count > 0;
     // Same for the speech models: the slice appears only after a download.
     const hasSpeech = m.speech.bytes > 0;
-    // The AI image models (host.upscale / host.matte) — each appears only once its
+    // The AI image models (host.upscale / host.matte) - each appears only once its
     // store holds bytes (pre-downloaded from Available offline, or fetched on demand
     // by the Upscale / Remove-background dialogs).
     const hasUpscale = m.upscale.bytes > 0;
@@ -1359,7 +1359,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     const body = viewEl.querySelector<HTMLElement>('#storage-body')!;
     body.innerHTML = renderSection(model, sessSort);
-    // Content loaded async after the card opened — cascade it in like the catalog does
+    // Content loaded async after the card opened - cascade it in like the catalog does
     // (silent: the shuffle already played when the section toggled open).
     staggerReveal([...body.children], { sound: false });
 
@@ -1368,7 +1368,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const selbar = body.querySelector<HTMLElement>('#store-selbar');
     const setText = (sel: string, text: string) => body.querySelectorAll(sel).forEach(e => { e.textContent = text; });
 
-    // Hero count-up — cosmetic; set instantly under reduced-motion OR a hidden tab
+    // Hero count-up - cosmetic; set instantly under reduced-motion OR a hidden tab
     // (rAF is paused when document.hidden, so the final value must land immediately).
     function countUp(el: HTMLElement | null, to: number) {
       if (!el) return;
@@ -1512,7 +1512,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     async function refreshMeter() { model = await measure(); applyMeter(model); }
 
     // The confirm modal restores focus to the (now-removed) delete control on close, so
-    // after a deletion move focus to a surviving control — else keyboard/SR users drop to
+    // after a deletion move focus to a surviving control - else keyboard/SR users drop to
     // <body> and have to re-traverse the page.
     function focusSurvivingSession(preferred?: HTMLElement | null) {
       const t = (preferred && document.contains(preferred) && preferred)
@@ -1561,7 +1561,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
       if (!ok) return;
       const prev = btn.textContent; btn.disabled = true; btn.textContent = t('Deleting…');
-      // Only splice a row once its delete actually resolves — otherwise a rejected
+      // Only splice a row once its delete actually resolves - otherwise a rejected
       // delete leaves a ghost (row gone, but the session still counted by refreshMeter
       // and resurrected on the next sort). Freed bytes are summed from real successes.
       let freed = 0, done = 0;
@@ -1618,7 +1618,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const cacheBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-cache-btn');
       // 'derived-media' rides with the asset cache: it is the same kind of thing
       // (downloaded/derived bytes that regenerate on demand), so it is counted in
-      // the same slice — see measure() — and must be cleared by the same button.
+      // the same slice - see measure() - and must be cleared by the same button.
       if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta', 'derived-media', 'audio-peaks', 'audio-cover-bakes']).then(() => { resetScrubCache(); }), t('Cleared asset cache')); return; }
 
       const prevBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-previews-btn');
@@ -1655,7 +1655,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       }
     });
 
-    // ── My images — same add/delete/lightbox handlers as before (grid reused). ──
+    // ── My images - same add/delete/lightbox handlers as before (grid reused). ──
     const userimgAddBtn = body.querySelector<HTMLButtonElement>('#userimg-add');
     async function syncUserImgMeta() {
       await refreshCounter(); // re-measures → applyMeter refreshes the count/size badges + legend + bar
@@ -1709,7 +1709,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     applyMeter(model);
     refreshStorageMeter = refreshMeter;
 
-    // Clear all — confirmation dialog gated on typing a randomised word, so an
+    // Clear all - confirmation dialog gated on typing a randomised word, so an
     // irreversible wipe can't be fired by reflex (or a stray double-click).
     viewEl.querySelector('#clear-storage-btn')?.addEventListener('click', () => {
       const word = CLEAR_CONFIRM_WORDS[Math.floor(Math.random() * CLEAR_CONFIRM_WORDS.length)]!;
@@ -1753,7 +1753,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // its rows are keyed by asset id, and an upload's id embeds the user's original
         // filename ("user/upload/…-therapy_session.mp3"), alongside a measured envelope
         // of the audio. Leaving it out means "Delete everything" leaves behind both the
-        // name of a file and the shape of its sound. Every derived cache added here in
+        // name of a file and the form of its sound. Every derived cache added here in
         // future needs the same check: does its KEY or its VALUE say anything about the
         // user's own content?
         await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta', 'derived-media', 'audio-peaks', 'audio-cover-bakes']);
@@ -1766,7 +1766,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         modal.close();
         // The bye-bye song is already playing (data-sfx on the confirm button). Land
         // back on the gallery: with the dismissed flag just wiped, the first-run
-        // "Welcome to Lolly" greets the clean slate there (unbranded installs only —
+        // "Welcome to Lolly" greets the clean slate there (unbranded installs only - 
         // a locked brand never shows it, see mountGallery). A hard reload (not just
         // a hash change) is required: in-memory singletons like the tokens bridge
         // cache (bridge/tokens.ts) only reset on bust(), so a soft nav would keep
@@ -1875,7 +1875,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     }
 
     // The two-part export+render job, kicked off once the confirm word matches. Runs in
-    // the shared progress toast (components/progress-toast.ts) — the `--top` variant, so
+    // the shared progress toast (components/progress-toast.ts) - the `--top` variant, so
     // the wait-time quips stay readable while a big archive renders (the bottom-right
     // default can sit below the fold on a long, scrolled profile page). Tracked in
     // openProfileToasts so a view swap tears it down. The toast's outer catch is new:
@@ -1883,12 +1883,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // throw elsewhere left a stale "rendering…" message on screen forever.
     async function exportAndRenderEverything(): Promise<void> {
       // The victorious fanfare fires when the render QUEUE finishes (see runBatchWithProgress),
-      // not here at kickoff — so it lands as a genuine "it's all done" reward.
+      // not here at kickoff - so it lands as a genuine "it's all done" reward.
       mountProgressToast(async (mount, toast) => {
         const prof = await host.profile.get().catch(() => null);
         const author = prof && (prof as { useDetails?: boolean }).useDetails ? prof : null;
 
-        // 1) Portable data backup (quick) — the same bundle the "Export my data" button makes.
+        // 1) Portable data backup (quick) - the same bundle the "Export my data" button makes.
         try {
           const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
           saveBlob(blob, filename);
@@ -1929,11 +1929,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             announce,
             // Videos/animations encode in real time (they pause if the tab is hidden), so make
             // them opt-in behind an explicit "I'll keep this tab active" affirmation. Dim the
-            // whole toast (not just its mount) while the choice is open — it floats above the
+            // whole toast (not just its mount) while the choice is open - it floats above the
             // dialog's backdrop, so it needs its own dimming.
             onMotionFound: (count) => askKeepTabActive(count, toast),
           });
-          // A falsy result means the motion prompt was cancelled — the backup still went out,
+          // A falsy result means the motion prompt was cancelled - the backup still went out,
           // but nothing was rendered, so say so rather than leaving a stale "rendering…".
           if (!result) {
             mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
@@ -1957,21 +1957,21 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       importInput!.value = ''; // let the same file be re-picked later
       if (!file) return;
       showImportDialog(async () => {
-        playSfx('vacuum');   // the data gets sucked in — the mirror of export's whoosh
+        playSfx('vacuum');   // the data gets sucked in - the mirror of export's whoosh
         const bytes = await file.arrayBuffer();
         const summary = await importBackup({ host: host as unknown as Parameters<typeof importBackup>[0]['host'], storage: localStorage }, bytes);
         host.profile.bust!();
         // The bundle may carry a brand: user tokens + font-face assets restore as
         // plain user assets, so drop the token caches, load the faces into
-        // document.fonts and repaint the chrome — same as a fresh boot would.
+        // document.fonts and repaint the chrome - same as a fresh boot would.
         (host.tokens as { bust?(): void } | undefined)?.bust?.();
         await registerUserFonts(fontsHost).catch(() => { /* faces load at next boot */ });
         void applyChromeBrandVars(host as unknown as Parameters<typeof applyChromeBrandVars>[0]);
         applyTheme(localStorage.getItem('theme') || 'light');
         // `skipped` > 0 means the bundle came from a newer app and carried parts this
-        // build doesn't understand yet — surface it rather than pretend a full restore.
+        // build doesn't understand yet - surface it rather than pretend a full restore.
         const skipNote = summary.skipped ? ` · ${summary.skipped === 1 ? t('1 newer item skipped') : t('{n} newer items skipped', { n: summary.skipped })}` : '';
-        // Failed restores are surfaced separately (and assertively) — a silently-dropped
+        // Failed restores are surfaced separately (and assertively) - a silently-dropped
         // image would be lost for good once the user discards the source backup.
         const failNote = summary.failedAssets ? ` · ${summary.failedAssets === 1 ? t('1 image couldn’t be restored (storage full?)') : t('{n} images couldn’t be restored (storage full?)', { n: summary.failedAssets })}` : '';
         announce(tRaw('Imported {sessions} and {images}', {
@@ -1992,7 +1992,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // three-layer state machine as the gallery cards' keep-offline toggle, styled
   // by offline-manager.css), the measured on-disk size beside each downloaded
   // tool, and a Download-all sweep. Sizes are the tool FILES recorded at pin
-  // time (PinRecord.bytes) — manifest-declared catalog assets are prefetched too
+  // time (PinRecord.bytes) - manifest-declared catalog assets are prefetched too
   // but counted by the Storage section's Asset-cache slice, never double here. ──
   const offlineDetails = viewEl.querySelector<HTMLDetailsElement>('#offline-section');
   let offlineLoaded = false;
@@ -2029,7 +2029,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </li>`;
     };
 
-    // Everything the parts rows need up front — all cheap (two small manifest
+    // Everything the parts rows need up front - all cheap (two small manifest
     // fetches + the already-synced asset index + IDB reads), all best-effort.
     const [precache, infoManifest, catSummary, parts, persist] = await Promise.all([
       fetchPrecacheManifest(),
@@ -2050,7 +2050,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     // Model parts are release-versioned in IndexedDB (invalidated by their own
     // cache-version, not a manifest watermark), so they have no live manifest
-    // version to go stale against — resyncOfflineParts never touches them.
+    // version to go stale against - resyncOfflineParts never touches them.
     const liveVersion = (id: OfflinePartId): string | null =>
       id === 'docs' ? (infoManifest?.version ?? null)
       : (id === 'upscale' || id === 'matte') ? null
@@ -2142,7 +2142,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       updateTotals();
     };
 
-    // Same erased cast as the gallery's pin handler — the concrete web host
+    // Same erased cast as the gallery's pin handler - the concrete web host
     // satisfies sync's structural SyncHost slice at runtime.
     const prefetch = (ids: string[]) => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids);
     const celebrate = (btn: HTMLElement) => {
@@ -2193,7 +2193,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       await refreshCounter(); // the Storage meter's pins slice moved
     });
 
-    // Sequential sweep — one spinner walks the list (parallel fetch storms help
+    // Sequential sweep - one spinner walks the list (parallel fetch storms help
     // nobody on the connections this feature exists for). Failures are skipped
     // and reported as a count; the button doubles as the progress line. Shared
     // by the tools-row "Download all" and the section's "Download everything".
@@ -2236,7 +2236,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       await refreshCounter();
     });
 
-    // Live search — plain substring over the display name.
+    // Live search - plain substring over the display name.
     const search = body.querySelector<HTMLInputElement>('.odl-search')!;
     const emptyEl = body.querySelector<HTMLElement>('.odl-empty')!;
     search.addEventListener('input', () => {
@@ -2254,10 +2254,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     let partState: PartState = parts;
     let controller: AbortController | null = null;
     // Re-entrancy is decided on this flag, set SYNCHRONOUSLY at runParts entry
-    // — `controller` is only assigned after two awaits (headroom estimate +
+    // - `controller` is only assigned after two awaits (headroom estimate +
     // confirm dialog), which is exactly the window a double-click exploits.
     let running = false;
-    // The catalogue row's recorded scope no longer matches the checked chips —
+    // The catalogue row's recorded scope no longer matches the checked chips - 
     // display state only; the record itself is untouched until a download runs.
     let catalogScopeDirty = false;
     offlineDownloadAbort = () => controller?.abort();
@@ -2277,7 +2277,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     let catalogPlanned = plannedBytes.catalog;
 
     // A part is downloadable when its manifest (or index) was reachable. The
-    // dev server ships no dist/precache.json — the rows say so instead of
+    // dev server ships no dist/precache.json - the rows say so instead of
     // pretending a download happened.
     const partAvailable: Record<OfflinePartId, boolean> = {
       app: !!precache, docs: !!infoManifest, verify: !!precache && plannedBytes.verify > 0, catalog: !!catSummary,
@@ -2294,7 +2294,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     /** What this part would still download: full size when absent, a token
      *  slice when downloaded-but-stale (delta re-syncs skip current files), and
-     *  zero when current — so preflights and the sweep price REMAINING work,
+     *  zero when current - so preflights and the sweep price REMAINING work,
      *  not work already on disk. */
     const planned = (id: OfflinePartId): number => {
       const full = id === 'catalog' ? catalogPlanned : plannedBytes[id];
@@ -2335,8 +2335,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     const syncSweepSize = (): void => {
       // "Everything" = app + catalogue scope + docs + every tool, but NOT the
-      // heavyweight verify and speech rows — those stay stated-size individual
-      // opt-ins (a 220 MB surprise inside one button would be dishonest, and
+      // heavyweight verify and speech rows - those stay stated-size individual
+      // opt-ins (hiding a 220 MB download inside one button would mislead the user, and
       // the voice models promise the same consent line everywhere). planned()
       // prices only REMAINING work, so downloaded-and-current parts cost 0.
       const remaining = (['app', 'catalog', 'docs'] as const)
@@ -2351,7 +2351,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       allBtn.disabled = busy;
       cancelBtn.hidden = !busy;
       body.querySelectorAll<HTMLButtonElement>('[data-part-dl],[data-part-rm]').forEach(b => { b.disabled = busy; });
-      // The scope a run downloads is captured at start — freezing the chips
+      // The scope a run downloads is captured at start - freezing the chips
       // keeps the UI from implying a mid-run change would apply to it.
       body.querySelectorAll<HTMLInputElement>('.odl-tagchip input').forEach(c => { c.disabled = busy; });
       progWrap.hidden = !busy;
@@ -2372,13 +2372,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       }
     };
 
-    // The erased cast sync's other callers use — the concrete web host
+    // The erased cast sync's other callers use - the concrete web host
     // satisfies the structural SyncHost slice at runtime.
     const syncHost = host as unknown as Parameters<typeof downloadCatalogScope>[0];
     const partLabel = (id: OfflinePartId): string => partDefs.find(p => p.id === id)?.name ?? id;
 
     /** Run one part's download; true on success. The caller owns busy state
-     *  and passes the catalogue scope it CAPTURED at run start — re-reading
+     *  and passes the catalogue scope it CAPTURED at run start - re-reading
      *  the live checkboxes here would let a mid-run change alter what a
      *  started download means. */
     const runPart = async (id: OfflinePartId, signal: AbortSignal, scope: 'all' | string[]): Promise<boolean> => {
@@ -2408,11 +2408,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     /** Preflight + sequential run of several parts behind one progress bar.
      *  Resolves true only when the run actually completed (with or without
-     *  per-part failures) — false on re-entry, decline, or cancel, so a caller
+     *  per-part failures) - false on re-entry, decline, or cancel, so a caller
      *  chaining more work (the Everything sweep) knows not to continue. */
     const runParts = async (ids: OfflinePartId[]): Promise<boolean> => {
       if (running) return false;
-      running = true;   // synchronous — closes the double-click window the two awaits below open
+      running = true;   // synchronous - closes the double-click window the two awaits below open
       try {
         const want = ids.filter(id => partAvailable[id] && (!partState[id] || isStale(id)));
         if (!want.length) return true; // nothing to do IS a completed run
@@ -2437,7 +2437,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             if (!await runPart(id, controller.signal, scope)) failed++;
           }
         } catch {
-          // Cancelled — everything already fetched stays cached, so the next
+          // Cancelled - everything already fetched stays cached, so the next
           // run resumes from here. Say so instead of reading as an error.
           announce(t('Download paused — already-saved files are kept'));
           return false;
@@ -2480,7 +2480,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     // Tag chips re-price the catalogue row live (asset-accurate, not tag sums).
     // Scope drift is tracked on a FLAG, never by deleting the record from the
-    // display state — any partRecords() refresh would silently resurrect a
+    // display state - any partRecords() refresh would silently resurrect a
     // deleted entry and the row would lie about being current.
     const normScope = (s: 'all' | string[] | readonly string[] | undefined): string => JSON.stringify(s === undefined ? 'all' : Array.isArray(s) ? [...s].sort() : s);
     body.querySelector('.odl-tagscope')?.addEventListener('change', async () => {
@@ -2493,7 +2493,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     everythingBtn.addEventListener('click', async () => {
       if (running) return;
-      // Held disabled across BOTH phases — parts and the tools sweep — so a
+      // Held disabled across BOTH phases - parts and the tools sweep - so a
       // second click can't slip in during the sweep and re-announce success.
       everythingBtn.disabled = true;
       try {
@@ -2511,7 +2511,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
     cancelBtn.addEventListener('click', () => controller?.abort());
 
-    // Eviction protection: say where downloads stand, and offer the fix — a
+    // Eviction protection: say where downloads stand, and offer the fix - a
     // re-request from a click is exactly when browsers grant it.
     const persistEl = body.querySelector<HTMLElement>('#odl-persist')!;
     const syncPersistLine = async (state?: 'granted' | 'denied' | 'unsupported'): Promise<void> => {
@@ -2568,7 +2568,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   function renderEnrollForm(health: CaHealth | null) {
     // Show only the providers the deployment has actually configured (from
-    // /api/ca/health.configured), so a button never 501s on click — and a newly
+    // /api/ca/health.configured), so a button never 501s on click - and a newly
     // configured provider appears with no code change. 'dev' rides on devProvider.
     const cfg = health?.configured ?? {};
     const providers: string[] = [
@@ -2672,10 +2672,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (act.dataset.identityAct === 'renew') {
         const provider = identityStatus?.identity?.provider;
         // Renew keeps the lifetime that was chosen last time (derived from the
-        // cert window — the status card has no picker; change it via Forget +
+        // cert window - the status card has no picker; change it via Forget +
         // re-enrol if you want a different duration).
         const prevDays = Math.round((Date.parse(identityStatus?.notAfter as string) - Date.parse(identityStatus?.notBefore as string)) / 86400000);
-        // A legacy email (magic-link) identity can no longer renew by email — re-show the
+        // A legacy email (magic-link) identity can no longer renew by email - re-show the
         // enroll form so it re-enrols via a provider instead.
         if (provider === 'email') body.innerHTML = renderEnrollForm(await caHealth());
         else if (provider) await enrollWith(provider, act, [7, 30, 90, 365].includes(prevDays) ? prevDays : undefined);
@@ -2709,7 +2709,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   if (identityDetails?.open) loadIdentity();
 
   // The Storage manager opens body-level modals (the shared confirmDialog, plus its own
-  // clear/hoard/keep-active/import/lightbox mountModal dialogs — see openProfileModals);
+  // clear/hoard/keep-active/import/lightbox mountModal dialogs - see openProfileModals);
   // tear any down when the router swaps this view out (main.js calls _cleanup) so an
   // orphaned top-layer <dialog> can't block the next view.
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
@@ -2718,7 +2718,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     openProfileModals.clear();
     openProfileToasts.forEach(el => el.remove());
     openProfileToasts.clear();
-    // Abort any in-flight offline download — a remount would otherwise start a
+    // Abort any in-flight offline download - a remount would otherwise start a
     // second concurrent run over the same buckets (the download is resumable,
     // so aborting loses nothing already fetched).
     offlineDownloadAbort?.();
@@ -2728,9 +2728,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
 function userImageThumb(ref: AssetRef) {
   const name = String(ref.meta?.name ?? t('Image'));
-  // SVGs (logos/icons) shouldn't be cropped to fill — show the whole mark.
+  // SVGs (logos/icons) shouldn't be cropped to fill - show the whole mark.
   const isVector = ref.type === 'vector' || ref.format === 'svg';
-  // A lottie's url is JSON (no still image) — show a play-glyph stub, not a broken
+  // A lottie's url is JSON (no still image) - show a play-glyph stub, not a broken
   // <img>. Its live preview surface is Design; here it's just manageable.
   // A video plays itself, muted + looping; gif/apng/animated-webp animate in <img>.
   const media = ref.type === 'lottie'
@@ -2758,7 +2758,7 @@ function openImageLightbox(ref: AssetRef) {
   // viewBox-only SVGs report no intrinsic size, so label them "SVG" rather than
   // leaving the dimensions blank.
   const dims = ref.width && ref.height ? `${ref.width} × ${ref.height}` : (isVector ? 'SVG' : (isLottie ? 'Lottie' : (isVideo ? 'Video' : '')));
-  // A lottie has no still frame to enlarge — show a play-glyph placeholder instead
+  // A lottie has no still frame to enlarge - show a play-glyph placeholder instead
   // of a broken <img>. (Placing it in Design is where it actually plays.)
   // A video plays full-size with controls; gif/apng/animated-webp enlarge as <img>.
   const media = isLottie
@@ -2846,7 +2846,7 @@ function showImportDialog(onConfirm: () => Promise<void>) {
 
 // Store the cropped square WebP in the user-assets store (one fixed id, so it
 // overwrites) and record the resulting AssetRef on the profile (sans the volatile
-// object URL — consumers re-resolve by id). A fresh version each time avoids the
+// object URL - consumers re-resolve by id). A fresh version each time avoids the
 // bridge's id:format:version object-URL cache masking the new image.
 async function saveHeadshot(host: ProfileHost, blob: Blob): Promise<AssetRef> {
   const record = {

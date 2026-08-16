@@ -56,7 +56,7 @@ export function renderSong(song: ZzfxSong): Promise<RenderedPcm> {
 }
 
 /**
- * Fetch a ZzFXM song JSON, render it, and return a WAV blob URL — the shape the
+ * Fetch a ZzFXM song JSON, render it, and return a WAV blob URL - the shape the
  * video-export music picker feeds to the muxer for a zzfxm-format track. The 16-bit
  * WAV encoder is shared with the tracker-module path (see pcm-wav.ts).
  */
@@ -69,7 +69,7 @@ export async function songUrlToWavBlobUrl(url: string): Promise<string> {
 /**
  * Render a song and wrap it in a stereo AudioBuffer on the given context.
  * `createBuffer` accepts the song's native sample rate even when it differs from
- * the context's — playback resamples. Throws if the song renders empty.
+ * the context's - playback resamples. Throws if the song renders empty.
  */
 export async function renderSongToAudioBuffer(ctx: BaseAudioContext, song: ZzfxSong): Promise<AudioBuffer> {
   const { left, right, sampleRate } = await renderSong(song);

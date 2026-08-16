@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stage-nav keyboard zoom — the "both zooms work and neither captures the other"
+ * Stage-nav keyboard zoom - the "both zooms work and neither captures the other"
  * contract. Design and Sequence Studio share this controller (views/tool.ts
  * mounts setupStageNav for every canvas tool); the timeline panel pins the same
  * chord rule for its own bindings in timeline-panel.test.ts.
  *
  *   · Shift+'+' / Shift+'_' (and the bare = / - / 0 / 1 keys) step the CANVAS
- *     zoom and are preventDefault()ed — they are the studio's.
+ *     zoom and are preventDefault()ed - they are the studio's.
  *   · Cmd/Ctrl+'=' / Cmd/Ctrl+'-' / Cmd/Ctrl+'0' are the BROWSER's whole-UI zoom
  *     (reset): the handler must neither step the canvas nor preventDefault, or
- *     native page zoom can never fire on a canvas tool. That regression shipped —
- *     the handler matched bare `key` values with no modifier guard — so this file
+ *     native page zoom can never fire on a canvas tool. That regression shipped - 
+ *     the handler matched bare `key` values with no modifier guard - so this file
  *     is the pin, not a nicety.
  *   · While focus sits in a text field, the zoom keys type instead of zooming.
  *
@@ -55,7 +55,7 @@ function mount() {
   return { stage, outer, nav, teardown() { nav.destroy(); stage.remove(); } };
 }
 
-/** Dispatch a keydown on window — the channel setupStageNav listens on. */
+/** Dispatch a keydown on window - the channel setupStageNav listens on. */
 function press(key: string, mods: Record<string, boolean> = {}): KeyboardEvent {
   const e = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods });
   dom.window.dispatchEvent(e);

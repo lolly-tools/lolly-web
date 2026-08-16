@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PPTX upload import — slides as standalone SVG user assets.
+ * PPTX upload import - slides as standalone SVG user assets.
  *
  * The .pptx sibling of pdf-import.ts's page path: the SAME handle shape
  * (PdfHandle/PdfPageSvg), the SAME pickPdfPages dialog, and the SAME
  * storeUserUpload destination, so a deck dropped on any upload surface behaves
- * exactly like a multi-page PDF — the user picks which slides become assets.
+ * exactly like a multi-page PDF - the user picks which slides become assets.
  *
  * The renderer (pptxSlideToSvg) is a PURE string builder over the engine's
- * pptx-read model — no DOM APIs — so the root test suite exercises it directly
+ * pptx-read model - no DOM APIs - so the root test suite exercises it directly
  * in node. It is an APPROXIMATION by design: solid fills, outlined shapes,
  * per-paragraph text lines, table grids, and inlined png/jpeg media; charts,
  * SmartArt, and other media degrade to labeled placeholder rects. The stored
  * SVG must survive storeUserUpload's DOMPurify pass, which allows
- * data:image/png|jpeg hrefs on <image> — which is why ONLY inline png/jpeg
+ * data:image/png|jpeg hrefs on <image> - which is why ONLY inline png/jpeg
  * media is resolved and everything else placeholders.
  *
  * Module-scope imports here MUST stay node-safe (engine + the pptx bridge):
@@ -31,7 +31,7 @@ import type {
   PptxPicNode, PptxShapeNode, PptxTableNode, PptxTextNode,
 } from '../../../../engine/src/pptx-read.ts';
 import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
-// Type-only — erased at runtime, so this does NOT load the pdf-lib chunk.
+// Type-only - erased at runtime, so this does NOT load the pdf-lib chunk.
 import type { PdfHandle, PdfPageSvg, EmbeddedImage, EmbeddedImageScan, EmbeddedFont } from './pdf-import.ts';
 
 // ── rendering constants ────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ const PX_PER_PT = 96 / 72;
 const DEFAULT_SIZE_PT = 18;
 /** Paragraph advance: 1.25 × the paragraph's max size (PowerPoint's single-spacing feel). */
 const LINE_HEIGHT = 1.25;
-/** A media part bigger than this is not inlined — the pic degrades to a placeholder. */
+/** A media part bigger than this is not inlined - the pic degrades to a placeholder. */
 const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
 const MAX_TABLE_ROWS = 20;
 const MAX_TABLE_COLS = 12;
@@ -64,7 +64,7 @@ function hexAttr(c: PptxReadColor | undefined): string | null {
   return c?.hex ? `#${c.hex}` : null;
 }
 
-// Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack.
+// Base64 in chunks - String.fromCharCode(...bigArray) overflows the call stack.
 function bytesToBase64(u8: Uint8Array): string {
   let bin = '';
   const CHUNK = 0x8000;
@@ -79,7 +79,7 @@ export interface PptxSlideRenderOpts {
   heightEmu: number;
   theme: PptxReadTheme;
   /** Resolve a media part path (e.g. "ppt/media/image1.png") to an inlineable
-   *  data: URI — null when missing, oversized, or not png/jpeg. */
+   *  data: URI - null when missing, oversized, or not png/jpeg. */
   getMedia: (path: string) => { dataUrl: string } | null;
 }
 
@@ -94,7 +94,7 @@ interface RenderCtx {
 /**
  * Render ONE read-model slide to a standalone SVG document (the PdfPageSvg
  * shape, so pickPdfPages and the ingest loop take it unchanged). Pure string
- * building — no DOM. `elementCount` counts drawn content nodes (the background
+ * building - no DOM. `elementCount` counts drawn content nodes (the background
  * rect excluded), so a blank slide reports 0 and gets skipped like a blank PDF
  * page.
  */
@@ -139,7 +139,7 @@ export function pptxSlideToSvg(slide: PptxReadSlide, opts: PptxSlideRenderOpts):
 function renderShape(node: PptxShapeNode, x: number, y: number, w: number, h: number): string {
   const fill = hexAttr(node.fill);
   const line = hexAttr(node.line);
-  if (!fill && !line) return ''; // nothing visible — skip the node entirely
+  if (!fill && !line) return ''; // nothing visible - skip the node entirely
   const paint = ` fill="${fill ?? 'none'}"${line ? ` stroke="${line}" stroke-width="1.5"` : ''}`;
   if (node.geom === 'ellipse') {
     return `<ellipse cx="${r(x + w / 2)}" cy="${r(y + h / 2)}" rx="${r(w / 2)}" ry="${r(h / 2)}"${paint}/>`;
@@ -148,7 +148,7 @@ function renderShape(node: PptxShapeNode, x: number, y: number, w: number, h: nu
   return `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}"${rx}${paint}/>`;
 }
 
-// Text is NOT clipped to its box in v1 — a per-node clipPath needs unique-id
+// Text is NOT clipped to its box in v1 - a per-node clipPath needs unique-id
 // management across an SVG that may be re-inlined next to its siblings (see the
 // SUSE illustration id-collision precedent), so overflow is accepted as part of
 // the approximation.
@@ -216,7 +216,7 @@ function renderTable(node: PptxTableNode, x: number, y: number, w: number, h: nu
 }
 
 /** Light-grey labeled stand-in for content the renderer can't draw (charts,
- *  SmartArt, non-png/jpeg media) — the slide keeps its layout instead of a hole. */
+ *  SmartArt, non-png/jpeg media) - the slide keeps its layout instead of a hole. */
 function placeholder(x: number, y: number, w: number, h: number, label: string): string {
   return `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" fill="${PLACEHOLDER_FILL}"/>` +
     `<text x="${r(x + w / 2)}" y="${r(y + h / 2)}" text-anchor="middle" dominant-baseline="middle"` +
@@ -225,18 +225,18 @@ function placeholder(x: number, y: number, w: number, h: number, label: string):
 
 // ── opening a deck (the PdfHandle shape) ───────────────────────────────────────
 
-/** Open a .pptx for slide-level conversion — the same handle shape as openPdfFile,
+/** Open a .pptx for slide-level conversion - the same handle shape as openPdfFile,
  *  so pickPdfPages and the ingest loop work over either document kind. */
 export async function openPptxFile(file: File | Blob): Promise<PdfHandle> {
   const parts = await inflatePptx(new Uint8Array(await file.arrayBuffer()));
   if (!isPptx(parts)) throw new Error('Not a PowerPoint (.pptx) file.');
-  // The parser is constructed here, not at module scope — node shells have no
+  // The parser is constructed here, not at module scope - node shells have no
   // DOMParser global (same rule as bridge/pptx.ts's createPptxAPI).
   const deck = readPptx(parts, (xml) => new DOMParser().parseFromString(xml, 'application/xml'));
 
   // Media parts inline as data: URIs so the stored SVG stays self-contained AND
   // survives storeUserUpload's DOMPurify pass (data:image/png|jpeg only).
-  // Memoised per path — the same logo on every slide encodes once.
+  // Memoised per path - the same logo on every slide encodes once.
   const mediaCache = new Map<string, { dataUrl: string } | null>();
   const getMedia = (path: string): { dataUrl: string } | null => {
     const hit = mediaCache.get(path);
@@ -383,7 +383,7 @@ export function deckFonts(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme 
     });
   }
 
-  // Referenced families — theme majors/minors and any explicit run typeface.
+  // Referenced families - theme majors/minors and any explicit run typeface.
   const names = new Set<string>();
   if (deck.theme.majorFont) names.add(deck.theme.majorFont);
   if (deck.theme.minorFont) names.add(deck.theme.minorFont);
@@ -411,7 +411,7 @@ export function deckFonts(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme 
  * One slide → converted directly. Multi-slide → the SAME pickPdfPages dialog asks
  * which (its copy says "page", generic enough with the deck's fileName in the
  * title; mode 'multi' offers all-of-them, 'single' picks one for a single slot).
- * Returns the stored refs — empty when cancelled or nothing converted. Per-slide
+ * Returns the stored refs - empty when cancelled or nothing converted. Per-slide
  * failures warn and continue.
  */
 export async function ingestPptxAsSvgAssets(
@@ -436,7 +436,7 @@ export async function ingestPptxAsSvgAssets(
     pages = picked;
   }
 
-  // Lazy for the same reason — picker.ts is a DOM/CSS chunk.
+  // Lazy for the same reason - picker.ts is a DOM/CSS chunk.
   const { storeUserUpload } = await import('./picker.ts');
   const base = name.replace(/\.pptx$/i, '').trim() || 'slide';
   const refs: AssetRef[] = [];

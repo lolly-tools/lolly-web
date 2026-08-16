@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Music `DockHost` adapter for the LIVE Neurospicy dock (plan "this-is-a-very-
- * sparkling-eich", Phase 2b — the migration onto @lolly-tools/audio-dock).
+ * sparkling-eich", Phase 2b - the migration onto @lolly-tools/audio-dock).
  *
  * It drives the shared audio-dock shell from the neurospicy ENGINE (lib/neurospicy.ts)
  * without touching it: every transport method here is a thin delegate to an exported
@@ -9,12 +9,12 @@
  * the two prove one dock shell serves both players.
  *
  * VISUALISER (2026-08-15). The rich MilkDrop/Butterchurn visualiser now lives INSIDE
- * the dock — there is no separate fullscreen panel any more. The shell owns the canvas
+ * the dock - there is no separate fullscreen panel any more. The shell owns the canvas
  * (backdrop / expanded window / fullscreen) plus the drag/resize/fullscreen chrome and
  * the visualiser SECTION UI; this adapter is the `DockViz` renderer it drives: `mount`/
  * `unmount` wrap lib/butterchurn-viz.ts's `mountViz`, and `presets`/`themes`/`select*`
  * wrap the same viz-presets / viz-stock / viz-schemes system the old components/
- * viz-overlay.ts panel used. The shell package stays butterchurn-free — the dependency
+ * viz-overlay.ts panel used. The shell package stays butterchurn-free - the dependency
  * enters only here, on the app side, so the static /info build never pulls it in.
  *
  * The one real piece of transport logic is `onChange`: the engine has no single
@@ -101,7 +101,7 @@ export function createNeurospicyDockHost(nhost: MusicHost): NeurospicyDockHandle
 /**
  * The `DockViz` renderer: butterchurn over the shell's ONE canvas, plus the preset +
  * theme (colour-scheme) controls the visualiser section drives. All the surface chrome
- * (backdrop / expanded / fullscreen, drag, resize) is the shell's — this only owns the
+ * (backdrop / expanded / fullscreen, drag, resize) is the shell's - this only owns the
  * renderer and the library.
  */
 class NeuroDockViz implements DockViz {
@@ -120,7 +120,7 @@ class NeuroDockViz implements DockViz {
    *  analyser appears (idle → reactive). */
   private mountedAnalyser: AnalyserNode | null = null;
   /** A silent, unconnected analyser (its own suspended AudioContext) so butterchurn
-   *  IDLE-ANIMATES with nothing playing — many presets move from time alone, and the docs
+   *  IDLE-ANIMATES with nothing playing - many presets move from time alone, and the docs
    *  ?neuro=viz capture needs a live picture without audio. Created lazily. */
   private silentCtx: AudioContext | null = null;
   private silentNode: AnalyserNode | null = null;
@@ -149,7 +149,7 @@ class NeuroDockViz implements DockViz {
     // When switched on the shell re-calls mount() itself (syncViz) with the canvas.
   }
 
-  /** A silent AnalyserNode that outputs zeros — butterchurn idles against it. */
+  /** A silent AnalyserNode that outputs zeros - butterchurn idles against it. */
   private silentAnalyser(): AnalyserNode | null {
     if (this.silentNode) return this.silentNode;
     try {
@@ -210,7 +210,7 @@ class NeuroDockViz implements DockViz {
     if (this.destroyed || this.canvas !== canvas || this.handle) { handle.destroy(); return; }
     this.handle = handle;
     this.mountedAnalyser = analyser;
-    // An ARTIST preset opened on the fallback — fetch + apply the real one now.
+    // An ARTIST preset opened on the fallback - fetch + apply the real one now.
     if (this.isStock(this.presetId)) void this.applyStock(this.presetId);
     this.startCycle();   // resume auto-cycling once there is a renderer to drive
   }
@@ -267,7 +267,7 @@ class NeuroDockViz implements DockViz {
     this.startCycle();
   }
   /** Rotate the preset every `cycleSeconds` (0 = off). A random pick from the whole library
-   *  each tick — the breadth is the point; skipped while the renderer isn't drawing. */
+   *  each tick - the breadth is the point; skipped while the renderer isn't drawing. */
   private startCycle(): void {
     this.stopCycle();
     if (this.cycleSeconds <= 0) return;
@@ -346,7 +346,7 @@ class NeurospicyDockHost implements DockHost {
   private readonly changeListeners = new Set<() => void>();
   private readonly listListeners = new Set<() => void>();
   private readonly docListeners: Array<[string, EventListener]> = [];
-  /** Cached track list — the source of truth for the now-playing title + current row.
+  /** Cached track list - the source of truth for the now-playing title + current row.
    *  Kept in lockstep with listLoops (which owns the canonical playlist order). */
   private tracks: NeuroTrack[] = [];
   private destroyed = false;
@@ -362,7 +362,7 @@ class NeurospicyDockHost implements DockHost {
       // A long library (whole catalog audio + uploads + radio) wants type-to-filter.
       searchable: true,
       // radio.ts asks the SomaFM attribution + support link stay visible wherever its
-      // stations play — shown whenever radio is in the list (i.e. online).
+      // stations play - shown whenever radio is in the list (i.e. online).
       attribution: (): DockAttribution | null =>
         radioAvailable()
           ? { text: 'Internet radio, free & listener-supported, via', href: SOMAFM_HOME, linkText: 'SomaFM' }
@@ -430,7 +430,7 @@ class NeurospicyDockHost implements DockHost {
     this.emitChange();
   }
 
-  // cycleNeurospicyLoop wraps infinitely, so stepping is always possible — canNext/
+  // cycleNeurospicyLoop wraps infinitely, so stepping is always possible - canNext/
   // canPrev are omitted (the dock then treats them as true).
   async next(): Promise<void> {
     await cycleNeurospicyLoop(this.nhost, 1);

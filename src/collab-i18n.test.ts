@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The collab surface's i18n contract — the guarantee the six STRINGS maps used to give
+ * The collab surface's i18n contract - the guarantee the six STRINGS maps used to give
  * on their own, restated now that they are catalog KEYS rather than the copy itself.
  *
  * Each module already pins its own two halves (`collab-ceremony.test.ts`,
  * `beam-toast.test.ts`, `join-route.test.ts`): every string the DOM shows comes out of
  * that module's map, and the map is the only place copy lives in its source. Those two
  * were enough while the map WAS the rendered text. They are not enough now: a value can
- * be in the map, render verbatim, and still be a string no translator ever sees — which
+ * be in the map, render verbatim, and still be a string no translator ever sees - which
  * is exactly what `collab-pill.ts` and `collab-focus.ts` were before this wave, with
  * their copy in inline `tRaw('…')` literals that scripts/translate.ts cannot scan.
  *
@@ -18,11 +18,11 @@
  *     catalog (here) is the end-to-end "every rendered string traces to a key".
  *  2. TRANSLATION ACTUALLY HAPPENS. Every `STRINGS` reference in those modules' source
  *     sits inside a `t()`/`tRaw()` call. A map of keys is worthless if a render site
- *     reads one straight out of it — that renders English forever, in every language,
+ *     reads one straight out of it - that renders English forever, in every language,
  *     with nothing failing. This is the part no runtime assertion can reach, because in
  *     English a missed call site and a correct one produce identical output.
- *  3. FALLBACK. A language whose catalog is missing renders English — not a blank, not a
- *     raw key — through the real i18n runtime and a real mounted component.
+ *  3. FALLBACK. A language whose catalog is missing renders English - not a blank, not a
+ *     raw key - through the real i18n runtime and a real mounted component.
  *  4. THE BOOT CARVE-OUT. The eight strings that render on ordinary chrome with the flag
  *     off stay in the `spa` corpus: the three dynamic Feature-flags-row strings are
  *     listed in extra-keys.spa.json, and the Share rows stay literal `t('…')` calls.
@@ -128,7 +128,7 @@ test('every string the collab surface can render is a key in all 26 catalogs', (
 
 test('no catalog carries a key the modules no longer render', () => {
   // The other direction, so a deleted string cannot sit in 26 files being paid for by
-  // every reader of the diff — and so a TYPO in a map shows up as an orphan here rather
+  // every reader of the diff - and so a TYPO in a map shows up as an orphan here rather
   // than as one silently-English line in production.
   const known = new Set(ALL_KEYS);
   const orphans: string[] = [];
@@ -174,14 +174,14 @@ const SUBSTANTIAL = (en: string): boolean => en.length >= 25 && /\s/.test(en);
 
 test('no collab catalog is a wholesale English echo of its own keys', () => {
   // Presence and non-emptiness were never enough. `no.json` shipped 174 of 174 values
-  // identical to their keys — a file the pipeline writes for an untranslated language
-  // (writeCatalogFromCache's "English fallback, never ship broken output") — and every
+  // identical to their keys - a file the pipeline writes for an untranslated language
+  // (writeCatalogFromCache's "English fallback, never ship broken output") - and every
   // check above passed against it, because an echo IS present and IS non-empty.
   //
   // Same shape and same threshold as locales.test.ts's boot-catalog guard, which cannot
   // see this directory: its readdirSync of locales/ never descends into locales/collab/.
-  // Short values legitimately echo — "Live", "Total", "Host", "Name" are loanwords in
-  // several of these languages — so only substantial strings count.
+  // Short values legitimately echo - "Live", "Total", "Host", "Name" are loanwords in
+  // several of these languages - so only substantial strings count.
   const problems: string[] = [];
   for (const { lang, path } of catalogs) {
     const cat = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
@@ -196,7 +196,7 @@ test('no collab catalog is a wholesale English echo of its own keys', () => {
 /**
  * Strings a real translation may leave byte-identical to its English source, each with
  * the reason it is not evidence of anything. This list exists so the ratio below counts
- * only values a translator was actually meant to change — it is NOT a blessing, and a
+ * only values a translator was actually meant to change - it is NOT a blessing, and a
  * string on it is still translated when a language has a word for it.
  *
  * Nothing here is added because a catalog happened to echo it. Add a line only for a
@@ -236,7 +236,7 @@ test('no collab catalog is an English echo end to end', () => {
   // check.
   //
   // The threshold is deliberately loose (>90%) because this is a floor, not a quality
-  // bar — it answers "was this file ever translated at all", and the guard above is
+  // bar - it answers "was this file ever translated at all", and the guard above is
   // what answers "was this wave finished".
   const problems: string[] = [];
   for (const { lang, path } of catalogs) {
@@ -270,7 +270,7 @@ test('no collab catalog is an English echo end to end', () => {
 });
 
 test('the echo guards fail a wholly-English catalog and clear a translated one', () => {
-  // Both guards above read the same 26 files, all of which pass — so on a green run
+  // Both guards above read the same 26 files, all of which pass - so on a green run
   // neither one demonstrates that it can still fail. That is precisely how the defect
   // they exist for got in: the ORIGINAL completeness check was keys-only, passed
   // against a Norwegian catalog that was 174/174 English, and its green tick was
@@ -295,7 +295,7 @@ test('the echo guards fail a wholly-English catalog and clear a translated one',
   assert.ok(eAll.echoed > eAll.graded * 0.9, 'the end-to-end guard no longer fires on an all-English catalog');
 
   // And the other direction, so neither guard can be "strengthened" into flagging real
-  // translations — a check that cries wolf gets its threshold raised, not its bug fixed.
+  // translations - a check that cries wolf gets its threshold raised, not its bug fixed.
   const tSub = echoStats(translated, SUBSTANTIAL);
   assert.ok(!(tSub.graded >= 50 && tSub.echoed > tSub.graded * 0.25), 'the substantial-sample guard flags a translated catalog');
   const tAll = echoStats(translated, GRADEABLE);
@@ -389,7 +389,7 @@ function insideTranslateCall(code: string, idx: number): boolean {
  */
 const UNTRANSLATED_OK: Record<string, readonly string[]> = {
   // The OBJECT holding one end-cause's three keys. All three are translated on the next
-  // three lines, in failureCopy — see that function's comment.
+  // three lines, in failureCopy - see that function's comment.
   'components/collab-ceremony.ts': ['STRINGS.fail[cause]', 'STRINGS.fail;'],
 };
 
@@ -432,24 +432,24 @@ test('every STRINGS reference in the collab modules is inside a t()/tRaw() call'
 /**
  * A STRINGS map that is NOT a corpus source, and the reason it is allowed to stay that
  * way. Anything not listed here and not in MODULES is a map of user copy no translator
- * will ever see — which is exactly how `org/collab-work-opener.ts` shipped 16 English
+ * will ever see - which is exactly how `org/collab-work-opener.ts` shipped 16 English
  * sentences past a green wave: it was written to the same "one map, one wave" convention
  * as the six converted modules, and simply never got added to COLLAB_SOURCES.
  */
 const NOT_A_CORPUS_SOURCE: Record<string, string> = {
-  // Two values, `Host` and `Invitee`, which collab-ceremony.ts already declares — so the
+  // Two values, `Host` and `Invitee`, which collab-ceremony.ts already declares - so the
   // COPY is translated and sits in all 26 catalogs; this map is a second reference to the
   // same two keys for a nameless peer. Its read at beam-session.ts:537 is not yet wrapped,
   // so those two words still paint English; the file belongs to another in-flight wave and
   // is not this one's to edit. Adding it to COLLAB_SOURCES would also orphan nothing and
-  // add nothing — the keys are already there — so this is a call-site fix, not a corpus one.
+  // add nothing - the keys are already there - so this is a call-site fix, not a corpus one.
   'collab/beam-session.ts': 'duplicate of two ceremony keys; call site owned by another wave',
 };
 
 test('every STRINGS map in the web shell is a corpus source or a documented exception', () => {
   // The completeness half of part 2. The per-module guards prove that what a module
   // renders comes out of its own map, and the catalog guards prove that every map in
-  // MODULES is translated — but neither can see a map that was never wired to either.
+  // MODULES is translated - but neither can see a map that was never wired to either.
   const roots = [HERE];
   const found: string[] = [];
   const walk = (dir: string): void => {
@@ -484,7 +484,7 @@ test('every STRINGS map in the web shell is a corpus source or a documented exce
 test('a language with no collab catalog renders English, never a raw key or a blank', async () => {
   // Arabic is a real target (and RTL). Under node the locale chunk cannot be imported
   // (JSON needs an import attribute), so both the boot catalog and the namespace fail to
-  // load — which is precisely the shape of "not translated yet", exercised against the
+  // load - which is precisely the situation of "not translated yet", exercised against the
   // real runtime rather than a stub.
   await setActiveLang('ar', { persist: false });
   assert.equal(currentLang(), 'ar');
@@ -533,7 +533,7 @@ let emit: (event: import('./components/beam-toast.ts').BeamToastEvent) => void =
 
 test('the Feature-flags row copy is listed for the spa corpus, not the lazy namespace', async () => {
   // t(f.label) / t(f.pill) / t(f.info) are DYNAMIC call sites, so extractSpaKeys cannot
-  // see them — extra-keys.spa.json is the hand-list that covers exactly that case (the
+  // see them - extra-keys.spa.json is the hand-list that covers exactly that case (the
   // Print-preflight row's three strings are the precedent right above these).
   const { PRIVATE_COLLAB_FLAG } = await import('./feature-flags.ts');
   const extra = JSON.parse(readFileSync(EXTRA_KEYS, 'utf8')) as string[];
@@ -552,7 +552,7 @@ test('the session-tile badge copy is listed for the spa corpus', () => {
   // are boot copy rather than namespace copy (that file's own Copy header states why).
   // Boot copy has to reach the `spa` corpus somehow, and these cannot reach it the free
   // way: `extractSpaKeys` matches a quote after `t(` EXACTLY, so a `tRaw('…')` literal
-  // is invisible to it — the badge's two count forms were already in all 26 catalogs by
+  // is invisible to it - the badge's two count forms were already in all 26 catalogs by
   // hand while being absent from the corpus, which means the next `--corpus spa` run
   // would have written catalogs without them and the aria-label would have gone back to
   // English in 26 languages with nothing failing.
@@ -576,7 +576,7 @@ test('the session-tile badge copy is listed for the spa corpus', () => {
 });
 
 test('the two Share-dialog rows stay literal t() call sites', () => {
-  // These render whenever the Share dialog opens, so they belong to the boot catalog —
+  // These render whenever the Share dialog opens, so they belong to the boot catalog - 
   // and a literal `t('…')` is what makes them free: extractSpaKeys picks them up with no
   // hand-list at all. Pinned as source, because the rows are gated behind an opener that
   // nothing registers in a test build, so no DOM assertion can reach them.

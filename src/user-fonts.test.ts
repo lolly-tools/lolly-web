@@ -5,7 +5,7 @@
  * Run directly:  node --test shells/web/src/user-fonts.test.ts
  *
  * DOM-free: registerUserFonts no-ops without FontFace, and the chrome repaint
- * inside setPrimaryFont swallows the missing-document rejection — so the whole
+ * inside setPrimaryFont swallows the missing-document rejection - so the whole
  * flow runs against an in-memory host whose tokens.resolve reads back the
  * user tokens blob the flow itself installs (a real round-trip, not a stub of
  * the answer).
@@ -95,7 +95,7 @@ function memoryHost(): UserFontsHost & { store: Map<string, any> } {
       async _getBlob(id: string) { return store.get(id)?.blob ?? null; },
     },
     tokens: {
-      // Resolve {font.brand} / {shape.radius} from the installed user doc —
+      // Resolve {font.brand} / {shape.radius} from the installed user doc - 
       // the live bridge's discovery order, reduced to the slice these flows
       // exercise (both live at the doc's top level or under 'base', per
       // fontTargetOf's layered-vs-plain-DTCG resolution).
@@ -141,7 +141,7 @@ test('setPrimaryFont installs a user tokens doc that resolves back', async () =>
   const host = memoryHost();
   await setPrimaryFont(host, 'Inter');
   assert.equal(await primaryFontFamily(host), 'Inter');
-  // The write is the standard user-tokens asset — backups carry it for free.
+  // The write is the standard user-tokens asset - backups carry it for free.
   assert.ok(host.store.has('user/tokens/brand'));
 });
 
@@ -182,7 +182,7 @@ test('removing the primary family promotes the next installed one', async () => 
 
 // ── installGoogleFont: the neverPrimary opt-out ──────────────────────────────
 // A design-file import installs fonts as a side effect and must never restyle
-// the whole app via the font.brand token — even when no primary exists yet.
+// the whole app via the font.brand token - even when no primary exists yet.
 // The network is stubbed: a canned css2 stylesheet plus fake font bytes.
 
 const FAKE_CSS2 = `/* latin */
@@ -235,8 +235,8 @@ test('installGoogleFont with neverPrimary leaves an existing primary untouched',
 
 // ── installFontFromBytes: the second entrance into the role system ───────────
 // Bytes the user already has (an upload, a face lifted out of a PDF) must land
-// on exactly the rails installGoogleFont uses — same user assets, same only-font
-// promotion — so a face's origin stops mattering once it's installed. The fixture
+// on exactly the rails installGoogleFont uses - same user assets, same only-font
+// promotion - so a face's origin stops mattering once it's installed. The fixture
 // is the real platform Outfit face, so the whole vetting chain (magic number →
 // name table → OS/2) runs against a genuine sfnt rather than a shape we invented.
 
@@ -247,7 +247,7 @@ function outfitBytes(): ArrayBuffer {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 }
 
-/** A copy of an sfnt with OS/2 fields rewritten — the cheapest way to get a
+/** A copy of an sfnt with OS/2 fields rewritten - the cheapest way to get a
  *  second weight of the same family, or a face that states a restriction, out of
  *  one fixture. (The table checksums go stale; nothing in this path reads them.) */
 function patchOs2(src: ArrayBuffer, patch: { weight?: number; fsType?: number }): ArrayBuffer {
@@ -342,7 +342,7 @@ test('a second weight of the same family takes the next index and groups as one 
 test('a variable face is stored as its whole axis, not as the one weight OS/2 defaults to', async () => {
   // Outfit[wght].ttf says usWeightClass 100 and carries 100 to 900. Storing it
   // as '100' registers a FontFace at Thin, which is then the primary the whole
-  // app wears — with every other weight browser-synthesised from it.
+  // app wears - with every other weight browser-synthesised from it.
   const host = memoryHost();
   const fam = await installFontFromBytes(host, outfitBytes());
 
@@ -357,7 +357,7 @@ test('a variable face is stored as its whole axis, not as the one weight OS/2 de
 test('an upload never overwrites a face the Google path downloaded', async () => {
   const host = memoryHost();
   // What installGoogleFont writes: one asset per SUBSET, each with the
-  // unicodeRange css2 gave it — metadata an upload has no way to reproduce.
+  // unicodeRange css2 gave it - metadata an upload has no way to reproduce.
   await host.assets._uploadUserAsset({
     id: `${USER_FONT_PREFIX}outfit/0`,
     type: 'font',
@@ -419,7 +419,7 @@ test('a WOFF1 upload is unwrapped and STORED as an sfnt, not as wOFF', async () 
 
 test('the size cap is applied to what gets STORED, not only to what arrived', async () => {
   // woff1 is zlib-per-table and is unwrapped on the way in, so the bytes that
-  // land on the device are bigger than the bytes that were vetted — here, a
+  // land on the device are bigger than the bytes that were vetted - here, a
   // compressible table makes a small file expand past the 5MB cap. Without the
   // second check a 5MB cap admits a ~10MB asset, which is not a cap on storage.
   const { sfntToWoff } = await import('@lolly/engine');
@@ -466,7 +466,7 @@ test('bad bytes return null and write nothing, never throwing', async () => {
   const truncated = new ArrayBuffer(12);
   new DataView(truncated).setUint32(0, 0x00010000, false);
   assert.equal(await installFontFromBytes(host, truncated), null, 'truncated sfnt');
-  // Over validateFontFile's 5MB cap — the cap is refused, not enforced twice.
+  // Over validateFontFile's 5MB cap - the cap is refused, not enforced twice.
   assert.equal(await installFontFromBytes(host, new ArrayBuffer(5 * 1024 * 1024 + 1)), null, 'oversized');
 
   assert.equal(host.store.size, 0);

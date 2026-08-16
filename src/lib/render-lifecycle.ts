@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Shared render lifecycle for mounting a tool's hydrated template into a DOM
- * node — used by the live tool view (views/tool.js) and the off-screen
+ * node - used by the live tool view (views/tool.js) and the off-screen
  * batch/compose renderer (pro/render-export.js). These were previously
  * "faithful copies" in both files and had already drifted (finding #4); this is
  * the single source of truth. CSS scoping lives next door in ./scope-css.ts.

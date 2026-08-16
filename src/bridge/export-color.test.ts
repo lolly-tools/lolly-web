@@ -6,12 +6,12 @@
  * This is a regression suite for a silent-data-loss bug: all three walkers used
  * to parse computed colour with a legacy `rgba?(int,int,int)` regex, on the
  * assumption (written in the code) that getComputedStyle always returns
- * rgb()/rgba(). CSS Color 4 makes that false — only rgb()/rgba()/hsl() are
+ * rgb()/rgba(). CSS Color 4 makes that false - only rgb()/rgba()/hsl() are
  * legacy; lab(), lch(), oklab(), oklch(), hwb() and color() serialise in their
  * own space. So a computed `color-mix(in oklab, …)` (deck-builder tables, slides
  * slots, rebrand-deck panels) or a raw `oklch()` brand token
  * (shells/web/src/brand-vars.ts injects them as tool CSS custom properties)
- * parsed to null — and null means "skip the fill" or "fall back to black" in the
+ * parsed to null - and null means "skip the fill" or "fall back to black" in the
  * walkers, so those paints vanished or turned black in SVG/PDF/EMF export.
  *
  * The cases below are the shapes browsers emit for those inputs. Every one of
@@ -33,7 +33,7 @@ import { parseColor as parseEmfColor } from './svg-ir.ts';
 // actually produce), not a hand-written guess at the serialisation. Note that
 // Chrome writes lab()/lch() lightness as a BARE number, not a percentage.
 const MODERN: Array<[css: string, rgb: [number, number, number]]> = [
-  ['oklch(0.7 0.1 200)', [64, 177, 183]],          // `color: oklch(…)` — a raw brand token
+  ['oklch(0.7 0.1 200)', [64, 177, 183]],          // `color: oklch(…)` - a raw brand token
   ['oklab(0 0 0 / 0.1)', [0, 0, 0]],               // color-mix(in oklab, currentColor 10%, transparent)
   ['oklab(0.539974 0.0962086 -0.0928316)', [140, 83, 162]], // a color-mix'd gradient stop
   ['color(srgb 0.5 0 0.5)', [128, 0, 128]],        // color-mix(in srgb, red 50%, blue)
@@ -61,7 +61,7 @@ test('the SVG/PDF walkers: alpha survives the modern notations', () => {
   assert.deepEqual(parseCssColorFull('rgb(255 0 0 / 50%)'), [255, 0, 0, 0.5]);
   assert.deepEqual(parseCssColorFull('oklab(0.628 0.225 0.126 / 0.25)'), [255, 0, 0, 0.25]);
   assert.deepEqual(parseCssColorFull('color(srgb 1 0 0 / 0.1)'), [255, 0, 0, 0.1]);
-  // A fully transparent colour is still "nothing to paint" — the walkers' `if
+  // A fully transparent colour is still "nothing to paint" - the walkers' `if
   // (rgb)` guards depend on it.
   assert.equal(parseCssColorFull('color(srgb 1 0 0 / 0)'), null);
   assert.equal(parseCssColorFull('transparent'), null);
@@ -92,7 +92,7 @@ test('the EMF walker resolves modern notations, and still flattens currentColor 
 });
 
 test('a wide-gamut paint is gamut-mapped, not clipped or dropped', () => {
-  // P3 red is outside sRGB. The walkers must still get a colour — and one that
+  // P3 red is outside sRGB. The walkers must still get a colour - and one that
   // is still red, rather than a channel-clipped or blacked-out one.
   const rgb = parseCssColor('color(display-p3 1 0 0)');
   assert.ok(rgb, 'P3 red resolves');
@@ -105,7 +105,7 @@ test('a wide-gamut paint is gamut-mapped, not clipped or dropped', () => {
 test('a modern colour inside a shadow shorthand is read as the colour, not as offsets', () => {
   // The failure this pins was worse than a lost colour: an unrecognised
   // `oklch(0.7 0.1 200)` stayed in the string, so 0.7/0.1/200 were consumed as
-  // x/y/blur — a 200px blur on a 2px shadow. The value is Chrome 149's verbatim
+  // x/y/blur - a 200px blur on a 2px shadow. The value is Chrome 149's verbatim
   // computed box-shadow for `box-shadow: oklch(0.7 0.1 200) 0px 2px 4px`.
   const [shadow] = parseBoxShadow('oklch(0.7 0.1 200) 0px 2px 4px 0px');
   assert.ok(shadow);

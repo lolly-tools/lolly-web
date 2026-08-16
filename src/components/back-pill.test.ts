@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * back-pill.ts — the shared back control's target resolution and click contract.
+ * back-pill.ts - the shared back control's target resolution and click contract.
  *
  * Run directly:  node --test shells/web/src/components/back-pill.test.ts
  *
@@ -11,7 +11,7 @@
  *
  * jsdom supplies the DOM, sessionStorage (which lib/back-nav.ts persists to) and
  * a history object. The router isn't running, so the module's writers
- * (noteMountedView/recordLeave) are driven directly — exactly the two calls
+ * (noteMountedView/recordLeave) are driven directly - exactly the two calls
  * main.ts makes around every navigation.
  */
 import test from 'node:test';
@@ -41,9 +41,9 @@ const withHistoryEntry = (): void => {
 };
 
 /** Stand in for one router navigation: leave `fromTitle` at `fromHref`, arrive
- *  somewhere ELSE (`arriveAt`, a distinct view — default a tool). Mirrors main.ts:
+ *  somewhere ELSE (`arriveAt`, a distinct view - default a tool). Mirrors main.ts:
  *  noteMountedView() at the outgoing view, recordLeave() when it's left, then the
- *  URL moves to the arrival — so, like the real app, the back target (the prev)
+ *  URL moves to the arrival - so, like the real app, the back target (the prev)
  *  is NOT the view we end up on. (Leaving the URL equal to the prev is the exact
  *  self-loop resolveBackTarget now escapes to Home; see the loop test below.) */
 function walkFrom(routeName: string, title: string, href: string, arriveAt = '/t/qr-code'): void {
@@ -63,7 +63,7 @@ test('a direct visit — no previous view — falls back to Home → the gallery
 });
 
 // A tool's canonical URL is the PATH form /t/<id>, so a relative '#/' fallback
-// resolved to /t/<id>#/ — which parseRoute reads as the same tool (the '/' hash
+// resolved to /t/<id>#/ - which parseRoute reads as the same tool (the '/' hash
 // is skipped, the path branch wins), stranding anyone who opened a shared tool
 // link inside the editor. Root-absolute or the pill isn't an exit.
 test('the fallback escapes a /t/<id> tool URL rather than resolving back into it', () => {
@@ -112,7 +112,7 @@ test('a pinned target (the tool view’s launch folder) keeps its href', () => {
 test('a back target that IS the current view escapes to Home instead of looping', () => {
   clearStored();
   withHistoryEntry();
-  // Arrive at /#/catalog with /#/catalog ALSO recorded as the previous view — the
+  // Arrive at /#/catalog with /#/catalog ALSO recorded as the previous view - the
   // self-loop a direct entry can produce. Back to yourself is not a back.
   walkFrom('catalog', 'Catalog — Lolly', '/#/catalog', '/#/catalog');
   const target = resolveBackTarget();
@@ -136,7 +136,7 @@ test('the home escape renders a house icon in the markup, not the back arrow', (
   const html = backPillHtml();
   assert.match(html, /href="\/#\/"/, 'points at Home');
   // The Lucide "house" path (icons.ts "home") starts with this distinctive
-  // roofline move; the back arrow does not — a stable discriminator without
+  // roofline move; the back arrow does not - a stable discriminator without
   // snapshotting the whole SVG.
   assert.match(html, /M15 21v-8/, 'wears the house icon, not the back arrow');
 });

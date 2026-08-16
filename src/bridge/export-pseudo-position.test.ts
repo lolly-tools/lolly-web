@@ -13,7 +13,7 @@
  *     (`.btn--glass` → `backdrop-filter: blur(4px)`) is exactly that: the profile
  *     pill is `position: static` but IS the containing block, so the browser anchors
  *     its avatar dot to the pill while the walker anchored it to the whole top-right
- *     cluster — 103px left, sitting on the settings button (docs/shots/use-utilities.svg).
+ *     cluster - 103px left, sitting on the settings button (docs/shots/use-utilities.svg).
  *  2. The pseudo's own `transform` was ignored, so the universal
  *     `top: 50%; translateY(-50%)` centring idiom came out half the marker's height low.
  *

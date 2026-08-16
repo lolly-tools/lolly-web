@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-cuts.ts — the CONTACT SHEET: N stills off one timed composition
+ * sequence-cuts.ts - the CONTACT SHEET: N stills off one timed composition
  * (Fable timeline, phase 2.5 / plans/51-fable-timeline-editing.md §4.6).
  *
  * This is the STILL sibling of sequence-render.ts. Where that module decodes,
  * composites and muxes to produce motion, this one does none of those things: it
  * moves the DOM playhead, asks the ordinary still renderer for a picture, and
  * repeats. Every pixel therefore comes from exactly the same code path as a normal
- * PNG/SVG/PDF export — which is the whole point, because Andy's rule is that a
+ * PNG/SVG/PDF export - which is the whole point, because Andy's rule is that a
  * still of a sequence is WYSIWYG, and the cheapest way to keep N stills honest is
  * for each of them to be a plain still taken at a different time.
  *
  * THE CONTRACT (§4.6):
  *   cuts = 1 (default)  the frame at the playhead. Nothing in this module runs;
  *                       the dispatch in export.ts never reaches it. That path must
- *                       stay byte-identical — it is the common one.
+ *                       stay byte-identical - it is the common one.
  *   cuts = N > 1        N stills at MIDPOINT times t_i = totalMs * (i + 0.5) / N.
  *                       png/jpg/webp/svg → N members in one ZIP, `<base>-01.<ext>`;
  *                       pdf              → ONE document of N pages.
@@ -25,19 +25,19 @@
  * useful. The midpoint of each equal slice always lands inside a live span.
  *
  * THE FREEZE STILL HOLDS. `render()` in export.ts has already run `snapshotMotion`
- * on the live node (a still of a sequence keeps it — only MOTION formats skip it),
+ * on the live node (a still of a sequence keeps it - only MOTION formats skip it),
  * so every `<video>` is already an `<img>` of the frame the preview was parked on.
  * We deliberately do NOT re-seek per cut: the poster contract is "the video is
  * where you left it", and it holds for cut 12 exactly as it does for cut 1. What
  * moves between cuts is the timeline's own visibility state and the six inline
- * properties the applier composes — `transform`, `opacity`, and, on a stage that
+ * properties the applier composes - `transform`, `opacity`, and, on a stage that
  * authors depth (plans/104), `filter`, `z-index`, and `width`/`height`. That list is
  * all `applySequenceTime` writes, and `restoreSequenceTime` hands every one of them
  * back.
  *
  * The last pair is the one deliberate LAYOUT write in the whole applier (plans/104
- * §5.2, P1): the `w`/`h` keyframe channels exist so that a size tween REFLOWS — text
- * rewraps, a border stays one pixel — which no composited property can fake. It costs
+ * §5.2, P1): the `w`/`h` keyframe channels exist so that a size tween REFLOWS - text
+ * rewraps, a border stays one pixel - which no composited property can fake. It costs
  * a reflow per cut on a stage that keys a size, and nothing at all on one that does
  * not: the write is gated on the track actually mentioning `w` or `h`.
  *
@@ -45,7 +45,7 @@
  * `withAuthoredDom` (plans/104 §6 point 0): the preview clock has been writing those
  * same properties for whatever frame the playhead is parked on, and this module's
  * session would capture that composed pose as "authored" the first time it touched a
- * box — so every cut would carry the parked frame baked in, and by how much would
+ * box - so every cut would carry the parked frame baked in, and by how much would
  * depend on where the user last scrubbed.
  *
  * INJECTED DEPENDENCIES. The renderers stay in export.ts (they are that file's
@@ -71,14 +71,14 @@ import type { ExportOpts } from './export.ts';
  * purpose rather than importing it: the engine clamps what it parses out of a URL,
  * but this bridge is also reachable from a hook, the MCP verb and a shell that
  * built `opts` by hand, so the boundary re-validates instead of trusting its
- * caller. 64 is already an 8x8 wall of thumbnails — past that a reviewer reads
+ * caller. 64 is already an 8x8 wall of thumbnails - past that a reviewer reads
  * nothing and the cost (64 full renders) stops paying for itself.
  */
 export const MAX_CUTS = 64;
 
 /**
- * Still formats a contact sheet is defined for. Everything else — the motion
- * formats, the data formats (json/csv/ics), `zip` itself, `pptx`, `ico` — ignores
+ * Still formats a contact sheet is defined for. Everything else - the motion
+ * formats, the data formats (json/csv/ics), `zip` itself, `pptx`, `ico` - ignores
  * `cuts` entirely: a bundle of a bundle has no meaning, and a data payload has no
  * frames. `jpeg` is listed beside `jpg` because renderFormatDispatch accepts both
  * spellings.
@@ -98,8 +98,8 @@ const CUT_EXT: Record<string, string> = { jpeg: 'jpg' };
 /**
  * Total function from whatever the caller put in `opts.cuts` to a usable N.
  *
- * Junk (undefined, null, '', NaN, Infinity, objects, 0, negatives) degrades to 1 —
- * the playhead frame — because a contact sheet is an enhancement and a broken
+ * Junk (undefined, null, '', NaN, Infinity, objects, 0, negatives) degrades to 1 - 
+ * the playhead frame - because a contact sheet is an enhancement and a broken
  * request must never turn into a failed export. A fraction truncates. Above
  * MAX_CUTS it CLAMPS rather than falling back: "too many" is a legible intent.
  * Numeric strings are accepted so a shell can pass a raw URL param through.
@@ -132,7 +132,7 @@ export function cutTimestamps(totalMs: number, n: number): number[] {
  * Archive member name for cut `i` (0-based) of `n`: `<base>-01.png`.
  *
  * Zero-padded to the width of `n` (minimum two digits) so a file manager's
- * lexicographic sort is the timeline order — the single thing that makes a
+ * lexicographic sort is the timeline order - the single thing that makes a
  * downloaded sheet readable. Any extension already on `base` is dropped, matching
  * `renderZip`'s base derivation.
  */
@@ -178,7 +178,7 @@ export interface CutsDeps {
 /**
  * Render `node` as a contact sheet. Callers must have established `wantsCuts`.
  *
- * The DOM is left exactly as it was found — the session's `restore()` runs in a
+ * The DOM is left exactly as it was found - the session's `restore()` runs in a
  * `finally` on every path, including a throw from the middle of page 7 of a PDF.
  * Failing to restore would strand the artboard on the last sampled frame with
  * `.seq-off` (display:none) still on every box outside it, i.e. a mostly blank
@@ -191,7 +191,7 @@ export async function renderSequenceCuts(
   // the authored styles on cut 2 is the same bug one level up: the PREVIEW CLOCK has
   // already written cut 0. This sheet opens its own session on the live artboard, and
   // `AuthoredStore.get()` captures whatever is on the element the first time it is
-  // touched — mid-keyframe that is the clock's composed pose, and every one of the N
+  // touched - mid-keyframe that is the clock's composed pose, and every one of the N
   // stills would then carry the frame the user happened to be parked on, baked in.
   // The scope stands every OTHER writer over `node` down (handing its writes back) and
   // holds it down until the last cut is packed; the session opened INSIDE it is not in
@@ -212,7 +212,7 @@ async function renderCutsAuthored(
   const times = cutTimestamps(totalMs, n);
 
   // ONE session across all N cuts. Per-cut sessions would re-capture the authored
-  // styles on cut 2 — and by then the "authored" transform is the one cut 1 wrote,
+  // styles on cut 2 - and by then the "authored" transform is the one cut 1 wrote,
   // so the enter/exit offsets would compound frame after frame.
   const session: SequenceTimeSession = createSequenceTime(root);
   // Members render with cuts stripped, so a member can never re-enter this path,
@@ -222,11 +222,11 @@ async function renderCutsAuthored(
 
   try {
     if (format === 'pdf') {
-      // The password stays ON the member opts here — there is exactly one output
+      // The password stays ON the member opts here - there is exactly one output
       // document and locking it is the same request as locking a one-page PDF.
       // ONE document, N pages. The page loop lives in export.ts's existing
-      // multi-page renderer — it already owns page sizing, orientation, the
-      // password tier and the PDF/X finishing pass — and `prepare` is the seam
+      // multi-page renderer - it already owns page sizing, orientation, the
+      // password tier and the PDF/X finishing pass - and `prepare` is the seam
       // that advances the playhead between pages.
       const pages = times.map(() => node);
       return await deps.renderPdfPages(pages, memberOpts, (i) => {
@@ -236,7 +236,7 @@ async function renderCutsAuthored(
     }
 
     // Raster/SVG: N members in one archive. A member is never itself locked (no
-    // still format can carry a password) — the container is what protects them,
+    // still format can carry a password) - the container is what protects them,
     // exactly as in the ordinary bundle.
     const stillOpts: ExportOpts = { ...memberOpts, password: undefined, strongPassword: undefined };
     const members: { name: string; bytes: Uint8Array }[] = [];

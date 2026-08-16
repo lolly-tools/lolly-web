@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Overview room — what it reads, what it shows, and where its doors go.
+ * The Overview room - what it reads, what it shows, and where its doors go.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/rooms/overview.test.ts"
@@ -20,7 +20,7 @@ const dom = new JSDOM('<!doctype html><html><body><div id="room"></div></body></
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
 
-/** Object URLs jsdom does not mint itself — recorded so the revoke can be asserted. */
+/** Object URLs jsdom does not mint itself - recorded so the revoke can be asserted. */
 const minted: string[] = [];
 const revoked: string[] = [];
 (globalThis.URL as unknown as { createObjectURL: (b: unknown) => string }).createObjectURL = () => {
@@ -115,7 +115,7 @@ test('a furnished system reports its palette, type, logos and token count', asyn
   assert.equal(model.furnished, true);
   assert.deepEqual(model.colors, ['#ff6600', '#0060ff', '#111111']);
   assert.equal(model.colorCount, 3);
-  // Distinct families in role order — Outfit fills two roles and is listed once.
+  // Distinct families in role order - Outfit fills two roles and is listed once.
   assert.deepEqual(model.fonts, ['Outfit', 'Space Mono']);
   assert.equal(model.logoCount, 2);
   assert.equal(model.tokenCount, 2);
@@ -150,7 +150,7 @@ test('the empty state offers exactly two doors plus a quiet exit', () => {
   assert.match(html, /data-ds-door="file"/);
   assert.match(html, /data-ds-door="scratch"/);
   assert.match(html, /href="#\/"/);
-  // The website door arrives with M6, gated on a transport that works — a
+  // The website door arrives with M6, gated on a transport that works - a
   // disabled third door would advertise something nobody here can use.
   assert.equal(/disabled/.test(html), false, 'no disabled door may be rendered');
   assert.equal(/website/i.test(html), false, 'the website source must not appear before M6');
@@ -273,7 +273,7 @@ test('teardown unsubscribes from the palette feed and stops the doors', async ()
 });
 
 test('a detached room never repaints (the view moved on mid-read)', async () => {
-  const el = document.createElement('div'); // never appended — isConnected is false
+  const el = document.createElement('div'); // never appended - isConnected is false
   const room = mountOverviewRoom(el, {
     host: stubHost({ installed: true, colors: ['#ff6600'] }),
     editor: () => null,

@@ -4,12 +4,12 @@
  * the same document (plan 100 §6.2, §6.2a, §11.19, §11.21; wave 2.3).
  *
  * `rtc-transport.test.ts` pins the wire and `collab-session.test.ts` pins the
- * composition; neither can see what this file exists for — TWO handles, each with its
+ * composition; neither can see what this file exists for - TWO handles, each with its
  * own `ReferenceCanvasDoc`, converging (or not) across a lane that is allowed to lose
  * a frame. A backstop that never repairs anything passes every single-sided test.
  *
  * WHAT IS REAL: both handles, both documents, the real register index, the real
- * ordering rules, the real op contract. FAKE: the transport (an in-memory pair — the
+ * ordering rules, the real op contract. FAKE: the transport (an in-memory pair - the
  * five methods `RtcHandleTransport` names, plus a switch to swallow a frame), the
  * clock, and the outbound coalescing scheduler, so nothing sleeps and a dropped
  * packet is a boolean rather than a race.
@@ -55,7 +55,7 @@ class TestClock implements CeremonyTimers {
     this.due.delete(handle as number);
   }
 
-  /** Armed timers — the only honest way to prove a teardown is complete. */
+  /** Armed timers - the only honest way to prove a teardown is complete. */
   pending(): number {
     return this.due.size;
   }
@@ -131,7 +131,7 @@ class FakeTransport implements RtcHandleTransport {
   readonly presenceOut: PresenceFrame[] = [];
   /** Refuse a frame carrying more ops than this, as the SCTP ceiling does. */
   maxOpsPerFrame = Number.POSITIVE_INFINITY;
-  /** Swallow the next N ops frames AFTER reporting them sent — a lost packet. */
+  /** Swallow the next N ops frames AFTER reporting them sent - a lost packet. */
   dropOps = 0;
 
   private readonly messageListeners = new Set<(value: RtcInboundMessage) => void>();
@@ -215,7 +215,7 @@ class FakeTransport implements RtcHandleTransport {
     this.connection = 'closed';
   }
 
-  /** Ops payloads, normalised to arrays — the shape this module always writes. */
+  /** Ops payloads, normalised to arrays - the shape this module always writes. */
   frames(): CanvasOp[][] {
     return this.opsOut.map((payload) => (Array.isArray(payload) ? (payload as CanvasOp[]) : [payload as CanvasOp]));
   }
@@ -251,7 +251,7 @@ interface PairOptions {
 interface Pair {
   readonly a: Side;
   readonly b: Side;
-  /** Run the coalescing hop on both sides — the microtask a real handle would take. */
+  /** Run the coalescing hop on both sides - the microtask a real handle would take. */
   flush(): void;
   /** Advance both clocks. */
   advance(ms: number): void;
@@ -347,7 +347,7 @@ test('a real transport still satisfies the subset a session asks for', () => {
   // The assignment is the whole test: the exported conditional type resolves to
   // `never` the moment `RtcTransport` stops satisfying `RtcHandleTransport`, and
   // `= true` then fails `tsc` rather than production. It lives here because a type
-  // alias alone proves nothing — nothing consumes it in the module.
+  // alias alone proves nothing - nothing consumes it in the module.
   const proof: RtcTransportSatisfiesHandleTransport = true;
   assert.equal(proof, true);
 });
@@ -387,7 +387,7 @@ test('two handles converge on interleaved ops', () => {
 test('the backstop repairs a dropped op, and stays quiet when nothing changed', () => {
   const pair = makePair({ backstopMs: 20_000 });
 
-  // The lane loses exactly one frame — reliable-ordered SCTP makes this rare, which
+  // The lane loses exactly one frame - reliable-ordered SCTP makes this rare, which
   // is precisely why nothing else in the system would ever notice.
   pair.a.transport.dropOps = 1;
   pair.a.set('title', 'survives');
@@ -402,7 +402,7 @@ test('the backstop repairs a dropped op, and stays quiet when nothing changed', 
   assert.deepEqual(pair.a.params(), pair.b.params());
 
   // Nothing has changed since, so the next tick must cost NOTHING (§6.2's "only when
-  // dirty" — a pair that is idle stays silent).
+  // dirty" - a pair that is idle stays silent).
   const framesBefore = pair.a.transport.opsOut.length;
   pair.advance(20_000);
   assert.equal(pair.a.transport.opsOut.length, framesBefore, 'an idle side sends no exchange');
@@ -497,7 +497,7 @@ test('a peer on an incompatible op major makes this side observer-only', () => {
   assert.equal(pair.a.transport.opsOut.length, framesBefore);
   assert.deepEqual(pair.b.params(), {});
 
-  // A compatible minor is not a demotion (§11.19 — PWA staleness makes skew routine).
+  // A compatible minor is not a demotion (§11.19 - PWA staleness makes skew routine).
   const other = makePair();
   other.a.transport.hello('BBB', '1.9.0');
   assert.equal(other.a.handle.role, 'writer');
@@ -633,7 +633,7 @@ test('a big exchange is chunked, paced, and halved onto the frame ceiling', () =
 test('an edit made mid-exchange, if the lane drops it, is not swallowed by the exchange landing', () => {
   const pair = makePair({ backstopMs: 20_000, stateChunkOps: 2, stateChunkGapMs: 1_000 });
 
-  // Five keys, one dropped coalescing frame — the same 3-chunk exchange (2, 2, 1)
+  // Five keys, one dropped coalescing frame - the same 3-chunk exchange (2, 2, 1)
   // the "big exchange" test above paces.
   pair.a.transport.dropOps = 1;
   for (const key of ['one', 'two', 'three', 'four', 'five']) pair.a.set(key, key);
@@ -641,11 +641,11 @@ test('an edit made mid-exchange, if the lane drops it, is not swallowed by the e
   assert.deepEqual(pair.b.params(), {}, 'and that frame was lost');
 
   // The backstop fires and lands chunk 1 of 3. Chunks 2 and 3 are still queued,
-  // paced 1s apart — the exchange is mid-flight.
+  // paced 1s apart - the exchange is mid-flight.
   pair.advance(20_000);
   assert.equal(Object.keys(pair.b.params()).length, 2, 'only the first chunk has landed so far');
 
-  // A brand-new local edit, made WHILE that exchange is still pacing — and its own
+  // A brand-new local edit, made WHILE that exchange is still pacing - and its own
   // live frame is the one the lane drops this time. This is exactly the case the
   // exchange's snapshot (taken before any of this happened, in `exchangeState()`)
   // cannot cover: 'midway' is not one of the five keys being restated, so nothing
@@ -666,7 +666,7 @@ test('an edit made mid-exchange, if the lane drops it, is not swallowed by the e
 
   // The exchange fully landed, but a local edit outran its snapshot: the divergence
   // backstop must still treat this side as dirty, or 'midway' has no repair path
-  // left until some UNRELATED edit happens to re-arm it (§6.2 — "cleared only by an
+  // left until some UNRELATED edit happens to re-arm it (§6.2 - "cleared only by an
   // exchange that fully landed" is not the same claim as "cleared only when nothing
   // has changed since the exchange was built").
   pair.advance(20_000);
@@ -686,7 +686,7 @@ test('inbound ops are refused before they can become state (§11.21)', () => {
   assert.deepEqual(forbidden.a.handle.docState().boxes.size, 0);
 
   // A clock outside the safe-integer band would win every future merge for the life
-  // of the document — also a breach.
+  // of the document - also a breach.
   const poison = makePair();
   poison.a.transport.deliver({
     lane: 'ops',
@@ -705,8 +705,8 @@ test('inbound ops are refused before they can become state (§11.21)', () => {
   assert.equal(flood.a.handle.reason(), 'op-batch-too-large');
   assert.deepEqual(flood.a.params(), {});
 
-  // A merely unrecognisable op is DROPPED — §11.11's "never the batch, never a throw"
-  // — and the session carries on.
+  // A merely unrecognisable op is DROPPED - §11.11's "never the batch, never a throw"
+  // - and the session carries on.
   const skew = makePair();
   skew.a.transport.deliver({
     lane: 'ops',
@@ -730,7 +730,7 @@ test('inbound ops are refused before they can become state (§11.21)', () => {
   assert.equal(notFinite.a.transport.closed, false);
   assert.equal(notFinite.a.handle.docState().collections, undefined, 'nothing was applied');
 
-  // A bare (unbatched) op is still accepted — the transport's payload is opaque.
+  // A bare (unbatched) op is still accepted - the transport's payload is opaque.
   const bare = makePair();
   bare.a.transport.deliver({
     lane: 'ops',

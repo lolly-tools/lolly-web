@@ -75,7 +75,7 @@ test('colour: a plain hex value drops its leading # (saves %23 per param)', () =
 
 test('colour: a token-backed value emits its canonical ref (never [object Object]), un-#-stripped', () => {
   // A colour input can hold a { ref, value } token object; it must serialise to the ref
-  // so the link re-resolves against the recipient's tokens — the whole reason the
+  // so the link re-resolves against the recipient's tokens - the whole reason the
   // isTokenValue branch exists. A regression here would stamp %5Bobject%20Object%5D.
   const r = only(mk({ id: 'bg', type: 'color', value: { ref: 'color.brand.primary', value: '#123456' } }));
   assert.equal(r.emit, 'bg=color.brand.primary');
@@ -109,7 +109,7 @@ test('blocks: compact form emits with RAW separators and a RAW key (byte-exact)'
     { a: 'z', b: 'w' },
   ];
   const r = only(mk({ id: 'blk', type: 'blocks', value, fields } as unknown as Partial<InputModelItem> & { id: string; type: string }));
-  // separators '~'/',' literal, key not encodeURIComponent'd — matches tool.ts:4130
+  // separators '~'/',' literal, key not encodeURIComponent'd - matches tool.ts:4130
   assert.equal(r.emit, 'blk=x,y~z,w');
   assert.equal(r.status, 'kept');
 });
@@ -127,7 +127,7 @@ test('blocks: empty array is absent from the link', () => {
 
 test('blocks: a value containing a comma forces the JSON fallback (encodeURIComponent, raw key)', () => {
   // encodeBlocksCompact bails to null when a value carries a '~'/',' separator, so the
-  // emit switches to the encodeURIComponent'd JSON form — a completely different byte
+  // emit switches to the encodeURIComponent'd JSON form - a completely different byte
   // path. Pin it end-to-end through the real blocksForUrl/stripHiddenRowIds transforms.
   const fields = [{ id: 'a', type: 'text' }];
   const value = [{ a: 'x,y' }];
@@ -220,7 +220,7 @@ test('costUrlState: counts dedup by id across vector rows; length identity survi
   ];
   const base = 'https://lolly.tools/t/z?';
   const m = costUrlState({ model, exportParts: [] }, { base });
-  assert.equal(m.totalCount, 3); // pos (its 2 rows share an id), big, name — deduped
+  assert.equal(m.totalCount, 3); // pos (its 2 rows share an id), big, name - deduped
   assert.equal(m.changedCount, 3); // pos changed (x off default), big changed (dropped), name changed
   const keptCost = m.params.filter((p) => p.status === 'kept').reduce((s, p) => s + p.cost, 0);
   assert.equal(keptCost + m.joinOverhead + m.baseLen, m.readableLen);

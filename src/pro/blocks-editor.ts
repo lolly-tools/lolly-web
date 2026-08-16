@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Pro / Batch mode — blocks (repeating field-group) editor.
+ * Pro / Batch mode - blocks (repeating field-group) editor.
  *
- * A `blocks` value is an array of records — a mini-table that can't live inside a
+ * A `blocks` value is an array of records - a mini-table that can't live inside a
  * single grid cell. The grid renders the cell as a trigger (a summary button);
  * activating it opens THIS right-docked panel, which edits one cell's value (or,
  * for a bulk fill, the value applied to every row). The panel is deliberately
  * NON-modal and side-docked rather than a centred dialog: the grid stays visible
  * so you keep your place while editing. The structured array is the value the
- * engine renders and that CSV / paste already round-trip as JSON — no new format.
+ * engine renders and that CSV / paste already round-trip as JSON - no new format.
  *
  * Two commit models, by opts:
  *   • onChange present  → LIVE (per-cell). Every edit/add/remove/reorder calls
  *                         onChange(records); the footer is just "Done". Mirrors the
- *                         single-tool sidebar — what you see in the grid IS applied.
+ *                         single-tool sidebar - what you see in the grid IS applied.
  *   • onChange absent   → EXPLICIT (bulk fill). A working copy + "Apply to N" /
  *                         Cancel; the value is broadcast to every row on apply.
  *
  * Each block is a collapsible card (mirrors the single-tool sidebar): a grip, an
- * expand toggle (collapsed shows a one-line preview — easy to scan/reorder long
+ * expand toggle (collapsed shows a one-line preview - easy to scan/reorder long
  * lists), stacked fields, and remove. Cards reorder by dragging the grip (pointer)
  * or focusing it and using ↑/↓ (keyboard/touch). Per-field controls reuse the
  * local control factory (controls.js), the shared SUSE colour picker for `color`,
@@ -95,7 +95,7 @@ export function openBlocksEditor({ input, value, host, assetPicker = false, onCh
     const fields = input.fields ?? [];
     let records: BlockRecord[] = Array.isArray(value) ? value.map((r) => ({ ...(r as BlockRecord) })) : [];
     if (!records.length) records = [emptyRecord(fields)];
-    // Collapsed by default on first open — but a lone block is auto-expanded (no
+    // Collapsed by default on first open - but a lone block is auto-expanded (no
     // point hiding the only thing to edit). Restore the owner's remembered state
     // when its length matches the current blocks.
     let expanded = Array.isArray(initialExpanded) && initialExpanded.length === records.length
@@ -158,7 +158,7 @@ export function openBlocksEditor({ input, value, host, assetPicker = false, onCh
     const previewPaneEl = panel.querySelector<HTMLElement>('[data-blk-preview]');
     const previewStageEl = panel.querySelector<HTMLElement>('[data-blk-prev-stage]');
     const previewToggleEl = panel.querySelector<HTMLElement>('[data-blk-prev-toggle]');
-    // previewTimer: ReturnType<typeof setTimeout> | 0 rather than number — with
+    // previewTimer: ReturnType<typeof setTimeout> | 0 rather than number - with
     // transformers.js in the program (host.speech), sharp's types pull
     // @types/node globals in and setTimeout's return stops being plain `number`.
     let previewOpen = hasPreview, previewTimer: ReturnType<typeof setTimeout> | 0 = 0, previewBusy = false, previewDirty = false, previewUrl: string | null = null;

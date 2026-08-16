@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Outline text — convert a rendered text box's glyphs into real vector path
+ * Outline text - convert a rendered text box's glyphs into real vector path
  * geometry, in place (plan 88: the Font Outliner capability exposed inside the
  * freeform editors, not a standalone tool only).
  *
@@ -13,7 +13,7 @@
  * export; this bakes the outlines into the box model as ordinary kind:'path'
  * boxes (the engine authored-spline codec via vector-ops' pathToBox), so the
  * text becomes durable vector geometry that renders headlessly (CLI/URL mode)
- * and survives share links — unlike an SVG data URI or a user asset, which the
+ * and survives share links - unlike an SVG data URI or a user asset, which the
  * compact block URL encoding cannot carry.
  *
  * Two phases, deliberately split:
@@ -26,7 +26,7 @@
  *  - SHAPE (async): resolve fonts, shape per line, group contours by fill.
  *
  * Refusal-first: a run that cannot be outlined faithfully (no resolvable font
- * file, or glyphs the resolved face chain cannot draw — notdef) refuses the
+ * file, or glyphs the resolved face chain cannot draw - notdef) refuses the
  * WHOLE element rather than committing tofu or a partial conversion. That is
  * the same stance the export walk takes, except an in-place edit has no
  * `<text>` fallback to keep, so refusal is the only honest answer.
@@ -67,7 +67,7 @@ export interface CollectedLine {
   style: RunStyle;
 }
 
-/** Contours that share one fill — one kind:'path' box each, in run order. */
+/** Contours that share one fill - one kind:'path' box each, in run order. */
 export interface OutlineGroup { fill: string; path: GeomPath }
 
 export type OutlineRefusal = 'no-text' | 'no-font' | 'notdef' | 'empty' | 'not-visible';
@@ -84,10 +84,10 @@ export interface ShapeDeps {
 }
 
 /**
- * Walk a text block exactly like the export walkers do — text nodes split on
+ * Walk a text block exactly like the export walkers do - text nodes split on
  * explicit '\n' then on soft wraps, descending only into non-replaced inline
  * elements (anything with its own box is separate content, not this block's
- * text), text-decoration OR'd down the tree — and return one CollectedLine per
+ * text), text-decoration OR'd down the tree - and return one CollectedLine per
  * visual line per styled run. Sync on purpose: see the module header.
  */
 export function collectTextLines(textEl: HTMLElement, rectToNative: RectToNative): CollectedLine[] {
@@ -144,7 +144,7 @@ export function translateContours(path: GeomPath, dx: number, dy: number): GeomP
   }));
 }
 
-/** An axis-aligned filled rect as contours — underline/strikethrough bars, the
+/** An axis-aligned filled rect as contours - underline/strikethrough bars, the
  *  same geometry the export walk draws for text-decoration. */
 export function rectContours(x: number, y: number, w: number, h: number): GeomPath {
   return pathFromSubPaths(parseSvgPath(`M${x} ${y}L${x + w} ${y}L${x + w} ${y + h}L${x} ${y + h}Z`));
@@ -161,12 +161,12 @@ function contourXSpan(c: GeomPath[number]): [number, number] {
  * Split a run's contours into one GeomPath per glyph, so each becomes its own path
  * box (the "separate objects, grouped" model). The signal is HORIZONTAL OVERLAP: a
  * glyph's counter (the hole in e/a/o/p) sits inside its outline's x-span, and a dot
- * sits directly above its stem, so both overlap and stay with their glyph — which is
+ * sits directly above its stem, so both overlap and stay with their glyph - which is
  * required for the hole to render (a counter must share a box with its outline so the
  * nonzero winding cuts it out, exactly as `shapeCollectedLines` keeps deco bars apart
  * for the same reason). Side-by-side letters have a kerning gap, so their x-spans are
  * disjoint and they split. Tightly-kerned or overlapping letters (script faces, some
- * italics) may merge into one box — acceptable, and still renders correctly. Union-find
+ * italics) may merge into one box - acceptable, and still renders correctly. Union-find
  * over pairwise overlap makes the grouping transitive; clusters come back left-to-right.
  */
 export function clusterContoursByGlyph(path: GeomPath): GeomPath[] {
@@ -223,9 +223,9 @@ export function rotatedFrameShift(
 }
 
 /**
- * Shape collected lines into contour groups — ONE PER GLYPH, in reading order, so
+ * Shape collected lines into contour groups - ONE PER GLYPH, in reading order, so
  * each glyph becomes its own kind:'path' box that can be moved, recoloured and
- * node-edited on its own (the "separate objects, grouped" model — the caller groups
+ * node-edited on its own (the "separate objects, grouped" model - the caller groups
  * a source's boxes together). A glyph's counter stays with its outline in the same
  * group (see `clusterContoursByGlyph`), so the hole still renders.
  *
@@ -247,7 +247,7 @@ export async function shapeCollectedLines(
   // via opposed winding, and a rect whose winding happens to oppose a glyph's outer
   // contour (CFF/PostScript-flavoured OTF fonts, which a user can upload) would punch a
   // hole where it crosses a stroke. The export walk draws each bar as an independent
-  // <rect> for exactly this reason — we mirror that with a separate box.
+  // <rect> for exactly this reason - we mirror that with a separate box.
   const glyphOut: OutlineGroup[] = [];
   const decoGroups = new Map<string, GeomPath>();
   const addDeco = (fill: string, contours: GeomPath): void => {
@@ -290,7 +290,7 @@ export async function shapeCollectedLines(
       for (const glyph of clusterContoursByGlyph(all)) if (glyph.length) glyphOut.push({ fill, path: glyph });
     }
 
-    // Underline / strikethrough, same offsets and thickness as the export walk —
+    // Underline / strikethrough, same offsets and thickness as the export walk - 
     // into the DECO groups (see the note above), never merged with the glyph path.
     if (line.deco.u || line.deco.s) {
       const thick = Math.max(0.75, fontSize * 0.06);
@@ -299,7 +299,7 @@ export async function shapeCollectedLines(
     }
   }
 
-  // Glyph boxes first (reading order), then any decoration boxes — so the bars stack
+  // Glyph boxes first (reading order), then any decoration boxes - so the bars stack
   // above the glyphs of the same run, matching the on-screen paint order.
   const out = [...glyphOut, ...[...decoGroups].map(([fill, path]) => ({ fill, path }))]
     .filter((g) => g.path.length > 0);
@@ -313,7 +313,7 @@ export async function shapeCollectedLines(
  * re-applies rotation on the result boxes), then shapes.
  *
  * The caller MUST have already awaited `document.fonts.ready` and a paint frame
- * before calling this — measuring here after an `await` is a bug: a font-load can
+ * before calling this - measuring here after an `await` is a bug: a font-load can
  * fire the template's fit pass mid-wait, moving the box under us so the captured
  * `boxEl` is stale and the geometry is wrong. This function stays await-free from
  * entry to the synchronous `collectTextLines`.
@@ -326,7 +326,7 @@ export async function outlineBoxText(
   // "one rule" lets an off-playhead box stay selected, so this action can be invoked
   // on one. Report it distinctly so the caller can say "bring the clip on screen
   // first" rather than the generic "nothing to outline" (an honest, actionable
-  // refusal — the same stance as the vector ops' empty-result message).
+  // refusal - the same stance as the vector ops' empty-result message).
   if (!boxEl.getClientRects().length) return { ok: false, reason: 'not-visible' };
   const prev = boxEl.style.transform;
   boxEl.style.transform = 'none';

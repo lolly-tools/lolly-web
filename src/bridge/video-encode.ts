@@ -2,12 +2,12 @@
 /**
  * Main-thread client for the video-encode Worker (video-encode.worker.ts). Lazily spawns
  * one worker (respawned on error), keys concurrent encodes by id, and transfers the frames
- * + planar audio to it — the encode/mux then runs off the main thread. Modelled on
+ * + planar audio to it - the encode/mux then runs off the main thread. Modelled on
  * lib/zzfxm-render.ts.
  *
  * OPT-IN: gated behind the `lolly.workerEncode` localStorage flag (default OFF) so the
  * shipping in-thread path is unchanged until a run is field-verified. Transfer is one-way,
- * so the caller (export.ts renderVideo) treats the worker path as COMMITTED — the up-front
+ * so the caller (export.ts renderVideo) treats the worker path as COMMITTED - the up-front
  * `supportsWorkerVideoEncode()` probe is what makes that safe.
  */
 import type { EncodePick, EncodeAudio } from './video-encode-core.ts';
@@ -51,7 +51,7 @@ export function supportsWorkerVideoEncode(): boolean {
 
 /**
  * Encode + mux in the Worker. The frames (and each audio channel's ArrayBuffer) are
- * TRANSFERRED — they are consumed and must not be used afterward. Resolves with the muxed
+ * TRANSFERRED - they are consumed and must not be used afterward. Resolves with the muxed
  * bytes + container MIME; the caller wraps them in a Blob and embeds provenance.
  */
 export function encodeVideoInWorker(

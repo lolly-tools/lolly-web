@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * oklch-slice-geom.ts — the pure colour↔position mapping the gamut charts plot
+ * oklch-slice-geom.ts - the pure colour↔position mapping the gamut charts plot
  * and drag through. Run: node --test "shells/web/src/**\/*.test.ts"
  *
  * The contract that matters: every plane round-trips (a colour placed at a
@@ -85,7 +85,7 @@ test('off-plane distance wraps hue and forgives greys', () => {
   assert.ok(Math.abs(near - 20 / 180) < 1e-9, `wrapped distance ${near}`);
   // Opposite hues are the maximum.
   assert.equal(sliceOffPlane('lc', { l: 0.5, c: 0.2, h: 0 }, 180), 1);
-  // A grey has no hue worth honouring — it belongs to every hue plane.
+  // A grey has no hue worth honouring - it belongs to every hue plane.
   assert.equal(sliceOffPlane('lc', { l: 0.5, c: 0.005, h: 123 }, 300), 0);
   // Non-hue fixed channels are a plain normalised difference.
   assert.equal(sliceOffPlane('ch', { l: 0.4, c: 0.1, h: 0 }, 0.4), 0);
@@ -122,7 +122,7 @@ test('ticks span the axis and are labelled in the channel’s own units', () => 
 });
 
 test('chroma ticks follow the gamut ceiling and stay ROUND numbers', () => {
-  // The ceiling moves per gamut, so the labels cannot be cMax/4 — on an sRGB axis
+  // The ceiling moves per gamut, so the labels cannot be cMax/4 - on an sRGB axis
   // that prints 0.085 / 0.17 / 0.255. Every label must be a round step, and the
   // last one must never claim more chroma than the axis holds.
   for (const g of GAMUTS) {
@@ -134,7 +134,7 @@ test('chroma ticks follow the gamut ceiling and stay ROUND numbers', () => {
     assert.ok(Number(last.label) <= cMax + 1e-9, `${g}: top tick ${last.label} past ${cMax}`);
     assert.ok(last.at <= 1 + 1e-9);
     for (const tk of ticks) {
-      // `at` is the fraction of the axis the label's value sits at — the position
+      // `at` is the fraction of the axis the label's value sits at - the position
       // and the number have to agree, or the axis lies about where 0.20 is.
       assert.ok(Math.abs(tk.at - Number(tk.label) / cMax) < 5e-3, `${g}: ${tk.label} at ${tk.at}`);
     }
@@ -147,16 +147,16 @@ test('chroma ticks follow the gamut ceiling and stay ROUND numbers', () => {
 });
 
 test('a chart scales to the gamut it charts, and only to that', () => {
-  // sliceCMax is what every surface sharing a chart's scale asks — chart, slider,
+  // sliceCMax is what every surface sharing a chart's scale asks - chart, slider,
   // typed input, ticks. Same limit, same answer; a narrower limit, a shorter axis.
   assert.equal(sliceCMax({ limit: 'srgb' }), chromaAxisMax('srgb'));
   assert.ok(sliceCMax({ limit: 'srgb' }) < sliceCMax({ limit: 'p3' }));
   assert.ok(sliceCMax({ limit: 'p3' }) < sliceCMax({ limit: 'rec2020' }));
-  // No limit means the chart's own default, Rec.2020 — never the old flat 0.4.
+  // No limit means the chart's own default, Rec.2020 - never the old flat 0.4.
   assert.equal(sliceCMax({}), chromaAxisMax('rec2020'));
   // An explicit cMax still wins: callers that need a fixed scale keep it.
   assert.equal(sliceCMax({ limit: 'srgb', cMax: 0.25 }), 0.25);
-  // Nothing about the SUBJECT enters into it — this is what keeps the axis from
+  // Nothing about the SUBJECT enters into it - this is what keeps the axis from
   // rescaling under the cursor while a dot is being dragged along it.
   const before = sliceCMax({ limit: 'p3' });
   assert.equal(oklchSliceXY('lc', { l: 0.9, c: 0.33, h: 146 }, before).x, 0.33 / before);
@@ -166,8 +166,8 @@ test('a chart scales to the gamut it charts, and only to that', () => {
 test('thinning a narrow axis keeps BOTH ends, and stays a readable scale', () => {
   // This rule has been wrong in both directions, so the test asserts the invariant
   // rather than the algorithm:
-  //   v1 dropped every EVEN index — took 0.50, the chroma ceiling, off a six-tick axis.
-  //   v2 counted back from the end to save the ceiling — and dropped index 0 on every
+  //   v1 dropped every EVEN index - took 0.50, the chroma ceiling, off a six-tick axis.
+  //   v2 counted back from the end to save the ceiling - and dropped index 0 on every
   //      even count, so the axis read `0.10 0.30 0.50` with chroma zero unlabelled.
   // The previous version of THIS test could not catch v2: it asserted `thin[n-1] ===
   // false` and a kept-length floor, and said nothing at all about the first label.
@@ -179,7 +179,7 @@ test('thinning a narrow axis keeps BOTH ends, and stays a readable scale', () =>
     const kept = thin.map((t, i) => (t ? -1 : i)).filter(i => i >= 0);
     assert.ok(kept.length >= 3, `n=${n}: ${kept.length} labels left`);
     // Roughly even: no gap may be more than one step wider than the smallest, or the
-    // survivors stop reading as a scale. (An integer grid cannot always be exact —
+    // survivors stop reading as a scale. (An integer grid cannot always be exact - 
     // for even n one gap is wider, which is the price of keeping both ends.)
     const gaps = kept.slice(1).map((k, i) => k - kept[i]!);
     assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1,

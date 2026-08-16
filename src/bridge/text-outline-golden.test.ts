@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Golden-file tests for host.text.toPath (shells/web/src/bridge/text.ts) — the
+ * Golden-file tests for host.text.toPath (shells/web/src/bridge/text.ts) - the
  * text→glyph-outline vectorisation path used on SVG/PDF export
  * (shells/web/src/bridge/export.ts). This is the highest-consequence text
  * seam in the app: get it wrong and every exported brand asset silently
  * mis-outlines.
  *
- * This is NOT a mock — it runs the real `harfbuzzjs` WASM module shaping
+ * This is NOT a mock - it runs the real `harfbuzzjs` WASM module shaping
  * real SUSE/Outfit font bytes read off disk. The only stub is `globalThis.
  * fetch`, and only as a transport shim so `toPath`'s internal `fetch(fontUrl)`
  * resolves against the repo's real font files instead of the network;
@@ -15,15 +15,15 @@
  * Run directly:            node --test shells/web/src/bridge/text-outline-golden.test.ts
  * Regenerate the goldens:  UPDATE_GOLDENS=1 node --test shells/web/src/bridge/text-outline-golden.test.ts
  *   (then re-run without UPDATE_GOLDENS to confirm the fixture is now green,
- *   and diff-review the fixture change before committing it — a golden diff
+ *   and diff-review the fixture change before committing it - a golden diff
  *   IS the review artefact for any change to this seam.)
  *
  * Portability: the STATIC cases need real SUSE static faces under
- * catalog/fonts/ttf/ (a gitignored profile VIEW — see CLAUDE.md "Content
+ * catalog/fonts/ttf/ (a gitignored profile VIEW - see CLAUDE.md "Content
  * profiles"), which a bare checkout on the `lolly-start` profile, or a public
  * CI run that never mounted brands/suse, won't have. Those cases check file
  * existence up front and `test.skip` with a logged reason rather than
- * failing when the font view isn't mounted — this file must never fail
+ * failing when the font view isn't mounted - this file must never fail
  * merely because a brand pack isn't checked out.
  *
  * The VARIABLE cases are deliberately not in that set: they read the shell's
@@ -56,7 +56,7 @@ function fontExists(rel: string): boolean {
 }
 
 // Transport-only stub: serves fontUrl fetches from disk. Real HarfBuzz + real
-// font bytes still run — nothing about shaping is faked.
+// font bytes still run - nothing about shaping is faked.
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (url: RequestInfo | URL) => {
   const rel = String(url).replace(/^\/+/, '');
@@ -79,22 +79,22 @@ const REGULAR      = 'catalog/fonts/ttf/SUSE-Regular.ttf';
 const BOLD         = 'catalog/fonts/ttf/SUSE-Bold.ttf';
 const BOLD_ITALIC  = 'catalog/fonts/ttf/SUSE-BoldItalic.ttf';
 // The actual VARIABLE master (the statics above are pre-instanced weights baked
-// from this at build time — SUSE-Regular.ttf itself carries no fvar axis).
+// from this at build time - SUSE-Regular.ttf itself carries no fvar axis).
 //
 // Read from the SHELL's own font directory, not from `catalog/fonts/variable/`.
 // The catalog path was always the wrong coupling: this case tests the fvar axis
 // in `bridge/text.ts`, which has nothing to do with which brand pack is mounted,
 // and pinning it to a gitignored profile VIEW meant the whole variable-font seam
 // silently stopped being tested on every checkout that wasn't on the `suse`
-// profile — including CI, which never mounts brands/suse. The shell serves this
+// profile - including CI, which never mounts brands/suse. The shell serves this
 // face on EVERY profile (it is the app's own standard face, alongside Outfit
 // below), so the case now runs everywhere. The bytes are the same file: this and
 // `brands/suse/catalog/fonts/variable/SUSE[wght].ttf` are identical
 // (sha256 e58dc240debae8a177d236e977e3834c6fff3883a7ad6010f098778f60904527), so
-// the committed goldens are unchanged by the repoint — verified, not assumed.
+// the committed goldens are unchanged by the repoint - verified, not assumed.
 const VARIABLE     = 'shells/web/public/fonts/SUSE[wght].ttf';
 // Platform fallback face (Outfit), shipped regardless of active brand profile
-// — used below purely as a face with disjoint unicode coverage from SUSE, to
+// - used below purely as a face with disjoint unicode coverage from SUSE, to
 // exercise the real fallbackFonts/segmentByFace branch.
 const OUTFIT_VARIABLE = 'shells/web/public/fonts/Outfit[wght].ttf';
 
@@ -105,7 +105,7 @@ const outfitAvailable = fontExists(OUTFIT_VARIABLE);
 const SKIP_NO_SUSE = suseStaticsAvailable ? false
   : `SUSE static fonts not present at ${REGULAR} etc. — this checkout's active profile ` +
     `(see profiles.json) has no SUSE fonts mounted under catalog/fonts/. Skipping.`;
-// Not profile-gated any more — the face ships with the shell this file lives in,
+// Not profile-gated any more - the face ships with the shell this file lives in,
 // so this reads as a corrupt checkout rather than as an unmounted brand pack, and
 // it must never quietly become the normal state again.
 const SKIP_NO_VARIABLE = suseVariableAvailable ? false
@@ -132,7 +132,7 @@ function round3(n: number): number {
   // against the JSON-parsed +0 (assert.deepEqual/deepStrictEqual uses SameValue,
   // which distinguishes -0 from 0). A glyph sitting exactly on the baseline is
   // a real, deterministic source of -0 (e.g. HarfBuzz Y-up 0 negated by the
-  // SVG Y-down flip in transformPath) — not an edge case worth preserving sign on.
+  // SVG Y-down flip in transformPath) - not an edge case worth preserving sign on.
   return r === 0 ? 0 : r;
 }
 
@@ -155,7 +155,7 @@ function loadFixture(): Record<string, NormalizedResult> {
 }
 
 // Regeneration accumulates here across the whole run, then is written ONCE in
-// `after` — so a fresh UPDATE_GOLDENS run always produces a fixture with
+// `after` - so a fresh UPDATE_GOLDENS run always produces a fixture with
 // exactly the cases this file defines (no stale leftover keys).
 const committed = loadFixture();
 const regenerated: Record<string, NormalizedResult> = {};
@@ -189,7 +189,7 @@ async function goldenCase(id: string, opts: ToPathOpts): Promise<NormalizedResul
 // ── golden regression cases ─────────────────────────────────────────────────
 // One entry per case = one committed { d, advanceWidth, bbox, notdef } snapshot
 // of a REAL toPath() call. A diff in any of these on a future run means the
-// real HarfBuzz shaping or the coordinate transform changed — exactly the
+// real HarfBuzz shaping or the coordinate transform changed - exactly the
 // signal this suite exists to catch.
 
 test('golden: basic Latin run, SUSE Regular 48px', { skip: SKIP_NO_SUSE }, async () => {
@@ -238,7 +238,7 @@ test('golden: blank/whitespace-only run', { skip: SKIP_NO_SUSE }, async () => {
 
 test('golden: mixed run with a SUSE-uncovered char, NO fallback face', { skip: SKIP_NO_FALLBACK }, async () => {
   // U+00B5 MICRO SIGN: absent from every SUSE static/variable face (verified
-  // against the shipped font files' cmap — see notes), present in Outfit.
+  // against the shipped font files' cmap - see notes), present in Outfit.
   await goldenCase('fallback-none-micro-48', { text: '5µm', fontUrl: REGULAR, fontSize: 48 });
 });
 
@@ -251,7 +251,7 @@ test('golden: same mixed run, WITH Outfit as a fallback face', { skip: SKIP_NO_F
 
 test('golden: two-word run with an interior space glyph, Regular 48px', { skip: SKIP_NO_SUSE }, async () => {
   // A space is the most common glyph in any real headline/sentence and carries
-  // NO outline — this drives toPath's no-path (`if (rawPath)`) and no-extents
+  // NO outline - this drives toPath's no-path (`if (rawPath)`) and no-extents
   // (`if (ext)`) falsy branches that every single-word case above skips.
   await goldenCase('two-word-space-regular-48', { text: 'Hamburg Berlin', fontUrl: REGULAR, fontSize: 48 });
 });
@@ -321,7 +321,7 @@ test('baseline & bbox sanity on an ordinary run: ascenders go negative-y, bbox i
 });
 
 test('fallbackFonts: an uncovered character drops out of notdef once a covering face is chained', { skip: SKIP_NO_FALLBACK }, async () => {
-  // '5µm' — SUSE covers the digit and 'm', but not U+00B5 MICRO SIGN.
+  // '5µm' - SUSE covers the digit and 'm', but not U+00B5 MICRO SIGN.
   const text = '5µm';
   const withoutFallback = await api.toPath({ text, fontUrl: REGULAR, fontSize: 48 });
   assert.ok((withoutFallback.notdef ?? 0) > 0, 'sanity: expected SUSE alone to miss the micro sign');
@@ -334,7 +334,7 @@ test('fallbackFonts: an uncovered character drops out of notdef once a covering 
     (withFallback.notdef ?? 0) < (withoutFallback.notdef ?? 0),
     `expected fallbackFonts to lower notdef (was ${withoutFallback.notdef}, got ${withFallback.notdef})`,
   );
-  // And the shaped output actually changed — segmentByFace really re-shaped
+  // And the shaped output actually changed - segmentByFace really re-shaped
   // the covered segment through the fallback face, not a no-op.
   assert.notEqual(withFallback.d, withoutFallback.d);
 });
@@ -354,15 +354,15 @@ test('an interior space (no-ink glyph) advances the pen and keeps bbox well-form
 });
 
 // Split from the static half below on purpose. This is the assertion with the
-// consequence — the weight a jsPDF embed silently gets — and pairing it with a
+// consequence - the weight a jsPDF embed silently gets - and pairing it with a
 // SUSE-static check used to take it down with the brand pack on every profile
 // that isn't `suse`. It now reads the shell's own master and runs everywhere.
 test('axisDefaults reports a variable font’s default instance (the jsPDF-embed weight cue)', { skip: SKIP_NO_VARIABLE }, async () => {
   // axisDefaults is an optional (v1.30) TextAPI method; this shell's impl always
-  // provides it — narrow + assert that, so a shell that dropped it fails loudly.
+  // provides it - narrow + assert that, so a shell that dropped it fails loudly.
   const axisDefaults = api.axisDefaults;
   assert.ok(axisDefaults, 'this shell must implement host.text.axisDefaults');
-  // The shipped SUSE[wght] master’s fvar default is wght=100 — the weight a
+  // The shipped SUSE[wght] master’s fvar default is wght=100 - the weight a
   // jsPDF embed (no axis control) will actually get. A change here means that
   // embed default moved and must be reviewed deliberately, not silently.
   assert.deepEqual(await axisDefaults(VARIABLE), { wght: 100 });
@@ -393,7 +393,7 @@ test('an unparseable variation/feature string is dropped, not thrown (a caller t
 
 test('a fallback face is instanced at its OWN variations (fallbackFonts[].variations is honoured)', { skip: SKIP_NO_FALLBACK }, async () => {
   // Outfit is a variable face and the micro sign is shaped THROUGH it, so the
-  // fallback entry’s own wght must change the outline — otherwise a fallback
+  // fallback entry’s own wght must change the outline - otherwise a fallback
   // face’s axis settings are being silently ignored.
   const text = '5µm';
   const light = await api.toPath({ text, fontUrl: REGULAR, fontSize: 48, fallbackFonts: [{ fontUrl: OUTFIT_VARIABLE, variations: ['wght=100'] }] });

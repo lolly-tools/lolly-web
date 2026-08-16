@@ -48,7 +48,7 @@ const GAINMAP_JPEG = assembleGainMapJpeg(minimalJpeg([1, 2, 3]), minimalJpeg([4,
   useBaseColorSpace: true,
 });
 
-/** An ordinary JPEG with a zip glued on after EOI — nothing declares it. */
+/** An ordinary JPEG with a zip glued on after EOI - nothing declares it. */
 function jpegWithZipTrailer(): Uint8Array {
   const jpeg = minimalJpeg([1, 2, 3]);
   const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
@@ -74,7 +74,7 @@ test('valid: an HDR gain map is disclosed, not accused', () => {
   assert.ok(!html.includes('valid-wm--warn'), 'the callout must not be styled as a warning');
   assert.ok(html.includes('Appended image or video data'), 'expected-payload copy must not say "video" alone');
   assert.ok(!html.includes('Appended data found'), 'that is the unexpected-payload heading');
-  // Still offered for inspection — reveal, never suppress.
+  // Still offered for inspection - reveal, never suppress.
   assert.ok(html.includes('data-payload-view="0"') && html.includes('data-payload-download="0"'));
 
   // 3. A downloaded gain map lands as a JPEG, because it is one.
@@ -112,7 +112,7 @@ test('valid: NEGATIVE CONTROL: an undeclared trailer still warns', () => {
 test('valid: a forged record cannot buy an exemption with a kind string', () => {
   // The exemption is evidence-based: `declared` comes from a parsed MPF index
   // the engine re-verified against the real buffer. Claiming the gain-map kind
-  // on an UNdeclared trailer must not silence the pip — otherwise the guard
+  // on an UNdeclared trailer must not silence the pip - otherwise the guard
   // would be a blanket suppression keyed on an attacker-chosen string.
   const forged: FileMetadata['appended'] = {
     bytes: 999, kind: 'HDR gain map (ISO 21496-1 / Ultra HDR)', offset: 20, declared: false,
