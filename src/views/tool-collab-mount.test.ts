@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * INERTNESS: mounting a tool must cost a single-player user nothing to be a collab
- * (plan 100 §4.6, §5, §11.14).
+ * (plan 100 section 4.6, section 5, section 11.14).
  *
  * `views/tool.ts` now contains one block that can build an entire presence stack - a
  * session, an op wrapper, an overlay layer, two frame-driven components, a stage pill
@@ -86,7 +86,7 @@ test('the presence stack is acquired exactly once, and that is the only entry po
   // Positional args, not a context literal: the dormant path must allocate nothing.
   assert.equal(/acquireCollabSession\(\s*\{/.test(CODE), false,
     'a context OBJECT at the call site would be a per-mount allocation charged to every '
-    + 'single-player user for a value nobody reads (§11.14)');
+    + 'single-player user for a value nobody reads (section 11.14)');
 });
 
 test('the presence chunk is reached ONLY by a lazy import, inside the guard', () => {
@@ -111,8 +111,8 @@ test('nothing but the seam is statically imported from the collab stack', () => 
       '../lib/collab-plumbing.ts',
       '../lib/collab-session-source.ts',
       // Added 2026-08-09 with the three one-shot hand-offs a live collab arms before this
-      // view is entered: the ephemeral `host.state` (§11.17), and the model + slot carried
-      // across the inviter's forced remount (§6.2a). The rule this list enforces is "a
+      // view is entered: the ephemeral `host.state` (section 11.17), and the model + slot carried
+      // across the inviter's forced remount (section 6.2a). The rule this list enforces is "a
       // collab costs a single-player build nothing", and this import costs it nothing:
       // `main.ts` already imports the SAME module on the boot path for
       // `installLiveCollabMount()`, so it is in the entry chunk with or without this line
@@ -203,12 +203,12 @@ test('the composition is handed the stage to mount in and the canvas to measure'
   assert.match(BLOCK, /canvas: contentEl,/, 'the render surface is passed to be READ');
   assert.match(BLOCK, /sidebar: inputsEl,/,
     'one delegated focusin/focusout pair on #tool-inputs is what makes focus the default '
-    + 'presence primitive on every tool (§4.1)');
+    + 'presence primitive on every tool (section 4.1)');
   assert.match(BLOCK, /runtime,/);
   assert.match(BLOCK, /toolManifest: tool\.manifest,/);
   assert.match(BLOCK, /^\s*host,$/m, 'the mount packs an outgoing beam from THIS mount\'s host');
   assert.match(BLOCK, /^\s*libraryHost,$/m,
-    'and lands a received one in the un-swapped library (§6.4) — without this an acceptor '
+    'and lands a received one in the un-swapped library (section 6.4) — without this an acceptor '
     + 'kept the assets and lost the session they belong to, while the toast said both landed');
   assert.match(BLOCK, /exportSettings: \(\) => actionsApi\?\.sessionState\?\.\(\) \?\? null,/,
     'the `__export_*` markers live in the export bar\'s DOM and nowhere else, so a beamed '
@@ -222,7 +222,7 @@ test('the composition is handed the stage to mount in and the canvas to measure'
 
 test('the library host is captured BEFORE the acceptor swap, and used by nothing else', () => {
   // The ordering IS the property: `views/tool.ts` replaces `host.state` with a memory
-  // bridge for an acceptor (§11.17), so a reference taken after that line is the
+  // bridge for an acceptor (section 11.17), so a reference taken after that line is the
   // ephemeral store wearing the library's name - and a beam the human accepted would
   // land in a store that dies with the mount.
   const capture = CODE.indexOf('const libraryHost = host;');
@@ -235,5 +235,5 @@ test('the library host is captured BEFORE the acceptor swap, and used by nothing
   // would be a save path routing around the interception the swap exists to be.
   assert.equal([...CODE.matchAll(/\blibraryHost\b/g)].length, 2,
     'the un-swapped bridge is for the beam\'s INGEST and nothing else — every other save '
-    + 'in this view must go through `host`, which is what §11.17 intercepts');
+    + 'in this view must go through `host`, which is what section 11.17 intercepts');
 });

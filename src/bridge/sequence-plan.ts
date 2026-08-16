@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-plan.ts - the PURE PLANNER behind deterministic sequence export
- * (Fable timeline, phase 3 §0.0 "DESIGN REQUIREMENT added by the spike").
+ * (Fable timeline, phase 3 section 0.0 "DESIGN REQUIREMENT added by the spike").
  *
  * Node cannot run WebCodecs, and Playwright's bundled Chromium has no proprietary
  * codecs. So anything that lives inside the compositor is browser-only and, in
@@ -37,7 +37,7 @@
  */
 
 import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
-// THE PARITY LAW, extended to depth (plans/104 §4): every keyframe and projection
+// THE PARITY LAW, extended to depth (plans/104 section 4): every keyframe and projection
 // FORMULA lives in the engine and is imported. Never restate it here, and never restate it in
 // sequence-dom.ts. The two evaluators share this module's adapters, and those adapters
 // share the engine's maths. So a drift needs a deliberate edit in one place, not
@@ -88,7 +88,7 @@ export const EMPTY_KF_TRACK: KfTrack = parseKf('');
  *
  * Bounded and cleared wholesale on overflow, the `EASE_PTS_CACHE` posture: the key
  * is untrusted text from a hand-edited URL, so it must not be able to grow without
- * limit. Per-thread by construction (module state), which is exactly the §5.1 rule - 
+ * limit. Per-thread by construction (module state), which is exactly the section 5.1 rule - 
  * the worker rebuilds its own from the strings it was handed.
  */
 const KF_CACHE = new Map<string, KfTrack>();
@@ -110,7 +110,7 @@ export function kfTrackOf(raw: string | null | undefined): KfTrack {
  *
  * Clamped with the ENGINE's `KF_Z_FIELD_CLAMP` rather than a re-typed −300…900: the
  * field clamp and the (much wider) `kf` wire clamp are deliberately different numbers
- * (§5.1), and a second copy of either is how they stop being the same number.
+ * (section 5.1), and a second copy of either is how they stop being the same number.
  */
 export function readDepthZ(raw: string | null | undefined): number {
   const v = parseFloat(raw ?? '');
@@ -122,7 +122,7 @@ export function readDepthZ(raw: string | null | undefined): number {
  * Split an authored inline `filter` into its blur radius and everything else.
  *
  * The tool hook writes ONE declaration - `filter: blur(4.5px) drop-shadow(...)`,
- * blur first so the shadow follows the blurred silhouette - and from §5.5 the PLANNER
+ * blur first so the shadow follows the blurred silhouette - and from section 5.5 the PLANNER
  * owns the total blur (authored + the kf `b` channel + depth-of-field). So the two
  * halves have to come apart: the number joins the fold, the remainder (today: the
  * `shadow`/`depth` drop-shadow) is carried through untouched and re-composed after it.
@@ -178,7 +178,7 @@ export interface SeqLayer {
   exitEase: string;
   lane: '' | 'seq';
   /**
-   * `camera` is the plan-104 §5.4 non-visual marker: a timeline citizen with no
+   * `camera` is the plan-104 section 5.4 non-visual marker: a timeline citizen with no
    * picture at all, exactly like `audio`. It contributes no plate, no draw and no
    * pixel; it exists so a scene can carry a pose over time.
    */
@@ -196,14 +196,14 @@ export interface SeqLayer {
   /**
    * The box's DEPTH - px above (positive) or below (negative) the stage plane
    * (`data-t-z`), already held to the engine's field clamp. 0 is the flat board, and
-   * a `z` token in the keyframe track REPLACES it for that segment (§5.2).
+   * a `z` token in the keyframe track REPLACES it for that segment (section 5.2).
    */
   z: number;
   /** The parsed keyframe track (`data-t-kf`), empty when the box is not keyframed. */
   kf: KfTrack;
   /**
    * The AUTHORED blur radius, px, lifted out of the inline `filter` - the base the
-   * kf `b` channel and depth-of-field add over (§5.5: the planner owns the total).
+   * kf `b` channel and depth-of-field add over (section 5.5: the planner owns the total).
    */
   blur: number;
   /**
@@ -291,7 +291,7 @@ export function layerKind(el: HTMLElement): SeqLayer['kind'] {
   // child. Check this first, before the descendant probes below, so the frame is never
   // mis-classified by what it holds. (Design, plan 92.)
   if (el.getAttribute?.('data-pdf-page') != null) return 'static';
-  // Check for a CAMERA (plan 104 §5.4) before every media probe. This mirrors the hooks' own rule
+  // Check for a CAMERA (plan 104 section 5.4) before every media probe. This mirrors the hooks' own rule
   // that a camera is keyed off `kind` ALONE: the marker div is all a camera box ever
   // contains, so nothing it might pick up later can re-classify it. Detection uses the
   // marker, not the class name, because `[data-cam]` is what the hooks promise both
@@ -320,7 +320,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
   const exit = el.getAttribute?.('data-t-exit') ?? null;
   const total = Number.isFinite(totalMs) && totalMs > 0 ? totalMs : 0;
   // Split the authored `filter` HERE, once per parse, not per frame:
-  // the blur radius goes into the fold; the rest passes through untouched (§5.5).
+  // the blur radius goes into the fold; the rest passes through untouched (section 5.5).
   const fx = splitFilterBlur(styleProp(el, 'filter'));
   return {
     el,
@@ -463,14 +463,14 @@ export function applyDurationOverride(
   return withTotalMs(stage, secs * 1000);
 }
 
-// ── the camera view and the §4.1 fold (shared by BOTH evaluators) ───────────
+// ── the camera view and the section 4.1 fold (shared by BOTH evaluators) ───────────
 
 /**
  * What a stage looks THROUGH, beyond its layers: its native size and any cameras.
  *
  * Optional on every entry point, and an absent env resolves to the DEFAULT camera
  * (P = 1200, pose 0) over a zero-sized stage - which projects a z = 0 layer at
- * eff = 1, i.e. exactly nothing. That is the §5.4 rule stated as a default rather
+ * eff = 1, i.e. exactly nothing. That is the section 5.4 rule stated as a default rather
  * than as a special case: "no camera box → the DEFAULT camera", never a literal
  * identity, because an identity would swallow z.
  */
@@ -488,7 +488,7 @@ export interface SeqPlanEnv {
 }
 
 /**
- * The camera clips a parsed stage carries (§5.4), derived from its own layers.
+ * The camera clips a parsed stage carries (section 5.4), derived from its own layers.
  *
  * DERIVED, not re-queried: a `camera` layer is an ordinary `.lolly-box` with a
  * `[data-cam]` marker inside it, already parsed into `SeqLayer` by `readLayer` - so
@@ -497,7 +497,7 @@ export interface SeqPlanEnv {
  * the executor reconstructs the identical camera track from the identical numbers
  * instead of being sent a second, separately-serialised copy that could disagree.
  *
- * Windows are BUTTED, half-open `[start, end)` - cuts, not blends (§5.4) - and an
+ * Windows are BUTTED, half-open `[start, end)` - cuts, not blends (section 5.4) - and an
  * open-ended camera (no authored `data-t-dur`: the "Always on" scenery chip, or a
  * clip that simply runs to the end) has no end at all. Latest-in-array wins, and DOM
  * order is array order, so two overlapping cameras cut to the later one.
@@ -523,7 +523,7 @@ export function stageCameras(layers: readonly SeqLayer[] | null | undefined): Kf
 
 /**
  * Does a camera exist that MOVES - i.e. that makes a layer's effects vary from frame
- * to frame, so its plate cannot carry them (§5.5, P1 obligation 1)?
+ * to frame, so its plate cannot carry them (section 5.5, P1 obligation 1)?
  *
  * Asked ONCE per render, over the whole camera set, because a plate is shot once for
  * the whole render while `projecting` is a per-frame question. A camera that is
@@ -557,7 +557,7 @@ export function camerasMove(cameras: readonly KfCameraClip[] | null | undefined)
 
 /**
  * Does any camera in this set author a TILT, and if so, which channel and how much
- * (P2, §6.4)?
+ * (P2, section 6.4)?
  *
  * This is the gate `renderSequence` branches on. It has the same COARSE shape as `camerasMove`
  * for the same reason: it is asked once for a whole render, over the whole camera set,
@@ -565,7 +565,7 @@ export function camerasMove(cameras: readonly KfCameraClip[] | null | undefined)
  * Any non-zero `rx`/`ry` anywhere, in a base pose or in any keyframe of any camera,
  * makes the render a tilted one, even if the angle is zero for most of its length.
  *
- * It returns the TRIGGER rather than a boolean because §6.4 asks for the gate to be
+ * It returns the TRIGGER rather than a boolean because section 6.4 asks for the gate to be
  * "logged with the trigger": a user whose export just took a ten-times-slower path
  * should see the name of the channel that caused it.
  */
@@ -609,7 +609,7 @@ export function planCameraView(env: SeqPlanEnv | null | undefined, tMs: number):
 /**
  * True when a view moves something that is NOT lifted, that is, when even a z = 0 box
  * has to be projected. A pan/dolly/aperture does this; perspective strength alone does
- * not (§4.3: `eff(z = camZ) === 1` for every `p`, so on a flat scene `p` is a no-op).
+ * not (section 4.3: `eff(z = camZ) === 1` for every `p`, so on a flat scene `p` is a no-op).
  *
  * This check is for cost and byte-identity, not correctness. When it is false, a stage
  * only projects the boxes that authored depth themselves. Every other
@@ -634,13 +634,13 @@ export interface KfFoldInput {
   tr: { dx: number; dy: number; sc: number; alpha: number; rot: number };
   /** The keyframe pose at this instant (`{}` when the box has no track). */
   pose: KfPose;
-  /** The box's `z` FIELD. A `z` token in the pose replaces it (§5.2). */
+  /** The box's `z` FIELD. A `z` token in the pose replaces it (section 5.2). */
   zField: number;
   /** The box's authored blur radius, px. */
   authoredBlur: number;
   /**
    * The box's AUTHORED size, stage-native px - the base a `w`/`h` token replaces
-   * (§5.2, P1). Optional so every pre-w/h caller keeps its exact behaviour: absent
+   * (section 5.2, P1). Optional so every pre-w/h caller keeps its exact behaviour: absent
    * means "no size to tween", and the fold hands back the same numbers it always did.
    */
   boxW?: number;
@@ -660,11 +660,11 @@ export interface KfFold {
   alpha: number;
   /** TOTAL blur, px at stage-native scale: authored + keyframe `b` + depth-of-field. */
   blur: number;
-  /** The depth this layer resolved to - the projection input AND the §4.2 paint-order key. */
+  /** The depth this layer resolved to - the projection input AND the section 4.2 paint-order key. */
   z: number;
   /**
    * The layer's RESOLVED size at this instant, stage-native px: its authored size
-   * unless a `w`/`h` token replaced it (§5.2, P1). Equal to the authored size on
+   * unless a `w`/`h` token replaced it (section 5.2, P1). Equal to the authored size on
    * every layer that keyframes no size, which is the byte-identity floor - the DOM
    * writes no `width`/`height` and the compositor draws the same rect it always did.
    */
@@ -685,17 +685,17 @@ export interface KfFold {
    *
    * The CANVAS compositor has no way to draw this: `setTransform` is affine by
    * definition. That is why a tilted export is captured off the live DOM instead
-   * (§6.4's P2a capture tier), gated in `renderSequence` before a plate is shot.
+   * (section 6.4's P2a capture tier), gated in `renderSequence` before a plate is shot.
    */
   m3: KfMatrix3 | null;
 }
 
 /**
- * The §4.1 fold, assembled once for both evaluators.
+ * The section 4.1 fold, assembled once for both evaluators.
  *
  * The maths is the engine's (`projectLayer`, `dofBlur`); what lives here is the
  * ORDER - authored → transition → keyframe → camera projection - and the channel
- * semantics of §5.2: `x/y` fold into the projected offset, `s` multiplies the
+ * semantics of section 5.2: `x/y` fold into the projected offset, `s` multiplies the
  * transition scale, `r` adds to the rotation, `o` multiplies the alpha, `b` adds over
  * the authored blur, and a keyed `z` replaces the box's own field for that segment.
  *
@@ -714,7 +714,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   const z = typeof pose.z === 'number' ? pose.z : inp.zField;
   const dxK = pose.x ?? 0;
   const dyK = pose.y ?? 0;
-  // SIZE, and it moves the anchor (§5.2, P1). `w`/`h` are ABSOLUTE px that replace the
+  // SIZE, and it moves the anchor (section 5.2, P1). `w`/`h` are ABSOLUTE px that replace the
   // box's own size for their segment, and a box grows from its top-left in both
   // evaluators - the DOM because `left`/`top` are what is authored and `width`/`height`
   // are what is written, the canvas because `rect.x/y` is the draw origin. So the
@@ -752,7 +752,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   // construction: with no angle authored, `flat` is the expression that shipped.
   const flat = !cameraTilted(view) && proj.scale === 1 && view.x === 0 && view.y === 0;
   // DOF IS A SCREEN-SPACE NUMBER; THE OTHER TWO ARE LAYER-SPACE ONES. `dofBlur`
-  // already carries `eff(z)·eff(f)` (§4.4) and is documented as "px at stage-native
+  // already carries `eff(z)·eff(f)` (section 4.4) and is documented as "px at stage-native
   // scale" - i.e. what the viewer sees. But BOTH executors apply `PlanItem.blur` in
   // the layer's own space and then magnify the result by `item.scale`, which contains
   // eff: the canvas blurs a plate-resolution scratch and draws it under
@@ -761,7 +761,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   // they did before this feature existed, and what a CSS blur has always done), while
   // the DOF term would be magnified by eff a SECOND time - eff², up to 100× at the
   // guard. Dividing it out here, in the one function both evaluators call, is what
-  // makes the number the viewer sees the number §4.4 defines.
+  // makes the number the viewer sees the number section 4.4 defines.
   const dof = proj.scale > 0 ? dofBlur(view, z) / proj.scale : dofBlur(view, z);
   return {
     dx: flat ? tr.dx + dxK : proj.dx,
@@ -779,7 +779,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
 }
 
 /**
- * Does this layer take part in the projection at all (§5.4 exclusions)?
+ * Does this layer take part in the projection at all (section 5.4 exclusions)?
  *
  * Audio beds and camera markers paint nothing, and a `[data-pdf-page]` frame page is
  * out of scope for v1 - "camera + kf apply only to boxes on a `[data-sequence]`
@@ -794,7 +794,7 @@ export function isProjectable(layer: Pick<SeqLayer, 'kind' | 'frameScene'>): boo
 /**
  * Does the COMPOSITOR own this layer's filter, or does its plate keep it?
  *
- * §5.5 hands the whole blur to the planner - plate shot clean, `PlanItem.blur`
+ * section 5.5 hands the whole blur to the planner - plate shot clean, `PlanItem.blur`
  * applied once by the executor. That is right for a layer with depth, and it is a
  * REGRESSION for one without: `shadow: content` is pre-104 vocabulary that the hooks
  * have always emitted as `filter: drop-shadow(...)`, and a document using it, with no
@@ -844,7 +844,7 @@ export interface PlanItem {
   /**
    * TOTAL blur radius, px at stage-native scale (× S at export): the box's authored
    * blur + the keyframe `b` channel + depth-of-field. The PLANNER owns the whole
-   * number (§5.5) - an executor applies exactly this and nothing else, and a plate
+   * number (section 5.5) - an executor applies exactly this and nothing else, and a plate
    * shot with the element's own filter still on it would then blur twice.
    *
    * Equals `item.layer.blur` on every layer that authors no depth, which is what
@@ -853,7 +853,7 @@ export interface PlanItem {
   blur: number;
   /**
    * The layer's DRAW size at this instant, stage-native px - its authored
-   * `rect.w`/`rect.h` unless the track keyed `w`/`h` (§5.2, P1). An executor sizes
+   * `rect.w`/`rect.h` unless the track keyed `w`/`h` (section 5.2, P1). An executor sizes
    * and anchors from THESE, not from the rect, so a stretched box occupies
    * `[rect.x, rect.x + w)` exactly as it does in the reflowed DOM.
    */
@@ -863,12 +863,12 @@ export interface PlanItem {
    * True when `w`/`h` came from the track. The compositor's reflow flag: a sized
    * layer's plate must be re-captured per frame (the live-raster path), because a
    * stretched plate is a stretched picture and the preview REFLOWS - text rewraps,
-   * a border stays one pixel. Parity beats speed (§5.2).
+   * a border stays one pixel. Parity beats speed (section 5.2).
    */
   sized: boolean;
   /**
    * The depth this layer resolved to at this instant - the `z` field unless a `z`
-   * token in the track overrode it. This is the §4.2 paint-order key: the plan comes
+   * token in the track overrode it. This is the section 4.2 paint-order key: the plan comes
    * back sorted by it (ascending - higher z is nearer the camera, so it paints last).
    */
   resolvedZ: number;
@@ -982,7 +982,7 @@ function transitionOf(layer: SeqLayer, tMs: number, extendMs: number, xfadeEnter
  * Everything visible at `tMs`, in PAINT order.
  *
  * Paint order is DOM order until depth is in play, and resolved-z order once it is
- * (§4.2): affine-per-layer only reproduces a true perspective render if draw order is
+ * (section 4.2): affine-per-layer only reproduces a true perspective render if draw order is
  * depth order, and z is keyframable, so two layers' z curves can cross mid-move. The
  * sort is ascending (higher z is nearer the camera → painted last), stable, with DOM
  * order as the tiebreak - and it is SKIPPED entirely when every layer resolved to
@@ -1002,7 +1002,7 @@ export function sequenceDrawPlan(
   // would let two layers in the same frame disagree about where the camera is.
   const view = planCameraView(env, t);
   const moving = viewMoves(view);
-  // §5.4, FRAMES-AS-SCENES IS OUT OF SCOPE FOR DEPTH IN v1 - the WHOLE document, not
+  // section 5.4, FRAMES-AS-SCENES IS OUT OF SCOPE FOR DEPTH IN v1 - the WHOLE document, not
   // only its pages. `isProjectable` already refuses a `[data-pdf-page]` layer, but a
   // frames document's ordinary boxes sit on the same stage, and the two evaluators are
   // told DIFFERENT stage sizes there: the exporter sizes its output to the first timed
@@ -1040,7 +1040,7 @@ export function sequenceDrawPlan(
     const projecting = !framesDoc && isProjectable(layer)
       && (moving || layer.z !== 0 || layer.kf.length > 0);
     // `t` is the SEQUENCE clock; a keyframe track runs on LOCAL box time, unscaled - 
-    // the same timebase as enterMs (§5.1). Speed remaps media, never keyframes.
+    // the same timebase as enterMs (section 5.1). Speed remaps media, never keyframes.
     const fold = projecting
       ? foldKfPose({
         view,
@@ -1078,7 +1078,7 @@ export function sequenceDrawPlan(
       m3: fold.m3,
     });
   }
-  // §4.2: paint order IS depth order once anything is lifted. `Array.prototype.sort`
+  // section 4.2: paint order IS depth order once anything is lifted. `Array.prototype.sort`
   // is stable, and `out` was built in DOM order, so the explicit idx tiebreak is
   // belt-and-braces rather than essential - but it says out loud which order two
   // layers at the same depth keep.
@@ -1165,7 +1165,7 @@ export function activeFrameWindow(layer: SeqLayer, grid: number[], extraMs = 0):
     if (first < 0) first = i;
     last = i;
     // `static` has nothing to seek - and neither has a `camera`, which is a pose over
-    // time and not a source at all (§5.4).
+    // time and not a source at all (section 5.4).
     if (layer.kind !== 'static' && layer.kind !== 'camera') {
       span.push((layer.clipInMs + (t - layer.startMs) * layer.speed) / 1000);
     }
@@ -1198,7 +1198,7 @@ export const SEQ_ERROR_CODES = Object.freeze([
   'SEQ_NO_CODEC',
   'SEQ_TOO_HEAVY',
   'SEQ_ABORTED',
-  // P2 (plans/104 §6.4). A tilted camera is composited by CAPTURING the live DOM, and
+  // P2 (plans/104 section 6.4). A tilted camera is composited by CAPTURING the live DOM, and
   // dom-to-image cannot serialise a playing `<video>` - the freeze would bake one frame
   // of it under the whole move. That combination refuses with a visible notice rather
   // than exporting something wrong, and it is its own code because it is neither a

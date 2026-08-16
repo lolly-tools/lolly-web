@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight settings provider, over the REAL registries (plans/99 §2b) - 
+ * The spotlight settings provider, over the REAL registries (plans/99 section 2b) - 
  * no fixtures: NAV_SECTIONS, the feature-flag consts and DASH_SECTIONS are the
  * data the shipped provider searches, so these tests double as drift guards
  * (a renamed section that stops matching its own label fails here).

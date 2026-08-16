@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * timeline-panel.ts - the docked timeline editor for a `boxes` block that carries the
- * phase-1 time model (plans/53-fable-timeline-phase-2.md §2).
+ * phase-1 time model (plans/53-fable-timeline-phase-2.md section 2).
  *
  * Three hard rules shape everything below, and every one of them exists because the
  * alternative has already bitten this codebase:
@@ -83,7 +83,7 @@ import {
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
   snapTime, trimClip,
-  // The keyframe surface's arithmetic (plans/104 §8). EVERY number the diamonds, the
+  // The keyframe surface's arithmetic (plans/104 section 8). EVERY number the diamonds, the
   // latch and the CRUD list need is one of these - the panel converts a pointer to an
   // intent and hands the intent over.
   clearKfTrack, kfBoxTrack, kfDiamondAt, kfDiamondTimes, kfDuplicateMs, kfFormatChannel,
@@ -224,7 +224,7 @@ export interface TimelinePanel {
   promote(id: string, want?: { start?: number; dur?: number | null }): void;
   demote(id: string): void;
   /**
-   * PLAYHEAD-CONTEXTUAL WRITES, the canvas half (plans/104 §8).
+   * PLAYHEAD-CONTEXTUAL WRITES, the canvas half (plans/104 section 8).
    *
    * The panel owns the clock and therefore owns the only honest answer to "is this
    * box parked on one of its own keyframes right now". free-canvas asks that at its
@@ -244,11 +244,11 @@ export interface TimelinePanel {
    * the pose the box is already striking (a drag's dx/dy, a rotate's degrees), `'set'`
    * writes the value itself. Resize is the one canvas gesture that is absolute - a
    * dragged handle produces the box's new WIDTH, not a change to it - so it is the
-   * caller that knows which reading applies (§5.2, the P1 w/h reversal).
+   * caller that knows which reading applies (section 5.2, the P1 w/h reversal).
    */
   kfPoseWrite(boxes: Box[], ids: readonly string[], delta: KfPose, mode?: 'add' | 'set'): Box[];
   /**
-   * CAMERA MODE, entered by SELECTION and never by a toggle (plans/104 §8): the id of
+   * CAMERA MODE, entered by SELECTION and never by a toggle (plans/104 section 8): the id of
    * the camera a canvas gesture is currently aimed at, or '' when none is.
    *
    * True when the panel is open, exactly one box is selected, it is a camera, and the
@@ -263,7 +263,7 @@ export interface TimelinePanel {
    * The camera gesture's delta, folded into the camera's own track - pure, like
    * `kfPoseWrite`, so the caller commits once on release (a drag) or once per pause (a
    * wheel). Returns the array unchanged when no camera is armed, or when the camera
-   * has an authored MOVE and the playhead is off every diamond (§8's latch, applied to
+   * has an authored MOVE and the playhead is off every diamond (section 8's latch, applied to
    * the camera: see `cameraPoseAtSec`).
    */
   cameraWrite(boxes: Box[], delta: KfPose): Box[];
@@ -271,13 +271,13 @@ export interface TimelinePanel {
    * The tilt the camera WOULD hold if a shift-drag of `(dRx, dRy)` degrees committed now
    * - the current pose plus the delta, clamped to the control band (`KF_TILT_CONTROL`),
    * read at the latch. Pure; null when no camera is armed. Drives the canvas tilt HUD: a
-   * camera drag previews NOTHING on the stage (§8 commits on release), so this absolute
+   * camera drag previews NOTHING on the stage (section 8 commits on release), so this absolute
    * readout is the only live feedback the gesture has, and the clamp lives here so the
    * HUD can never show an angle the write would not actually reach.
    */
   cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null;
   /**
-   * "+Keyframe", the ACTION (plans/104 §8's M2.5 revision: "TWO homes, one action").
+   * "+Keyframe", the ACTION (plans/104 section 8's M2.5 revision: "TWO homes, one action").
    *
    * The panel's own transport button, the canvas contextual bar's diamond and the `K`
    * shortcut are three doors onto this one function - there is no second copy of the
@@ -304,7 +304,7 @@ export interface TimelinePanel {
 
 // ── tunables ──────────────────────────────────────────────────────────────────
 
-/** Panel height floor, px (§2 docking clamp). */
+/** Panel height floor, px (section 2 docking clamp). */
 export const MIN_PANEL_H = 112;
 /** Panel height on first open, px. Session-local; never persisted. */
 export const DEFAULT_PANEL_H = 190;
@@ -369,10 +369,10 @@ const MIN_FRAME_PX = 40;
 export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000 };
 
 /**
- * The depth SLIDER's travel (plans/104 §5.3). NOT a clamp: `KF_Z_FIELD_CLAMP` is the
+ * The depth SLIDER's travel (plans/104 section 5.3). NOT a clamp: `KF_Z_FIELD_CLAMP` is the
  * engine's, it is what every write is held to, and it is deliberately wider than this.
  *
- * 0–300 is the band §5.3 calls tasteful - at P = 1200 it spans eff 1.00–1.33, with the
+ * 0–300 is the band section 5.3 calls tasteful - at P = 1200 it spans eff 1.00–1.33, with the
  * 1.05–1.2 lift landing mid-travel and "Lift layers"' 0/40/80 stagger in the first
  * fifth. Deeper moves belong to the camera dolly, not to a per-box depth, so the slider
  * stops where taste does while the NUMBER beside it still accepts the whole field range
@@ -411,7 +411,7 @@ export const KF_TILT_CONTROL: readonly [number, number] = Object.freeze([-75, 75
 const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const);
 
 /**
- * The camera moves that write keyframes (plans/104 §8, §12 Q8) - stored EXPANDED.
+ * The camera moves that write keyframes (plans/104 section 8, section 12 Q8) - stored EXPANDED.
  *
  * Each `track` is the plan's own literal wire sketch, parsed by the ENGINE's `parseKf`
  * on the way in and re-serialised on the way out, so a preset is indistinguishable from
@@ -435,17 +435,17 @@ const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const)
  * out is a different shot), which is a product call and not a P2 one. Flagged for Andy
  * with the numbers rather than changed in passing.
  *
- * ⚑ THE DOLLY SIGN IS INVERTED FROM §8's SKETCHES, and deliberately. The engine's own
+ * ⚑ THE DOLLY SIGN IS INVERTED FROM section 8's SKETCHES, and deliberately. The engine's own
  * projection is `eff = P / (P − (z − camZ))` (`projectDepth`), so a camera whose `z`
  * GROWS is a camera moving AWAY: a layer at z = 0 under camZ = 220 renders at
- * eff = 1200/1420 = 0.845, i.e. smaller. §8's sketch for "Push in" ends at z 220 and
+ * eff = 1200/1420 = 0.845, i.e. smaller. section 8's sketch for "Push in" ends at z 220 and
  * would therefore pull back, and "Pull back" would push in - the two sketches are each
- * other's. §4.3's own Vertigo derivation agrees with the formula and not with the
+ * other's. section 4.3's own Vertigo derivation agrees with the formula and not with the
  * sketches (`camZ = P·(1/c − 1) + z_s` puts camZ BELOW the subject plane to magnify
  * it, and names camZ ≈ −600 for the recipe), so the sketch is what is wrong here. The
  * FORM of every preset is kept exactly as authored - the same instants, the same
  * eases, the same start-or-end-at-rest structure - with the dolly's sign flipped so
- * that each move does what its name says. Flagged for the plan to correct §8.
+ * that each move does what its name says. Flagged for the plan to correct section 8.
  *
  * The labels go through `t()` HERE, at module scope, for the reason PANEL_SHORTCUTS
  * states: literal `t('…')` call sites are what scripts/translate.ts's corpus scan
@@ -470,7 +470,7 @@ export const KF_CAMERA_PRESETS: ReadonlyArray<{ id: string; label: string; track
   { id: 'reveal', label: t('Reveal'), track: 't0_z-260_a0.5_f200*t3500_eo_z0_a0', icon: 'eye' },
   // ── P2: the two tilt moves ────────────────────────────────────────────────
   //
-  // SURFACE GLIDE is the signature move. §9's re-sequencing verdict said: "what I'm
+  // SURFACE GLIDE is the signature move. section 9's re-sequencing verdict said: "what I'm
   // seeing show up are all top-down views, not angled glides along the surface of
   // the image, POV style". The acceptance phrase was "to feel INSIDE the landscape
   // of the image". The move opens down among the lifted surfaces: `rx −40` pitches
@@ -602,7 +602,7 @@ const CHIP_SEP = ' · ';
 /**
  * The Animate segment's WHOLE collapsed reading: the two kind names, `Rise · Fade`.
  *
- * §8's M2.6 pass, verbatim: "Chips must not duplicate the popup's contents… ANIMATE's
+ * section 8's M2.6 pass, verbatim: "Chips must not duplicate the popup's contents… ANIMATE's
  * chip drops the ms/curve dump - kind names only". M2.5 printed
  * `In: Rise · 400ms · Ease out` beside `Out: Cut (no animation)`, which is every field
  * of the group re-rendered as text on the door of the group - so the door taught the
@@ -1096,7 +1096,7 @@ function writeOnionPref(pref: OnionPref | null): void {
 }
 
 /**
- * Disclosure, since §8's M2.5 revision: the inspector strip carries only the SEGMENTS
+ * Disclosure, since section 8's M2.5 revision: the inspector strip carries only the SEGMENTS
  * (icon + label + the resolved value chips, at a constant width), and an open group's
  * body is a body-mounted popover ABOVE the transport.
  *
@@ -1108,7 +1108,7 @@ function writeOnionPref(pref: OnionPref | null): void {
  *   • DEFAULT ALL-SHUT. Nothing auto-discloses on selection: a popover that opens
  *     itself over the canvas because you clicked a box is a popover you have to close.
  *   • Still UI state and still session-local - it lives in `openGroup` inside the panel
- *     closure below, never in the model (plans/104 §8: "never a model field") and never
+ *     closure below, never in the model (plans/104 section 8: "never a model field") and never
  *     in storage. A group left open is a working posture, not a setting.
  */
 
@@ -1243,9 +1243,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   scriptBtn.hidden = true;   // decided below, beside the mic's check
 
   /**
-   * "+Keyframe" - one of its TWO homes (plans/104 §8's M2.5 revision).
+   * "+Keyframe" - one of its TWO homes (plans/104 section 8's M2.5 revision).
    *
-   * It sits at the END of the left cluster, AFTER the keyboard sheet (§8's M2.6 pass:
+   * It sits at the END of the left cluster, AFTER the keyboard sheet (section 8's M2.6 pass:
    * "the transport diamond moves to after the keyboard icon"). M2.5 put it fourth,
    * among `+` / mic / script on the reasoning that it is the fourth thing this panel
    * can ADD - but on the built strip that reading did not survive contact: the three
@@ -1295,7 +1295,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (§8's M2.6).
+  // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (section 8's M2.6).
   tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
@@ -1464,7 +1464,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const el = boxEl(id);
     // A CAMERA first, and off the MODEL: it paints nothing, so every probe below reads
     // '' on it and its chip would have said "Clip" - the one thing a camera is not
-    // (plans/104 §5.4). This is the label the "Always on" scenery chip wears, which is
+    // (plans/104 section 5.4). This is the label the "Always on" scenery chip wears, which is
     // the whole affordance the implicit scene camera is discovered through.
     const rows = getBoxes();
     const ci = indexOfId(rows, cfg, id);
@@ -1543,7 +1543,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The diamonds: one strip per ANIMATED clip, one dot per keyframe (plans/104 §8).
+   * The diamonds: one strip per ANIMATED clip, one dot per keyframe (plans/104 section 8).
    *
    * POINTER SUGAR, and the word is exact. A bar is `role="option"` inside a listbox,
    * where an interactive child is illegal - so these are `<span>`s, aria-hidden, out
@@ -1585,7 +1585,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     while (strip.childElementCount < track.length) {
       const dot = document.createElement('span');
       dot.className = 'tl-kf-dot';
-      // NO tabIndex, not even -1 (§8's M2.6 low): this subtree is aria-hidden, and a
+      // NO tabIndex, not even -1 (section 8's M2.6 low): this subtree is aria-hidden, and a
       // focusable node inside an aria-hidden subtree is the one combination that has no
       // honest reading - focus would land somewhere the accessibility tree says is not
       // there. `-1` keeps it out of the TAB order but leaves it programmatically
@@ -1596,7 +1596,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // A NEW dot is a BLANK dot - `is-selected` went with the node it replaced (or with
     // the whole row, on a `rebuild`). The latch's structural memo is keyed on the
     // ANSWER, which a row rebuild does not change, so it would skip the re-mark and the
-    // enlarged diamond would silently vanish (§8's M2.6 low: "enlarged-diamond mark
+    // enlarged diamond would silently vanish (section 8's M2.6 low: "enlarged-diamond mark
     // lost on row rebuild"). Resetting the memo is the whole fix - the next
     // `syncKfLatch` re-reads and re-marks - and it costs nothing on the common path,
     // because a repaint that mints no dot does not touch it.
@@ -1661,7 +1661,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // boxes stay independent in the model, individually selectable and fully editable
     // on canvas - but 200 generated caption cues must not become 200 lane rows, and
     // grouped bars never overlap in time (cues are sequential), so side by side on one
-    // row is both honest and readable. The lane-explosion decision, §5 of the plan.
+    // row is both honest and readable. The lane-explosion decision, section 5 of the plan.
     const groupLanes = new Map<string, HTMLElement>();
     for (const b of boxes) {
       if (!b) continue;
@@ -1997,7 +1997,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The PURE half of {@link promote}: the promoted array, no commit and no side
    * effects. Split out for the one caller that must compose it with a second write - 
    * "+Keyframe" on an UNTIMED box, which promotes it and poses its first keyframe in
-   * ONE commit and therefore one undo step (§8's M2.5 revision). Everything about the
+   * ONE commit and therefore one undo step (section 8's M2.5 revision). Everything about the
    * resolution - the playhead start, the authored → media → DEFAULT_CLIP_S length
    * ladder, the overlay lane - is documented on `promote` and lives HERE so neither
    * caller re-derives it.
@@ -2355,7 +2355,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The diamond's own menu: the three things §3 lists on the transport's right - 
+   * The diamond's own menu: the three things section 3 lists on the transport's right - 
    * EASING / DUPLICATE / DELETE - offered where the pointer already is.
    *
    * Pointer sugar again, and the same three actions are labelled buttons in the
@@ -2372,7 +2372,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!key) { queueMicrotask(() => pop.close()); return null; }
     el.textContent = '';
     const act = (fn: () => void) => () => { pop.close(); fn(); };
-    // ONE SURFACE (§8's M2.7): the curve editor is DOCKED in the Keyframes popup, so
+    // ONE SURFACE (section 8's M2.7): the curve editor is DOCKED in the Keyframes popup, so
     // this item opens that popup on this keyframe rather than spawning a second,
     // nested editor of its own - which is exactly what a left-click on the same
     // diamond already does. The item stays because a context menu that lists Duplicate
@@ -2507,14 +2507,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * CAN this box be keyframed at all (plans/104 §8, M2.5) - the ONE rule, with five
+   * CAN this box be keyframed at all (plans/104 section 8, M2.5) - the ONE rule, with five
    * readers: "+Keyframe"'s scope, the transport button's enabled state, the canvas
    * contextual bar's enabled state (through `keyframableIds` on the handle), the
    * inspector's Keyframes group, and the diamonds on the bar.
    *
    * Deliberately permissive: a box is keyframable timed or not, because the M2.5
    * revision made the button itself the door - an untimed box is promoted onto the
-   * timeline and keyed in the same commit. Two exclusions, both named in §8:
+   * timeline and keyed in the same commit. Two exclusions, both named in section 8:
    *
    *   • `audio` - sound has no pose to strike; keyframed gain is plan 101's, and until
    *     it exists an audio clip in a mixed selection must fall out rather than be
@@ -2545,11 +2545,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * THE "+Keyframe" action - one implementation, three doors (the transport button,
-   * the canvas contextual bar, and `K`), which is the whole point of §8's M2.5
+   * the canvas contextual bar, and `K`), which is the whole point of section 8's M2.5
    * revision: "TWO homes, one action".
    *
    * Add-or-update the full pose at the playhead on every keyframable selected box, in
-   * ONE write, so a multi-select press is ONE undo step (§8's gesture/commit law,
+   * ONE write, so a multi-select press is ONE undo step (section 8's gesture/commit law,
    * applied to a press). `writeKfPose` returns the array by identity for a box it
    * cannot key, so anything unkeyable simply falls out.
    *
@@ -2628,7 +2628,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     addKeyframeAction({ speak: true });
   });
 
-  /** The Animate door: a t = 0 pose, which is where an animation starts (§8). */
+  /** The Animate door: a t = 0 pose, which is where an animation starts (section 8). */
   function animateBox(id: string): void {
     const rows = getBoxes();
     const i = indexOfId(rows, cfg, id);
@@ -2664,7 +2664,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const sel = selection.get();
     const to = kfSeekDiamond(rows, cfg, sel, playheadSec(), dir);
     if (to === null) {
-      // "Last keyframe" on a box that HAS none is a lie about why nothing moved (§8's
+      // "Last keyframe" on a box that HAS none is a lie about why nothing moved (section 8's
       // M2.6 low). Three different silences, and the shortcut has to name the right
       // one: nothing selected, nothing animated, or genuinely at the end of a track.
       const any = sel.some((id) => {
@@ -2681,7 +2681,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * Park the playhead on one keyframe and open the Keyframes popup on it (§8's M2.7).
+   * Park the playhead on one keyframe and open the Keyframes popup on it (section 8's M2.7).
    *
    * Selection, playhead and popup in one press, in that order and deliberately: the
    * selection is what builds the inspector row this popup borrows its body from (so
@@ -2689,7 +2689,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * `selectAndReveal` moves the playhead to the clip's start when the selection would
    * otherwise be off screen - which would land it beside the diamond rather than on it.
    *
-   * Writes nothing. Opening a keyframe is a way of LOOKING at it, and §8's whole model
+   * Writes nothing. Opening a keyframe is a way of LOOKING at it, and section 8's whole model
    * is that nothing is keyed by accident.
    */
   function openKeyframeAt(id: string, atMs: number): void {
@@ -2721,7 +2721,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     writeTrack(id, (track) => kfTrackDuplicate(track, atMs, kfDuplicateMs(track, atMs, dur)));
   }
 
-  // ── the camera (plans/104 §5.4, §8) ─────────────────────────────────────────
+  // ── the camera (plans/104 section 5.4, section 8) ─────────────────────────────────────────
   //
   // A camera is an ordinary box of kind `camera` whose only job is to be animated.
   // The panel owns three things about it and nothing else: WHERE its pose is written
@@ -2731,7 +2731,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   const cameraKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'camera');
 
-  /** A box is a camera because its kind says so - the hooks' own rule (§5.4). */
+  /** A box is a camera because its kind says so - the hooks' own rule (section 5.4). */
   function isCameraBox(b: Box | undefined): boolean {
     return !!b && String(b.kind ?? '') === 'camera';
   }
@@ -2743,7 +2743,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * THE IMPLICIT SCENE CAMERA (§5.4's "default experience", the review's strongest UX
+   * THE IMPLICIT SCENE CAMERA (section 5.4's "default experience", the review's strongest UX
    * finding): the first depth interaction auto-creates ONE untimed camera box.
    *
    * PURE - it returns the array and the id, and commits nothing, so the gesture that
@@ -2762,7 +2762,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * invents a kind. With no seed it still mints `{kind:'camera'}`, because the wire is
    * the contract and the hooks key their marker off `kind` alone.
    *
-   * No geometry: a camera has no canvas footprint (§5.4), and a zero-size box is
+   * No geometry: a camera has no canvas footprint (section 5.4), and a zero-size box is
    * exactly that - nothing to hit-test, nothing to marquee, nothing to paint.
    */
   function ensureSceneCameraRows(rows: Box[]): { rows: Box[]; id: string } {
@@ -2779,7 +2779,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * WHERE a camera pose edit lands, in TIMELINE seconds - or null when it may not land
-   * at all. The camera's reading of §8's latch, and the one place that decides it.
+   * at all. The camera's reading of section 8's latch, and the one place that decides it.
    *
    * Three cases, in order:
    *   • parked ON a diamond → that keyframe. The ordinary latch rule.
@@ -2788,7 +2788,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     the last, so with one key the camera holds that pose for the whole sequence.
    *     This is what makes the fresh implicit camera behave as SCENE DEFAULTS - pan it,
    *     dolly it, change its focus, and the whole shot moves - with no keyframe UI in
-   *     the way and no auto-keying (§8's "No auto-key" is about NEW diamonds; there is
+   *     the way and no auto-keying (section 8's "No auto-key" is about NEW diamonds; there is
    *     no new diamond here).
    *   • a real MOVE (two or more keys), off every diamond → null. Writing the first key
    *     of an authored move from a playhead parked somewhere else would change the shot
@@ -2804,7 +2804,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * Is a canvas gesture currently aimed at the camera (§8: "camera mode is entered by
+   * Is a canvas gesture currently aimed at the camera (section 8: "camera mode is entered by
    * SELECTION, never a global toggle")? Returns the camera's id, or ''.
    *
    * Three conditions, all of them things the user can SEE: the panel is open (the same
@@ -2899,11 +2899,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * One camera preset, expanded onto the camera's own track in ONE commit - creating
-   * the scene camera first if there is none (§8: "inserting writes the camera's kf
+   * the scene camera first if there is none (section 8: "inserting writes the camera's kf
    * track (creating the scene camera if absent) in one commit").
    *
    * `parseKf` is the engine's reader and `setKfTrack` re-serialises through the
-   * engine's writer, so what lands is the canonical wire at the §4.6 quanta - never
+   * engine's writer, so what lands is the canonical wire at the section 4.6 quanta - never
    * the literal string, which would put an unvalidated author's text on the wire.
    */
   function applyCameraPreset(preset: { label: string; track: string }): void {
@@ -2924,7 +2924,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     announce(t('Camera move: {name}', { name: preset.label }));
   }
 
-  // ── the latch (plans/104 §8) ────────────────────────────────────────────────
+  // ── the latch (plans/104 section 8) ────────────────────────────────────────────────
   //
   // ONE question, asked once per tick: is the playhead parked exactly on a diamond?
   // Everything downstream is a reading of that answer - the group header's wording,
@@ -2954,14 +2954,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     /** The CRUD list, whose rows carry `data-t`. */
     list: HTMLElement;
     /**
-     * The curve editor DOCKED in this popup (§8's M2.7): the keyframe it is showing,
+     * The curve editor DOCKED in this popup (section 8's M2.7): the keyframe it is showing,
      * and the handle to tear down. Null when the row has no keyframes to ease.
      */
     dock: { atMs: number; editor: EasingEditorHandle | null; host: HTMLElement } | null;
   }
   let kfLatch: KfLatchRefs | null = null;
   let kfLatchKey = '\u0000';
-  /** The live camera-channel controls of the row on screen, or null (§8's Camera group). */
+  /** The live camera-channel controls of the row on screen, or null (section 8's Camera group). */
   let kfCam: { id: string; fields: KfPoseField[] } | null = null;
   let kfCamKey = '\u0000';
 
@@ -2978,7 +2978,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *
    * `z` clamps to the FIELD range (`KF_Z_FIELD_CLAMP`), not the wider wire range: the
    * wire has to carry a camera dolly, a control does not, and a depth a user can
-   * scrub to should stay inside the band the guard never has to rescue (§5.1). It is
+   * scrub to should stay inside the band the guard never has to rescue (section 5.1). It is
    * also the only one with a SLIDER, and the only one that stays live off a diamond - 
    * both because it is the one channel with a base field of its own (see `base`).
    */
@@ -2988,8 +2988,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     slider?: readonly [number, number];
     /**
      * The box sub-field this channel falls back to when the playhead is OFF every
-     * diamond - §8's "edits write the base". Only `z` has one: a depth is a property
-     * of the box (the `z` field) that a keyframe may override for a segment (§5.2),
+     * diamond - section 8's "edits write the base". Only `z` has one: a depth is a property
+     * of the box (the `z` field) that a keyframe may override for a segment (section 5.2),
      * while scale/opacity/blur have no per-box base the pose row could write.
      */
     base?: 'z';
@@ -3001,19 +3001,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   ];
 
   /**
-   * The CAMERA's own channels, as the §8 camera panel offers them - pose, tilt, focus,
+   * The CAMERA's own channels, as the section 8 camera panel offers them - pose, tilt, focus,
    * aperture and perspective, each with the affordance chip Depthfield puts on the
-   * same row (§3's observed UI: DRAG for pan, SCROLL for the dolly).
+   * same row (section 3's observed UI: DRAG for pan, SCROLL for the dolly).
    *
    * `p` is labelled as FOV STRENGTH and never "zoom": `eff(z = camZ) === 1` for every
    * value of p, so p changes the perspective, not the magnification - a dolly (`z`) is
-   * what magnifies (§4.3). Calling this control "zoom" is the one naming mistake this
+   * what magnifies (section 4.3). Calling this control "zoom" is the one naming mistake this
    * feature can make, and the plan names it twice.
    *
    * P2 PUT THE TILT ROWS HERE (this is the seam the M2.5 comment reserved). They sit
    * between the pans and the dolly because that is the order a shot is set up in - where
    * the camera is, which way it is pointing, how far away it is - and they carry the
-   * SHIFT-DRAG chip, the gesture §8 reserved for them at M2.5 and P2 finally spends.
+   * SHIFT-DRAG chip, the gesture section 8 reserved for them at M2.5 and P2 finally spends.
    *
    * The labels are TILT X / TILT Y, the reference tool's own words, and not "pitch"/
    * "yaw": those are the correct terms and nobody outside a flight sim uses them. Signs
@@ -3056,13 +3056,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *
    * Depth is a box PROPERTY (`cfg.zField`), not a keyframe: it is the one pose channel
    * with a base field of its own, so writing it off a diamond sets the box's own depth
-   * (§5.2 / §8's "edits write the BASE") rather than minting a keyframe. It used to be
+   * (section 5.2 / section 8's "edits write the BASE") rather than minting a keyframe. It used to be
    * reachable only through the Keyframes pose row - i.e. only AFTER pressing Animate,
    * which a still, un-animated layer has no reason to do. Standing a lifted layer off the
    * board is the whole point of a flythrough's parallax, so it should not cost a keyframe
    * track to reach.
    *
-   * This does NOT cross §8's disclosure law: it writes the box's `z` field through the
+   * This does NOT cross section 8's disclosure law: it writes the box's `z` field through the
    * SAME `ensureSceneCameraRows(patchBox(...))` path the pose row already uses off a
    * diamond - no track is created, exactly as setting position or size creates none, and
    * a box nobody touches keeps `zField` absent, so its export stays byte-identical. Only
@@ -3105,7 +3105,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const commit = (raw: number): void => {
       const v = clamp(raw, KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]);
       num.value = kfFormatChannel('z', v);
-      // The first depth interaction mints the scene camera in the SAME commit (§5.4), so
+      // The first depth interaction mints the scene camera in the SAME commit (section 5.4), so
       // one gesture stays one ⌘Z and the camera panel becomes reachable - identical to the
       // pose row's off-diamond base write.
       const seeded = ensureSceneCameraRows(patchBox(getBoxes(), id, { [field]: v }));
@@ -3131,7 +3131,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // ── the latch line ────────────────────────────────────────────────────────
     // The READOUT only. Its "+Keyframe" button moved out to the transport and the
-    // canvas contextual bar in §8's M2.5 revision: one action wants one home per
+    // canvas contextual bar in section 8's M2.5 revision: one action wants one home per
     // surface, and a third copy inside a popover that has to be opened first is the
     // one nobody would find.
     const latch = document.createElement('div');
@@ -3148,10 +3148,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // ── the pose ──────────────────────────────────────────────────────────────
     //
     // A CAMERA has none of these: its channels are pan / dolly / focus / aperture /
-    // FOV strength, and they live in the Camera group (§8's seam). Scale, opacity and
+    // FOV strength, and they live in the Camera group (section 8's seam). Scale, opacity and
     // blur on a camera would be controls for something that paints nothing.
     //
-    // The §5.2 "size is not keyframable" tooltip is GONE, and its absence is the
+    // The section 5.2 "size is not keyframable" tooltip is GONE, and its absence is the
     // point: the P1 reversal (Andy, 2026-08-12 - "I can't change width and height of
     // elements and have them tween") put `w`/`h` on the wire, and a resize ON a
     // diamond now writes them. Size is still authored on the CANVAS, like x/y/r, so it
@@ -3180,7 +3180,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           // on that blur - so a number typed while parked on a diamond could otherwise
           // land as a BRAND-NEW keyframe wherever the playhead had since travelled (a
           // ruler scrub `preventDefault()`s, so the field keeps focus throughout).
-          // §8's model is "nobody keyframes by accident".
+          // section 8's model is "nobody keyframes by accident".
           const rows = getBoxes();
           const j = indexOfId(rows, cfg, id);
           const at = playheadSec();
@@ -3189,23 +3189,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           // `min`/`max` are the SPINNER's range, not a validator: a typed value is
           // committed verbatim on `change`, so without this a Depth of 5000 reached
           // the engine's much wider WIRE clamp and stored a number the field's own
-          // range says is impossible (§5.1 names the inspector as a
+          // range says is impossible (section 5.1 names the inspector as a
           // `KF_Z_FIELD_CLAMP` site). Reflected back into the control, so the field
           // never disagrees with the model.
           const v = clamp(raw, f.range[0], f.range[1]);
           el.value = kfFormatChannel(f.ch, v);
           if (!on) {
-            // OFF a diamond, §8's rule is "edits write the BASE" - and depth is the
+            // OFF a diamond, section 8's rule is "edits write the BASE" - and depth is the
             // one channel here that HAS one: a keyed `z` REPLACES the box's `z` field
-            // for its segment (§5.2), so the field is exactly what it replaces. Every
+            // for its segment (section 5.2), so the field is exactly what it replaces. Every
             // other channel is refused as before - there is no keyframe to pose and
-            // nothing else to write, and minting one would be the accident §8 forbids.
+            // nothing else to write, and minting one would be the accident section 8 forbids.
             if (f.base !== 'z' || !cfg.zField) {
               kfPoseKey = '\u0000';   // the memo would otherwise call the stale value current
               syncKfLatch();
               return;
             }
-            // THE FIRST DEPTH INTERACTION (§5.4): lifting a box mints the scene camera
+            // THE FIRST DEPTH INTERACTION (section 5.4): lifting a box mints the scene camera
             // in the SAME array, so one gesture stays one commit and one ⌘Z. Depth
             // already projects correctly without it (no camera box resolves to the
             // DEFAULT camera, never an identity) - the box is what makes the camera
@@ -3232,7 +3232,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         lab.className = 'field-label';
         lab.textContent = f.label;
         wrap.append(lab, el);
-        // THE DEPTH SLIDER (§5.3 - P1's headline control). Its travel is the tasteful
+        // THE DEPTH SLIDER (section 5.3 - P1's headline control). Its travel is the tasteful
         // band 0–300 while the number beside it still takes the whole field range,
         // negatives included; both are held to `KF_Z_FIELD_CLAMP`, which is the
         // engine's and is never re-typed here. One model write per gesture: `input`
@@ -3272,13 +3272,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const time = document.createElement('input');
       time.className = 'field-input tl-num tl-kf-time';
       time.type = 'number';
-      // The wire's own quantum is the millisecond (§4.6), so the grid is milliseconds
+      // The wire's own quantum is the millisecond (section 4.6), so the grid is milliseconds
       // and the step is a hundredth of a second - fine enough to place a beat, coarse
       // enough that the arrow keys are usable.
       time.step = '10';
       time.min = '0';
       time.value = String(k.t);
-      // NAMED WITH ITS ROW, exactly as Duplicate and Delete already are. §8 makes this
+      // NAMED WITH ITS ROW, exactly as Duplicate and Delete already are. section 8 makes this
       // list the keyboard and screen-reader route to the diamonds (which is what lets
       // the diamonds themselves stay aria-hidden), so a four-key track that tabs as
       // "Keyframe time" four times identifies nothing: the row is the only thing that
@@ -3319,7 +3319,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       body.appendChild(remove);
     }
 
-    // ── the curve, DOCKED (§8's M2.7) ─────────────────────────────────────────
+    // ── the curve, DOCKED (section 8's M2.7) ─────────────────────────────────────────
     //
     // "The curve editor docks INSIDE the Keyframes popup (top or bottom of it - one
     // surface, never a second nested popover)". So the per-keyframe ease `<select>`s in
@@ -3397,7 +3397,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     d.editor = mountEasingEditor(d.host, {
       // The ENGINE's adapters both ways: the wire token in, the CSS bezier the editor
-      // speaks out (§5.1 - "the adapter is mandatory", because the canonical ease wire
+      // speaks out (section 5.1 - "the adapter is mandatory", because the canonical ease wire
       // uses commas and the kf charset bans them).
       value: kfEaseCss(key.ease),
       onCommit: (wire) => writeTrack(refs.id, (tr) => kfTrackSetEase(tr, on, kfEaseToken(wire))),
@@ -3426,7 +3426,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       opt(tok, name && Object.hasOwn(EASINGS, name) ? t((EASINGS as Record<string, string>)[name]!) : tok);
     }
     opt(KF_HOLD_EASE, t('Hold'));
-    // CUSTOM IS A STATE HERE, NOT A ROUTE (§8's M2.7). The transition picker's
+    // CUSTOM IS A STATE, NOT A ROUTE (section 8's M2.7). The transition picker's
     // "Custom…" opens a popover; this list is inside a popup that already has the
     // curve editor DOCKED in it, and a second nested editor is exactly what M2.7
     // replaced. So a keyframe whose ease is an authored bezier selects an option that
@@ -3452,7 +3452,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     asks this a hundred times and writes no DOM at all. The bars/dots walk, the
    *     header wording and the list marking live under it.
    *   • `kfPoseKey` - the POSE READOUT. Keyed on the playhead's own local millisecond,
-   *     because §8's M2.5 revision made these fields track it: off a diamond they now
+   *     because section 8's M2.5 revision made these fields track it: off a diamond they now
    *     print the EVALUATED value at the playhead (the engine's `evaluateKf`, through
    *     `kfPoseAt` - the same arithmetic the preview and the export read), disabled.
    *     Four `<input>.value` writes per changed millisecond, and only while the
@@ -3479,7 +3479,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (key !== kfLatchKey) {
       kfLatchKey = key;
 
-      // The selected diamond draws large (§3's observed-Depthfield note). Only on a
+      // The selected diamond draws large (section 3's observed-Depthfield note). Only on a
       // SELECTED bar: an unselected clip's diamonds are a picture of its animation, not
       // a control surface, and marking one of them would claim an edit target the
       // playhead does not actually own.
@@ -3500,7 +3500,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         for (const row of Array.from(refs.list.children) as HTMLElement[]) {
           row.classList.toggle('is-current', on !== null && row.dataset.t === String(on));
         }
-        // The docked curve follows the same answer (§8's M2.7). Inside the structural
+        // The docked curve follows the same answer (section 8's M2.7). Inside the structural
         // memo, because mounting an editor is the most expensive thing this function
         // can do and the latch is what decides whether it has to happen at all.
         syncKfDock(refs, box, on);
@@ -3518,7 +3518,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (poseKey === kfPoseKey) return;
     kfPoseKey = poseKey;
     for (const f of refs.pose) {
-      // EVALUATED, never blank (§8's M2.5 point 3: blanking was honest but read as
+      // EVALUATED, never blank (section 8's M2.5 point 3: blanking was honest but read as
       // broken). A disabled control showing the live value says "this is what it is
       // doing here, and there is no keyframe here to change it on" - which is the
       // truth. The memo above is keyed on `readMs`, so this genuinely tracks the
@@ -3531,8 +3531,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // would have to invent one silently. "+Keyframe" is the one press that changes
       // that, and the title says so rather than leaving a dead control unexplained.
       //
-      // EXCEPT DEPTH (§5.3, P1): it has a base field of its own, so off a diamond an
-      // edit there is not an invention - it is §8's "edits write the base", which is
+      // EXCEPT DEPTH (section 5.3, P1): it has a base field of its own, so off a diamond an
+      // edit there is not an invention - it is section 8's "edits write the base", which is
       // the whole reason the depth slider is usable on a box that has never been
       // keyframed at all. `base` is set on exactly the channels that have one.
       const inert = on === null && !f.base;
@@ -3546,7 +3546,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The CAMERA's channels, re-read on the same tick as the latch (§8).
+   * The CAMERA's channels, re-read on the same tick as the latch (section 8).
    *
    * Same readout law as the pose fields - the live EVALUATED pose, so the numbers are
    * what the shot is actually doing at this instant - but a different enablement rule,
@@ -3585,10 +3585,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Build one inspector group: a SEGMENT for the strip (a disclosure button carrying
    * an icon, a text label and the resolved value chips) plus the body its fields live
-   * in - which, since §8's M2.5 revision, is NOT appended to the segment.
+   * in - which, since section 8's M2.5 revision, is NOT appended to the segment.
    *
    * The row this replaced was eleven labelled inputs in a horizontal overflow
-   * scroller, and the keyframe row would have made it fourteen (plans/104 §8,
+   * scroller, and the keyframe row would have made it fourteen (plans/104 section 8,
    * "Inspector regrouping"). Grouping answered that; the M2.5 revision answers what
    * grouping left behind - an open group still had to fit its whole body INSIDE the
    * strip, which is why the ease pickers were truncated to "Ease in ar…". So the body
@@ -3861,7 +3861,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * The CAMERA group (plans/104 §8) - the scene-camera panel, and the only place a
+   * The CAMERA group (plans/104 section 8) - the scene-camera panel, and the only place a
    * camera's pose is typed rather than dragged.
    *
    * Three parts, in the order a shot is set up: the preset MOVES (each one commit, each
@@ -3970,12 +3970,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // a repaint memo that is supposed to answer "did the MODEL change" answer something
     // else. The three added at the tail are what the regroup reads that the flat row
     // did not: the keyframe track and the box kind gate the Keyframes group's very
-    // existence (plans/104 §8). The A/V link no longer decides anything in this row - 
+    // existence (plans/104 section 8). The A/V link no longer decides anything in this row - 
     // M2.6 sent detach / re-attach back to the clip context menu - but it STAYS in the
     // key, because this list is appended to and never trimmed: a spare entry costs one
     // string compare, and dropping one is how a row starts printing stale values the
     // day something reads that field again. `z` joins them for the same reason `kf`
-    // did: the pose row shows the box's depth wherever no keyframe overrides it (§5.2),
+    // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
     const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind])}` : '';
@@ -4125,7 +4125,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // ── the groups ────────────────────────────────────────────────────────────
     //
-    // A `camera` box swaps Time + Animate for the CAMERA group (plans/104 §8, the P1
+    // A `camera` box swaps Time + Animate for the CAMERA group (plans/104 section 8, the P1
     // seam this function was left holding): pose channels - pan / dolly / focus /
     // aperture / FOV strength - each with the DRAG / SCROLL affordance chip the
     // reference tool puts on the same row. Keyframes and the timed ⇄ always-on switch
@@ -4133,7 +4133,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // purpose is animation.
     //
     // Why the two it replaces go: a camera's ENTER/EXIT transition is ignored by both
-    // evaluators in v1 (§5.4), so an Animate group on one is a control that writes a
+    // evaluators in v1 (section 5.4), so an Animate group on one is a control that writes a
     // field nothing reads; and its Time is the switch below plus the clip's own bar,
     // not a start/length pair - a camera has no media to trim and no speed to set.
     const isCamera = isCameraBox(box);
@@ -4142,7 +4142,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (isCamera) buildCameraGroup(id, box);
 
     // ── Time ──────────────────────────────────────────────────────────────────
-    // Shut, like every group since §8's M2.5 revision - including on an UNTIMED box,
+    // Shut, like every group since section 8's M2.5 revision - including on an UNTIMED box,
     // where Start and Length are still the typed promotion route (the `.tl-timing`
     // switch below is the one-press one). Auto-opening a popover over the canvas
     // because a box was selected is a popover the user has to dismiss.
@@ -4218,7 +4218,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // that is always on can still be given the transition it will use once it is timed,
     // and the fields are plain value writes, so nothing here depends on a bar existing.
     //
-    // Never on a CAMERA: v1 ignores a camera box's enter/exit outright (§5.4), so these
+    // Never on a CAMERA: v1 ignores a camera box's enter/exit outright (section 5.4), so these
     // would be four controls writing fields no evaluator reads.
     const animG = isCamera ? null : inspectorGroup('animate', t('Animate'), 'animate');
     if (animG) inspector.appendChild(animG.root);
@@ -4246,12 +4246,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // ── Keyframes ─────────────────────────────────────────────────────────────
     //
-    // THE DISCLOSURE LAW (plans/51:80, restated by plans/104 §8): nobody keyframes by
+    // THE DISCLOSURE LAW (plans/51:80, restated by plans/104 section 8): nobody keyframes by
     // accident. A camera exists only to be animated, so it always carries the group; a
     // content box earns it by already having a track. Every other box has no keyframe
     // affordance anywhere in the UI - not a disabled one, not an empty one. Animate is
     // DERIVED, never stored: the gate reads the track itself, so there is no second
-    // source of truth to drift (§8, "Animate is DERIVED, not stored").
+    // source of truth to drift (section 8, "Animate is DERIVED, not stored").
     //
     // The body itself is built below. The DOOR is the form of it: a box with no
     // track and no camera kind gets ONE action ("Animate") behind a collapsed
@@ -4261,11 +4261,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // `isKeyframable` is the SAME gate "+Keyframe" uses, and it has to be: without it
     // a detached sound got the group and its Animate door, which wrote precisely the
     // x/y/s/r/o track the button refuses to write and no evaluator reads - a door onto
-    // a room the rest of the UI says does not exist (§8's disclosure law is explicit:
+    // a room the rest of the UI says does not exist (section 8's disclosure law is explicit:
     // "Every other box has no keyframe affordance anywhere in the UI").
     const kfRaw = cfg.kfField ? String(box[cfg.kfField] ?? '') : '';
     if (cfg.kfField && isKeyframable(box, id)) {
-      // parseKf is the engine's own reader (plans/104 §5.1) - never a `split('*')` here.
+      // parseKf is the engine's own reader (plans/104 section 5.1) - never a `split('*')` here.
       // It never throws, so a hand-edited share URL summarises as "No keyframes" rather
       // than taking the inspector down with it.
       const track = kfRaw ? parseKf(kfRaw) : null;
@@ -4282,17 +4282,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // Depth stands FIRST because it is what a lifted layer needs before it needs a
         // keyframe: set the parallax, THEN (optionally) animate it. It writes the box's
         // own `z` field, not a track (see `buildDepthControl`), so it is not a keyframe
-        // affordance and does not violate §8's disclosure law.
+        // affordance and does not violate section 8's disclosure law.
         buildDepthControl(kfG, id, box);
         // One action, one commit, one undo step. Enabling is DERIVED, not stored
-        // (§8): what it writes is a t = 0 pose, and the track's existence IS the
+        // (section 8): what it writes is a t = 0 pose, and the track's existence IS the
         // animated state from then on - there is no flag anywhere to drift.
         const door = actionBtn('tl-kf-animate', t('Animate'), 'keyframe');
         door.title = t('Adds a first pose at the start of this clip. Everything else stays where it is.');
         door.addEventListener('click', () => animateBox(id));
         kfG.body.appendChild(door);
       } else {
-        // The curve editor is DOCKED in this body now (§8's M2.7), so there is no
+        // The curve editor is DOCKED in this body now (section 8's M2.7), so there is no
         // second popover anchored to a `<select>` this rebuild just detached - the
         // re-point the transition editor still needs above has nothing to re-point.
         // `syncKfLatch` rebuilds the dock against the row that replaced this one.
@@ -4302,7 +4302,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // ── Sound: a TOGGLE, never a group ────────────────────────────────────────
     //
-    // §8's M2.6 pass: "SOUND stops being a popover group entirely… it becomes a
+    // section 8's M2.6 pass: "SOUND stops being a popover group entirely… it becomes a
     // speaker/mute icon toggle on the strip (direct click flips mute - the NLE
     // convention), no popup." Mute is ONE bit, and a disclosure onto one switch is a
     // door onto a door: the M2.5 group cost a press, a popover mount and a "Sound on"
@@ -4559,7 +4559,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     };
 
     /**
-     * ONE bitmap, once, over the box's own flat fill - the STATIC bar (plans/104 §8's
+     * ONE bitmap, once, over the box's own flat fill - the STATIC bar (plans/104 section 8's
      * M2.5 revision, point 4).
      *
      * A filmstrip or a waveform repeats because it is a picture of time passing. A
@@ -4627,7 +4627,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // this tool has no box nesting - an animated neighbour is a SIBLING with its own
     // bar), so N rasters would buy N identical pictures and N TILES of one raster buy
     // N identical thumbnails. This branch used to tile it like a still, which is what
-    // §8's M2.5 revision (point 4) calls clip-bar label noise: the picture repeated
+    // section 8's M2.5 revision (point 4) calls clip-bar label noise: the picture repeated
     // dozens of times across a wide bar. It is drawn once now, at the leading edge,
     // over the flat fill. The trim window below is skipped for the same reason the
     // repeat is: there is no time axis here.
@@ -4951,7 +4951,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    */
   /**
    * The keyframes of the SELECTED boxes, as timeline seconds - the latch's own
-   * candidates (plans/104 §8).
+   * candidates (plans/104 section 8).
    *
    * Selected only, and that is the whole design: a timeline with six animated clips
    * has dozens of diamonds, and snapping to all of them would make the playhead
@@ -5374,7 +5374,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const coarse = isCoarsePointer(g.pointerType);
     if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse, true); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
     // A diamond PRESSED and released without moving is a click, and a click on a
-    // keyframe opens the Keyframes popup ON it (§8's M2.7 (a): "selection + popup in
+    // keyframe opens the Keyframes popup ON it (section 8's M2.7 (a): "selection + popup in
     // one gesture"). Before the `!g.moved` return below, because that one is the
     // "nothing happened" path and this is the one gesture where nothing MOVING is
     // itself the intent.
@@ -6460,7 +6460,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
   }
 
-  // ── generated subtitles (plans/41-tts-stt-programme.md §5) ─────────────────────
+  // ── generated subtitles (plans/41-tts-stt-programme.md section 5) ─────────────────────
   //
   // Timing-source ladder, best first: the asset's own `meta.tts.words` (a TTS
   // clip aligns itself - exact by construction, no download, no wait), else
@@ -6818,7 +6818,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // every one of them preventDefault()ed. free-canvas.ts guards its `v`/`p` tool
     // letters the same way.
     // …with ONE documented exception, taken BEFORE the guard because the guard is a
-    // bare `return`: Alt+←/→ walks the selected clip's keyframes (plans/104 §8). Alt
+    // bare `return`: Alt+←/→ walks the selected clip's keyframes (plans/104 section 8). Alt
     // is already this panel's "not the ordinary reading" modifier - it bypasses
     // snapping on every drag - and no browser binds Alt+arrow on a focused element,
     // which is the same test every bare letter below had to pass.
@@ -6891,7 +6891,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
       // "+Keyframe" from the keyboard - the THIRD door onto `addKeyframeAction`, and
       // literally the same call the transport button and the canvas contextual bar
-      // make (§8's M2.5 revision: two homes, one action). So `K` inherits every rule
+      // make (section 8's M2.5 revision: two homes, one action). So `K` inherits every rule
       // from it, including the auto-promotion of an untimed selected box: the panel
       // being open with something selected IS the disclosure, and a keyboard user must
       // not be given the smaller half of a feature. Always preventDefault, including
@@ -7126,7 +7126,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /**
    * A thumbnail is a picture of the CLIP, never of the frame the playhead is parked on
-   * (plans/104 §6.5). clip-thumbs cannot reach the authored values itself - importing
+   * (plans/104 section 6.5). clip-thumbs cannot reach the authored values itself - importing
    * bridge/sequence-dom.ts would drag sequence-plan → @lolly/engine into the chunk
    * picker.ts loads for `onIdle` alone - so the panel, which already owns both ends,
    * hands it the two readers. Removed with the panel: a seam pointing at a destroyed
@@ -7214,7 +7214,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // only takes its DOM away.
     try { easeEditor?.destroy(); } catch { /* never opened */ }
     easeEditor = null;
-    // …and so does the one DOCKED in the Keyframes popup (§8's M2.7).
+    // …and so does the one DOCKED in the Keyframes popup (section 8's M2.7).
     try { kfLatch?.dock?.editor?.destroy(); } catch { /* never mounted */ }
     try { closeGroupPopover(); } catch { /* never opened */ }
     kfLatch = null;
@@ -7261,12 +7261,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * Of `ids`, the ones whose OWN keyframe sits exactly under the playhead right now.
    *
-   * Exact equality, because the latch has already put the playhead there (§8): a
+   * Exact equality, because the latch has already put the playhead there (section 8): a
    * tolerance would make a canvas drag key a keyframe the panel's own header says
    * you are not on, which is the one way this model can lie.
    */
   function kfPoseIds(ids: readonly string[]): string[] {
-    // A CLOSED panel arms nothing. §8's model is "the playhead's position IS the arm",
+    // A CLOSED panel arms nothing. section 8's model is "the playhead's position IS the arm",
     // and with the panel shut there is no playhead on screen, no diamonds, no latch
     // header and no "+Keyframe" anywhere - so a drag that quietly wrote a keyframe
     // instead of moving the box would be the one thing this model exists to prevent:

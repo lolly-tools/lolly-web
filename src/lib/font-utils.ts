@@ -22,7 +22,7 @@ export type FontFormat = 'ttf' | 'otf' | 'woff' | 'woff2' | 'unknown';
  * is an unambiguous "no", and it is the thing to show anyone about to pull a font
  * out of a document they were merely sent.
  *
- * Bits 0–3 are a small exclusive set (§OS/2 fsType); bits 8 and 9 are separate
+ * Bits 0–3 are a small exclusive set (section OS/2 fsType); bits 8 and 9 are separate
  * flags that ride alongside.
  */
 export type FontEmbedding =

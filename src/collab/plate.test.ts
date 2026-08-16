@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The connection plate - a private collab's short authentication string
- * (plan 100 §1, §6.1; Andy's decision, 2026-08-10).
+ * (plan 100 section 1, section 6.1; Andy's decision, 2026-08-10).
  *
  * Six characters that two humans read to each other. The properties below are the ones
  * that decide whether that comparison means anything at all:

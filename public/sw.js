@@ -63,6 +63,13 @@ const CACHE = 'lolly-v14';
 // READS it, as the last-resort fallback for /tools/ requests.
 const PIN_CACHE = 'lolly-pins';
 
+// Tools SIDELOADED from a .lolly share file (shells/web/src/lib/installed-tools.ts —
+// keep the two literals in sync). The page writes /tools/<id>/* copies here; unlike a
+// catalog tool these have no network home, so this bucket is served CACHE-FIRST for
+// /tools/ (below) rather than as a last-resort fallback. Same persistence contract as
+// PIN_CACHE: activate never deletes it, the page owns writes/evictions.
+const INSTALLED_CACHE = 'lolly-installed';
+
 // The other three page-owned, unversioned buckets, written by the profile
 // view's "Available offline" download manager (shells/web/src/lib/
 // offline-manager.ts — keep the literals in sync). Same lifecycle contract as
@@ -105,7 +112,7 @@ const TRANSFORMERS_CACHE = 'transformers-cache';
 const SPEECH_CACHE = 'lolly-speech';
 
 // Every bucket that survives a CACHE-generation bump (activate's keep-list).
-const PERSISTENT_CACHES = [PIN_CACHE, APP_CACHE, ORT_CACHE, ORT_HF_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
+const PERSISTENT_CACHES = [PIN_CACHE, INSTALLED_CACHE, APP_CACHE, ORT_CACHE, ORT_HF_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
@@ -510,6 +517,16 @@ function isShellNavigation(pathname) {
 // network ultimately gives, or a 503 if it never arrives.
 async function networkFirst(event) {
   const { request } = event;
+
+  // A sideloaded tool's files live only in INSTALLED_CACHE (no network home), so serve
+  // them CACHE-FIRST - a network round-trip would 404 or, worse, return the SPA shell.
+  // Catalog tools are never written here, so they still take the network-first path below.
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/tools/')) {
+    const installed = await caches.match(request, { cacheName: INSTALLED_CACHE }).catch(() => undefined);
+    if (installed) return installed;
+  }
+
   const cache = await caches.open(CACHE);
 
   let timer;

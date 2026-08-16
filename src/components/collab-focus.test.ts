@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * collab-focus.ts - the two remote-focus decorations (plan 100 §4.1, §4.6, §4.8).
+ * collab-focus.ts - the two remote-focus decorations (plan 100 section 4.1, section 4.6, section 4.8).
  *
  * Run directly:  node --test shells/web/src/components/collab-focus.test.ts
  *
@@ -13,7 +13,7 @@
  *
  * The claims, in the order a regression would hurt:
  *
- *  1. THE CANVAS IS NEVER TOUCHED (§4.6). Asserted the only way that means anything:
+ *  1. THE CANVAS IS NEVER TOUCHED (section 4.6). Asserted the only way that means anything:
  *     the fixture's `.tool-canvas` innerHTML is captured and compared BYTE FOR BYTE
  *     after a full decorate/undecorate cycle. An export must be identical whether
  *     you are alone or in a room of six; a stray class or data attribute written
@@ -25,7 +25,7 @@
  *  3. A STABLE ROW ID FINDS THE RIGHT CARD. The wire carries an id, the DOM
  *     addresses an index, and the model's value order is the only honest bridge - 
  *     including when a concurrent insert has renumbered everything below it.
- *  4. MOST-RECENT WINS THE RING, EVERYONE IS IN THE STACK (§4.6), and "most recent"
+ *  4. MOST-RECENT WINS THE RING, EVERYONE IS IN THE STACK (section 4.6), and "most recent"
  *     means most recently MOVED, so a 15 s heartbeat cannot steal the ring.
  *
  * jsdom returns a zero rect from getBoundingClientRect, so the canvas-outline
@@ -219,7 +219,7 @@ test('the outline layer is a SIBLING of the canvas, never a child', () => {
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   const layer = f.focus.el;
   assert.ok(layer, 'a canvas with a parent gets a layer');
-  assert.equal(f.canvas.contains(layer), false, 'presence chrome never enters the export stage (§4.6)');
+  assert.equal(f.canvas.contains(layer), false, 'presence chrome never enters the export stage (section 4.6)');
   assert.equal(layer.parentElement, f.stage,
     'it hangs off .tool-stage — the anchor collab.css describes, and the one that is not '
     + 'clipped by .tool-canvas-outer\'s overflow:hidden');
@@ -239,7 +239,7 @@ test('canvas outlines anchor from the annotated element rects', () => {
   assert.equal(ring.style.height, '46px');
   assert.equal(ring.style.getPropertyValue('--collab-color'), '#4ea1ff');
   assert.equal(ring.querySelector('.collab-focus-box-label')?.textContent, 'Priya',
-    'the name rides the outline — colour is never the only differentiator (§4.8)');
+    'the name rides the outline — colour is never the only differentiator (section 4.8)');
 
   // A blocks row resolves through the SAME index mapping the sidebar uses, so both
   // decorations point at the same row.
@@ -377,7 +377,7 @@ test('an away peer drops its decorations but keeps its roster seat', () => {
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   assert.equal(f.rows().length, 1);
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline', { away: true })]);
-  assert.equal(f.rows().length, 0, 'a hidden tab\'s ring is stale information, not presence (§11.4)');
+  assert.equal(f.rows().length, 0, 'a hidden tab\'s ring is stale information, not presence (section 11.4)');
   assert.equal(f.rings().length, 0);
   f.focus.dispose();
 });
@@ -407,7 +407,7 @@ test('most-recent owns the ring; everybody shows in the chip stack', () => {
   assert.equal(f.rows()[0]!.style.getPropertyValue('--collab-color'), '#4ea1ff');
 
   // A heartbeat restating the same presence must NOT reshuffle the ring: "most
-  // recent" means most recently MOVED, not most recently heard from (§4.7).
+  // recent" means most recently MOVED, not most recently heard from (section 4.7).
   f.focus.setPeers([
     peer('p2', 'Sam', '#ffb03a', 'headline'),
     peer('p1', 'Priya', '#4ea1ff', 'headline'),
@@ -458,7 +458,7 @@ test('reduced motion removes the outline transition rather than the outline', ()
   f.setStill(true);
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   assert.equal(f.rings()[0]?.style.transition, 'none',
-    'rings do not move on their own, so §4.8 only has to stop them SLIDING when they '
+    'rings do not move on their own, so section 4.8 only has to stop them SLIDING when they '
     + 're-anchor — and the inline mirror covers the injected preference seam, which is '
     + 'the one thing collab.css\'s own two gates cannot see');
   assert.equal(f.rings().length, 1, 'the presence itself is never hidden');
@@ -543,7 +543,7 @@ test('the module injects its own sheet, and every class it writes is defined the
   // the module used to state inline - which is why the offset can be a11y-scaled.
   assert.ok(css.includes('[data-collab-chips]'), 'the chip stack has a rule of its own');
   assert.match(css, /\[data-collab-chips\] \{[^}]*inset-block-start: calc\(-9px \* var\(--a11y-fs\)\)/);
-  // §4.8: chrome type rides the largeText multiplier, never a bare px.
+  // section 4.8: chrome type rides the largeText multiplier, never a bare px.
   assert.ok(!/font-size: \d/.test(css), 'every font-size is a --a11y-fs multiple');
   // Minor, but it is the whole reason a per-ROW chip lands on the right card:
   // .block-item has no position of its own (tool.css), so the stack would otherwise

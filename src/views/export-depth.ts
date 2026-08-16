@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Deep output in the export panel - the pro-format grouping and the depth fact
- * (plans/61-deeprichpixels.md §10 item 3).
+ * (plans/61-deeprichpixels.md section 10 item 3).
  *
  * Both halves obey the plan's governing rule, DEPTH FOLLOWS PROVENANCE.
  *

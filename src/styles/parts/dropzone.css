@@ -34,7 +34,7 @@
 .updz.is-busy { opacity: .6; pointer-events: none; }
 .updz-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }
 
-/* ── Trim-to-content offer (lib/design-system/trim-offer.ts) ── plan 97 §7.3. Lives in
+/* ── Trim-to-content offer (lib/design-system/trim-offer.ts) ── plan 97 section 7.3. Lives in
    this sheet because it belongs to the same moment as the zone above: a user file is
    becoming an asset, and every surface that ingests one (the dropzone, the Logos room,
    the asset picker's upload flow, the catalogue details panel) shows the same card.
@@ -92,7 +92,7 @@
 .trimo-pad-input { width: 5.5em; }
 .trimo-unit { color: hsl(var(--muted-foreground)); }
 
-/* The permanence sentence (plan 97 §14.4) sits with the actions, not in a tooltip:
+/* The permanence sentence (plan 97 section 14.4) sits with the actions, not in a tooltip:
    the trim is default-on, so its cost is read before the default is taken. */
 .trimo-note { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.78rem * var(--a11y-fs)); }
 .trimo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -106,7 +106,7 @@
    of its own then. */
 .trimo-host { flex: none; padding: 12px 20px; max-height: 55vh; overflow-y: auto; }
 
-/* Touch: every control in the card is a real 44px target (plan 97 §11). The
+/* Touch: every control in the card is a real 44px target (plan 97 section 11). The
    stepper is a text field as well as a target, so it grows in height only. */
 @media (pointer: coarse) {
   .trimo-x { width: 44px; height: 44px; }

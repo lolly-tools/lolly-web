@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * ceremony - the private-collab pairing state machine (plan 100 §6.1, §6.2a, wave 2.2).
+ * ceremony - the private-collab pairing state machine (plan 100 section 6.1, section 6.2a, wave 2.2).
  *
  * PURE LOGIC. This module owns the *order of events* in a Track-A pairing and nothing
  * else: no DOM, no `RTCPeerConnection`, no codec, no timers of its own. Everything that
@@ -19,7 +19,7 @@
  * ("that reply isn't readable, try again") and must not end a ceremony, so it never
  * becomes an event here.
  *
- * ── The two paths (§6.1) ──────────────────────────────────────────────────────────
+ * ── The two paths (section 6.1) ──────────────────────────────────────────────────────────
  *
  *   inviter:  idle → creating-invite → awaiting-answer ⇄(re-arm) → applying-answer
  *                                                                → connecting → connected
@@ -27,16 +27,16 @@
  *
  *   acceptor: idle → reading-invite → creating-answer → awaiting-connection → connected
  *
- * Terminal is `failed` (with a cause the UI turns into specific copy, §11.26) or
+ * Terminal is `failed` (with a cause the UI turns into specific copy, section 11.26) or
  * `closed` (the user cancelled). `reconnect-armed` is NOT terminal - it is the inviter
  * holding a freshly minted re-invite, because a dropped WebRTC connection can never be
- * resumed and always needs a fresh ceremony (§6.1); pre-minting the offer the moment the
+ * resumed and always needs a fresh ceremony (section 6.1); pre-minting the offer the moment the
  * old one dies is what makes the session card's "Reconnect" QR feel pre-armed.
  *
- * ── Why the acceptor probes before answering (§6.1) ───────────────────────────────
+ * ── Why the acceptor probes before answering (section 6.1) ───────────────────────────────
  *
  * A private collab requires the tool on BOTH devices: peers send values, never code
- * (§11.22), so the template and hooks always come from the local catalog. `checkTool`
+ * (section 11.22), so the template and hooks always come from the local catalog. `checkTool`
  * answers `have` / `missing` / `version-skew`, and `missing` is an honest terminal
  * refusal at accept time rather than a join that renders nothing.
  *
@@ -44,9 +44,9 @@
  *
  *  1. TOOL version (probed): a MAJOR skew means the two catalogs disagree about what the
  *     input ids mean, so the ops would land on the wrong fields → terminal refusal
- *     (`version-major-mismatch`). A minor skew is a soft note (`toolVersionNote`), §11.19.
+ *     (`version-major-mismatch`). A minor skew is a soft note (`toolVersionNote`), section 11.19.
  *  2. OP-CONTRACT version (`CANVAS_OP_VERSION`): a major mismatch is NOT a refusal - 
- *     contract §9 says the client joins OBSERVER-ONLY rather than corrupting state, so
+ *     contract section 9 says the client joins OBSERVER-ONLY rather than corrupting state, so
  *     `state.observerOnly` is set and the pair still connects. Both peers set the flag on
  *     themselves, which is the symmetric, safe outcome. Either envelope MAY carry the
  *     peer's version; when the byte-starved signalling payload does not, the ops
@@ -75,7 +75,7 @@
  * `reconnecting` flag, `checking` still arms the connect watchdog - and an ICE
  * `connected` on its own now changes no phase anywhere.
  *
- * ── The publish-before-promote guarantee (§11.25) ─────────────────────────────────
+ * ── The publish-before-promote guarantee (section 11.25) ─────────────────────────────────
  *
  * A promotion may never SKIP a step a human has to act on. The acceptor's answer must be
  * published and rendered before anything can move it to `connected`, and the inviter's
@@ -124,28 +124,28 @@
  * re-presented, and the class stops being reachable. They are safe to stack because both
  * land on `onIce`/`onReady`, which are idempotent in the value (see `syncIce`).
  *
- * ── `disconnected` is not death (§11.3) ───────────────────────────────────────────
+ * ── `disconnected` is not death (section 11.3) ───────────────────────────────────────────
  *
  * ICE `disconnected` self-heals in seconds on a UDP blip, so it only raises the transient
  * `reconnecting` flag: no timer, no state change, no re-pair UI (presence greys the
  * avatar, it does not evict). Only `failed`/`closed` is fatal - and then only the inviter
  * arms a re-invite, because the inviter owns the session and is the authoritative
- * continuation (§6.2a); the acceptor's copy is ephemeral, so its drop ends in
+ * continuation (section 6.2a); the acceptor's copy is ephemeral, so its drop ends in
  * `connection-lost` and its way back is scanning the inviter's fresh invite.
  *
  * No wall clock anywhere: every deadline is a delta handed to the injected timers, so a
- * device with a wrong clock (the airgap case, §11.7) behaves identically.
+ * device with a wrong clock (the airgap case, section 11.7) behaves identically.
  */
 
 import { CANVAS_OP_VERSION, isCompatibleOpVersion } from '@lolly-tools/core/canvas-op-v1';
 
 // ── Roles, phases, causes ──────────────────────────────────────────────────────────
 
-/** Who this machine is acting for. The pair is asymmetric on purpose (§6.2a). */
+/** Who this machine is acting for. The pair is asymmetric on purpose (section 6.2a). */
 export type CeremonyRole = 'inviter' | 'acceptor';
 
 /**
- * Every state the ceremony can be in. Each maps to one screen of the dialog (§11.26 - 
+ * Every state the ceremony can be in. Each maps to one screen of the dialog (section 11.26 - 
  * "ceremony states need first-class UI"), which is why the in-flight ones are named
  * separately rather than collapsed into a boolean.
  */
@@ -168,32 +168,32 @@ export type CeremonyPhase =
   | 'awaiting-connection'
   /** Both: the transport reports the ops channel OPEN - the pair can carry a session. */
   | 'connected'
-  /** inviter: the connection died; a fresh invite is minted and waiting (§6.1, §11.3). */
+  /** inviter: the connection died; a fresh invite is minted and waiting (section 6.1, section 11.3). */
   | 'reconnect-armed'
-  /** Terminal: ended with a cause the UI turns into specific copy (§11.26). */
+  /** Terminal: ended with a cause the UI turns into specific copy (section 11.26). */
   | 'failed'
   /** Terminal: the user closed it. Not an error - never show failure copy for this. */
   | 'closed';
 
 /**
- * Why a ceremony ended. Distinct causes, not one "it broke" - §11.26 asks for specific
+ * Why a ceremony ended. Distinct causes, not one "it broke" - section 11.26 asks for specific
  * copy per cause, and the difference between "this network blocks device-to-device
  * traffic" and "your invite went unanswered" is the difference between a support ticket
  * and a shrug.
  */
 export type CeremonyEndCause =
-  /** The acceptor does not have the tool. Honest refusal at accept time (§6.1). */
+  /** The acceptor does not have the tool. Honest refusal at accept time (section 6.1). */
   | 'tool-missing'
   /** The two catalogs hold incompatible MAJOR versions of the tool (see header). */
   | 'version-major-mismatch'
   /**
    * ICE reported `failed`, or never got anywhere before the connect watchdog expired,
    * having NEVER connected. On a LAN that is overwhelmingly Wi-Fi client isolation or
-   * blocked mDNS (§11.1, §11.2) - the copy should say so and suggest a hotspot or wire,
+   * blocked mDNS (section 11.1, section 11.2) - the copy should say so and suggest a hotspot or wire,
    * not blame the invite.
    */
   | 'ice-failed-isolation-suspected'
-  /** A live connection died (§11.3). Different copy from never having connected. */
+  /** A live connection died (section 11.3). Different copy from never having connected. */
   | 'connection-lost'
   /** A human leg ran out of time: the invite went unanswered, or an effect hung. */
   | 'timeout'
@@ -210,7 +210,7 @@ export function isCeremonyTerminal(phase: CeremonyPhase): boolean {
 // ── The signals (logical form; the codec owns the bytes) ───────────────────────────
 
 /**
- * The identity that crosses the wire - chosen, never leaked (§11.23). Both fields are
+ * The identity that crosses the wire - chosen, never leaked (section 11.23). Both fields are
  * optional because the QR budget is real: `sdp-codec.ts` makes the name optional and
  * carries the colour as a palette index, so an anonymous pair is a legitimate outcome
  * and the UI needs a "someone" fallback either way.
@@ -218,26 +218,26 @@ export function isCeremonyTerminal(phase: CeremonyPhase): boolean {
 export interface CollabPeer {
   /** Display name, defaulting to profile firstname but editable at ceremony time. */
   readonly name?: string;
-  /** Collaborator colour hint; the receiving shell may re-derive it instead (§4.4). */
+  /** Collaborator colour hint; the receiving shell may re-derive it instead (section 4.4). */
   readonly colour?: string;
 }
 
 /**
- * The invite payload (§6.1), in logical form. The mini-codec (wave 2.1) is what squeezes
+ * The invite payload (section 6.1), in logical form. The mini-codec (wave 2.1) is what squeezes
  * `signal` to the QR budget; everything else is small metadata the acceptor needs BEFORE
  * it answers.
  */
 export interface CollabInvite extends CollabPeer {
   /** The connection blob: DTLS fingerprint + ICE ufrag/pwd + host candidates. */
   readonly signal: string;
-  /** The tool both devices must have (§6.1). */
+  /** The tool both devices must have (section 6.1). */
   readonly toolId: string;
   /** The inviter's copy of the tool, for the skew check. */
   readonly toolVersion?: string;
-  /** The inviter's engine version - a soft note only (§11.19). */
+  /** The inviter's engine version - a soft note only (section 11.19). */
   readonly engineVersion?: string;
   /**
-   * The inviter's `CANVAS_OP_VERSION` (contract §9 → observer-only on a major gap).
+   * The inviter's `CANVAS_OP_VERSION` (contract section 9 → observer-only on a major gap).
    * OPTIONAL because the signalling payload is byte-starved and may not carry it: when
    * it is absent the machine assumes compatibility and the in-band hello settles it via
    * the `peer-op-version` event, which lands before the first op either way.
@@ -247,7 +247,7 @@ export interface CollabInvite extends CollabPeer {
   readonly seed?: string;
 }
 
-/** The reply leg (§11.25 - the weak point, which is why it is a first-class payload). */
+/** The reply leg (section 11.25 - the weak point, which is why it is a first-class payload). */
 export interface CollabAnswer extends CollabPeer {
   /** The acceptor's connection blob. */
   readonly signal: string;
@@ -283,7 +283,7 @@ export type CreateAnswerResult =
   | { readonly ok: false; readonly detail?: string };
 
 /**
- * Applying the peer's answer. `retryable` is the §11.25 concession: a mis-scanned or
+ * Applying the peer's answer. `retryable` is the section 11.25 concession: a mis-scanned or
  * truncated reply must send the inviter back to waiting with a note, NOT end a ceremony
  * the humans are still working. Everything else is a local stack failure.
  */
@@ -294,7 +294,7 @@ export type ApplyRemoteResult =
 export interface CeremonyEffects {
   /** Mint an invite. `attempt` counts re-arms, for the transport's own logging. */
   createOffer(req: { readonly attempt: number }): Promise<CreateOfferResult>;
-  /** Probe the local catalog before answering (§6.1). Acceptor only. */
+  /** Probe the local catalog before answering (section 6.1). Acceptor only. */
   checkTool(req: ToolProbeRequest): Promise<ToolProbeResult>;
   /** Take the remote offer and mint the answer. Acceptor only. */
   createAnswer(invite: CollabInvite): Promise<CreateAnswerResult>;
@@ -348,7 +348,7 @@ const REAL_TIMERS: CeremonyTimers = {
   },
 };
 
-/** How long an invite (or an answer awaiting delivery) stays live before re-arming (§6.1). */
+/** How long an invite (or an answer awaiting delivery) stays live before re-arming (section 6.1). */
 export const ANSWER_WAIT_MS = 10 * 60_000;
 /** How long ICE gets to connect once both descriptions exist, before isolation is suspected. */
 export const CONNECT_WATCHDOG_MS = 45_000;
@@ -359,7 +359,7 @@ export const EFFECT_BUDGET_MS = 20_000;
  * How many times the answer leg may be re-armed before the ceremony gives up.
  *
  * Both re-arm paths spend it: the ten-minute timer that re-mints an unanswered
- * invite, and an answer that came back unreadable (§11.25), which restarts the same
+ * invite, and an answer that came back unreadable (section 11.25), which restarts the same
  * wait. Counting only the first would leave an invite's lifetime unbounded - one
  * garbled paste every nine minutes holds the offer open for ever.
  */
@@ -376,19 +376,19 @@ export interface CeremonyState {
   readonly answer?: CollabAnswer;
   /** The other side's chosen identity, as soon as a payload carries it. */
   readonly peer?: CollabPeer;
-  /** How much of the answer leg's budget is spent (§6.1) - a re-mint after ten
+  /** How much of the answer leg's budget is spent (section 6.1) - a re-mint after ten
    *  unanswered minutes, or an answer that came back unreadable, each cost one.
    *  Reset to 0 the moment the pair connects. See {@link MAX_REARMS}. */
   readonly rearms: number;
   /** An invite mint is in flight - the QR/link is not ready to show yet. */
   readonly arming: boolean;
-  /** ICE said `disconnected`: transient, grey the avatar, do NOT re-pair (§11.3). */
+  /** ICE said `disconnected`: transient, grey the avatar, do NOT re-pair (section 11.3). */
   readonly reconnecting: boolean;
   /** Has this ceremony ever been live? Changes the copy on a late failure. */
   readonly everConnected: boolean;
-  /** Op-contract major mismatch → join, but send no ops (contract §9, §11.19). */
+  /** Op-contract major mismatch → join, but send no ops (contract section 9, section 11.19). */
   readonly observerOnly: boolean;
-  /** Minor tool skew: connect, and say "you're on different versions" (§11.19). */
+  /** Minor tool skew: connect, and say "you're on different versions" (section 11.19). */
   readonly toolVersionNote?: 'minor-skew';
   /** Set when a retryable answer was rejected, so the dialog can say "try that again". */
   readonly retryNote?: string;
@@ -415,12 +415,12 @@ export type CeremonyEvent =
   | { readonly type: 'invite' }
   /** acceptor: a decoded invite arrived (link, paste, QR scan, share sheet). */
   | { readonly type: 'accept'; readonly invite: CollabInvite }
-  /** inviter: a decoded answer arrived (paste, QR scan, `#/join-reply` handoff §11.25). */
+  /** inviter: a decoded answer arrived (paste, QR scan, `#/join-reply` handoff section 11.25). */
   | { readonly type: 'answer'; readonly answer: CollabAnswer }
   /**
    * Either: the peer declared its `CANVAS_OP_VERSION` in band (the ops-channel hello).
    * The escape hatch for signalling payloads too small to carry it - it recomputes
-   * `observerOnly` and lands before the first op, which is all contract §9 requires.
+   * `observerOnly` and lands before the first op, which is all contract section 9 requires.
    */
   | { readonly type: 'peer-op-version'; readonly opVersion: string }
   /** Either: the peer connection's ICE state changed. */
@@ -560,7 +560,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
   }
 
   /**
-   * Contract §9: a MAJOR op-contract gap means observer-only, never a refusal. An
+   * Contract section 9: a MAJOR op-contract gap means observer-only, never a refusal. An
    * undeclared version is not a gap - it is silence, and the in-band hello answers it.
    */
   function observerOnlyFor(peerOpVersion: string | undefined): boolean {
@@ -606,7 +606,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
   /**
    * Mint an invite. `armed` distinguishes the first ceremony (`creating-invite` →
    * `awaiting-answer`) from a re-invite after a drop, which lives in `reconnect-armed`
-   * throughout so the session card can keep showing one thing (§6.1).
+   * throughout so the session card can keep showing one thing (section 6.1).
    */
   function startInvite(armed: boolean, attempt: number): void {
     // A mint is a NEW peer connection, so the previous pairing's readiness dies with it.
@@ -640,7 +640,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
     });
   }
 
-  /** The 10-minute re-arm (§6.1): a stale offer's candidates are worth less than a fresh one. */
+  /** The 10-minute re-arm (section 6.1): a stale offer's candidates are worth less than a fresh one. */
   function armAnswerWait(armed: boolean, gen: number): void {
     startTimer(gen, answerWaitMs, () => {
       if (state.rearms >= maxRearms) {
@@ -688,7 +688,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
           return;
         }
         if (res.retryable) {
-          // §11.25: a bad paste is a step to repeat, not a ceremony to restart - but
+          // section 11.25: a bad paste is a step to repeat, not a ceremony to restart - but
           // it SPENDS a re-arm. `armAnswerWait` starts the ten minutes over, so an
           // answer that never reads (a cracked camera, a chat client mangling the
           // token) would otherwise hold this offer, its ICE credentials and the
@@ -741,7 +741,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
       {
         onResult: (probe) => {
           if (probe.status === 'missing') {
-            // §6.1: peers send values, never code - so a missing tool is a refusal.
+            // section 6.1: peers send values, never code - so a missing tool is a refusal.
             fail('tool-missing', invite.toolId);
             return;
           }
@@ -775,7 +775,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
         // early.
         const next = setPhase('awaiting-connection', { answer: res.answer });
         if (!live(next)) return;
-        // The long budget: the human still has to carry this blob back (§6.1). It
+        // The long budget: the human still has to carry this blob back (section 6.1). It
         // shortens to the connect watchdog the moment ICE starts checking.
         startTimer(next, answerWaitMs, () => fail('timeout', 'the answer was never delivered'));
         // …and on a LAN the entire handshake may already have happened inside the
@@ -850,7 +850,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
     });
   }
 
-  // ── ICE (§11.3) ─────────────────────────────────────────────────────────────────
+  // ── ICE (section 11.3) ─────────────────────────────────────────────────────────────────
 
   /**
    * Read the transport's CURRENT ICE state and process it exactly as a live event.
@@ -912,7 +912,7 @@ export function createCeremony(opts: CeremonyOptions): CeremonyMachine {
         return;
       case 'disconnected':
         // NOT a failure: it self-heals in seconds, and no timer is started on purpose - 
-        // the browser escalates to `failed` itself if it does not (§11.3).
+        // the browser escalates to `failed` itself if it does not (section 11.3).
         if (!state.reconnecting) patch({ reconnecting: true });
         return;
       case 'failed':

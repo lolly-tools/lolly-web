@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * tool-collab - the presence chrome of ONE mounted tool, composed (plan 100 §4.6, §5).
+ * tool-collab - the presence chrome of ONE mounted tool, composed (plan 100 section 4.6, section 5).
  *
  * `views/tool.ts` owns a single guarded block that asks whether this mount is part of
  * a collab and, if it is, imports this module. Everything the answer "yes" costs - a
@@ -29,7 +29,7 @@
  * NOTHING HERE WRITES INTO THE RENDER. The canvas is passed to be MEASURED and read;
  * the rings and cursors paint on an overlay layer `mountOverlayLayer` deliberately
  * climbs OUT of it, and the pill is a child of the stage. A collaborator's presence
- * must not be able to change a single byte of an exported PNG (§4.6, §8) - and the
+ * must not be able to change a single byte of an exported PNG (section 4.6, section 8) - and the
  * sidebar is the one surface decorated in place, because the sidebar is chrome and
  * is never exported.
  *
@@ -92,8 +92,8 @@ export interface ToolCollabOptions {
   runtime: CollabRuntime;
   /** The tool being edited (`tool.manifest`). */
   toolManifest?: CollabToolManifest | null;
-  /** The host bridge: the pack's colour tokens (§4.4), and the bridge an OUTGOING beam
-   *  is packed from - which for an acceptor is the memory-backed clone (§11.17), so a
+  /** The host bridge: the pack's colour tokens (section 4.4), and the bridge an OUTGOING beam
+   *  is packed from - which for an acceptor is the memory-backed clone (section 11.17), so a
    *  working copy that may never reach a slot on this device can still be given away. */
   host?: HostV1 | null;
   /**
@@ -102,8 +102,8 @@ export interface ToolCollabOptions {
    * means "the same one".
    *
    * A received beam is a disclosed gift the human accepted by name, not the acceptor's
-   * borrowed copy of the inviter's document: §6.4 says it "lands attributed ('From
-   * Priya') in the receiver's library, storage meter updated honestly", and §11.17's
+   * borrowed copy of the inviter's document: section 6.4 says it "lands attributed ('From
+   * Priya') in the receiver's library, storage meter updated honestly", and section 11.17's
    * ephemerality rule is about the collab document and nothing else. Landing it in the
    * memory store made the toast report a success that evaporated at teardown - and only
    * half of one, since the assets ride `host.assets` and were persisting all along.
@@ -121,7 +121,7 @@ export interface ToolCollabOptions {
    */
   exportSettings?: (() => Record<string, unknown> | null) | null;
   /** `.tool-stage` - the pill's container and the overlay layer's host. Both are
-   *  siblings of the render surface, which is the §4.6 rule made structural. */
+   *  siblings of the render surface, which is the section 4.6 rule made structural. */
   stage: HTMLElement;
   /** `#tool-canvas` / `#tool-content` - the render surface. READ ONLY. */
   canvas: HTMLElement;
@@ -150,7 +150,7 @@ export interface ToolCollab {
 
 /**
  * The pack's colour tokens as `collabPalette` takes them, and the accent that
- * anchors the hue spin (§4.4 - collaborator colours are derived from the ACTIVE
+ * anchors the hue spin (section 4.4 - collaborator colours are derived from the ACTIVE
  * design system, never a fixed list).
  *
  * Neither read may fail the mount: a pack that answers nothing simply yields the
@@ -198,7 +198,7 @@ function holdsPickedFile(value: unknown): boolean {
  * on the wire.
  *
  * `file` inputs are the user's own file, held in memory as an `InputFile` whose `bytes`
- * are a `Uint8Array`. §3's exclusions say it plainly ("`file` inputs never sync", "local
+ * are a `Uint8Array`. section 3's exclusions say it plainly ("`file` inputs never sync", "local
  * file - not shared"), and the beam's own design agrees: bytes travel as chunked asset
  * ITEMS, checksummed and consented to, never inline in the session JSON. What actually
  * happened when one did is worth recording, because none of the guards caught it:
@@ -302,7 +302,7 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
       toolManifest: opts.toolManifest ?? null,
       // ONE delegated focusin/focusout pair on the sidebar root. That is what makes
       // "which control are you in" the presence primitive every tool gets for free
-      // (§4.1), and delegation is what makes it survive the sidebar's rebuilds.
+      // (section 4.1), and delegation is what makes it survive the sidebar's rebuilds.
       sidebarRoot: sidebar,
       ...(opts.colors ? { colors: opts.colors } : { palette, accent }),
       ...(opts.now ? { now: opts.now } : {}),
@@ -333,7 +333,7 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
     steps.unshift(() => cursors.dispose());
 
     /**
-     * THE BEAM'S ENTRY POINT (§6.4), and the reason it is HERE.
+     * THE BEAM'S ENTRY POINT (section 6.4), and the reason it is HERE.
      *
      * The paired channel is a general conduit - co-editing is one payload type on it,
      * and a whole session (with the uploads it references) is another. The stack for
@@ -341,21 +341,21 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
      * toast or called `sendCurrentSession`. `attachCollabBeam` is that call, and it can
      * only be made from a mounted tool, because a beam needs three things nothing
      * earlier in the chain holds: the host bridge it packs from (already swapped to the
-     * acceptor's memory state by `views/tool.ts`, §11.17 - so an ephemeral copy beams
+     * acceptor's memory state by `views/tool.ts`, section 11.17 - so an ephemeral copy beams
      * through the identical path), the live model it sends, and a page for the toast.
      *
-     * The two directions take DIFFERENT hosts, and that asymmetry is the whole of §11.17
-     * versus §6.4. Outgoing packs from `host`: for an acceptor that is the memory clone,
+     * The two directions take DIFFERENT hosts, and that asymmetry is the whole of section 11.17
+     * versus section 6.4. Outgoing packs from `host`: for an acceptor that is the memory clone,
      * which is right - the working copy is theirs to give away and must not touch a slot.
      * Incoming lands in `libraryHost`, the bridge as it was before the swap, because a
-     * received beam is a gift the human accepted by name and §6.4 promises it lands in
+     * received beam is a gift the human accepted by name and section 6.4 promises it lands in
      * their library. With one host for both, an acceptor's toast reported a success that
      * evaporated at teardown - and only half of one: the assets go through
      * `host.assets`, which was never swapped, so they persisted while the session they
      * belong to did not.
      *
      * `null` for every collab that cannot beam, which is every WORK collab: Track B's
-     * transport publishes no bulk lane (§7), so the pill grows no control rather than
+     * transport publishes no bulk lane (section 7), so the pill grows no control rather than
      * one that answers "not available".
      */
     const currentSession = (): { state: Record<string, unknown>; label?: string } => {
@@ -419,9 +419,9 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
      * Roster → the two overlays.
      *
      * The cursor sample is deliberately not on `CollabParticipant` (a true x/y cursor
-     * is opt-in per tool, §4.3, while focus ships on every tool), so it is read off
+     * is opt-in per tool, section 4.3, while focus ships on every tool), so it is read off
      * the presence roster and joined by client id. `collabDisplayName` supplies
-     * §4.5's Host/Invitee fallback, so a peer who chose no name still has something
+     * section 4.5's Host/Invitee fallback, so a peer who chose no name still has something
      * on their chip rather than a blank one.
      */
     const paint = (state: CollabSessionState): void => {
@@ -457,7 +457,7 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
      * Both adapters say in their headers that the MOUNT owns this one line, and this is
      * the mount.
      *
-     * `session.applyRemotePatch` is the only door: it runs the §11.21 op guard before
+     * `session.applyRemotePatch` is the only door: it runs the section 11.21 op guard before
      * the plumbing queues anything, so a hostile batch never reaches the converging
      * document, and the plumbing then coalesces per frame and lands them atomically. A
      * throw here is contained for the same reason the paint is - a transport must not be
@@ -473,7 +473,7 @@ export async function mountToolCollab(opts: ToolCollabOptions): Promise<ToolColl
     }
 
     /**
-     * THE ROLE WIRE (§11.19). A downgrade to observer is decided by the transport - an
+     * THE ROLE WIRE (section 11.19). A downgrade to observer is decided by the transport - an
      * incompatible op-contract major on Track A, the gateway's seat on Track B - and
      * `CollabSessionState.role` is rebuilt from `handle.role` on every notify, so the
      * pill's observer banner is already correct as soon as anything notifies. What was

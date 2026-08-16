@@ -62,7 +62,7 @@ const byId = (list: VerifyNotice[], id: string): VerifyNotice | undefined => lis
 test('formatLabel says what the sniffer actually established, and nothing more', () => {
   assert.equal(formatLabel('html'), 'HTML document');
   assert.equal(formatLabel('text'), 'plain text');
-  // 'code' means "an §A.9 manifest DELIMITER is in this text" - NOT a language
+  // 'code' means "an section A.9 manifest DELIMITER is in this text" - NOT a language
   // claim, and NOT a claim that a whole armour block is present: the sniffer
   // sets it on one delimiter, which is the case the engine reports as "no
   // credential here". The label must over-claim neither the language nor the
@@ -190,7 +190,7 @@ test('classifyPastedUrl: text is PAYLOAD unless it is unmistakably an address', 
   assert.deepEqual(classifyPastedUrl(`${ORIGIN}//evil.test/x`, ORIGIN), { kind: 'unresolvable' });
 });
 
-// ═══ external credential (§A.7.1.2 / §A.9.3) ══════════════════════════════════
+// ═══ external credential (section A.7.1.2 / section A.9.3) ══════════════════════════════════
 
 test('manifest.inaccessible NEVER renders as a broken credential', () => {
   // The exact field M1's report flags for this: state 'invalid' + the
@@ -257,7 +257,7 @@ test('a fetched external credential says so — a valid verdict must not read as
 // it. `verifyTextNotices` looks the status up in a table and pushes nothing at
 // all on a miss, so an unmapped status is silent - the hero stands with no note
 // under it, which is the exact failure this wave exists to prevent. A literal
-// list cannot catch that: M1 §6.4 already plans to change one of these strings
+// list cannot catch that: M1 section 6.4 already plans to change one of these strings
 // (`lolly.manifest.unsupportedReference` → the spec code), and a list of ten
 // literals would have gone on passing while the note disappeared.
 // `textMultipleWrappers` is the one status STATUS_NOTICE deliberately excludes - 
@@ -300,7 +300,7 @@ test("the engine's own detail sentence rides along, verbatim", () => {
   assert.equal(byId(notes, 'corrupted-wrapper')!.detail, 'the wrapper ends inside manifestLength (2 of 4 bytes)');
 });
 
-test('the §A.9.5 "one delimiter only" case stays honest about quoted prose', () => {
+test('the section A.9.5 "one delimiter only" case stays honest about quoted prose', () => {
   const n = byId(verifyTextNotices(report({
     state: 'none', found: false, format: 'code',
     textBinding: { kind: 'structuredText', status: 'manifest.structuredText.noManifest' },
@@ -311,10 +311,10 @@ test('the §A.9.5 "one delimiter only" case stays honest about quoted prose', ()
   assert.equal(n.tone, 'info');
 });
 
-// ═══ §A.8 wrappers ════════════════════════════════════════════════════════════
+// ═══ section A.8 wrappers ════════════════════════════════════════════════════════════
 
 test('multiple wrappers: a notice when one was selected, a refusal only when more than one MATCHED', () => {
-  // Extraction-time multiplicity is a NOTICE (§A.8.4.1 gives selection to the
+  // Extraction-time multiplicity is a NOTICE (section A.8.4.1 gives selection to the
   // exclusions) - and here the assertion picked one cleanly, so the text is fine.
   const picked = byId(verifyTextNotices(report({
     state: 'valid',
@@ -325,7 +325,7 @@ test('multiple wrappers: a notice when one was selected, a refusal only when mor
   assert.match(picked.body, /select wrapper \{k\}/);
   assert.equal(picked.tone, 'info');
 
-  // §15.12.1.3.1 step 4: more than one MATCH is the case with no verdict.
+  // section 15.12.1.3.1 step 4: more than one MATCH is the case with no verdict.
   const many = byId(verifyTextNotices(report({
     state: 'invalid',
     textBinding: { kind: 'text', wrappers: 3, matchedWrappers: 2 },
@@ -427,7 +427,7 @@ test('a clean text credential earns no notes either', () => {
   assert.deepEqual(verifyTextNotices(clean, { origin: ORIGIN }), []);
 });
 
-// ═══ §18.28 ai-disclosure ═════════════════════════════════════════════════════
+// ═══ section 18.28 ai-disclosure ═════════════════════════════════════════════════════
 
 test('aiDisclosureRows: the model is named from whichever field the claim used', () => {
   assert.deepEqual(aiDisclosureRows(report({ aiDisclosure: { modelName: 'Nano Banana' } })), [{ model: 'Nano Banana' }]);

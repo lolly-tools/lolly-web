@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-ceremony - the invite and accept dialogs of a private collab
- * (plan 100 §6.1, §4.5, §11.25, §11.26; wave 2.2).
+ * (plan 100 section 6.1, section 4.5, section 11.25, section 11.26; wave 2.2).
  *
  * WHAT THIS IS. The human half of `collab/ceremony.ts`. That module owns the order of
  * events and nothing else; this one owns the screens the two people actually work
- * through, numbered 1-2-3 on every screen because §11.25 says the QR Tango survives
+ * through, numbered 1-2-3 on every screen because section 11.25 says the QR Tango survives
  * only when the UI says which step the pair is on. Nothing here decides when a
  * ceremony ends - it renders `machine.state.phase` and feeds events back in.
  *
@@ -14,7 +14,7 @@
  * object or a factory), the QR as `renderQr`, the scanner as `scan`. Three reasons,
  * in order of weight: the provider is another wave's file and would drag WebRTC into
  * every bundle that shows a share dialog; `BarcodeDetector` is Chromium-only
- * (§11.27), so scanning has to be an absent capability rather than a broken button;
+ * (section 11.27), so scanning has to be an absent capability rather than a broken button;
  * and the whole flow then runs under jsdom with stub effects and a fake clock, which
  * is the only way the ten-minute re-arm and the isolation timeout are testable at all.
  *
@@ -46,12 +46,12 @@
  *             3. show the reply back (link / code / QR), then connect
  *
  * The acceptor's step 2 runs `checkTool` BEFORE the machine exists, so the probe's
- * verdict can be shown before asking for a name (§6.1 wants the refusal at accept
+ * verdict can be shown before asking for a name (section 6.1 wants the refusal at accept
  * time, and asking someone to name themselves for a collab that cannot happen is
  * rude). The machine re-runs the same probe when it starts; it is a local catalog
  * lookup, and the machine stays the authority on the outcome.
  *
- * A MISSING TOOL IS A REFUSAL, NOT A DEGRADED JOIN (§6.1, §11.22). Peers send values,
+ * A MISSING TOOL IS A REFUSAL, NOT A DEGRADED JOIN (section 6.1, section 11.22). Peers send values,
  * never code, so the template and hooks always come from the local catalog. The copy
  * names the tool rather than saying "something went wrong".
  *
@@ -76,7 +76,7 @@
  *
  * Focus moves only when the STEP changes, never on a countdown tick and never on a
  * validation notice - and a re-render restores the caret and the selection to whatever
- * field held them, with the typed text intact. §11.25 already calls the reply leg the
+ * field held them, with the typed text intact. section 11.25 already calls the reply leg the
  * ceremony's weak point; a dialog that wipes the paste field to tell you the paste was
  * wrong is what makes it one.
  *
@@ -90,7 +90,7 @@
  * ever reaches the DOM through `textContent`, never a markup sink - the same rule the
  * rest of `collab/` follows, because those strings come from a stranger.
  *
- * The copy is a LAZY namespace (§2 of the collab i18n wave): its ~180 strings are needed
+ * The copy is a LAZY namespace (section 2 of the collab i18n wave): its ~180 strings are needed
  * only once someone is actually starting or joining a collab, so they stay out of every
  * boot catalog and load with the dialog (that reasoning is about WHEN the copy is needed,
  * and survives `private-collab` going ON by default on 2026-08-10). English needs no load
@@ -129,7 +129,7 @@ import { derivePlate } from '../collab/plate.ts';
 import type { PlateMaterial } from '../collab/plate.ts';
 import { mountModal } from './modal.ts';
 import { currentLang, loadNamespace, tRaw } from '../i18n.ts';
-// Nearby discovery (plans/110 §3): tap a discovered peer to hand over the invite, instead
+// Nearby discovery (plans/110 section 3): tap a discovered peer to hand over the invite, instead
 // of the peer scanning a QR. The provider is null on every plain web build (no LAN provider
 // registered), so the whole panel is absent unless a Tauri shell registered one.
 import { getNearbyProvider, timedWindow, type NearbyPeer } from '../lib/nearby.ts';
@@ -231,7 +231,7 @@ export const STRINGS = {
   // Connected, and the two notes that can ride along.
   connectedHeading: 'Connected',
   connectedBody: 'You are working with {peer}.',
-  // The connection plate (§1). One sentence, and it says what a MATCH means rather than
+  // The connection plate (section 1). One sentence, and it says what a MATCH means rather than
   // instructing anyone to compare: the pair who read it out have already understood, and
   // the pair who do not are not made safer by being told to.
   plateBody: 'Both screens show the same plate when the connection is private.',
@@ -243,7 +243,7 @@ export const STRINGS = {
   observerOnly: 'The two devices run different collab versions. You can watch, but edits from this device are not sent.',
   minorSkew: 'The two devices run different versions of {tool}. Some fields may not match.',
 
-  // One screen per end cause (§11.26). Specific copy, one action each.
+  // One screen per end cause (section 11.26). Specific copy, one action each.
   fail: {
     'tool-missing': {
       title: 'This device does not have that tool',
@@ -282,7 +282,7 @@ export const STRINGS = {
     },
   },
 
-  // Nearby devices (plans/110 §3) - the tap-to-hand-over panel on the invite screen.
+  // Nearby devices (plans/110 section 3) - the tap-to-hand-over panel on the invite screen.
   nearbyHeading: 'Nearby devices',
   nearbyMakeVisible: 'Make this device visible',
   nearbyHint: 'Make the other device visible too, and it will appear here to tap.',
@@ -306,9 +306,9 @@ export const fill = tRaw;
 
 // ── Routes, timings, small pure helpers ───────────────────────────────────────
 
-/** Where an invite link points (§6.1 skin 1). */
+/** Where an invite link points (section 6.1 skin 1). */
 export const JOIN_ROUTE = '#/join';
-/** Where a reply link points (§11.25 - the answer leg is a link too, not just a blob). */
+/** Where a reply link points (section 11.25 - the answer leg is a link too, not just a blob). */
 export const REPLY_ROUTE = '#/join-reply';
 /**
  * The attribute an INVITER dialog states its minted invite on, in the link skin.
@@ -334,7 +334,7 @@ const RESTARTABLE: ReadonlySet<CeremonyEndCause> = new Set<CeremonyEndCause>([
   'timeout',
 ]);
 
-/** The name shown when someone clears the field (§4.5 - role-based, never a profile field). */
+/** The name shown when someone clears the field (section 4.5 - role-based, never a profile field). */
 export function fallbackName(role: CeremonyRole): string {
   return role === 'inviter' ? tRaw(STRINGS.hostFallback) : tRaw(STRINGS.inviteeFallback);
 }
@@ -405,7 +405,7 @@ export type SignalReadResult =
 /**
  * Decode what a human handed us, and re-skin it into both forms. Total: every
  * failure is a code this file has copy for, and nothing throws - the input is a
- * stranger's QR code or a chat message (§11.21).
+ * stranger's QR code or a chat message (section 11.21).
  */
 export function readSignal(raw: string, expect: SignalKind): SignalReadResult {
   const token = tokenFrom(raw, expect === 'invite' ? INVITE_PARAM : ANSWER_PARAM);
@@ -437,7 +437,7 @@ export function presentSignal(signal: string, kind: SignalKind): { link: string;
 }
 
 /** The invite the machine needs, out of a decoded payload. Peer colour is left for
- *  the receiving shell to re-derive from its own design system (§4.4). */
+ *  the receiving shell to re-derive from its own design system (section 4.4). */
 export function inviteFromSignal(view: SignalView): CollabInvite | null {
   if (view.payload.kind !== 'invite') return null;
   const meta = view.payload.invite;
@@ -452,7 +452,7 @@ export function inviteFromSignal(view: SignalView): CollabInvite | null {
 }
 
 /**
- * The failure screen for an end cause. Total over `CeremonyEndCause` (§11.26).
+ * The failure screen for an end cause. Total over `CeremonyEndCause` (section 11.26).
  *
  * `STRINGS.fail[cause]` is the one place this file reads the map without a `tRaw()`
  * around it, and it is not copy: it is the OBJECT holding this cause's three keys.
@@ -528,7 +528,7 @@ export interface CeremonyEffectsBundle extends CeremonyEffects {
    */
   close?(): void;
   /**
-   * The pairing's two DTLS certificate fingerprints, for the connection plate (§1).
+   * The pairing's two DTLS certificate fingerprints, for the connection plate (section 1).
    *
    * A LEVEL READ, exactly like the machine's `iceState`/`channelsReady` and asked the same
    * way - on every render, rather than off an edge this dialog may have been in no screen
@@ -558,7 +558,7 @@ export interface CeremonyConnectedHandle {
   readonly toolId?: string;
   readonly invite?: CollabInvite;
   readonly answer?: CollabAnswer;
-  /** Contract §9: a major op-version gap joins as a watcher rather than refusing. */
+  /** Contract section 9: a major op-version gap joins as a watcher rather than refusing. */
   readonly observerOnly: boolean;
   readonly toolVersionNote?: 'minor-skew';
   readonly state: CeremonyState;
@@ -576,9 +576,9 @@ export interface CollabCeremonyOptions {
   readonly effects: CeremonyEffectsSource;
   /** The tool the session is on. Inviter only; the acceptor reads it off the invite. */
   readonly toolId?: string;
-  /** Prefill for the name field, normally the profile firstname. Clearable (§4.5). */
+  /** Prefill for the name field, normally the profile firstname. Clearable (section 4.5). */
   readonly profileName?: string;
-  /** Draw a QR for a token. Absent means the QR skin is simply not offered (§11.27). */
+  /** Draw a QR for a token. Absent means the QR skin is simply not offered (section 11.27). */
   readonly renderQr?: (text: string) => HTMLElement | null | Promise<HTMLElement | null>;
   /** Start a scan. Resolves with the scanned text, or null when nothing was read. */
   readonly scan?: () => Promise<string | null>;
@@ -593,7 +593,7 @@ export interface CollabCeremonyOptions {
   readonly onClose?: (state: CeremonyState | undefined) => void;
   /** Fires once with the acceptor's minted REPLY signal, the moment it exists - so a nearby
    *  pairing can hand the reply back over its own channel rather than showing a QR to scan.
-   *  Acceptor only; never fired for the inviter (plans/110 §3). */
+   *  Acceptor only; never fired for the inviter (plans/110 section 3). */
   readonly onAnswer?: (signal: string) => void;
   /** Base for the invite/reply links. Defaults to this page's origin + path. */
   readonly linkBase?: string;
@@ -718,13 +718,13 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   /**
    * What is typed in the two paste fields, mirrored out of the DOM so a re-render
    * cannot eat it. Every render rebuilds the screen, and a validation notice IS a
-   * render - the one moment the text matters most (§11.25).
+   * render - the one moment the text matters most (section 11.25).
    */
   const pasted = new Map<string, string>();
   let notice = '';
   let copiedAct = '';
   let connectedFired = false;
-  // Nearby (plans/110 §3). The LAN provider, or null when discovery is off or unavailable - 
+  // Nearby (plans/110 section 3). The LAN provider, or null when discovery is off or unavailable - 
   // in which case none of the panel, the subscription or the handlers below do anything.
   const nearbyProvider = isFlagOnSync(NEARBY_DISCOVERY_FLAG) ? getNearbyProvider('lan') ?? null : null;
   let nearbyPeers: readonly NearbyPeer[] = [];
@@ -774,7 +774,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       machine?.dispose();
       unsubscribe?.();
       releaseEffects();
-      // Stop browsing and, if we made ourselves discoverable, hide again (plans/110 §3).
+      // Stop browsing and, if we made ourselves discoverable, hide again (plans/110 section 3).
       nearbyUnsub?.();
       nearbyUnsub = null;
       if (nearbyVisible) void nearbyProvider?.hide();
@@ -888,7 +888,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     render();
   }
 
-  // ── Countdown (§6.1's ten minutes, shown rather than implied) ───────────────
+  // ── Countdown (section 6.1's ten minutes, shown rather than implied) ───────────────
 
   function stopTick(): void {
     if (tickHandle !== null) timers.clearTimeout(tickHandle);
@@ -1250,7 +1250,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     ]);
   }
 
-  /** The QR skin, or nothing at all when the host cannot draw one (§11.27). */
+  /** The QR skin, or nothing at all when the host cannot draw one (section 11.27). */
   function qrSlot(label: string, value: string): HTMLElement | null {
     if (!opts.renderQr) return null;
     const box = node('div', {
@@ -1374,7 +1374,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     return [heading(headingText), status(bodyText), actions(cancelButton())];
   }
 
-  /** Subscribe to the LAN peer list once, repainting on change (plans/110 §3). */
+  /** Subscribe to the LAN peer list once, repainting on change (plans/110 section 3). */
   function ensureNearbySub(): void {
     if (!nearbyProvider || nearbyUnsub) return;
     nearbyUnsub = nearbyProvider.subscribePeers((peers) => {
@@ -1571,7 +1571,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
 
   /**
    * Two things reset on a phase edge rather than on every paint. A dropped
-   * connection re-mints the invite (§6.1, §11.3), so the "I have sent it" step has to
+   * connection re-mints the invite (section 6.1, section 11.3), so the "I have sent it" step has to
    * rewind or the human keeps showing a code that no longer works - and the next
    * connection is a new session, so the handoff is allowed to fire again for it.
    */
@@ -1698,7 +1698,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     }
 
     // The acceptor's reply is minted the moment it reaches `awaiting-connection`. Hand it
-    // straight back over the nearby channel (plans/110 §3) rather than waiting for a scan.
+    // straight back over the nearby channel (plans/110 section 3) rather than waiting for a scan.
     if (role === 'acceptor' && state?.answer && !answerFired) {
       answerFired = true;
       opts.onAnswer?.(state.answer.signal);
@@ -1743,7 +1743,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       }
       case 'nearby-pick': {
         // Hand the current invite to the tapped peer over the nearby channel, then feed the
-        // reply it sends back through the SAME path a pasted reply takes (plans/110 §3).
+        // reply it sends back through the SAME path a pasted reply takes (plans/110 section 3).
         const peerId = target?.closest<HTMLElement>('[data-peer-id]')?.dataset.peerId;
         const signal = machine?.state.invite?.signal;
         if (nearbyProvider && peerId && signal) {

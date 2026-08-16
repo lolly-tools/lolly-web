@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Components as templates - the storage half (plan §2.2, phase 1.2).
+ * Components as templates - the storage half (plan section 2.2, phase 1.2).
  *
  * Run directly:  node --test shells/web/src/lib/design-templates.test.ts
  *

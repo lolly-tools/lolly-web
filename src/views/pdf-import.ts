@@ -339,7 +339,7 @@ function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resource
 }
 
 /**
- * Pre-decode an ExtGState /SMask into a `PdfSoftMaskDef` - PDF 32000-1 §11.6.5.2.
+ * Pre-decode an ExtGState /SMask into a `PdfSoftMaskDef` - PDF 32000-1 section 11.6.5.2.
  *
  * The whole point of this function is the shell/engine split: the mask group /G is a
  * form XObject, so all the shell has to do is decode its stream, pull its /Matrix and
@@ -376,7 +376,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     const tr = getKey(ctx, smRef, 'TR');
     const transfer = !!tr && nameOf(ctx, tr) !== 'Identity';
     // /BC: the backdrop colour the group is composited against, expressed in the
-    // GROUP's colour space (§11.6.5.2) and in force everywhere outside the /BBox.
+    // GROUP's colour space (section 11.6.5.2) and in force everywhere outside the /BBox.
     // Only a BLACK backdrop (luminosity 0, which is also the default when /BC is
     // absent) is expressible: any brighter backdrop reveals content out to infinity
     // and a userSpaceOnUse <mask> region cannot say that, so the engine refuses.
@@ -419,7 +419,7 @@ function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDe
     // changes the result where objects INSIDE the mask group overlap with transparency,
     // and the interpreter's painter model already approximates that everywhere else;
     // refusing every knockout group would cost more fidelity than it buys. /Group /I
-    // (isolated) needs no handling - §11.6.5.2 composites a luminosity group against
+    // (isolated) needs no handling - section 11.6.5.2 composites a luminosity group against
     // /BC alone, which is isolated behaviour by definition.
     return def;
   } catch { return true; }
@@ -824,7 +824,7 @@ function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
         family: name.replace(/^[A-Z]{6}\+/, ''),
         ext: realExt,
         bytes,
-        // The "ABCDEF+" prefix is the PDF spec's own subset marker (§9.6.4).
+        // The "ABCDEF+" prefix is the PDF spec's own subset marker (section 9.6.4).
         subset: /^[A-Z]{6}\+/.test(name),
         // A bare CFF or a Type1 PFB fragment is a font PROGRAM, not a font FILE:
         // no system will install it without being wrapped in an sfnt container.

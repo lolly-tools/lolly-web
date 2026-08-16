@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Paint order for the HTML→SVG walker - CSS 2.1 Appendix E §E.2 under
+ * Paint order for the HTML→SVG walker - CSS 2.1 Appendix E section E.2 under
  * `ExportOpts.stackingOrder`, and the guarantee that tool exports (flag absent)
  * still paint in DOM order.
  *
@@ -8,7 +8,7 @@
  *
  * jsdom cannot be the oracle. Every case here hinges on `getComputedStyle`
  * resolving `z-index`, `isolation`, `opacity` and - critically - CSS Display 3
- * §2.7 blockification, which is what makes an `position: absolute` inline
+ * section 2.7 blockification, which is what makes an `position: absolute` inline
  * element reachable by the walker's block-child loop at all. Hand-feeding a fake
  * computed style would only test the fake. So this follows the gated pattern of
  * export-stroke-paint.test.ts: esbuild-bundle the REAL module, drive it in a
@@ -168,7 +168,7 @@ test('a positioned child paints AFTER its parent\'s inline text (E.2 step 5 then
 // ─── (d) negative z: after the context\'s own background, before its content ──
 // This is the case that breaks under the obvious `insertBefore(firstChild)`
 // implementation: the negative child would slide behind the CONTEXT'S OWN
-// background, which §E.2 step 2 lays down first.
+// background, which section E.2 step 2 lays down first.
 test('a z-index:-1 child paints after its context\'s own background and before in-flow content',
   { skip: SKIP }, async () => {
     const markup = `<div id="root" style="position:relative;width:300px;height:200px;background:#f7fafc">
@@ -267,7 +267,7 @@ test('hoisting stops at isolation:isolate', { skip: SKIP }, async () => {
 // ─── (h) KNOWN LIMITATION assertions ──────────────────────────────────────────
 // Recorded deliberately so a future fix trips these and gets reviewed, rather
 // than quietly changing behaviour nobody was asserting.
-test('KNOWN LIMITATION: floats are painted in tree order, not §E.2 layer 4',
+test('KNOWN LIMITATION: floats are painted in tree order, not section E.2 layer 4',
   { skip: SKIP }, async () => {
     // A float paints BELOW positioned content but ABOVE in-flow blocks; the
     // walker has no float model and approximates with tree order. Zero floats

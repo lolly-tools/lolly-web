@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * versions-io.ts - publishing, activating and restoring design-system versions
- * (plans/97 §6a), over the REAL assets + tokens bridges.
+ * (plans/97 section 6a), over the REAL assets + tokens bridges.
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/versions-io.test.ts"
@@ -85,7 +85,7 @@ const doc = (jungle = '#30ba78') => ({
  * document DERIVED from the current head (studio-state clones it, the brand-doc
  * helpers mutate the clone), so the ledger rides along. A caller that installs a
  * document built from nothing replaces the head wholesale, ledger included - 
- * which is why importing a pack has to merge rather than overwrite (§8.1).
+ * which is why importing a pack has to merge rather than overwrite (section 8.1).
  */
 async function editHead(h: ReturnType<typeof makeHost>, next: Record<string, unknown>): Promise<void> {
   const index = readVersionIndex(await h.tokens.raw());
@@ -468,7 +468,7 @@ test('a version is read relative to the head it belongs to, not to the user id',
   assert.deepEqual(preview.diff.changed, ['color.brand.jungle']);
 });
 
-// ── Chrome follows active-or-latest (§6a / brand-vars.ts) ────────────────────
+// ── Chrome follows active-or-latest (section 6a / brand-vars.ts) ────────────────────
 
 test('the app’s own accent follows the ACTIVE version, not the draft head', async () => {
   stubFetch();
@@ -484,7 +484,7 @@ test('the app’s own accent follows the ACTIVE version, not the draft head', as
     const h = makeHost();
     const host = h.host as unknown as Parameters<typeof applyChromeBrandVars>[0];
 
-    // Nothing published: the head paints the chrome, exactly as before §6a.
+    // Nothing published: the head paints the chrome, exactly as before section 6a.
     await installUserTokens(h.host as unknown as Parameters<typeof installUserTokens>[0], semantic('#30ba78'), { label: 'My brand' });
     await applyChromeBrandVars(host);
     assert.equal(accent(), '#30ba78');

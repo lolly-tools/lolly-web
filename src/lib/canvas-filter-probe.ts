@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Does `ctx.filter` actually FILTER? - the functional probe (plan 104 §11 S1).
+ * Does `ctx.filter` actually FILTER? - the functional probe (plan 104 section 11 S1).
  *
  * The depth/DOF compositor wants to blur a plate per frame with one property write
  * (`ctx.filter = 'blur(Npx)'`) instead of a mip-chain of downscale/upscale passes.
@@ -22,7 +22,7 @@
  * would also be true if the geometry assumption broke; and a verdict of `false` is
  * always the safe one - it only routes the caller to the slower fallback lane.
  *
- * KIND, NOT THREAD. §11 S1's finding is that support is per-ENGINE: a worker's
+ * KIND, NOT THREAD. section 11 S1's finding is that support is per-ENGINE: a worker's
  * OffscreenCanvas and the main thread's canvas answer the same way on a given
  * browser. The cache is keyed by context kind anyway, because the two kinds are
  * separate implementations in every engine and because module state is per-realm - 

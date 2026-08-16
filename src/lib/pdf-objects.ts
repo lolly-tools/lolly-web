@@ -12,7 +12,7 @@
  * /Function and never sees a PostScript program - it receives a pre-sampled colour
  * ramp, a flat colour, or an opaque raster-tile key.
  *
- * Soft masks (PDF 32000-1 §11.6.5) are no longer the gap this header used to record:
+ * Soft masks (PDF 32000-1 section 11.6.5) are no longer the gap this header used to record:
  * views/pdf-import.ts pre-decodes the mask group and the engine emits a real SVG
  * `<mask>`. What lives here is the part of that decision which is pure object
  * arithmetic and therefore testable - `groupColorSpace` / `backdropLuminosity` (does
@@ -97,15 +97,15 @@ export function colorSpaceName(ctx: PDFContext, o: Ref): string | null {
 
 /** Colour space names that mean something on their own as a bare `/Name` operand.
  *  Anything else written as a bare name is a key into a /Resources /ColorSpace
- *  dict (PDF 32000-1 §8.6.3), not a space. */
+ *  dict (PDF 32000-1 section 8.6.3), not a space. */
 const BARE_SPACES = new Set(['DeviceGray', 'DeviceRGB', 'DeviceCMYK', 'Pattern']);
 
 /**
  * The colour space of a transparency group XObject - its `/Group /CS`, reduced to a
- * device/CIE space NAME (PDF 32000-1 §11.6.6, Table 147).
+ * device/CIE space NAME (PDF 32000-1 section 11.6.6, Table 147).
  *
  * WHY this exists separately from `colorSpaceName`: `/CS` may be written as a bare
- * name that is NOT a device space, in which case §8.6.3 says it names an entry in the
+ * name that is NOT a device space, in which case section 8.6.3 says it names an entry in the
  * *form's own* `/Resources /ColorSpace` dict - Illustrator and InDesign both do this
  * (`/CS /CS0`) where Chromium always writes `/DeviceRGB` inline. One level of
  * indirection is resolved; deeper chains and unresolvable names return null so the
@@ -167,7 +167,7 @@ export function softMaskId(
  * A soft mask's `/BC` backdrop colour → its LUMINOSITY in 0..1, or null when the
  * colour space is one we cannot convert (the caller must then refuse the mask).
  *
- * This is the whole point of reading the group's colour space. §11.6.5.2 composites
+ * This is the whole point of reading the group's colour space. section 11.6.5.2 composites
  * the group against a full-plane backdrop of `/BC` and takes the luminosity of the
  * result: luminosity 0 (the DEFAULT when /BC is absent) hides everything outside the
  * group's /BBox, luminosity 1 reveals it. In an ADDITIVE space (DeviceGray/RGB,
@@ -176,15 +176,15 @@ export function softMaskId(
  * `/BC` without its space therefore gets print/Illustrator PDFs backwards in the
  * unsafe direction: DeviceCMYK white `[0 0 0 0]` read as black hides live artwork.
  *
- * Formulas are the spec's own: Y = 0.3R + 0.59G + 0.11B (§11.6.5.2), with DeviceCMYK
- * first converted by R = 1 − min(1, C + K) (§10.4.2.1).
+ * Formulas are the spec's own: Y = 0.3R + 0.59G + 0.11B (section 11.6.5.2), with DeviceCMYK
+ * first converted by R = 1 − min(1, C + K) (section 10.4.2.1).
  *
  * DELIBERATE LIMITATIONS, all of which return null (= refuse, the safe direction - 
  * the mask is dropped and content stays visible):
  *   • /Separation and /DeviceN are subtractive but their luminosity needs the tint
  *     transform function evaluated into the alternate space. Their common case, an
  *     all-zero tint, is white = refuse anyway, so evaluating buys almost nothing.
- *   • /Indexed and /Pattern are not legal group spaces (§11.6.6) - refused.
+ *   • /Indexed and /Pattern are not legal group spaces (section 11.6.6) - refused.
  *   • A component count that disagrees with the space is malformed - refused.
  */
 export function backdropLuminosity(cs: string | null, bc: number[]): number | null {
@@ -310,7 +310,7 @@ function parseFunction(ec: ShadingCtx, o: Ref, depth: number): PdfFn | null {
   if (type === 0) return parseSampledFunction(ctx, o, d0, d1);
 
   // Type 4 - a PostScript calculator program. Compiled ONCE here (the classifier
-  // makes ~550 calls per shading), and clipped to /Domain per input per §7.10.2.
+  // makes ~550 calls per shading), and clipped to /Domain per input per section 7.10.2.
   if (type === 4) {
     const src = decodedText(ctx, o);
     const range = numArray(ctx, d.get(PDFName.of('Range'))) || [];
@@ -393,7 +393,7 @@ export function buildShading(ec: ShadingCtx, o: Ref): PdfShading | null {
 
 /**
  * ShadingType 1 - a colour function over a 2-D domain rectangle (PDF 32000-1
- * §8.7.4.5.3, Table 78). Classified into one of three rungs by lib/pdf-shading.ts:
+ * section 8.7.4.5.3, Table 78). Classified into one of three rungs by lib/pdf-shading.ts:
  *
  *   flat      → a `type: 1` shading carrying ONLY `flat`. `buildPattern` unwraps
  *               that to a plain colour so the interpreter never builds a gradient

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * THE PLATE BUDGET - how much memory a sequence export may spend on plates, and what
- * it gives back when it cannot afford what the camera asked for (plan 104 §5.5).
+ * it gives back when it cannot afford what the camera asked for (plan 104 section 5.5).
  *
  * Layers are rasterised ONCE, before the frame loop, and re-drawn every frame. That is
  * cheap while every plate is shot at the export scale S. Depth changes the arithmetic:
  * a layer flown toward the camera is magnified by `eff`, and a plate shot at S and then
- * blown up by eff is a soft plate, so §5.5 shoots it at `S·eff` instead. `eff` is
+ * blown up by eff is a soft plate, so section 5.5 shoots it at `S·eff` instead. `eff` is
  * capped at KF_EFF_MAX = 10 by the behind-camera guard, and a six-layer 1080p job at
  * eff 2.5 is already ~311 MB of plates - doubled while the worker path has both the
  * originals and their transferred copies alive. Fly-pasts are EXPECTED to hit the cap.
@@ -21,7 +21,7 @@
  *                 SILENTLY, which is the worst possible way to find out
  *   over budget → ONE λ = sqrt(budget / need), applied to every layer's eff, floored
  *                 at 1, and ONE warn line naming the clamp
- *   pad - the OTHER multiplier on plate size (§5.5's capture margin for a
+ *   pad - the OTHER multiplier on plate size (section 5.5's capture margin for a
  *                 blur/shadow spill). It gets its own cap against the same long side,
  *                 because eff floors at 1 and λ only scales eff: without one, a big
  *                 authored blur grows a plate ~90× with nothing able to take it back
@@ -84,7 +84,7 @@ export function bucketEffDown(eff: number): number {
 
 /** How many plates a layer of this kind occupies. */
 export function platesPerLayer(kind: PlateKind, needsLiveRaster = false): number {
-  // A camera has no picture and an audio bed has none either (§5.4).
+  // A camera has no picture and an audio bed has none either (section 5.4).
   if (kind === 'audio' || kind === 'camera') return 0;
   // A video layer is shot twice - everything under the media, and everything over it.
   if (kind === 'video') return 2;
@@ -118,7 +118,7 @@ export interface PlateLayerNeed {
   /** Stage-native box size, px, BEFORE the export scale. */
   w: number;
   h: number;
-  /** Capture margin on all four sides, stage-native px (plans/104 §5.5). */
+  /** Capture margin on all four sides, stage-native px (plans/104 section 5.5). */
   pad?: number;
   /** The largest projection magnification over this layer's active window. 1 = flat. */
   maxEff?: number;
@@ -386,7 +386,7 @@ export function blurScratchNeedBytes(
  * pixels, today's cost), and the executor logs ONE line naming what it refused. So it
  * is deliberately NOT subtracted from `planPlateBudget`'s allowance the way
  * `blurScratchNeedBytes` is - a reservation would degrade plate RESOLUTION, which is
- * quality, to buy back time, which is not the trade §5.5 makes anywhere else.
+ * quality, to buy back time, which is not the trade section 5.5 makes anywhere else.
  */
 export const FX_CACHE_BUDGET_SHARE = 0.5;
 

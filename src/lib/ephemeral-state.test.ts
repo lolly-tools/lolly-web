@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The memory-backed `host.state` for an ephemeral collab acceptor (plan 100 §11.17).
+ * The memory-backed `host.state` for an ephemeral collab acceptor (plan 100 section 11.17).
  *
  * What matters here is not that a Map can hold records - it is that this is the SAME
  * StateAPI the web shell persists with, only over a different driver. So the tests

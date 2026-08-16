@@ -8,7 +8,7 @@
  * export (the two walkers share the one descriptor):
  *
  *  1. The containing-block walk tested `position !== 'static'` only. CSS Position 3
- *     §3 also promotes an element with `transform` / `filter` / `backdrop-filter` /
+ *     section 3 also promotes an element with `transform` / `filter` / `backdrop-filter` /
  *     `perspective` / `contain: paint` / `content-visibility`. The app's glass chrome
  *     (`.btn--glass` → `backdrop-filter: blur(4px)`) is exactly that: the profile
  *     pill is `position: static` but IS the containing block, so the browser anchors

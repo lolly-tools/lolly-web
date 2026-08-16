@@ -511,7 +511,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-cbtn:hover { background: hsl(var(--muted)); }
 .fc-cbtn:active:not(:disabled) { filter: brightness(0.92); }
 /* An action the SELECTION cannot take right now (today: "+Keyframe" on a sound clip,
-   plans/104 §8). Dimmed and inert, never hidden and never removed — a control that
+   plans/104 section 8). Dimmed and inert, never hidden and never removed — a control that
    comes and goes as you click around teaches nothing, and its tooltip is where the
    reason lives. `aria-disabled` rather than the `disabled` property, so it keeps its
    place in the tab order and can still be read. Same posture, same numbers, as
@@ -710,7 +710,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    (two buttons rather than a field + a button). */
 .fc-confirm-row { justify-content: flex-end; }
 
-/* ── Lift layers (plans/104 §7) ────────────────────────────────────────────────
+/* ── Lift layers (plans/104 section 7) ────────────────────────────────────────────────
    The confirm dialog is the same `fc-panel fc-num-panel` recipe as askConfirm; the
    only new furniture is the plan LIST between the sentence and the buttons. It is a
    preview, not a control: no checkboxes (an unticked layer would have nowhere to go —

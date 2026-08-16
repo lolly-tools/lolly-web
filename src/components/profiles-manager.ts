@@ -20,7 +20,7 @@
  * - **Display** (`mntr`): a screen. The ICC publishes an sRGB v2 profile under terms
  *   that plainly allow it, so this section has one preset of its own; everything else
  *   here is a file the reader brought. Apple's `Display P3.icc` is NOT redistributable
- *   and Elle Stone's set is CC-BY-SA, so neither is offered (plans/60-color-spaces.md §11.8).
+ *   and Elle Stone's set is CC-BY-SA, so neither is offered (plans/60-color-spaces.md section 11.8).
  * - **Other**: `scnr`, `spac`, `nmcl` - a class that characterises neither a press nor a
  *   screen. A scanner profile describes what a device can SEE, and a `spac` conversion
  *   profile (the ICC's own sRGB v4 preference is one) describes a transform, not a
@@ -41,7 +41,7 @@
  * profile is a different gamut under `perceptual` than under `absolute`, which is
  * why the intent is part of `GamutSource.id` rather than an argument. But four
  * pills per profile in the Lab's comparison row is exactly the tab-row failure
- * §11.6b describes. So the row out there carries ONE profile pill and the intent
+ * section 11.6b describes. So the row out there carries ONE profile pill and the intent
  * choice lives on the profile's own row in here, next to the file it belongs to.
  *
  * An intent the profile has no table for is rendered UNAVAILABLE, never hidden:
@@ -194,7 +194,7 @@ export function groupFor(e: Pick<ProfileEntry, 'deviceClass' | 'colourSpace'>): 
  * quotes the provider verbatim. Nothing is mirrored - the bytes go from the ICC to the
  * reader's device, so Lolly is never the redistributor.
  *
- * What is deliberately absent, from the licence read in plans/60-color-spaces.md §11.8:
+ * What is deliberately absent, from the licence read in plans/60-color-spaces.md section 11.8:
  * Apple's `Display P3.icc` ("Copyright Apple Inc., 2022" - not redistributable, and P3
  * is already a built-in gamut modelled from matrices), and Elle Stone's CC-BY-SA set,
  * which would be this repo's first copyleft asset and needs a decision, not a commit.

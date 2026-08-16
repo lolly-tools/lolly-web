@@ -22,7 +22,7 @@
  * face follows the pack's `font.brand` token automatically because that IS the
  * doc. Nothing else on the device is touched.
  *
- * Published VERSIONS travel too (plans/97 §6a): `versions/<slug>.json` per
+ * Published VERSIONS travel too (plans/97 section 6a): `versions/<slug>.json` per
  * published version, `frozen/<sha12>.<ext>` for bytes a version pinned and the
  * head has since replaced, and `versions.json` for the ledger as published. Two
  * merge rules make that safe, and both are stated in the import result:
@@ -56,7 +56,7 @@ import { TOKEN_EXT } from '@lolly/engine';
 import type { UserFontsHost } from './user-fonts.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
-/** 2 adds the `versions/` + `frozen/` parts (plans/97 §6a). `minReader` stays 1
+/** 2 adds the `versions/` + `frozen/` parts (plans/97 section 6a). `minReader` stays 1
  *  on purpose: the parts are additive, so a reader that predates them loads the
  *  pack and counts them as skipped rather than refusing a file it can mostly use. */
 export const BRAND_FORMAT_VERSION = 2;
@@ -260,7 +260,7 @@ export async function exportBrandPack(
   }
   entries['logos.json'] = strToU8(JSON.stringify(logoRows, null, 2));
 
-  // Published versions (plans/97 §6a). The ledger lives in the head document, the
+  // Published versions (plans/97 section 6a). The ledger lives in the head document, the
   // payloads in sibling assets, and the preserved bytes under `user/frozen/*` - 
   // all three have to travel or a version arrives unloadable.
   //

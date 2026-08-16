@@ -61,7 +61,7 @@ public/info/manifest.json
 public/info/docs-render-manifest.json
 public/info/icon.svg
 public/info/founded-by.svg
-# Page seals (plans/105 §7): one .c2pa Manifest Store per English page, signed by
+# Page seals (plans/105 section 7): one .c2pa Manifest Store per English page, signed by
 # docs/build.ts over the page's final bytes. Derived from a page that is itself
 # gitignored above — committing a credential for bytes the repo does not hold
 # would be a record of nothing checkable. Every build re-creates the ones whose

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The plate budget (plan 104 §5.5).
+ * The plate budget (plan 104 section 5.5).
  *
  * P0 cannot produce an eff above 1 - there is no camera yet - so every case here feeds
  * SYNTHETIC eff values. That is the point: the machinery has to be real and provably
  * correct before the thing that drives it exists, or the first fly-past ships an
- * untested degradation path. §4.5 pins eff_max at 10, which means the cap engages on
+ * untested degradation path. section 4.5 pins eff_max at 10, which means the cap engages on
  * every fly-past by design; a designed path gets tests, not a shrug.
  *
  * The two rules that keep it safe to ship at P0 are asserted first and hardest:
@@ -92,7 +92,7 @@ test('platesPerLayer: two for video, two for a LIVE lottie, none for a citizen w
   assert.equal(platesPerLayer('lottie'), 1);
   assert.equal(platesPerLayer('lottie', true), 2);
   assert.equal(platesPerLayer('audio'), 0);
-  assert.equal(platesPerLayer('camera'), 0, 'a camera is a pose, not a picture (§5.4)');
+  assert.equal(platesPerLayer('camera'), 0, 'a camera is a pose, not a picture (section 5.4)');
 });
 
 // ── rule 1: today's quality is the floor ────────────────────────────────────

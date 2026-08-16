@@ -11,7 +11,7 @@
  * there are guards below for both halves of that.
  *
  * Section 5 covers the other half of the sequence export bar: the "Frames" contact
- * sheet control (spec §4.6) - present only for a timed composition on a still
+ * sheet control (spec section 4.6) - present only for a timed composition on a still
  * format, and the sole source of `opts.cuts`.
  *
  * Everything here is driven through the REAL renderActions against a jsdom canvas:
@@ -308,7 +308,7 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
 });
 
-// ── 5. "Frames" - the contact sheet (plans/51-fable-timeline-editing.md §4.6) ────
+// ── 5. "Frames" - the contact sheet (plans/51-fable-timeline-editing.md section 4.6) ────
 // A still export of a sequence renders the playhead frame. `cuts=N` instead samples
 // N stills at equal midpoint intervals across the timeline - a zip for raster/SVG,
 // N pages for PDF. The control belongs to timed compositions on still formats ONLY,

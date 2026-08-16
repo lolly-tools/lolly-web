@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Projects spotlight provider (plans/99 §2b) over a fake state.list +
+ * The Projects spotlight provider (plans/99 section 2b) over a fake state.list +
  * folder store: folder hits (name → #/p/<id>), session hits (shared haystack,
  * tool-name + folder-path subtitle, the projects tile's open href), the
  * 'batch' keyword, ranking + limit, and the short-lived load cache (one

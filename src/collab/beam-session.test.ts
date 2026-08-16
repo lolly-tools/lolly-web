@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The beam session - the four wires, end to end (plan 100 §6.4, §11.6, §11.16,
- * §11.18, §11.24).
+ * The beam session - the four wires, end to end (plan 100 section 6.4, section 11.6, section 11.16,
+ * section 11.18, section 11.24).
  *
  * `beam-protocol.test.ts` proves the wire, `beam-pack.test.ts` proves the two ends
  * that touch the user's data, `beam-sink.test.ts` proves staging. This suite proves
@@ -16,13 +16,13 @@
  * assertions are still about real bytes landing in a real library:
  *
  *   - a session + its asset closure round-trips **byte-exact**, both directions on one
- *     lane pair, with catalog refs listed rather than sent (§11.16);
+ *     lane pair, with catalog refs listed rather than sent (section 11.16);
  *   - **consent gates everything**: a decline moves not one byte, and a chunk header
- *     that arrives before `accept` cancels the beam and discards staging (§11.24);
+ *     that arrives before `accept` cancels the beam and discards staging (section 11.24);
  *   - the sender is **pull-driven**: with the lane's buffer above its low threshold,
- *     nothing leaves until the lane says it drained (§11.6);
+ *     nothing leaves until the lane says it drained (section 11.6);
  *   - a **cancel mid-transfer** - from either side - leaves nothing staged and nothing
- *     ingested (§11.18), and so does `close()`;
+ *     ingested (section 11.18), and so does `close()`;
  *   - the toast port sees **offer → accepted → progress → item-done → complete**, in
  *     that order, with progress never going backwards.
  *
@@ -366,9 +366,9 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   connect(laneA, sessionB);
   connect(laneB, sessionA);
 
-  // ── A → B: the §11.16 offer, sized and disclosed before anything moves ──
+  // ── A → B: the section 11.16 offer, sized and disclosed before anything moves ──
   const out = ok(await sessionA.sendCurrentSession(SLOT));
-  assert.deepEqual([...out.byReference], [LOGO], 'a catalog ref is listed by reference, never sent (§11.16)');
+  assert.deepEqual([...out.byReference], [LOGO], 'a catalog ref is listed by reference, never sent (section 11.16)');
 
   const offered = eventsB[0];
   assert.equal(offered?.t, 'offer-received');
@@ -379,7 +379,7 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   assert.equal(offered.offer.itemCount, 2, 'the pack manifest is bookkeeping, not an item a human is told about');
   assert.equal(offered.offer.totalBytes, out.totalBytes);
   assert.equal(offered.offer.peerName, 'Andy');
-  assert.equal(sinkB!.writes.length, 0, 'not one byte is staged before consent (§11.24)');
+  assert.equal(sinkB!.writes.length, 0, 'not one byte is staged before consent (section 11.24)');
   assert.equal(hostB.records.size, 0);
 
   sessionB.toast.accept(out.beamId);
@@ -388,14 +388,14 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   assert.equal(sessionA.state().outgoing?.phase, 'complete');
   assert.equal(sessionB.state().incoming?.phase, 'complete');
 
-  // The asset landed under a receiver-local id, byte for byte (§6.4).
+  // The asset landed under a receiver-local id, byte for byte (section 6.4).
   assert.equal(hostB.records.size, 1);
   const landed = [...hostB.records.values()][0]!;
   assert.ok(landed.id.startsWith('user/beam/'), `re-keyed on ingest, got ${landed.id}`);
   const inBytes = new Uint8Array(await hostA.records.get(PHOTO)!.blob!.arrayBuffer());
   const outBytes = new Uint8Array(await landed.blob!.arrayBuffer());
   assert.deepEqual([...outBytes], [...inBytes], 'byte-exact, through the lane');
-  assert.equal(landed.meta!.beamFrom, 'Andy', 'attributed to the sender’s chosen name (§6.4)');
+  assert.equal(landed.meta!.beamFrom, 'Andy', 'attributed to the sender’s chosen name (section 6.4)');
 
   // …and the session that came after it points at that id.
   assert.equal(hostB.sessions.size, 1);
@@ -404,7 +404,7 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   assert.equal((session.data.photo as { id: string }).id, landed.id);
   assert.equal((session.data.logo as { id: string }).id, LOGO, 'a catalog ref is left for the receiver to resolve');
 
-  // Staging never outlives the transfer, even the one that succeeded (§11.18).
+  // Staging never outlives the transfer, even the one that succeeded (section 11.18).
   assert.equal(sinkB!.discards, 1);
   assert.equal(sinkB!.staged(), 0);
   assert.equal(sinkB!.sealedCount(), 0);
@@ -415,7 +415,7 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   sessionA.toast.accept(back.beamId);
   await waitFor(() => only(eventsA, 'complete').length === 2, 'the return beam to land');
 
-  assert.equal(hostA.records.size, 1, 'identical bytes already here are reused — no second row (§6.4)');
+  assert.equal(hostA.records.size, 1, 'identical bytes already here are reused — no second row (section 6.4)');
   assert.equal(sinkA!.discards, 1);
 
   sessionA.close();
@@ -448,7 +448,7 @@ test('a decline moves no bytes, and discards staging', async () => {
   assert.equal(laneA.sent[0]?.kind, 'json');
   assert.equal(laneA.sent.filter((f) => f.kind === 'binary').length, 0);
   assert.equal(sinkB!.writes.length, 0);
-  assert.equal(sinkB!.discards, 1, 'the §11.18 latch fires even when nothing was staged');
+  assert.equal(sinkB!.discards, 1, 'the section 11.18 latch fires even when nothing was staged');
 
   assert.equal(sessionA.state().outgoing?.phase, 'declined');
   assert.equal(sessionA.state().outgoing?.reason, 'user');
@@ -535,7 +535,7 @@ test('the sender writes only from a pull — the lane’s buffer is the pace', a
 
   laneA.flush();                       // the `bufferedamountlow` moment
   await tick(3);
-  assert.ok(payloads() > 1, 'the drain is what pulls the next chunk (§11.6)');
+  assert.ok(payloads() > 1, 'the drain is what pulls the next chunk (section 11.6)');
   assert.ok(sinkB!.writes.length >= 1, 'and the chunks that were pulled did stage');
 
   // Let it finish, so the test also proves the pull loop terminates.
@@ -588,7 +588,7 @@ test('a mid-transfer cancel discards staging on both sides', async () => {
   assert.equal(sinkB!.discards, 1);
   assert.equal(sinkB!.staged(), 0);
   assert.equal(sinkB!.sealedCount(), 0);
-  assert.equal(hostB.records.size, 0, 'a cancelled transfer never partially ingests (§11.18)');
+  assert.equal(hostB.records.size, 0, 'a cancelled transfer never partially ingests (section 11.18)');
   assert.equal(hostB.sessions.size, 0);
 
   // The peer's cancel reaches the sender through the lane it was already writing on.
@@ -600,7 +600,7 @@ test('a mid-transfer cancel discards staging on both sides', async () => {
   sessionB.close();
 });
 
-test('bytes before consent cancel the beam and discard staging (§11.24)', async () => {
+test('bytes before consent cancel the beam and discard staging (section 11.24)', async () => {
   const laneB = makeLane();
   const hostB = makeHost();
   const eventsB: BeamToastEvent[] = [];

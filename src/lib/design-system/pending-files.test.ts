@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * pending-files.ts - the one-shot mark handoff (plan 97 §8, M5). Pure module
+ * pending-files.ts - the one-shot mark handoff (plan 97 section 8, M5). Pure module
  * semantics only: stash / take / has, the two caps, and the single-use rule the
  * Logos room's drain depends on.
  *

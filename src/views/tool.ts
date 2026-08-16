@@ -28,7 +28,7 @@ import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { attachCollabPlumbing } from '../lib/collab-plumbing.ts';
-// The acquisition seam only (plan 100 §5) - a registry with no runtime imports of
+// The acquisition seam only (plan 100 section 5) - a registry with no runtime imports of
 // its own. The presence stack it gates (session, pill, rings, cursors) is reached
 // through one `import()` inside the guarded block below, so a build that ships no
 // transport never fetches that chunk: a collab is lazy chrome that must cost a
@@ -36,7 +36,7 @@ import { attachCollabPlumbing } from '../lib/collab-plumbing.ts';
 // music-player pattern).
 import { acquireCollabSession } from '../lib/collab-session-source.ts';
 // The three one-shot hand-offs a live collab arms BEFORE this view is entered
-// (lib/collab-live-mount.ts, plan 100 §6.2a/§11.17). Statically imported, and that
+// (lib/collab-live-mount.ts, plan 100 section 6.2a/section 11.17). Statically imported, and that
 // costs a single-player build NOTHING extra: `main.ts` already imports this module on
 // the boot path for `installLiveCollabMount()`, so it is in the entry chunk either way
 // - unlike the presence composition, which stays behind the guard's `import()`. All
@@ -45,7 +45,7 @@ import {
   carryMountState, takeCarriedMountState, takeEphemeralState, willRemountForCollab,
 } from '../lib/collab-live-mount.ts';
 // The fourth such hand-off, and the smallest: which TEAM session this mount was opened
-// from, when it was opened from one (org/team-session-origin.ts, plans/100 §7). A leaf
+// from, when it was opened from one (org/team-session-origin.ts, plans/100 section 7). A leaf
 // with no imports of its own - module state, no network, no DOM - so a build with no
 // control plane pays two function calls and nothing else.
 import { consumeTeamSessionOrigin, releaseTeamSessionOrigin } from '../org/team-session-origin.ts';
@@ -53,6 +53,7 @@ import type { ToolCollab } from './tool-collab.ts';
 import { migrateBlockRowIds, stripHiddenRowIds } from '../lib/row-id.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
+import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
 
 import { escape } from '../utils.ts';
 import { createHistory, cloneValue } from './tool-history.ts';
@@ -90,9 +91,9 @@ import { openShareDialog, type ShareDialogLolly } from '../components/share-dial
 import { encodeModelParam, AUTO_PACK_MIN, costUrlState, BROWSER_TARGET, type ShareFidelity } from '../lib/url-budget.ts';
 import { createUrlGauge, type UrlGauge } from '../lib/url-budget-gauge.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import { buildLollyFile, creatorFromProfile, LOLLY_MIME, LOLLY_EXT, type LollyLibraryAsset } from '../lib/lolly-pack.ts';
+import { buildLollyFile, creatorFromProfile, LOLLY_MIME, LOLLY_EXT, type LollyLibraryAsset, type LollyToolBundle, type LollyToolTrust } from '../lib/lolly-pack.ts';
 import type { BeamAssetRecord } from '../lib/beam-pack.ts';
-import { ENGINE_VERSION } from '@lolly/engine';
+import { ENGINE_VERSION, sha256Hex } from '@lolly/engine';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
 // Type-only imports (erased at build). The `@lolly/engine` barrel re-exports
@@ -301,7 +302,7 @@ export interface RunExportOpts {
   hdrRichness?: number;
   /** Requested export bit depth from ?depth= (8/16/float). Absent ⇒ 'auto'. A
    *  request only - the export bridge emits deep bits solely where the pipeline
-   *  produced them (plans/61-deeprichpixels.md §10). */
+   *  produced them (plans/61-deeprichpixels.md section 10). */
   depth?: DepthSetting;
   bleed?: string;
   cropMarks?: boolean;
@@ -403,15 +404,22 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // `views/tool-team-origin.test.ts` fails if a new one forgets to.
   consumeTeamSessionOrigin(toolId);
 
+  // A sideloaded tool (installed from a .lolly) lives in a device-local bucket, not the
+  // catalog. When one is installed it loads from that bucket with NO signed-catalog
+  // integrity check - the recipient's catalog has no authority over it, and its bytes
+  // were verified at import (lib/installed-tools.ts). Resolved before the existence check
+  // so a deep link to an installed tool is never 404'd for being absent from the catalog.
+  const installed = await isToolInstalled(toolId).catch(() => false);
+
   // If the catalog is loaded, do a fast existence check before fetching anything.
   const catalog = (window as Window & { __toolIndex?: { tools?: { id: string }[] } }).__toolIndex;
-  if (catalog?.tools && !catalog.tools.some(t => t.id === toolId)) {
+  if (!installed && catalog?.tools && !catalog.tools.some(t => t.id === toolId)) {
     mount404(viewEl, toolId);
     releaseTeamSessionOrigin();
     return;
   }
 
-  const fetchFile = makeFetchFile(toolId);
+  const fetchFile = installed ? installedFetchFile(toolId) : makeFetchFile(toolId);
 
   // Defer the loading screen so prefetched tools don't flash the gallery out.
   // The gallery stays visible until the tool is ready (or 400ms passes).
@@ -432,7 +440,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool — network timeout')), LOAD_TIMEOUT_MS);
     });
     try {
-      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang(), integrity: (await getToolIntegrity()) ?? undefined }), timeout]);
+      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang(), integrity: installed ? undefined : ((await getToolIntegrity()) ?? undefined) }), timeout]);
     } finally {
       clearTimeout(loadTimer);
     }
@@ -499,7 +507,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     host = { ...host, net: createNetAPI({ allowlist: tool.manifest.network.allowlist }) };
   }
 
-  // §6.2a/§11.17: an ACCEPTOR's working copy must never reach a slot on their device.
+  // section 6.2a/section 11.17: an ACCEPTOR's working copy must never reach a slot on their device.
   // The ruling was one interception point rather than an audit of every save call site,
   // and this is it - a memory-backed `host.state`, armed by the mount before the route
   // was entered. The clone rides the SAME rule as the allowlist clone above (bridge
@@ -510,8 +518,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // until somebody accepts an invite.
   const ephemeralState = takeEphemeralState(toolId);
   // The bridge as it was BEFORE the swap, kept because exactly one thing still needs the
-  // real store on an acceptor's mount: a beam they were asked about and accepted. §11.17
-  // is about their borrowed copy of the inviter's document; a gift is not that, and §6.4
+  // real store on an acceptor's mount: a beam they were asked about and accepted. section 11.17
+  // is about their borrowed copy of the inviter's document; a gift is not that, and section 6.4
   // promises it lands in their library. The same object for every other mount, so this
   // costs a reference. NOTHING ELSE may use it - every save path in this view and in the
   // tool's own actions goes through `host`, which is the whole point of the interception.
@@ -569,7 +577,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const carriedMount = takeCarriedMountState(toolId);
   // The bar drops `slot` on the first edit, so the route alone would open the collab as
   // a FRESH session and the inviter's first Save would mint a duplicate beside the one
-  // they were collaborating on (§6.2a pins a private collab to the session it started
+  // they were collaborating on (section 6.2a pins a private collab to the session it started
   // from). The route still wins when it names one.
   const slot = routeSlot ?? carriedMount?.slot ?? undefined;
   const urlFlags = new URLSearchParams(urlParams || '');
@@ -584,7 +592,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Reached via a link when the boot URL carried ANY tool configuration - a share,
   // a bookmark, an `?options`/`?full` deep link. The cost panel keys its degrade on
   // this (money-policy `selectionFromUrl`): a link always opens on counts, and money
-  // is revealed only by an explicit per-device action (§5). A card is NEVER a URL
+  // is revealed only by an explicit per-device action (section 5). A card is NEVER a URL
   // param, so this can never let a link ORIGINATE a money view - it can only withhold.
   const reachedViaLink = isFull || urlFlags.size > 0;
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
@@ -886,7 +894,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     refreshHistoryUI();
   };
 
-  // ── Stable row ids (plan 100 §3) ───────────────────────────────────────────
+  // ── Stable row ids (plan 100 section 3) ───────────────────────────────────────────
   // A session saved before rows had ids gets them here, once, for this mount - the
   // ONE place that owns a mounted session's model, and before anything can edit it.
   // Fire-and-forget: it writes through the engine's applyPatch, so it records no undo
@@ -930,11 +938,11 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       .catch(e => host.log?.('warn', 'template seed failed - staying blank: ' + String(e)));
   }
 
-  // ── Live collab (plan 100 §5) ──────────────────────────────────────────────
+  // ── Live collab (plan 100 section 5) ──────────────────────────────────────────────
   // Wraps the undo wrapper above once more, so a local edit ALSO becomes ops for a
   // registered sync provider (and an undo replay syncs like any other local edit).
   // Returns null when no provider is registered - which is every build of this repo
-  // (plans/99 §1.1) - and in that state it has not touched the runtime at all, so
+  // (plans/99 section 1.1) - and in that state it has not touched the runtime at all, so
   // the mount is byte-identical to single-player.
   const collab = attachCollabPlumbing(runtime);
 
@@ -947,7 +955,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   //
   // Both stay null for every mount of this repo, and that is what a single-player
   // mount pays for presence: two nullable reads on a resize and one per painted
-  // frame. No timer, no listener, no node (§11.14's solo-cost discipline).
+  // frame. No timer, no listener, no node (section 11.14's solo-cost discipline).
   let collabReanchor: (() => void) | null = null;
   let collabTeardown: (() => void) | null = null;
 
@@ -1032,7 +1040,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const canvasEditInput = editorLayout
     ? tool.manifest.inputs?.find(i => i.type === 'blocks' && i.canvas)
     : null;
-  // Geometry paint fast-skip (plans/98 §9) - OFF by default, opt-in via ?canvasfastpath=1 so
+  // Geometry paint fast-skip (plans/98 section 9) - OFF by default, opt-in via ?canvasfastpath=1 so
   // the served-app harness proves exported-SVG byte-parity before it is enabled for everyone.
   const fastPathOn = editorLayout && !!canvasEditInput
     && typeof location !== 'undefined' && /[?&]canvasfastpath=1\b/.test(location.href);
@@ -1723,7 +1731,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     stageEl.appendChild(hud);
   }
 
-  // ── Live collab: presence chrome (plan 100 §4.6, §5) ───────────────────────
+  // ── Live collab: presence chrome (plan 100 section 4.6, section 5) ───────────────────────
   //
   // The ONE place a mounted tool becomes a collab, and the only place in this view
   // that knows presence exists. It is DEAD in this repo: nothing registers a session
@@ -1733,7 +1741,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // the single-player one it has always been.
   //
   // It sits HERE, and not beside the op plumbing it belongs to (search "Live collab
-  // (plan 100 §5)"), for two reasons that are both about the DOM: presence is chrome,
+  // (plan 100 section 5)"), for two reasons that are both about the DOM: presence is chrome,
   // so it needs the stage, the render surface and the sidebar root, which the view's
   // innerHTML only creates further up; and the pill shares the stage's top-inline-end
   // lane with the zoom HUD, so it can only measure what it is clearing after
@@ -1782,7 +1790,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         exportSettings: () => actionsApi?.sessionState?.() ?? null,
         // The stage hosts the pill and the overlay layer; the render surface is
         // passed to be MEASURED and never written to, which is what keeps an export
-        // byte-identical whether or not anyone is watching (§4.6, §8).
+        // byte-identical whether or not anyone is watching (section 4.6, section 8).
         stage: stageEl,
         canvas: contentEl,
         sidebar: inputsEl,
@@ -3278,7 +3286,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   let rafId = 0;
   let pendingFrame: { model: InputModelItem[]; hydrated: string } | null = null;   // latest { model, hydrated } awaiting paint
   let lastPainted: string | null = null;   // hydrated source of the last CLEAN paint - skip an identical canvas rebuild
-  let lastPaintedBoxes: Box[] | null = null;   // baseline for the geometry fast-skip diff (plans/98 §9)
+  let lastPaintedBoxes: Box[] | null = null;   // baseline for the geometry fast-skip diff (plans/98 section 9)
 
   function paint(): void {
     rafId = 0;
@@ -3293,7 +3301,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // have moved on an input that doesn't touch the template (e.g. an export-dimension
     // select), so URL sync / size-driver / auto-export below always run. lastPainted
     // is recorded only after a CLEAN paint, so a throwing render retries next emit.
-    // ── Geometry fast-skip (plans/98 §9, opt-in) ────────────────────────────────
+    // ── Geometry fast-skip (plans/98 section 9, opt-in) ────────────────────────────────
     // A proven pure-translation move whose DOM free-canvas already positioned (applyLiveRect
     // during the drag) needs no rebuild - export parity holds via COMPUTED style (the export
     // walker reads getComputedStyle, so raw-attribute formatting is irrelevant). paint()
@@ -3423,7 +3431,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // The canvas just moved (or was rebuilt outright, taking every annotated node
     // with it) and the sidebar was re-synced a moment ago - so any remote focus ring
     // and cursor is anchored to geometry that no longer exists. Null unless a collab
-    // is live, which makes this one nullable read per painted frame (§11.14).
+    // is live, which makes this one nullable read per painted frame (section 11.14).
     collabReanchor?.();
 
     syncUrl();
@@ -4106,6 +4114,69 @@ function isProprietaryLicense(license: unknown): boolean {
  * bridge to resolve the session's closure, gates proprietary/brand-locked catalog bytes,
  * and assembles the creator block from the profile (identity gated on `useDetails`).
  */
+// Tool files fetched as TEXT (the loader-critical set + svg); everything else as bytes.
+const TOOL_TEXT_FILE = /\.(html|css|js|json|ics|vcf|csv|md|txt|svg)$/i;
+
+/**
+ * A cheap trust class for the "include the tool" default, without fetching every file:
+ * a tool the deployment's signed catalog lists is `signed-catalog`; anything else
+ * (unsigned build, a tool absent from the envelope, a sideloaded tool) is `custom`.
+ */
+async function coarseToolTrust(toolId: string): Promise<LollyToolTrust> {
+  const integ = await getToolIntegrity().catch(() => null);
+  const signed = integ?.envelope?.files;
+  return signed && Object.hasOwn(signed, `${toolId}/tool.json`) ? 'signed-catalog' : 'custom';
+}
+
+/**
+ * Resolve a tool's files for embedding in a `.lolly` and stamp a precise trust class.
+ * The file list is the loader-critical set (tool.json/template/styles/hooks/i18n/text
+ * templates + icon) UNIONED with every `<toolId>/*` path the signed catalog lists (which
+ * adds thumb + tool-local assets for a catalog tool). Each file is fetched, and - when the
+ * catalog signed this tool - hashed against the signed digest: `signed-catalog` only when
+ * every covered file matched with no tamper, else `custom`. Returns null when the two files
+ * a tool cannot open without (tool.json + template.html) can't be fetched.
+ */
+async function resolveToolBundle(toolId: string, manifest: ToolManifest): Promise<LollyToolBundle | null> {
+  const integ = await getToolIntegrity().catch(() => null);
+  const signed = integ?.envelope?.files ?? null;
+
+  const rels = new Set<string>(['tool.json', 'template.html', 'styles.css', 'icon.svg']);
+  const hooks = manifest.hooks as { module?: boolean } | undefined;
+  if (hooks && hooks.module !== true) rels.add('hooks.js');
+  for (const ext of ['ics', 'vcf', 'csv', 'md']) if ((manifest.render?.formats ?? []).includes(ext)) rels.add(`template.${ext}`);
+  const lang = currentLang();
+  if (lang && lang !== 'en') rels.add(`i18n/${lang}.json`);
+  if (signed) for (const key of Object.keys(signed)) if (key.startsWith(`${toolId}/`)) rels.add(key.slice(toolId.length + 1));
+
+  const fetchText = makeFetchFile(toolId);
+  const files: Record<string, Uint8Array> = {};
+  let covered = 0;      // carried files the signed catalog also lists
+  let matched = 0;      // …of those, how many hashed identically
+  for (const rel of rels) {
+    let bytes: Uint8Array | null = null;
+    try {
+      if (TOOL_TEXT_FILE.test(rel)) {
+        bytes = new TextEncoder().encode(await fetchText(`${toolId}/${rel}`));
+      } else {
+        const resp = await instanceFetch(instancePath(`/tools/${toolId}/${rel}`));
+        const ct = resp.headers.get('content-type') ?? '';
+        if (resp.ok && !ct.includes('text/html')) bytes = new Uint8Array(await resp.arrayBuffer());
+      }
+    } catch { bytes = null; }   // an optional file that isn't there
+    if (!bytes) continue;
+    files[rel] = bytes;
+    const digest = signed?.[`${toolId}/${rel}`];
+    if (digest) { covered++; if ((await sha256Hex(bytes)) === digest) matched++; }
+  }
+  if (!files['tool.json'] || !files['template.html']) return null;
+
+  const trust: LollyToolTrust =
+    signed && Object.hasOwn(signed, `${toolId}/tool.json`) && covered > 0 && matched === covered
+      ? 'signed-catalog' : 'custom';
+  return { id: toolId, ...(manifest.version != null ? { version: String(manifest.version) } : {}), trust, files };
+}
+
 function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManifest, sessionState: (() => unknown) | undefined): ShareDialogLolly | undefined {
   if (typeof sessionState !== 'function') return undefined;
   const assets = host.assets as unknown as LollyAssetsSlice;
@@ -4129,19 +4200,31 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
     } catch { return null; }
   };
 
-  const build = async (includeLicensed: boolean) => {
+  const build = async ({ includeLicensed = false, includeTool = false }: { includeLicensed?: boolean; includeTool?: boolean } = {}) => {
     const session = sessionState() ?? null;
     const profile = await host.profile.get().catch(() => null);
     const userAssets = await assets._exportUserAssets();
     const creator = creatorFromProfile(profile, { appVersion });
+    // Carry the tool's own files only on request - resolving them fetches every file.
+    // A resolve failure (missing core files) degrades to a tool-less .lolly, never an error.
+    const tool = includeTool ? (await resolveToolBundle(toolId, manifest).catch(() => null)) : null;
     const { blob, filename, summary } = await buildLollyFile({
       session, toolId,
       toolVersion: manifest.version != null ? String(manifest.version) : undefined,
       name: String((manifest as { name?: unknown }).name ?? toolId),
       userAssets, resolveLibrary, includeLicensed, creator,
+      ...(tool ? { tool } : {}),
       appVersion, engineVersion: ENGINE_VERSION,
     });
     return { blob, filename, summary };
+  };
+
+  // The "include the tool" offer: resolved lazily by the dialog after it opens (a coarse
+  // trust read, no file fetches), so a `custom` tool - one the deployment can't vouch for,
+  // e.g. a fork or a private-brand tool a recipient likely lacks - defaults the toggle ON.
+  const toolOffer = async () => {
+    const trust = await coarseToolTrust(toolId).catch(() => 'custom' as LollyToolTrust);
+    return { trust, suggested: trust === 'custom' };
   };
 
   // "Send to…" is offered ONLY where a real OS share will happen - host.export.canShare
@@ -4153,7 +4236,7 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
   const share = canOsShare
     ? (blob: Blob, filename: string) => host.export.share!(blob, { filename, mime: LOLLY_MIME, title: filename })
     : undefined;
-  return { build, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }), share };
+  return { build, toolOffer, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }), share };
 }
 
 // Reads the export-panel controls (format, dimensions, colour profile, password, print

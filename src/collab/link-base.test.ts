@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * link-base - every production call site that opens the ceremony dialog must pass
- * an explicit `linkBase` (plan 100 §6.1, §11.25; the pre-stitch concerns pass,
+ * an explicit `linkBase` (plan 100 section 6.1, section 11.25; the pre-stitch concerns pass,
  * 2026-08-09).
  *
  * `components/collab-ceremony.ts` is i18n-owned right now, so the trap it carries

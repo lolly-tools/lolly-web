@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * NAV_SECTIONS - the profile settings index the spotlight settings provider
- * federates (plans/99 §2b). Guards:
+ * federates (plans/99 section 2b). Guards:
  *
  *  1. Every exported section id exists as a real `id="…"` in the view's markup
  *     (a renamed card would leave search deep-linking a ghost anchor).

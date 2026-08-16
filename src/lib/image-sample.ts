@@ -170,7 +170,7 @@ const HEIC_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevm', 'he
 const AVIF_BRANDS = new Set(['avif', 'avis']);
 
 // JPEG SOFn frame-header markers: 0xC0–0xCF minus DHT (0xC4), JPG (0xC8), DAC (0xCC).
-// ITU-T T.81 §B.2.2: the frame header is SOFn, Lf (2 bytes), then P - the sample
+// ITU-T T.81 section B.2.2: the frame header is SOFn, Lf (2 bytes), then P - the sample
 // precision in bits (8 for baseline; 12 for the rare extended/progressive case).
 const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
 
@@ -182,7 +182,7 @@ const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 
  * than crush it silently (plans/61-deeprichpixels.md Phase A).
  *
  * Sources and where each number comes from:
- * - PNG: the IHDR bit-depth byte. Per the PNG spec (W3C PNG 3rd ed §11.2.1),
+ * - PNG: the IHDR bit-depth byte. Per the PNG spec (W3C PNG 3rd ed section 11.2.1),
  *   after the 8-byte signature the first chunk is IHDR (4-byte length, 4-byte
  *   type, then width/height as 4 bytes each), so bit depth - legal values
  *   1/2/4/8/16 - is byte 24 of the datastream.
@@ -191,7 +191,7 @@ const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 
  *   u16 count, then 12-byte entries of tag/type/count/value-or-offset; a value
  *   that fits in 4 bytes is stored inline). Per-channel depths are near-always
  *   equal, so the first SHORT answers.
- * - JPEG: the SOFn precision byte (ITU-T T.81 §B.2.2) - 8, or 12 in the rare
+ * - JPEG: the SOFn precision byte (ITU-T T.81 section B.2.2) - 8, or 12 in the rare
  *   extended case; 8 when the scan doesn't reach a frame header.
  * - WebP: always 8 - both VP8 (RFC 6386) and VP8L lossless are defined 8-bit.
  * - HEIC/AVIF: recognised by 'ftyp' brand, but the real depth lives in codec
@@ -217,7 +217,7 @@ export async function depthHint(file: Blob | Uint8Array): Promise<DepthHint> {
     // PNG - signature, then IHDR's bit-depth byte at datastream offset 24.
     if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
       && head[4] === 0x0d && head[5] === 0x0a && head[6] === 0x1a && head[7] === 0x0a) {
-      // The first chunk MUST be IHDR (§11.2.1); anything else is malformed.
+      // The first chunk MUST be IHDR (section 11.2.1); anything else is malformed.
       const ihdr = head.length >= 25
         && head[12] === 0x49 && head[13] === 0x48 && head[14] === 0x44 && head[15] === 0x52;
       const depth = ihdr ? head[24]! : 0;

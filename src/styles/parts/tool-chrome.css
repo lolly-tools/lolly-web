@@ -1017,7 +1017,7 @@ html[data-a11y-motion="reduce"] .url-budget[data-state="compressing"] .url-budge
   margin: 0;
   color: hsl(var(--muted-foreground));
 }
-/* Reported speech (§5): the file's claims, set apart from every fact and figure. */
+/* Reported speech (section 5): the file's claims, set apart from every fact and figure. */
 .cost-source {
   margin: 0;
   font-size: calc(11px * var(--a11y-fs));
@@ -1079,7 +1079,7 @@ html[data-a11y-motion="reduce"] .url-budget[data-state="compressing"] .url-budge
   font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
-/* The explicit per-device reveal / opt-in actions (§5). Device-local memory only. */
+/* The explicit per-device reveal / opt-in actions (section 5). Device-local memory only. */
 .cost-reveal {
   align-self: flex-start;
   padding: 5px 10px;

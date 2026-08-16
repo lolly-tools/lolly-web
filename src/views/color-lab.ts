@@ -595,7 +595,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * One profile pill however many are stored, deliberately. Every mounted profile
    * gets a picker tab for free (the output family widens for it), but this row is
    * a comparison-target selector and a fifth, sixth and seventh pill is precisely
-   * the failure §11.6b describes. Which profile is live is chosen in the panel,
+   * the failure section 11.6b describes. Which profile is live is chosen in the panel,
    * where the intent buttons and the remove buttons already live.
    *
    * The native row holds no mounted control, so rebuilding its markup is safe.
@@ -2759,7 +2759,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
  * badge decision, pure and in one testable place.
  *
  * `clippedHex` is what the colour BECOMES inside `limit`: chroma given up at
- * constant lightness/hue (CSS Color 4 §14.2, via `clipToGamut`), rendered to an
+ * constant lightness/hue (CSS Color 4 section 14.2, via `clipToGamut`), rendered to an
  * sRGB hex. `deltaE` is the perceptual distance (ΔEOK) between the swatch and
  * that clip - so a badge can say not just "outside" but "outside, by THIS much";
  * it is exactly 0 when the colour already fits, where `clipToGamut` returns the
@@ -2953,7 +2953,7 @@ function contrastCardShell(key: string, label: string, pickable = false): string
 /**
  * The view's static frame.
  *
- * The comparison row is an EMPTY group here, filled by `renderLimitSeg` before
+ * The comparison row starts as an EMPTY group, filled by `renderLimitSeg` before
  * the first paint. It used to be written from a `limit` parameter, which worked
  * while a limit was one of three names; a mounted press profile makes the row's
  * contents depend on state this function cannot see (which profile, which intent,
@@ -3114,7 +3114,7 @@ function shellHtml(): string {
               <button type="button" class="view-seg-btn" data-val="landscape" aria-pressed="true">${escape(t('Landscape'))}</button>
               <button type="button" class="view-seg-btn" data-val="lab" aria-pressed="false">${escape(t('Lab axes'))}</button>
             </div>
-            ${/* The second way in (plans/60-color-spaces.md §11.5): a colour, or an
+            ${/* The second way in (plans/60-color-spaces.md section 11.5): a colour, or an
                   image. It sits on the solid rather than up in step 1 because the
                   result appears HERE - the cloud is drawn in this figure, and an
                   affordance three sections away from its own effect reads as an

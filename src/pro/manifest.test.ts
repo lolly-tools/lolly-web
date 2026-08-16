@@ -133,7 +133,7 @@ test('preflight.json carries the opaque findings payload verbatim', () => {
 });
 
 test('a SKIPPED row\'s findings reach the report, keyed by identity', () => {
-  // The case plan §7 says preflight most exists for. A skipped row has no runner
+  // The case plan section 7 says preflight most exists for. A skipped row has no runner
   // index, so the positional channel structurally cannot carry it; without the
   // identity channel `collect.row-not-rendered` was computed on every run and deleted
   // on every run, and preflight.json said {"state":"skipped","findings":[]}.

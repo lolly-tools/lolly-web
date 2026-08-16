@@ -142,7 +142,7 @@ function count(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-// ── name trees (§7.9.6) ───────────────────────────────────────────────────────
+// ── name trees (section 7.9.6) ───────────────────────────────────────────────────────
 
 /**
  * Flatten a name tree - /Names pairs at the leaves, /Kids in the interior - into
@@ -186,7 +186,7 @@ interface Attachment {
 }
 
 /**
- * Read one /Filespec (§7.11.3) → a named, sized attachment. /UF is the Unicode
+ * Read one /Filespec (section 7.11.3) → a named, sized attachment. /UF is the Unicode
  * filename and wins over the legacy /F; the embedded stream's /Length is the
  * compressed size, so /Params /Size (the true uncompressed size) is preferred.
  */
@@ -265,7 +265,7 @@ function* eachAnnot(ctx: PDFContext, pages: PDFDict[]): Generator<PDFDict> {
 /** Annotation subtypes that are pure page furniture, not authored commentary. */
 const NON_MARKUP = new Set(['Link', 'Widget', 'Popup', 'FileAttachment']);
 
-// ── actions (§12.6) ───────────────────────────────────────────────────────────
+// ── actions (section 12.6) ───────────────────────────────────────────────────────────
 
 interface ActionSink {
   /** Distinct JavaScript program texts, in discovery order. */
@@ -381,7 +381,7 @@ function collectActions(ctx: PDFContext, doc: PDFDocument, pages: PDFDict[], fie
 
 interface FormField {
   dict: PDFDict;
-  /** Fully-qualified name - parent /T values joined with '.', per §12.7.3.2. */
+  /** Fully-qualified name - parent /T values joined with '.', per section 12.7.3.2. */
   name: string;
   /** Field type: Tx (text), Btn (button), Ch (choice), Sig (signature). */
   type: string | null;

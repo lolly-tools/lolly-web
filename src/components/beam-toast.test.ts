@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-toast (plan 100 §6.4, §4.6 point 6) - driven entirely from a scripted
+ * beam-toast (plan 100 section 6.4, section 4.6 point 6) - driven entirely from a scripted
  * {@link BeamEventSource}, exactly the way a real adapter over
  * `collab/beam-protocol.ts`'s `BeamSender`/`BeamReceiver` would drive it. No
  * transport, no worker, no beam-protocol instance anywhere in this file.
@@ -240,7 +240,7 @@ test('progress moves both bars\' aria-valuenow and the current item label', () =
 });
 
 test('progress arriving before the human answers cannot stand in for their consent', () => {
-  // The §11.24 event-order bypass, arriving through the one door this file owns: an
+  // The section 11.24 event-order bypass, arriving through the one door this file owns: an
   // adapter (or a peer that pushed bytes early) emits `progress` while the consent
   // sheet is still up. Promoting the card would destroy the ONLY Accept/Decline
   // buttons that exist and leave the beam reading as consented.

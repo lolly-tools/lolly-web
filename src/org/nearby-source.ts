@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org nearby-source - the `'org'` NearbyProvider (plans/26 §8, OSS plans/110 §5),
+ * org nearby-source - the `'org'` NearbyProvider (plans/26 section 8, OSS plans/110 section 5),
  * registered by org/index.ts when the instance grants `collab.nearby`.
  *
  * A browser cannot discover devices on a network, but a control plane can group its
@@ -11,7 +11,7 @@
  *
  *   - `exchangeInvite` REJECTS. A browser cannot hand an invite token peer-to-peer;
  *     inviting an org colleague goes through the work-collab room (org/collab-*),
- *     not this provider. Listing a colleague is the whole capability here.
+ *     not this provider. Listing a colleague is the whole capability of this provider.
  *   - `subscribeInvites` never fires - there is no inbound P2P invite on this track.
  *
  * Everything goes through instanceFetch/instancePath (lib/instance.ts), so a shell

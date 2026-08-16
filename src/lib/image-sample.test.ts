@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * depthHint (lib/image-sample.ts) - bit-depth header sniff over hand-built
- * fixture bytes. Reference values are the specs themselves: PNG 3rd ed §11.2.1
+ * fixture bytes. Reference values are the specs themselves: PNG 3rd ed section 11.2.1
  * puts the IHDR bit-depth byte at datastream offset 24; TIFF 6.0 tag 258
- * (BitsPerSample, SHORT) in the first IFD; ITU-T T.81 §B.2.2 puts the JPEG
+ * (BitsPerSample, SHORT) in the first IFD; ITU-T T.81 section B.2.2 puts the JPEG
  * sample precision as the first byte of the SOFn payload.
  *
  * Run: node --import ./tests/css-stub.mjs --test "shells/web/src/**\/*.test.ts"
@@ -54,7 +54,7 @@ function tiffFile(le: boolean, bits: number, samples = 1): Uint8Array {
   return concat([header, ifd, tail]);
 }
 
-/** JPEG head: SOI + SOF0 with the given precision byte (ITU-T T.81 §B.2.2: Lf, P, Y, X, Nf...). */
+/** JPEG head: SOI + SOF0 with the given precision byte (ITU-T T.81 section B.2.2: Lf, P, Y, X, Nf...). */
 function jpegHead(precision: number): Uint8Array {
   const sofPayload = Uint8Array.of(precision, 0, 1, 0, 1, 1, 0x11, 0, 0); // P, Y, X, Nf=1, comp spec
   return concat([
@@ -86,7 +86,7 @@ test('depthHint: 8-bit PNG is the negative control — never reported deep', asy
 });
 
 test('depthHint: PNG with an illegal depth byte answers null, not a lie', async () => {
-  // 3 is not a legal PNG bit depth (§11.2.1 allows 1/2/4/8/16).
+  // 3 is not a legal PNG bit depth (section 11.2.1 allows 1/2/4/8/16).
   assert.deepEqual(await depthHint(pngHead(3)), { bitsPerChannel: null, source: 'png' });
 });
 

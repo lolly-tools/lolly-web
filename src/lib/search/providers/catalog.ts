@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Catalogue spotlight provider (plans/99 §2b) - brand assets + the user's
+ * The Catalogue spotlight provider (plans/99 section 2b) - brand assets + the user's
  * own uploads, searched over the SAME haystack the catalogue view builds
  * (views/catalog-filter.ts buildSearchHaystack - name, id, tags, category,
  * format/type), so the overlay and the view's live filter agree on recall.
@@ -10,7 +10,7 @@
  * headshot, filtered to what the catalogue actually TILES (visual types, the
  * user's own audio, and neurospicy focus audio) - a hit must land on a visible
  * tile, since the href is a #/c?q= scoped list keyed on the asset's name
- * (plans/99 §5's locked target - never the per-asset details modal). Categories
+ * (plans/99 section 5's locked target - never the per-asset details modal). Categories
  * come from the shared lib/asset-category rules WITHOUT the per-user override
  * layer (that would cost a profile read per search; overrides only reclassify
  * the subtitle/haystack category, never hide an asset).
@@ -112,7 +112,7 @@ export function createCatalogProvider(host: CatalogSearchHost): SearchProvider {
         subtitle: row.category !== 'other'
           ? t(categoryLabel(row.category))
           : String(row.asset.format || row.asset.type),
-        // The locked plans/99 §5 target: catalogue hits land on the #/c?q=
+        // The locked plans/99 section 5 target: catalogue hits land on the #/c?q=
         // SCOPED LIST (never the per-asset details modal, which #/c?asset=
         // would open - detail affordances vary by asset type). Scoping to the
         // asset's own name narrows the list to it and its likenames, so the

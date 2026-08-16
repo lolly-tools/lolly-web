@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * recolor-logo.ts - derived mono/reverse logo variants (plan 97 §7.3).
+ * recolor-logo.ts - derived mono/reverse logo variants (plan 97 section 7.3).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/recolor-logo.test.ts"

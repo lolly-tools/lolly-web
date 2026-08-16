@@ -3,7 +3,7 @@
  * The bed-duck gain envelope - pure scheduling math shared by the two Web Audio
  * mix graphs: bridge/export.ts's looped-bed path (live AudioContext and the
  * WebCodecs OfflineAudioContext bed render) and bridge/sequence-render.ts's
- * OfflineAudioContext mix. The rule (plans/41-tts-stt-programme.md §6.1): a mix-in
+ * OfflineAudioContext mix. The rule (plans/41-tts-stt-programme.md section 6.1): a mix-in
  * bed plays at FULL volume wherever the primary audio (a tool's own clip, or a
  * sequence's audio boxes) is silent - before it starts and after it ends, the
  * top-and-tail intro/outro - and glides to a user-set CENTRE level underneath
@@ -47,7 +47,7 @@ export interface ExportAudio {
   duck?: number;
   /** In-point into the SOURCE, seconds (the tool's data-audio-start contract). */
   start?: number;
-  /** Optional second track mixed in around/under the primary (§6.1). */
+  /** Optional second track mixed in around/under the primary (section 6.1). */
   mix?: ExportAudioMixIn;
 }
 

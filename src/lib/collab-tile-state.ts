@@ -2,7 +2,7 @@
 /**
  * collab-tile-state - a generic registry for an EXTERNAL source of live-collab
  * PRESENCE, keyed by saved-session slot, plus the pure DOM renderer that paints it
- * onto a Projects grid tile (plan 100 §4.6, §4.8; wave 1.5).
+ * onto a Projects grid tile (plan 100 section 4.6, section 4.8; wave 1.5).
  *
  * Mirrors `session-source.ts`'s shape exactly (see its header for the pattern this
  * follows): a neutral seam the Projects view consults so a tile can show "who's in
@@ -53,7 +53,7 @@ export interface CollabTilePeer {
   /** The peer's collab client id - used only as a React-style key by callers
    *  that diff a peer list; the badge itself never reads it. */
   readonly id: string;
-  /** Display name (§4.5's naming rules already resolved it by the time it gets
+  /** Display name (section 4.5's naming rules already resolved it by the time it gets
    *  here - "Priya F.", "Invitee 2", "Host", …). Its first character becomes the
    *  avatar's initial; falls back to a bullet when absent/empty. */
   readonly name?: string;
@@ -102,7 +102,7 @@ export function _clearCollabTileProviderForTests(): void {
 // ── The badge ────────────────────────────────────────────────────────────────
 
 /** Avatars shown before the cluster collapses to "+N" - the same 3 the plan's
- *  collab-pill uses (§4.6), so a person who has seen the pill recognises the
+ *  collab-pill uses (section 4.6), so a person who has seen the pill recognises the
  *  tile badge as the same idiom. */
 const MAX_AVATARS = 3;
 
@@ -119,7 +119,7 @@ function initialOf(name: string | undefined): string {
  * One avatar, as a NODE. The colour is deliberately not set here.
  *
  * A peer-supplied colour interpolated into a `style` attribute is a CSS injection
- * (§11.21 - inbound presence is untrusted, continuously): HTML-escaping replaces only
+ * (section 11.21 - inbound presence is untrusted, continuously): HTML-escaping replaces only
  * `&<>"'`, so a `;` passes straight through and `red;background-image:url(https://x)`
  * would land as extra declarations on the tile. Every other collab surface writes the
  * same value through `style.setProperty`, which silently REJECTS a value containing

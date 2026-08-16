@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-provider - the WORK-COLLAB client (plan 100 §7, wave 3.1).
+ * org/collab-provider - the WORK-COLLAB client (plan 100 section 7, wave 3.1).
  *
  * A thin WebSocket pipe speaking `CanvasOp` and presence frames to the instance's
  * collab gateway, wrapped so it satisfies `CanvasSyncAdapter`. This is the same stable
  * contract type the private-collab (P2P) provider satisfies, so the shell has ONE
- * collab client surface and only the transport object differs (plan 100 §7, last
+ * collab client surface and only the transport object differs (plan 100 section 7, last
  * paragraph: "No yjs in the browser, ever"). Convergence on this side uses the
  * dependency-free `ReferenceCanvasDoc` from `@lolly-tools/core`. The SERVER owns the
  * Yjs document authority.
@@ -39,7 +39,7 @@
  * STEP 3's `collab.on(e => … session.applyRemotePatch(e.ops))`, NEVER
  * `plumbing?.applyRemotePatch(e.ops)` directly, is not a style preference. An
  * earlier revision of this header got it backwards. `session.applyRemotePatch` is
- * where `createCollabSession` runs the manifest-aware op guard (plan 100 §11.21).
+ * where `createCollabSession` runs the manifest-aware op guard (plan 100 section 11.21).
  * `plumbing.applyRemotePatch` is the UNGUARDED door beneath it, and `org/collab-
  * handle.ts`'s own header says the same thing for the same wire ("Those ops are
  * untrusted input and must pass the shared op guard … BEFORE they reach the
@@ -83,16 +83,16 @@
  *   close         → `handle.close()`
  *   self          → the org session's display name (SSO) + this device's clientId
  *   hostClientId  → absent: a work collab has no inviter-owns-it asymmetry; the
- *                   server owns persistence (§7.10), which is the whole point
+ *                   server owns persistence (section 7.10), which is the whole point
  *   peerRole      → look up `state().roster` by userId; undefined is honest
  *
  * Presence deliberately does NOT go through `adapter.presence` on this path: the
  * wave-1 engine's frame carries the per-sender `seq` an unordered lane needs
- * (§11.5), and `CanvasSyncAdapter.presence` only takes a bare `Awareness`.
+ * (section 11.5), and `CanvasSyncAdapter.presence` only takes a bare `Awareness`.
  *
  * ── The outbox, and how an entry is retired ──────────────────────────────────
  *
- * Plan 100 §7.10 is the availability guarantee Track A structurally cannot make:
+ * Plan 100 section 7.10 is the availability guarantee Track A structurally cannot make:
  * every client can crash at once and the room recovers from the server snapshot plus
  * everyone's outbox. The client half is here: local ops persist to IndexedDB,
  * replay after `join-ack`, and the gateway dedups per client by highest accepted
@@ -140,7 +140,7 @@
  *    as an observer: absent is never a grant. It is checked again locally against
  *    `isCompatibleOpVersion` so a gateway that forgot still cannot make us write ops
  *    it will reject. Presence is a different lane and stays open to observers (plan
- *    100 §7.5).
+ *    100 section 7.5).
  *  - Our own ops are never re-emitted to the runtime. An echo is used for acking and
  *    then dropped, so a local edit cannot round-trip into a second apply.
  *  - An `ops` frame never exceeds the gateway's per-message cap. Both a live gesture
@@ -152,7 +152,7 @@
  *    `primeClock`: a re-minted `(client, clock)` pair is silently DISCARDED by the
  *    gateway's monotonic dedup, which in a quiet room means the user types and
  *    nothing ever reaches anyone.
- *  - No wall clock touches convergence (plan 100 §11.7): ordering is `(clock, client)`
+ *  - No wall clock touches convergence (plan 100 section 11.7): ordering is `(clock, client)`
  *    only. `Date.now()` appears nowhere in this file.
  */
 
@@ -212,7 +212,7 @@ export type WorkCollabStatus =
 export interface WorkCollabState {
   readonly status: WorkCollabStatus;
   readonly role: CollabRole;
-  /** The OTHER members. The gateway excludes self on purpose (§4.7's orphan ghost);
+  /** The OTHER members. The gateway excludes self on purpose (section 4.7's orphan ghost);
    *  this device's own seat is `self`. */
   readonly roster: readonly RosterEntry[];
   /** This device's seat as the gateway assigned it, when the `join-ack` said. */
@@ -271,7 +271,7 @@ export interface CollabOutboxStore {
 }
 
 export interface WorkCollabOptions {
-  /** This device's collab client id (plan 100 §5). Defaults to the persisted ULID. */
+  /** This device's collab client id (plan 100 section 5). Defaults to the persisted ULID. */
   clientId?: string;
   /**
    * The org principal this session belongs to (`OrgUser.sub`), which partitions the
@@ -302,12 +302,12 @@ export interface WorkCollabOptions {
   clearTimer?: (handle: unknown) => void;
   store?: CollabOutboxStore;
   /** Max journal entries held; past it the oldest are shed - delivered ones first
-   *  and silently, undelivered ones with a warning (plan 100 §7.10). */
+   *  and silently, undelivered ones with a warning (plan 100 section 7.10). */
   outboxLimit?: number;
   /** Reconnect automatically after a non-terminal drop. Default true. */
   reconnect?: boolean;
   /**
-   * The inbound boundary (plan 100 §11.21) for peer-authored ops BEFORE they reach
+   * The inbound boundary (plan 100 section 11.21) for peer-authored ops BEFORE they reach
    * `doc` - this file's own `CanvasSyncAdapter`, handed out verbatim as
    * `handle.adapter` (`org/collab-handle.ts`'s header). Build it from the mounted
    * tool's declared inputs: `createOpGuard({ inputs: runtime.getModel() })`. Only
@@ -397,8 +397,8 @@ export interface WorkCollabHandle {
   on(listener: (event: WorkCollabEvent) => void): () => void;
   /** Hand ONE outbound presence payload to the lane, verbatim. The caller owns
    *  cadence (lib/collab-presence.ts throttles to 50 ms and goes silent when alone
-   * - plan 100 §4.7); this only writes it. Dropped, never queued, when not live:
-   *  presence is ephemeral by definition. Open to observers (§7.5). */
+   * - plan 100 section 4.7); this only writes it. Dropped, never queued, when not live:
+   *  presence is ephemeral by definition. Open to observers (section 7.5). */
   sendPresence(frame: CollabPresencePayload): void;
   /** The durable journal, oldest first - every local op not yet retired, delivered
    *  or not (diagnostics + tests). `state().pending` is the undelivered subset. */
@@ -758,7 +758,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
   }
 
   /**
-   * Admit inbound peer-authored ops through the boundary (§11.21) BEFORE they can
+   * Admit inbound peer-authored ops through the boundary (section 11.21) BEFORE they can
    * reach `doc` - see `WorkCollabOptions.guard`'s comment for why this has to run
    * here rather than only downstream, at `session.applyRemotePatch`. `ops` has
    * already passed `sanitizeOps`'s structural gate (`isCanvasOp`, collab-
@@ -833,7 +833,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     }
     // The snapshot is stored server state, which is exactly what a peer's OWN
     // out-of-band write becomes once the room persists it and a later joiner's
-    // `join-ack` restates it - §11.21's boundary applies here for the same reason
+    // `join-ack` restates it - section 11.21's boundary applies here for the same reason
     // it applies to a live `ops` frame, and BEFORE `doc` sees any of it (below),
     // never after. See `WorkCollabOptions.guard`.
     const seed = admitInbound(rawSeed);
@@ -853,7 +853,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     // observer, the same fail-closed reading org/collab-config.ts takes on every
     // capability bit. We degrade further on our own if the gateway's op version is
     // a different major, so a gateway that forgot cannot make us write ops it will
-    // discard (plans/99 §9).
+    // discard (plans/99 section 9).
     self = isRosterEntry(frame.you) ? frame.you : undefined;
     const stated = self?.role ?? frame.role;
     const declared: CollabRole = stated === 'writer' ? 'writer' : 'observer';
@@ -912,7 +912,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
         onJoinAck(frame);
         return;
       case 'ops': {
-        // Admitted BEFORE anything below can touch `doc` (§11.21) - including the
+        // Admitted BEFORE anything below can touch `doc` (section 11.21) - including the
         // clock absorption two lines down, which is exactly what an out-of-range
         // `origin.clock` would otherwise poison (see `WorkCollabOptions.guard`'s
         // comment and `op-guard.ts`'s `clockOutOfRange`). A rejected op never
@@ -1143,7 +1143,7 @@ export function createWorkCollabProvider(sessionId: string, opts: WorkCollabOpti
     presence(a: Awareness): void {
       doc.presence(a);
       // Presence is ephemeral: never queued, never replayed, and open to observers
-      // (plan 100 §7.5 - the presence lane is structurally unauthorized). Cadence is
+      // (plan 100 section 7.5 - the presence lane is structurally unauthorized). Cadence is
       // the caller's (lib/collab-presence.ts owns the throttle).
       sendPresence(a);
     },

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * localizeToolIndex - the non-destructive-localization contract (plans/99 §2e).
+ * localizeToolIndex - the non-destructive-localization contract (plans/99 section 2e).
  *
  * Run directly:  node --test shells/web/src/catalog/sync.test.ts
  *

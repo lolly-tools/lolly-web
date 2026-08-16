@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-providers.ts - frame + audio sources for the sequence compositor
- * (Fable timeline, phase 3 §2.2).
+ * (Fable timeline, phase 3 section 2.2).
  *
  * The compositor asks one question per clip per output frame: paint the pixels
  * of THIS source at THIS source time into THIS rectangle. It asks one question
@@ -12,7 +12,7 @@
  * WHY THE INTERFACES ARE SHAPED LIKE THIS
  *
  * `FrameProvider` is DRAW-AND-RELEASE, not "give me an image source". The spike
- * (plans/54-fable-timeline-phase-3.md §0.0 rule 3) found that mediabunny's
+ * (plans/54-fable-timeline-phase-3.md section 0.0 rule 3) found that mediabunny's
  * `VideoSample` is already the draw wrapper: `sample.draw(ctx, dx, dy, dw, dh)`
  * applies the container's rotation metadata into the destination rect for us.
  * `toCanvasImageSource()` may auto-close in the next microtask, and
@@ -694,7 +694,7 @@ const srcUrl = (src: Blob | string): { url: string; revoke: boolean } => {
 /**
  * Open a clip and return the best provider for THAT clip.
  *
- * Per-clip, not per-session (§2.2): a composition can mix an H.264 clip the
+ * Per-clip, not per-session (section 2.2): a composition can mix an H.264 clip the
  * hardware decoder handles and a HEVC one it refuses. One refusal must not
  * demote the whole export to element seeking. The ladder is:
  *
@@ -1068,7 +1068,7 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
       }
       if (landed == null && v.readyState < 2 /* HAVE_CURRENT_DATA */) { ledger.raw.missed++; return false; }
 
-      // The element IS the sample here: it is acquired and released around the
+      // The element itself IS the sample: it is acquired and released around the
       // single draw so the in-flight ledger reads the same way as mediabunny's.
       ledger.acquire();
       try {
@@ -1192,7 +1192,7 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
     }
   }
   // No WebCodecs at all: a module still plays (it is rendered in plain WASM),
-  // so the sniff is the whole ladder here, not just its last rung.
+  // so the sniff is the whole ladder for this provider, not just its last rung.
   return await openModuleAudio(src, opts, 'sniffed');
 }
 

@@ -12,6 +12,7 @@
 import { createBridge } from './bridge/index.ts';
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged, localizeToolIndex } from './catalog/sync.ts';
+import { mergeInstalledToolsIntoIndex } from './lib/installed-tools.ts';
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
@@ -21,31 +22,31 @@ import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 // Side-effect only: registers the "Private collab" Share-dialog row into the
-// generic lib/share-sections.ts seam (plan 100 §0/§6, Track A - an OSS
+// generic lib/share-sections.ts seam (plan 100 section 0/section 6, Track A - an OSS
 // individual feature, not under org/). The row itself stays gated on the
 // private-collab flag + a registered opener and renders nothing until both
 // exist (see the module header) - importing it is the whole of the wiring.
 import './lib/collab-share-private.ts';
 // Side-effect only: registers the 'private' opener that row consults, so pressing
-// "Start a collab" opens the inviter ceremony (plan 100 §6.1). Gated INSIDE the opener
+// "Start a collab" opens the inviter ceremony (plan 100 section 6.1). Gated INSIDE the opener
 // on the same private-collab flag, and platform-free on this path - the ceremony
 // dialog, the QR encoder and the WebRTC transport are one dynamic import behind the
 // press, sharing the chunk the #/join route loads (see the module header).
 import './collab/private-opener.ts';
 // The other end of that ceremony: what turns a connected pair into a MOUNTED, co-editing
-// tool (plan 100 §5, §6.2a). `lib/collab-mount.ts`'s header specifies the two-line stitch
+// tool (plan 100 section 5, section 6.2a). `lib/collab-mount.ts`'s header specifies the two-line stitch
 // - register, then drain whatever the ceremony parked while this module was importing - 
 // and `installLiveCollabMount()` (called below the import block) is its only call site.
 // Platform-free on the boot path for the same reason as the opener above: everything
 // under it (the memory state bridge, the tool route itself) is a dynamic import.
 import { installLiveCollabMount } from './lib/collab-live-mount.ts';
-// Side-effect wire for LAN discovery (plans/110 §3): registers the 'lan' NearbyProvider
+// Side-effect wire for LAN discovery (plans/110 section 3): registers the 'lan' NearbyProvider
 // ONLY when the Tauri runtime is present (probed at call time). A no-op on the web - a
 // PWA cannot do mDNS/sockets - so the registry stays empty and every Nearby affordance
 // stays absent, keeping the web build byte-identical. The native side is Rust `nearby.rs`.
 import { installNearbyBoot } from './lib/nearby-boot.ts';
 // The acceptor side of a nearby pairing: opens the accept ceremony when a peer hands us an
-// invite over the nearby channel (plans/110 §3). Dormant off Tauri / with the flag off.
+// invite over the nearby channel (plans/110 section 3). Dormant off Tauri / with the flag off.
 import { installNearbyAccept } from './collab/nearby-accept.ts';
 import { initSearchBar, applySearchBarRoute } from './components/search-bar.ts';
 import { initSpotlight } from './components/spotlight.ts';
@@ -196,7 +197,7 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // view like Ask/Lab: no tab, the back pill, its own scroll (footer: 'none'). Keys on the
   // SLUG (routeSignature's 'slug' case), so moving between doc pages re-mounts the reader.
   docs: { label: 'Documentation', viewClasses: ['docs-view'], sigKey: 'slug', footer: 'none' },
-  // The two private-collab ceremony links (plan 100 §6.1 skin 1, §11.25). Both are
+  // The two private-collab ceremony links (plan 100 section 6.1 skin 1, section 11.25). Both are
   // arrival points from someone ELSE's device, so they get no tab and no footer bar - 
   // and both key on `params`, because the whole meaning of the route is the invite (or
   // reply) token in the query: a second link pasted into the same tab must re-mount
@@ -254,7 +255,7 @@ function routeSignature(route: Route): string {
   // explicit route lang) - navigating between doc pages must re-mount, not dedupe.
   if (key === 'slug') return `${route.name}:${sub.lang ?? ''}/${sub.slug ?? ''}`;
   if (key === 'folderId') {
-    // The ?q= results-mode param is mount state too (plans/99 §2a): entering or
+    // The ?q= results-mode param is mount state too (plans/99 section 2a): entering or
     // leaving projects results mode must remount in BOTH directions - the
     // overlay's "See all in Projects" handoff forward AND the browser's Back - 
     // so the signature carries it alongside the folder. Other params stay out:
@@ -526,7 +527,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountDocs(view, host as unknown as Parameters<typeof mountDocs>[1], route.slug, route.lang, route.params ?? '');
       break;
     }
-    // --- The private-collab ceremony links (plan 100 §6.1, §11.25). One lazy chunk
+    // --- The private-collab ceremony links (plan 100 section 6.1, section 11.25). One lazy chunk
     // for both, shared with the Share dialog's "Start a collab" opener: WebRTC, the QR
     // encoder and the ceremony dialog have no business on any other route. ---
     case 'join': {
@@ -740,10 +741,10 @@ async function boot(): Promise<void> {
         // conic-gradient or backdrop-filter on a top-level container rasterises the
         // whole page (measured: 100% raster coverage on two audit fixtures).
         // stackingOrder: a page snapshot must paint in CSS stacking-context order
-        // (Appendix E §E.2), not DOM order. Lolly's own gallery has 99 non-auto
+        // (Appendix E section E.2), not DOM order. Lolly's own gallery has 99 non-auto
         // z-indexes, 22 of them negative, so DOM order puts scrims over content
         // and cards in reverse. Off for tool exports - see ExportOpts.
-        // layerIds: this is the production caller plans/104 §7 was written for - 
+        // layerIds: this is the production caller plans/104 section 7 was written for - 
         // "Lolly screenshots become semantically explodable … url-shot output then
         // lifts along real UI boundaries (nav/hero/cards)". The passthrough is inert
         // unless the walked element already carries `data-box-id`, so it changes
@@ -913,7 +914,11 @@ async function boot(): Promise<void> {
   // and the profile "Change" button later).
   await maybeShowFirstRunInstanceSheet(host);
 
-  const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
+  // Sideloaded tools (installed from a .lolly) are spliced into the tool index the moment
+  // the catalog lands, so they appear in the galleries/pickers and pass the tool view's
+  // existence check. Part of catalogReady so the first gallery paint already includes them.
+  const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0])
+    .then(async () => { try { await mergeInstalledToolsIntoIndex(); } catch { /* no installed tools / no index yet */ } });
   catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
   // The Neurospicy dock mounts ABOVE, before this sync starts - on a cold install its
   // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
@@ -996,8 +1001,29 @@ async function boot(): Promise<void> {
   // boot skeleton; runs regardless of which view mounted (the chooser is
   // body-mounted). A feature-detected no-op everywhere but the Android WebView.
   // drop-router (the sniff + chooser module) is itself dynamic-imported off the boot
-  // path now - its heavy import/ingest deps were already lazy.
-  void import('./lib/drop-router.ts').then(m => m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]));
+  // path now - its heavy import/ingest deps were already lazy. Hold the resolved module
+  // so the footer "Open" button below can call it SYNCHRONOUSLY inside the click gesture.
+  let dropRouterMod: typeof import('./lib/drop-router.ts') | null = null;
+  const dropRouterReady = import('./lib/drop-router.ts').then((m) => {
+    dropRouterMod = m;
+    m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]);
+    return m;
+  });
+
+  // The footer's "Open" button (components/footer-nav.ts) is an action, not a route: it
+  // opens the OS file picker that feeds the SAME chooser a dropped file gets, so a
+  // .lolly / design / image can be imported without a drag. Delegated at the document so
+  // it survives the footer's between-view re-renders. CAPTURE phase, so a jelly-button's
+  // own click handling can't preempt it; and the picker is opened SYNCHRONOUSLY (the
+  // module is pre-warmed above) because a file chooser only opens under live user
+  // activation, which a `.then` microtask after a cold import would forfeit.
+  document.addEventListener('click', (e) => {
+    if (!(e.target instanceof Element) || !e.target.closest('[data-open-file]')) return;
+    const openPicker = (m: typeof import('./lib/drop-router.ts')) =>
+      m.openDropFilePicker(host as unknown as Parameters<typeof m.openDropFilePicker>[0]);
+    if (dropRouterMod) openPicker(dropRouterMod);           // warm: same-gesture, picker opens
+    else void dropRouterReady.then(openPicker);             // cold first click only (rare)
+  }, true);
 
   // Warm the likely-next view chunks so the first tap doesn't pay a cold dynamic-import.
   // import() promises are cached, so the later route reuses these.
@@ -1127,7 +1153,7 @@ function parseRoute(): Route {
         : { name: 'docs', lang: null, slug: parts[1], params: query || '' };
     }
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
-    // The two halves of a private collab's ceremony (plan 100 §6.1, §11.25). These
+    // The two halves of a private collab's ceremony (plan 100 section 6.1, section 11.25). These
     // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE - 
     // an invite link carries ?inv=<token>, a reply link ?ans=<token>. A test pins the
     // two spellings against each other so a renamed route cannot quietly orphan every

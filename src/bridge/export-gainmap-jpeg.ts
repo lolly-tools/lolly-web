@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * HDR JPEG as an ISO 21496-1 gain-map file - Phase B2 of
- * plans/61-deeprichpixels.md (§4.2, §6 B, §10 item 2), and the sibling of
+ * plans/61-deeprichpixels.md (section 4.2, section 6 B, section 10 item 2), and the sibling of
  * `export-hdr-png.ts`.
  *
  * Before this module, `?hdr=1&format=jpeg` ran the canvas through the engine's
  * legacy byte path (`hdrBoostToPQ`: 8-bit in, 8-bit PQ code values out) and
  * tagged the result with a Rec.2100-PQ ICC profile. Two defects in one file:
- * PQ quantised to 8 bits bands in the shadows (plan §1's sharpest recorded
+ * PQ quantised to 8 bits bands in the shadows (plan section 1's sharpest recorded
  * defect), and a PQ-tagged JPEG shown by any decoder that ignores the profile - 
  * which is most of them - is a washed-out, wrongly-lit picture, because PQ code
  * values interpreted as sRGB are simply the wrong numbers. The SDR "fallback"
@@ -30,7 +30,7 @@
  * ─── One rasterisation, and why the two images are pixel-aligned ─────────────
  * `hdrViewTransform` derives the HDR rendition FROM the SDR frame, so the pair
  * is aligned by construction - there is no second render, no re-layout, and no
- * chance of a half-pixel drift between base and map. This is also what plan §10
+ * chance of a half-pixel drift between base and map. This is also what plan section 10
  * means by depth-follows-provenance on this path: the map's values come from
  * the float view transform, never from an upsampled 8-bit intermediate.
  *
@@ -167,7 +167,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
   // would serialise hdrCapacityMin == hdrCapacityMax - a range the Adobe spec
   // forbids and that makes the standard decoder weight formula 0/0. Attaching a
   // map that carries no light is also exactly the padding-as-quality this plan
-  // refuses (§10, depth follows provenance), so ship the plain SDR JPEG instead.
+  // refuses (section 10, depth follows provenance), so ship the plain SDR JPEG instead.
   if (gm.meta.gainMapMax <= NO_BOOST_EPS) {
     log('info', 'jpeg: the HDR view transform found nothing to boost — writing a plain SDR JPEG rather than a gain map that carries no extra light.');
     return { bytes: base, baseLength: base.length, mapLength: 0, stats: gm.stats };

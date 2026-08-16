@@ -12,16 +12,16 @@
  * about a minted invite is what a peer would actually decode.
  *
  * What is pinned, and why each one is essential:
- *  - the three channels and their exact options (§6.2, §11.6) - presence being ordered
+ *  - the three channels and their exact options (section 6.2, section 11.6) - presence being ordered
  *    or beam sharing the ops channel are both silent, expensive regressions;
- *  - non-trickle gathering is WAITED for, and its timeout mints anyway (§6.1) - a
+ *  - non-trickle gathering is WAITED for, and its timeout mints anyway (section 6.1) - a
  *    ceremony that fails because the internet is absent is the one failure this
  *    airgap-first feature may not have;
- *  - `disconnected` ≠ `failed` (§11.3), the single most expensive confusion available;
+ *  - `disconnected` ≠ `failed` (section 11.3), the single most expensive confusion available;
  *  - the isolation heuristic and the three diagnoses it must not be confused with
- *    (§11.1, §11.2, §11.26);
+ *    (section 11.1, section 11.2, section 11.26);
  *  - presence frames keep their sequence numbers and are passed through unreordered
- *    (§11.5) - the transport must not "help";
+ *    (section 11.5) - the transport must not "help";
  *  - `close()` leaves zero listeners and zero timers;
  *  - the effects drive `ceremony.ts` end to end, both halves, over the fake stack.
  */
@@ -241,7 +241,7 @@ interface PcScript {
    */
   gather: 'state' | 'null-candidate' | 'manual';
   candidates: number;
-  /** `getStats` reports; `null` removes `getStats` entirely (§11.29). */
+  /** `getStats` reports; `null` removes `getStats` entirely (section 11.29). */
   stats: unknown[] | null;
   /** Make `setRemoteDescription` reject - a local stack failure, not a bad paste. */
   rejectRemote?: boolean;
@@ -368,7 +368,7 @@ class FakePc implements RtcPeerConnectionLike {
     this.fire('connectionstatechange');
   }
 
-  /** The acceptor's three channels arrive this way (§6.2). */
+  /** The acceptor's three channels arrive this way (section 6.2). */
   deliverChannels(labels: readonly string[] = LANES): FakeChannel[] {
     const made: FakeChannel[] = [];
     for (const label of labels) {
@@ -503,9 +503,9 @@ async function mintInvite(): Promise<CollabInvite> {
   return result.invite;
 }
 
-// ── Channels (§6.2, §11.6) ────────────────────────────────────────────────────────
+// ── Channels (section 6.2, section 11.6) ────────────────────────────────────────────────────────
 
-test('the inviter opens three channels with the options plan 100 §6.2 specifies', async () => {
+test('the inviter opens three channels with the options plan 100 section 6.2 specifies', async () => {
   const r = rig('inviter');
   const offer = await r.transport.effects.createOffer({ attempt: 0 });
   assert.equal(offer.ok, true);
@@ -516,9 +516,9 @@ test('the inviter opens three channels with the options plan 100 §6.2 specifies
   assert.deepEqual(r.rtc.pc().channel('ops').init, CHANNEL_INIT.ops);
   assert.deepEqual(r.rtc.pc().channel('ops').init, { ordered: true });
   // The lossy lane: an ordered presence channel would head-of-line-block cursors
-  // behind a retransmit, which is exactly what §11.5's sequence numbers replace.
+  // behind a retransmit, which is exactly what section 11.5's sequence numbers replace.
   assert.deepEqual(r.rtc.pc().channel('presence').init, { ordered: false, maxRetransmits: 0 });
-  // Beam on its OWN reliable channel: a 38 MB pack must never queue an edit (§11.6).
+  // Beam on its OWN reliable channel: a 38 MB pack must never queue an edit (section 11.6).
   assert.deepEqual(r.rtc.pc().channel('beam').init, { ordered: true });
 
   assert.equal(r.rtc.pc().channel('beam').bufferedAmountLowThreshold, BEAM_LOW_THRESHOLD);
@@ -536,11 +536,11 @@ test("the acceptor's channels arrive over ondatachannel and unknown labels are i
   r.rtc.pc().deliverChannels(['ops', 'presence', 'beam', 'telemetry']);
   r.rtc.pc().openAll();
   assert.deepEqual([...r.opened].sort(), ['beam', 'ops', 'presence']);
-  // A lane from a newer peer is ignored, not fatal (§11.19).
+  // A lane from a newer peer is ignored, not fatal (section 11.19).
   assert.equal(r.transport.state().connection, 'live');
 });
 
-// ── Non-trickle gathering (§6.1) ──────────────────────────────────────────────────
+// ── Non-trickle gathering (section 6.1) ──────────────────────────────────────────────────
 
 test('the invite is not minted until non-trickle gathering completes', async () => {
   const r = rig('inviter', 0, { gather: 'manual' });
@@ -590,7 +590,7 @@ test('gathering that never completes times out at the boundary and mints anyway'
   const result = await pending;
   // Proceeding with what we have is the whole point: on an airgapped LAN the host
   // candidates are already in and the outstanding lookup is a STUN round trip that
-  // is never coming back. Failing here would break the target persona (§6.1).
+  // is never coming back. Failing here would break the target persona (section 6.1).
   assert.equal(result.ok, true);
   assert.equal(r.transport.state().gathering, 'timed-out');
   if (!result.ok) return;
@@ -598,9 +598,9 @@ test('gathering that never completes times out at the boundary and mints anyway'
   assert.equal(r.clock.pending, 0);
 });
 
-// ── ICE mapping (§11.3) ───────────────────────────────────────────────────────────
+// ── ICE mapping (section 11.3) ───────────────────────────────────────────────────────────
 
-test('disconnected is transient and only failed ends the session (§11.3)', async () => {
+test('disconnected is transient and only failed ends the session (section 11.3)', async () => {
   const r = rig('inviter');
   await connect(r);
   assert.equal(r.transport.state().connection, 'live');
@@ -831,7 +831,7 @@ test('a throwing subscriber cannot break the replay, or the transport', async ()
   assert.deepEqual(after, [{ type: 'ice', state: 'connected' }, { type: 'ready' }]);
 });
 
-// ── The isolation heuristic (§11.1, §11.2, §11.26) ───────────────────────────────
+// ── The isolation heuristic (section 11.1, section 11.2, section 11.26) ───────────────────────────────
 
 test('candidates on both sides and no pair ever formed reads as isolation', async () => {
   const r = rig('inviter');
@@ -847,7 +847,7 @@ test('candidates on both sides and no pair ever formed reads as isolation', asyn
   assert.equal(state.remoteCandidates, 2);
   assert.equal(state.candidatePairSeen, false);
   // This is the difference between "your invite didn't work" and "this network blocks
-  // device-to-device traffic - try a hotspot" (§11.2, §11.26).
+  // device-to-device traffic - try a hotspot" (section 11.2, section 11.26).
   assert.equal(state.diagnosis, 'isolation-suspected');
   assert.equal(state.isolationSuspected, true);
 });
@@ -896,7 +896,7 @@ test('a pair that was live and then died reads as connection-lost', async () => 
   assert.equal(state.isolationSuspected, false);
 });
 
-// ── Presence (§11.5) ──────────────────────────────────────────────────────────────
+// ── Presence (section 11.5) ──────────────────────────────────────────────────────────────
 
 test('outbound presence frames get this client id and a strictly increasing seq', async () => {
   const r = rig('inviter');
@@ -931,7 +931,7 @@ test('inbound presence frames arrive unreordered, with their sequence intact', a
   await connect(r);
   const channel = r.rtc.pc().channel('presence');
   // `maxRetransmits: 0` means late and out-of-order frames are the normal case. The
-  // transport passes them through untouched - newest-only is the roster's rule (§11.5),
+  // transport passes them through untouched - newest-only is the roster's rule (section 11.5),
   // and a transport that buffered to "fix" the order would add exactly the latency the
   // lossy lane exists to avoid.
   channel.deliver(JSON.stringify({ from: '01GUEST', seq: 9, state: presenceState('01GUEST') }));
@@ -946,7 +946,7 @@ test('inbound presence frames arrive unreordered, with their sequence intact', a
   assert.equal(frames[2]?.away, true);
 });
 
-test('malformed presence frames are dropped, never thrown (§11.21)', () => {
+test('malformed presence frames are dropped, never thrown (section 11.21)', () => {
   assert.equal(parsePresenceFrame({ from: 'a', seq: 1, state: null })?.seq, 1);
   assert.equal(parsePresenceFrame(null), null);
   assert.equal(parsePresenceFrame({ seq: 1, state: null }), null);
@@ -961,7 +961,7 @@ test('malformed presence frames are dropped, never thrown (§11.21)', () => {
   assert.deepEqual(Object.keys(extra).sort(), ['away', 'from', 'seq', 'state']);
 });
 
-// ── Ops lane + the in-band hello (§11.19) ────────────────────────────────────────
+// ── Ops lane + the in-band hello (section 11.19) ────────────────────────────────────────
 
 test('the ops lane opens with a hello carrying this op-contract version', async () => {
   const r = rig('inviter');
@@ -995,7 +995,7 @@ test('unparsable and unknown ops frames are dropped, not fatal', async () => {
   assert.deepEqual(r.messages[0], { lane: 'ops', kind: 'op', op: { set: { headline: 'hi' } } });
 });
 
-test('a frame over the SCTP ceiling is refused, not sent (§11.6)', async () => {
+test('a frame over the SCTP ceiling is refused, not sent (section 11.6)', async () => {
   const r = rig('inviter');
   await connect(r);
   const before = r.rtc.pc().channel('ops').sent.length;
@@ -1016,7 +1016,7 @@ test('sending before the lane opens is a typed result, not a throw', async () =>
   assert.equal(r.transport.sendOp({ a: 1 }), 'closed');
 });
 
-// ── The beam lane (§6.4, §11.6) ──────────────────────────────────────────────────
+// ── The beam lane (section 6.4, section 11.6) ──────────────────────────────────────────────────
 
 test('beam writes go to the beam channel and the pull fires on bufferedamountlow', async () => {
   const r = rig('inviter');
@@ -1034,7 +1034,7 @@ test('beam writes go to the beam channel and the pull fires on bufferedamountlow
   assert.equal(typeof beamChannel.sent[0], 'string');
   assert.ok(beamChannel.sent[1] instanceof Uint8Array);
   // The ops lane carries the hello and nothing else: a bulk transfer must never queue
-  // an edit behind it (§11.6).
+  // an edit behind it (section 11.6).
   assert.equal(r.rtc.pc().channel('ops').sent.length, 1);
 
   beamChannel.fire('bufferedamountlow');
@@ -1058,9 +1058,9 @@ test('an inbound beam frame keeps its lane and its binary form', async () => {
   assert.deepEqual([...second.bytes], [9, 8, 7]);
 });
 
-// ── The effects, as the ceremony sees them (§6.1, §11.25) ────────────────────────
+// ── The effects, as the ceremony sees them (section 6.1, section 11.25) ────────────────────────
 
-test('an unreadable reply is retryable and a stack failure is not (§11.25)', async () => {
+test('an unreadable reply is retryable and a stack failure is not (section 11.25)', async () => {
   const r = rig('inviter');
   await r.transport.effects.createOffer({ attempt: 0 });
 
@@ -1084,7 +1084,7 @@ test('an unreadable reply is retryable and a stack failure is not (§11.25)', as
   if (!stack.ok) assert.notEqual(stack.retryable, true);
 });
 
-test('a device with no WebRTC refuses honestly instead of crashing (§11.29)', async () => {
+test('a device with no WebRTC refuses honestly instead of crashing (section 11.29)', async () => {
   const transport = createRtcTransport({
     role: 'inviter',
     clientId: '01HOST',
@@ -1119,7 +1119,7 @@ test('a re-invite mints on a fresh connection and abandons the old one', async (
   assert.equal(first.listeners.length, 0);
 });
 
-test('an invite token carries everything the acceptor probes before answering (§6.1)', async () => {
+test('an invite token carries everything the acceptor probes before answering (section 6.1)', async () => {
   const r = rig('inviter');
   const result = await r.transport.effects.createOffer({ attempt: 0 });
   assert.equal(result.ok, true);
@@ -1138,7 +1138,7 @@ test('an invite token carries everything the acceptor probes before answering (�
   assert.equal(answerFromToken(result.invite.signal).ok, false);
 });
 
-// ── The plate material (§1: the connection plate) ─────────────────────────────────
+// ── The plate material (section 1: the connection plate) ─────────────────────────────────
 
 test('the plate material is both fingerprints, or nothing at all', async () => {
   const r = rig('inviter');
@@ -1342,7 +1342,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   const inviteToken = hostCeremony.state.invite?.signal ?? '';
   assert.ok(inviteToken.length > 0);
   // The QR skin is a scan-and-paste-safe alphabet, and the blob stays inside the
-  // §6.1 budget with room to spare.
+  // section 6.1 budget with room to spare.
   assert.match(inviteToken, /^[A-Z2-7]+$/);
   assert.ok(inviteToken.length < 400, `invite token is ${inviteToken.length} chars`);
 
@@ -1364,7 +1364,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   assert.equal(hostCeremony.state.phase, 'connecting');
 
   // ICE comes up on both stacks - and neither ceremony calls that a session. A candidate
-  // pair answering a binding request is not three open data channels (§6.2).
+  // pair answering a binding request is not three open data channels (section 6.2).
   inviterRtc.pc().setConnection('connected');
   acceptorRtc.pc().setIce('connected');
   assert.equal(hostCeremony.state.phase, 'connecting');
@@ -1387,7 +1387,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   assert.equal(acceptor.state().connection, 'live');
 
   // Each side's hello lands on the other, so the op-contract version is settled in band
-  // even though this pairing's blob was small enough to carry it too (§11.19).
+  // even though this pairing's blob was small enough to carry it too (section 11.19).
   const helloAtGuest = acceptorMessages.find((m) => m.kind === 'hello');
   assert.equal(helloAtGuest?.kind === 'hello' ? helloAtGuest.clientId : '', '01HOST');
   const helloAtHost = inviterMessages.find((m) => m.kind === 'hello');
@@ -1409,7 +1409,7 @@ test('the effects drive both halves of ceremony.ts end to end over the fake stac
   assert.equal(frame?.seq, 1);
 
   // A drop on the inviter's stack: transient, then fatal, and only the second one
-  // re-arms an invite (§6.2a - the inviter owns the session).
+  // re-arms an invite (section 6.2a - the inviter owns the session).
   inviterRtc.pc().setConnection('disconnected');
   assert.equal(hostCeremony.state.reconnecting, true);
   assert.equal(hostCeremony.state.phase, 'connected');

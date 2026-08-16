@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The ceremony dialogs (plan 100 §6.1, §4.5, §11.25, §11.26; wave 2.2).
+ * The ceremony dialogs (plan 100 section 6.1, section 4.5, section 11.25, section 11.26; wave 2.2).
  *
  * jsdom, a manual clock, and stub effects - the same discipline `collab/ceremony.ts`'s
  * own suite runs on, for the same reason: the screens that matter most here are the
@@ -366,7 +366,7 @@ test('inviteFromSignal: carries the tool and versions, and leaves colour to be r
   assert.equal(invite.signal, read.value.link);
 });
 
-// ── Failure copy (§11.26) ─────────────────────────────────────────────────────
+// ── Failure copy (section 11.26) ─────────────────────────────────────────────────────
 
 const ALL_CAUSES: CeremonyEndCause[] = [
   'tool-missing',
@@ -473,7 +473,7 @@ test('inviter: clearing the name shows up as Host, and that is what the transpor
   h.close();
 });
 
-test('inviter: no renderQr means no QR slot, never a broken one (§11.27)', async () => {
+test('inviter: no renderQr means no QR slot, never a broken one (section 11.27)', async () => {
   const h = open({ role: 'inviter' });
   clickAct(h.el, 'create-invite');
   await settle();
@@ -498,7 +498,7 @@ test('inviter: no scan capability means no scan button', async () => {
   without.close();
 });
 
-// ── The re-arm countdown (§6.1) ───────────────────────────────────────────────
+// ── The re-arm countdown (section 6.1) ───────────────────────────────────────────────
 
 test('inviter: the ten minutes are counted down in the open, and a re-arm restarts them', async () => {
   const h = open({ role: 'inviter' });
@@ -631,7 +631,7 @@ test('acceptor: a major tool skew refuses; a minor one connects with a note', as
   minor.close();
 });
 
-test('acceptor: a major op-contract gap notes observer-only rather than refusing (contract §9)', async () => {
+test('acceptor: a major op-contract gap notes observer-only rather than refusing (contract section 9)', async () => {
   const h = open({ role: 'acceptor' });
   typeInto(h.el, '#collab-cer-invite', inviteToken({ opVersion: '99.0.0' }));
   clickAct(h.el, 'submit-invite');
@@ -745,7 +745,7 @@ test('the connected handoff fires once, however often ICE says connected', () =>
   assert.equal(handle.el.isConnected, false, 'the handle can close the dialog');
 });
 
-test('a dropped connection rewinds to the fresh invite, and the next one is a new handoff (§6.1, §11.3)', () => {
+test('a dropped connection rewinds to the fresh invite, and the next one is a new handoff (section 6.1, section 11.3)', () => {
   const stub = stubMachine('inviter');
   const seen: CeremonyConnectedHandle[] = [];
   const handle = openCollabCeremony({
@@ -772,7 +772,7 @@ test('a dropped connection rewinds to the fresh invite, and the next one is a ne
   handle.close();
 });
 
-test('a quiet link is a note on the connected screen, never a re-pair prompt (§11.3)', () => {
+test('a quiet link is a note on the connected screen, never a re-pair prompt (section 11.3)', () => {
   const stub = stubMachine('inviter');
   const handle = openCollabCeremony({
     role: 'inviter',
@@ -893,7 +893,7 @@ test('a countdown tick repaints the time without stealing focus from a half-type
   h.close();
 });
 
-// ── The connection plate (§1) ─────────────────────────────────────────────────
+// ── The connection plate (section 1) ─────────────────────────────────────────────────
 //
 // The plate is the pairing's short authentication string, and the property it rests on is
 // not local to this file: BOTH SCREENS MUST SHOW THE SAME SIX CHARACTERS. `plate.ts` pins
@@ -901,7 +901,7 @@ test('a countdown tick repaints the time without stealing focus from a half-type
 // dialog is that it renders the plate for the pairing it is actually in, on both roles,
 // and renders nothing at all rather than something wrong. A dialog that shows a plate
 // derived from the wrong thing - or shows one role a plate and the other none - turns
-// every honest pairing into a suspected attack, which is the failure that matters here.
+// every honest pairing into a suspected attack, which is the failure this test guards against.
 
 /** One pairing's two certificate fingerprints, fixed so a plate can be pinned to them. */
 const FP_HERE = Uint8Array.from({ length: 32 }, (_, i) => (i * 7 + 3) & 0xff);

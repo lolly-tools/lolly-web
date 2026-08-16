@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * beam-session - the stitch that makes a **beam** an end-to-end feature
- * (plan 100 §6.4, §11.6, §11.15a, §11.16, §11.18, §11.24; wave 2.5).
+ * (plan 100 section 6.4, section 11.6, section 11.15a, section 11.16, section 11.18, section 11.24; wave 2.5).
  *
  * Four modules already do the whole job between them, and none of them knows the
  * others exist - deliberately, because each is only testable that way:
@@ -27,16 +27,16 @@
  *
  *   1. **out**  `buildBeamOffer` → `createBeamSender` → the lane's `json`/`binary`
  *   2. **pull** the lane's `onDrain` → `sender.nextChunk()`. The sender is
- *      pull-based on purpose (§11.6): not one frame leaves except from a pull, so
+ *      pull-based on purpose (section 11.6): not one frame leaves except from a pull, so
  *      the transport's `bufferedamountlow` IS the backpressure story and a 38 MB
  *      beam can never outrun the channel. {@link BeamSessionOptions.lane}'s
  *      `bufferedAmount()`/`lowThreshold` are the whole of the pacing policy.
  *   3. **in**   inbound frames → `createBeamReceiver` over a `createBeamSink` per
  *      beam → on `complete`, `ingestBeamItem` for each staged item, attributed to
- *      the peer's chosen name (§6.4: received items land "From Priya").
+ *      the peer's chosen name (section 6.4: received items land "From Priya").
  *   4. **consent** the toast port. An incoming offer surfaces as an
  *      `offer-received` event and NOTHING else happens until the human's
- *      `accept()`/`decline()` comes back through the same port (§11.24). The
+ *      `accept()`/`decline()` comes back through the same port (section 11.24). The
  *      session never accepts on its own, and the protocol refuses bytes that arrive
  *      before consent regardless - one gate, asserted twice.
  *
@@ -69,11 +69,11 @@
  *    `BeamPolicy`'s, enforced inside the receiver.
  *  - **Mount anything.** No DOM here at all: `mountBeamToast(el, session.toast)` is
  *    the caller's line, and this module is `import type` only against that file.
- *  - **Own identity.** `peerName` arrives resolved (§11.23: chosen, never leaked).
- *    With none, the §4.5 role fallback applies - the peer of an inviter is an
+ *  - **Own identity.** `peerName` arrives resolved (section 11.23: chosen, never leaked).
+ *    With none, the section 4.5 role fallback applies - the peer of an inviter is an
  *    Invitee, the peer of an acceptor is the Host.
  *  - **Read a wall clock.** Nothing here is timed; the only pacing signal is the
- *    lane's own drain callback (§11.7's rule holds by construction).
+ *    lane's own drain callback (section 11.7's rule holds by construction).
  */
 
 import {
@@ -123,12 +123,12 @@ import type { RtcBeamLane, RtcInboundMessage } from './rtc-transport.ts';
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
 // One map, one wave - the house shape (`lib/beam-pack.ts`, `lib/beam-sink.ts`). Two
-// words only: the §4.5 role fallbacks for a peer who chose no name. Everything else a
+// words only: the section 4.5 role fallbacks for a peer who chose no name. Everything else a
 // human reads about a beam is either the pack's own (`beam-pack.ts`'s STRINGS) or the
 // toast's (`components/beam-toast.ts`'s).
 
 export const STRINGS = {
-  /** A nameless peer, seen from the acceptor's side - they own the session (§6.2a). */
+  /** A nameless peer, seen from the acceptor's side - they own the session (section 6.2a). */
   hostName: 'Host',
   /** A nameless peer, seen from the inviter's side. */
   inviteeName: 'Invitee',
@@ -142,7 +142,7 @@ export const STRINGS = {
  * Structurally identical to `rtc-transport.ts`'s `RtcBeamLane` - the two writers ARE
  * `beam-protocol.ts`'s `BeamWire`, and `onDrain` is the `bufferedamountlow` pull
  * point. Declared here rather than imported as a value so a test (and a future
- * non-WebRTC transport - §11.29's LAN socket rung) can satisfy it without a
+ * non-WebRTC transport - section 11.29's LAN socket rung) can satisfy it without a
  * `RTCPeerConnection` anywhere; {@link asBeamLane} is the compile-time proof that the
  * real one still fits.
  */
@@ -199,7 +199,7 @@ export function beamInbound(transport: {
  *  `BeamStagedItem` satisfies this; a test's in-memory sink can too. */
 export interface BeamStagedBytes {
   readonly itemIndex: number;
-  /** The item's exact bytes (§6.4: byte-exact, or C2PA does not survive the trip). */
+  /** The item's exact bytes (section 6.4: byte-exact, or C2PA does not survive the trip). */
   readonly blob: Blob;
 }
 
@@ -219,12 +219,12 @@ export interface BeamIngestInput {
   readonly offer: BeamOfferMessage;
   /** Sealed items in index order. Item 0 is the pack manifest. */
   readonly items: readonly BeamStagedBytes[];
-  /** The peer's display name, for attribution (§6.4). */
+  /** The peer's display name, for attribution (section 6.4). */
   readonly fromName?: string;
 }
 
 /** Land a completed beam. Throwing means nothing was kept - the default rolls back
- *  everything it wrote before rethrowing (§11.18). */
+ *  everything it wrote before rethrowing (section 11.18). */
 export type BeamIngestFn = (input: BeamIngestInput) => Promise<readonly BeamIngestResult[]>;
 
 /** An ingest that failed and undid itself. `rolledBack` is what the compensating
@@ -268,7 +268,7 @@ export type BeamSendResult =
       readonly ok: true;
       readonly beamId: string;
       readonly totalBytes: number;
-      /** Catalog ids the receiver must resolve locally (§11.16) - surfaced so the
+      /** Catalog ids the receiver must resolve locally (section 11.16) - surfaced so the
        *  sender's UI can say "3 brand images resolve on their device" honestly. */
       readonly byReference: readonly string[];
     }
@@ -303,12 +303,12 @@ export interface BeamSessionState {
 }
 
 export interface BeamSessionOptions {
-  /** The bulk lane (§11.6: beam gets its own channel, so ops never queue behind it). */
+  /** The bulk lane (section 11.6: beam gets its own channel, so ops never queue behind it). */
   readonly lane: BeamLane;
-  /** This device's ceremony role. Decides the §4.5 fallback name for a nameless peer,
+  /** This device's ceremony role. Decides the section 4.5 fallback name for a nameless peer,
    *  and nothing else - either side may send, either side may receive. */
   readonly role: CeremonyRole;
-  /** The peer's chosen display name, already resolved (§11.23). */
+  /** The peer's chosen display name, already resolved (section 11.23). */
   readonly peerName?: string;
   /** This device's chosen display name - travels in the pack manifest as `fromName`
    *  and becomes the receiver's "From …" attribution. */
@@ -330,12 +330,12 @@ export interface BeamSessionOptions {
   readonly onIngested?: (outcome: BeamIngestOutcome) => void;
   /**
    * Verification hasher. Defaults to `null`, which means THE SINK produces the
-   * digest - the §11.15a arrangement, where the protocol buffers nothing at all
+   * digest - the section 11.15a arrangement, where the protocol buffers nothing at all
    * (`createBeamSink` hashes what it staged). A custom sink that returns no digest
    * must pass `sha256Hasher` here; verification is never skipped either way.
    */
   readonly hasher?: BeamHasher | null;
-  /** Payload bytes per chunk frame; clamped by the protocol to ≤64 KB (§11.6). */
+  /** Payload bytes per chunk frame; clamped by the protocol to ≤64 KB (section 11.6). */
   readonly chunkBytes?: number;
   /** Receiver-side caps, on top of the protocol ceilings. */
   readonly policy?: BeamPolicy;
@@ -355,12 +355,12 @@ export interface BeamSession {
    *  which this session then owns and disposes when the transfer settles. */
   send(request: BeamPackSource | BuiltBeamOffer): Promise<BeamSendResult>;
   /**
-   * The §11.16 offer: this session plus its closure - every user-local asset it
+   * The section 11.16 offer: this session plus its closure - every user-local asset it
    * references, and the catalog ids it does NOT send, listed by reference so a
    * cross-profile pair is told the truth rather than rendering silently broken.
    *
    * Takes a saved slot id, or a live state object (an unsaved working copy - the
-   * acceptor's ephemeral one, §11.17). §6.2a means this is usually the inviter's
+   * acceptor's ephemeral one, section 11.17). section 6.2a means this is usually the inviter's
    * move; nothing here enforces that, because an acceptor beaming one of their own
    * saved sessions is an ordinary thing to want.
    */
@@ -370,7 +370,7 @@ export interface BeamSession {
   /** One inbound payload frame. */
   receiveBinary(bytes: Uint8Array): void;
   /** Tear down: unsubscribe, end both machines silently, and discard any staging
-   *  (§11.18 - a transfer that did not complete leaves nothing). Idempotent. */
+   *  (section 11.18 - a transfer that did not complete leaves nothing). Idempotent. */
   close(): void;
 }
 
@@ -441,7 +441,7 @@ function hostWithLiveSession(
 }
 
 /** The default landing step: `beam-pack.ts`, in item order, rolling back everything
- *  it wrote if any item fails (§11.18 - no partial ingest). */
+ *  it wrote if any item fails (section 11.18 - no partial ingest). */
 function defaultIngest(host: BeamPackHost): BeamIngestFn {
   return async ({ offer, items, fromName }) => {
     const ctx = createBeamIngest(host, { ...(fromName ? { fromName } : {}) });
@@ -529,7 +529,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
     }
   }
 
-  /** The peer's name for attribution and for the consent sheet. §4.5's fallback:
+  /** The peer's name for attribution and for the consent sheet. section 4.5's fallback:
    *  the peer of an inviter is an invitee, the peer of an acceptor is the host. */
   function peerName(): string {
     const chosen = (opts.peerName ?? '').trim();
@@ -572,7 +572,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
     },
   };
 
-  // ── the pull (§11.6) ────────────────────────────────────────────────────────
+  // ── the pull (section 11.6) ────────────────────────────────────────────────────────
 
   let pumping = false;
   let wake = false;
@@ -722,7 +722,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
     if (st.phase === 'complete') {
       // `complete` is emitted from inside the receiver's own staging chain, so every
       // finalize + verify has already passed. Nothing enters the library before this
-      // point (§11.18), and the toast's "Saved to your library" waits for the ingest.
+      // point (section 11.18), and the toast's "Saved to your library" waits for the ingest.
       void land(st);
       return;
     }
@@ -775,7 +775,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
     }
   }
 
-  /** Staging outlives nothing (§11.18). The protocol discards on every terminal that
+  /** Staging outlives nothing (section 11.18). The protocol discards on every terminal that
    *  is not `complete`; this is the `complete` half, run once the bytes are safely
    *  somewhere else (or once the attempt to put them there has failed and undone). */
   async function discardStaging(sink: BeamSessionSink | null): Promise<void> {
@@ -886,7 +886,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
     live.receiveBinary(bytes);
   }
 
-  // ── the toast port (§11.24) ─────────────────────────────────────────────────
+  // ── the toast port (section 11.24) ─────────────────────────────────────────────────
 
   const toast: BeamEventSource = {
     subscribe(fn) {
@@ -1023,7 +1023,7 @@ export function createBeamSession(opts: BeamSessionOptions): BeamSession {
         /* a machine that is already settled is not a problem */
       }
       try {
-        // Terminal + silent, and the §11.18 latch fires: half-received staging never
+        // Terminal + silent, and the section 11.18 latch fires: half-received staging never
         // outlives the session that was receiving it.
         inRecv?.dispose();
       } catch {

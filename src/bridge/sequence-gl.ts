@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-gl.ts - a hand-rolled WebGL2 quad compositor for the TILT export tier
- * (plans/104 §6.4, P2b; plan 98 §9.1 Phase C).
+ * (plans/104 section 6.4, P2b; plan 98 section 9.1 Phase C).
  *
  * THE PROBLEM IT SOLVES. A tilted camera projects each screen-parallel layer through
  * a HOMOGRAPHY (`KfProjection.m`, the element-local 3×3 the engine already computes),
@@ -78,7 +78,7 @@
  * draw, but the frame sink that consumes it (`mux.addFrame`) is async, and a cleared
  * drawing buffer would hand the encoder black.
  *
- * SCOPE (first cut, plans/104 §6.4). Static / image / lifted-SVG layers, in-thread
+ * SCOPE (first cut, plans/104 section 6.4). Static / image / lifted-SVG layers, in-thread
  * only. Non-`source-over` blend modes and video-under-tilt are explicit follow-ups; the
  * caller keeps the `SEQ_TILT_UNSUPPORTED` video refusal reachable, and the six epic
  * shots this tier targets use neither.

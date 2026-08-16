@@ -215,7 +215,7 @@ test('every class this module writes is collab-tile-prefixed — never a bare co
 });
 
 test('a hostile peer colour cannot inject CSS declarations onto the tile', () => {
-  // §11.21: inbound presence is untrusted, continuously. `escape()` (utils.ts) covers
+  // section 11.21: inbound presence is untrusted, continuously. `escape()` (utils.ts) covers
   // `&<>"'` and nothing else, so a colour interpolated into a `style=` attribute would
   // carry a `;` straight through and land arbitrary declarations on the avatar. Every
   // other collab surface writes this value through `style.setProperty`, which rejects

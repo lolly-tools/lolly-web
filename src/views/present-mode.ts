@@ -358,7 +358,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
         if (isActive) {
           // Unmute ONLY a box that explicitly opted into present audio (data-present-audio);
           // entering the presenter is a user gesture, so the unmute is allowed. Everything
-          // else stays muted - the deck never blares (plan §8, Andy's opt-in decision).
+          // else stays muted - the deck never blares (plan section 8, Andy's opt-in decision).
           v.muted = v.getAttribute('data-present-audio') !== '1';
           const p = v.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {});
         } else {

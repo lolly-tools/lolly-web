@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * join-route - the two URL entry points of a private collab (plan 100 §6.1, §11.25).
+ * join-route - the two URL entry points of a private collab (plan 100 section 6.1, section 11.25).
  *
  * The bugs this file exists to catch are all of one kind: a name known in two places.
  * The dialog mints `#/join?inv=…`; the router has to answer to exactly that. The dialog
@@ -280,7 +280,7 @@ function channelHub(): { open(): CeremonyChannelLike; posts: unknown[] } {
 
 // ── #/join: the gates, before anything platform happens ───────────────────────
 
-// ── The flag gate's three arrivals (§6.3 enable-on-accept) ───────────────────
+// ── The flag gate's three arrivals (section 6.3 enable-on-accept) ───────────────────
 //
 // The old behaviour was one screen: "turn it on in your profile settings, then open the
 // link again". That is a dead end at the only moment the reader had a reason to care, so
@@ -538,7 +538,7 @@ test('#/join: Esc is the same answer as "Not now", not a quieter one', async () 
 });
 
 test('#/join: the gate is not an oracle — a mangled invite gets the SAME card as a good one', async () => {
-  // The ordering property §6.3 asks for. If the flag-off screen varied with the token,
+  // The ordering property section 6.3 asks for. If the flag-off screen varied with the token,
   // anyone could learn which blobs this build considers valid without ever turning the
   // feature on, and a reader would be told about a stranger's link before being asked
   // anything at all.
@@ -1159,7 +1159,7 @@ test('the route constants, the router source and this module agree on both paths
  * "missing" / "version-skew" by reading `window.__toolIndex.tools` directly - the
  * exact global the fast path would leave unsynced - and that answer is not a paint
  * that quietly corrects itself: it is the ONE-SHOT refusal or acceptance the acceptor
- * sees before a peer connection ever opens (§6.1). A tool the device genuinely has,
+ * sees before a peer connection ever opens (section 6.1). A tool the device genuinely has,
  * probed against a stale or empty cached index, reads as "missing" and the pair is
  * told the device cannot join - an honest-sounding refusal for a reason that isn't
  * true, with no retry the stranger clicking the link would know to attempt. Routing
@@ -1185,7 +1185,7 @@ test('main.ts\'s fastPath skip-ahead excludes #/join — the tool probe needs th
   assert.match(body, /routeName === 'dashboard'/, 'the fastPath scan no longer sees its dashboard arm — has it moved?');
 });
 
-// ── The reply handoff (§11.25) ────────────────────────────────────────────────
+// ── The reply handoff (section 11.25) ────────────────────────────────────────────────
 
 test('the channel name is the one both halves meet on', () => {
   assert.equal(CEREMONY_CHANNEL_NAME, 'lolly-collab-ceremony');
@@ -1461,7 +1461,7 @@ test('delivery helpers refuse rather than half-work when there is no field to fi
   assert.equal(deliverInviteToDialog(empty, inviteToken()), false);
 });
 
-// ── The tool probe (§6.1) ─────────────────────────────────────────────────────
+// ── The tool probe (section 6.1) ─────────────────────────────────────────────────────
 
 test('probeLocalTool: a tool this device does not have is a refusal', () => {
   assert.deepEqual(probeLocalTool({ toolId: 'qr-code' }, []), { status: 'missing' });

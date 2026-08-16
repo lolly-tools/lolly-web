@@ -195,7 +195,7 @@ function assertExactArea(p: GeomPath | null, expected: number, what: string): vo
  * The wire format (engine/src/geom/authored-url.ts) fixes every coordinate at six decimals
  * of a FRACTION of the box frame - deliberately, so a share link's bytes do not churn when
  * it is opened and re-shared. Six decimals of a 150-unit frame is 1.5e-4 of a unit per
- * coordinate, and an area is quadratic in those, so ~1e-6 relative is the floor here. The
+ * coordinate, and an area is quadratic in those, so ~1e-6 relative is the practical floor. The
  * two helpers stay separate because the difference between "the boolean is exact" and
  * "persisting it quantises" is a fact about this system worth keeping visible.
  */

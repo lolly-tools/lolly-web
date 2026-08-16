@@ -4,7 +4,7 @@
  * a panel above the persistent bottom bar. Typing in the bar (or the ⌘/⌃Space
  * chord) surfaces hits from every registered provider (lib/search/registry.ts),
  * grouped in fixed presentation order; the view behind keeps live-filtering on
- * the live-adapt routes and stays untouched on the overlay-only ones (§2a).
+ * the live-adapt routes and stays untouched on the overlay-only ones (section 2a).
  *
  * Anatomy and the rules that shaped it:
  *  - BODY-MOUNTED, never a child of the footer: `.gallery-footer` has a
@@ -24,7 +24,7 @@
  *    handler's modifier convention. Rows carry data-sfx="navigate" so the
  *    app-wide delegated cue layer (lib/sfx.ts) sounds a click activation like
  *    any footer link.
- *  - Own-domain lead (§2a): the current route's group is HOISTED to the top of
+ *  - Own-domain lead (section 2a): the current route's group is HOISTED to the top of
  *    the panel with the larger cap and BRAND-HIGHLIGHTED, so the view you're on
  *    is always discoverable in the overlay even when the panel overlaps the
  *    live-filtered cards behind it; routes with no domain show every group at
@@ -121,7 +121,7 @@ function ensurePanel(): HTMLElement {
   return panel;
 }
 
-/** Anchor the panel just above the live footer bar (bottom-up, plans/99 §2d). */
+/** Anchor the panel just above the live footer bar (bottom-up, plans/99 section 2d). */
 function position(): void {
   const panel = ensurePanel();
   const footer = document.querySelector<HTMLElement>('footer.gallery-footer');
@@ -203,7 +203,7 @@ function setActive(index: number): void {
 }
 
 /** Arrow walk across ALL rows - hits and see-all rows alike - wrapping at both
- *  ends (plans/99 §2d). */
+ *  ends (plans/99 section 2d). */
 function move(delta: 1 | -1): void {
   const rows = rowEls();
   if (!rows.length) return;
@@ -273,7 +273,7 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
   for (const gid of order) {
     const hits = navigableHits(hitsByGroup.get(gid) ?? []);
     if (!hits.length) continue;
-    const own = gid === ownGroup; // the current view's group - leads, brand-highlighted (§2a)
+    const own = gid === ownGroup; // the current view's group - leads, brand-highlighted (section 2a)
     total += hits.length;
     html += `<div class="spotlight-group-label${own ? ' spotlight-group-label--own' : ''}" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
     for (const hit of hits) html += rowHtml(hit, n++, gid, own);
@@ -305,7 +305,7 @@ function onQueryChanged(raw: string): void {
   }
   const tokens = tokenize(trimmed);
   const own = ROUTE_DOMAIN[currentSearchRoute()];
-  // §2a: the current view's own group LEADS the panel - hoisted first with the
+  // section 2a: the current view's own group LEADS the panel - hoisted first with the
   // larger cap and brand-highlighted (renderResults marks it) - so its results
   // stay discoverable in the overlay even when the panel occludes the
   // live-filtered cards behind it. Applies to both tiers now; a live view still

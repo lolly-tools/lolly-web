@@ -191,7 +191,7 @@ test('discovery id flips lolly/tokens/brand → user/tokens/brand after install 
   assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
 });
 
-// ── Design-system versions (plans/97 §6a) ─────────────────────────────────────
+// ── Design-system versions (plans/97 section 6a) ─────────────────────────────────────
 // The head is unchanged by any of this; what these pin down is that a VERSION
 // can only be written deliberately, can never be rewritten, and can never be
 // mistaken for the design system itself.
@@ -322,7 +322,7 @@ test('forVersion(latest) is the head surface, by identity, and costs no second l
   assert.equal(api.forVersion('latest'), api.forVersion('latest'),
     'a caller can resolve the ladder and use the answer unconditionally, with no extra load');
   assert.equal(await api.forVersion('latest').raw(), await api.raw(), 'and it IS the head document');
-  assert.equal(await api.activeSlug(), 'latest', 'nothing published ⇒ the head, exactly as before §6a');
+  assert.equal(await api.activeSlug(), 'latest', 'nothing published ⇒ the head, exactly as before section 6a');
 });
 
 test('forVersion of a version this device does not have falls back to the head, never to blank', async () => {
@@ -365,7 +365,7 @@ test('a published version resolves its OWN document, and bust() drops the versio
   assert.equal(await api.forVersion('v1').resolve('{color.brand.jungle}'), '#123456', 'no stale version surface');
 });
 
-// ── The resolution ladder behind the DEFAULT reads (plans/97 §6a) ─────────────
+// ── The resolution ladder behind the DEFAULT reads (plans/97 section 6a) ─────────────
 // Every render on this shell reads host.tokens: the tool canvas's brand vars, the
 // picker swatches, the engine's token-bound inputs, the export palette. So the
 // ladder has to be applied HERE, or the app chrome paints one design system while
@@ -394,7 +394,7 @@ test('an ACTIVE version is what the default reads answer for — chrome and canv
   assert.deepEqual(await api.raw(), withVersions(DOC2, [V1], 'v1'));
 });
 
-test('nothing active ⇒ the default reads are the head, byte-identically to before §6a', async () => {
+test('nothing active ⇒ the default reads are the head, byte-identically to before section 6a', async () => {
   stubFetch({});
   const api = createTokensAPI({ assets: createAssetsAPI(versionedDb(null)) });
   assert.equal(await api.activeSlug(), 'latest');
@@ -417,7 +417,7 @@ test('?designv= beats the active version, and designv=latest previews the head',
   at('#/t/qr-code?designv=latest');
   assert.equal(await api.activeSlug(), 'latest');
   assert.equal(await api.resolve('{color.brand.jungle}'), '#123456',
-    'an author previews the edit head over an active version — the accept criterion of §6a');
+    'an author previews the edit head over an active version — the accept criterion of section 6a');
 
   at('#/t/qr-code');
   assert.equal(await api.resolve('{color.brand.jungle}'), '#30ba78', 'and leaving the link restores the active version');
@@ -526,7 +526,7 @@ test('installUserTokens refuses on a locked brand (BrandLockedError) and writes 
   assert.equal(await tokens.resolve('{color.brand.jungle}'), '#30ba78');
 });
 
-// ── applyBrandVars (brand-vars.ts) - the contract-§3 injection rules ───────────
+// ── applyBrandVars (brand-vars.ts) - the contract-section 3 injection rules ───────────
 // DOM-free like the rest of this file: applyBrandVars only touches
 // el.style.setProperty/removeProperty, so a recording stand-in suffices.
 
@@ -559,7 +559,7 @@ test('applyBrandVars sets the seven slots under the --brand-* namespace, never t
   ]);
   // Bare --primary/--muted/… are the SHELL's shadcn HSL-triple vocabulary
   // (styles/tokens.css) that community tools consume via hsl(var(--primary)) - 
-  // injecting full colours under those names would break them (contract §3).
+  // injecting full colours under those names would break them (contract section 3).
   assert.equal(props.has('--primary'), false);
 });
 

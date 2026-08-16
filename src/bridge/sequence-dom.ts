@@ -36,7 +36,7 @@
  * too.
  *
  * `width`/`height` are THE ONE DELIBERATE EXCEPTION to "the applier never writes
- * layout" (plans/104 §5.2, the P1 reversal). Every other property here is composited:
+ * layout" (plans/104 section 5.2, the P1 reversal). Every other property here is composited:
  * it changes what the box looks like without changing what the box IS, so a frame
  * costs no reflow. A keyed `w`/`h` costs one, on purpose - text REWRAPS, a border stays
  * one pixel wide, a flex row re-distributes. That is the entire reason the channel
@@ -126,7 +126,7 @@ export interface Timing {
   kf: KfTrack;
   /**
    * True when this element is a `[data-pdf-page]` FRAME PAGE (frames-as-scenes).
-   * It is timed like any other element and keeps its transitions - but §5.4 scopes
+   * It is timed like any other element and keeps its transitions - but section 5.4 scopes
    * v1's camera and keyframes to boxes on a `[data-sequence]` stage, so a frame is
    * excluded from the projection. The hooks already refuse to stamp `data-t-z` /
    * `data-t-kf` on one; this is the reader's own half of that contract.
@@ -250,7 +250,7 @@ const n3 = (v: number): string => String(Math.round(v * 1000) / 1000);
  * the authored one is what keeps a box the user rotated by hand spinning about its
  * own centre rather than swinging around the authored angle.
  *
- * P2 - `m3` is the TILTED camera's element-local homography (plans/104 §6.4), and it
+ * P2 - `m3` is the TILTED camera's element-local homography (plans/104 section 6.4), and it
  * takes the leading translate's place and nothing else's. It sits exactly where the
  * translate sat because that is what it generalises: at `rx = ry = 0` the engine's
  * matrix IS `translate(dx, dy)` (a pinned golden), so the authored transform, the
@@ -332,7 +332,7 @@ interface Authored {
   /** Audio boxes render nothing visible - never worth a transform. */
   audio: boolean;
   /**
-   * Camera markers render nothing visible either (plans/104 §5.4): a camera is a
+   * Camera markers render nothing visible either (plans/104 section 5.4): a camera is a
    * timeline citizen that carries a POSE, not a picture. Mirrors `audio` exactly - 
    * no transform, no filter, no z-index, no projection - because the audio exclusion
    * only ever worked because both evaluators actively detect it.
@@ -340,7 +340,7 @@ interface Authored {
   camera: boolean;
   /**
    * This element is part of the stage's BACKGROUND PLANE, not a layer of its own
-   * (plans/104 §5.5) - see `isBackgroundPlane`.
+   * (plans/104 section 5.5) - see `isBackgroundPlane`.
    *
    * It IS projected: the export draws the bg plate through the same `projectLayer`
    * every layer goes through, so the preview has to move it too or a pan slides the
@@ -362,7 +362,7 @@ export interface AuthoredStore {
   get(el: HTMLElement): Authored;
   /**
    * The authored values this store holds for `el`, WITHOUT capturing them if it does
-   * not - the read a photographer takes (plans/104 §6 point 0). `get` would capture
+   * not - the read a photographer takes (plans/104 section 6 point 0). `get` would capture
    * whatever is on the element right now, which mid-keyframe is the applier's own
    * composed pose: exactly the value that must never be mistaken for the authored one.
    */
@@ -553,7 +553,7 @@ export function createAuthoredStore(): AuthoredStore {
 
 // ── the live-writer registry (the export-time read/restore seam) ────────────
 //
-// THE PROBLEM (plans/104 §6 point 0, the review's top finding, found twice).
+// THE PROBLEM (plans/104 section 6 point 0, the review's top finding, found twice).
 // `renderSequence` parses and PHOTOGRAPHS the live artboard - the same artboard the
 // preview clock has been writing on. Every read it takes is an authored read:
 // `readLayer` takes the box's rotation off `style.transform`, its opacity off
@@ -769,14 +769,14 @@ export interface ApplyCtx {
   media?(el: HTMLElement, timing: Timing, sourceMs: number, active: boolean): void;
   /**
    * The stage's NATIVE size, px - the projection's principal point is its centre
-   * (§4.1). A FUNCTION rather than two numbers on purpose: reading `offsetWidth`
+   * (section 4.1). A FUNCTION rather than two numbers on purpose: reading `offsetWidth`
    * forces layout, and this pass runs every frame, so a stage that authors no depth
    * must never pay for it. It is called at most once per apply, and only once
    * something actually needs projecting.
    */
   stage?(): { w: number; h: number };
   /**
-   * The camera clips governing this stage (§5.4), latest-in-array covering `t` wins.
+   * The camera clips governing this stage (section 5.4), latest-in-array covering `t` wins.
    *
    * An OVERRIDE, and normally absent: the applier derives the cameras from the very
    * elements it was handed, exactly as the planner derives them from its own layers
@@ -856,19 +856,19 @@ export function releaseShotBorrow(el: HTMLElement): void {
  */
 export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyCtx): void {
   // Timing is read for EVERY element before anything is written, because the
-  // per-frame `z-index` (§4.2) is a RANK across the whole stage: it cannot be known
+  // per-frame `z-index` (section 4.2) is a RANK across the whole stage: it cannot be known
   // while the first box is still being read. This first pass touches attributes only
   // - no layout, no writes - so it costs the same as the read the single-pass version
   // used to do inline.
   const n = els.length;
   const timings: Timing[] = new Array(n);
   let anyBoxDepth = false;
-  // §5.4: a frames-as-scenes document is out of depth scope in v1 - the WHOLE
+  // section 5.4: a frames-as-scenes document is out of depth scope in v1 - the WHOLE
   // document, not only its pages. The planner opts out on the same condition and for
   // the same reason (the two evaluators are told different stage sizes there; see
   // `sequenceDrawPlan`), so the two agree by construction rather than by coincidence.
   let framesDoc = false;
-  // Cameras, derived from the SAME elements (§5.4). Built here, in the read-only pass,
+  // Cameras, derived from the SAME elements (section 5.4). Built here, in the read-only pass,
   // for the same reason the timings are: the camera governing frame `t` has to be known
   // before the first box is posed, and a camera can appear anywhere in DOM order.
   const derived: KfCameraClip[] = [];
@@ -948,15 +948,15 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     else if (!el.hasAttribute?.(BORROW_ATTR)) el.classList.add(OFF_CLASS);
 
     // An audio bed and a camera marker are timeline citizens with no picture: no
-    // transition, no projection, no style write of any kind (§5.4).
+    // transition, no projection, no style write of any kind (section 5.4).
     const silent = rec.audio || rec.camera;
     const tr = active && !silent ? transitionAt(timing, tMs, ctx.seqMs) : null;
-    // The §5.4 exclusions, asked through the SAME predicate the planner asks - an
+    // The section 5.4 exclusions, asked through the SAME predicate the planner asks - an
     // audio bed, a camera marker, and a `[data-pdf-page]` frame page (which keeps its
     // ordinary transitions, but v1's camera and keyframes reach only boxes on a
     // [data-sequence] stage).
     // Two questions, and they are NOT the same one. "Does this element take part in
-    // the paint order at all" is the §5.4 exclusion set (audio bed, camera marker,
+    // the paint order at all" is the section 5.4 exclusion set (audio bed, camera marker,
     // frame page); "does it need the fold computed" additionally requires that
     // something actually moved it. Conflating them is what made the DOM rank a
     // SUBSET of what the planner sorts - see the rank pass below.
@@ -964,7 +964,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       kind: rec.camera ? 'camera' : rec.audio ? 'audio' : 'static',
       frameScene: timing.frame,
     });
-    // The BACKGROUND PLANE (§5.5) is projected on exactly the same terms as a layer - 
+    // The BACKGROUND PLANE (section 5.5) is projected on exactly the same terms as a layer - 
     // it is an implicit z = 0 one, and `rec.left/top/w/h` on a full-artboard child
     // resolve to the stage's own rect, so the fold produces the very numbers the
     // worker's bg draw uses (`projectLayer` at the stage centre, z = 0). It is only
@@ -975,7 +975,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     if (tr || projecting) {
       const off = tr ? recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease) : REST_TRANSITION;
       // ONE fold, shared with the canvas planner - see foldKfPose. `t` is the
-      // sequence clock; a keyframe track runs on LOCAL box time, unscaled (§5.1).
+      // sequence clock; a keyframe track runs on LOCAL box time, unscaled (section 5.1).
       const fold = projecting && view
         ? foldKfPose({
           view,
@@ -992,7 +992,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
           dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha,
           blur: rec.filterBlur, z: 0, w: rec.w, h: rec.h, sized: false, m3: null,
         };
-      // THE LAYOUT WRITE (§5.2, and the header's stated exception). Gated on `sized`,
+      // THE LAYOUT WRITE (section 5.2, and the header's stated exception). Gated on `sized`,
       // which is only ever true when the track actually mentioned `w`/`h` - so a stage
       // that keyframes position, scale, opacity, blur or depth still issues not one
       // reflow. Written BEFORE the transform so the browser lays the box out once and
@@ -1012,7 +1012,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       }
       // P2 - a TILTED camera hands the fold a homography, and it goes on this element
       // and no other: per-element `matrix3d`, flattened, never a shared `perspective`
-      // ancestor (§6.4's Cover Flow rule). The z-index rank below is unaffected and has
+      // ancestor (section 6.4's Cover Flow rule). The z-index rank below is unaffected and has
       // to be - under tilt the paint order is still the view-axis order the engine
       // resolved, and a browser given a flat matrix3d has no depth of its own to sort by.
       const transform = composeTransform(
@@ -1032,7 +1032,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       // keeps its authored declaration spelled exactly as the hook wrote it, rather
       // than an equivalent re-serialisation of it. Blur first, then whatever else the
       // author asked for (the `shadow`/`depth` drop-shadow), so the shadow keeps
-      // following the blurred silhouette (§5.5).
+      // following the blurred silhouette (section 5.5).
       const filter = fold.blur === rec.filterBlur ? rec.filter : composeFilter(fold.blur, rec.filterRest);
       if (filter !== (rec.lastFilter ?? rec.filter)) {
         if (filter) el.style.filter = filter; else el.style.removeProperty('filter');
@@ -1072,7 +1072,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     }
   }
 
-  // §4.2 - paint order IS depth order. Affine-per-layer only reproduces a true
+  // section 4.2 - paint order IS depth order. Affine-per-layer only reproduces a true
   // perspective render when the two agree, and z is keyframable, so two layers' z
   // curves can cross mid-move. The canvas planner sorts its PlanItems; a live DOM
   // cannot be re-ordered, so the same ranking is expressed as `z-index`.
@@ -1174,7 +1174,7 @@ export function sequenceDurationMs(root: HTMLElement | null): number {
  *    the planner enumerates every `.lolly-box` regardless of timing. Without them a
  *    scenery box's z and its whole keyframe track were live in the export and inert in
  *    the preview.
- *  • `[data-cam]` - the camera MARKER, mapped to the box that carries its pose. §5.4's
+ *  • `[data-cam]` - the camera MARKER, mapped to the box that carries its pose. section 5.4's
  *    headline "Always on" scene camera is untimed by construction, so it has no
  *    `data-t-start` and the applier could not see the one element whose whole job is to
  *    move everything else: the camera-pan drag, the wheel dolly and all five presets
@@ -1186,7 +1186,7 @@ export function sequenceDurationMs(root: HTMLElement | null): number {
  * Plus, once a camera exists at all, the stage's BACKGROUND PLANE: its own children
  * that are not layers. That is exactly the residue `sequence-render.ts` photographs
  * into the bg plate (it hides every `.lolly-box` and timed frame page and shoots what
- * is left - the connector layer, for one), and §5.5 requires BOTH paths to project it,
+ * is left - the connector layer, for one), and section 5.5 requires BOTH paths to project it,
  * or a pan slides every layer across frozen wallpaper. Gated on a camera being present
  * because without one nothing can move the plane, so a camera-less document - every
  * document written before this - is not given one extra element to walk.
@@ -1221,7 +1221,7 @@ const UNPAINTED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE
 
 /**
  * Is this element part of the stage's BACKGROUND PLANE - the implicit z = 0 layer
- * (plans/104 §5.5) rather than a layer of its own?
+ * (plans/104 section 5.5) rather than a layer of its own?
  *
  * The definition is the export's, restated as a predicate rather than re-derived: the
  * bg plate is the stage shot with every `.lolly-box` and every timed `[data-pdf-page]`
@@ -1238,7 +1238,7 @@ const UNPAINTED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE
  * frame, so there is no edge to reveal either. The one residue is the behind-camera
  * guard: past `u = 0.8` the export fades the whole bg plate with `alphaGuard` while the
  * artboard's own fill stays opaque in the preview. That is the extreme end of a
- * fly-through, it is stated here, and it is the only part of §5.5's bg rule the DOM
+ * fly-through, it is stated here, and it is the only part of section 5.5's bg rule the DOM
  * cannot express.
  */
 export function isBackgroundPlane(el: HTMLElement | null): boolean {
@@ -1382,7 +1382,7 @@ export function driveSequenceTime(
     schedule?: (fn: () => void, ms: number) => () => void;
   },
 ): SequenceDriver {
-  // THE READ/RESTORE SEAM (plans/104 §6 point 0), the live-capture half. This driver
+  // THE READ/RESTORE SEAM (plans/104 section 6 point 0), the live-capture half. This driver
   // opens a SECOND session on a root the preview clock is very likely already posing,
   // and `AuthoredStore.get()` captures whatever is on the element at first touch - so
   // without standing the clock down first, every frame of a live take would compose on

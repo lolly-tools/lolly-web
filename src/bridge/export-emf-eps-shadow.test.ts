@@ -5,7 +5,7 @@
  * These formats have no blur primitive, so the walker used to skip shadows entirely
  * for them (`opts.noBoxShadow`) - an EMF of a card deck came out with flat, floating
  * cards. A blur does not need a blur primitive: it is reproducible as concentric
- * bands (see §13 of plans/69-svg-snapshot-without-print.md), and for a format with no
+ * bands (see section 13 of plans/69-svg-snapshot-without-print.md), and for a format with no
  * alpha the bands have to be non-overlapping RINGS at absolute coverage, because
  * `svg-ir` flattens every shape against the page background INDEPENDENTLY. Overlapping
  * increments never accumulate there and come out far too light.

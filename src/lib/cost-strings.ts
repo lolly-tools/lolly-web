@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The cost panel's chrome strings - the minimum set (plans/65-preflight-and-cost.md §6
+ * The cost panel's chrome strings - the minimum set (plans/65-preflight-and-cost.md section 6
  * "Minimum chrome string set"), defined once as `t()` call sites so the surfaces
  * that render money import them from here rather than re-spelling them.
  *
@@ -32,7 +32,7 @@ import { t, tRaw } from '../i18n.ts';
 
 // ── The 11 minimum strings ─────────────────────────────────────────────────────
 
-/** 1. Panel heading (§6). */
+/** 1. Panel heading (section 6). */
 export const costHeading = (): string => t('Cost, worked out from your rate card');
 
 /** 2. Rule 1 body, shown when no rate card is attached. No money is shown at all. */
@@ -68,7 +68,7 @@ export const upTo = (amount: string): string => t('up to {amount}', { amount });
 export const headroom = (amount: string): string =>
   t('Depends on the final separation: up to {amount} more', { amount });
 
-/** 9. §5 reported speech: the card's claims, never a bare attribution beside a figure. */
+/** 9. section 5 reported speech: the card's claims, never a bare attribution beside a figure. */
 export const reportedSource = (issuer: string, issued: string): string =>
   tRaw('The file says: {issuer}, {issued}. Lolly has not verified this.', { issuer, issued });
 
@@ -84,10 +84,10 @@ export const showCostsPrompt = (): string => t('You hold rates for this job. Sho
 export const ratesExpired = (date: string): string =>
   tRaw('These rates expired on {date}. Showing counts only.', { date });
 
-/** The opt-in action that stamps every resulting figure with the expiry date (§5). */
+/** The opt-in action that stamps every resulting figure with the expiry date (section 5). */
 export const useExpiredAnyway = (): string => t('Use these rates anyway');
 
-/** The stamp on a figure computed from opted-in expired rates (§5): the expiry date
+/** The stamp on a figure computed from opted-in expired rates (section 5): the expiry date
  *  rides WITH the total so a lapsed figure is never read as a current one. */
 export const figureExpiredNote = (date: string): string =>
   tRaw('These rates expired on {date}. This figure was computed from lapsed prices.', { date });

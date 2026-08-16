@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-mount - the single seam between a ceremony that has just CONNECTED and the
- * code that turns that connection into a live co-editing session (plan 100 §5, §6.2a,
- * §11.17; wave 2.5's door, opened here in 2.4).
+ * code that turns that connection into a live co-editing session (plan 100 section 5, section 6.2a,
+ * section 11.17; wave 2.5's door, opened here in 2.4).
  *
  * The house single-provider pattern, fourth of its kind: `lib/canvas-sync-provider.ts`
  * registers the convergence adapter, `lib/collab-session-source.ts` registers the
@@ -16,8 +16,8 @@
  * is asked, per tool mount, whether THIS tool on THIS slot is in a collab. Nothing joins
  * those two facts. That join is the registrant here - given a {@link CollabConnection} it
  * builds a `CollabSessionHandle` over the transport, registers it as the session source
- * for the slot the ceremony ran from (§6.2a pins a private collab to exactly that slot),
- * gives the acceptor a memory-backed `host.state` so its copy stays ephemeral (§11.17),
+ * for the slot the ceremony ran from (section 6.2a pins a private collab to exactly that slot),
+ * gives the acceptor a memory-backed `host.state` so its copy stays ephemeral (section 11.17),
  * and takes the user to the tool. None of that belongs in a dialog, and none of it can be
  * written until the session composition exists - hence a seam rather than a call.
  *
@@ -27,7 +27,7 @@
  * yet - the acceptor arrives on `#/join` cold, from a link, with no tool view ever
  * having mounted. So the two events genuinely race. Dropping a connection because the
  * adopter was half a second late would throw away a completed WebRTC pairing that costs
- * two people a fresh ceremony to rebuild (§6.1: a dropped connection needs a whole new
+ * two people a fresh ceremony to rebuild (section 6.1: a dropped connection needs a whole new
  * invite). {@link parkHandle} keeps it; {@link takeParked} is how the stitch adopts it.
  *
  * The stitch's contract, stated once so it is not folklore:
@@ -58,7 +58,7 @@
  * - plus a `close()` that hangs up whatever is underneath. Track A wraps its transport
  * inside that `close()` (`collab/rtc-connection.ts`); Track B wraps `provider.close`
  * (`org/collab-handle.ts`). One mount serves both, and neither track's object shape
- * leaks into the seam or into the mount registered on it (§7's last paragraph: the shell
+ * leaks into the seam or into the mount registered on it (section 7's last paragraph: the shell
  * has exactly ONE collab client implementation - only the transport object differs).
  *
  * SO PARKING IS BOUNDED THREE WAYS, and the third one is the one that matters. Eviction
@@ -84,7 +84,7 @@ import type { CollabLaunchContext } from './collab-launch.ts';
 /**
  * Which participant this device is.
  *
- * Track A's pairing is asymmetric (§6.2a: the inviter owns persistence, the acceptor's
+ * Track A's pairing is asymmetric (section 6.2a: the inviter owns persistence, the acceptor's
  * copy is ephemeral), so its two roles are the ceremony's own. Track B has no ceremony
  * and no owner-of-the-session - the server is the authority - so everyone joining an org
  * room is a `'member'`: not ephemeral, not seeded from a peer, seeded by the join-ack.
@@ -103,7 +103,7 @@ export type CollabSeed = Record<string, unknown>;
  * neither the handle nor the transport under it is reachable from any registry.
  */
 export interface CollabConnection {
-  /** Which participant this device is. The inviter owns the session (§6.2a). */
+  /** Which participant this device is. The inviter owns the session (section 6.2a). */
   readonly role: CollabConnectionRole;
   /** The built session handle - the convergence adapter, this client's identity, the
    *  presence lanes and the connection-state stream. What `createCollabSession` takes. */
@@ -117,19 +117,19 @@ export interface CollabConnection {
    * track made it.
    */
   close(): void;
-  /** The tool both peers have (§6.1). Absent only on a malformed invite. */
+  /** The tool both peers have (section 6.1). Absent only on a malformed invite. */
   readonly toolId?: string;
   /** Inviter only: the Share-dialog context the collab was started from. */
   readonly launch?: CollabLaunchContext;
   /**
    * True when this device's copy must never touch a saved slot - the acceptor's working
-   * copy is ephemeral (§6.2a), which §11.17 implements as a memory-backed `host.state`
+   * copy is ephemeral (section 6.2a), which section 11.17 implements as a memory-backed `host.state`
    * rather than an audit of every save call site. The adopter owns doing that; this flag
    * is the ceremony telling it which side it is on.
    */
   readonly ephemeral: boolean;
   /**
-   * The session state this mount should be BORN with (§12 Q3: transfer-on-connect, one
+   * The session state this mount should be BORN with (section 12 Q3: transfer-on-connect, one
    * path), when it is known at hand-off time. The inviter's is its own live model; a
    * `'member'` never carries one (the server seeds through the join-ack).
    */
@@ -138,13 +138,13 @@ export interface CollabConnection {
    * The same seed when it can only arrive after this hand-off, with `undefined` for
    * "there will not be one".
    *
-   * Track A needs it: the seed rides the ops-lane hello (§6.1 - the invite blob is sized
+   * Track A needs it: the seed rides the ops-lane hello (section 6.1 - the invite blob is sized
    * for a QR and a packed session is not), and the ceremony reaches `connected` off an
    * ICE event, which precedes the data channel the hello arrives on. So the acceptor's
    * connection is handed over BEFORE its seed exists, and a mount that wants to open the
    * tool already populated waits on this instead of guessing. Absent whenever {@link
    * seed} is already known, and a mount must never wait on it forever - a seed that
-   * never lands is not an error, it is convergence doing the job instead (§6.2's late
+   * never lands is not an error, it is convergence doing the job instead (section 6.2's late
    * joiner gets the full state from the peer).
    */
   readonly seedLater?: Promise<CollabSeed | undefined>;

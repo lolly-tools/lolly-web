@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stable row ids (plan 100 §3) - the ULID itself and the lazy `ensureRowIds` migration.
+ * Stable row ids (plan 100 section 3) - the ULID itself and the lazy `ensureRowIds` migration.
  *
  * The claims that matter for a collab are uniqueness (two devices minting rows with no
  * chance to coordinate must not collide), sort-by-creation (the time prefix), and the

@@ -646,7 +646,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     };
     const draw = (q: string) => {
       // lib/search matching (plans/99 M3): folded token AND over the NAME only - 
-      // deliberately narrow (plan §1 documents the scope), this list is short
+      // deliberately narrow (plan section 1 documents the scope), this list is short
       // and its rows show nothing but the name.
       const tokens = tokenize(q);
       shown = tokens.length

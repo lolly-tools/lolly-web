@@ -6,17 +6,17 @@
  * O(damage) / O(viewport) ones, WITHOUT yet touching the 8.4k-line free-canvas.ts
  * overlay. They are unit-tested here and benchmarked by scripts/bench-canvas.ts.
  *
- *   1. diffBoxes() - the DAMAGE STREAM (plans/98 §5). Given the previous and next
+ *   1. diffBoxes() - the DAMAGE STREAM (plans/98 section 5). Given the previous and next
  *      `boxes` arrays, report exactly which boxes changed and in which LANE, so a
  *      paint touches only the damaged nodes instead of re-emitting the whole canvas
  *      (`innerHTML` swap). The lanes are kept separate on purpose: a geometry-only
  *      change ("moved") must never invalidate a cached raster the way a content
- *      change ("restyled") does - plans/98 §5, plans/99 §4.3. This is also the exact
+ *      change ("restyled") does - plans/98 section 5, plans/99 section 4.3. This is also the exact
  *      diff the collaboration seam consumes: interned to stable ids it becomes the
- *      canvas-op stream (plans/99 §7.1) - here it stays index-keyed for the shell's
- *      hot loop, matching plans/98 §5's number[] interface.
+ *      canvas-op stream (plans/99 section 7.1) - here it stays index-keyed for the shell's
+ *      hot loop, matching plans/98 section 5's number[] interface.
  *
- *   2. buildHitGrid()/hitGrid() - the SPATIAL HIT INDEX (plans/98 §6.1). A uniform
+ *   2. buildHitGrid()/hitGrid() - the SPATIAL HIT INDEX (plans/98 section 6.1). A uniform
  *      AABB grid that replaces free-canvas-math.ts's linear back-to-front scan
  *      (hitTest, run per pointer event) above ~500 boxes. hitGrid() is contractually
  *      identical to hitTest() - same topmost-wins, same rotation-aware body test - 
@@ -24,7 +24,7 @@
  *      co-located test (random queries, hitGrid ≡ hitTest).
  *
  * Nothing here imports the DOM, a framework, or storage; it lives in the web shell
- * (not engine/) per plans/98 §11.3.
+ * (not engine/) per plans/98 section 11.3.
  */
 import type { Box, BoxFieldConfig, MarqueeRect } from './free-canvas-math.ts';
 import { boxAABB, boxRect, rectCentre, rotateVec, num, hitTest, marqueeHit } from './free-canvas-math.ts';
@@ -54,7 +54,7 @@ const structuralDefaults: Required<StructuralFieldConfig> = {
 /**
  * A damage set: which boxes changed, split into non-exclusive LANES (a box that
  * both moved and restyled appears in both). Indices are into the NEXT array,
- * except `removed`, which indexes the PREV array. plans/98 §5.
+ * except `removed`, which indexes the PREV array. plans/98 section 5.
  */
 export interface Damage {
   /** Geometry changed (x/y/w/h/rot). Re-place the node; NEVER invalidates a raster. */
@@ -79,7 +79,7 @@ const EMPTY_DAMAGE = (): Damage => ({
 
 
 /**
- * Diff two `boxes` arrays into a {@link Damage} set (plans/98 §5). O(prev+next).
+ * Diff two `boxes` arrays into a {@link Damage} set (plans/98 section 5). O(prev+next).
  * Values are compared with strict `!==`; box rows are flat scalar fields (complex
  * fields like `path` are string-encoded), so a shallow compare is exact.
  */
@@ -157,7 +157,7 @@ export function diffBoxes(
  * True iff `d` is a pure geometry move: some box moved, and NOTHING was restyled, added,
  * removed, reordered, or reparented, and no frame moved (a frame move changes page bounds
  * + membership, so it is not fast-pathable). The gate for the geometry paint fast-path
- * (plans/98 §9).
+ * (plans/98 section 9).
  */
 export function isGeometryOnlyDamage(d: Damage): boolean {
   return d.moved.length > 0
@@ -165,7 +165,7 @@ export function isGeometryOnlyDamage(d: Damage): boolean {
     && d.zChanged.length === 0 && d.frames.length === 0;
 }
 
-/** Field names + cross-box context the geometry fast-path planner needs (plans/98 §9). */
+/** Field names + cross-box context the geometry fast-path planner needs (plans/98 section 9). */
 export interface FastPathCfg {
   /** id/x/y/w/h/rot - the geometry lane. */
   field: BoxFieldConfig;
@@ -184,7 +184,7 @@ export interface FastPathCfg {
 export interface FastPatch { id: string; x: number; y: number; }
 
 /**
- * The set of box ids that are connector endpoints (plans/98 §9): every non-empty
+ * The set of box ids that are connector endpoints (plans/98 section 9): every non-empty
  * `bindStart`/`bindEnd` value (the boxes a bound path attaches to) UNION every `kind:"path"`
  * box's own id (the line itself). Moving any of these re-routes a connector line, so the
  * geometry fast-path must exclude them. Kept here so paint() and free-canvas derive the
@@ -236,7 +236,7 @@ export function resolveCanvasFastCfg(canvas: Record<string, unknown>): Omit<Fast
 }
 
 /**
- * Plan a geometry paint fast-path (plans/98 §9), or return null to force a full paint.
+ * Plan a geometry paint fast-path (plans/98 section 9), or return null to force a full paint.
  *
  * Returns the moved boxes' new left/top ONLY when the change is a **pure x/y translation**
  * (w/h/rot unchanged) of boxes with no cross-box or structural coupling that a full paint
@@ -402,7 +402,7 @@ export function hitGridMarquee(grid: HitGrid, rect: MarqueeRect, skip?: (i: numb
 
 /**
  * Above this box count the grid beats a linear scan; below it, the scan is a few µs
- * and the grid's build cost isn't worth it (plans/98 §6.1). Tuned from bench-canvas.
+ * and the grid's build cost isn't worth it (plans/98 section 6.1). Tuned from bench-canvas.
  */
 export const GRID_PICK_MIN = 500;
 

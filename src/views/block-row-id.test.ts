@@ -3,7 +3,7 @@
  * Every `blocks` row is minted in ONE place, and the legacy migration runs in ONE
  * place - a source scan, not a mount.
  *
- * Plan 100 §3 makes a row's id a property of its birth: `newBlockRow` (tool-inputs.ts)
+ * Plan 100 section 3 makes a row's id a property of its birth: `newBlockRow` (tool-inputs.ts)
  * builds the declared defaults AND the stable id together, so a row cannot exist without
  * one. That guarantee is only as good as the number of places that build a row, and the
  * sidebar has four (the "+ Add" button and its typed menu, drop-to-add, Markdown paste,

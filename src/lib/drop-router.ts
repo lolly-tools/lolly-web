@@ -10,13 +10,13 @@
  *   token doc / .penpot / design-system pack zip → the Design System studio
  *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
  *                 the Design System studio (a guidelines PDF's colours, marks
- *                 and embedded faces - plan 97 §8)
+ *                 and embedded faces - plan 97 section 8)
  *   PowerPoint  → slides → SVG library assets
  *   image/video/audio → the asset library · /verify (Content Credentials)
  *   unknown / C2PA-looking bytes → /verify
  *
  * A `.penpot` reaches TWO doors (Design and the studio), so both label
- * where they land rather than what they do (plan 97 §14.9).
+ * where they land rather than what they do (plan 97 section 14.9).
  *
  * Design files travel by the same one-shot in-memory handoff pattern
  * lib/verify-handoff.ts proves: the File is stashed here, we navigate to
@@ -43,8 +43,9 @@ import { t, tRaw } from '../i18n.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
-import { choiceDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
+import { choiceDialog, confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { DialogChoice } from '../components/confirm-dialog.ts';
+import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import { setPendingVerify } from './verify-handoff.ts';
 import type { PickerHost } from '../views/picker.ts';
 import type { BeamPackHost } from './beam-pack.ts';
@@ -71,7 +72,7 @@ const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico
 const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
 const PURE_DESIGN_EXT_RE = /\.(fig|penpot|idml|indd)$/i;
 const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
-// Design-system shapes (plan 97 §8). A Penpot project always carries a token
+// Design-system shapes (plan 97 section 8). A Penpot project always carries a token
 // document; the zip/JSON cases need evidence, below.
 const PENPOT_EXT_RE = /\.penpot$/i;
 const JSON_EXT_RE = /\.json$/i;
@@ -87,7 +88,7 @@ let pendingDesign: { file: File; scenes: boolean } | null = null;
 /** Consume the design file stashed by a drop route into Design - single use,
  *  cleared on read. free-canvas checks this on mount. `scenes` carries the
  *  "as timed scenes vs replace the board" choice the drop door offered
- *  (plans/104 §337): the "Make a video from its frames" door sets it true. */
+ *  (plans/104 section 337): the "Make a video from its frames" door sets it true. */
 export function takePendingDesignImport(): { file: File; scenes: boolean } | null {
   const d = pendingDesign;
   pendingDesign = null;
@@ -105,7 +106,7 @@ let pendingDesignSystemFile: File | null = null;
  *
  * Every route below that reaches the studio arms it, including the PDF one - a
  * guidelines PDF is design-system material even though the sniff files it under
- * `pdf` (its colours, marks and embedded faces are the whole point of plan 97 §8's
+ * `pdf` (its colours, marks and embedded faces are the whole point of plan 97 section 8's
  * PDF source).
  */
 export function takePendingDesignSystemFile(): File | null {
@@ -156,7 +157,7 @@ export interface Sniff {
   layers: boolean;
   /** A plain archive (.zip/.tar/.tar.gz) we can explode into member assets. */
   archive: boolean;
-  /** Design-system material (plan 97 §8): a DTCG/Tokens-Studio token document,
+  /** Design-system material (plan 97 section 8): a DTCG/Tokens-Studio token document,
    *  a Penpot project, or a zip whose parts say design-system pack. Additive - 
    *  it never suppresses a route another flag already earned. */
   designSystem: boolean;
@@ -282,7 +283,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   // "unpack" route never competes for a .penpot or shreds a .xlsx.
   const archive = !lolly && !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
     && (ARCHIVE_EXT_RE.test(file.name) || (zipMagic && !DESIGN_EXT_RE.test(file.name)));
-  // Design-system material (plan 97 §8), sniffed LAST and only on the deep
+  // Design-system material (plan 97 section 8), sniffed LAST and only on the deep
   // (single-file) path - the route is a single-file journey, and every flag
   // above is computed exactly as it was before this one existed. A .penpot is
   // one by extension; a zip needs its parts named; a .json has to parse.
@@ -323,7 +324,7 @@ export interface ChooserContext {
  * into member assets is what a dropped archive usually means. It must NOT lead
  * for a zip the sniff positively identified as a design-system pack - unpacking
  * that shreds it into loose library files, which is the opposite of installing
- * it, and it is the one archive whose real destination we know (plan 97 §14.9:
+ * it, and it is the one archive whose real destination we know (plan 97 section 14.9:
  * a door names where it lands). So the studio goes first there, and unpack
  * stays available underneath.
  */
@@ -353,7 +354,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
     choices.push({ id: 'design', label: t('Edit in Design'), primary: !s.archive });
   }
   // The Design System studio door, next to the Design one so the two
-  // .penpot destinations read as a pair (plan 97 §14.9). It leads only when no
+  // .penpot destinations read as a pair (plan 97 section 14.9). It leads only when no
   // earlier route already claimed the call-to-action, so nothing above it moves.
   if (single && s.designSystem && !packZip) {
     choices.push({
@@ -364,7 +365,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   }
   // Frames → timed scenes: the same design/PDF sniff can open in Design as a video
   // sequence, each frame a timed scene (free-canvas's scene-mode import consumes the
-  // stash on mount). The other half of the §337 "as scenes vs replace the board" choice.
+  // stash on mount). The other half of the section 337 "as scenes vs replace the board" choice.
   if (single && (s.design || s.pdf) && has('design')) {
     choices.push({ id: 'sequence', label: t('Make a video from its frames') });
   }
@@ -379,7 +380,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
     choices.push({ id: 'library', label: t('Add pages to your library') });
     // A guidelines PDF is the richest design-system file most teams have - its
     // artwork carries the marks and the palette, and it embeds the real font
-    // programs (plan 97 §8's PDF source). It sits with the other "what is inside
+    // programs (plan 97 section 8's PDF source). It sits with the other "what is inside
     // this document" routes and never LEADS: a PDF's first meaning is a document,
     // and the sniff cannot tell guidelines from an invoice. The guard is
     // defensive - `sniffFile` never reports `designSystem` for a PDF, so the
@@ -417,7 +418,7 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
   if (s.pdf) return tRaw('“{name}” is a PDF or Illustrator document.', { name });
   if (s.pptx) return tRaw('“{name}” is a PowerPoint deck.', { name });
   // Two doors, so the sentence names both destinations rather than leaving
-  // "design file" to stand for either of them (plan 97 §14.9).
+  // "design file" to stand for either of them (plan 97 section 14.9).
   if (s.designSystem && s.design && ctx.has('design')) {
     return tRaw('“{name}” can open in Design or install as the design system.', { name });
   }
@@ -441,15 +442,72 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
  *  import keeps the pack/ingest code off the drop cold path. */
 async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
   try {
-    const { ingestLollyFile } = await import('./lolly-pack.ts');
+    const lp = await import('./lolly-pack.ts');
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const res = await ingestLollyFile(bytes, host as unknown as BeamPackHost);
+    // A .lolly may carry the tool itself (plans/114 Wave 7). Provision it - behind a
+    // "do you trust the author?" gate - BEFORE landing the session, so the session can
+    // open. `available` is whether the session's tool can load here afterwards.
+    const available = await provisionLollyTool(bytes, lp);
+    const res = await lp.ingestLollyFile(bytes, host as unknown as BeamPackHost);
     playSfx('drop');
-    announce(tRaw('Opened {name}', { name: file.name }));
-    const hash = `#/tool/${res.toolId}?slot=${encodeURIComponent(res.slot)}`;
-    routeToConsumer(hash, window.location.hash === hash);
+    if (available) {
+      announce(tRaw('Opened {name}', { name: file.name }));
+      const hash = `#/tool/${res.toolId}?slot=${encodeURIComponent(res.slot)}`;
+      routeToConsumer(hash, window.location.hash === hash);
+    } else {
+      // The tool wasn't installed (declined / unsupported), so opening it would 404.
+      // The session is saved regardless - it waits in Projects for when the tool is added.
+      announce(tRaw('Saved “{name}” to your projects. Its tool isn’t installed here, so it can’t open yet.', { name: file.name }), { assertive: true });
+    }
   } catch (err) {
     announce(tRaw('Could not open this .lolly file: {message}', { message: (err as Error).message }), { assertive: true });
+  }
+}
+
+/**
+ * Provision a `.lolly`'s carried tool, if any, before its session lands. Returns whether
+ * the session's tool can load here afterwards:
+ *   - no carried tool → true (the session resolves its tool from the catalog, as always);
+ *   - the tool is already here (catalog or installed) → true, nothing to do;
+ *   - carried + not here → a "do you trust the author?" confirm (its code runs unsandboxed);
+ *     Trust ⇒ install + surface it (true); Decline / unsupported (module hooks) ⇒ false.
+ */
+async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-pack.ts')): Promise<boolean> {
+  const parsed = await lp.readLollyFile(bytes);
+  const tool = lp.extractBundledTool(parsed);
+  if (!tool) return true;   // travels by reference - same as before Wave 7
+
+  const it = await import('./installed-tools.ts');
+  const idx = (window as unknown as { __toolIndex?: { tools?: Array<{ id: string; _installed?: boolean }> } }).__toolIndex;
+  const inCatalog = !!idx?.tools?.some(t => t.id === tool.id && t._installed !== true);
+  if (inCatalog || (await it.isToolInstalled(tool.id))) return true;   // already have it
+
+  const manifest = JSON.parse(new TextDecoder().decode(tool.files['tool.json'] ?? new Uint8Array())) as ToolManifest;
+  const name = (manifest as { name?: string }).name || tool.id;
+  const by = parsed.manifest.creator?.name || parsed.manifest.creator?.org;
+  const trusted = await confirmDialog({
+    title: tRaw('Trust this tool?'),
+    message: tRaw('This file includes a tool — “{name}”{by} — that isn’t installed here. Opening it runs the tool’s own code on your device. Only install it if you trust where this file came from.',
+      { name, by: by ? tRaw(' by {who}', { who: by }) : '' }),
+    confirmLabel: tRaw('Trust & install'),
+    danger: true,
+  });
+  if (!trusted) return false;
+
+  try {
+    await it.installTool({
+      manifest, files: tool.files, trust: tool.trust,
+      ...(tool.version ? { version: tool.version } : {}),
+      ...(parsed.manifest.engineVersion ? { engineVersion: parsed.manifest.engineVersion } : {}),
+    });
+    await it.mergeInstalledToolsIntoIndex();
+    return true;
+  } catch (err) {
+    const msg = err instanceof it.UnsupportedToolError
+      ? err.message
+      : tRaw('Could not install the tool: {message}', { message: (err as Error).message });
+    announce(msg, { assertive: true });
+    return false;
   }
 }
 
@@ -524,7 +582,7 @@ export async function openDropChooser(
       break;
     case 'sequence':
       // "Make a video from its frames" - the same design opens in Design, but each
-      // frame becomes a timed scene (plans/104 §337; Sequence Studio's old home for
+      // frame becomes a timed scene (plans/104 section 337; Sequence Studio's old home for
       // this route retired into Design).
       pendingDesign = { file: first, scenes: true };
       routeToConsumer('#/tool/design', onToolRoute('design'));

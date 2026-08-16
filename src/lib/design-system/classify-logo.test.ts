@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * classify-logo.ts - the pure logo classification heuristics (plan 97 §7.3).
+ * classify-logo.ts - the pure logo classification heuristics (plan 97 section 7.3).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/classify-logo.test.ts"

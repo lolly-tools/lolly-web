@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * lib/collab-share-private.ts - the "Private collab" section of the Share dialog
- * (plans/100 §0/§6, Track A: P2P pairs). An OSS individual feature, deliberately
- * NOT under src/org/ (§1 - org/ is control-plane awareness only, and a private
+ * (plans/100 section 0/section 6, Track A: P2P pairs). An OSS individual feature, deliberately
+ * NOT under src/org/ (section 1 - org/ is control-plane awareness only, and a private
  * collab is exactly the "airgapped edge user's dream" the org boundary excludes).
  *
  * Registers into the generic lib/share-sections.ts seam once, as a side effect of
@@ -23,11 +23,11 @@
  *     gets no row. The SYNC mirror, not the profile-aware `isFlagOn`, because the
  *     Share dialog's builder runs outside any profile-aware view.
  *   - a `'private'` opener registered in lib/collab-launch.ts - the actual
- *     invite/accept ceremony (plans/100 §6.1). `collab/private-opener.ts` registers
+ *     invite/accept ceremony (plans/100 section 6.1). `collab/private-opener.ts` registers
  *     one unconditionally and `main.ts` imports it for that effect, so on a shipped
  *     boot this gate is satisfied and the flag is the one that decides.
  *
- * Row copy follows plans/100 §0's naming: "Private collab" heading, "Start a
+ * Row copy follows plans/100 section 0's naming: "Private collab" heading, "Start a
  * collab" verb - never "rooms"/"multiplayer". `announce()` on a successful open,
  * exactly like org/share-links.ts's rows and org/collab-share.ts's "Work collab"
  * row; a missing/throwing opener degrades to silence (openCollabLaunch's own
@@ -74,7 +74,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
   btn.textContent = t('Start a collab');
 
   // The other end of the same feature, and the reason this row has two buttons: an
-  // invite is a link OR a code (plans/100 §6.1's three skins), and until the code door
+  // invite is a link OR a code (plans/100 section 6.1's three skins), and until the code door
   // landed the code half had nowhere to go - a person handed a code in a chat had to be
   // sent a link as well. Secondary, because starting one is the common case; it opens
   // the door at #/join rather than duplicating it, so both entrances are one screen.

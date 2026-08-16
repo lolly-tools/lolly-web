@@ -2,7 +2,7 @@
 /**
  * nearby - the seam between the collab ceremony and a *discovery* transport: a way
  * to find another Lolly device on the same network and hand it an invite without
- * anyone scanning a QR (plans/110 §3).
+ * anyone scanning a QR (plans/110 section 3).
  *
  * ── What this module is, and is deliberately not ────────────────────────────────
  *
@@ -21,7 +21,7 @@
  *                Android NsdManager). Registered by `lib/nearby-boot.ts` when it
  *                detects the Tauri runtime. This is real device discovery.
  *   - `'org'` - a control-plane instance grouping connected members by network
- *                (lolly-work `plans/26` §8). Registered from `org/nearby-source.ts`
+ *                (lolly-work `plans/26` section 8). Registered from `org/nearby-source.ts`
  *                only on an instance that grants `collab.nearby`. A SORTING HINT,
  *                never true discovery, and its `exchangeInvite` deliberately refuses
  *                (a browser cannot hand a token to a peer without a server round the
@@ -32,7 +32,7 @@
  * Discovery replaces only the TRANSPORT of the invite/reply tokens. mDNS is
  * unauthenticated - anyone on a café network can advertise any name - so tapping a
  * discovered peer starts the SAME accept ceremony, and the SAS matching plates
- * remain the authentication (plans/110 §3, plan 100 §11.23). "Discoverable" never
+ * remain the authentication (plans/110 section 3, plan 100 section 11.23). "Discoverable" never
  * means "trusted", and nothing here weakens the ceremony. The tokens exchanged are
  * the same opaque blobs a QR carries today; this module never inspects them.
  */

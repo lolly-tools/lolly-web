@@ -720,7 +720,7 @@ const FAMILY_LABEL: Record<ColorModeFamily, string> = {
   perceptual: 'Perceptual', device: 'Device', output: 'Output',
 };
 
-/** One tab. Profile entries are two-line full-width rows - §11.6b wants the
+/** One tab. Profile entries are two-line full-width rows - section 11.6b wants the
  *  profile name ON the tab, and a bare "CMYK" pill cannot carry it. */
 function modeTabHtml(eid: string, spec: SpaceSpec, active: boolean): string {
   const slug = slugMode(spec.mode);

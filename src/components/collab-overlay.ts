@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-overlay - the remote x/y cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
+ * collab-overlay - the remote x/y cursor layer (plan 100 section 4.3, section 4.6, section 4.8, section 11.14).
  *
  * A cursor is the ONE presence primitive that moves, and it is the only one that
  * costs a frame loop. Everything about this module is shaped by that: it runs a
  * single rAF ticker, only while at least one remote cursor is live, and it paints
  * into a layer that is a SIBLING of the canvas stage - never a child. The tool's
- * render is untouched, byte for byte, which is the §4.6 rule ("presence chrome
+ * render is untouched, byte for byte, which is the section 4.6 rule ("presence chrome
  * never goes inside `.tool-canvas`/`#tool-content` or any export stage"): a
  * collaborator's cursor must not be able to change what a PNG comes out looking
  * like, and an overlay that lives outside the stage cannot.
  *
- * COORDINATES ARE NORMALIZED, NOT PIXELS (§4.3). A peer broadcasts `cursor` as
+ * COORDINATES ARE NORMALIZED, NOT PIXELS (section 4.3). A peer broadcasts `cursor` as
  * 0..1 of the design's unit space, so a phone at 0.4× and a desktop at 2× paint the
  * same point on the same artwork. The mapping is one multiply through the STAGE's
  * live rect, re-read each tick, then rebased into the layer's own coordinate space
  * - so a zoom, a scroll or a sidebar resize needs no invalidation protocol at all.
  *
- * THE RENDER-LOOP DISCIPLINE IS BORROWED, THE DEPENDENCY IS NOT (§11.14, Andy
+ * THE RENDER-LOOP DISCIPLINE IS BORROWED, THE DEPENDENCY IS NOT (section 11.14, Andy
  * 2026-08-09 - "worth learning from the pixijs.com folks"). Four rules, all of them
  * cheap and all of them essential:
  *
@@ -27,7 +27,7 @@
  *      peer to arrive takes that same node back. A roster that churns - the normal
  *      pattern of a session where people come and go - allocates nothing after the
  *      first few joins, and never leaves detached nodes for the GC to sweep mid-drag.
- *   3. INTERPOLATE, NEVER EXTRAPOLATE (§4.3, stated in the plan as a rule). The
+ *   3. INTERPOLATE, NEVER EXTRAPOLATE (section 4.3, stated in the plan as a rule). The
  *      ticker renders the segment BETWEEN the last two samples, one sample-interval
  *      behind live. Extrapolation is what produces the rubber-band overshoot that
  *      makes a cursor look drunk when a frame is dropped, and the presence lane
@@ -45,13 +45,13 @@
  * rAF simply stops being called. That last one matters: a backgrounded helper's tab
  * must cost nothing, and a timer-driven loop would keep burning.
  *
- * REDUCED MOTION (§4.8). `prefersReducedMotion()` does not slow the cursor down, it
+ * REDUCED MOTION (section 4.8). `prefersReducedMotion()` does not slow the cursor down, it
  * removes the moving thing entirely: no ticker is started at all, and each peer is
  * drawn as a STATIC dot at its newest sample, repainted only when a frame actually
  * arrives. A user who asked for less motion should not be handed six drifting
  * arrows; they still get to see where everyone is.
  *
- * NAMES ARE UNTRUSTED (§11.21/§11.23). A display name arrives over the wire from a
+ * NAMES ARE UNTRUSTED (section 11.21/section 11.23). A display name arrives over the wire from a
  * peer, so it is written with `textContent` and never interpolated into markup.
  *
  * IT CARRIES ITS OWN STYLESHEET, injected into `<head>` on first mount - the
@@ -78,7 +78,7 @@ const STYLE_ID = 'lolly-collab-overlay-css';
 
 const CSS = `
 /* The shared presence layer — a SIBLING of the render surface, never a child
-   (§4.6). z-index 15 puts it over the canvas and under the stage HUD (z 20). */
+   (section 4.6). z-index 15 puts it over the canvas and under the stage HUD (z 20). */
 .collab-canvas-layer {
   position: absolute;
   inset: 0;
@@ -111,7 +111,7 @@ const CSS = `
 
 /* The arrow silhouette: one painted box in the collaborator's colour, clipped to
    a pointer. The halo is a doubled drop-shadow in the theme's card ground rather
-   than a border, so it follows the clip path instead of the box (§4.4 — a cursor
+   than a border, so it follows the clip path instead of the box (section 4.4 — a cursor
    must stay legible over artwork that happens to share its hue). */
 .collab-cursor-arrow {
   flex: none;
@@ -121,7 +121,7 @@ const CSS = `
   clip-path: polygon(0 0, 0 78%, 24% 60%, 42% 100%, 60% 92%, 42% 55%, 74% 52%);
   filter: drop-shadow(0 0 1px hsl(var(--card))) drop-shadow(0 0 1px hsl(var(--card)));
 }
-/* Reduced motion (§4.8): the same painted box, squared off into a dot. The two
+/* Reduced motion (section 4.8): the same painted box, squared off into a dot. The two
    inline properties setStill() writes drop the clip path and round the corners;
    this rule is only the SIZE, which an inline style cannot express in a11y-fs. */
 .collab-cursor--still .collab-cursor-arrow {
@@ -130,7 +130,7 @@ const CSS = `
   margin-block-start: calc(4px * var(--a11y-fs));
 }
 
-/* The name, so a cursor is never colour alone (§4.8). Fixed ink on the
+/* The name, so a cursor is never colour alone (section 4.8). Fixed ink on the
    collaborator's ground for the same reason collab-pill.ts's .collab-av uses one:
    COLLAB_BAND projects every hue into one OKLCH lightness/chroma calibrated for
    APCA contrast against that ink, in both themes. */
@@ -205,7 +205,7 @@ export interface CursorSample {
  * `disconnected` ICE blip, a laptop lid) rather than moved slowly. Gliding across it
  * would draw a long confident sweep the user never made, so the cursor SNAPS.
  *
- * 500 ms is ten send-throttle windows (§4.7's 50 ms), so it can never fire on
+ * 500 ms is ten send-throttle windows (section 4.7's 50 ms), so it can never fire on
  * ordinary jitter; anything shorter is smoothed, anything longer was a real absence.
  */
 export const CURSOR_SNAP_GAP_MS = 500;
@@ -217,7 +217,7 @@ export const CURSOR_SNAP_GAP_MS = 500;
  * The lag is the whole trick and it is deliberate. If `u` were `(t - prev.t)/dur`
  * the interpolator would already be AT `next` the instant `next` arrived, and the
  * only way to keep moving after that is to extrapolate - which is exactly the rule
- * §4.3 forbids. Anchoring the window at `next.t` instead means a freshly arrived
+ * section 4.3 forbids. Anchoring the window at `next.t` instead means a freshly arrived
  * sample starts the glide at `prev` and reaches `next` one interval later, so the
  * cursor is always drawing a segment it has both ends of. The cost is ~50 ms of
  * apparent latency, which is far below what a viewer reads as lag and far above what
@@ -257,7 +257,7 @@ export const CANVAS_LAYER_CLASS = 'collab-canvas-layer';
  * Mount an absolutely-positioned overlay layer as a SIBLING of `stage`.
  *
  * The containment check is not defensive programming for its own sake - it is the
- * §4.6 invariant made unbypassable. A caller that passes the canvas itself as the
+ * section 4.6 invariant made unbypassable. A caller that passes the canvas itself as the
  * host (an easy mistake: `#tool-canvas` is the element everything else in the tool
  * view is measured from) would put presence chrome inside the export stage, and the
  * damage would show up as a diff in an exported PNG rather than as an error. So the
@@ -375,7 +375,7 @@ export interface CursorPeer {
   /** Normalized 0..1 unit-space position, or null/absent when this peer has no
    *  cursor to show (a sidebar-only tool, or a peer that never moved). */
   readonly cursor?: { readonly x: number; readonly y: number } | null;
-  /** A hidden tab (§11.4). Away peers keep their roster entry but drop their
+  /** A hidden tab (section 11.4). Away peers keep their roster entry but drop their
    *  cursor - a pointer that has not moved for minutes is noise, not presence. */
   readonly away?: boolean;
 }
@@ -441,12 +441,12 @@ interface LiveCursor {
   name: string;
 }
 
-/** Modifier for the reduced-motion presentation (§4.8). The sheet above sizes it;
+/** Modifier for the reduced-motion presentation (section 4.8). The sheet above sizes it;
  *  see {@link setStill} for the two inline properties that carry the silhouette. */
 export const CURSOR_STILL_CLASS = 'collab-cursor--still';
 
 /**
- * Swap a cursor between the arrow and the still DOT (§4.8: "hidden entirely under
+ * Swap a cursor between the arrow and the still DOT (section 4.8: "hidden entirely under
  * `prefersReducedMotion()`, showing static position dots instead").
  *
  * The sheet draws `.collab-cursor-arrow` as a clip-path silhouette in the
@@ -651,7 +651,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
       for (const peer of peers) {
         const c = peer.cursor;
         // No cursor and no presence to fake: a peer that is away, or on a tool with
-        // no x/y lane at all (§4.3 - the cursor is opt-in per tool).
+        // no x/y lane at all (section 4.3 - the cursor is opt-in per tool).
         if (!c || peer.away || !Number.isFinite(c.x) || !Number.isFinite(c.y)) continue;
         seen.add(peer.id);
         let entry = live.get(peer.id);
@@ -661,7 +661,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
           arrived = true;
         } else if (c.x !== entry.next.x || c.y !== entry.next.y) {
           // Only a MOVE advances the timeline. A 15 s heartbeat re-stating the same
-          // position (§4.7) would otherwise restart the interpolation window every
+          // position (section 4.7) would otherwise restart the interpolation window every
           // time and hold the cursor visually frozen one interval behind itself.
           entry.prev = entry.next;
           entry.next = { x: c.x, y: c.y, t };
@@ -673,7 +673,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
         }
         if (entry.name !== peer.name) {
           entry.name = peer.name;
-          // textContent, never innerHTML: a display name is peer-supplied (§11.21).
+          // textContent, never innerHTML: a display name is peer-supplied (section 11.21).
           entry.node.label.textContent = peer.name;
         }
       }
@@ -694,7 +694,7 @@ export function createCollabCursors(opts: CollabCursorOptions): CollabCursors {
         return;
       }
       if (still) {
-        // No ticker under reduced motion (§4.8) - repaint on arrival instead, so the
+        // No ticker under reduced motion (section 4.8) - repaint on arrival instead, so the
         // dots are current without anything animating between frames.
         stopTicker();
         paint(t);

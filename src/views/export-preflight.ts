@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Preflight in the export panel - "Before you export" (plans/65-preflight-and-cost.md §8, phase 1).
+ * Preflight in the export panel - "Before you export" (plans/65-preflight-and-cost.md section 8, phase 1).
  *
  * The engine owns the RULES (`engine/src/preflight.ts`, a pure synchronous
  * `preflight(job) -> PreflightReport`); this module owns only the two shell-side
@@ -96,7 +96,7 @@ const evStr = (f: Finding, key: string): string => {
 /**
  * The translated panel copy, keyed by finding id.
  *
- * DELIBERATELY the minimum set (plan §8 / the surface brief §3): the five
+ * DELIBERATELY the minimum set (plan section 8 / the surface brief section 3): the five
  * findings a user can act on. Every other id falls through to `finding.message`,
  * the engine's resolved English - visible, honest, and one export/import cycle
  * away from being translated if it earns it. Each entry costs a chrome string in
@@ -151,7 +151,7 @@ const areaCount = (report: PreflightReport, box: 'trim' | 'bleed'): Count | unde
 /**
  * The page count, ONLY when it is exact.
  *
- * A ceiling is never promoted into a bare fact row (§6 rule 4): when the count is
+ * A ceiling is never promoted into a bare fact row (section 6 rule 4): when the count is
  * a ceiling it stays in the body list, where the engine's own sentence still says
  * "up to". Suppressing the row costs nothing and removes the one place a bound
  * could be laundered.

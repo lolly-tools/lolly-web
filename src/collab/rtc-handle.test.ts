@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The Track A handle: a transport pair, two documents, and the rules that keep them
- * the same document (plan 100 §6.2, §6.2a, §11.19, §11.21; wave 2.3).
+ * the same document (plan 100 section 6.2, section 6.2a, section 11.19, section 11.21; wave 2.3).
  *
  * `rtc-transport.test.ts` pins the wire and `collab-session.test.ts` pins the
  * composition; neither can see what this file exists for - TWO handles, each with its
@@ -280,7 +280,7 @@ function makeSide(
 
   const inbound: CanvasOp[] = [];
   // The device Lamport counter `collab-plumbing.ts` holds, absorbed from every op we
-  // see so a local write is causally after everything applied (plans/99 §8).
+  // see so a local write is causally after everything applied (plans/99 section 8).
   let lamport = 0;
   handle.opsIn.subscribe((ops) => {
     for (const op of ops) {
@@ -401,7 +401,7 @@ test('the backstop repairs a dropped op, and stays quiet when nothing changed', 
   assert.deepEqual(pair.b.params(), { title: 'survives' }, 'the exchange repaired it');
   assert.deepEqual(pair.a.params(), pair.b.params());
 
-  // Nothing has changed since, so the next tick must cost NOTHING (§6.2's "only when
+  // Nothing has changed since, so the next tick must cost NOTHING (section 6.2's "only when
   // dirty" - a pair that is idle stays silent).
   const framesBefore = pair.a.transport.opsOut.length;
   pair.advance(20_000);
@@ -497,14 +497,14 @@ test('a peer on an incompatible op major makes this side observer-only', () => {
   assert.equal(pair.a.transport.opsOut.length, framesBefore);
   assert.deepEqual(pair.b.params(), {});
 
-  // A compatible minor is not a demotion (§11.19 - PWA staleness makes skew routine).
+  // A compatible minor is not a demotion (section 11.19 - PWA staleness makes skew routine).
   const other = makePair();
   other.a.transport.hello('BBB', '1.9.0');
   assert.equal(other.a.handle.role, 'writer');
   assert.equal(other.a.handle.peerRole('BBB'), 'writer');
 });
 
-test('the inviter is the host on both sides (§6.2a)', () => {
+test('the inviter is the host on both sides (section 6.2a)', () => {
   const pair = makePair();
 
   assert.equal(pair.a.handle.hostClientId, 'AAA', 'the inviter owns the session');
@@ -576,7 +576,7 @@ test('a transport failure surfaces on the handle events', () => {
   const states: CollabConnectionState[] = [];
   pair.a.handle.events.subscribe((state) => states.push(state));
 
-  // A UDP blip is not death (§11.3): it greys the avatar and evicts nobody.
+  // A UDP blip is not death (section 11.3): it greys the avatar and evicts nobody.
   pair.a.transport.setConnection('reconnecting');
   assert.deepEqual(states, ['live', 'reconnecting']);
 
@@ -666,14 +666,14 @@ test('an edit made mid-exchange, if the lane drops it, is not swallowed by the e
 
   // The exchange fully landed, but a local edit outran its snapshot: the divergence
   // backstop must still treat this side as dirty, or 'midway' has no repair path
-  // left until some UNRELATED edit happens to re-arm it (§6.2 - "cleared only by an
+  // left until some UNRELATED edit happens to re-arm it (section 6.2 - "cleared only by an
   // exchange that fully landed" is not the same claim as "cleared only when nothing
   // has changed since the exchange was built").
   pair.advance(20_000);
   assert.equal(pair.b.params().midway, 'edit', 'the next tick repairs the edit the first exchange missed');
 });
 
-test('inbound ops are refused before they can become state (§11.21)', () => {
+test('inbound ops are refused before they can become state (section 11.21)', () => {
   // A forbidden key is a cap breach: the peer is disconnected, not throttled.
   const forbidden = makePair();
   forbidden.a.transport.deliver({
@@ -705,7 +705,7 @@ test('inbound ops are refused before they can become state (§11.21)', () => {
   assert.equal(flood.a.handle.reason(), 'op-batch-too-large');
   assert.deepEqual(flood.a.params(), {});
 
-  // A merely unrecognisable op is DROPPED - §11.11's "never the batch, never a throw"
+  // A merely unrecognisable op is DROPPED - section 11.11's "never the batch, never a throw"
   // - and the session carries on.
   const skew = makePair();
   skew.a.transport.deliver({

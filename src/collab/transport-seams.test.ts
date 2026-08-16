@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The transport's seams with everything above it (plan 100 §6.1, §11.3, §11.23, §11.27).
+ * The transport's seams with everything above it (plan 100 section 6.1, section 11.3, section 11.23, section 11.27).
  *
  * `rtc-transport.test.ts` pins the wire. This file pins the three places where a value
  * this module accepts has to actually REACH somebody, plus the scan loop's abort - each
@@ -14,7 +14,7 @@
  *    transport exists, so the identity has to be read at mint time and not at
  *    construction - otherwise the peer sees the profile prefill, whatever the human typed.
  *  - `reconnecting`. A UDP blip recovers through `checking`, and the data channels never
- *    close, so the naive read flickers back to live halfway through (§11.3).
+ *    close, so the naive read flickers back to live halfway through (section 11.3).
  *  - an aborted scan. A dialog that has already closed must not receive a decoded token
  *    from the frame that was in flight when it closed.
  *
@@ -263,7 +263,7 @@ async function mintAndOpen(r: Rig): Promise<string> {
   return offer.ok ? offer.invite.signal : '';
 }
 
-// ── The session seed (§6.1) ───────────────────────────────────────────────────────
+// ── The session seed (section 6.1) ───────────────────────────────────────────────────────
 
 test('the session seed reaches the peer on the ops hello, because the invite blob has no room', async () => {
   const seed = 'z1_packedsessionstate';
@@ -271,7 +271,7 @@ test('the session seed reaches the peer on the ops hello, because the invite blo
   const token = await mintAndOpen(r);
 
   // Not in the blob, and not because somebody forgot: the payload is sized for a QR
-  // (§6.1 wants ≤150 B), and a packed session state is not that shape.
+  // (section 6.1 wants ≤150 B), and a packed session state is not that shape.
   const decoded = inviteFromToken(token);
   assert.equal(decoded.ok, true);
   assert.equal((unwrap(decodePayload(token, 'link')) as { invite?: Record<string, unknown> }).invite?.seed, undefined);
@@ -311,13 +311,13 @@ test('an inbound seed arrives with the hello it was sent on', async () => {
   const hello = messages.find((m) => m.kind === 'hello');
   assert.equal(hello?.kind === 'hello' ? hello.seed : '', 'z1_state');
 
-  // A peer that sends nonsense in the field is not a peer that crashes us (§11.21).
+  // A peer that sends nonsense in the field is not a peer that crashes us (section 11.21).
   r.stack.pc().channel('ops').deliver(JSON.stringify({ t: 'hello', c: '01GUEST', s: { not: 'a string' } }));
   const second = messages.filter((m) => m.kind === 'hello')[1];
   assert.equal(second?.kind === 'hello' ? second.seed : 'unset', undefined);
 });
 
-// ── The chosen name (§4.5, §11.23) ────────────────────────────────────────────────
+// ── The chosen name (section 4.5, section 11.23) ────────────────────────────────────────────────
 
 test('a name thunk is read at mint time, so an acceptor that names itself last still reaches the wire', async () => {
   // The acceptor's real order: build the transport for the tool probe, THEN ask the
@@ -346,7 +346,7 @@ test('a plain string name still works, and an empty one is anonymity rather than
   assert.equal(second.ok ? second.value.invite.name : 'unset', undefined);
 });
 
-// ── `disconnected` is not death, and neither is the way back (§11.3) ──────────────
+// ── `disconnected` is not death, and neither is the way back (section 11.3) ──────────────
 
 test('a UDP blip stays reconnecting all the way back, never flickering through live', async () => {
   const r = rig();
@@ -355,7 +355,7 @@ test('a UDP blip stays reconnecting all the way back, never flickering through l
   assert.equal(r.transport.state().connection, 'live');
 
   // Connection transitions only: `ice` and `gathering` move under it for their own
-  // reasons, and the thing §11.3 is about is what the pill and the avatar read.
+  // reasons, and the thing section 11.3 is about is what the pill and the avatar read.
   const seen: string[] = [];
   r.transport.on('state', (s) => {
     if (seen[seen.length - 1] !== s.connection) seen.push(s.connection);
@@ -404,7 +404,7 @@ test('a re-invite is a fresh pairing, not the tail of the old one blip', async (
   assert.equal(r.transport.state().connection, 'live');
 });
 
-// ── The scan loop's abort (§11.27) ────────────────────────────────────────────────
+// ── The scan loop's abort (section 11.27) ────────────────────────────────────────────────
 
 /** A video that always has a frame to read. */
 const readyVideo: QrVideoLike = { readyState: 4, videoWidth: 640, videoHeight: 480 };

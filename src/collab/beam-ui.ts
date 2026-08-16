@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-ui - the door into the beam (plan 100 §6.4; the stitch-2 debt named in
+ * beam-ui - the door into the beam (plan 100 section 6.4; the stitch-2 debt named in
  * `collab/beam-session.ts`'s header as "the caller's line").
  *
  * Five modules already implement a beam end to end - the frames (`beam-protocol.ts`),
@@ -29,8 +29,8 @@
  *      knows which collab it belongs to, and it is a MOUNTED TOOL
  *      (`views/tool-collab.ts`). An ACCEPTOR holds two of them, which is the one place
  *      this module branches: their `host.state` has been swapped for the memory bridge
- *      (§11.17), so their working copy PACKS from the ephemeral one and never touches a
- *      slot - while a beam they accepted LANDS in the real library, because §6.4 says a
+ *      (section 11.17), so their working copy PACKS from the ephemeral one and never touches a
+ *      slot - while a beam they accepted LANDS in the real library, because section 6.4 says a
  *      received gift lands there attributed. `packHost` is that second host, and every
  *      caller with only one passes `host` alone and sees no branch at all.
  *   3. **the human.** `mountBeamToast(container, session.toast)` - on BOTH ends, at
@@ -54,12 +54,12 @@
  *    made the pair (`collab/rtc-connection.ts`), and is read STRUCTURALLY at the mount
  * - the `CollabHandleLanes` idiom from `views/tool-collab.ts`. A work collab (Track
  *    B) publishes none, so the send control is structurally absent there rather than
- *    hidden behind a flag: the server path has no beam and never will (§7).
+ *    hidden behind a flag: the server path has no beam and never will (section 7).
  *  - **Know what a session IS.** {@link BeamCurrentSessionReader} is injected by the
  *    mounted view, because "the thing I am working on right now" is the runtime's live
  *    model and this module cannot see one.
  *  - **Own a clock or a retry.** A beam is paced by the lane's own drain callback
- *    (§11.6) and ended by the human or by the transport.
+ *    (section 11.6) and ended by the human or by the transport.
  *
  * ── The one honest limit ──────────────────────────────────────────────────────
  *
@@ -105,10 +105,10 @@ export interface CollabBeamTransport {
  */
 export interface CollabBeamLink {
   readonly transport: CollabBeamTransport;
-  /** This device's ceremony role - decides only the §4.5 fallback name for a nameless
+  /** This device's ceremony role - decides only the section 4.5 fallback name for a nameless
    *  peer. Either side may send and either side may receive. */
   readonly role: CeremonyRole;
-  /** The peer's chosen display name (§11.23: chosen, never a profile field). */
+  /** The peer's chosen display name (section 11.23: chosen, never a profile field). */
   readonly peerName?: string;
   /** This device's chosen display name - the receiver's "From …" attribution. */
   readonly selfName?: string;
@@ -160,7 +160,7 @@ export interface CollabBeamUiOptions {
    * `BeamSession.sendCurrentSession` has taken a per-send host override since it was
    * written ("a caller with two hosts in play"); this is that caller. An ACCEPTOR has
    * exactly two: a memory-backed clone holding the working copy they may give away
-   * (§11.17), and the real library a gift they accepted must land in (§6.4). Defaults to
+   * (section 11.17), and the real library a gift they accepted must land in (section 6.4). Defaults to
    * {@link CollabBeamUiOptions.host}, so every other mount passes one host and notices
    * nothing.
    */
@@ -184,7 +184,7 @@ export interface CollabBeamUi {
   /** The live session, for a caller that wants to watch it. */
   readonly session: BeamSession;
   /** Is the bulk lane open? THE visibility test for the send control - a button that
-   *  can only fail is worse than no button (§4.6's "no dead controls" rule, the same
+   *  can only fail is worse than no button (section 4.6's "no dead controls" rule, the same
    *  reason the pill renders no invite without an `onInvite`). */
   isOpen(): boolean;
   /** Beam whatever this device is working on, right now. Never throws: a refusal comes
@@ -325,7 +325,7 @@ export function createCollabBeamUi(opts: CollabBeamUiOptions): CollabBeamUi {
       ownedContainer = null;
       container = null;
       // Last, so a beam still in flight sees its own terminal state (and its staging
-      // is discarded - §11.18) before the stream it reports on goes away.
+      // is discarded - section 11.18) before the stream it reports on goes away.
       session.close();
     },
   };

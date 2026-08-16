@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * start-route.ts - what a `#/start` link asks for, resolved once (plan 97 §5).
+ * start-route.ts - what a `#/start` link asks for, resolved once (plan 97 section 5).
  *
  * The studio is a set of independent rooms, so the only routing question is
  * "which room, and is anything asked to be open on arrival". Three read-only
@@ -23,7 +23,7 @@ export type StartRoom = (typeof START_ROOMS)[number];
  * Every routable area: the rooms, plus the panels pinned to the rail's FOOT.
  *
  * The split is not cosmetic. A room is a peer in the sidebar list and one of the
- * brand editor's own panel keys; `versions` (plan 97 §6a) is neither - it acts on
+ * brand editor's own panel keys; `versions` (plan 97 section 6a) is neither - it acts on
  * the whole design system rather than on one part of it, it hides itself until
  * there is something to publish, and it has no editor panel behind it. It is
  * still an AREA, because `#/start?area=versions` is a deep link the plan's own
@@ -54,7 +54,7 @@ export type StartFocus = (typeof START_FOCUS)[number];
 
 const FOCUSES = new Set<string>(START_FOCUS);
 
-/** The sources the picker can open on (plan 97 §8). `pdf` and `url` are
+/** The sources the picker can open on (plan 97 section 8). `pdf` and `url` are
  *  RECOGNISED but have no tile yet - they resolve, and the picker opens on its
  *  plain source list, so a link written today keeps working when M5/M6 give them
  *  one. An unknown value is not a source and opens nothing. */
@@ -71,7 +71,7 @@ export interface StartRoute {
   wheel: boolean;
   /** `?import` - open the source modal on arrival (`?import=0` means shut). */
   importOpen: boolean;
-  /** `?focus=<wing>` - open that wing of the colour room (plan 97 §5). */
+  /** `?focus=<wing>` - open that wing of the colour room (plan 97 section 5). */
   focus: StartFocus | null;
   /** `?source=<kind>` - which source the picker opens on. Naming one IMPLIES the
    *  picker opens (see `importOpen`); it never fetches or reads anything by

@@ -65,14 +65,14 @@ import {
   gradientLine, gradientPosAt, gradientAngleAt, resolveFrame,
   sequenceFramesInOrder, framesAreSequenced, parseDashArray, formatDashArray,
   pathEndPoints, pathEndTangents,
-  // Lift layers (plans/104 §7): the pure box synthesis. The ENUMERATION is the
+  // Lift layers (plans/104 section 7): the pure box synthesis. The ENUMERATION is the
   // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
   // tag scanner has no business in the chunk of every editor that never lifts.
   isSvgImageRef, liftRows, applyLift, liftCanCrop, liftCropScale, LIFT_STRENGTH,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
-// linear hitTest/marqueeHit on small ones (plans/98 §6.1; proven in canvas-scene.test.ts).
+// linear hitTest/marqueeHit on small ones (plans/98 section 6.1; proven in canvas-scene.test.ts).
 import { pickTopmost, pickMarquee } from './canvas-scene.ts';
 import {
   toCssPx,
@@ -104,7 +104,7 @@ import type { TimelinePanel } from './timeline-panel.ts';
 // Type-only: the ghost layer is a lazy chunk that only an editor with onion skin turned
 // ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
 import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
-// Type-only, same terms: the motion-path layer (plans/104 §8) is a lazy chunk that only
+// Type-only, same terms: the motion-path layer (plans/104 section 8) is a lazy chunk that only
 // an editor with a KEYFRAMED box selected ever fetches - and it pulls timeline-math (and
 // therefore the engine's keyframe module) with it, which is exactly why it must not be a
 // static import here.
@@ -218,11 +218,11 @@ interface CanvasCfg {
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
-  /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 §5.1). Absent means the
+  /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 section 5.1). Absent means the
    *  tool is not keyframable - and, in `timeline-math`, that a split/trim/join has no
    *  track to rebase. */
   kfField?: string;
-  /** OPTIONAL, same terms: the box's DEPTH (plans/104 §5.3, px above the surface).
+  /** OPTIONAL, same terms: the box's DEPTH (plans/104 section 5.3, px above the surface).
    *  Not a timing field - named alongside them because a keyframe's `z` channel
    *  replaces it for its segment, so every writer that carries one carries the other. */
   zField?: string;
@@ -447,7 +447,7 @@ interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
 interface TapGesture extends GestureBase { type: 'tap' }
 interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
 /**
- * CAMERA PAN (plans/104 §8) - a drag on the EMPTY stage while a camera is selected and
+ * CAMERA PAN (plans/104 section 8) - a drag on the EMPTY stage while a camera is selected and
  * running. It takes the gesture the marquee would otherwise have had, which is the
  * whole idea of "camera mode is entered by selection": there is no mode to turn on,
  * and clicking any box leaves it by ordinary selection semantics.
@@ -462,7 +462,7 @@ interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; a
  */
 interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx: number; dy: number }
 /**
- * The CAMERA TILT drag (plans/104 §8, P2): shift + empty-stage drag, the chord §8
+ * The CAMERA TILT drag (plans/104 section 8, P2): shift + empty-stage drag, the chord section 8
  * reserved at M2.5 ("shift-drag reserved for tilt (P2)") and P2 finally spends.
  *
  * CLIENT px, and deliberately NOT native ones - the opposite of its `campan` sibling,
@@ -546,9 +546,9 @@ const SVG = {
   dup: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   // "+Keyframe" - the same diamond lib/icons.ts's `keyframe` draws, because it is the
   // same action wearing the same glyph in its other home (the timeline transport).
-  // plans/104 §8's M2.5 revision: TWO homes, ONE action.
+  // plans/104 section 8's M2.5 revision: TWO homes, ONE action.
   keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
-  // The camera add-kind (plans/104 §5.4) - the same body-and-lens the icon registry's
+  // The camera add-kind (plans/104 section 5.4) - the same body-and-lens the icon registry's
   // `camera` draws, so the rail, the timeline menu and the inspector group agree.
   camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
@@ -642,7 +642,7 @@ const SVG = {
   // Simplify - one smooth curve with only its two end nodes left on it.
   simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
   outlineText: '<path d="M5 7V4h14v3M12 4v12"/><path d="M9 20h6"/><rect x="10.2" y="14.2" width="3.6" height="3.6" fill="none"/>',
-  // Lift layers (plans/104 §7) - the three-plate stack, with the top plate standing
+  // Lift layers (plans/104 section 7) - the three-plate stack, with the top plate standing
   // OFF the other two: the glyph says "one drawing, several plates, one of them
   // raised", which is exactly what the action does. The plates are the same isometric
   // diamond the `group`/`ungroup` pair already uses, so the family reads as one set.
@@ -1066,7 +1066,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
   // manifests had moved on: Design and Sequence Studio both declare a fifth,
   // `depth` - the very target `liftRows` pre-sets on every lifted layer (plans/104
-  // §7) and a real branch of SHADOW_TARGETS in all three hooks copies. A segmented
+  // section 7) and a real branch of SHADOW_TARGETS in all three hooks copies. A segmented
   // control marks `is-on` by exact match, so a lifted layer opened its Shadow row
   // with ALL FOUR segments off (the control reads as broken) and clicking any of
   // them silently replaced the depth shadow with no way back from that panel.
@@ -1166,21 +1166,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // (generated captions), and a tool without a group field never groups.
       groupField: cv.groupField || '',
       // And again: the keyframe track. It is the ONE field a split/trim-in/join
-      // rebases instead of copying (plans/104 §5.6) - a tool that declares none is
+      // rebases instead of copying (plans/104 section 5.6) - a tool that declares none is
       // simply not keyframable, and every rebase branch in timeline-math is inert.
       kfField: cv.kfField || '',
       // And the depth field, for the one thing the time math needs it for: a `z`
-      // keyframe REPLACES it for its segment (§5.2), so writing an honest full pose
+      // keyframe REPLACES it for its segment (section 5.2), so writing an honest full pose
       // means knowing what the unkeyed value is.
       zField: cv.zField || '',
     } : null;
   // Can this tool import a design AS timed scenes (frames → timeline clips) at all?
   // Time-capable + import-capable. Design qualifies (it declares the time model), so it
-  // OFFERS the "as scenes vs replace the board" choice (plans/104 §337) - on the drop
+  // OFFERS the "as scenes vs replace the board" choice (plans/104 section 337) - on the drop
   // door (the stash's `scenes` flag) and in the import panel (the toggle below).
   const importSceneCapable: boolean = !!(timeCfg && importCfg);
   // Whether SCENES is the DEFAULT: only a manifest that still declares `import.mode:
-  // 'scenes'`. Design does NOT (that opt-in flipped every import, plans/104 §337), so
+  // 'scenes'`. Design does NOT (that opt-in flipped every import, plans/104 section 337), so
   // Design defaults to replacing the board and asks per-import.
   const importScenesMode: boolean = importSceneCapable
     && (importCfg as { mode?: unknown }).mode === 'scenes';
@@ -1295,7 +1295,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const bgInputId = 'background';
   const getBg = (): any => runtime.getModel().find((i) => i.id === bgInputId)?.value ?? '#ffffff';
 
-  // A row's identity is its OWN id, never its array position (plan 100 §3): an index key
+  // A row's identity is its OWN id, never its array position (plan 100 section 3): an index key
   // silently re-points at a different box the moment anything inserts above it - a peer's
   // concurrent add, an undo, a paste - and a late field op would then land on the wrong
   // box. Every shipped canvas manifest declares its id sub-field, and rows that lack a
@@ -1343,7 +1343,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   function freshId(boxes: Box[]): string {
-    // ULID (plan 100 §3): the old id was a per-mount counter plus 4 random base-36
+    // ULID (plan 100 section 3): the old id was a per-mount counter plus 4 random base-36
     // digits, so two devices opening the SAME saved session and adding a box each
     // could mint the same id - which is exactly the case a collab makes routine. The
     // collision check stays because it costs one pass over an array we already walk.
@@ -1482,7 +1482,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * Two exclusions:
    *   • SEQ-HIDDEN - the box is not on screen at the playhead, so a click falls through
    *     it to whatever is (the rule this function was written for).
-   *   • CAMERA - a camera has NO canvas footprint at all (plans/104 §5.4: "excluded
+   *   • CAMERA - a camera has NO canvas footprint at all (plans/104 section 5.4: "excluded
    *     from hit-testing, marquee…; selected via its bar/chip only"). It paints nothing
    *     and is minted with no geometry, so without this a zero-size marker at the origin
    *     is caught by any marquee crossing it and dragged around as if it were artwork.
@@ -1683,12 +1683,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── motion path: where a keyframed box travels, never in an export ───────────
-  // plans/104 §8's overlay bullet, on onion skin's exact terms - a `.fc-overlay` child
+  // plans/104 section 8's overlay bullet, on onion skin's exact terms - a `.fc-overlay` child
   // carrying [data-export-hide] that never writes to a `.lolly-box` (motion-path.ts's
   // module doc restates the three guarantees, and its own test file pins them).
   //
   // Shown for SELECTED animated boxes only, and only while the timeline is OPEN. That
-  // second condition is M2's binding reading of §8 applied again: a closed panel
+  // second condition is M2's binding reading of section 8 applied again: a closed panel
   // disarms the latch because "the arm must be visible", and a path drawn with no
   // playhead, no diamonds and no transport in sight is a picture of a move the user
   // cannot currently reach. Opening the panel brings it back.
@@ -1903,7 +1903,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   });
 
   // Camera-gesture HUD (audit A2/A4). A camera drag commits on release and previews
-  // NOTHING on the stage (§8's "drags commit on release"), so a shift-drag tilt or an
+  // NOTHING on the stage (section 8's "drags commit on release"), so a shift-drag tilt or an
   // empty-stage pan gives no feedback at all until the drop - the single biggest reason
   // the camera "shortcuts are very noticable". This readout is that feedback: the
   // ABSOLUTE tilt the drop will land (via `timelinePanel.cameraTiltPreview`, so it can
@@ -2740,7 +2740,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closePopover();
     const panel = document.createElement('div');
     panel.className = 'fc-popover fc-import-panel';
-    // The §337 choice, per-import: scenes-capable tools (Design) let the user pick
+    // The section 337 choice, per-import: scenes-capable tools (Design) let the user pick
     // between replacing the board and laying the frames out as timed scenes. Default
     // follows the manifest (importScenesMode) - false for Design, so it replaces.
     let chooseScenes = importScenesMode;
@@ -2996,7 +2996,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         };
         items.push({ sep: true });
         // Set as background: fill the box's frame, cover-fit, adopt membership, and send it
-        // behind its siblings - the one-click cover image/video backdrop (plan §8). Any
+        // behind its siblings - the one-click cover image/video backdrop (plan section 8). Any
         // image/video box that resolves to a frame; disabled otherwise so the row is stable.
         items.push({
           label: t('Set as slide background'), icon: icon(SVG.image),
@@ -3096,7 +3096,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         disabled: !(img?.id || img?.url),
       });
     }
-    // ── lift layers (plans/104 §7) ─────────────────────────────────────────────
+    // ── lift layers (plans/104 section 7) ─────────────────────────────────────────────
     // Present for any tool with an image field (somewhere to put the derived
     // documents) - absent entirely otherwise, like the timeline/vector/matte
     // sections. WITHIN the section it disables rather than hides, so the menu keeps
@@ -3151,7 +3151,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
     // The frame primitive (plan 93) - the artboard "#" rather than a bare "+".
     frame: SVG.frame,
-    // The scene camera (plans/104 §5.4). Same glyph the timeline's add menu and the
+    // The scene camera (plans/104 section 5.4). Same glyph the timeline's add menu and the
     // Camera inspector group wear, so one thing looks like one thing.
     camera: SVG.camera,
   };
@@ -3251,7 +3251,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * "+Keyframe" in its SECOND home (plans/104 §8's M2.5 revision - "TWO homes, one
+   * "+Keyframe" in its SECOND home (plans/104 section 8's M2.5 revision - "TWO homes, one
    * action"). The first is the timeline transport's left additive cluster; this is the
    * diamond beside Duplicate / Delete on the selected object itself, because the
    * selection is what the action acts on and the canvas is where the selection lives.
@@ -3290,7 +3290,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * menu's timing items above, and for the same reason: a broken chunk means no write
    * rather than a half-written box.
    *
-   * Opening the panel is not incidental. §8's latch model says the playhead's position
+   * Opening the panel is not incidental. section 8's latch model says the playhead's position
    * IS the arm, so the surface that shows the playhead has to be up before a keyframe
    * can honestly be written at it.
    */
@@ -3298,7 +3298,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     void ensureTimeline(true).then(() => { timelinePanel?.addKeyframe(); });
   }
 
-  // ── camera mode (plans/104 §8) ───────────────────────────────────────────────
+  // ── camera mode (plans/104 section 8) ───────────────────────────────────────────────
   //
   // "Camera mode is entered by SELECTION, never a global toggle": with a camera
   // selected and the playhead inside its window, an empty-stage drag pans the shot and
@@ -3315,7 +3315,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * The DOLLY, coalesced (§8: "wheel coalesces one commit per pause").
+   * The DOLLY, coalesced (section 8: "wheel coalesces one commit per pause").
    *
    * A wheel is a stream of small deltas with no end event, so a commit per notch would
    * be a hundred undo steps for one gesture. The deltas accumulate here and one write
@@ -3361,7 +3361,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /**
    * Plain wheel = DOLLY; Cmd/Ctrl-wheel stays the VIEW's zoom and Space+drag stays the
-   * view's pan (§8: "move the shot" and "move my view" have to stay separable, which
+   * view's pan (section 8: "move the shot" and "move my view" have to stay separable, which
    * the reference tool never had to solve).
    *
    * Bound on the canvas with `passive: false` so the notch can be claimed, and it stops
@@ -3439,7 +3439,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The model is the engine's gradient spec (a string on the box's `grad` field), and
   // the CSS comes from `gradientSpecToCss` - the SAME call the tool's hooks make, so
   // what the handles show and what the export writes cannot drift. The stops are
-  // interpolated in OKLab and baked to sRGB by the engine (plans/60-color-spaces.md §10),
+  // interpolated in OKLab and baked to sRGB by the engine (plans/60-color-spaces.md section 10),
   // which is what keeps a two-colour gradient from going muddy through the middle.
   //
   // Colour picking deliberately reuses the ctx bar's Fill field: in gradient mode it
@@ -4012,7 +4012,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // selection, so no-frames documents and ordinary boxes are byte-identical. The hook
     // defaults an unset clipChildren to ON (boolVal(fb.clipChildren, true)), so reflect
     // that here. Writes through setField → one commit → the render honours overflow.
-    // "Lift layers" (plans/104 §7) - its SECOND home, beside the right-click menu. The
+    // "Lift layers" (plans/104 section 7) - its SECOND home, beside the right-click menu. The
     // More panel is where a box's own properties live, and "this picture is a stack of
     // layers" is one of them; a user who never right-clicks would otherwise never meet
     // the feature. Shown only when this exact selection can be lifted (unlike the menu,
@@ -4567,7 +4567,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.focus();
   }
 
-  // ── Lift layers (plans/104 §7) ───────────────────────────────────────────────
+  // ── Lift layers (plans/104 section 7) ───────────────────────────────────────────────
   //
   // "The feature that makes this especially for vectors": one box holding a flat SVG
   // becomes N stacked boxes, one per layer of the drawing, sharing a group, with their
@@ -4624,12 +4624,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * two buttons, riding `morePanel` so an outside click or Escape dismisses it and that
    * dismissal means "no". It grows one thing: the list of layers.
    *
-   * The list is READ-ONLY, deliberately, and this is a v1 decision worth stating. §7
+   * The list is READ-ONLY, deliberately, and this is a v1 decision worth stating. section 7
    * calls it a "checklist preview", and the obvious reading is checkboxes - but an
    * unticked layer has nowhere to go: dropping it would silently delete artwork the
-   * user never asked to lose, and merging it into a neighbour is a semantic §7 does not
+   * user never asked to lose, and merging it into a neighbour is a semantic section 7 does not
    * define. So v1 SHOWS the plan and asks yes or no to all of it; per-layer control
-   * belongs with the Objects panel (plan 100), which is §7's own stated home for the
+   * belongs with the Objects panel (plan 100), which is section 7's own stated home for the
    * list. No thumbnails either: rendering N derived documents to preview them costs a
    * rasteriser and a frame each, and the label plus the element count already answers
    * the only question the dialog is asked ("did it find my layers, or one big blob?").
@@ -4766,7 +4766,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     function renderPlan(layers: SvgLayerPlan[], warnings: string[], viewBox: SvgSourceBox): void {
       p.removeAttribute('aria-busy');
-      // The count sentence is the headline §7 names verbatim ("6 layers found"), and it
+      // The count sentence is the headline section 7 names verbatim ("6 layers found"), and it
       // is the SAME line that said "Reading the artwork…" a moment ago - so a screen
       // reader hears the finish without the dialog being rebuilt around it.
       msgEl.textContent = t('{n} layers found', { n: layers.length });
@@ -4778,7 +4778,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           // from six stray leaves the clusterer happened to group.
           //
           // One exception, and it is an ID rather than a name: `boxId` is the walker's
-          // `data-box-id` come back round (§7's identity passthrough - a Lolly
+          // `data-box-id` come back round (section 7's identity passthrough - a Lolly
           // screenshot exported with `layerIds` carries the canvas's own box ids), so
           // when it is there the row can say WHICH element of the original page this
           // layer is. Minted by the canvas, never read out of a stranger's file.
@@ -4834,7 +4834,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** What this file needs from an engine `SvgLayer` - structural, so no runtime import. */
   interface SvgLayerPlan {
     markup: string; nodes: number; boxId?: string;
-    /** The crop the engine cropped this layer's document to (§P3.2), in source user units. */
+    /** The crop the engine cropped this layer's document to (section P3.2), in source user units. */
     viewBox?: { x: number; y: number; w: number; h: number };
     /** The layer's measured ink extent - what decides which rows are peers. */
     bbox?: { x: number; y: number; w: number; h: number } | null;
@@ -4903,7 +4903,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           crop: L.viewBox ?? null,
           bbox: L.bbox ?? null,
         })),
-        // `zField` is the DEPTH field (plans/104 §5.3) and lives on the canvas block
+        // `zField` is the DEPTH field (plans/104 section 5.3) and lives on the canvas block
         // rather than in this module's geometry cfg - the only reader it has had until
         // now is `timeCfg`, because a keyed `z` replaces it for its segment. A lift is
         // its second reader, so it is named here rather than smuggled into FieldCfg,
@@ -5627,7 +5627,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
   // A group TAG, not a row identity: it is compared for equality between boxes of this
   // one document, so it keeps its short per-mount form (freshId moved to ULIDs because a
-  // ROW is what a remote op addresses - see plan 100 §3). Its own counter since that
+  // ROW is what a remote op addresses - see plan 100 section 3). Its own counter since that
   // move; two peers grouping at the same millisecond can still mint the same tag, which
   // would merge two unrelated groups - a convergence snag for the collab wave, not this one.
   let groupSeq = 0;
@@ -6298,7 +6298,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * points. The two never collide: this button only exists while node editing, where
    * `selection` (boxes) is empty by construction.
    *
-   * Straightening a traced outline is the reason it is here. A hand-placed run of points
+   * Straightening a traced outline is the reason this button exists. A hand-placed run of points
    * along a straight edge is never actually straight, and the alternative is nudging each
    * one with the arrow keys.
    */
@@ -8158,11 +8158,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     deselectEdge();   // clicked empty → drop any connector selection
 
-    // Empty canvas - or the CAMERA's, when one is selected and running (plans/104 §8).
+    // Empty canvas - or the CAMERA's, when one is selected and running (plans/104 section 8).
     // The camera takes the drag the marquee would have had: there is nothing on the
     // empty stage for a marquee to catch that a camera user is reaching for, and
     // clicking any box hands the gesture straight back by ordinary selection.
-    // SHIFT IS THE TILT (P2 - §8 reserved the chord at M2.5 and this milestone spends
+    // SHIFT IS THE TILT (P2 - section 8 reserved the chord at M2.5 and this milestone spends
     // it). The additive marquee keeps shift everywhere else, including on this very
     // canvas the moment no camera is armed: `camModeId()` is a selection state the user
     // can see, so the chord is never quietly reassigned under them.
@@ -8219,7 +8219,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // what made the whole area outside the artboard feel inert.
     // Touch is left alone: stageNav owns one-finger pan there, as it does inside.
     if (e.pointerType !== 'mouse' || spacePan) return;
-    // …and the CAMERA takes it first when one is armed (plans/104 §8), exactly as it
+    // …and the CAMERA takes it first when one is armed (plans/104 section 8), exactly as it
     // does over the artboard: the backdrop is empty stage too, and a camera pan that
     // stopped at the artboard's edge would be a gesture with an invisible boundary.
     if (camModeId()) {
@@ -8276,9 +8276,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       drawRubber(gesture.origin, nat);
       return;
     }
-    // CAMERA PAN (plans/104 §8). Accumulate in NATIVE px and write nothing: the
+    // CAMERA PAN (plans/104 section 8). Accumulate in NATIVE px and write nothing: the
     // projection is applied by the sequence DOM applier off the model, so the one
-    // honest preview is the commit itself - which is why §8's gesture law for the
+    // honest preview is the commit itself - which is why section 8's gesture law for the
     // camera is "drags commit on release", not "on move".
     //
     // Native, not client, because the model is native: `camX` is stage px, and the
@@ -8641,7 +8641,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (addAtMs != null) timelinePanel?.promote(id, { start: addAtMs / 1000, dur: null });
       // A new timed box is only useful next to a timeline, so creating one opens it - and
       // a CAMERA needs the timeline up too, because camera mode (and with it the shift-drag
-      // tilt / drag-pan gestures, plans/104 §8) only arms while `cameraModeId()` sees an
+      // tilt / drag-pan gestures, plans/104 section 8) only arms while `cameraModeId()` sees an
       // OPEN timeline. Without this, adding a camera left the timeline shut and a shift-drag
       // fell through to the marquee - "tilt doesn't work" until you happened to open it.
       if (timeCfg && (wasClip || wasCard || wasAudio || wasCamera)) openTimeline();
@@ -8657,7 +8657,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const { dx, dy } = g;
       endGesture();
       // ONE commit on release, and only when the shot actually moved. `cameraWrite`
-      // resolves WHICH keyframe it lands on (the latch, §8) and returns the array
+      // resolves WHICH keyframe it lands on (the latch, section 8) and returns the array
       // unchanged when there is nowhere honest to put it.
       //
       // NEGATED, because the content follows the hand: the projection subtracts camX
@@ -8718,7 +8718,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = g.sel;
       endGesture();
       if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) {
-        // PLAYHEAD-CONTEXTUAL WRITES (plans/104 §8). The gesture is untouched - the
+        // PLAYHEAD-CONTEXTUAL WRITES (plans/104 section 8). The gesture is untouched - the
         // preview path never knew about this and still does not - and the redirection
         // happens HERE, at the one commit, which is what keeps a keyframed drag one
         // undo step exactly like an ordinary one.
@@ -8745,7 +8745,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const idx = g.index;
       const rotId = idOf(boxes[idx], idx);
       // BOTH gestures are pose channels now. Rotate always was (`r`); RESIZE became one
-      // at P1 (plans/104 §5.2, REVERSED - Andy, 2026-08-12 hands-on: "I can't change
+      // at P1 (plans/104 section 5.2, REVERSED - Andy, 2026-08-12 hands-on: "I can't change
       // width and height of elements and have them tween"), so a resize ON a diamond
       // writes `w`/`h` and a resize anywhere else still writes the box itself.
       //
@@ -10115,7 +10115,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
     // Arrow-nudge (Shift = 10px). Alt+←/→ is RESERVED, and only that pair: it is the
-    // timeline panel's keyframe walk (plans/104 §8, and §9.2 records the decline as "the
+    // timeline panel's keyframe walk (plans/104 section 8, and section 9.2 records the decline as "the
     // seek chord"), so the chord means one thing in this editor rather than seeking in
     // the panel and nudging on the canvas. It is a reservation, not a collision: the panel
     // binds its keys on its OWN root, this handler is on `window` and bails outright while
@@ -10136,7 +10136,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // over the selected indices only - no-op on frameless tools (Design), so a
       // no-frame nudge stays byte-identical to the old moveBoxes-only path.
       const idx = selIndices(boxes);
-      // …and the SAME playhead-contextual split, for the same reason (plans/104 §8).
+      // …and the SAME playhead-contextual split, for the same reason (plans/104 section 8).
       // The nudge is the keyboard equivalent of the drag: on a diamond, dragging a box
       // poses the keyframe, so nudging it by the same pixel must pose it too - or the
       // accessible route silently gets the opposite model-write semantics from the
@@ -10208,7 +10208,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   stageEl.addEventListener('pointermove', onStagePointerMove, { passive: true });
   stageEl.addEventListener('wheel', onStageMove, { passive: true });
-  // The camera's wheel (plans/104 §8) - on the CANVAS, not the stage, and non-passive
+  // The camera's wheel (plans/104 section 8) - on the CANVAS, not the stage, and non-passive
   // so a claimed notch can be preventDefault()ed. It runs BEFORE `tool-stage-nav`'s
   // stage-level listener (a canvas-level handler on the way up), and only claims the
   // event when a camera is actually armed.
@@ -10314,7 +10314,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       try {
         if (pendingImport.scenes && importSceneCapable) {
           // The "Make a video from its frames" drop door: the dropped design's frames
-          // become timed scenes on the timeline (plans/104 §337).
+          // become timed scenes on the timeline (plans/104 section 337).
           const n = await importAsScenes(pendingImport.file, (m: string) => announce(m));
           if (disposed) return;
           announce(n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n }));

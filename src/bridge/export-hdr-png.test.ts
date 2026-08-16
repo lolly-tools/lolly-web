@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * bridge/export-hdr-png.ts - HDR PNG at 16 bits per channel
- * (plans/61-deeprichpixels.md §10 item 2, Phase B1 wiring).
+ * (plans/61-deeprichpixels.md section 10 item 2, Phase B1 wiring).
  *
  * The seam under test is deliberately DOM-free - `Uint8ClampedArray` in, PNG
  * bytes out - so the whole HDR raster path is driven here with no canvas and no
@@ -302,7 +302,7 @@ test('a 16-bit HDR PNG takes a C2PA store and still decodes', async () => {
   assert.equal(cs[1]!.type, 'caBX');
 });
 
-// ── the deflate ceiling (plan §9b): big images REFUSE so the caller can fall
+// ── the deflate ceiling (plan section 9b): big images REFUSE so the caller can fall
 // back to the legacy 8-bit path - a stored 16-bit IDAT would ship a ~60 MB 4K
 // file from an existing link, which is a regression, not an upgrade.
 

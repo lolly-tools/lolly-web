@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **PDF source** (plan 97 §8 gap 2, M5) - a guidelines PDF as design-system
+ * The **PDF source** (plan 97 section 8 gap 2, M5) - a guidelines PDF as design-system
  * material: the palette its artwork paints with, the marks themselves, and the
  * font programs it embeds.
  *
- * §8 states the structure of this milestone exactly: "`PdfHandle` is already
+ * section 8 states the structure of this milestone exactly: "`PdfHandle` is already
  * view-agnostic - the work is adapters + affordances, not extraction". So there
  * is no PDF parsing here at all. `views/pdf-import.ts` opens the document and
  * `listVectors`/`listFonts` do the reading; this module is the two things that

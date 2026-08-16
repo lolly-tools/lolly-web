@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * join-route - the two URL entry points of a private collab, and the platform
- * composition both ceremony roles share (plan 100 §6.1 skin 1, §11.25, §11.26; wave 2.4).
+ * composition both ceremony roles share (plan 100 section 6.1 skin 1, section 11.25, section 11.26; wave 2.4).
  *
  * `components/collab-ceremony.ts` owns the screens and imports no platform. `collab/`'s
  * other modules own one platform piece each (the codec, the machine, the transport, the
@@ -12,13 +12,13 @@
  * ── The two routes ─────────────────────────────────────────────────────────────
  *
  * **`#/join?inv=<token>`** - the acceptor's front door. It checks the `private-collab`
- * flag, reads the token, and refuses honestly when it cannot (§11.21: this is a
+ * flag, reads the token, and refuses honestly when it cannot (section 11.21: this is a
  * stranger's link, so an unreadable one gets a plain error screen, never a thrown view).
  * It opens the ACCEPTOR ceremony with the invite already delivered. The human pasted it
  * by clicking the link, so making them paste it again would be pointless.
  *
  * **`#/join` with no `inv` at all** - the same door for the other skin. An invite is a
- * link OR a code (§6.1), and the code half had nowhere to go: this route used to say
+ * link OR a code (section 6.1), and the code half had nowhere to go: this route used to say
  * "this link carries no invite" and stop. That is a true sentence, but a dead end for
  * the one person it was shown to: somebody holding a code from a chat message. So a
  * bare `#/join` is now a paste card (one field, one button), reachable from the Share
@@ -28,7 +28,7 @@
  * refusal, because that is a link that was built and then damaged, and it is worth
  * saying so.
  *
- * ── The flag gate has two answers, not one (§6.3 enable-on-accept) ─────────────
+ * ── The flag gate has two answers, not one (section 6.3 enable-on-accept) ─────────────
  *
  * `private-collab` has been ON by default since 2026-08-10, so the ordinary arrival (a
  * fresh profile, a device that has never seen this feature) walks straight past this
@@ -61,7 +61,7 @@
  * paint the same card for a good invite and a mangled one; the verdict shows afterwards,
  * on the ordinary path, once the feature is actually on.
  *
- * **`#/join-reply?ans=<token>`** - §11.25's fix for the ceremony's weak point. The
+ * **`#/join-reply?ans=<token>`** - section 11.25's fix for the ceremony's weak point. The
  * answer leg is the awkward half: the invite travels as a link the inviter chose to
  * send, but the reply has to travel BACK, and a blob pasted into a waiting dialog is
  * where pairs give up. So the reply is a link too. Clicking it opens a tab that hands
@@ -134,8 +134,8 @@
  * {@link createCollabEffects} is the one place the three platform pieces meet: the RTC
  * transport (`collab/rtc-transport.ts`) supplies `createOffer`/`createAnswer`/
  * `applyRemote` plus the ICE events without which no ceremony ever reaches `connected`.
- * The local catalog supplies `checkTool`, the probe §6.1 requires BEFORE answering,
- * because peers send values and never code (§11.22), so a tool this device does not
+ * The local catalog supplies `checkTool`, the probe section 6.1 requires BEFORE answering,
+ * because peers send values and never code (section 11.22), so a tool this device does not
  * have gets a refusal rather than a degraded join. It is a FACTORY, not a bundle: the
  * acceptor names itself after the probe, and `restart` must get a genuinely fresh peer
  * connection.
@@ -143,7 +143,7 @@
  * ── Copy ───────────────────────────────────────────────────────────────────────
  *
  * Same rule as the dialog: every user-visible string is in {@link STRINGS}, English for
- * now, batched into the wave-2.7 locale fan-out (§11.28). Peer-supplied text reaches the
+ * now, batched into the wave-2.7 locale fan-out (section 11.28). Peer-supplied text reaches the
  * DOM only through `textContent`.
  */
 
@@ -199,7 +199,7 @@ export const STRINGS = {
   offTitle: 'Private collab is turned off on this device',
   offBody: 'Turn on "Private collab" in your profile settings, then open the invite link again.',
 
-  // The flag gate on #/join, which has two answers (§6.3 enable-on-accept). The
+  // The flag gate on #/join, which has two answers (section 6.3 enable-on-accept). The
   // organization decided, or nobody but the reader did - and the second one is an
   // offer, not a refusal.
   governedTitle: 'Private collabs are turned off here',
@@ -237,7 +237,7 @@ export const STRINGS = {
   ownInvite: 'This invite was created on this device. Testing with two tabs works - or send the link to the other person.',
   ownInviteDismiss: 'Dismiss',
 
-  // #/join-reply - the handoff (§11.25).
+  // #/join-reply - the handoff (section 11.25).
   replyTitle: 'Sending the reply back',
   replyWorking: 'Handing the reply to the window that made the invite.',
   replyDelivered: 'Reply delivered. You can close this tab.',
@@ -261,7 +261,7 @@ export const STRINGS = {
 
 // ── Routes and timings ────────────────────────────────────────────────────────
 
-/** The channel both tabs meet on. One name, two files (§11.25). */
+/** The channel both tabs meet on. One name, two files (section 11.25). */
 export const CEREMONY_CHANNEL_NAME = 'lolly-collab-ceremony';
 
 /**
@@ -297,7 +297,7 @@ export const REPLY_BID_WINDOW_MS = 150;
 export const OWN_INVITE_ASK_MS = 200;
 
 /**
- * The version on every channel message. Two app versions may share a device (§11.19).
+ * The version on every channel message. Two app versions may share a device (section 11.19).
  *
  * Bumped to 2 with the offer/bid/grant handoff below, and the bump is the point: a v1
  * tab left open from an older build would have read a v2 grant as a plain broadcast
@@ -355,7 +355,7 @@ export const CODE_FIELD_ID = 'collab-join-code';
 export const CODE_FIELD_SELECTOR = '#collab-join-code';
 export const SUBMIT_CODE_ACT = '[data-act="submit-code"]';
 
-// ── The BroadcastChannel handoff (§11.25) ─────────────────────────────────────
+// ── The BroadcastChannel handoff (section 11.25) ─────────────────────────────────────
 
 /** The slice of `BroadcastChannel` this file uses; a test's fake satisfies it. */
 export interface CeremonyChannelLike {
@@ -370,7 +370,7 @@ export type ChannelFactory = (name: string) => CeremonyChannelLike | null;
 /**
  * Open the ceremony channel, or `null` where `BroadcastChannel` does not exist.
  *
- * Null is a supported answer, not an error: the reply-link skin is one of three (§6.1),
+ * Null is a supported answer, not an error: the reply-link skin is one of three (section 6.1),
  * and a browser without the API still has paste and scan. The route says so in words
  * rather than failing.
  */
@@ -577,7 +577,7 @@ export function canTakeReply(dialog: ParentNode): boolean {
 }
 
 /**
- * Put a reply into an open INVITER dialog exactly as a paste would (§11.25).
+ * Put a reply into an open INVITER dialog exactly as a paste would (section 11.25).
  *
  * The reply field lives on step 2, and the dialog may still be sitting on step 1 showing
  * the invite ("I have not sent it yet"), so the step is advanced first through the same
@@ -640,7 +640,7 @@ export function answerInviteAsks(
 }
 
 /**
- * Answer `#/join-reply` tabs on behalf of an open dialog (§11.25).
+ * Answer `#/join-reply` tabs on behalf of an open dialog (section 11.25).
  *
  * Wired by whoever opened the INVITER ceremony, for as long as that dialog is open. Two
  * messages matter here: an OFFER, which is bid for only when the dialog could actually
@@ -727,7 +727,7 @@ export function askOwnInvite(
   });
 }
 
-// ── The local tool probe (§6.1) ───────────────────────────────────────────────
+// ── The local tool probe (section 6.1) ───────────────────────────────────────────────
 
 /** One row of `window.__toolIndex`, as far as the probe cares. */
 export interface ProbeToolEntry {
@@ -771,7 +771,7 @@ export function probeLocalTool(req: ToolProbeRequest, tools: readonly ProbeToolE
   const localMajor = majorOf(localVersion);
   const remoteMajor = majorOf(remote);
   // An unparseable version on either side is not evidence of a gap: say "have" and let
-  // the pair discover any real incompatibility through the unknown-key rules (§11.11).
+  // the pair discover any real incompatibility through the unknown-key rules (section 11.11).
   if (localMajor === null || remoteMajor === null) return { status: 'have' };
   return localMajor === remoteMajor
     ? { status: 'version-skew', severity: 'minor', localVersion }
@@ -786,14 +786,14 @@ export interface CollabEffectsOptions {
   /** Its local version, for the peer's own probe. Defaults to this device's index entry. */
   readonly toolVersion?: string;
   /**
-   * Packed session seed, carried in band on the ops hello (§6.1, §12 Q3).
+   * Packed session seed, carried in band on the ops hello (section 6.1, section 12 Q3).
    *
    * Left absent by every caller in this wave. Seeding the acceptor's copy is the live
    * session's business, and inventing a shape here that the mount then has to honour
    * would be a contract minted by scaffolding.
    */
   readonly seed?: string;
-  /** This device's collab client id. Defaults to the per-device persisted ULID (§11.23). */
+  /** This device's collab client id. Defaults to the per-device persisted ULID (section 11.23). */
   readonly clientId?: string;
   /** Peer-connection constructor. Tests pass a fake; production passes nothing. */
   readonly rtc?: RtcPeerConnectionCtor | null;
@@ -855,7 +855,7 @@ export function createCollabEffects(opts: CollabEffectsOptions = {}): (ctx: Cere
   };
 }
 
-// ── QR skins, probe-gated (§11.27) ────────────────────────────────────────────
+// ── QR skins, probe-gated (section 11.27) ────────────────────────────────────────────
 
 /**
  * A camera scan, or `undefined` where this browser cannot decode one.
@@ -1062,7 +1062,7 @@ function flagOff(view: HTMLElement): void {
   card(view, tRaw(STRINGS.offTitle), tRaw(STRINGS.offBody));
 }
 
-// ── The flag gate's ungoverned half: the enable card (§6.3) ───────────────────
+// ── The flag gate's ungoverned half: the enable card (section 6.3) ───────────────────
 
 /**
  * Offer to turn `private-collab` on, and resolve with what the human decided.
@@ -1162,7 +1162,7 @@ async function enablePrivateCollab(host: JoinRouteHost | null | undefined): Prom
 /**
  * Ask for an invite code, and resolve with the decoded invite.
  *
- * The other half of the front door. An invite is a link OR a code by design (§6.1's
+ * The other half of the front door. An invite is a link OR a code by design (section 6.1's
  * three skins), and until this card the code half had no door of its own: a person
  * holding a code pasted out of a chat had nowhere to put it, because `#/join` without a
  * token said "this link carries no invite" and stopped. This is that missing field.
@@ -1188,7 +1188,7 @@ function askForCode(view: HTMLElement, hooks: Cancellable): Promise<SignalView |
   return new Promise<SignalView | null>((resolve) => {
     let settled = false;
     // Mirrored out of the field, so a notice re-render cannot eat what was pasted - 
-    // the same rule the ceremony's own paste fields hold (§11.25).
+    // the same rule the ceremony's own paste fields hold (section 11.25).
     let typed = '';
 
     const finish = (value: SignalView | null): void => {
@@ -1290,7 +1290,7 @@ export interface JoinRouteDeps {
   /** Override the flag gate. Tests, and nothing else. */
   readonly flagOn?: () => boolean;
   /**
-   * Override the "is this flag the ORGANIZATION's decision?" read (§6.3).
+   * Override the "is this flag the ORGANIZATION's decision?" read (section 6.3).
    *
    * Defaults to `flagHidden`, which is true only when a control plane has hidden the
    * flag's toggle - i.e. its value is forced and no user can change it. An instance that
@@ -1533,7 +1533,7 @@ function connectionOf(
   if (!transport) return null;
   // Track A's producer for the (transport-agnostic) mount seam: it builds the session
   // handle over this transport, wraps hanging it up in `close()`, and arms the latch for
-  // the in-band seed that lands after the ceremony's own `connected` (§6.1, §12 Q3).
+  // the in-band seed that lands after the ceremony's own `connected` (section 6.1, section 12 Q3).
   return rtcCollabConnection({ role, ceremony: handle, transport, launch });
 }
 
@@ -1559,7 +1559,7 @@ export interface JoinReplyDeps {
 }
 
 /**
- * `#/join-reply?ans=<token>` - §11.25's handoff tab.
+ * `#/join-reply?ans=<token>` - section 11.25's handoff tab.
  *
  * It does exactly three things: decode, offer the payload to any tab holding an invite
  * dialog, and then either get out of the way or explain itself. It never opens a peer
@@ -1580,14 +1580,14 @@ export async function mountJoinReplyRoute(
   // no theme cycle (nothing to persist a theme to). Set before the first card().
   ceremonyHost = null;
   await loadNamespace('collab'); // see mountJoinRoute - the copy loads before it paints
-  // One answer here, not two: §6.3's enable-on-accept is deliberately `#/join` only. A
+  // One answer here, not two: section 6.3's enable-on-accept is deliberately `#/join` only. A
   // reply link is opened on the device that MINTED the invite, whose flag is necessarily
   // already on - so a flag-off reply tab is not a newcomer to be introduced to the
   // feature, it is a link on the wrong device, and the existing sentence says so.
   const flagOn = deps.flagOn ?? (() => isFlagOnSync(PRIVATE_COLLAB_FLAG));
   if (!flagOn()) { flagOff(view); return; }
 
-  // The dialog mints `?ans=`; §11.25's prose spelled it `sig`. The minted link is the
+  // The dialog mints `?ans=`; section 11.25's prose spelled it `sig`. The minted link is the
   // contract, and the other spelling is accepted so a hand-written link still lands.
   const query = new URLSearchParams(params);
   const token = query.get(ANSWER_PARAM) ?? query.get('sig') ?? '';

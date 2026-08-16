@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The Versions panel - what it says, what it refuses, and what a press writes
- * (plan 97 §6a, M7).
+ * (plan 97 section 6a, M7).
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/rooms/versions.test.ts"

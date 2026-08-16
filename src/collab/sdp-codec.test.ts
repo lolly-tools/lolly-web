@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sdp-codec tests - plan 100 §6.1 / §2.9 / §11.21, wave 2.1.
+ * sdp-codec tests - plan 100 section 6.1 / section 2.9 / section 11.21, wave 2.1.
  * Run directly:  node --test shells/web/src/collab/sdp-codec.test.ts
  *
  * Four things are actually being proved here, in rising order of how much they
@@ -14,11 +14,11 @@
  *     its own output is worthless.
  *  2. THE LOOP CLOSES. `extract(reconstruct(m)) === m` over fixtures and fuzz: the
  *     boilerplate we hardcode really is boilerplate, and nothing that varies is lost.
- *  3. THE BUDGET HOLDS. §6.1 asks for ~60–150 bytes; the size tests state the actual
+ *  3. THE BUDGET HOLDS. section 6.1 asks for ~60–150 bytes; the size tests state the actual
  *     numbers (via `t.diagnostic`) so a regression shows up as a number, not a vibe.
  *  4. NOTHING THROWS. Every decode entry point is fed truncation, garbage, hostile
  *     lengths and wrong versions - including a fuzz sweep of random bytes and random
- *     strings - and must always return a typed failure (§11.21).
+ *     strings - and must always return a typed failure (section 11.21).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -173,7 +173,7 @@ const CHROME_OFFER = [
   'a=max-message-size:262144',
 ].join('\r\n');
 
-/** Chrome with mDNS obfuscation on (the default on a LAN, §11.1). */
+/** Chrome with mDNS obfuscation on (the default on a LAN, section 11.1). */
 const CHROME_MDNS_OFFER = [
   'v=0',
   'o=- 1234567890123456789 2 IN IP4 127.0.0.1',
@@ -255,7 +255,7 @@ test('extract: a Chrome offer yields exactly the material that varies', () => {
   assert.equal(m.iceUfrag, '4ZcD');
   assert.equal(m.icePwd, '2/1muCWoOi3uLifh0NuRHlsw');
   assert.equal(m.setupRole, 'actpass');
-  // component 2 ignored, relay dropped (no TURN in OSS, §6.2a), host before srflx.
+  // component 2 ignored, relay dropped (no TURN in OSS, section 6.2a), host before srflx.
   assert.deepEqual(m.candidates, [
     { type: 'host', protocol: 'udp', address: '192.168.1.42', port: 55823 },
     { type: 'srflx', protocol: 'udp', address: '203.0.113.77', port: 55823 },
@@ -374,7 +374,7 @@ test('reconstruct: emits the lines a browser needs, and only those', () => {
   assert.match(sdp, /^a=candidate:2 1 udp \d+ 203\.0\.113\.77 55823 typ srflx raddr 0\.0\.0\.0 rport 0$/m);
 });
 
-test('reconstruct: an answer never says actpass (RFC 5763 §5)', () => {
+test('reconstruct: an answer never says actpass (RFC 5763 section 5)', () => {
   const m = ok(extract(CHROME_OFFER));
   assert.ok(ok(reconstruct(m, 'offer')).includes('a=setup:actpass\r\n'));
   assert.ok(ok(reconstruct(m, 'answer')).includes('a=setup:active\r\n'));
@@ -595,7 +595,7 @@ test('unpack: single-bit flips of a valid payload are caught or harmless, never 
   }
 });
 
-// ── size budget (§6.1: ~60–150 bytes) ─────────────────────────────────────────
+// ── size budget (section 6.1: ~60–150 bytes) ─────────────────────────────────────────
 
 test('size: a typical LAN invite fits the QR budget', t => {
   const meta: InviteMeta = {

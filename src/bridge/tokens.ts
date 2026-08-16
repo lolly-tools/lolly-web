@@ -6,18 +6,18 @@
  * DTCG document). Discovery is brand-agnostic: the bridge takes the first
  * `type: 'tokens'` asset that is not a published VERSION of another one - the
  * same rule the MCP server's tokens resource and the CLI apply (see
- * pickHeadAssetId, plans/97 §6a) - rather than pinning a brand-specific id, so a
+ * pickHeadAssetId, plans/97 section 6a) - rather than pinning a brand-specific id, so a
  * different brand profile's catalog supplies its own tokens with no shell
  * change. The document is handed to engine/src/tokens.js for resolution - so the
  * colour picker can source its swatches from tokens, brand-bound input values can
  * resolve their references, and a token-aware tool can read the whole tree.
  *
- * Versioning (plans/97 §6a) is layered on top and costs an unversioned install
+ * Versioning (plans/97 section 6a) is layered on top and costs an unversioned install
  * nothing: the head asset IS the edit head, and `forVersion(slug)` opens a
  * read-only surface over a published sibling `<headId>/<slug>`.
  *
  * THE DEFAULT READS ARE THE RENDER SURFACE, not the head. `get`/`colors`/
- * `resolve`/`themes` answer for whatever the §6a ladder lands on - the `?designv=`
+ * `resolve`/`themes` answer for whatever the section 6a ladder lands on - the `?designv=`
  * override on the current route, else the active version, else the head - because
  * every render on this shell reads them through `host.tokens`: the tool canvas's
  * brand vars, the picker swatches, the engine's token-bound inputs, the export
@@ -91,7 +91,7 @@ interface TokensHost {
 export type TokenDocSurface = TokensAPI & { raw(): Promise<unknown>; bust(): void };
 
 /** The web shell's tokens surface: HostV1's TokensAPI plus the cache-buster, the
- *  brand-lock query and the version reads (plans/97 §6a). */
+ *  brand-lock query and the version reads (plans/97 section 6a). */
 export interface WebTokensAPI extends TokensAPI {
   /** Drop caches (e.g. after the user imports their own tokens). */
   bust(): void;
@@ -123,12 +123,12 @@ export interface WebTokensAPI extends TokensAPI {
    */
   isLocked(): Promise<boolean>;
   /**
-   * The version this page resolves against right now: the whole §6a ladder - the
+   * The version this page resolves against right now: the whole section 6a ladder - the
    * `?designv=` override on the current route, else the active version, else
    * `latest` (the head). This is what the default reads already answer for; it is
    * exposed so a caller can NAME the answer (a banner, a log line) without
    * re-deriving the rule. Nothing published and no override ⇒ always `latest`,
-   * which is what makes an unversioned system behave exactly as it did before §6a.
+   * which is what makes an unversioned system behave exactly as it did before section 6a.
    */
   activeSlug(): Promise<string>;
   /**
@@ -150,7 +150,7 @@ const ASSET_INDEX_URL = '/catalog/assets/index.json';
 
 /** The user-installed brand tokens' well-known asset id. Its presence flips
  *  discovery away from the catalog's tokens (e.g. `lolly/tokens/brand`) - the
- *  shell's branded/unbranded signal (plans/archive/brand-token-contract.md §5). */
+ *  shell's branded/unbranded signal (plans/archive/brand-token-contract.md section 5). */
 export const USER_TOKENS_ID = 'user/tokens/brand';
 
 /** The host slice installUserTokens needs: the asset store's user-upload writer
@@ -207,7 +207,7 @@ export class VersionExistsError extends Error {
 }
 
 /**
- * Install the user's own brand tokens (plans/archive/brand-token-contract.md §5):
+ * Install the user's own brand tokens (plans/archive/brand-token-contract.md section 5):
  * validate + write the DTCG document as the well-known `user/tokens/brand`
  * asset, then bust the tokens caches so the very next get()/resolve() re-runs
  * discovery - which now returns the user asset ahead of the shipped brand.
@@ -218,7 +218,7 @@ export class VersionExistsError extends Error {
  * brand-file import, and every set/add/remove-font action), so one guard here
  * covers them all.
  *
- * `versionSlug` switches to the VERSION path (plans/97 §6a): the document is
+ * `versionSlug` switches to the VERSION path (plans/97 section 6a): the document is
  * written as the immutable sibling `user/tokens/brand/<slug>` instead of the
  * head. Immutability is enforced HERE, at the same chokepoint, because that is
  * the only place no caller can go around. Everything about the head write below
@@ -386,7 +386,7 @@ function tokenSurface(loadDoc: () => Promise<unknown>): TokenDocSurface {
 /**
  * The `?designv=` render override on the current route, or null.
  *
- * Top rung of the §6a ladder and the author's testing lever ("check against
+ * Top rung of the section 6a ladder and the author's testing lever ("check against
  * `latest`, fix, then publish"). It is read HERE, in the bridge, rather than
  * threaded from the view that mounted a tool, for the same reason the rest of
  * the ladder lives here: a render reads `host.tokens`, and a rule applied at
@@ -431,7 +431,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
       if (resp.ok) {
         const idx = await resp.json() as { assets?: Array<TokensAssetMeta & { type?: string }> };
         // The SAME descendant-exclusion rule _findMetaByType applies (plans/97
-        // §6a): a pack that ships published versions puts several `type:'tokens'`
+        // section 6a): a pack that ships published versions puts several `type:'tokens'`
         // entries in this index, and index order must never decide which of them
         // is the design system. This reader also supplies the un-shadowable
         // brandLock flag, so a mis-pick here would be a mis-picked LOCK too.
@@ -542,7 +542,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
   }
 
   /**
-   * The §6a ladder over an already-loaded head document. No `pin` rung: a
+   * The section 6a ladder over an already-loaded head document. No `pin` rung: a
    * manifest pin belongs to ONE mounted tool, and this bridge is the whole page's.
    */
   const ladder = (headDoc: unknown): string =>

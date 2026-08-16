@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * type-compare.ts - the Type room's side-by-side compare stage (plan 97 §7.2, M4).
+ * type-compare.ts - the Type room's side-by-side compare stage (plan 97 section 7.2, M4).
  *
  * Nothing in this shell has ever let anyone SEE two faces before choosing one.
  * The brand editor's type panel is commit-then-look: a Google family installs

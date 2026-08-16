@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/collab-work-opener - the `'work'` slot of `lib/collab-launch.ts`, and the inbox
- * affordance that joins one from an invite (plan 100 §7 items 9 + 11, §12 Q3; wave 3.3).
+ * affordance that joins one from an invite (plan 100 section 7 items 9 + 11, section 12 Q3; wave 3.3).
  *
  * The Track B sibling of `collab/private-opener.ts`, one track over. Read that file's
  * header first: the two are deliberately the same shape (an opener registered into a
@@ -32,7 +32,7 @@
  * means their local doc records edits the room never saw. Waiting costs one promise and
  * removes the whole class. It is also when `self.name` is known.
  *
- * The wait is bounded ({@link CONNECT_TIMEOUT_MS} - §7.11 targets join-to-interactive
+ * The wait is bounded ({@link CONNECT_TIMEOUT_MS} - section 7.11 targets join-to-interactive
  * under 3 s, so several times that is already a failure) and every exit that is not
  * `'live'` closes the provider. A socket left open behind a failure message is a room
  * the user has silently joined.
@@ -52,7 +52,7 @@
  * session's state and delivers it in the `join-ack` snapshot, so handing the mount a
  * second, older copy of it - in a different currency, fetched over a different
  * connection - is two sources of truth for one document. The fetch's other product is
- * the SERVER's `toolId`, which is §7.11's preload (the mount can start loading the tool
+ * the SERVER's `toolId`, which is section 7.11's preload (the mount can start loading the tool
  * while the handshake completes) and is the one fact the invite could have gone stale on.
  *
  * ── WHAT GATES WHAT ────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ import type { CollabSessionHandle } from '../lib/collab-session.ts';
 
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
-// One map, one wave (§11.28). No interpolation: none of these name a person, a
+// One map, one wave (section 11.28). No interpolation: none of these name a person, a
 // session or an instance, deliberately - an invite's own title already did.
 //
 // These are catalog KEYS, not the rendered copy: the English source doubles as the
@@ -137,7 +137,7 @@ export const STRINGS = {
 } as const;
 
 /**
- * How long the join may take before it is called a failure. §7.11 targets
+ * How long the join may take before it is called a failure. section 7.11 targets
  * join-to-interactive under 3 s; several times that is a room that is not answering,
  * and the user is owed a sentence rather than a spinner.
  */
@@ -423,8 +423,8 @@ async function connectAndDeliver(plan: ConnectPlan, deps: WorkCollabDeps): Promi
     ...(plan.toolId ? { toolId: plan.toolId } : {}),
     ...(plan.launch ? { launch: plan.launch } : {}),
     // A work collab edits the instance's own durable session - the server is the
-    // authority and the persistence (§7.3), so nothing about this copy is ephemeral.
-    // That is the opposite of a private collab's acceptor (§6.2a/§11.17).
+    // authority and the persistence (section 7.3), so nothing about this copy is ephemeral.
+    // That is the opposite of a private collab's acceptor (section 6.2a/section 11.17).
     ephemeral: false,
     // No `seed`/`seedLater`, per the seam's own contract: a member is seeded by the
     // gateway's join-ack snapshot. See the header.

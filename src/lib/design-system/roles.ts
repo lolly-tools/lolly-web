@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Roles as an assignment layer (plan 97 §7.1).
+ * Roles as an assignment layer (plan 97 section 7.1).
  *
  * A role is a SLOT, not a colour. Primary, Secondary, Surface and Text are
  * satisfied by pointing `color.semantic.<role>` at a swatch that already exists
@@ -363,7 +363,7 @@ export interface RoleReadout extends RoleState {
  * Every role's colour plus its contrast readout, measured against the assigned
  * surface.
  *
- * The pairing, applied uniformly (plan 97 §7.1: "with roles set, live APCA
+ * The pairing, applied uniformly (plan 97 section 7.1: "with roles set, live APCA
  * readouts appear against the chosen surface"):
  *
  * | role      | foreground                        | background            |

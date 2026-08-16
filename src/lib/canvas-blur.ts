@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * THE TWO BLUR LANES - how a composited layer gets blurred on a canvas (plan 104
- * §5.5, and the answer to §11 S1).
+ * section 5.5, and the answer to section 11 S1).
  *
  * The sequence compositor owns the whole blur now: `PlanItem.blur` is authored +
  * keyframe `b` + depth-of-field, plates are shot with the element's own `filter`
@@ -10,7 +10,7 @@
  *
  *   • THE FILTER LANE. `ctx.filter = 'blur(Npx) drop-shadow(...)'`, one property
  *     write, the engine's own separable Gaussian. Available wherever
- *     `lib/canvas-filter-probe.ts` says it is - and ONLY there. §11 S1 measured
+ *     `lib/canvas-filter-probe.ts` says it is - and ONLY there. section 11 S1 measured
  *     WebKit 26.5 with no `ctx.filter` on any of the three context kinds, and with an
  *     assign-and-read-back check that reports success anyway (the value is stored as
  *     an expando). The probe is the only support truth in this codebase.
@@ -41,7 +41,7 @@
  * tools.
  *
  * SIGMA, NOT RADIUS. `blur(Npx)` is a Gaussian of standard deviation N (Filter
- * Effects §blur). `drop-shadow`'s third length is a blur RADIUS and its standard
+ * Effects section blur). `drop-shadow`'s third length is a blur RADIUS and its standard
  * deviation is half of it. Getting that factor of two backwards is the classic way to
  * make a shadow twice as soft as the browser draws it, so the two are separate types
  * here and the halving happens in exactly one place.
@@ -95,7 +95,7 @@ let factory: BlurCanvasFactory = defaultFactory;
 /**
  * Replace the canvas factory. TESTS ONLY - it is what lets the Node tier drive the
  * restructured `drawItem` against a recording canvas and assert the ORDER of the
- * passes, which is the part of §5.5 that is a contract rather than a pixel.
+ * passes, which is the part of section 5.5 that is a contract rather than a pixel.
  */
 export function _setBlurCanvasFactory(f: BlurCanvasFactory | null): void {
   factory = f ?? defaultFactory;
@@ -341,7 +341,7 @@ export const BLUR_SPREAD_SIGMAS = 3;
 /**
  * The margin, in the SAME px as the inputs, that a layer's effects paint outside its
  * own box - the pad `drawItem` grows its scratch by, and the number the plate budget
- * prices (plan 104 §5.5).
+ * prices (plan 104 section 5.5).
  *
  * `max(blur spill, shadow spill)`, where the shadow's reach is measured from the
  * BLURRED silhouette: a filter chain applies drop-shadow to the result of the blur
@@ -441,7 +441,7 @@ export const BLUR_AREA_SHRINK_PER_SIGMA = 2;
  * bilinear tent of width 2s (variance s²/6) is a variance of s²/4, i.e. sigma = s/2.
  * It is a MODEL of two resamples that belong to the engine, not to us.
  *
- * MEASURED 2026-08-11 (plans/104 §9.2 M1 obligation 2, both engines on macOS 27 via
+ * MEASURED 2026-08-11 (plans/104 section 9.2 M1 obligation 2, both engines on macOS 27 via
  * Playwright 1.62.1): a step edge through the chain with the box pass suppressed,
  * fitted to a gaussian, averaged in VARIANCE over every edge phase - because what the
  * round trip delivers depends on where the edge falls on the mip grid, and real content
@@ -735,7 +735,7 @@ export function fxFilterString(fx: FxSpec): string {
 
 /**
  * Which lane a destination context may use. The probe is asked about the DESTINATION's
- * kind rather than the scratch's because §11 S1 measured support to be per-engine, and
+ * kind rather than the scratch's because section 11 S1 measured support to be per-engine, and
  * because the scratch is made in the same realm anyway.
  */
 export function laneFor(dst: BlurCtx | null | undefined): BlurLane {
@@ -824,7 +824,7 @@ function smooth(ctx: BlurCtx): void {
  * unfiltered picture, which is a visibly softer-than-intended frame rather than a
  * missing layer.
  *
- * THE PASS ORDER IS THE CONTRACT (§5.5). The content arrives already clipped (radius /
+ * THE PASS ORDER IS THE CONTRACT (section 5.5). The content arrives already clipped (radius /
  * clip-path applied by the caller into `src`), the blur is applied to the clipped
  * result, and each drop-shadow is cast by everything before it and painted UNDER it.
  * That is the DOM's own order - clip first, filter after - which is why a blurred

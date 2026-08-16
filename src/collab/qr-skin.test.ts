@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * qr-skin tests - plan 100 §6.1 (skin 2), §2.9, §11.27; wave 2.6.
+ * qr-skin tests - plan 100 section 6.1 (skin 2), section 2.9, section 11.27; wave 2.6.
  * Run directly:  node --test shells/web/src/collab/qr-skin.test.ts
  *
  * A QR encoder is the kind of code that looks right and scans never, so almost none
@@ -175,7 +175,7 @@ function rsReference(data: readonly number[], degree: number): number[] {
   return buf.slice(data.length);
 }
 
-/** The eight data-mask formulas, transcribed from §8.8.1. */
+/** The eight data-mask formulas, transcribed from section 8.8.1. */
 function maskAt(mask: number, x: number, y: number): boolean {
   if (mask === 0) return (y + x) % 2 === 0;
   if (mask === 1) return y % 2 === 0;
@@ -265,7 +265,7 @@ function decodeQr(modules: Uint8Array, size: number): DecodedQr {
   const version = (size - 17) / 4;
   const dark = (x: number, y: number): number => modules[y * size + x]!;
 
-  // Format information, copy 1 (§8.9's placement, transcribed).
+  // Format information, copy 1 (section 8.9's placement, transcribed).
   let raw1 = 0;
   const seq1: [number, number][] = [];
   for (let i = 0; i <= 5; i++) seq1.push([8, i]);
@@ -653,7 +653,7 @@ test('forcing byte mode on alphanumeric text still round-trips (and costs a vers
  * through it: with the mask pinned, every symbol this encoder produces is byte-
  * identical to that implementation's, across versions 1–9, byte mode, level M. The two
  * disagree only on which mask to CHOOSE, which is a quality heuristic rather than a
- * conformance question (§8.8.2 scoring differs between real implementations).
+ * conformance question (section 8.8.2 scoring differs between real implementations).
  *
  * So this fixture pins the whole pipeline - version choice, bit stream, ECC,
  * interleaving, function patterns, data walk, format bits, masking - to a foreign
@@ -894,7 +894,7 @@ test('createQrElementRenderer matches the dialog callback and degrades to null',
   assert.equal(createQrElementRenderer()('LOLLY'), null);
 });
 
-// ══ 7. The real ceremony payload (§6.1, §2.9) ══════════════════════════════════
+// ══ 7. The real ceremony payload (section 6.1, section 2.9) ══════════════════════════════════
 
 function material(candidates: SdpMaterial['candidates']): SdpMaterial {
   return {
@@ -1015,7 +1015,7 @@ test('byte mode alone would NOT hold a typical invite — the base32 skin is loa
   assert.ok(encodeQr(token).ok, 'and alphanumeric mode carries it');
 });
 
-// ══ 8. Scan: the progressive rung (§11.27) ═════════════════════════════════════
+// ══ 8. Scan: the progressive rung (section 11.27) ═════════════════════════════════════
 
 interface FakeDetected {
   rawValue?: unknown;

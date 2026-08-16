@@ -417,7 +417,7 @@ test('the Design video template ships a procedural bed, not a catalog loop', () 
   // Migrated from Sequence Studio (retired into Design, plans/104): the "carry a
   // procedural, licence-free bed" contract now lives on Design's Video template.
   const tpl = JSON.parse(
-    readFileSync(fileURLToPath(new URL('../../../../brands/lolly-start/tools/design/templates/video.json', import.meta.url)), 'utf8'),
+    readFileSync(fileURLToPath(new URL('../../../../community/design/templates/video.json', import.meta.url)), 'utf8'),
   ) as { values?: { boxes?: { kind?: string; image?: { id?: string } }[] } };
   const boxes = tpl.values?.boxes;
   assert.ok(Array.isArray(boxes));

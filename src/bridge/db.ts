@@ -181,7 +181,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         db.createObjectStore('matte-models');
       }
       if (oldVersion < 13) {
-        // Receiver-side staging for a beam transfer (plans/100 §11.15a, §11.18) - 
+        // Receiver-side staging for a beam transfer (plans/100 section 11.15a, section 11.18) - 
         // one row per 64 KB chunk so a 38 MB pack streams to disk as it arrives
         // instead of accumulating in renderer RAM. Keyed [beamId, itemIndex, seq],
         // which makes an item's chunks read back in seq order and a whole beam one

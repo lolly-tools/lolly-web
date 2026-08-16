@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shell collab plumbing (plan 100 §5, wave 0.5).
+ * Shell collab plumbing (plan 100 section 5, wave 0.5).
  *
  * The claims worth pinning, in order of how much a regression would cost:
  *
  *  1. INERTNESS. With no provider registered, attaching must not touch the runtime
  *     at all - proven by a call-count spy on the underlying setInput, not by
  *     reading the code. This is the single promise the whole seam makes to every
- *     build of this repo (plans/99 §1.1).
+ *     build of this repo (plans/99 section 1.1).
  *  2. Echo suppression. A remote batch lands through `applyPatch` and must not come
- *     back out as ops, and must not record an undo step (§5).
+ *     back out as ops, and must not record an undo step (section 5).
  *  3. Coalescing. A burst of remote ops is ONE apply per animation frame.
  *  4. The order-key progression this module mints must match the one the CONTRACT's
  *     own `damageToOps` threads - asserted against its real output, so a change on
  *     either side fails here rather than silently sorting two peers differently.
- *  5. Hook-derived patches never re-emit (plan 100 §11.9). A hook that writes OTHER
+ *  5. Hook-derived patches never re-emit (plan 100 section 11.9). A hook that writes OTHER
  *     inputs/extras in response to an edit must not turn into ops of its own - only
  *     the id the caller actually set does. Mounts the real engine `createRuntime`
  *     (every other test here uses the fake `harness()`, whose setInput never runs a
@@ -228,7 +228,7 @@ test('a history replay is a local edit and syncs like any other', async () => {
   assert.equal((adapter.applied[1] as ParamOp).value, 'hello');
   assert.ok(
     adapter.applied[1]!.origin.clock > adapter.applied[0]!.origin.clock,
-    'the undo is a strictly newer LWW write (plan 100 §11.15)',
+    'the undo is a strictly newer LWW write (plan 100 section 11.15)',
   );
 });
 
@@ -323,9 +323,9 @@ test('orderKeysFor mirrors the contract\'s own add-time key progression', () => 
   }
 });
 
-// ── hook-derived patches never re-emit (plan 100 §11.9, §13 wave 0.6) ──────────
+// ── hook-derived patches never re-emit (plan 100 section 11.9, section 13 wave 0.6) ──────────
 //
-// §11.9: a local edit runs onInput; the hook's OWN patched inputs/extras are
+// section 11.9: a local edit runs onInput; the hook's OWN patched inputs/extras are
 // derived state each peer computes locally, and must never sync as ops of their
 // own - only falls out naturally if hook patches keep flowing through engine
 // internals rather than the shell's wrapped setInput. Every other test in this
@@ -339,7 +339,7 @@ let hookToolSeq = 0;
 
 /** A loadable tool whose onInput hook, on every `title` edit, patches a SECOND
  *  declared input (`mirror`) and an extras-only key (`note`) - the exact "hook
- *  writes other inputs/extras" shape §11.9 is about. */
+ *  writes other inputs/extras" shape section 11.9 is about. */
 function hookTool(hooksSource: string): any {
   return {
     manifest: {
@@ -621,7 +621,7 @@ test('an inbound value that LOST the merge never reaches the model', async () =>
 
   // What a local edit at clock 9 leaves in the document, on both lanes. The row is
   // ADDED first, because a box only enters the snapshot once its `alive` register
-  // says so - a bare field write on an unknown id is not a resurrection (§3).
+  // says so - a bare field write on an unknown id is not a resurrection (section 3).
   adapter.doc.apply({ k: 'param', key: 'title', value: 'winner', origin: { client: 'zz', clock: 9 } });
   adapter.doc.apply({
     k: 'add', id: 'AAA', col: 'rows', row: { label: 'winner' }, orderKey: 'i',

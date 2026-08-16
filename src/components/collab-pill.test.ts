@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-pill - the stage cluster (plan 100 §4.6), driven from a scripted state
+ * collab-pill - the stage cluster (plan 100 section 4.6), driven from a scripted state
  * stream.
  *
  * The pill is the anchor component of the whole presence surface, and almost
@@ -10,12 +10,12 @@
  *
  *  1. The avatar stack shows 3 and then "+N" - the plan's number, and the thing that
  *     stops a six-person roster from pushing the zoom HUD off the stage.
- *  2. The connection dot is never colour ALONE (§4.8). `data-state` is what CSS
+ *  2. The connection dot is never colour ALONE (section 4.8). `data-state` is what CSS
  *     hangs a distinct SHAPE off, and the `title` plus a live-region label carry it
  *     for anyone not reading shapes either - so the attribute, the title and the
  *     text are all asserted, and so is the fact that reconnecting ≠ away.
  *  3. Nameless people fall back by ROLE, not by device id: the inviter reads as
- *     "Host", everyone else as "Invitee", numbered from the second (§4.5).
+ *     "Host", everyone else as "Invitee", numbered from the second (section 4.5).
  *  4. The invite slot exists only when a caller supplies `onInvite`. A dead invite
  *     button in a session you cannot invite into is worse than none.
  *  5. Joins and leaves are announced once each, by name, and the FIRST render - the
@@ -238,7 +238,7 @@ test('the invite slot renders only when a caller supplies one', () => {
   withSlot.pill.destroy();
 });
 
-// ── action slots (§6.4's "Send this session" is the first one) ────────────────
+// ── action slots (section 6.4's "Send this session" is the first one) ────────────────
 
 test('an action slot renders only when a caller supplies one, and the PILL owns its words', () => {
   const none = mount(sessionState());
@@ -265,7 +265,7 @@ test('an action slot renders only when a caller supplies one, and the PILL owns 
 
 test('an action hides itself the moment it stops being available, and comes back', () => {
   // The beam's case: the bulk lane dies with the pair, and a button that can only fail
-  // is the dead control §4.6 refuses. The predicate is re-read on every paint, so the
+  // is the dead control section 4.6 refuses. The predicate is re-read on every paint, so the
   // session's own state stream is what makes it live.
   let open = false;
   const { pill, src } = mount(sessionState(), {
@@ -474,6 +474,6 @@ test('the dot has a distinct shape per state, so colour is never carrying it alo
   assert.match(css, /\.collab-dot\[data-state="closed"\]::after/);
 });
 
-test('every avatar carries the 1px theme-contrast halo (§4.4), not just a colour', () => {
+test('every avatar carries the 1px theme-contrast halo (section 4.4), not just a colour', () => {
   assert.match(sheet(), /\.collab-av\s*\{[^}]*box-shadow:[^;]*var\(--foreground\)/);
 });

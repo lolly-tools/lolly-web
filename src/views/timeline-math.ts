@@ -87,20 +87,20 @@ export interface TimeCfg {
   groupField?: string;
   /**
    * OPTIONAL, same progressive-capability terms again: the sub-field carrying the
-   * box's KEYFRAME TRACK (plans/104 §5.1 - the `kf` wire, poses over the box's own
+   * box's KEYFRAME TRACK (plans/104 section 5.1 - the `kf` wire, poses over the box's own
    * local time). A tool that declares none is not keyframable, and every rebase
    * below is a no-op for it: an edit that would shift a track simply doesn't,
    * because there is no track and no field to write one to.
    *
-   * This is the ONE field the §5.6 rebase rewrites. Everything else a split, trim
+   * This is the ONE field the section 5.6 rebase rewrites. Everything else a split, trim
    * or join copies stays copied - the detach link, the source ref, the geometry - 
    * so the field-copy contracts those features rest on are untouched.
    */
   kfField?: string;
   /**
-   * OPTIONAL, same terms: the box's DEPTH field (plans/104 §5.3 - px above the
+   * OPTIONAL, same terms: the box's DEPTH field (plans/104 section 5.3 - px above the
    * surface, `canvas.zField`). Not a timing field at all, and named here for one
-   * reason: a keyframe's `z` channel REPLACES this field for its segment (§5.2), so
+   * reason: a keyframe's `z` channel REPLACES this field for its segment (section 5.2), so
    * the pose writer below has to know what the unkeyed value is before it can write
    * an honest full pose. Absent means the box has no authored depth and `z` resolves
    * to 0 - which is exactly what the default camera projects at eff = 1.
@@ -335,7 +335,7 @@ function withFields(box: Box, patch: Record<string, Box[string]>): Box {
   return changed ? { ...box, ...patch } : box;
 }
 
-// ── keyframe rebase (plans/104 §5.6) ──────────────────────────────────────────
+// ── keyframe rebase (plans/104 section 5.6) ──────────────────────────────────────────
 //
 // A keyframe track is authored in the box's OWN LOCAL TIME (ms from the clip's
 // start, unscaled - `speed` remaps the MEDIA inside a clip, never the clip's own
@@ -367,7 +367,7 @@ function withFields(box: Box, patch: Record<string, Box[string]>): Box {
 // Exactness, stated once so the tests can pin it: the halves reproduce the original's
 // value at the cut and at every key EXACTLY (to the wire's own quanta), and reproduce
 // the whole curve when each keyframe poses the same set of channels - which is what
-// the UI writes (§8: "every diamond is a complete honest pose"). A hand-authored
+// the UI writes (section 8: "every diamond is a complete honest pose"). A hand-authored
 // SPARSE track, where one channel's segment spans a keyframe that never mentions it,
 // can have two different crossing segments at one cut; a keyframe carries ONE ease, so
 // the subdivision is applied to the last key before the cut and any channel whose
@@ -376,7 +376,7 @@ function withFields(box: Box, patch: Record<string, Box[string]>): Box {
 /** Nothing to rebase. Shared so the "no kf field" path allocates nothing. */
 const EMPTY_KF: KfTrack = Object.freeze([]);
 
-/** Local box time in INTEGER ms (the §4.6 `t` quantum) from an edit measured in seconds. */
+/** Local box time in INTEGER ms (the section 4.6 `t` quantum) from an edit measured in seconds. */
 function kfMs(sec: number): number {
   return Math.round(num(sec, 0) * 1000);
 }
@@ -522,7 +522,7 @@ export function kfTrackJoin(a: KfTrack, b: KfTrack, offsetMs: number): KfKey[] {
   return out;
 }
 
-// ── keyframe EDITING (plans/104 §8 - the surface's arithmetic, not the panel's) ─
+// ── keyframe EDITING (plans/104 section 8 - the surface's arithmetic, not the panel's) ─
 //
 // The panel is editing GLUE: it turns pointers and presses into intents, and every
 // number those intents need lives here or in the engine. That split is the panel's
@@ -531,7 +531,7 @@ export function kfTrackJoin(a: KfTrack, b: KfTrack, offsetMs: number): KfKey[] {
 //
 // Two timebases meet in this section and they must never be confused:
 //   • TIMELINE seconds - what the ruler, the bars and `snapTime` speak.
-//   • LOCAL box ms - what a `kf` track is authored in (§5.1), i.e. ms since the
+//   • LOCAL box ms - what a `kf` track is authored in (section 5.1), i.e. ms since the
 //     clip's own start, UNSCALED. `speed` remaps the media inside a clip, never the
 //     clip's animation, so it appears nowhere below. The DOM evaluator reads exactly
 //     this (`evaluateKf(timing.kf, tMs - timing.start)`, sequence-dom.ts) and the
@@ -572,12 +572,12 @@ export const KF_NEUTRAL: Readonly<Record<KfChannel, number>> = Object.freeze({
  * they are edited, which is exactly what "the box's ACTIVE channel set" means.
  *
  * A camera is born with the camera set instead: a camera exists only to be animated,
- * so its pose IS its channels (§5.4).
+ * so its pose IS its channels (section 5.4).
  */
 export const KF_POSE_SEED: readonly KfChannel[] = Object.freeze(['x', 'y', 's', 'r', 'o'] as const);
 
 /**
- * One channel's value as a control PRINTS it - at that channel's own §4.6 quantum.
+ * One channel's value as a control PRINTS it - at that channel's own section 4.6 quantum.
  *
  * Here rather than in the panel because it is arithmetic, and because the quantum is
  * per channel: `x/y/z/b/r` are hundredths, `s/o/a` thousandths. A hardcoded 1e-3 in
@@ -633,7 +633,7 @@ export function kfTimelineSec(box: Box | undefined, cfg: TimeCfg, localMs: numbe
 }
 
 /**
- * Every diamond of one box, in TIMELINE seconds - the latch's candidate set (§8).
+ * Every diamond of one box, in TIMELINE seconds - the latch's candidate set (section 8).
  *
  * Ascending, because `parseKf` sorts; duplicates are impossible for the same reason
  * (it dedupes at equal `t`).
@@ -677,7 +677,7 @@ export function kfKeyAt(track: KfTrack, atMs: number): KfKey | null {
  * A channel the track already mentions is evaluated (so an existing curve is
  * preserved through the diamond being written); one it does not is the neutral value
  * - except `z`, whose neutral is the box's own depth field, because a keyed `z`
- * REPLACES that field for its segment (§5.2) and a full pose that wrote 0 over an
+ * REPLACES that field for its segment (section 5.2) and a full pose that wrote 0 over an
  * authored 140 would drop the box to the floor the moment it was keyed.
  */
 export function kfPoseAt(
@@ -699,7 +699,7 @@ export function kfPoseAt(
  * plus everything this edit touches, plus - on a track that has none of either - the
  * seed (a camera's own channels, else {@link KF_POSE_SEED}).
  *
- * This is the "full pose over the box's active channel set" rule of §8 spelled as
+ * This is the "full pose over the box's active channel set" rule of section 8 spelled as
  * one function, so the button, the shortcut, the canvas gesture and the pose row all
  * write the SAME structure of keyframe. Order follows the engine's canonical channel
  * order, which is the order `serialiseKf` emits in anyway.
@@ -742,7 +742,7 @@ function upsertKey(track: KfTrack, atMs: number, pose: KfPose, ease?: string): K
  * Two rules, in this order:
  *
  *   • an EXISTING diamond is written where it is. The latch's whole claim is that the
- *     header names the keyframe a gesture will edit (§8), so a track carrying a key
+ *     header names the keyframe a gesture will edit (section 8), so a track carrying a key
  *     past its clip's out-point - reachable by hand-editing a share URL, and by
  *     trimming a clip shorter afterwards - must still be posed at its own time rather
  *     than silently forked into a second key at the edge.
@@ -802,7 +802,7 @@ export function writeKfPose(
   return rows.map((b, k) => (k === i ? withFields(b!, { [field]: wire }) : b));
 }
 
-/** Every keyframe gone, in one write. The destructive half of the Animate door (§8). */
+/** Every keyframe gone, in one write. The destructive half of the Animate door (section 8). */
 export function clearKfTrack(boxes: Box[], cfg: TimeCfg, id: string): Box[] {
   const rows = Array.isArray(boxes) ? boxes : [];
   const field = cfg.kfField;
@@ -902,7 +902,7 @@ export function kfTrackDelete(track: KfTrack, atMs: number): KfKey[] {
  * `ease` arrives in the shared editor's vocabulary (a preset name or a CSS
  * `cubic-bezier(...)`, which is what `mountEasingEditor` commits) and goes through
  * the engine's own adapter, because the canonical wire uses commas and the kf
- * charset bans them (§5.1). Junk normalises to the default rather than throwing.
+ * charset bans them (section 5.1). Junk normalises to the default rather than throwing.
  */
 export function kfTrackSetEase(track: KfTrack, atMs: number, ease: unknown): KfKey[] {
   const t = Math.round(num(atMs, 0));
@@ -926,7 +926,7 @@ export function setKfTrack(boxes: Box[], cfg: TimeCfg, id: string, keys: readonl
 
 /**
  * The next diamond strictly after (`dir > 0`) or before (`dir < 0`) `fromSec`,
- * across every box in `ids` - Alt+←/→ (§8). Null when there is none, which is what
+ * across every box in `ids` - Alt+←/→ (section 8). Null when there is none, which is what
  * makes the shortcut stop at the ends rather than wrapping into a surprise.
  */
 export function kfSeekDiamond(
@@ -946,9 +946,9 @@ export function kfSeekDiamond(
   return best;
 }
 
-// ── the motion path (plans/104 §8's overlay bullet, under §6.5's projection rule) ─
+// ── the motion path (plans/104 section 8's overlay bullet, under section 6.5's projection rule) ─
 //
-// §6.5 is the whole reason this is arithmetic and not a `<polyline>` drawn from the
+// section 6.5 is the whole reason this is arithmetic and not a `<polyline>` drawn from the
 // raw kf offsets: "ghosts + motion-path samples are computed as
 // `pose(t) = kf-evaluate + projectLayer(cameraAt(t))` before `nativeToStage`". A path
 // drawn flat would be a LIE the moment a camera exists - the parallax it promises is
@@ -1001,13 +1001,13 @@ export const MOTION_PATH_MIN_TRAVEL = 0.5;
 const EMPTY_PATH: MotionPathSamples = Object.freeze({ pts: [], keys: [] }) as MotionPathSamples;
 
 /**
- * The camera clips a MODEL carries (§5.4) - the model-side twin of `stageCameras`
+ * The camera clips a MODEL carries (section 5.4) - the model-side twin of `stageCameras`
  * (bridge/sequence-plan.ts), which derives the identical list from parsed DOM layers.
  *
  * Two derivations rather than one shared function because the two sides hold
  * different things: the render path has already parsed the artboard into `SeqLayer`s
  * and must not re-query the DOM, while the editor has only the model and no artboard
- * for a camera at all (a camera has no canvas footprint, §5.4). They agree by reading
+ * for a camera at all (a camera has no canvas footprint, section 5.4). They agree by reading
  * the same fields in the same order and handing the ENGINE the same shape - which is
  * what `tests/timeline-math.test.ts` pins against `stageCameras`'s own output.
  *
@@ -1099,7 +1099,7 @@ export function kfMotionPath(
   const cams = env.cameras ?? null;
   const view = { w: num(env.stageW, 0), h: num(env.stageH, 0) };
 
-  /** The §4.1 fold at one TIMELINE instant - the ONLY place this file makes a point. */
+  /** The section 4.1 fold at one TIMELINE instant - the ONLY place this file makes a point. */
   const at = (tMs: number): MotionPathPoint => {
     const cam = resolveCamera(cams, tMs);
     const pose = evaluateKf(track, tMs - startMs);
@@ -1351,7 +1351,7 @@ export function removeAndRipple(boxes: Box[], cfg: TimeCfg, id: string, mediaDur
  * overlays anchored to the clips that moved ripple with them.
  *
  * A trim of the IN edge also rebases the box's keyframe track by the clamped delta
- * (§5.6): the head of the clip's own local timeline is what a trim-in removes, so the
+ * (section 5.6): the head of the clip's own local timeline is what a trim-in removes, so the
  * animation has to travel with it. The OUT edge never does - see {@link kfTrackAfter}.
  */
 export function trimClip(
@@ -1425,7 +1425,7 @@ export function trimClip(
   const patch: Record<string, Box[string]> = {
     [cfg.startField]: start, [cfg.durField]: dur, [cfg.clipInField]: clipIn,
   };
-  // A head trim moves the clip's own t = 0, so its keyframes travel with it (§5.6).
+  // A head trim moves the clip's own t = 0, so its keyframes travel with it (section 5.6).
   // Nothing is written when the box has no track - a document that uses no keyframes
   // must come out of a trim byte-identical to the way it went in.
   const headMs = kfMs(head);
@@ -1518,7 +1518,7 @@ export function setClipIn(
 /**
  * Set the clip's playback rate. Clamped to [MIN_SPEED, MAX_SPEED] and to the media.
  *
- * Deliberately NO keyframe rebase (§5.6): `speed` remaps the MEDIA inside a clip - 
+ * Deliberately NO keyframe rebase (section 5.6): `speed` remaps the MEDIA inside a clip - 
  * which frame of the file plays when - while a keyframe track is authored in the
  * clip's own local timeline, whose length `dur` already states. Halving the rate makes
  * the video play slower; the box's animation is unchanged, because nothing about the
@@ -1542,7 +1542,7 @@ export function setSpeed(
  * immediately after A so z-order is preserved, and its id comes from the injected
  * `mintId` (this module never invents ids).
  *
- * The keyframe track is the one field that is REBASED rather than copied (§5.6): a
+ * The keyframe track is the one field that is REBASED rather than copied (section 5.6): a
  * verbatim copy would have B replay the whole animation from its own t = 0. Both
  * halves get a keyframe at the cut holding the pose the original struck there, and
  * the crossing segment's ease is subdivided so neither half's motion changes shape.
@@ -1575,7 +1575,7 @@ export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, m
   // rather than mint a sub-minimum sliver.
   if (aDur < MIN_DUR || bDur < MIN_DUR) return null;
 
-  // The keyframe rebase (§5.6). A keeps everything up to the cut plus the pose it was
+  // The keyframe rebase (section 5.6). A keeps everything up to the cut plus the pose it was
   // striking there; B replays from that pose at its own t = 0. The cut is measured in
   // the box's LOCAL time, which is exactly A's length - B's start on the timeline has
   // nothing to do with it. An unkeyframed box takes neither branch and both halves
@@ -1691,7 +1691,7 @@ function isMuted(box: Box | undefined, cfg: TimeCfg): boolean {
  *   • and they are the same source, which this module cannot decide for itself - an
  *     asset ref is not a timing concern, so the predicate is INJECTED by the caller.
  *
- * The keyframe track is deliberately NOT a sixth condition. A split rebases it (§5.6),
+ * The keyframe track is deliberately NOT a sixth condition. A split rebases it (section 5.6),
  * and rejoining restores the MOTION rather than the byte-identical wire - a subdivided
  * ease is a different token for the same curve. Comparing tracks here would hide the
  * hairline behind every keyframed cut, which is the opposite of what it is for.
@@ -1728,7 +1728,7 @@ export function isThroughEdit(
  * split → join a true round-trip on a clip that never had a transition at all.
  *
  * B's keyframes come too, shifted by A's length onto the merged clip's single local
- * timeline (§5.6, {@link kfTrackJoin}) - discarding them was the loudest of the three
+ * timeline (section 5.6, {@link kfTrackJoin}) - discarding them was the loudest of the three
  * gaps this rebase closes.
  *
  * Deliberately NOT gated on {@link isThroughEdit}: that predicate decides what to OFFER,
@@ -1757,7 +1757,7 @@ export function joinClips(
     if (Object.prototype.hasOwnProperty.call(b, f)) merged[f] = b[f];
     else delete merged[f];
   }
-  // B's keyframes move to where B now plays inside the merged clip (§5.6). Only B
+  // B's keyframes move to where B now plays inside the merged clip (section 5.6). Only B
   // having a track can change anything: with none, A's own track is already correct
   // and is left byte-identical rather than re-serialised.
   const trackB = boxTrack(b, cfg);

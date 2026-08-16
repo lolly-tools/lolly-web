@@ -24,7 +24,7 @@
  * 5. the bar still rebuilds only when the SELECTION changes, so adding controls to it did
  *    not turn it into per-frame innerHTML churn.
  *
- * The canvas config is the SHIPPED `brands/lolly-start/tools/design/tool.json` block,
+ * The canvas config is the SHIPPED `community/design/tool.json` block,
  * so "the control appears" is a claim about the real tool. The jsdom bootstrap is the same
  * shape as free-canvas-pen.test.ts / free-canvas-vector.test.ts.
  *
@@ -91,7 +91,7 @@ function pointerEvent(type: string, o: { x: number; y: number; shift?: boolean }
 
 // ── the SHIPPED canvas config ─────────────────────────────────────────────────
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TOOL = join(HERE, '..', '..', '..', '..', 'brands', 'lolly-start', 'tools', 'design', 'tool.json');
+const TOOL = join(HERE, '..', '..', '..', '..', 'community', 'design', 'tool.json');
 
 /** Design's real `canvas` block. Note it declares `pathField` and NOT the stroke
  *  sub-fields: those come from the overlay's own defaults, which is precisely why a test

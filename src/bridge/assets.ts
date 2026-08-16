@@ -48,7 +48,7 @@ import { noteScrubSource } from '../lib/scrub-registry.ts';
 // like tool-url.ts's, because every shell that resolves an asset has to
 // recognise it.
 import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
-// Tokens discovery must skip a published design-system VERSION (plans/97 §6a).
+// Tokens discovery must skip a published design-system VERSION (plans/97 section 6a).
 // The engine leaf, like the imports above: the web bridge, the MCP server and
 // the CLI all apply this one predicate instead of each writing the rule out.
 import { pickHeadAssetId } from '../../../../engine/src/design-version.ts';
@@ -244,7 +244,7 @@ export interface AssetsApiOptions {
   /**
    * Runs BEFORE anything replaces or removes the bytes stored at a
    * user-asset id. Its job is to preserve bytes a published design-system
-   * version pins (plans/97 §6a copy-on-write); see bridge/version-assets.ts.
+   * version pins (plans/97 section 6a copy-on-write); see bridge/version-assets.ts.
    *
    * A THROW REFUSES the write: losing a version's bytes is not an
    * acceptable success, and a version that silently changed what it renders
@@ -525,6 +525,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // the replacement.
       await opts.preservePinned?.(record.id);
       if (!upOpts.skipQuota) await assertQuotaRoom(record.blob?.size ?? 0);
+      // The AI-kind memo is keyed by id and valid only while the bytes under that id don't
+      // change. This write may REPLACE the bytes at an existing id (Replace reuses an id), so a
+      // stale verdict from the previous image must not survive onto the new bytes - drop it and
+      // let the flag recompute from the new record's own credential below.
+      AI_KIND_MEMO.delete(record.id);
       // Compute the AI-provenance flag once, at ingest, from the captured credential.
       if (record.aiGenerated === undefined && record.credential && record.credentialFormat) {
         const kind = detectAiGenerated(record, await loadC2paVerify());
@@ -657,6 +662,9 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       await db.delete('user-assets', id);
       // toAssetRef keys user URLs as `user:<id>:<format>:<version>` - evict any.
       evictObjectUrlsByPrefix(`user:${id}:`);
+      // The AI-kind memo is keyed by id; the bytes are gone, so its verdict must not linger to
+      // be re-applied should this id ever be reused.
+      AI_KIND_MEMO.delete(id);
       // A derived scrub proxy outlives nothing: without this its row (and its
       // object URL) would leak for the lifetime of the database.
       await import('../lib/clip-proxy.ts')
@@ -777,7 +785,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
      * brand-specific id.
      *
      * "Head" rather than "first" because of design-system versions (plans/97
-     * §6a): a published version is a sibling asset one segment DEEPER than
+     * section 6a): a published version is a sibling asset one segment DEEPER than
      * the system it belongs to (`user/tokens/brand/jupiter`), and it must
      * never be picked as the design system. pickHeadAssetId (the engine
      * predicate the MCP server and the CLI apply too) drops any id that is a

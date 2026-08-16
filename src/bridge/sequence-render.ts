@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-render.ts - the EXECUTOR + ORCHESTRATOR for deterministic sequence
- * export (Fable timeline, phase 3 §2.5).
+ * export (Fable timeline, phase 3 section 2.5).
  *
  * The split this module lives on is the whole point of the phase-3 design (spike
- * §0.0, "DESIGN REQUIREMENT"):
+ * section 0.0, "DESIGN REQUIREMENT"):
  *
  *   sequence-plan.ts      decides WHAT is on screen at time t and where its media
  *                         is seeked to - pure, DOM-only-for-reading, node-testable.
@@ -86,7 +86,7 @@ import {
   type SeqErrorCode,
   type SeqPlanEnv,
 } from './sequence-plan.ts';
-// The plate budget (plans/104 §5.5) and the spill geometry it prices. Both pure; the
+// The plate budget (plans/104 section 5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
 import {
   blurScratchNeedBytes,
@@ -103,7 +103,7 @@ import {
   type BlurCanvas,
   type BlurCtx,
 } from '../lib/canvas-blur.ts';
-// P2b - the WebGL2 quad compositor for tilt export (plans/104 §6.4). Shell-only; the
+// P2b - the WebGL2 quad compositor for tilt export (plans/104 section 6.4). Shell-only; the
 // engine supplies the projection math (`projectLayer` → `m3`) and nothing else.
 import {
   createGlQuadCompositor,
@@ -165,7 +165,7 @@ import {
 // …and `withAuthoredDom` is the other half of the same story: `.seq-off` is the class
 // the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
 // filter, z-index) have to come off the stage for exactly as long - see the wrapper on
-// `renderSequence` below, and plans/104 §6 point 0.
+// `renderSequence` below, and plans/104 section 6 point 0.
 import { OFF_CLASS, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
@@ -369,7 +369,7 @@ interface BedFade {
   duck?: { level: number; spans: DuckSpan[] };
   /** Gain ramp seconds. Defaults to the legacy snappy 0.25 for clip ducks
    *  (speech-under-bed; a short clip must SIT at the ducked level - pinned by
-   *  tests/sequence-render.browser.test.ts). The §6.1 mix-in path passes the
+   *  tests/sequence-render.browser.test.ts). The section 6.1 mix-in path passes the
    *  slower musical MIX_RAMP_SEC. */
   rampSec?: number;
   /** In-point into the SOURCE, seconds. Independent of the envelope, which is
@@ -414,7 +414,7 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
     fadeOut: fade.fadeOut,
     // Clip ducks are speech-under-bed: the legacy 0.25s ramps, so a short clip
     // actually SITS at the ducked level instead of riding a 0.8s triangle
-    // (tests/sequence-render.browser.test.ts pins this). The §6.1 mix-in call
+    // (tests/sequence-render.browser.test.ts pins this). The section 6.1 mix-in call
     // passes the slower musical MIX_RAMP_SEC explicitly.
     rampSec: fade.rampSec ?? 0.25,
   });
@@ -448,7 +448,7 @@ interface RasterOpts {
   opaque?: boolean;
   /**
    * Shoot the element with its INLINE `filter` removed - the blur rule, and the exact
-   * twin of `opaque` (plans/104 §5.5).
+   * twin of `opaque` (plans/104 section 5.5).
    *
    * `PlanItem.blur` is the WHOLE blur: the box's authored `filter: blur()`, plus the
    * keyframe `b` channel, plus depth-of-field. The executor applies that one number.
@@ -465,7 +465,7 @@ interface RasterOpts {
    */
   neutralFilter?: boolean;
   /**
-   * Extra margin, in ELEMENT px, captured on all four sides (plans/104 §5.5).
+   * Extra margin, in ELEMENT px, captured on all four sides (plans/104 section 5.5).
    *
    * The capture canvas grows to `(bw + 2·pad) × (bh + 2·pad)` at scale S and the clone
    * is translated INSIDE the scale - `scale(S) translate(pad, pad)` - so the offset is
@@ -477,7 +477,7 @@ interface RasterOpts {
    *
    * 0 - the default, and what every P0 call site passes - is byte-for-byte today's
    * shot: the canvas is `bw·S × bh·S` and the transform string is `scale(S)` exactly as
-   * it always was. The budget that chooses a non-zero pad is the planner's (§5.5).
+   * it always was. The budget that chooses a non-zero pad is the planner's (section 5.5).
    */
   pad?: number;
   /**
@@ -490,7 +490,7 @@ interface RasterOpts {
    * compositor-owned layer's plate arrives ALREADY CLIPPED, and `drawItem` - which is
    * correct, and was confirmed correct by the same run - then casts its drop-shadow
    * from the clipped silhouette while the browser casts it from the UNCLIPPED element
-   * and clips the filter's OUTPUT afterwards (Filter Effects §5 / CSS Masking). Mean
+   * and clips the filter's OUTPUT afterwards (Filter Effects section 5 / CSS Masking). Mean
    * error 1.93 / 2.26, max 204, over 2–3 % of the frame; with an unclipped plate,
    * 0.00 / 0.54. The fix belongs here, in the capture, and nowhere else.
    *
@@ -502,7 +502,7 @@ interface RasterOpts {
   neutralClipPath?: boolean;
   /**
    * Shoot the element at a size other than its authored one, in ELEMENT px - the
-   * `w`/`h` channels' half of the capture (§5.2).
+   * `w`/`h` channels' half of the capture (section 5.2).
    *
    * A size tween REFLOWS: text rewraps, a border stays one pixel wide. A plate cannot
    * be stretched to fake that, so a sized layer is re-photographed per frame with the
@@ -516,7 +516,7 @@ interface RasterOpts {
  * The capture frame one plate shot asks dom-to-image for: canvas size in device px,
  * and the clone transform that places the box inside it.
  *
- * Pure, exported and tested for one reason - `pad` (plans/104 §5.5) changes the shot's
+ * Pure, exported and tested for one reason - `pad` (plans/104 section 5.5) changes the shot's
  * geometry, and "a document that uses no depth exports the same bytes it always did"
  * has to be a pinned property rather than a reading of the diff. At pad 0 both numbers
  * and the transform string are what they have always been.
@@ -543,7 +543,7 @@ export function plateShotFrame(
 export interface PlateWindowDemand {
   /**
    * Capture margin on all four sides, stage-native px: the largest distance this
-   * layer's effects reach outside its own box at any frame (plans/104 §5.5).
+   * layer's effects reach outside its own box at any frame (plans/104 section 5.5).
    *
    * Zero on a layer with no blur and no authored filter - which is every layer of
    * every document written before this feature, and the reason their plates are the
@@ -558,7 +558,7 @@ export interface PlateWindowDemand {
   maxEff: number;
   /**
    * The largest DRAW size the layer reaches over the window, stage-native px - its
-   * authored box unless the track keys `w`/`h` (§5.2). The budget prices a size-tweened
+   * authored box unless the track keys `w`/`h` (section 5.2). The budget prices a size-tweened
    * layer at its widest, because its plate is re-shot per frame and the peak is what
    * has to fit.
    */
@@ -591,7 +591,7 @@ export function plateWindowDemands(
     out.set(L.idx, { pad: 0, maxEff: 1, maxW: L.rect.w, maxH: L.rect.h, sized: false });
     // Only a layer whose fx the COMPOSITOR owns needs room for the spill: a layer that
     // keeps its filter on its plate has its effect baked in and clipped at the box
-    // edge, exactly as every export before this feature did it (§5.5, `ownsLayerFx`).
+    // edge, exactly as every export before this feature did it (section 5.5, `ownsLayerFx`).
     shadowsOf.set(
       L.idx,
       L.shadowFilter && ownsLayerFx(L, cameraMoves) ? parseDropShadows(L.shadowFilter) : [],
@@ -621,7 +621,7 @@ export function plateWindowDemands(
 }
 
 /**
- * The OVERSCAN the stage background must be photographed with (plans/104 §5.5).
+ * The OVERSCAN the stage background must be photographed with (plans/104 section 5.5).
  *
  * THE BUG THIS EXISTS TO FIX: the bg plate is drawn full-canvas and untransformed,
  * while every layer above it is projected - so a camera pan would slide the whole
@@ -870,7 +870,7 @@ async function mixSequenceAudio(
         clipSec: totalSec, volume: opts.audio.volume, duck, start: opts.audio.start,
       }, log);
       hasBed = true;
-      // A mix-in track (a tool with its own audio, §6.1). The primary bed above
+      // A mix-in track (a tool with its own audio, section 6.1). The primary bed above
       // loops the whole clip here, so the mix-in ducks to its centre level for
       // the full duration rather than being silently dropped.
       if (opts.audio.mix?.url) {
@@ -965,7 +965,7 @@ export async function sequenceAudioPcm(
  * provenance tags already embedded (like every other video renderer); the C2PA
  * stamp is applied uniformly by renderFormat afterwards.
  *
- * THE READ/RESTORE SEAM (plans/104 §6 point 0) is this wrapper, and it is the whole
+ * THE READ/RESTORE SEAM (plans/104 section 6 point 0) is this wrapper, and it is the whole
  * reason the render is one function inside another. Everything below reads or
  * photographs the LIVE artboard - `parseSequenceStage` takes each box's rotation,
  * opacity and blur off its inline style; `rasterBox` photographs the element itself - 
@@ -1093,7 +1093,7 @@ async function renderSequenceAuthored(
 
   const transparent = opts.background === 'transparent';
 
-  // ── plate geometry + the plate budget (plans/104 §5.5) ─────────────────
+  // ── plate geometry + the plate budget (plans/104 section 5.5) ─────────────────
   //
   // Two numbers per layer, decided ONCE and then obeyed by the static plates, the
   // per-frame live re-shots and the wire alike - a live plate that padded or scaled
@@ -1105,7 +1105,7 @@ async function renderSequenceAuthored(
   //   eff - how much EXTRA resolution the projection asked for, after the budget has
   //          had its say. 1 with no camera, which is every P0 export, and `S * 1` is
   //          exactly `S`.
-  // The cameras (§5.4), derived from the stage's own `camera` layers - the same
+  // The cameras (section 5.4), derived from the stage's own `camera` layers - the same
   // function the worker calls over the same layers, so the two evaluators can never be
   // told different cameras. `camMoves` is asked ONCE for the whole render because a
   // plate is shot once for the whole render (the P1 obligation): under a moving camera
@@ -1115,7 +1115,7 @@ async function renderSequenceAuthored(
   const planEnv: SeqPlanEnv = { stageW: nativeW, stageH: nativeH, cameras };
   const camMoves = camerasMove(cameras);
 
-  // ── the TILT GATE (plans/104 §6.4, P2) ────────────────────────────────────
+  // ── the TILT GATE (plans/104 section 6.4, P2) ────────────────────────────────────
   //
   // Here, and here specifically: after the stage and its keyframe tracks have been
   // parsed (so the question is asked of the camera set the render will actually use)
@@ -1127,10 +1127,10 @@ async function renderSequenceAuthored(
   // to fall back to, only a wrong picture. So the whole render moves to the P2a capture
   // tier: the DOM applier already writes the engine's matrix as a per-element
   // `matrix3d`, so the live artboard IS the composite, and every frame is a photograph
-  // of it. Slower by an order of magnitude and correct, which is the trade §6.4 makes
+  // of it. Slower by an order of magnitude and correct, which is the trade section 6.4 makes
   // explicitly ("that's the price of correct-first").
   const tilt = camerasTilt(cameras);
-  // P2b (plans/104 §6.4, plan 98 §9.1 Phase C): with the opt-in GPU compositor flag on
+  // P2b (plans/104 section 6.4, plan 98 section 9.1 Phase C): with the opt-in GPU compositor flag on
   // AND WebGL2 present, a tilted export takes the GL quad-compositor path - ONE clean
   // plate texture per layer, resampled coherently through each per-quad homography,
   // which fixes the P2a capture-tier flicker (127 independent full-frame dom-to-image
@@ -1145,7 +1145,7 @@ async function renderSequenceAuthored(
     return await renderTiltCapture(tilt);
   }
   if (useGl) {
-    // The video refusal stays reachable on the P2b path too (§6.4 first cut: video
+    // The video refusal stays reachable on the P2b path too (section 6.4 first cut: video
     // under tilt is an explicit follow-up). Failed up front, before a single plate is
     // photographed, exactly as `renderTiltCapture` refuses it - same coded error, same
     // wording, so a user sees one answer whichever tilt tier is active.
@@ -1213,7 +1213,7 @@ async function renderSequenceAuthored(
   const clipNeutralOf = (idx: number): boolean => clipNeutral.get(idx) ?? false;
   // The DRAW size a size-tweened layer's live plate is shot at, per frame.
   const sizedLayers = new Set(stage.layers.filter((L) => demands.get(L.idx)?.sized).map((L) => L.idx));
-  // The stage background's own margin (§5.5). It joins the memory budget the same way
+  // The stage background's own margin (section 5.5). It joins the memory budget the same way
   // every other plate does - as bytes on a layer the budget can see - rather than as an
   // unpriced extra: a big pull-back can ask for a plate several times the artboard.
   const bgPadWanted = transparent ? 0 : bgOverscanPad(nativeW, nativeH, usedGrid, planEnv);
@@ -1235,7 +1235,7 @@ async function renderSequenceAuthored(
    *
    * Two reasons a layer lands here, and they are independent: a Lottie box with a
    * mounted player (`marker` set - the frame has to be scrubbed before the shot), and a
-   * layer whose `w`/`h` are tweened (§5.2 - the element has to be laid out at the size
+   * layer whose `w`/`h` are tweened (section 5.2 - the element has to be laid out at the size
    * of the moment before the shot, because a stretched plate does not REFLOW).
    *
    * `hide` is the static plate's own hide list, carried so the live shot is the SAME
@@ -1273,7 +1273,7 @@ async function renderSequenceAuthored(
         // frame is instead photographed as its own per-layer plate below, gated to its
         // window. Harmless in object-clip mode: the frame selector matches nothing there.
         // …and with the camera's OVERSCAN, so a pan/pull-back reveals artboard rather
-        // than a hard edge (§5.5). `bgPad` is 0 on every camera-less export, and at 0
+        // than a hard edge (section 5.5). `bgPad` is 0 on every camera-less export, and at 0
         // `plateShotFrame` produces byte-for-byte the shot it always did.
         bgRaster = await rasterBox(stageEl, S, [
           ...stageEl.querySelectorAll('.lolly-box'),
@@ -1287,7 +1287,7 @@ async function renderSequenceAuthored(
       for (const L of stage.layers) {
         const w = win.get(L.idx)!;
         const el = L.el;
-        // `neutralFilter` follows the ONE ownership predicate (§5.5, `ownsLayerFx`): a
+        // `neutralFilter` follows the ONE ownership predicate (section 5.5, `ownsLayerFx`): a
         // layer with depth is shot clean and the compositor applies its whole filter;
         // a layer without keeps its filter baked into the plate, which is what every
         // pre-104 `shadow: content` / `blur` document has always exported.
@@ -1304,7 +1304,7 @@ async function renderSequenceAuthored(
         let needsLiveRaster = false;
         /** What this layer's plates were shot WITHOUT - the live re-shot must match. */
         let plateHide: Element[] = [];
-        // A CAMERA is a pose over time, not a picture (plans/104 §5.4): no plate, the
+        // A CAMERA is a pose over time, not a picture (plans/104 section 5.4): no plate, the
         // same way an audio bed has none. `w.first >= 0` would otherwise photograph its
         // marker div - an empty, `data-export-hide` box - once per export.
         if (w.first >= 0 && L.kind !== 'audio' && L.kind !== 'camera') {
@@ -1382,7 +1382,7 @@ async function renderSequenceAuthored(
     const job: SeqJob = {
       layers: wire, grid: usedGrid, frameCount, fps, totalMs: stage.totalMs,
       outW, outH: targetH, scale: S,
-      // The stage the depth projection anchors on (plans/104 §4.1): its NATIVE size,
+      // The stage the depth projection anchors on (plans/104 section 4.1): its NATIVE size,
       // the same number `S` was derived from, so the principal point stays the stage
       // centre at every export scale.
       stageW: nativeW, stageH: nativeH,
@@ -1418,7 +1418,7 @@ async function renderSequenceAuthored(
     );
     const hybrid = liveBoxes.size > 0;
 
-    // ── P2b: the GPU compositor draws tilt (plans/104 §6.4) ────────────────
+    // ── P2b: the GPU compositor draws tilt (plans/104 section 6.4) ────────────────
     // Reached only under a tilted camera with the opt-in flag on and WebGL2 present
     // (`useGl`, decided at the gate above). The plate pipeline just ran, so this reuses
     // the SeqJob verbatim - plates, clips, the live raster, the audio mix - and only the
@@ -1516,7 +1516,7 @@ async function renderSequenceAuthored(
   }
 
   /**
-   * **P2b - the GPU COMPOSITOR** (plans/104 §6.4, plan 98 §9.1 Phase C).
+   * **P2b - the GPU COMPOSITOR** (plans/104 section 6.4, plan 98 section 9.1 Phase C).
    *
    * The sibling of `renderInThread`: same SeqJob, same plates, same audio mix, same mux
    * sink, same one-container-C2PA - but the frame is COMPOSED on the GPU instead of by
@@ -1581,7 +1581,7 @@ async function renderSequenceAuthored(
         const t = usedGrid[i] as number;
         comp.beginFrame();
 
-        // THE BACKGROUND is an implicit z = 0 layer (§5.5) and is projected like one - 
+        // THE BACKGROUND is an implicit z = 0 layer (section 5.5) and is projected like one - 
         // through the SAME `projectLayer`, so a tilt tilts the wallpaper too (the DOM
         // does exactly this in `sequence-dom.ts`). `bgPad` is the overscan the plate was
         // captured with so the reveal has artboard in it.
@@ -1603,14 +1603,14 @@ async function renderSequenceAuthored(
 
         // The plan is ALREADY depth-sorted (sequence-plan.ts's `out.sort` by resolvedZ)
         // - DO NOT re-sort. Drawing it in order is the painter's order a perspective
-        // render needs, and it holds under tilt (κ > 0 over the control range, §4.2).
+        // render needs, and it holds under tilt (κ > 0 over the control range, section 4.2).
         const plan = sequenceDrawPlan(stageLayers, t, totalMs, planEnv);
         for (const item of plan) {
           const L = item.layer;
-          if (L.kind === 'audio' || L.kind === 'camera') continue;   // no picture (§5.4)
+          if (L.kind === 'audio' || L.kind === 'camera') continue;   // no picture (section 5.4)
           if (item.alpha <= 0) continue;
           const wire = wireOf.get(L.idx);
-          // The RESOLVED box (§5.2) - the authored rect unless the track keyed `w`/`h`.
+          // The RESOLVED box (section 5.2) - the authored rect unless the track keyed `w`/`h`.
           const bw = item.sized ? item.w : (Number.isFinite(item.w) && item.w > 0 ? item.w : L.rect.w);
           const bh = item.sized ? item.h : (Number.isFinite(item.h) && item.h > 0 ? item.h : L.rect.h);
           if (bw <= 0 || bh <= 0) continue;
@@ -1627,7 +1627,7 @@ async function renderSequenceAuthored(
           }
           if (!src) continue;
 
-          // DEPTH-OF-FIELD / owned filter (§5.5): when the compositor owns this layer's
+          // DEPTH-OF-FIELD / owned filter (section 5.5): when the compositor owns this layer's
           // blur it bakes a variant via the SAME S1 mip lane the canvas path uses
           // (`renderFx`), at the plate's own resolution (`S·plateEff`) so the scaling
           // law holds - the quad then minifies it to `S`, and `item.scale` (carrying
@@ -1687,7 +1687,7 @@ async function renderSequenceAuthored(
   }
 
   /**
-   * **P2a - the CAPTURE TIER** (plans/104 §6.4, verbatim: "its own loop
+   * **P2a - the CAPTURE TIER** (plans/104 section 6.4, verbatim: "its own loop
    * `createSequenceTime(root).apply(grid[i])` per frame → dom-to-image capture → the
    * existing streaming mux").
    *
@@ -1708,12 +1708,12 @@ async function renderSequenceAuthored(
    * testing.
    *
    * NOT `createFrameSource`. That drives animation clocks, not the sequence session
-   * (§6.4 says so explicitly): its `frame(t)` knows nothing about `.seq-off`, the
+   * (section 6.4 says so explicitly): its `frame(t)` knows nothing about `.seq-off`, the
    * per-frame `filter`/`z-index` surface or the camera. This loop drives the same
    * `createSequenceTime` session the contact sheet uses, which is the one apply site
    * every still and every preview already goes through.
    *
-   * VIDEO REFUSES, visibly (§6.4). dom-to-image serialises the DOM into an SVG
+   * VIDEO REFUSES, visibly (section 6.4). dom-to-image serialises the DOM into an SVG
    * `<foreignObject>`, and a `<video>` element does not survive that - the freeze would
    * bake one frame of it under the whole move, silently. Hybrid compositing (draw the
    * decoded frames, then the captured chrome over them) is P2b's job with the GPU
@@ -1721,7 +1721,7 @@ async function renderSequenceAuthored(
    *
    * The static-chrome fast path self-declines here for a reason worth stating: the
    * session writes inline styles on every frame, which raises MutationObserver records,
-   * so every frame pays a full dom-to-image serialisation. That is the price §6.4 named
+   * so every frame pays a full dom-to-image serialisation. That is the price section 6.4 named
    * in advance, and it is why the log below quotes an estimate rather than pretending
    * this is free.
    */
@@ -1747,7 +1747,7 @@ async function renderSequenceAuthored(
       // all N cuts: a per-frame session would capture frame 0's composed pose as
       // "authored" and compound the offsets from frame 1 onward. It composes normally
       // because `renderSequence`'s `withAuthoredDom` scope was opened BEFORE it existed
-      // (§6 point 0) - the other writers are stood down, this one is not in the snapshot.
+      // (section 6 point 0) - the other writers are stood down, this one is not in the snapshot.
       const session = createSequenceTime(stageEl);
       // The stage's own background rides along inside the photograph (there is no
       // separate bg plate here - the whole artboard is one shot), so a transparent
@@ -2062,7 +2062,7 @@ export function supportsWorkerSequenceRender(): boolean {
 }
 
 /**
- * The opt-in flag for the P2b GPU compositor (plans/104 §6.4) - its own switch,
+ * The opt-in flag for the P2b GPU compositor (plans/104 section 6.4) - its own switch,
  * separate from the worker one, so a user can trial the tilt compositor without also
  * moving the untilted render off-thread. A test flips it with
  * `localStorage.setItem('lolly.glCompositor', '1')`.

@@ -3,7 +3,7 @@
  * beam-protocol - the message and state layer for a **Beam**: an AirDrop-grade,
  * serverless hand-off of a saved session, a whole project, the user's own assets, or
  * a tag pack, over the direct channel the pairing ceremony already established
- * (plan 100 §6.4, §11.6, §11.15a, §11.18, §11.24).
+ * (plan 100 section 6.4, section 11.6, section 11.15a, section 11.18, section 11.24).
  *
  * WHAT THIS FILE IS NOT. There is no `RTCDataChannel` here, no Worker, no IndexedDB,
  * no OPFS, no `fetch`, no DOM, and no wall clock. This module is pure logic: it
@@ -12,19 +12,19 @@
  * **drivers** that sit outside and feed these machines - which is what lets the whole
  * protocol be exercised headlessly, byte-exactly, against an in-memory sink.
  *
- * That separation is not tidiness. §11.15a requires beam work to run off the main
- * thread with chunks streaming to staging as they arrive, and §11.18 requires a
+ * That separation is not tidiness. section 11.15a requires beam work to run off the main
+ * thread with chunks streaming to staging as they arrive, and section 11.18 requires a
  * cancelled transfer to leave nothing behind. Both are properties of the *driver* - 
  * but they are only provable if the protocol never touches storage itself and never
  * decides on its own when to write. So:
  *
  *   - the sender is **pull-based** (`nextChunk()`), so the transport decides the
  *     pace. The `bufferedamountlow` integration point is "call nextChunk() again";
- *     nothing is ever pushed on a timer or a microtask of our own (§11.6);
+ *     nothing is ever pushed on a timer or a microtask of our own (section 11.6);
  *   - the receiver writes through an injected `BeamSink` (`write`/`finalize`/
  *     `discard`), so the IDB/OPFS integration is a driver, not part of the protocol;
  *   - **every terminal path that is not `complete` calls `sink.discard()` exactly
- *     once** (§11.18: no partial ingest). Decline, protocol violation, peer cancel,
+ *     once** (section 11.18: no partial ingest). Decline, protocol violation, peer cancel,
  *     channel death and `dispose()` all land there. That is one latch and one test,
  *     rather than an audit of every exit.
  *
@@ -43,13 +43,13 @@
  *   cancel {reason}                     ◀─▶   either side, at any moment
  *
  * A chunk is TWO frames - a JSON header immediately followed by its binary payload.
- * The channel that carries a beam is reliable-ordered (§11.6: beam gets its own
+ * The channel that carries a beam is reliable-ordered (section 11.6: beam gets its own
  * channel so a bulk transfer never queues ops or presence behind it), so the header
  * is guaranteed to arrive before its bytes. A payload with no pending header, or a
  * second header with no payload between, is a protocol violation - that pairing is
  * the only framing this needs, and it costs nothing on the wire.
  *
- * ── The consent gate (§6.4, §11.24) ──────────────────────────────────────────
+ * ── The consent gate (section 6.4, section 11.24) ──────────────────────────────────────────
  *
  * Nothing transfers on pairing alone. The offer discloses kind, name, item count,
  * per-item labels and the exact byte total BEFORE anything moves ("Receive 'Berlin
@@ -58,7 +58,7 @@
  * that cancels and discards. A peer cannot push bytes at a device that has not said
  * yes, and the machine proves it rather than the UI promising it.
  *
- * ── Integrity (§6.4, §11.18) ─────────────────────────────────────────────────
+ * ── Integrity (section 6.4, section 11.18) ─────────────────────────────────────────────────
  *
  * Checksums are the catalog's own primitive: SRI `sha256-<base64>`, byte-for-byte the
  * form `scripts/checksum-assets.ts` writes and `bridge/assets.ts` verifies against, so
@@ -71,14 +71,14 @@
  *
  * The hasher is injectable for two reasons, and only one of them is tests. Web Crypto
  * has no streaming digest, so the built-in `sha256Hasher` retains each chunk until
- * `digest()` - O(item) memory, which is exactly what §11.15a says a 38 MB beam must
+ * `digest()` - O(item) memory, which is exactly what section 11.15a says a 38 MB beam must
  * not do in the renderer. The escape hatch is `BeamSink.finalize()`: a driver that
  * holds the staged bytes anyway may return the digest from `finalize`, and that value
  * wins over (and is computed instead of) anything the hasher would produce - pass
  * `hasher: null` and the protocol buffers nothing at all. A driver that supplies
  * neither fails closed (`sink-failure`), never "verified" by omission.
  *
- * ── Untrusted discipline (§11.21 applied to bulk transfer) ───────────────────
+ * ── Untrusted discipline (section 11.21 applied to bulk transfer) ───────────────────
  *
  * Every inbound frame is peer-controlled input from someone you paired with, and is
  * treated that way: one strict parser (`parseBeamMessage`) is the single door, with
@@ -100,7 +100,7 @@
  * not range: a peer on another wire version gets an explicit `protocol-version`
  * refusal rather than a best-effort guess. No wall clock is read anywhere in this
  * file - a beam between two airgapped devices with wrong clocks behaves identically
- * (§11.7's rule, honoured here for the same reason).
+ * (section 11.7's rule, honoured here for the same reason).
  */
 
 import { ulid } from '../lib/row-id.ts';
@@ -112,10 +112,10 @@ import { ulid } from '../lib/row-id.ts';
  *  than half-understood. Independent of CANVAS_OP_VERSION and CONTRACT_VERSION. */
 export const BEAM_PROTOCOL_VERSION = 1;
 
-/** Default payload size for one chunk frame. §11.6: every SCTP message stays ≤64 KB
+/** Default payload size for one chunk frame. section 11.6: every SCTP message stays ≤64 KB
  *  to be cross-browser safe, and a chunk frame is the largest thing a beam sends. */
 export const DEFAULT_CHUNK_BYTES = 64 * 1024;
-/** Hard ceiling for one payload frame - the §11.6 SCTP limit, not a preference. */
+/** Hard ceiling for one payload frame - the section 11.6 SCTP limit, not a preference. */
 export const MAX_CHUNK_BYTES = 64 * 1024;
 /** Floor, so a hostile or buggy driver cannot turn a 38 MB beam into 38 M frames. */
 export const MIN_CHUNK_BYTES = 1024;
@@ -138,7 +138,7 @@ export const MAX_MESSAGE_CHARS = 128 * 1024;
 /** SRI SHA-256, the catalog's checksum form: 32 raw bytes → 43 base64 chars + `=`. */
 export const CHECKSUM_RE = /^sha256-[A-Za-z0-9+/]{43}=$/;
 
-/** What a beam carries (§6.4). Additive: a new kind is a minor wire bump. */
+/** What a beam carries (section 6.4). Additive: a new kind is a minor wire bump. */
 export const BEAM_KINDS = ['session', 'assets', 'project', 'tag-pack'] as const;
 export type BeamKind = (typeof BEAM_KINDS)[number];
 
@@ -161,7 +161,7 @@ export type BeamCancelReason =
   | 'too-large'
   /** More items than the receiver will take. */
   | 'too-many-items'
-  /** Bytes (or a chunk header) arrived before consent - the §11.24 gate. */
+  /** Bytes (or a chunk header) arrived before consent - the section 11.24 gate. */
   | 'unsolicited-bytes'
   /** `seq` was not the next one for this item. */
   | 'bad-sequence'
@@ -195,7 +195,7 @@ export type BeamEndReason = BeamCancelReason | BeamDeclineReason;
 /** One thing inside a beam. `checksum` is SRI SHA-256 over the item's exact bytes. */
 export interface BeamItem {
   /** Sender-local id (a session slot, an upload id). Receiver-local ids are re-keyed
-   *  on ingest by the driver - §11.18 - so this is a label for humans and dedup, not
+   *  on ingest by the driver - section 11.18 - so this is a label for humans and dedup, not
    *  an address. */
   readonly id: string;
   /** What the human sees in the consent sheet. May be empty. */
@@ -475,7 +475,7 @@ export async function sriSha256(bytes: Uint8Array): Promise<string> {
 
 /**
  * The built-in incremental hasher. Web Crypto has no streaming digest, so this
- * RETAINS every chunk until `digest()` - O(item) memory, which §11.15a explicitly
+ * RETAINS every chunk until `digest()` - O(item) memory, which section 11.15a explicitly
  * does not want in the renderer for a 38 MB beam. Two ways out, both supported:
  * return the digest from `BeamSink.finalize()` (the driver holds the bytes anyway),
  * or inject a real streaming hasher from the Worker. Passing `hasher: null` with a
@@ -529,16 +529,16 @@ export interface BeamSource {
 
 /**
  * Where the receiver stages bytes. The whole IDB/OPFS integration is this interface
- * (§11.15a) - the protocol never learns what a staging row is.
+ * (section 11.15a) - the protocol never learns what a staging row is.
  *
  * `finalize` SEALS an item's staging - it is emphatically NOT ingestion. Verification
- * happens after it (that is where a corrupted item is caught), and §11.18 means
+ * happens after it (that is where a corrupted item is caught), and section 11.18 means
  * nothing may enter the user's library until the receiver reaches `complete`. A
  * driver that ingests on `finalize` has broken the no-partial-ingest guarantee.
  * `finalize` MAY return the SRI digest of everything staged for the item; when it
  * does, that is what gets verified and the protocol never buffers the bytes itself.
  *
- * `discard()` must be safe to call having staged nothing at all: §11.18's guarantee
+ * `discard()` must be safe to call having staged nothing at all: section 11.18's guarantee
  * is unconditional, so it fires on a decline too, and it is called at most once.
  */
 export interface BeamSink {
@@ -641,7 +641,7 @@ export interface BeamSenderOptions {
   /**
    * Opt-in: re-digest what is actually read and send THAT in `item-done`, refusing
    * to continue if the source has drifted from the offer. Off by default, because
-   * the built-in hasher would hold a whole item in renderer memory (§11.15a) for a
+   * the built-in hasher would hold a whole item in renderer memory (section 11.15a) for a
    * guarantee the receiver already enforces against the offered checksum.
    */
   readonly hasher?: BeamHasher | null;
@@ -1013,7 +1013,7 @@ export interface BeamRecvState {
   readonly progress: BeamProgress;
   readonly reason?: BeamEndReason;
   readonly detail?: string;
-  /** Has `sink.discard()` run? The §11.18 invariant, observable. */
+  /** Has `sink.discard()` run? The section 11.18 invariant, observable. */
   readonly discarded: boolean;
 }
 
@@ -1041,7 +1041,7 @@ export interface BeamReceiver {
   receive(raw: unknown): void;
   /** One inbound binary payload frame. */
   receiveBinary(bytes: Uint8Array): void;
-  /** The consent gate (§11.24). Only meaningful while an offer is on the table. */
+  /** The consent gate (section 11.24). Only meaningful while an offer is on the table. */
   accept(): void;
   decline(reason?: BeamDeclineReason): void;
   cancel(reason?: BeamCancelReason, detail?: string): void;
@@ -1050,7 +1050,7 @@ export interface BeamReceiver {
   /** Resolve once every queued staging write, finalize and verify has settled. */
   drain(): Promise<void>;
   subscribe(fn: (state: BeamRecvState) => void): () => void;
-  /** Teardown. An unfinished beam is aborted first, so staging never leaks (§11.18). */
+  /** Teardown. An unfinished beam is aborted first, so staging never leaks (section 11.18). */
   dispose(): void;
 }
 
@@ -1118,7 +1118,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
     }
   }
 
-  /** The §11.18 latch: at most once, and on every terminal that is not `complete`. */
+  /** The section 11.18 latch: at most once, and on every terminal that is not `complete`. */
   function discardOnce(): void {
     if (discarded) return;
     discarded = true;
@@ -1129,7 +1129,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
         /* teardown must not resurrect a dead transfer */
       }
     };
-    // BOTH handlers, deliberately: §11.18's guarantee is unconditional, so a chain
+    // BOTH handlers, deliberately: section 11.18's guarantee is unconditional, so a chain
     // that has somehow rejected must still reach the discard - a bare `.then(run)`
     // would skip it and leave the staged bytes behind, which is the one outcome
     // this latch exists to make impossible.
@@ -1154,7 +1154,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
    * reached `end()`. `discardOnce()` never fired, `phase` stayed `receiving`, and
    * the receiver went on accepting and STAGING bytes from the peer it had just
    * judged to be violating the protocol. Both headline guarantees broke on one
-   * line: §11.18's exactly-once discard, and "never a thrown exception". Announcing
+   * line: section 11.18's exactly-once discard, and "never a thrown exception". Announcing
    * afterwards through the non-throwing `wireJson` costs nothing and cannot.
    */
   function fail(why: BeamCancelReason, why2?: string, silent = false): void {
@@ -1208,14 +1208,14 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
 
   function declineWith(why: BeamDeclineReason): void {
     // Same order as `fail`, for the same reason: a decline that could not be sent is
-    // still a decline, and §11.18's discard must not depend on the wire.
+    // still a decline, and section 11.18's discard must not depend on the wire.
     const target = offer;
     end('declined', why);
     if (target) wireJson({ v: BEAM_PROTOCOL_VERSION, beamId: target.beamId, t: 'decline', reason: why });
   }
 
   function onChunkHeader(msg: BeamChunkMessage): void {
-    // THE CONSENT GATE (§6.4, §11.24). Nothing about the transfer is inspected first
+    // THE CONSENT GATE (section 6.4, section 11.24). Nothing about the transfer is inspected first
     // - a header before accept is refused for arriving at all.
     if (phase !== 'receiving') {
       fail('unsolicited-bytes', `chunk header in ${phase}`, !offer);
@@ -1405,7 +1405,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
       startItem();
       if (!wireJson({ v: BEAM_PROTOCOL_VERSION, beamId: offer!.beamId, t: 'accept' })) {
         // The channel died between the offer and the human saying yes. Nothing is
-        // staged yet, but the latch still runs - §11.18 is unconditional.
+        // staged yet, but the latch still runs - section 11.18 is unconditional.
         fail('transport', 'accept could not be written', true);
         return;
       }
@@ -1446,7 +1446,7 @@ export function createBeamReceiver(opts: BeamReceiverOptions): BeamReceiver {
 
     dispose() {
       // Unlike the ceremony's dispose, this one is not purely observational: a
-      // half-received beam holds staging, and §11.18 says staging never survives a
+      // half-received beam holds staging, and section 11.18 says staging never survives a
       // transfer that did not complete. So tear down first, silently.
       if (!settled()) end('cancelled', 'transport', 'disposed');
       subs.clear();

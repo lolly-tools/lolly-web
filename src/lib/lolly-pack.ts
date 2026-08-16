@@ -105,6 +105,43 @@ export interface LollyAssetEntry {
   meta?: Record<string, unknown>;
 }
 
+/**
+ * How much a carried tool's code can be trusted on the receiving device.
+ *  - `signed-catalog`: every file byte-matched the official signed catalog at pack
+ *    time, so it is identical to what the CDN would serve - trust-equivalent to a
+ *    normal install, safe to auto-provision (the importer re-verifies).
+ *  - `custom`: a fork / private-brand / hand-authored tool. Its `hooks.js` runs
+ *    unsandboxed in-realm (it is NOT a security boundary), so it may only be
+ *    provisioned behind an explicit "do you trust the author?" gate on import.
+ */
+export type LollyToolTrust = 'signed-catalog' | 'custom';
+
+/** The tool's files the caller resolved for embedding. Keys are tool-dir-relative
+ *  paths (`tool.json`, `template.html`, `hooks.js`, `assets/x.svg`, `i18n/fr.json`);
+ *  the shell fetches + integrity-checks them (that is where `trust` is decided). */
+export interface LollyToolBundle {
+  id: string;
+  version?: string;
+  trust: LollyToolTrust;
+  files: Record<string, Uint8Array | Blob>;
+}
+
+/** One carried tool file, recorded in the manifest for verify + extraction. */
+export interface LollyBundledToolFile {
+  /** Zip path (`tool/…`). */
+  path: string;
+  /** SRI `sha256-…` (also in `manifest.integrity[path]`). */
+  checksum?: string;
+}
+
+/** The manifest record for an embedded tool (present only when one was carried). */
+export interface LollyBundledTool {
+  id: string;
+  version?: string;
+  trust: LollyToolTrust;
+  files: LollyBundledToolFile[];
+}
+
 export interface LollyManifest {
   format: typeof LOLLY_FILE_FORMAT;
   formatVersion: number;
@@ -121,6 +158,8 @@ export interface LollyManifest {
   counts: { assets: number; byReference: number; bytes: number };
   creator: LollyCreator | null;
   assets: LollyAssetEntry[];
+  /** The tool's own files, when the sender chose to carry it (Wave 7 / plans 114). */
+  bundledTool?: LollyBundledTool;
   integrity?: Record<string, string> | null;
 }
 
@@ -149,6 +188,10 @@ export interface LollySummary {
   licensedExcluded: number;
   /** The creator name embedded, if any (drives the "includes your name" line). */
   creatorName?: string;
+  /** How many tool files were carried (0 = the tool travels by reference, as before). */
+  toolFiles: number;
+  /** The trust class of the carried tool, when one was embedded. */
+  toolTrust?: LollyToolTrust;
 }
 
 export interface LollyBuildInput {
@@ -166,6 +209,10 @@ export interface LollyBuildInput {
   resolveLibrary?: (id: string) => Promise<LollyLibraryAsset | null>;
   /** Carry brand-pack / licensed catalog bytes (after the licensed-content confirmation). */
   includeLicensed?: boolean;
+  /** Embed the tool's own files, so the `.lolly` opens on a device that lacks it. The
+   *  shell resolves + integrity-checks the files and decides `trust`; this module just
+   *  writes them under `tool/` and records them. Omit ⇒ the tool travels by reference. */
+  tool?: LollyToolBundle;
   creator?: LollyCreator | null;
   /** "Lolly x.y.z". */
   appVersion?: string;
@@ -226,6 +273,55 @@ function safeBase(name: string): string {
 }
 
 /**
+ * A file extension for a carried asset. Prefers the asset's own `format` (already the
+ * short token we stored - `svg`, `png`, `webp`, `json` for lottie, `mp4`, `zzfxm`),
+ * falling back to a compact mime→ext ladder. Mirrors `views/picker-formats.ts
+ * extFromMime`, kept local so this module stays self-contained + DOM-free.
+ */
+function extForAsset(format: string, mime: string): string {
+  const f = (format || '').toLowerCase();
+  if (/^[a-z0-9]{1,5}$/.test(f)) return f === 'jpeg' ? 'jpg' : f;
+  const m = (mime || '').toLowerCase();
+  if (m.includes('svg')) return 'svg';
+  if (m.includes('png')) return 'png';
+  if (m.includes('jpeg') || m.includes('jpg')) return 'jpg';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('gif')) return 'gif';
+  if (m.includes('avif')) return 'avif';
+  if (m.includes('json')) return 'json';
+  if (m.includes('pdf')) return 'pdf';
+  if (m.includes('tiff')) return 'tiff';
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('quicktime')) return 'mov';
+  if (m.includes('mp4') || m.includes('m4v')) return 'mp4';
+  if (m.startsWith('audio/')) return 'mp3';
+  return 'bin';
+}
+
+/**
+ * A usable, human-legible zip path for a carried asset's bytes - so unzipping a `.lolly`
+ * yields real files (`assets/uploads/hero-photo.jpg`, `assets/catalog/suse-logo.svg`)
+ * instead of opaque `assets/blobs/0`. The base name is the asset's own label / original
+ * upload filename (`meta.name`); the extension matches the stored bytes. Deduped within
+ * its folder (`-2`, `-3`) against `taken` (full lowercased paths), so two same-named
+ * assets never collide. Paths are the only place the byte location is recorded - the
+ * manifest carries `path` per asset and the integrity map is keyed by it - so this is
+ * purely cosmetic to the wire format and transparent to import.
+ */
+function assetPath(dir: string, base: string, format: string, mime: string, taken: Set<string>): string {
+  const ext = extForAsset(format, mime);
+  let stem = (base.split(/[\\/]/).pop() ?? base);           // last segment of an id-shaped name
+  const dot = stem.lastIndexOf('.');                        // drop an already-matching extension
+  if (dot > 0 && stem.slice(dot + 1).toLowerCase() === ext) stem = stem.slice(0, dot);
+  stem = safeBase(stem) || 'asset';
+  let name = `${stem}.${ext}`;
+  for (let n = 2; taken.has((dir + name).toLowerCase()); n++) name = `${stem}-${n}.${ext}`;
+  const full = dir + name;
+  taken.add(full.toLowerCase());
+  return full;
+}
+
+/**
  * Build a `.lolly` file for one saved session. Pure: everything platform-specific
  * (the session, the user records, catalog byte resolution, the creator identity) is
  * supplied by the caller. Reuses `lib/bundle.ts` for the envelope exactly as
@@ -240,7 +336,8 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
   let totalBytes = 0;
   let hasLicensed = false;
   let licensedExcluded = 0;
-  let blobIndex = 0;
+  // Full lowercased zip paths already used, so two same-named assets never collide.
+  const takenPaths = new Set<string>();
 
   // Device-local (user/*) assets - carried whenever we hold the bytes, always.
   for (const id of refs.user) {
@@ -253,13 +350,15 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
       continue;
     }
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const path = `assets/blobs/${blobIndex++}`;
+    const label = labelOf(record.meta) ?? id;
+    const format = record.format ?? '';
+    const mime = blob.type || '';
+    const path = assetPath('assets/uploads/', label, format, mime, takenPaths);
     entries[path] = [bytes, { level: 0 }];   // already-compressed image/av bytes
     totalBytes += bytes.length;
     assets.push({
       kind: 'asset', id, source: 'user', path, bytes: bytes.length,
-      label: labelOf(record.meta) ?? id,
-      type: record.type ?? 'data', format: record.format ?? '', mime: blob.type || '',
+      label, type: record.type ?? 'data', format, mime,
       ...(record.meta ? { meta: record.meta } : {}),
     });
   }
@@ -279,7 +378,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
       continue;
     }
     const bytes = await toBytes(lib.bytes);
-    const path = `assets/blobs/${blobIndex++}`;
+    const path = assetPath('assets/catalog/', lib.label ?? id, lib.format, lib.mime, takenPaths);
     entries[path] = [bytes, { level: 0 }];
     totalBytes += bytes.length;
     assets.push({
@@ -289,6 +388,15 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
       ...(lib.meta ? { meta: lib.meta } : {}),
     });
   }
+
+  // The tool's own files, when the sender chose to carry it - under `tool/`, folded
+  // into the same integrity map so a reader verifies the code exactly like the assets.
+  // Text (tool.json/template/hooks/css/i18n) deflates; already-compressed binaries
+  // (thumb, fonts, tool-local media) are stored. The `trust` marker is the shell's
+  // call (signed-catalog byte-match vs custom); this module only records it.
+  const bundledTool = input.tool && Object.keys(input.tool.files).length
+    ? await packBundledTool(input.tool, entries)
+    : null;
 
   // The session payload, integrity-protected alongside the blobs.
   entries['session.json'] = strToU8(JSON.stringify(input.session ?? null, null, 2));
@@ -301,12 +409,17 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     hasLicensed,
     licensedExcluded,
     ...(input.creator?.name ? { creatorName: input.creator.name } : {}),
+    toolFiles: bundledTool?.files.length ?? 0,
+    ...(bundledTool ? { toolTrust: bundledTool.trust } : {}),
   };
 
-  // Integrity over every payload part (session + blobs), BEFORE the manifest (which
-  // carries the map) and the README - mirroring bundle.ts's contract.
+  // Integrity over every payload part (session + blobs + tool files), BEFORE the
+  // manifest (which carries the map) and the README - mirroring bundle.ts's contract.
   const integrity = await buildIntegrity(entries);
-  if (integrity) for (const a of assets) if (a.path) a.checksum = integrity[a.path];
+  if (integrity) {
+    for (const a of assets) if (a.path) a.checksum = integrity[a.path];
+    if (bundledTool) for (const f of bundledTool.files) f.checksum = integrity[f.path];
+  }
 
   const manifest: LollyManifest = {
     format: LOLLY_FILE_FORMAT,
@@ -321,6 +434,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     counts: { assets: summary.assetCount, byReference: byReferenceCount, bytes: totalBytes },
     creator: input.creator ?? null,
     assets,
+    ...(bundledTool ? { bundledTool } : {}),
     ...(integrity ? { integrity } : {}),
   };
   entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
@@ -330,6 +444,35 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
   const filename = `${safeBase(input.name || input.toolId)}${LOLLY_EXT}`;
   const blob = new Blob([zipped as BlobPart], { type: LOLLY_MIME });
   return { blob, filename, manifest, summary };
+}
+
+/** Binary tool files store verbatim; text (tool.json/template/hooks/css/i18n) deflates. */
+const TOOL_BINARY_RE = /\.(png|jpe?g|webp|gif|avif|ico|woff2?|ttf|otf|mp4|webm|mp3|wav|ogg|pdf)$/i;
+
+/**
+ * Write a carried tool's files under `tool/` into the zip entries and return its
+ * manifest record. A tool-dir-relative path is normalised to a zip-safe `tool/…`
+ * path (leading slashes and any `..` segment stripped, so a malicious manifest can
+ * never escape the folder). Checksums are stamped later from the integrity map.
+ */
+async function packBundledTool(tool: LollyToolBundle, entries: Record<string, BundleEntry>): Promise<LollyBundledTool> {
+  const files: LollyBundledToolFile[] = [];
+  for (const [rel, data] of Object.entries(tool.files)) {
+    const segs = rel.split(/[\\/]/);
+    if (segs.some(seg => seg === '..')) continue;   // reject traversal outright, never relocate
+    const safeRel = segs.filter(seg => seg && seg !== '.').join('/');
+    if (!safeRel) continue;
+    const path = `tool/${safeRel}`;
+    const bytes = await toBytes(data);
+    entries[path] = TOOL_BINARY_RE.test(safeRel) ? [bytes, { level: 0 }] : bytes;
+    files.push({ path });
+  }
+  return {
+    id: tool.id,
+    ...(tool.version ? { version: tool.version } : {}),
+    trust: tool.trust,
+    files,
+  };
 }
 
 function labelOf(meta: Record<string, unknown> | undefined): string | undefined {
@@ -344,10 +487,22 @@ function lollyReadme(manifest: LollyManifest, summary: LollySummary): string {
     'This is a .lolly file — a design created with Lolly.',
     `Open it in Lolly (https://lolly.tools) to keep editing: drop it onto the app, or use Open.`,
     '',
-    `Tool:     ${manifest.tool.id}`,
+    `Tool:     ${manifest.tool.id}${manifest.bundledTool ? ' (included)' : ''}`,
     `Assets:   ${summary.assetCount} embedded, ${summary.byReferenceCount} by reference`,
     `Exported: ${manifest.exportedAt}`,
   ];
+  if (manifest.bundledTool) {
+    lines.push('', `This file includes the tool itself (under tool/), so it opens even on a`,
+      `device that doesn't already have "${manifest.bundledTool.id}".`);
+  }
+  if (summary.assetCount > 0) {
+    // A .lolly is a plain zip: rename it .zip and open it. The embedded assets are
+    // ordinary files under assets/ with their original names + extensions, so a
+    // designer can lift any one out directly. manifest.json maps each back to its id.
+    lines.push('', 'The embedded assets are under assets/uploads/ (your files) and',
+      'assets/catalog/ (brand + catalog art), with their real names and extensions —',
+      'rename this file to .zip to browse them. manifest.json lists each one.');
+  }
   const c = manifest.creator;
   if (c?.name || c?.org) {
     lines.push('', '[ Created by ]');
@@ -383,6 +538,38 @@ export async function readLollyFile(bytes: ArrayBuffer | Uint8Array): Promise<Lo
   await verifyIntegrity(files, manifest.integrity, 'This .lolly file');
   const session = readJson(files, 'session.json');
   return { manifest, session, files: files as Record<string, Uint8Array> };
+}
+
+/** A carried tool pulled out of a parsed `.lolly`, ready to hand to the installer.
+ *  `files` are keyed by tool-dir-relative path (the `tool/` prefix stripped), exactly
+ *  the shape `loadTool`'s `fetchFile` expects. */
+export interface LollyToolContents {
+  id: string;
+  version?: string;
+  trust: LollyToolTrust;
+  files: Record<string, Uint8Array>;
+}
+
+/**
+ * Extract the embedded tool from a parsed `.lolly`, or null when none was carried.
+ * The bytes are already integrity-verified by `readLollyFile`; this only maps the
+ * manifest's `bundledTool.files` back to their bytes and strips the `tool/` prefix.
+ * The caller still decides whether to install it (trust gate) - extraction is inert.
+ */
+export function extractBundledTool(contents: LollyFileContents): LollyToolContents | null {
+  const bt = contents.manifest.bundledTool;
+  if (!bt || !Array.isArray(bt.files) || !bt.files.length) return null;
+  const files: Record<string, Uint8Array> = {};
+  for (const f of bt.files) {
+    const bytes = contents.files[f.path];
+    if (bytes) files[f.path.replace(/^tool\//, '')] = bytes;
+  }
+  return {
+    id: bt.id,
+    ...(bt.version ? { version: bt.version } : {}),
+    trust: bt.trust === 'signed-catalog' ? 'signed-catalog' : 'custom',
+    files,
+  };
 }
 
 // ── Import (ingest) ───────────────────────────────────────────────────────────

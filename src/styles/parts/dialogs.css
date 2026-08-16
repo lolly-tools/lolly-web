@@ -29,8 +29,15 @@
 .modal .modal-primary {
   border-color: hsl(var(--primary));
 }
-/* Choice buttons can carry longer labels than OK/Cancel — let them wrap. */
+/* Choice buttons can carry longer labels than OK/Cancel — on a narrow screen they
+   wrap (and the modal stays 420px). On desktop there's no need to cramp them: let
+   the modal grow to fit its options on ONE row (same idea as .unsaved-dialog's
+   widening), capped so a very wordy chooser still can't run off the screen. */
 .modal-actions--choices { flex-wrap: wrap; }
+@media (min-width: 641px) {
+  .modal:has(.modal-actions--choices) { width: auto; max-width: min(760px, 92vw); }
+  .modal-actions--choices { flex-wrap: nowrap; }
+}
 /* askExportLock's password + zip-tier controls (lib/export-lock.ts). Both are
    plain `.field-input` / `.field-select` now; the only thing the old inline
    recipe carried that the primitive doesn't is the hairline gap between the two
@@ -241,6 +248,18 @@
 .share-file-text strong { font-size: calc(13px * var(--a11y-fs)); }
 .share-file-note { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); line-height: 1.4; }
 .share-file-btn { flex: 0 0 auto; }
+/* "Include the tool" toggle — revealed once its offer resolves (see share-dialog.ts). */
+.share-file-tool {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.share-file-tool[hidden] { display: none; }
+.share-file-tool input { flex: 0 0 auto; }
 .share-file-licensed { flex: 1 1 100%; }
 .share-file-licensed[hidden] { display: none; }
 .share-file-warn {

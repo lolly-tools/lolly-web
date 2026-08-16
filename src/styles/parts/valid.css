@@ -1294,7 +1294,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-note--warn { border-color: hsl(var(--vf-warn) / 0.4); background: hsl(var(--vf-warn) / 0.08); }
 .valid-note--warn .valid-note-ic { background: hsl(var(--vf-warn) / 0.22); color: hsl(30 75% 30%); }
 
-/* §18.28 ai-disclosure — the shared GEN-AI violet (--vf-ai-*, tokens.css), the
+/* section 18.28 ai-disclosure — the shared GEN-AI violet (--vf-ai-*, tokens.css), the
    same family as the catalog's GEN-AI pill and the /verify AI banner, because it
    is the same subject. Quieter than .valid-ai-flag on purpose: that one reports
    a declaration of AI-generated CONTENT, this one records which model the signer

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * HDR PNG at 16 bits per channel - the first "invisible upgrade" of
- * plans/61-deeprichpixels.md §10 item 2.
+ * plans/61-deeprichpixels.md section 10 item 2.
  *
  * Before this module, `?hdr=1&format=png` ran the canvas through the engine's
  * legacy byte path (`hdrBoostToPQ`: 8-bit in, 8-bit PQ code values out) and then
- * spliced a cICP chunk into the browser's own PNG bytes. That is §1's sharpest
+ * spliced a cICP chunk into the browser's own PNG bytes. That is section 1's sharpest
  * recorded defect: PQ is a 10/12-bit transfer by design, so quantising it to 8
  * bits bands the shadows - the very place PQ spends its code values. The fix is
  * not a new toggle: the same `hdr=` request now routes through the float view
@@ -17,7 +17,7 @@
  *                -> pqToU16           (0..65535, the precision PQ was designed for)
  *                -> packPng           (depth 16, cICP 9/16/0/1, pHYs)
  *
- * ─── Why this is not padding (the honesty rule, plan §10) ────────────────────
+ * ─── Why this is not padding (the honesty rule, plan section 10) ────────────────────
  * "Depth follows provenance - never emit bits the pipeline did not produce."
  * A 16-bit TIFF of an 8-bit canvas render is padding. This is NOT that: the
  * bits below the 8th are *generated* by real float math on the way out. The
@@ -35,7 +35,7 @@
  * `depth=8` is IGNORED here (with a logged note): 8-bit PQ *is* the banding
  * defect the plan forbids, so honouring the request would re-introduce it under
  * a different name. `depth=float` is also noted and satisfied at 16 - PNG has no
- * float sample format (that is EXR's job, plan §4.2 B3). 16/auto/absent take
+ * float sample format (that is EXR's job, plan section 4.2 B3). 16/auto/absent take
  * this path silently, which is what "auto = the deepest the provenance chain
  * supports" means for an HDR PNG.
  *
@@ -66,7 +66,7 @@
  * top 8 bits therefore carry precisely the pattern a detector expects, while the
  * low byte keeps the PQ precision. A mark is never silently skipped.
  *
- * ─── Size (the plan §9b blocker, lifted in Phase B3) ─────────────────────────
+ * ─── Size (the plan section 9b blocker, lifted in Phase B3) ─────────────────────────
  * This path used to refuse past ~2.1 megapixels, because `deflate.ts` compressed
  * in one shot with ~8x scratch: a 4K 16-bit master (8.3 MP, ~66 MiB filtered)
  * meant ~530 MiB of tokenizer scratch, and the alternative - a stored,
@@ -145,7 +145,7 @@ export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): 
   if (!(width > 0) || !(height > 0) || rgba.length !== width * height * 4) {
     throw new Error(`encodeHdrPng16: ${rgba.length} samples for ${width}x${height} (expected ${width * height * 4}).`);
   }
-  // depth= is a request, never a promise (plan §10). Deep is the only honest
+  // depth= is a request, never a promise (plan section 10). Deep is the only honest
   // answer for PQ, so an 8-bit request is answered and explained, not obeyed.
   if (o.depth === 8) {
     log('info', 'png: depth=8 ignored for an HDR export — PQ code values quantised to 8 bits band in the shadows, so HDR PNG is always written at 16 bits per channel.');
@@ -191,7 +191,7 @@ export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): 
   if (filtered > cap) {
     // Past the compressor's single-shot ceiling a stored IDAT would ship a
     // ~60 MB 4K file. Until the slab-fed deflater lands (deflate.ts TODO,
-    // plans/61-deeprichpixels.md §9b) refuse instead: the caller falls back to
+    // plans/61-deeprichpixels.md section 9b) refuse instead: the caller falls back to
     // the legacy 8-bit PQ path, so an existing link never silently balloons.
     throw new Error(`png: ${width}x${height} at 16 bits is ${(filtered / (1024 * 1024)).toFixed(1)} MiB of scanlines, past the deep-PNG size ceiling`);
   }

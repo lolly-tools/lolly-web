@@ -529,7 +529,7 @@ background-image:
 .be-logo-empty { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
 .be-logo-hint { margin: 0; font-size: calc(.7rem * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); }
 
-/* ── Logo intake — level 0 of the room (plan 97 §7.3) ──────────────────────────
+/* ── Logo intake — level 0 of the room (plan 97 section 7.3) ──────────────────────────
    One multi-file drop zone, then a queue of confirm chips: a dropped file is
    classified, proposes a slot and waits for a tap. The zone is a genuine drop
    area, which is why it (and the per-slot tiles above) are the only dashed
@@ -595,7 +595,7 @@ background-image:
 .be-logo-chip-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem; }
 /* A square box, not a bare glyph: this is the destructive control of the chip and
    it sits a few pixels from the primary one. 28px at rest, a full 44px target on a
-   coarse pointer (plan 97 §11) — the same treatment .labp-close takes. */
+   coarse pointer (plan 97 section 11) — the same treatment .labp-close takes. */
 .be-logo-chip-x {
   flex: none; display: grid; place-items: center;
   width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs));
@@ -624,7 +624,7 @@ background-image:
   .be-logo-chip-acts { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
-/* Touch: every control in the intake queue is a real 44px target (plan 97 §11).
+/* Touch: every control in the intake queue is a real 44px target (plan 97 section 11).
    The chip's own actions ride .be-btn--sm, which is sized for a mouse, so the
    height is lifted here rather than in the shared button primitive — this queue
    is the surface with a destructive control inches from a primary one. */
@@ -654,7 +654,7 @@ background-image:
 /* Gradients list — folded with a count chip while unopened. */
 .be-grads-details .be-grad-list { margin-top: .7rem; }
 
-/* ── Colour-room wings (plan 97 §7.1) — the level-2 expert controls, folded
+/* ── Colour-room wings (plan 97 section 7.1) — the level-2 expert controls, folded
       until asked. Same disclosure family as .be-subst-details, at panel scale:
       the wing IS the panel, so it borrows .be-panel's box and adds a summary
       row. Closed on mount, no persistence — the palette's own sections do the
@@ -880,7 +880,7 @@ background-image:
 }
 .be-suggest-dismiss:hover { color: hsl(var(--foreground)); }
 
-/* ── Type room level 0 (plan 97 §7.2): the four role cards.
+/* ── Type room level 0 (plan 97 section 7.2): the four role cards.
       brand-editor.ts updates these IN PLACE (textContent + one class), never by
       re-rendering, so nothing here may assume a fresh element on every paint.
 
@@ -913,7 +913,7 @@ background-image:
 .be-typecard-sample--mono { font-size: calc(.86rem * var(--a11y-fs)); }
 .be-typecard-act { justify-self: start; }
 
-/* ── The compare stage's frame (plan 97 §7.2). Everything INSIDE
+/* ── The compare stage's frame (plan 97 section 7.2). Everything INSIDE
       [data-be-typestage-mount] belongs to styles/parts/type-compare.css, which
       the stage module imports; this is only the panel the room wraps it in — the
       title, the close, and the Google search that seeds candidates. */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-session - the ONE object a mounted tool needs to be in a collab
- * (plan 100 §4.6, §5; wave 1.x).
+ * (plan 100 section 4.6, section 5; wave 1.x).
  *
  * Wave 0 and wave 1.1 each landed a piece of the machine, and deliberately did
  * not wire them together: `collab-plumbing.ts` moves ops, `collab-presence.ts`
@@ -23,7 +23,7 @@
  *   4. the roster               → collaborator colours, and one state stream the
  *                                 collab pill / focus overlay / projects badge read
  *
- * ── THE GUARD SITS ON BOTH INBOUND WIRES (§6.3, §11.21) ───────────────────────
+ * ── THE GUARD SITS ON BOTH INBOUND WIRES (section 6.3, section 11.21) ───────────────────────
  *
  * Wires 1 and 3 are the ONLY two doors a peer's bytes come through, and this module
  * owns both of them. So this is where `createOpGuard` runs, once per session, built
@@ -43,7 +43,7 @@
  *  - **Drop is not disconnect.** An op this build simply does not recognise (an
  *    input id a newer peer declares, a value that lost its type) is dropped, that
  *    op only, and the session carries on: PWA staleness makes version skew routine
- *    (§11.19). A STRUCTURAL breach (a prototype key, a depth/length/rate cap) has
+ *    (section 11.19). A STRUCTURAL breach (a prototype key, a depth/length/rate cap) has
  *    no innocent sender, and `ABUSE_REASONS` is the set that says so. It is raised
  *    as {@link CollabAbuseEvent} through `onAbuse`, and NOTHING is closed from
  *    here: disconnecting is a transport decision (it owns the peer connection, the
@@ -65,10 +65,10 @@
  *    reaches `phase: 'connected'`, and the RTC provider (wave 2.3) builds a handle:
  *    `adapter` is the `ReferenceCanvasDoc`, `presenceIn` is the unordered
  *    `maxRetransmits: 0` data channel, `sendPresence` writes to it, `events` maps
- *    ICE state (`disconnected` → `'reconnecting'`, NEVER a leave - §11.3), `self`
+ *    ICE state (`disconnected` → `'reconnecting'`, NEVER a leave - section 11.3), `self`
  *    carries the name and palette index chosen at ceremony time (`sdp-codec.ts`
  *    carries `colorIndex` as a u8 for exactly this), and `hostClientId` is the
- *    inviter's. The inviter owns the session (§6.2a), which is what lets a
+ *    inviter's. The inviter owns the session (section 6.2a), which is what lets a
  *    nameless peer render as "Host" rather than "Invitee".
  *  - **Track B (work collab, `org/collab-provider.ts`).** The registered Yjs
  *    adapter is `adapter`; `presenceIn`/`sendPresence` sit on the room's awareness
@@ -76,7 +76,7 @@
  *    where the adapter owns awareness itself); `events` maps socket state; `self`
  *    carries the SSO display name; `role` comes from `org/collab-config.ts`'s
  *    `canEditCollab()` - a member who may join but not edit is an `'observer'`,
- *    and so is either peer after a `CANVAS_OP_VERSION` major mismatch (contract §9).
+ *    and so is either peer after a `CANVAS_OP_VERSION` major mismatch (contract section 9).
  *
  * Neither transport is imported here, and this module is never the thing that
  * decides a collab exists - `mountTool` asks for a handle and gets `null` in every
@@ -91,7 +91,7 @@
  * Their own edits simply never become ops. Detaching the plumbing instead would
  * silently stop their view updating, which is the opposite of observing.
  *
- * ── FOCUS IS THE DEFAULT PRESENCE PRIMITIVE (§4.1) ────────────────────────────
+ * ── FOCUS IS THE DEFAULT PRESENCE PRIMITIVE (section 4.1) ────────────────────────────
  *
  * Not a cursor: the canvas is a rendered preview, so "which control are you in"
  * is the thing that generalises to every tool. One delegated `focusin`/`focusout`
@@ -103,7 +103,7 @@
  * sidebar's innerHTML rebuilds, which a per-control listener would not.
  *
  * Nothing here writes a class or an attribute into tool DOM. The remote-focus
- * paint is an overlay anchored from element rects (§4.6, wave 1.2) and lives
+ * paint is an overlay anchored from element rects (section 4.6, wave 1.2) and lives
  * outside `.tool-canvas` - this module only decides WHAT to say about focus.
  *
  * ── TIME ──────────────────────────────────────────────────────────────────────
@@ -137,10 +137,10 @@ import { rowIdField } from './row-id.ts';
 export type CollabRole = 'writer' | 'observer';
 
 /**
- * The connection as a human reads it in the collab pill's dot (§4.6).
+ * The connection as a human reads it in the collab pill's dot (section 4.6).
  *
  * `'reconnecting'` is a first-class state and not a synonym for trouble: ICE
- * `disconnected` self-heals in seconds on a UDP blip (§11.3), so the transport
+ * `disconnected` self-heals in seconds on a UDP blip (section 11.3), so the transport
  * reports it here, the avatar greys, and NOBODY is evicted. Only `'closed'` means
  * the session is over.
  */
@@ -154,12 +154,12 @@ export interface CollabStream<T> {
   subscribe(fn: (value: T) => void): () => void;
 }
 
-/** This client's identity on the wire - chosen, never leaked (§11.23). */
+/** This client's identity on the wire - chosen, never leaked (section 11.23). */
 export interface CollabSelf {
   /** The per-device collab client id (a random ULID, `collab-plumbing.ts`). */
   readonly clientId: string;
   /** The display name chosen at ceremony time, or absent for an anonymous peer
-   *  (the UI then renders the role fallback - §4.5). Never a profile field. */
+   *  (the UI then renders the role fallback - section 4.5). Never a profile field. */
   readonly name?: string;
   /** Preferred slot in the derived collaborator palette. Carried across the wire
    *  as a u8 by `sdp-codec.ts`, so both sides agree without negotiating. */
@@ -176,17 +176,17 @@ export interface CollabSessionHandle {
   readonly role: CollabRole;
   readonly self: CollabSelf;
   /** Inbound presence frames, exactly as they came off the lane - unordered and
-   *  possibly stale. The engine's per-sender `seq` rule sorts that out (§11.5). */
+   *  possibly stale. The engine's per-sender `seq` rule sorts that out (section 11.5). */
   readonly presenceIn: CollabStream<PresenceFrame>;
   /** Hand one outbound frame to the transport. Called at most once per 50 ms, and
-   *  never at all while this client is alone in the session (§4.7). */
+   *  never at all while this client is alone in the session (section 4.7). */
   sendPresence(frame: PresenceFrame): void;
   /** Connection-state changes. The session republishes them on its own stream. */
   readonly events: CollabStream<CollabConnectionState>;
   /** Tear the transport down. Called once, last, by {@link CollabSession.close}. */
   close(): void;
 
-  /** The client id that owns the session (§6.2a - the inviter in Track A). Used
+  /** The client id that owns the session (section 6.2a - the inviter in Track A). Used
    *  ONLY to pick the "Host" vs "Invitee" fallback for a peer with no name; absent
    *  is fine and simply means every nameless peer reads as an invitee. */
   readonly hostClientId?: string;
@@ -221,18 +221,18 @@ export interface CollabParticipant {
   readonly colorIndex: number;
   /** Known role, or `undefined` when the transport did not say (see `peerRole`). */
   readonly role?: CollabRole;
-  /** Hidden tab (§11.4). A display state - never a reason to evict. */
+  /** Hidden tab (section 11.4). A display state - never a reason to evict. */
   readonly away: boolean;
-  /** The focus token: an input id, or `"<blocksId>:<rowId>"` (§4.1). */
+  /** The focus token: an input id, or `"<blocksId>:<rowId>"` (section 4.1). */
   readonly focus?: string;
-  /** Slide/page/scene for big tools (§4.2). */
+  /** Slide/page/scene for big tools (section 4.2). */
   readonly location?: string;
   readonly isSelf: boolean;
-  /** Owns the session (§6.2a). False for everyone when no host was declared. */
+  /** Owns the session (section 6.2a). False for everyone when no host was declared. */
   readonly isHost: boolean;
   /**
    * 1-based ordinal among the ANONYMOUS non-host participants, ordered by client
-   * id - the number in the plan's "Invitee 2+" (§4.5). `0` for anyone who chose a
+   * id - the number in the plan's "Invitee 2+" (section 4.5). `0` for anyone who chose a
    * name and for the host, neither of which is ever numbered. Client id, not join
    * order, precisely so the ordinal a person is given never depends on who is
    * asking; see `build()` for why join order cannot deliver that.
@@ -257,17 +257,17 @@ export interface CollabToolManifest {
   readonly id?: string;
 }
 
-// ── What the guard reports (§11.21) ───────────────────────────────────────────
+// ── What the guard reports (section 11.21) ───────────────────────────────────────────
 
 /**
  * A peer sent something no build of this protocol can produce in good faith - a
  * prototype key, a payload past a depth/length/node cap, an over-sized batch, an
  * out-of-band Lamport clock, or more traffic per second than the lane allows.
  *
- * §11.21 says explicitly that such a peer is DISCONNECTED rather than silently
+ * section 11.21 says explicitly that such a peer is DISCONNECTED rather than silently
  * throttled, and equally explicitly (by where it puts the connection) that the
  * disconnect is not this module's job to perform: the transport owns the peer
- * connection, the ceremony's re-invite, and the §11.26 "specific cause" failure
+ * connection, the ceremony's re-invite, and the section 11.26 "specific cause" failure
  * copy. So this is the whole of what the session does about it: say what
  * happened, with the typed reason the copy keys off, and let the wiring layer
  * decide. The offending message is already discarded by the time this fires.
@@ -306,7 +306,7 @@ export interface CollabSessionOptions {
   getLocation?: () => string | undefined;
 
   /**
-   * A peer misbehaved structurally (§11.21). Called AFTER the offending message has
+   * A peer misbehaved structurally (section 11.21). Called AFTER the offending message has
    * been discarded, so a handler that does nothing is a safe handler - the only
    * thing left to decide is whether to hang up, and that is the transport's call
    * (see {@link CollabAbuseEvent}). A throwing handler is swallowed: a consumer's
@@ -317,7 +317,7 @@ export interface CollabSessionOptions {
    * Overrides for individual guard ceilings - the affordance `OpGuardCaps` exists
    * for ("a test can trip one cheaply and a future transport can tighten them
    * without a code change"). Omitted entries keep their shipped value; omit the
-   * option entirely and the session runs §11.21's published numbers.
+   * option entirely and the session runs section 11.21's published numbers.
    */
   guardCaps?: Partial<OpGuardCaps>;
 
@@ -330,7 +330,7 @@ export interface CollabSessionOptions {
   /** The pack accent (`color.semantic.primary`), which anchors the hue spin. */
   accent?: string | null;
 
-  /** The document whose `visibilitychange` drives the away flag (§11.4).
+  /** The document whose `visibilitychange` drives the away flag (section 11.4).
    *  Defaults to the ambient one; pass null to opt out entirely. */
   doc?: Document | null;
   /** Monotonic clock, forwarded to the presence engine. */
@@ -360,7 +360,7 @@ export interface CollabSession {
   setFocus(focus: string | null | undefined): void;
   /** Re-read `getLocation()` and publish it (a slide change, a scene switch). */
   refreshLocation(): void;
-  /** Inbound ops from the transport - the only door they have. Guarded (§11.21)
+  /** Inbound ops from the transport - the only door they have. Guarded (section 11.21)
    *  and then coalesced per frame by the plumbing: an op the guard drops never
    *  reaches the adapter, and a structurally abusive message takes the whole batch
    *  with it and raises `onAbuse`. */
@@ -421,7 +421,7 @@ export function _clearCollabPaletteCacheForTests(): void {
   paletteCache.clear();
 }
 
-// ── Focus tokens (§4.1) ───────────────────────────────────────────────────────
+// ── Focus tokens (section 4.1) ───────────────────────────────────────────────────────
 
 /**
  * The stable row id of a blocks row at `index`, read from the MODEL.
@@ -483,7 +483,7 @@ export function focusTokenFor(
  * `onLocalChange` returning `[]` and `apply` doing nothing is what stops a local
  * edit becoming ops (the plumbing emits exactly what these two produce), while
  * `applyRemotePatch`, `presence` and `state` pass straight through so the
- * observer's document still tracks the room. Contract §9's observer-only join is
+ * observer's document still tracks the room. Contract section 9's observer-only join is
  * this, precisely: read everything, write nothing.
  */
 function observerAdapter(adapter: CanvasSyncAdapter): CanvasSyncAdapter {
@@ -501,7 +501,7 @@ function observerAdapter(adapter: CanvasSyncAdapter): CanvasSyncAdapter {
 /**
  * The clock the guard's rate windows are measured on when the caller injects none.
  *
- * §11.7's "no wall clock" rule is about CONVERGENCE - LWW rides Lamport
+ * section 11.7's "no wall clock" rule is about CONVERGENCE - LWW rides Lamport
  * `(clock, client)` and nothing here touches that. A rate window is a local
  * throttle, so `performance.now()` (monotonic where it exists) is not just
  * acceptable but the right source: a device whose system clock jumps mid-session
@@ -524,7 +524,7 @@ const NO_CURSOR = Object.freeze({ x: 0, y: 0 });
  * bending either: `Presence` (packages/core) makes `cursor` and `selection`
  * REQUIRED, because it was written for a canvas. `PresenceState`
  * (`collab-presence.ts`) relaxes both to optional, because focus presence ships on
- * every tool (§4.1) while a true x/y cursor is opt-in per tool (§4.3): a
+ * every tool (section 4.1) while a true x/y cursor is opt-in per tool (section 4.3): a
  * sidebar-only tool has neither to report, and every frame this shell sends today
  * omits both. Handing those straight to the guard would refuse 100% of real traffic.
  *
@@ -611,7 +611,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
    * runs in a same-profile pair, and it is why nobody sees Priya as teal while
    * Priya sees herself as amber.
    *
-   * PASS 2 is the cross-profile case (§11.16): two devices on different packs
+   * PASS 2 is the cross-profile case (section 11.16): two devices on different packs
    * derive different palettes, so a peer's hex is simply not one of ours and no
    * amount of agreement protocol will make it one. We re-derive locally by join
    * order - `assignColor` walking forward from the peer's roster position, with
@@ -648,7 +648,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
     return out;
   }
 
-  // ── the boundary (§6.3, §11.21) ────────────────────────────────────────────
+  // ── the boundary (section 6.3, section 11.21) ────────────────────────────────────────────
 
   /**
    * ONE guard for the life of the session, built from the tool's DECLARED inputs.
@@ -730,9 +730,9 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
    * `org/collab-handle.ts` - "Replay the room to a subscriber that arrived after the
    * join-ack"). That replay is not peer traffic arriving at a rate at all; it is a
    * transport restating what it already knows, ALL AT ONCE, about a room whose
-   * membership the gateway already bounds (§7.5's "~10 writers, observers beyond").
+   * membership the gateway already bounds (section 7.5's "~10 writers, observers beyond").
    * Charging it against the same 40/s budget real traffic answers to is the
-   * §11.21 rate cap solving a problem it was never aimed at - a room past the cap
+   * section 11.21 rate cap solving a problem it was never aimed at - a room past the cap
    * making its own JOINER look like the abuser, and every member past it silently
    * missing from the roster. Track A's `presenceIn` never replays on subscribe (see
    * `rtc-handle.ts`'s bare `emitter<PresenceFrame>()`), so `seeded` is always false
@@ -743,7 +743,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
       refuse('presence', [{ reason: 'rate-limited' }], frame.from);
       return false;
     }
-    // A clean leave (§4.7) carries no peer-authored state at all - the envelope is
+    // A clean leave (section 4.7) carries no peer-authored state at all - the envelope is
     // the transport's own contract (`rtc-transport.ts` bounds `from`/`seq` before a
     // frame ever reaches a session), so there is nothing here for the guard to look
     // at, and refusing it would leave the peer ghosting until the 30 s TTL.
@@ -774,7 +774,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
   });
 
   /** This client's presence payload. `userId` is the client id: a private collab
-   *  has no account, and §11.23 says nothing else from the profile ever crosses. */
+   *  has no account, and section 11.23 says nothing else from the profile ever crosses. */
   function localState(): PresenceState {
     const c = selfColor();
     const base: PresenceState = {
@@ -833,7 +833,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
     const selfIsHost = isHostId(selfId);
 
     /**
-     * The "Invitee 2+" ordinals (§4.5), numbered by SORTED CLIENT ID.
+     * The "Invitee 2+" ordinals (section 4.5), numbered by SORTED CLIENT ID.
      *
      * The ordinal has to be the same on every device or it is worse than useless:
      * `collabDisplayName` feeds it to the avatar title, the roster row, the stack's
@@ -921,7 +921,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
     notify();
   }));
 
-  // Focus tracking OUT (§4.1). One delegated pair on the sidebar root, so it
+  // Focus tracking OUT (section 4.1). One delegated pair on the sidebar root, so it
   // survives every innerHTML rebuild the sidebar does.
   function applyFocus(next: string | undefined): void {
     if (closed || next === focus) return;
@@ -951,7 +951,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
     });
   }
 
-  // Away (§11.4): a hidden tab is not a dead tab - it says so, and stays in the
+  // Away (section 11.4): a hidden tab is not a dead tab - it says so, and stays in the
   // roster exempt from the TTL.
   if (doc) {
     const onVisibility = (): void => { presence.setAway(doc.hidden === true); };

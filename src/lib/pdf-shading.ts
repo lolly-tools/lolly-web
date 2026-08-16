@@ -10,7 +10,7 @@
  * Why a classifier at all: Chromium's print backend does not emit an axial shading
  * for a CSS `oklch()` colour, a `conic-gradient()` or a wide-gamut interpolated
  * gradient. It emits a **ShadingType 1** - a colour function over a 2-D domain
- * rectangle (PDF 32000-1 §8.7.4.5.3) - usually driven by a FunctionType 4
+ * rectangle (PDF 32000-1 section 8.7.4.5.3) - usually driven by a FunctionType 4
  * PostScript calculator. Most of those are not actually 2-D:
  *
  *   rung 1 "flat"      the function is CONSTANT. Chromium routes a solid `oklch()`

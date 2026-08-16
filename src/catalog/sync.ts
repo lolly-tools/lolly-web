@@ -62,17 +62,22 @@ interface ToolIndex {
   /** Each entry may carry `en` - the pristine English name/description, stashed
    *  by localizeToolIndex before it overlays a translation (in-memory only, never
    *  serialized) so search haystacks can keep matching the English name in any
-   *  session (plans/99 §2e). */
+   *  session (plans/99 section 2e). */
   tools: Array<{ id: string; en?: { name: unknown; description: unknown } } & Record<string, unknown>>;
 }
 
 /** The asset catalog index as fetched from /catalog/assets/index.json. */
 interface AssetIndex {
   assets: AssetMetaRecord[];
-  /** Curated asset ids every user starts with favourited (seeded once, on first run - 
+  /** Curated asset ids every user starts with favourited (seeded once, on first run -
    *  see boot() in main.ts). SUSE-specific content, so it's authored here in the catalog
    *  data, not in shell code. */
   defaultFavourites?: string[];
+  /** TOOL ids hidden from the gallery grid by default (the "Hide tool" state, pre-applied).
+   *  Merged into the user's hidden-tools overlay until they first edit it - the tool twin of
+   *  DEFAULT_HIDDEN_ASSETS. Authored in the brand catalog data so it's per-brand (SUSE-scoped;
+   *  omitted from lolly-start), never in shell code. See lib/hidden-tools.ts + gallery.ts. */
+  defaultHiddenTools?: string[];
 }
 
 /**
@@ -96,7 +101,7 @@ export function localizeToolIndex(index: ToolIndex): void {
     if (!overlay) continue;
     // Stash the pristine English strings BEFORE overlaying - once (the guard keeps
     // a second localize pass from stashing already-localized strings) - so a search
-    // in any language still finds "Compress PDF" by "compress" (plans/99 §2e). The
+    // in any language still finds "Compress PDF" by "compress" (plans/99 section 2e). The
     // localStorage index cache is unaffected: it stores the pre-localize JSON.
     if (!tool.en) tool.en = { name: tool.name, description: tool.description };
     if (overlay.name) tool.name = overlay.name;
@@ -309,6 +314,11 @@ let defaultFavouriteIds: readonly string[] = [];
  *  hasn't been fetched this session). Read once at boot to seed first-run favourites. */
 export function defaultFavouriteAssetIds(): readonly string[] { return defaultFavouriteIds; }
 
+let defaultHiddenToolIds_: readonly string[] = [];
+/** Tool ids flagged `defaultHiddenTools` in the catalog index (empty if the index hasn't been
+ *  fetched this session). Merged into a fresh profile's hidden-tools overlay by the gallery. */
+export function defaultHiddenToolIds(): readonly string[] { return defaultHiddenToolIds_; }
+
 /**
  * With a remote instance base set, rewrite the index's root-relative format
  * URLs to absolute instance URLs BEFORE they reach the asset-meta store - one
@@ -333,6 +343,9 @@ async function syncAssets(host: SyncHost): Promise<void> {
   cachedAssetIndex = index; // let syncCorePrefetch reuse this fresh fetch
   if (Array.isArray(index.defaultFavourites)) {
     defaultFavouriteIds = index.defaultFavourites.filter((x): x is string => typeof x === 'string');
+  }
+  if (Array.isArray(index.defaultHiddenTools)) {
+    defaultHiddenToolIds_ = index.defaultHiddenTools.filter((x): x is string => typeof x === 'string');
   }
 
   // Write metadata into IndexedDB so host.assets.get(id) can resolve any asset.

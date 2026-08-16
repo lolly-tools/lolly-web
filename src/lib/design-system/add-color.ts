@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Add a colour" - the Colours room's level-0 control (plan 97 §7.1).
+ * "Add a colour" - the Colours room's level-0 control (plan 97 section 7.1).
  *
  * Two halves, deliberately separable:
  *

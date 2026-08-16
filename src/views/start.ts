@@ -17,7 +17,7 @@
  *   - the RAIL FOOT: "Add from…" (the source picker - a design file: a
  *     W3C/Tokens-Studio JSON, a Penpot file, an SVG's colours or a Lolly brand
  *     file; a PDF, read here for its colours, marks and embedded faces; an image;
- *     a font file), Export, and Versions (plan 97 §6a - publish, activate,
+ *     a font file), Export, and Versions (plan 97 section 6a - publish, activate,
  *     restore; hidden until the studio has something of its own to publish, and
  *     mounted the first time it is opened). All three act on the whole design
  *     system rather than the open room, which is why they sit in the chrome and
@@ -59,13 +59,13 @@ import type { StartArea, StartRoom, StartSource } from '../lib/design-system/sta
 import { createStudioState } from '../lib/design-system/studio-state.ts';
 import { mountOverviewRoom } from '../lib/design-system/rooms/overview.ts';
 import type { OverviewRoom } from '../lib/design-system/rooms/overview.ts';
-// Versions (plan 97 §6a, M7): a foot-pinned panel, not a room - it acts on the
+// Versions (plan 97 section 6a, M7): a foot-pinned panel, not a room - it acts on the
 // whole design system, and it stays hidden until there is something to publish.
 import { mountVersionsRoom, hasPublishableSystem } from '../lib/design-system/rooms/versions.ts';
 import type { VersionsRoom } from '../lib/design-system/rooms/versions.ts';
 // The M2 source framework: one census type, one persistent tray, one file router.
 // This view owns the copy, the markup and the install; those modules own the
-// sniffing, the shapes and the model (plan 97 §8).
+// sniffing, the shapes and the model (plan 97 section 8).
 import { createTray, candidatesFromCensus } from '../lib/design-system/tray.ts';
 import type { Tray } from '../lib/design-system/tray.ts';
 import { mountTrayUi } from '../lib/design-system/tray-ui.ts';
@@ -84,7 +84,7 @@ import type { ColorTokenRow, DesignFileRoute, RoleFollow } from '../lib/design-s
 import type { PdfFontCandidate, PdfLogoPick } from '../lib/design-system/sources/pdf.ts';
 // The website source (M6). Imported statically, unlike the PDF one: the picker
 // has to know AT MOUNT whether a transport exists, because that decides whether
-// the tile is rendered at all (plan 97 §9) - and the module it pulls in is the
+// the tile is rendered at all (plan 97 section 9) - and the module it pulls in is the
 // pure HTML/CSS reader plus a transport probe, not a parser library. Its own
 // heavy leg (the image decoder, for a screenshot census) is lazy inside it.
 import {
@@ -157,10 +157,10 @@ const ROOM_ICONS: Record<StartArea, IconName> = {
   versions: 'tag',
 };
 
-// ── The source picker (plan 97 §8) ───────────────────────────────────────────
+// ── The source picker (plan 97 section 8) ───────────────────────────────────────────
 // Stage 1 of the modal: WHAT you have, not what format it is. Four tiles are
 // always here; the Website tile joins them ONLY on a device that can actually
-// read a page (plan 97 §9 - see the website source below). A disabled tile or a
+// read a page (plan 97 section 9 - see the website source below). A disabled tile or a
 // "coming soon" line would be advertising something nobody can press, so the
 // gate is presence, not state: with no transport the tile does not exist, and
 // `?source=url` lands on this plain list exactly as it did before M6.
@@ -240,7 +240,7 @@ function faceChipText(chip: string): string {
  * keeps its hex). Sources that already report DISTINCT colours - an SVG's list,
  * a token document - are untouched at this threshold.
  *
- * INTERIM HOME. Plan 97 §2d puts this in lib/design-system/census.ts as
+ * INTERIM HOME. Plan 97 section 2d puts this in lib/design-system/census.ts as
  * `condenseCensus`, beside the adapters it serves; it lives here only because
  * this milestone's shell work must not reach into that file. Move it, keep the
  * behaviour.
@@ -262,7 +262,7 @@ function condenseColors(census: DesignCensus, opts: { minDistance?: number; max?
   return { ...census, colors: kept.map(k => k.row) };
 }
 
-// ── The website source's transport (plan 97 §9, M6) ──────────────────────────
+// ── The website source's transport (plan 97 section 9, M6) ──────────────────────────
 
 /**
  * How long the studio waits for a page read before it stops waiting.
@@ -355,7 +355,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const importOpen = route.importOpen;
   // `?source=url&u=<address>` PREFILLS the website source's field and does
   // nothing else - the fetch button is the consent, so a link somebody sends
-  // must never be able to start a read (plan 97 §9). Read here rather than in
+  // must never be able to start a read (plan 97 section 9). Read here rather than in
   // resolveStartRoute because it is the only param that belongs to one stage
   // rather than to the route; it should move there the next time that file is
   // open, with the same "prefill, never act" contract written on it.
@@ -400,7 +400,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
             <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog">
               <span class="start-import-cta-ic" aria-hidden="true">↓</span> <span>${t('Add from…')}</span></button>
             <!-- Hidden until a scan actually keeps something: an empty concept is
-                 never advertised (plan 97 §9). The count rides the subscription. -->
+                 never advertised (plan 97 section 9). The count rides the subscription. -->
             <button type="button" class="be-btn ds-tray-toggle" data-start-tray aria-expanded="false" hidden>
               <span class="ds-tray-toggle-ic" aria-hidden="true">${icon('dock')}</span>
               <span>${t('Tray')}</span>
@@ -411,7 +411,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
                  the plain document, for a repo or another tool that reads DTCG. -->
             <button type="button" class="be-btn start-export-tokens" data-start-export-tokens>
               <span aria-hidden="true">↑</span> <span>${t('Tokens (.json)')}</span></button>
-            <!-- Versions (plan 97 §6a). Hidden until the studio has something of
+            <!-- Versions (plan 97 section 6a). Hidden until the studio has something of
                  its own to publish, or until a link asks for the panel by name:
                  a system that never publishes must never be shown the machinery.
                  It carries data-ds-room, so the rail's existing click delegate
@@ -505,7 +505,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const railEl = viewEl.querySelector<HTMLElement>('.ds-rail')!;
   const roomBtns = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-ds-room]')];
 
-  // The save discipline's substrate (plan 97 §6): used here for the checkpoint a
+  // The save discipline's substrate (plan 97 section 6): used here for the checkpoint a
   // source install takes before it lands, so "revert to before the import" is a
   // restore rather than an apology. The rooms adopt the rest in M1.
   //
@@ -525,7 +525,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     catch { /* nothing to go back to */ }
   };
 
-  // ── The candidate tray (plan 97 §8) ──────────────────────────────────────────
+  // ── The candidate tray (plan 97 section 8) ──────────────────────────────────────────
   // A source scans material into a census, the census becomes typed candidates,
   // and NOTHING joins the design system until someone presses Add. The model is
   // persistent and outlives the view (lib/design-system/tray.ts); its surface
@@ -563,7 +563,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         if (overviewPanel.hidden) return;
         overview?.refresh();
       },
-      // The durable half of the room's undo (plan 97 §6): the editor's own stack
+      // The durable half of the room's undo (plan 97 section 6): the editor's own stack
       // is session-only, so a destructive action also asks the host for a named
       // checkpoint. Same shape as checkpointBeforeInstall, with the label the
       // room supplies. Best-effort - a first-ever edit has no head to snapshot.
@@ -751,7 +751,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     btn.disabled = false;
   });
 
-  // ── Versions (plan 97 §6a, M7) ───────────────────────────────────────────────
+  // ── Versions (plan 97 section 6a, M7) ───────────────────────────────────────────────
   // The panel writes the head through THIS studio, so publish, activate and
   // restore land on the same undo stack as every other edit and repaint chrome
   // through the same afterInstall. Version payloads never come through here - 
@@ -794,7 +794,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   }).catch(() => { /* undiscoverable storage — the entry stays hidden */ });
 
   /**
-   * One token per colour, through the Colours room's own write (plan 97 §2b).
+   * One token per colour, through the Colours room's own write (plan 97 section 2b).
    *
    * The room's `addColors` writes into the LIVE document the editor is holding
    * - the only correct target. This view once kept its own `headDoc` snapshot
@@ -927,7 +927,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     await keepInTray(census, note);
   };
 
-  // ── The PDF source (plan 97 §8 gap 2, M5) ────────────────────────────────────
+  // ── The PDF source (plan 97 section 8 gap 2, M5) ────────────────────────────────────
   // A guidelines PDF is the richest single file most teams have: its artwork
   // carries the marks AND the palette they are drawn in, and it embeds the real
   // font programs. All of the reading is lib/design-system/sources/pdf.ts's
@@ -1123,7 +1123,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   }
 
   /**
-   * Install one embedded face (plan 97 §7.2 / M5).
+   * Install one embedded face (plan 97 section 7.2 / M5).
    *
    * `installFontFromBytes` is the whole vetting story - the cap, the magic
    * number, the name table, the fsType reading and the variable axis - and it
@@ -1247,8 +1247,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     window.dispatchEvent(new Event('lolly:remount'));
   }
 
-  // ── The website source (plan 97 §9, M6) ──────────────────────────────────────
-  // §9's decision in one sentence: NO SERVER FETCH, EVER. The deployed PWA
+  // ── The website source (plan 97 section 9, M6) ──────────────────────────────────────
+  // section 9's decision in one sentence: NO SERVER FETCH, EVER. The deployed PWA
   // cannot reach an arbitrary origin at all (its CSP allowlists six hosts, so
   // this dies before CORS is even asked), and no fetching service was built - 
   // it was ruled out, not deferred. So the source exists only where a reader
@@ -1628,7 +1628,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   }
 
   // ── Add from…: a two-stage picker ────────────────────────────────────────────
-  // Stage 1 asks WHAT you have (plan 97 §8); stage 2 is that source's own control.
+  // Stage 1 asks WHAT you have (plan 97 section 8); stage 2 is that source's own control.
   // The design-file card is NOT rebuilt per open - it's moved out of its hidden
   // holder into the file stage and back again, so the file input, the drop target
   // and the delegated result handlers below stay wired to the same nodes for the
@@ -1661,7 +1661,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   };
 
   /** The tiles this device can actually offer. Website leads when it is there
-   *  (plan 97 §5's order) and is simply absent when it is not. */
+   *  (plan 97 section 5's order) and is simply absent when it is not. */
   const sourceTiles = (): ReadonlyArray<{ id: PickerSource; icon: IconName }> =>
     siteReady ? [WEBSITE_TILE, ...SOURCE_TILES] : SOURCE_TILES;
 
@@ -1682,7 +1682,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     if (!el) return;
     // `url` is a stage only where a transport answered: on a plain browser the
     // section was never rendered, so a `?source=url` link falls through to the
-    // list rather than opening an empty panel (plan 97 §9's degrade).
+    // list rather than opening an empty panel (plan 97 section 9's degrade).
     const stage = src === 'file' || src === 'image' || src === 'pdf' ? src
       : src === 'url' && siteReady ? 'url' : null;
     const tiles = el.querySelector<HTMLElement>('[data-ds-src-tiles]');
@@ -1760,7 +1760,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         <div class="ds-src-pdf-result" data-ds-pdf-result tabindex="-1" hidden></div>
       </section>
       ${siteReady ? `
-      <!-- The website stage exists only where a transport does (plan 97 §9): it
+      <!-- The website stage exists only where a transport does (plan 97 section 9): it
            is not rendered-and-disabled, it is not rendered at all. The button is
            the consent, and the line above it names the host and the reader. -->
       <section class="ds-src-stage" data-ds-stage="url" hidden>
@@ -2148,7 +2148,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
    *
    * The sniffing, the size caps and the three zip shapes live in
    * lib/design-system/sources/file.ts, which is pure and covered; this function
-   * owns the copy, the cards and the install - the split plan 97 §8 asks for.
+   * owns the copy, the cards and the install - the split plan 97 section 8 asks for.
    * The size cap is checked from `File.size` first so a mispicked multi-GB file
    * is refused before a byte of it is read (the router re-checks what it is
    * handed, because a cap enforced at one of two call sites will be skipped).
@@ -2410,7 +2410,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   }
 
   /**
-   * The semantic mapping review (plan 97 §8) - the card that stops an import
+   * The semantic mapping review (plan 97 section 8) - the card that stops an import
    * landing a full palette with every `--brand-*` var still dark.
    *
    * It renders only for the case it is about: a document that resolves colour
@@ -2537,7 +2537,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     const plainBtn = target.closest<HTMLButtonElement>('[data-install-plain]');
     if (plainBtn && importedDoc) { void install(importedDoc, importedLabel, plainBtn); return; }
 
-    // "Review first" (plan 97 §8): the document decomposes into candidates
+    // "Review first" (plan 97 section 8): the document decomposes into candidates
     // instead of installing, so it can be shopped one at a time. Nothing is
     // written by pressing it.
     if (target.closest('[data-tokens-tray]') && importedDoc) {

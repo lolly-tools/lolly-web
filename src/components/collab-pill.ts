@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-pill - the floating collaborator cluster over the stage (plan 100 §4.6).
+ * collab-pill - the floating collaborator cluster over the stage (plan 100 section 4.6).
  *
  * The plan calls this "the anchor component", and the reason it is built before any
  * transport exists is Andy's: "we can't build this and not have the realestate
@@ -21,7 +21,7 @@
  *
  * ── Placement is the CONTAINER'S job, deliberately ────────────────────────────
  *
- * §4.6 puts the pill top-right of the canvas area, which is the lane `.stage-nav`
+ * section 4.6 puts the pill top-right of the canvas area, which is the lane `.stage-nav`
  * moved into (editor.css says why: the docked timeline band owns the bottom). Two
  * things cannot share one lane by accident, and this component cannot see the HUD,
  * so it does not guess: the base class is an inline-flex cluster with no position at
@@ -30,7 +30,7 @@
  * tool view sets that offset to clear whatever else is in the lane. A component that
  * pinned itself would be a collision nobody could fix from the outside.
  *
- * ── Colour is never the only differentiator (§4.8) ────────────────────────────
+ * ── Colour is never the only differentiator (section 4.8) ────────────────────────────
  *
  * Three rules follow from that, and each is required rather than decorative:
  *
@@ -38,7 +38,7 @@
  *    split disc / barred ring) and a `title`, plus a visually-hidden live label - 
  *    green-vs-red alone fails for the ~8% of men who would read them as one colour;
  *  - every avatar carries a 1px halo in the theme ground plus an outer hairline in
- *    the theme ink (the selection-handle convention, §4.4), so a collaborator colour
+ *    the theme ink (the selection-handle convention, section 4.4), so a collaborator colour
  *    that happens to match the artwork behind it still reads as a separate object;
  *  - initials are `aria-hidden` and the accessible name is the full roster - two
  *    letters in a 24px disc are an identifier for people who can already see the
@@ -59,7 +59,7 @@
  * It never imports the launch registry, the ceremony or a transport: `onInvite` is a
  * callback slot, and the invite button exists only when a caller supplies one. It
  * renders no markup into `.tool-canvas`/`#tool-content` and touches no export stage
- * - a render must stay byte-identical whether or not anyone is watching (§4.6, §8).
+ * - a render must stay byte-identical whether or not anyone is watching (section 4.6, section 8).
  */
 
 import { announce as announceLive } from '../a11y.ts';
@@ -89,7 +89,7 @@ export const STRINGS = {
   group: 'Collaboration',
   /** The invite button (its label and its tooltip are the same words). */
   invite: 'Invite someone',
-  /** The beam control (§6.4): hand the whole session - and the uploads it uses - down
+  /** The beam control (section 6.4): hand the whole session - and the uploads it uses - down
    *  the channel that is already up. */
   sendSession: 'Send this session',
   /** A send that never reached the toast, announced. Everything that fails AFTER the
@@ -100,7 +100,7 @@ export const STRINGS = {
   /** The avatar stack's accessible name - everyone here, by name. */
   stack: 'Collaborators: {names}',
 
-  // §4.5's role fallbacks, for anyone who did not choose a name.
+  // section 4.5's role fallbacks, for anyone who did not choose a name.
   host: 'Host',
   invitee: 'Invitee',
   inviteeNumbered: 'Invitee {n}',
@@ -159,7 +159,7 @@ const CSS = `
   --collab-gone: 0 72% 48%;
 }
 
-/* The stage-HUD placement (§4.6). --collab-pill-offset is what clears whatever else
+/* The stage-HUD placement (section 4.6). --collab-pill-offset is what clears whatever else
    owns the top-inline-end lane (.stage-nav, editor.css); the mount site sets it.
    --vv-* are the pinch-zoom offsets the rest of the top row uses; they are physical
    by nature (the visual viewport is), which is why only the inset composes them. */
@@ -245,7 +245,7 @@ html[data-a11y-motion="reduce"] .collab-av.is-new { animation: none; }
   color: hsl(222 47% 8%);
   /* The 1px halo: the inner ring in the theme ground separates two overlapping
      avatars, the outer hairline in the theme ink keeps the disc legible against a
-     canvas that happens to be the same colour (§4.4). */
+     canvas that happens to be the same colour (section 4.4). */
   box-shadow: 0 0 0 1px hsl(var(--card)), 0 0 0 calc(2px * var(--a11y-fs)) hsl(var(--foreground) / 0.28);
   margin-inline-start: calc(-7px * var(--a11y-fs));
 }
@@ -271,7 +271,7 @@ html[data-a11y-motion="reduce"] .collab-av.is-new { animation: none; }
   white-space: nowrap;
 }
 /* One control geometry for every icon button in the cluster: the invite slot and the
-   action slots (§6.4's "Send this session"). Two classes rather than one because the
+   action slots (section 6.4's "Send this session"). Two classes rather than one because the
    invite button is addressed by name elsewhere in this file (the lazy-namespace
    repaint re-stamps ITS label, not an action's). */
 .collab-invite,
@@ -347,7 +347,7 @@ function ensureStyles(): void {
 // ── Pure helpers (exported: the focus overlay and the projects badge need the
 //    same names, and a test can pin them without a DOM) ────────────────────────
 
-/** How many avatars the stack shows before it collapses to "+N" (§4.6). */
+/** How many avatars the stack shows before it collapses to "+N" (section 4.6). */
 export const COLLAB_STACK_MAX = 3;
 
 /** The dot's five states, in the order a session walks them. */
@@ -358,7 +358,7 @@ export type CollabDotState = 'connecting' | 'live' | 'reconnecting' | 'away' | '
  *
  * `away` is not a connection state on the wire - the transport is perfectly healthy
  * - but it IS what a person needs to know, so a live session in which every peer has
- * a hidden tab reads as away rather than as live (§11.4: a background tab is not a
+ * a hidden tab reads as away rather than as live (section 11.4: a background tab is not a
  * dead tab, and it is not an attending one either). With nobody else here at all the
  * dot stays live: being alone is not being away.
  */
@@ -369,10 +369,10 @@ export function pillDotState(state: CollabSessionState): CollabDotState {
 }
 
 /**
- * The label a person is shown, with §4.5's role fallbacks.
+ * The label a person is shown, with section 4.5's role fallbacks.
  *
  * A chosen name always wins. Without one the person is identified by their place in
- * the session instead of by a device id: the inviter owns the session (§6.2a) so
+ * the session instead of by a device id: the inviter owns the session (section 6.2a) so
  * they are the Host, everyone else is an Invitee, numbered from the second one on so
  * a pair never reads as "Invitee 1".
  */
@@ -402,7 +402,7 @@ export function collabInitials(name: string): string {
   return out;
 }
 
-/** The chip's truncation point (§4.5: "chips truncate at ~12 chars"). The full name
+/** The chip's truncation point (section 4.5: "chips truncate at ~12 chars"). The full name
  *  always survives in the roster and in every announcement. */
 export const COLLAB_CHIP_MAX = 12;
 
@@ -441,7 +441,7 @@ export interface CollabPillAction {
    * Re-read on EVERY render: `false` hides the control.
    *
    * Not a constant, because the answer changes under the user - a beam's lane dies
-   * with the pair, and leaving a button that can only fail is the dead control §4.6
+   * with the pair, and leaving a button that can only fail is the dead control section 4.6
    * refuses. The session's own state stream is what re-renders the pill, so a
    * connection dropping to `closed` takes the action with it in the same paint.
    * Absent means always shown.
@@ -468,7 +468,7 @@ export interface CollabPillOptions {
    * what exists; this component decides what it is called.
    */
   actions?: readonly CollabPillAction[];
-  /** Extra class on the root - pass `'collab-pill--stage'` for the §4.6 placement. */
+  /** Extra class on the root - pass `'collab-pill--stage'` for the section 4.6 placement. */
   className?: string;
   /** Screen-reader announcer. Injected so a test can assert the join/leave copy
    *  without a live region (and so /pro's isolated tree could pass its own). */

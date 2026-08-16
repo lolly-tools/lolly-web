@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * PDF FunctionType 4 - the PostScript calculator function (PDF 32000-1 §7.10.5).
+ * PDF FunctionType 4 - the PostScript calculator function (PDF 32000-1 section 7.10.5).
  *
  * A tiny, total, side-effect-free stack language: numbers, booleans, a fixed
  * operator set, and `{…}` procedures that exist only as operands to `if`/`ifelse`.
@@ -32,7 +32,7 @@ export type PsCalculator = (args: number[]) => number[] | null;
 // Every one of these is a hostile-input guard, not a performance tuning knob.
 const MAX_TOKENS = 100_000;   // a 1 MB garbage stream tokenises to well under this
 const MAX_DEPTH = 32;         // `{{{{…}}}}` nesting; real programs use 2–4
-const MAX_STACK = 100;        // PDF 32000-1 §7.10.5: "at most 100 numbers"
+const MAX_STACK = 100;        // PDF 32000-1 section 7.10.5: "at most 100 numbers"
 const MAX_STEPS = 10_000;     // per evaluation; the language has no loops, so this
                               // only ever fires on pathological ifelse nests or us
 
@@ -41,7 +41,7 @@ const MAX_STEPS = 10_000;     // per evaluation; the language has no loops, so t
 type PsNode = { t: 'n'; v: number } | { t: 'o'; v: string } | { t: 'p'; v: PsProc };
 type PsProc = PsNode[];
 
-/** Operators we implement - PDF 32000-1 §7.10.5, Table 42 in full. A token that is
+/** Operators we implement - PDF 32000-1 section 7.10.5, Table 42 in full. A token that is
  *  neither a number nor one of these fails the COMPILE, not some later sample. */
 const OPS = new Set([
   // arithmetic
@@ -56,7 +56,7 @@ const OPS = new Set([
 ]);
 
 /** Split a calculator program into `{`, `}`, numbers and operator names.
- *  `%` starts a comment to end-of-line (PDF 32000-1 §7.2.3). */
+ *  `%` starts a comment to end-of-line (PDF 32000-1 section 7.2.3). */
 function tokenizePs(src: string): string[] | null {
   const clean = String(src ?? '').replace(/%[^\r\n]*/g, ' ');
   const out: string[] = [];
@@ -90,7 +90,7 @@ function parsePs(toks: string[]): PsProc | null {
       }
       i++;
       // PostScript reals: 1, -1, .5, 1., 1e3, 16#FF is NOT valid here (Type 4
-      // programs are plain decimal per §7.10.5), so a strict decimal test is right.
+      // programs are plain decimal per section 7.10.5), so a strict decimal test is right.
       if (/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t)) {
         const v = parseFloat(t);
         if (!isFinite(v)) return null;
@@ -139,7 +139,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
 
     const op = node.v;
 
-    // ── conditionals (§7.10.5.3) ───────────────────────────────────────────
+    // ── conditionals (section 7.10.5.3) ───────────────────────────────────────────
     if (op === 'if') {
       const p = st.pop(), c = st.pop();
       if (!isProc(p) || !isBool(c)) return false;
@@ -155,7 +155,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
     if (op === 'true') { if (st.length >= MAX_STACK) return false; st.push(true); continue; }
     if (op === 'false') { if (st.length >= MAX_STACK) return false; st.push(false); continue; }
 
-    // ── stack operators (§7.10.5.4) ────────────────────────────────────────
+    // ── stack operators (section 7.10.5.4) ────────────────────────────────────────
     if (op === 'pop') { if (!st.length) return false; st.pop(); continue; }
     if (op === 'exch') {
       if (st.length < 2) return false;
@@ -197,7 +197,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
 
     // ── unary/binary numeric + boolean operators ──────────────────────────
     // `not`/`and`/`or`/`xor` are LOGICAL on booleans and BITWISE on integers
-    // (§7.10.5.2); mixing the two is a type error, deliberately.
+    // (section 7.10.5.2); mixing the two is a type error, deliberately.
     if (op === 'not') {
       const a = st.pop();
       if (isBool(a)) { st.push(!a); continue; }
@@ -212,7 +212,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
     }
     if (op === 'bitshift') {
       // Positive shift = left; negative = right, with ZEROS shifted in (a logical
-      // shift, per the PostScript language definition §bitshift) - hence `>>>`.
+      // shift, per the PostScript language definition section bitshift) - hence `>>>`.
       const sft = st.pop(), a = st.pop();
       if (!isInt(a) || !isInt(sft) || Math.abs(sft) > 31) return false;
       st.push(sft >= 0 ? (a << sft) | 0 : (a >>> -sft) | 0);
@@ -272,7 +272,7 @@ function execPs(proc: PsProc, st: PsVal[], budget: Budget, depth: number): boole
         case 'round': out = Math.sign(a) * Math.round(Math.abs(a)); break;
         case 'truncate': out = Math.trunc(a); break;
         case 'sqrt': if (a < 0) return false; out = Math.sqrt(a); break;
-        // sin/cos take DEGREES (§7.10.5.1).
+        // sin/cos take DEGREES (section 7.10.5.1).
         case 'sin': out = Math.sin(a * DEG); break;
         case 'cos': out = Math.cos(a * DEG); break;
         case 'ln': if (!(a > 0)) return false; out = Math.log(a); break;

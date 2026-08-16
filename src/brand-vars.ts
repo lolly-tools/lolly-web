@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Brand semantic CSS variables - the web half of the brand token contract
- * (plans/archive/brand-token-contract.md §3/§5).
+ * (plans/archive/brand-token-contract.md section 3/section 5).
  *
  * applyBrandVars(el, host) resolves the seven `color.semantic.*` slots from the
  * active brand tokens (host.tokens) and mirrors them onto the tool-canvas root
@@ -11,7 +11,7 @@
  * in charge. Best-effort and async: it never throws and mounting never waits
  * on it (though exports may - see views/tool.ts brandVarsReady).
  *
- * Why `--brand-*`, not bare `--primary` (contract §3): the web shell's
+ * Why `--brand-*`, not bare `--primary` (contract section 3): the web shell's
  * styles/tokens.css defines `--primary`/`--muted`/… on `:root` as shadcn HSL
  * *triples*, and community utilities (compress-pdf, strip-data, text-helper)
  * deliberately consume that vocabulary inside the tool canvas as
@@ -42,7 +42,7 @@ const SLOTS = [
 ] as const;
 
 /** A resolvable tokens document - the head, or a published design-system version
- *  (plans/97 §6a). Both answer the same two reads, which is the point. */
+ *  (plans/97 section 6a). Both answer the same two reads, which is the point. */
 interface BrandTokens {
   resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
   colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
@@ -52,7 +52,7 @@ interface BrandTokens {
  * `colors()` for the warm-accent scan (see nearestWarmHex).
  *
  * No version reads: the web bridge's own `resolve`/`colors` already answer for
- * whatever the §6a ladder lands on (bridge/tokens.ts), so both painters here - 
+ * whatever the section 6a ladder lands on (bridge/tokens.ts), so both painters here - 
  * app chrome and the tool canvas - read one surface and cannot disagree about
  * which design system is live. A shell or test host whose tokens API has no
  * versioning is on the head, which is what an unversioned system resolves to. */
@@ -740,10 +740,10 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;
 
-  // `host.tokens` IS the render surface (plans/97 §6a): the web bridge resolves
+  // `host.tokens` IS the render surface (plans/97 section 6a): the web bridge resolves
   // the version ladder behind its own reads, so chrome and the tool canvas below
   // paint from one answer and cannot disagree. Nothing to resolve here, and
-  // nothing published means the head, exactly as before §6a.
+  // nothing published means the head, exactly as before section 6a.
   const tk: BrandTokens | undefined = host.tokens;
 
   const resolveHex = async (slot: string, theme: string): Promise<string | null> => {
@@ -800,7 +800,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
 
 /**
  * Resolve each semantic slot and set/remove its custom property on `el`.
- * Injection rules (contract §3, identical to the CLI's applyBrandVars):
+ * Injection rules (contract section 3, identical to the CLI's applyBrandVars):
  * a resolved string passes through (hex or a raw `oklch()` string are both
  * valid CSS colours the browser resolves natively) - UNLESS it is alias
  * residue (a `{path}` that never resolved is a missing slot, not a colour);
@@ -808,7 +808,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
  * (null ⇒ missing slot). Missing slots remove the property.
  *
  * The per-TOOL-CANVAS painter, and the reason `host.tokens` had to become the
- * render surface rather than the head (plans/97 §6a): under an active version
+ * render surface rather than the head (plans/97 section 6a): under an active version
  * this must paint that version's colours, and there is no per-mount hook here to
  * resolve a ladder in - the same reason the picker's swatches, the engine's
  * token-bound inputs and the export palette all read the bridge directly.

@@ -9,7 +9,7 @@
  * on mount - placeholder, initial value, an optional live-filter tap - and
  * releases the claim from its _cleanup. Unclaimed routes (dashboard, profile)
  * get the global default placeholder; their queries go to the spotlight overlay
- * (M2), never to the view behind (plans/99 §2a).
+ * (M2), never to the view behind (plans/99 section 2a).
  *
  * The invariant that matters: THE BAR NEVER RE-RENDERS WHILE A VIEW IS MOUNTED.
  * A view re-rendering on each keystroke (projects, catalogue) leaves the input
@@ -35,7 +35,7 @@
  * hears route changes. Registering the hook also upgrades the field to the
  * ARIA combobox pattern (lifted from pro/index.ts's template picker); the
  * overlay drives aria-expanded/aria-activedescendant via setSearchBarExpanded.
- * The summon chord (plans/99 §2f) lives here too: ⌘Space AND ⌃Space are both
+ * The summon chord (plans/99 section 2f) lives here too: ⌘Space AND ⌃Space are both
  * bound, only ⌃␣ is ever advertised (the <kbd> hint chip) - on stock macOS
  * Spotlight eats ⌘Space before the page sees it, and that inertness is by
  * design ("if the OS doesn't steal it"). The chord only acts while a search
@@ -60,7 +60,7 @@ export interface SearchBarClaim {
   /** The live-filter tap: called with the RAW field text after the shared
    *  debounce (each view applies its own normalisation, so migrated behaviour
    *  stays byte-for-byte). Its presence is the live-adapt switch (plans/99
-   *  §2a/§2c) - overlay-only views claim without it. */
+   *  section 2a/section 2c) - overlay-only views claim without it. */
   onQuery?: (raw: string) => void;
   /** Overlay-only views' clear tap (plans/99 M2): clearSearchBar() notifies
    *  onQuery('') when the claim live-filters, OTHERWISE this - so a view with
@@ -68,7 +68,7 @@ export interface SearchBarClaim {
   onClear?: () => void;
 }
 
-/** The spotlight overlay's seam into the bar (plans/99 §2d/§2f) - implemented
+/** The spotlight overlay's seam into the bar (plans/99 section 2d/section 2f) - implemented
  *  by components/spotlight.ts, registered once at boot right after the bar. */
 export interface SpotlightHook {
   /** The debounced field text (also fired by the chord and a clear). */
@@ -109,14 +109,14 @@ function labels(): { placeholder: string; ariaLabel: string } {
 
 /** The ✕ tracks the field's content (shown only while there's text to clear);
  *  the ⌃␣ hint chip is its complement - it yields the corner as soon as the
- *  field has text (plans/99 §2f). */
+ *  field has text (plans/99 section 2f). */
 function syncClear(): void {
   const hasText = !!inputEl()?.value;
   clearBtn()?.toggleAttribute('hidden', !hasText);
   kbdHintEl()?.toggleAttribute('hidden', hasText);
 }
 
-/** ARIA combobox upgrade (plans/99 §2d, the pro/index.ts pattern) - applied to
+/** ARIA combobox upgrade (plans/99 section 2d, the pro/index.ts pattern) - applied to
  *  the `.gallery-search` element (also correct for the <jelly-input> host) once
  *  a spotlight hook exists, and re-applied on every re-render. */
 function applyCombobox(): void {
@@ -139,7 +139,7 @@ function render(): void {
     proEnabled: renderedPro,
     searchHtml: gallerySearchBox({
       placeholder, ariaLabel, value: currentClaim?.value ?? '',
-      // Advertise ⌃␣ ONLY - ⌘Space stays bound but silent (plans/99 §2f, locked).
+      // Advertise ⌃␣ ONLY - ⌘Space stays bound but silent (plans/99 section 2f, locked).
       kbdHint: { label: '⌃␣', title: t('Ctrl + Space') },
     }),
   });
@@ -163,13 +163,13 @@ function wire(footer: HTMLElement): void {
       const raw = inputEl()?.value ?? '';
       currentClaim?.onQuery?.(raw);
       // The overlay rides the SAME debounce, after the local tap - one query,
-      // two tiers (plans/99 §2a: live view behind, spotlight above).
+      // two tiers (plans/99 section 2a: live view behind, spotlight above).
       spotlightHook?.onQueryChanged(raw);
     }, SEARCH_DEBOUNCE_MS);
   });
   footer.addEventListener('keydown', (e) => {
     if (!(e.target as HTMLElement).closest('.gallery-search')) return;
-    // The overlay gets first refusal on the combobox keys (plans/99 §2d): a
+    // The overlay gets first refusal on the combobox keys (plans/99 section 2d): a
     // consumed key never reaches the Escape ladder below, and preventDefault
     // keeps ArrowUp/ArrowDown from moving the caret.
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter' || e.key === 'Escape')
@@ -197,7 +197,7 @@ function wire(footer: HTMLElement): void {
 export function initSearchBar(): void {
   if (footerEl) return;
   render();
-  // The summon chord (plans/99 §2f): ⌘Space AND ⌃Space, document-level, live
+  // The summon chord (plans/99 section 2f): ⌘Space AND ⌃Space, document-level, live
   // only while a search route shows the bar. Handling = focus the field + hand
   // the current text to the overlay (so it opens if there's already a query).
   // On stock macOS Spotlight consumes ⌘Space before the page ever sees it - 
@@ -248,7 +248,7 @@ export function applySearchBarRoute(nextMode: FooterMode, nextRouteName: string)
 }
 
 /** The route currently owning the bar - ROUTE_DOMAIN's key for the overlay's
- *  own-domain split (plans/99 §2a). '' until the first navigation applies. */
+ *  own-domain split (plans/99 section 2a). '' until the first navigation applies. */
 export function currentSearchRoute(): string {
   return routeName;
 }

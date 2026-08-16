@@ -71,7 +71,7 @@ import {
   type StreamingMux,
 } from './video-encode-core.ts';
 import { parseClipShape, projectLayer } from '@lolly/engine';
-// The two blur lanes (plans/104 §5.5, §11 S1). DOM-free at import, so the executor
+// The two blur lanes (plans/104 section 5.5, section 11 S1). DOM-free at import, so the executor
 // keeps its own DOM-free contract; the probe inside decides which lane a context gets.
 import {
   laneFor, releaseBlurScratches, releaseStage, renderFx, scaleFilter, scratchPadCap,
@@ -198,7 +198,7 @@ export interface SeqJobLayer {
    * A `KfTrack` is arrays of records of numbers and strings and nothing else, which
    * is the whole reason the engine hands it back in that shape: a compiled bezier
    * closure inside the cached form would throw DataCloneError on `postMessage` and
-   * silently kill worker offload (§5.1). The evaluator's own caches - the per-track
+   * silently kill worker offload (section 5.1). The evaluator's own caches - the per-track
    * channel index, the bezier control points - are module state, so they simply
    * rebuild on this side from the values that crossed. `structuredClone(toJobLayer(…))`
    * is pinned in sequence-render-worker.test.ts.
@@ -210,7 +210,7 @@ export interface SeqJobLayer {
   shadowFilter: string;
   /**
    * The margin, in stage-native px, this layer's plates were CAPTURED with
-   * (`rasterBox`'s `pad`, plans/104 §5.5). The plate's origin is `(-platePad,
+   * (`rasterBox`'s `pad`, plans/104 section 5.5). The plate's origin is `(-platePad,
    * -platePad)` in box space, so every draw of it subtracts the pad and adds twice it
    * to the size. 0 - what P0 always computes - makes those expressions the identical
    * numbers they were before padding existed, which is the byte-identity floor.
@@ -218,7 +218,7 @@ export interface SeqJobLayer {
   platePad?: number;
   /**
    * The RESOLUTION multiplier this layer's plates were captured at, over the export
-   * scale S (the plate budget's bucketed `eff`, plans/104 §5.5). 1 - every P0 export - 
+   * scale S (the plate budget's bucketed `eff`, plans/104 section 5.5). 1 - every P0 export - 
    * means "shot at exactly S", which is what every plate before depth was.
    *
    * The executor needs it because the FILTERED path composites through a scratch, and
@@ -334,7 +334,7 @@ export interface SeqJob {
   scale: number;
   /**
    * The stage's NATIVE size (BEFORE `scale`), px - the projection's principal point
-   * is its centre (plans/104 §4.1). Optional so an older or hand-built job still
+   * is its centre (plans/104 section 4.1). Optional so an older or hand-built job still
    * runs: absent means a zero-sized stage, and a zero-sized stage only differs from a
    * real one once a layer is actually lifted off it.
    */
@@ -343,7 +343,7 @@ export interface SeqJob {
   /** The artboard behind every layer, or null for a transparent export. */
   bg: CanvasImageSource | null;
   /**
-   * The margin, stage-native px, the bg plate was captured with (plans/104 §5.5).
+   * The margin, stage-native px, the bg plate was captured with (plans/104 section 5.5).
    *
    * The stage background is an implicit z = 0 LAYER and is projected like one, so a
    * camera pan or pull-back reveals what used to be off the artboard - this is the
@@ -387,7 +387,7 @@ export function closeJobBitmaps(job: SeqJob): void {
 }
 
 /**
- * Which of a layer's two plates a live re-capture is for (plans/104 §5.2).
+ * Which of a layer's two plates a live re-capture is for (plans/104 section 5.2).
  *
  * `under` is the only slot for every kind but `video` - and it is the DEFAULT, so an
  * older caller (or a test stub) that ignores the argument answers the same shot it
@@ -521,11 +521,11 @@ export function releaseFxPlates(all: Iterable<LayerRes>): void {
  * WHY THIS EXISTS (plans/104 P3.1, measured failure 1). `drawItem`'s filtered path is
  * per-frame by construction: take a padded scratch, paint the plate into it, run it
  * through a blur lane, composite. That is right when the effect changes frame to
- * frame, and a depth shadow does not. §5.3's shadow is derived from the box's `z`
+ * frame, and a depth shadow does not. section 5.3's shadow is derived from the box's `z`
  * alone, so for a layer at a fixed depth it is one filter over one unchanging plate,
  * re-computed for every frame of the export. A LIFTED layer makes that catastrophic
  * rather than merely wasteful: every derived document keeps the source's root
- * coordinates (§7), so a lifted layer is a FULL-STAGE box and its `shadow: depth` is a
+ * coordinates (section 7), so a lifted layer is a FULL-STAGE box and its `shadow: depth` is a
  * full-frame gaussian. Eleven of them at 960x540/30 measured 854 ms/frame against
  * 51 ms/frame with the shadows off, and on a slower machine the encoder's stall
  * watchdog fires first and the export ABORTS.
@@ -607,7 +607,7 @@ function adoptFxPlate(
  * The effects one plan item asks for, in DEVICE px, or null when the layer is CLEAN.
  *
  * CLEAN means: no blur of any kind (authored, keyframed or depth-of-field) and no
- * authored filter remainder. That is the byte-identity gate (plans/104 §5.5): a clean
+ * authored filter remainder. That is the byte-identity gate (plans/104 section 5.5): a clean
  * layer never enters the restructured path, never allocates a scratch, and issues the
  * exact canvas calls in the exact order it issued before this existed.
  *
@@ -623,7 +623,7 @@ export function itemFx(item: PlanItem, S: number, cameraMoves = false): FxSpec |
   // byte-identity floor: a pre-104 `shadow: content` document never reaches the
   // restructured path at all.
   //
-  // `cameraMoves` is the P1 obligation (plans/104 §9.2): a camera that moves varies
+  // `cameraMoves` is the P1 obligation (plans/104 section 9.2): a camera that moves varies
   // eff and the depth-of-field radius frame by frame, and a plate is shot ONCE for the
   // whole render. So under a moving camera the compositor owns every projectable
   // layer's filter, including a flat one that authored no depth of its own. The three
@@ -650,7 +650,7 @@ function clipLayer(
 ): boolean {
   if (L.clipPath) {
     // `bw`/`bh` are the layer's RESOLVED box, which is the authored rect unless the
-    // track keyed `w`/`h` (§5.2). Percentage clip shapes and percentage radii resolve
+    // track keyed `w`/`h` (section 5.2). Percentage clip shapes and percentage radii resolve
     // against the box the browser laid out, so under a size tween they have to resolve
     // against the tweened one - otherwise a `circle(50%)` stops being a circle exactly
     // when the box stops being its authored size.
@@ -686,7 +686,7 @@ function clipLayer(
  * plate draw subtracts it and adds twice it. At pp = 0 - every P0 export - the four
  * expressions evaluate to the identical numbers the un-padded draws used.
  *
- * THE LIVE RASTER OUTRANKS THE PLATE ON EVERY KIND (plans/104 §5.2). It is asked for by
+ * THE LIVE RASTER OUTRANKS THE PLATE ON EVERY KIND (plans/104 section 5.2). It is asked for by
  * a mounted Lottie player OR by a `w`/`h` tween, and a size tween is answered by a
  * re-photograph of the box laid out at the tweened size - the whole point being that
  * text REFLOWS. Reading it only in the `lottie` branch (which is what shipped) paid for
@@ -741,7 +741,7 @@ async function paintLayer(
  * which is the same matrix the preview builds and the same one renderRecord's
  * drawObject issues.
  *
- * TWO PATHS, AND WHICH ONE A LAYER TAKES IS THE POINT (plans/104 §5.5).
+ * TWO PATHS, AND WHICH ONE A LAYER TAKES IS THE POINT (plans/104 section 5.5).
  *
  *  • CLEAN (the compositor owns no effect here): clip into the destination and draw.
  *    Byte for byte the path this function has always taken. `itemFx` returning null is
@@ -767,12 +767,12 @@ export async function drawItem(
   ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined, S: number, cameraMoves = false,
 ): Promise<void> {
   const L = item.layer;
-  // Timeline citizens with no picture: an audio bed, and (plans/104 §5.4) a camera
+  // Timeline citizens with no picture: an audio bed, and (plans/104 section 5.4) a camera
   // marker, which carries a pose rather than pixels. Neither is given a plate, and
   // neither may leave one behind here either.
   if (L.kind === 'audio' || L.kind === 'camera') return;
   if (item.alpha <= 0) return;
-  // The RESOLVED box (§5.2): the authored rect unless the track keyed `w`/`h`. Equal
+  // The RESOLVED box (section 5.2): the authored rect unless the track keyed `w`/`h`. Equal
   // to `L.rect.w/h` on every layer that keyframes no size, so every expression below is
   // the one that shipped - and a sized layer grows from its top-left, exactly as the
   // reflowed DOM does, because `rect.x/y` is still the origin and the centre moved by
@@ -821,7 +821,7 @@ export async function drawItem(
       return;
     }
 
-    // WHERE THE CLIP GOES, and the two answers are not the same (Filter Effects §5 /
+    // WHERE THE CLIP GOES, and the two answers are not the same (Filter Effects section 5 /
     // CSS Masking): `border-radius` clips the element's own content, and the filter
     // then applies to that - soft spill escapes the radius. `clip-path` applies to the
     // FILTER OUTPUT - the browser cuts the blur and the drop-shadow off at the path.
@@ -934,11 +934,11 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
   // cameras for the same stage - the property the worker-vs-in-thread sha identity
   // test exists to protect. With no camera box this resolves to the DEFAULT camera for
   // every frame, which is not an identity: it is what makes a lifted layer read as
-  // lifted (plans/104 §5.4).
+  // lifted (plans/104 section 5.4).
   const cameras = stageCameras(layers);
   const env = { stageW: job.stageW ?? 0, stageH: job.stageH ?? 0, cameras };
   // Asked ONCE for the whole render, because a plate is shot once for the whole render
-  // (§5.5 / the P1 obligation). See `itemFx`.
+  // (section 5.5 / the P1 obligation). See `itemFx`.
   const camMoves = camerasMove(cameras);
 
   const ext = new Map(crossfadeJunctions(layers).map((j) => [j.aIdx, j.ms]));
@@ -1043,7 +1043,7 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, job.outW, job.outH);
-    // THE BACKGROUND IS AN IMPLICIT z = 0 LAYER (plans/104 §5.5). Untransformed it would
+    // THE BACKGROUND IS AN IMPLICIT z = 0 LAYER (plans/104 section 5.5). Untransformed it would
     // be frozen wallpaper the whole composition slides across under a pan - the opposite
     // of a camera move - so it goes through the same `projectLayer` every other layer
     // does, anchored on the stage centre, and is drawn from a plate captured with
@@ -1096,7 +1096,7 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
           // A LIVE re-capture is asked for by the wire flag (a mounted Lottie player)
           // OR by the frame itself: a layer whose `w`/`h` are being tweened has to be
           // re-photographed at the size it is at, because a stretched plate is a
-          // stretched picture and the preview REFLOWS (§5.2). `sourceSec` is no longer
+          // stretched picture and the preview REFLOWS (section 5.2). `sourceSec` is no longer
           // part of the gate - a static box has none, and needing a size is not needing
           // a source time.
           if (!w?.needsLiveRaster && !item.sized) continue;

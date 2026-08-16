@@ -2,7 +2,7 @@
 /**
  * collab-session-source - the registry a TRANSPORT registers itself in, so that a
  * mounted tool can become a collab without the tool view knowing what a transport
- * is (plan 100 §5).
+ * is (plan 100 section 5).
  *
  * The exact sibling of `canvas-sync-provider.ts` (read its header first - this
  * mirrors it deliberately, down to the last-wins rule and the test-only clear), and
@@ -17,7 +17,7 @@
  * ── WHY A FACTORY, NOT A HANDLE ───────────────────────────────────────────────
  *
  * A provider is registered once, for the app; a handle belongs to ONE mount. A
- * private collab is pinned to the session slot the ceremony was run from (§6.2a),
+ * private collab is pinned to the session slot the ceremony was run from (section 6.2a),
  * and an org room is pinned to a document - so the registrant is asked, per mount,
  * whether THIS tool on THIS slot is part of a live collab, and answers `null` for
  * every mount that is not. Returning `null` is the normal case even when a
@@ -27,13 +27,13 @@
  * ── INERTNESS IS THE CONTRACT ─────────────────────────────────────────────────
  *
  * Nothing in this repo registers a source (it ships no server, no socket, and no
- * ceremony transport - plans/99 §1.1), so {@link acquireCollabSession} returns
+ * ceremony transport - plans/99 section 1.1), so {@link acquireCollabSession} returns
  * `null` and every presence surface in `views/tool.ts` stays unbuilt. The dormant
  * path is deliberately *one function call, one truthiness test, and no allocation*
  * - which is why this takes positional arguments rather than the context OBJECT the
  * factory receives. A context literal built at the call site would be a per-mount
  * allocation charged to every single-player user forever, for a value nobody reads
- * (plan 100 §11.14's solo-cost discipline). The object is built here, after we know
+ * (plan 100 section 11.14's solo-cost discipline). The object is built here, after we know
  * somebody is listening.
  *
  * A factory that throws is a transport failing to start, not a reason to fail the

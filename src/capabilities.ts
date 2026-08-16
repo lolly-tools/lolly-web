@@ -74,7 +74,7 @@ export interface ToolSupport {
 
 /**
  * How the Design System studio's website source stands on THIS device
- * (plan 97 §9). The same three-verdict vocabulary `toolSupport` uses, for a
+ * (plan 97 section 9). The same three-verdict vocabulary `toolSupport` uses, for a
  * feature that is gated by a transport rather than by a tool manifest:
  *
  *   'ready' - a transport exists (a Tauri shell's native fetch, or the
@@ -82,13 +82,13 @@ export interface ToolSupport {
  *   'install' - a Chromium browser with no transport: the extension can
  *                   fulfil this, exactly as it can fulfil `capture`.
  *   'unavailable' - anywhere else. There is no third transport to add later:
- *                   §9's decision is that Lolly runs no fetching service, and
+ *                   section 9's decision is that Lolly runs no fetching service, and
  *                   the deployed PWA's CSP cannot reach an arbitrary origin at
  *                   all, so this verdict is settled rather than pending.
  *
  * WHAT EACH VERDICT IS ALLOWED TO RENDER is the part worth writing down. Only
  * 'ready' puts a Website tile in the source picker - a disabled tile, or a
- * "get the app" teaser where the feature cannot run, is the dark pattern §9
+ * "get the app" teaser where the feature cannot run, is the dark pattern section 9
  * forbids. 'install' is documented on the capabilities surface
  * (lib/capabilities-data.ts → #/d?tab=caps), the same place every other gated
  * capability explains its unlock, so somebody who wants it can find out how and

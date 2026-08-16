@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The acquisition seam a mounted tool asks "am I in a collab?" through
- * (plan 100 §5) - and, more importantly, what it costs to ask when nobody is
+ * (plan 100 section 5) - and, more importantly, what it costs to ask when nobody is
  * listening.
  *
  * This registry is the ONLY thing standing between `views/tool.ts` and a whole

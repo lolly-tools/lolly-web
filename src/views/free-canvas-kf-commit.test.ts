@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The CANVAS half of playhead-contextual keyframe writes (plans/104 §8).
+ * The CANVAS half of playhead-contextual keyframe writes (plans/104 section 8).
  *
  * `timeline-panel.test.ts` covers the panel's half - the latch, the diamonds, the
  * inspector, and the `kfPoseIds` / `kfPoseWrite` seam as a pure pair. This file covers
@@ -259,7 +259,7 @@ test('a MIXED selection splits: the posed boxes are posed, the rest move, in ONE
 
 // ── "+Keyframe" in its SECOND home: the canvas contextual bar ─────────────────
 //
-// plans/104 §8's M2.5 revision, directive 1: "a diamond-glyph button in the timeline
+// plans/104 section 8's M2.5 revision, directive 1: "a diamond-glyph button in the timeline
 // transport's LEFT additive cluster AND a diamond in the canvas selected-object
 // contextual bar - both always reactive to the canvas selection". `timeline-panel.test.ts`
 // owns the transport half; this file owns the canvas half and, crucially, the seam

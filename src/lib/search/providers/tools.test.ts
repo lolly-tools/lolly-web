@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Tools + Utilities spotlight providers (plans/99 §2b) over a fake
+ * The Tools + Utilities spotlight providers (plans/99 section 2b) over a fake
  * window.__toolIndex: the utility/tool split mirrors the gallery, unlisted
  * tools never surface, the localized name is displayed while the pristine
- * English stash (§2e) stays searchable, tag/name weighting orders hits, and
+ * English stash (section 2e) stays searchable, tag/name weighting orders hits, and
  * the WeakMap haystack cache refreshes when a re-sync swaps the index object.
  *
  * Run directly:
@@ -51,7 +51,7 @@ test('utility split mirrors the gallery: category utility goes to Utilities only
   assert.equal((await tools.search(tokenize('qr'), 5))[0]!.href, '#/tool/qr-code');
 });
 
-test('the English stash is searchable; the LOCALIZED name is what displays (§2e)', async () => {
+test('the English stash is searchable; the LOCALIZED name is what displays (section 2e)', async () => {
   const hits = await utilities.search(tokenize('compress'), 5);
   assert.equal(hits.length, 1);
   assert.equal(hits[0]!.title, 'PDF verkleinern');

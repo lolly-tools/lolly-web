@@ -37,10 +37,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '../../../..');
 const EXPORT_MODULE = join(HERE, 'export.ts');
 
-// The reference artwork: 103 shapes, 84 of them stroked ONLY by a class. Lives in the
+// The reference artwork: 103 shapes, most of them stroked ONLY by a class. Lives in the
 // private SUSE brand pack, so it is absent under lolly-start / public CI - skip cleanly,
 // exactly as tests/color-block.test.ts does for its tool.
-const ART = join(REPO, 'catalog/assets/suse/credentials/illustration-cybersecurity-pine.svg');
+const ART = join(REPO, 'catalog/assets/suse/illustrations/cybersecurity.svg');
 
 /** Resolve a Chromium, or a reason to skip. Mirrors packages/node-shell/src/browsers.ts's
  *  stance: a plain `npm install` pulls no browser, so its absence is normal, not a failure. */
@@ -117,8 +117,8 @@ test('strokeOf: a class-declared stroke on the real catalog artwork resolves (PD
 
     // The regression itself. Pre-fix every one of these was 'none' → 0 outlines in PDF.
     assert.ok(r.stroked > 50, `expected most of ${r.total} shapes stroked, got ${r.stroked}`);
-    assert.ok(r.strokes.includes('rgb(0, 62, 55)'),
-      `expected the artwork's #003e37 outline colour, got ${JSON.stringify(r.strokes)}`);
+    assert.ok(r.strokes.includes('rgb(12, 50, 44)'),
+      `expected the artwork's #0c322c outline colour, got ${JSON.stringify(r.strokes)}`);
     // 4px is the artwork's own stroke-width; pre-fix this silently fell back to 1.
     assert.ok(r.widths.includes(4), `expected a 4-unit stroke width, got ${JSON.stringify(r.widths)}`);
   });

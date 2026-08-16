@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * audio-envelope - the shared bed-duck gain math behind §6.1's export mixing
+ * audio-envelope - the shared bed-duck gain math behind section 6.1's export mixing
  * (tool audio + a mix-in bed). The real graphs run only in a browser, so the
  * envelope is proven headlessly the way an OfflineAudioContext would evaluate
  * it: bedDuckEnvelope's events are rendered to samples via envelopeGainAt (a
@@ -115,7 +115,7 @@ test('scheduleGainEvents maps events onto setValueAtTime / linearRampToValueAtTi
   assert.deepEqual(calls, [['set', 1, 10], ['set', 1, 13], ['ramp', 0.2, 13.8]]);
 });
 
-test('tiny mix render: bed + primary reads as the §6.1 use case', () => {
+test('tiny mix render: bed + primary reads as the section 6.1 use case', () => {
   // Bed (constant 1.0 source through the envelope) mixed with a primary
   // narration over its span. What the user hears: music at the top, voice over
   // a low bed through the middle, music again at the tail - and with centre off,

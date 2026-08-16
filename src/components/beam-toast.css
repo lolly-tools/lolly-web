@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /*
- * The beam consent + progress toast (plan 100 §6.4, §4.6 point 6). Same visual
+ * The beam consent + progress toast (plan 100 section 6.4, section 4.6 point 6). Same visual
  * idiom as the `.pro-toast` progress-pill family (`pro/run-overlay.css`'s
  * `.pro-toast`/`.pro-toast-close`/`.pro-progress-track`/`.pro-progress-fill`,
  * the plan's own named reference) — translucent-free solid card, close corner
@@ -10,7 +10,7 @@
  * chart) that a corner consent toast has no business pulling in just to borrow a
  * handful of small rules, and `.pro-toast`'s own footprint (spans the viewport
  * width with side gutters, for a batch log that needs room to breathe) is the
- * wrong shape for a small "corner toast" (§6.4: never a blocking modal) — fighting
+ * wrong shape for a small "corner toast" (section 6.4: never a blocking modal) — fighting
  * that with an override would mean winning a cross-file cascade-layer/specificity
  * contest instead of just declaring the right box once. `.btn`/`.btn--primary`/
  * `.btn--ghost`/`.btn--sm` (buttons.css, critical path, always loaded) cover every

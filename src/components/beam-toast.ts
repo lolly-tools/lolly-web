@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-toast - the consent + progress UI for a **beam** (plan 100 §6.4, §4.6 point 6:
+ * beam-toast - the consent + progress UI for a **beam** (plan 100 section 6.4, section 4.6 point 6:
  * "Beam: progress/consent rides the existing toast/progress pill pattern (`.pro-toast`
  * family), with cancel; never a blocking modal.").
  *
@@ -48,7 +48,7 @@
  * made. A `progress` frame for a card still showing the consent sheet is dropped, not
  * treated as an implied acceptance - see `apply()`'s `progress` case.
  *
- * ── Queueing (§6.4: "never a blocking modal … multiple beams queue, one visible at a
+ * ── Queueing (section 6.4: "never a blocking modal … multiple beams queue, one visible at a
  * time") ──
  *
  * One `mountBeamToast()` call is a single toast HOST that can receive events for
@@ -241,7 +241,7 @@ export type BeamRole = 'sender' | 'receiver';
 
 /** What a beam offer looks like to a human. Deliberately NOT `beam-protocol.ts`'s own
  *  `BeamOfferMessage` - that has no notion of the human on the other end, which is a
- *  presence concern (plan §4.6's naming rules), not a wire concern. `peerName` is
+ *  presence concern (plan section 4.6's naming rules), not a wire concern. `peerName` is
  *  already the resolved display string ("Priya", "Host", "Invitee") by the time it
  *  reaches here. */
 export interface BeamOfferView {
@@ -446,7 +446,7 @@ export function mountBeamToast(container: HTMLElement, source: BeamEventSource):
       // ADVANCE a card into the accepted phase: the consent sheet is the only place
       // `accept`/`decline` exist, so treating an early progress frame as consent would
       // destroy the buttons and leave the human unable to answer while the card reads
-      // as though they had - the §11.24 event-order bypass, arriving through the one
+      // as though they had - the section 11.24 event-order bypass, arriving through the one
       // door this file owns. (`beam-protocol.ts`'s receiver refuses pre-consent bytes
       // too; this layer must hold on its own, because it is specified against an
       // untyped event stream from an adapter it does not control.)

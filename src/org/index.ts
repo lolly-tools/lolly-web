@@ -180,19 +180,19 @@ let unregisterShareSection: (() => void) | null = null;
  *  leaks the previous registration. */
 let unregisterApprovalOpener: (() => void) | null = null;
 let unregisterSessionSource: (() => void) | null = null;
-/** Unregister for the `'org'` nearby provider (plans/26 §8), so a re-init replaces
+/** Unregister for the `'org'` nearby provider (plans/26 section 8), so a re-init replaces
  *  rather than stacks it. Registered only when the instance grants `collab.nearby`. */
 let unregisterNearbySource: (() => void) | null = null;
 /** Unregister for the work-collab factory (plan 100 wave 3.1), so a re-init replaces
  *  rather than stacks the registration. Null whenever the instance does not grant
  *  `collab.join` - which is every instance until the server ships the bits. */
 let unregisterCollabFactory: (() => void) | null = null;
-/** Unregister for the Share-dialog "Work collab" section (plan 100 §7 item 9,
+/** Unregister for the Share-dialog "Work collab" section (plan 100 section 7 item 9,
  *  wave 3.1), so a re-init replaces rather than stacks the registration onto the
  *  generic share-sections registry - same reasoning as unregisterShareSection
  *  above, kept as its own handle because the two sections are independent rows. */
 let unregisterCollabShareSection: (() => void) | null = null;
-/** Unregister for the `'work'` collab opener (plan 100 §7 item 9, wave 3.3) - the
+/** Unregister for the `'work'` collab opener (plan 100 section 7 item 9, wave 3.3) - the
  *  thing that makes the Share row above render at all, since the row is gated on an
  *  opener existing. Same last-wins reasoning as the handles above. */
 let unregisterCollabOpener: (() => void) | null = null;
@@ -639,7 +639,7 @@ export async function initOrg(): Promise<OrgState | null> {
       unregisterSessionSource = registerSessionSource(
         createInstanceSessionSource(orgConfigState?.instance?.name || t('your organisation')),
       );
-      // Instance-mediated "nearby" (plans/26 §8): register the `'org'` provider when
+      // Instance-mediated "nearby" (plans/26 section 8): register the `'org'` provider when
       // this instance grants `collab.nearby` (enabled policy ∩ collab.join). Absent
       // ⇒ NO registration, so a plain build or an instance without the bit stays
       // byte-identical. Replaced (not stacked) on re-init, and dropped on reset.
@@ -648,7 +648,7 @@ export async function initOrg(): Promise<OrgState | null> {
       if (orgConfigState?.can?.['collab.nearby'] === true) {
         unregisterNearbySource = registerNearbyProvider(createOrgNearbyProvider());
       }
-      // Offer live co-editing on this instance's sessions (plan 100 §7, wave 3.1),
+      // Offer live co-editing on this instance's sessions (plan 100 section 7, wave 3.1),
       // through the factory seam in org/collab-provider.ts. Gated on the caller's
       // `collab.join` capability bit - read inline here rather than through
       // org/collab-config.ts's `canJoinCollab()` (the same test, and the accessor
@@ -695,7 +695,7 @@ export async function initOrg(): Promise<OrgState | null> {
           })
           .catch(() => { /* additive; never block or break boot */ });
       }
-      // Offer a "Work collab" row in the Share dialog (plan 100 §7 item 9, wave
+      // Offer a "Work collab" row in the Share dialog (plan 100 section 7 item 9, wave
       // 3.1 - the row + gating only; the ceremony/join UI that actually starts a
       // work collab is a later wave). Registered through the same generic
       // lib/share-sections.ts seam as "On this instance" above, with the row's

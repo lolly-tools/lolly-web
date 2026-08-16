@@ -22,9 +22,11 @@ import {
   ingestLollyFile,
   applyLollyRekey,
   creatorFromProfile,
+  extractBundledTool,
   LOLLY_FILE_FORMAT,
   LOLLY_MIME,
   type LollyLibraryAsset,
+  type LollyToolBundle,
 } from './lolly-pack.ts';
 
 /** A tiny in-memory beam host - the same seam beam-pack's own tests use, so the
@@ -107,7 +109,8 @@ test('.lolly build → read round-trips the session and carries user + catalog b
   assert.equal(upload.source, 'user');
   assert.equal(upload.bytes, uploadBytes.length);
   assert.equal(upload.label, 'My Logo');
-  assert.ok(upload.path && upload.path.startsWith('assets/blobs/'));
+  // Usable, human-legible path: the asset's own name + an extension matching the bytes.
+  assert.equal(upload.path, 'assets/uploads/My-Logo.png');
 
   const cat = manifest.assets.find(a => a.id === CATALOG_ID)!;
   assert.equal(cat.kind, 'asset');
@@ -159,6 +162,84 @@ test('.lolly records a stale/missing user ref instead of dropping it', async () 
   assert.equal(ref.kind, 'asset-ref');
   assert.equal(ref.source, 'user');
   assert.equal(ref.id, 'user/upload/gone.png');
+});
+
+test('.lolly gives carried blobs usable names + extensions, deduped on collision', async () => {
+  // Two uploads that share a name, one catalog asset - and an upload whose format is
+  // empty so the extension must come from the mime type.
+  const session = {
+    a: { source: 'user', id: 'user/upload/1-photo.jpg', url: '' },
+    b: { source: 'user', id: 'user/upload/2-photo.jpg', url: '' },
+    c: { source: 'library', id: 'suse/logo/primary', url: '' },
+    d: { source: 'user', id: 'user/upload/3-clip', url: '' },
+  };
+  const { manifest } = await buildLollyFile({
+    session, toolId: 'demo-tool',
+    userAssets: [
+      { id: 'user/upload/1-photo.jpg', type: 'raster', format: 'webp', blob: new Blob([PNG(1)], { type: 'image/webp' }), meta: { name: 'photo.webp' } },
+      { id: 'user/upload/2-photo.jpg', type: 'raster', format: 'webp', blob: new Blob([PNG(2)], { type: 'image/webp' }), meta: { name: 'photo.webp' } },
+      // No meta.name and an empty format ⇒ name falls to the id's last segment, ext to the mime.
+      { id: 'user/upload/3-clip', type: 'video', format: '', blob: new Blob([PNG(3)], { type: 'video/mp4' }) },
+    ],
+    resolveLibrary: async (id) => id === 'suse/logo/primary'
+      ? { bytes: new Uint8Array([60]), mime: 'image/svg+xml', type: 'vector', format: 'svg', label: 'SUSE Logo' } : null,
+  });
+  const path = (id: string) => manifest.assets.find(a => a.id === id)!.path;
+  assert.equal(path('user/upload/1-photo.jpg'), 'assets/uploads/photo.webp', 'own name + real ext, no double extension');
+  assert.equal(path('user/upload/2-photo.jpg'), 'assets/uploads/photo-2.webp', 'the collision is deduped');
+  assert.equal(path('suse/logo/primary'), 'assets/catalog/SUSE-Logo.svg', 'catalog asset under assets/catalog/ by its label');
+  assert.equal(path('user/upload/3-clip'), 'assets/uploads/3-clip.mp4', 'no name/format ⇒ id segment + mime-derived ext');
+});
+
+test('.lolly carries the tool under tool/, integrity-covered, and extracts it back', async () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const tool: LollyToolBundle = {
+    id: 'demo-tool',
+    version: '2.0.0',
+    trust: 'custom',
+    files: {
+      'tool.json': enc('{"id":"demo-tool"}'),
+      'template.html': enc('<div>{{title}}</div>'),
+      'hooks.js': enc('export function onInit(){}'),
+      'assets/logo.svg': enc('<svg/>'),
+      // A path that tries to escape the folder must be neutralised.
+      '../evil.js': enc('bad'),
+    },
+  };
+  const built = await buildLollyFile({
+    session: makeSession(), toolId: 'demo-tool', toolVersion: '2.0.0',
+    userAssets, resolveLibrary, tool,
+  });
+
+  const bt = built.manifest.bundledTool!;
+  assert.ok(bt, 'the manifest records the bundled tool');
+  assert.equal(bt.id, 'demo-tool');
+  assert.equal(bt.version, '2.0.0');
+  assert.equal(bt.trust, 'custom');
+  assert.equal(built.summary.toolFiles, 4, 'four real files (the ../evil.js escape is dropped)');
+  assert.equal(built.summary.toolTrust, 'custom');
+  // Every recorded file lives under tool/ and is checksummed via the integrity map.
+  for (const f of bt.files) {
+    assert.ok(f.path.startsWith('tool/'), `${f.path} is under tool/`);
+    assert.equal(f.checksum, built.manifest.integrity![f.path], 'file checksum mirrors integrity');
+  }
+  assert.ok(!bt.files.some(f => f.path.includes('evil')), 'the folder-escape path never made it in');
+
+  // Read + integrity-verify, then pull the tool out for the installer.
+  const parsed = await readLollyFile(new Uint8Array(await built.blob.arrayBuffer()));
+  const extracted = extractBundledTool(parsed)!;
+  assert.equal(extracted.id, 'demo-tool');
+  assert.equal(extracted.trust, 'custom');
+  assert.equal(new TextDecoder().decode(extracted.files['template.html']), '<div>{{title}}</div>', 'tool/ prefix stripped, bytes exact');
+  assert.equal(new TextDecoder().decode(extracted.files['assets/logo.svg']), '<svg/>');
+});
+
+test('.lolly without a tool carries none (backwards-compatible default)', async () => {
+  const built = await buildLollyFile({ session: makeSession(), toolId: 'demo-tool', userAssets, resolveLibrary });
+  assert.equal(built.manifest.bundledTool, undefined, 'no bundledTool block when the tool is not carried');
+  assert.equal(built.summary.toolFiles, 0);
+  const parsed = await readLollyFile(new Uint8Array(await built.blob.arrayBuffer()));
+  assert.equal(extractBundledTool(parsed), null);
 });
 
 test('.lolly import lands assets + session, rewriting user AND carried-library refs', async () => {

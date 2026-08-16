@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-mount - the registry between a connected ceremony and the thing that makes it a
- * live session (plan 100 §5, §6.2a, §11.17).
+ * live session (plan 100 section 5, section 6.2a, section 11.17).
  *
  * What is worth pinning here is not "a setter sets": it is the RACE the parking surface
  * exists for. The acceptor arrives on `#/join` from a link, cold, with no tool view ever
  * having mounted - so a pairing can genuinely complete before anything has registered a
- * mount, and dropping it would cost two people a whole fresh ceremony (§6.1). So:
+ * mount, and dropping it would cost two people a whole fresh ceremony (section 6.1). So:
  * dormant returns false and parks, a registrant takes it, and a late registrant can
  * still adopt what was parked.
  *
@@ -163,7 +163,7 @@ test('a rejecting async mount does not surface as an unhandled rejection', async
   await new Promise((resolve) => { setImmediate(resolve); });
 });
 
-test('the ephemeral flag says which side of §6.2a this device is on', () => {
+test('the ephemeral flag says which side of section 6.2a this device is on', () => {
   assert.equal(fake('x', 'acceptor').ephemeral, true, "the acceptor's copy never lands in a slot");
   assert.equal(fake('x', 'inviter').ephemeral, false, 'the inviter owns the saved session');
 });

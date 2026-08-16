@@ -48,7 +48,7 @@ export interface TextBinding {
   /** A C2PA_TEXT_STATUS code - the carrier is present but unusable. */
   status?: string;
   detail?: string;
-  /** §A.7.1.2 / §A.9.3 external reference. THE ENGINE NEVER FETCHES IT. */
+  /** section A.7.1.2 / section A.9.3 external reference. THE ENGINE NEVER FETCHES IT. */
   manifestUrl?: string;
   /** The verified store arrived via verifyC2pa's `externalManifest` option - the
    *  shell fetched `manifestUrl` itself, so this report is about a credential
@@ -59,12 +59,12 @@ export interface TextBinding {
   wrappersTruncated?: boolean;
   selectedWrapper?: number;
   exclusionsConform?: 'narrower' | 'other';
-  /** §15.12.1.3.4 - the machine-derivable "this is part of a longer signed
+  /** section 15.12.1.3.4 - the machine-derivable "this is part of a longer signed
    *  text" shapes only. Never set from a plain hash mismatch. */
   fragment?: boolean;
   exclusionsFrom?: 'wrapper' | 'selectors';
 }
-// §18.28 c2pa.ai-disclosure - claim CONTENT (what the signer declared), read for
+// section 18.28 c2pa.ai-disclosure - claim CONTENT (what the signer declared), read for
 // every format and never a failure.
 export interface AiDisclosure {
   modelType?: string;
@@ -94,11 +94,11 @@ export interface VerifyReport {
   history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown; generator?: unknown }>;
   // Present only for the three C2PA 2.4 text formats (html / code / text).
   textBinding?: TextBinding;
-  // §18.28, any format. `aiDisclosures` appears only when a claim made more than
+  // section 18.28, any format. `aiDisclosures` appears only when a claim made more than
   // one; `aiDisclosure` is always the first of them.
   aiDisclosure?: AiDisclosure;
   aiDisclosures?: AiDisclosure[];
-  // claim_generator_info.specVersion - informational per §10.2.3.1, so nothing
+  // claim_generator_info.specVersion - informational per section 10.2.3.1, so nothing
   // here (or in the engine) branches on it.
   specVersion?: string;
 }
@@ -162,8 +162,8 @@ export const STATE_COPY = {
     title: 'Credential expired',
     sub: 'The file still matches exactly what its credential signed — nothing was modified — but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
   },
-  // state 'invalid' with ONE failure: manifest.inaccessible. C2PA 2.4 §A.7.1.2 /
-  // §A.9.3 let a text asset REFERENCE its credential instead of carrying it, and
+  // state 'invalid' with ONE failure: manifest.inaccessible. C2PA 2.4 section A.7.1.2 /
+  // section A.9.3 let a text asset REFERENCE its credential instead of carrying it, and
   // the engine reports `invalid` there because `state` is integrity-only and NO
   // integrity check could run - 'valid' would be a lie and 'none' (no credential
   // at all) would be a different one. Rendering that as the flat "Credential
@@ -196,7 +196,7 @@ export const STATE_COPY = {
   // block, so part of the file is deliberately not bound. The hash over the rest
   // still ran and still PASSED, which is why the flat broken hero was false on
   // its own page - the check list right below it prints "data hash valid". This
-  // is the §A.7.1.3 / §A.9.4 forged-carve-out shape, and the correct reading is
+  // is the section A.7.1.3 / section A.9.4 forged-carve-out shape, and the correct reading is
   // "the bytes are intact, the coverage is not", never "the file was edited".
   uncovered: {
     cls: 'is-none is-uncovered',
@@ -234,7 +234,7 @@ export function isExpiredOnly(report: VerifyReport): boolean {
 }
 
 // True when the ONLY failure is "the credential lives elsewhere" - the C2PA 2.4
-// external-reference case (§A.7.1.2 / §A.9.3). Same shape as isExpiredOnly, and
+// external-reference case (section A.7.1.2 / section A.9.3). Same shape as isExpiredOnly, and
 // for the same reason: an `invalid` state whose single cause is not damage must
 // not be worded as damage. A report that ALSO carries a real failure keeps the
 // broken verdict - this is a rewording of one specific case, never a softener.
@@ -250,9 +250,9 @@ export function isExternalOnly(report: VerifyReport): boolean {
 // badge that says "bytes no longer match" / "modified after signing" is an
 // inference FROM one of them, so it may only be printed when one of them is
 // actually in the report. Nine of the C2PA 2.4 text statuses return before the
-// binding ever runs (M1 §3: "'your exclusions are wrong' and 'your bytes
-// changed' are different accusations"), and one of them - the §A.7.1.3 /
-// §A.9.4 carve-out - fails the report with the hash row PASSING beside it.
+// binding ever runs (M1 section 3: "'your exclusions are wrong' and 'your bytes
+// changed' are different accusations"), and one of them - the section A.7.1.3 /
+// section A.9.4 carve-out - fails the report with the hash row PASSING beside it.
 const HASH_FAIL_CODES = ['assertion.dataHash.mismatch', 'assertion.bmffHash.mismatch'];
 const HASH_PASS_CODES = ['assertion.dataHash.match', 'assertion.bmffHash.match'];
 /** A hard-binding comparison ran and FAILED - the only evidence for "the bytes changed". */
@@ -276,7 +276,7 @@ const CARRIER_CODES = new Set([
   'manifest.text.multipleWrappers',
   'manifest.inaccessible',
   'credential.unreadable',
-  // §15.12.1.3.1 step 3: the exclusions are wrong, which is a different
+  // section 15.12.1.3.1 step 3: the exclusions are wrong, which is a different
   // accusation from "the bytes changed" - and the hash never ran.
   'assertion.dataHash.malformed',
 ]);
@@ -286,7 +286,7 @@ export function isCarrierOnly(report: VerifyReport): boolean {
   return fails.length > 0 && fails.every((c) => CARRIER_CODES.has(c.code)) && !hasHashVerdict(report);
 }
 
-/** The ONE failure is the §A.7.1.3 / §A.9.4 carve-out - the hash itself passed. */
+/** The ONE failure is the section A.7.1.3 / section A.9.4 carve-out - the hash itself passed. */
 export function isExclusionsOnly(report: VerifyReport): boolean {
   const fails = (report.checks ?? []).filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
   return fails.length === 1 && fails[0]!.code === 'assertion.dataHash.additionalExclusionsPresent';
@@ -319,7 +319,7 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
   const na = 'na';
 
   // "Manifest readable" is about a manifest we actually read. With the credential
-  // stored elsewhere (§A.7.1.2 / §A.9.3) there was nothing in these bytes to
+  // stored elsewhere (section A.7.1.2 / section A.9.3) there was nothing in these bytes to
   // read, so this is not-applicable - a green "readable: passed" would be the
   // scorecard vouching for a file the page just said it could not check.
   const readable = present('credential.unreadable') ? 'fail'
@@ -438,7 +438,7 @@ export function resolveState(report: VerifyReport): ResolvedState {
           })
         // The external hero's default sub ends "The address is shown below."
         // One route here has no address to show: a reference the engine refused
-        // to hand up at all (a `javascript:` href - M1 §3, "manifestUrl is
+        // to hand up at all (a `javascript:` href - M1 section 3, "manifestUrl is
         // deliberately absent"). Promising an address that is never rendered
         // sends the reader looking for something that is not on the page.
         : state === STATE_COPY.external && !report.textBinding?.manifestUrl

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Neutralising a `transform` that a RUNNING ANIMATION owns - the walkers' re-entry
- * guard (plans/104 §9, P3.1 failure 2).
+ * guard (plans/104 section 9, P3.1 failure 2).
  *
  * Both walkers in `export.ts` (SVG here, PDF further down the same file) handle a
  * rotated / skewed / non-uniformly-scaled element the same way: set
@@ -9,7 +9,7 @@
  * comes out in ONE SVG `rotate()`/`matrix()` group (or one jsPDF CTM). That
  * neutralise step is a plain inline declaration, and there is exactly one thing in
  * CSS that outranks every declaration in every origin: an ANIMATION or TRANSITION
- * currently running on that property (CSS Cascade 5 §6.1 - animations sit above the
+ * currently running on that property (CSS Cascade 5 section 6.1 - animations sit above the
  * author `!important` level and transitions above them again). A STRONGER inline
  * style therefore cannot win, `!important` included - measured, which is why nothing
  * here reaches for one.
@@ -48,7 +48,7 @@
  *     of its walk. That means an element merely DECLARING a transform transition - 
  *     idle, never hovered, never touched - was enough to trigger the re-entry, which
  *     is why a gallery of static tiles could explode. `!important` is used for this
- *     one property, and it is not the move §9 rules out: importance settles a
+ *     one property, and it is not the move section 9 rules out: importance settles a
  *     contest between DECLARATIONS, which this is. Out-declaring a running ANIMATION
  *     is what is futile, and that is not attempted here.
  *  2. **If the transform survives that, do not wrap and do not recurse.** An author
@@ -201,7 +201,7 @@ export function neutraliseTransform(
   const prevTransPriority = style.getPropertyPriority?.('transition-property') ?? '';
   const stopped = stopTransformAnimations(el);                  // (1)
   // (1b) Both writes land in one style change, so the transition that the transform
-  // write would have started never gets to exist: CSS Transitions §Starting reads
+  // write would have started never gets to exist: CSS Transitions section Starting reads
   // `transition-property` from the AFTER-change style, and by then it is `none`.
   style.setProperty('transition-property', 'none', 'important');
   style.transform = 'none';

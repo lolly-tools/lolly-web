@@ -303,7 +303,7 @@ test('verify ?src= refuses anything that can name another host', () => {
   }
 });
 
-// ── The credential stored elsewhere (C2PA 2.4 §A.7.1.2 / §A.9.3) ─────────────
+// ── The credential stored elsewhere (C2PA 2.4 section A.7.1.2 / section A.9.3) ─────────────
 //
 // The engine reports `state: 'invalid'` + `manifest.inaccessible` for a text
 // asset that REFERENCES its credential instead of carrying it, because `state`
@@ -372,7 +372,7 @@ test('a credential fetched from elsewhere never claims to be "embedded"', () => 
 //
 // Every hero sentence and badge about the FILE's bytes is an inference from one
 // check row: a failed hard binding. Nine of the C2PA 2.4 text statuses return
-// before that row is ever produced, and the §A.7.1.3 / §A.9.4 carve-out fails
+// before that row is ever produced, and the section A.7.1.3 / section A.9.4 carve-out fails
 // the report with that row PASSING beside it. Printing the accusation in either
 // case is the page arguing with its own check list.
 
@@ -457,8 +457,8 @@ test('an invalid state with no hash FAILURE never claims the bytes changed', () 
   assert.equal(stateTone(real), 'bad');
 });
 
-test('the §A.7.1.3 carve-out reads as coverage, not as damage', () => {
-  // The forgery shape M1 §6.3 added the refusal for: the exclusion swallows a
+test('the section A.7.1.3 carve-out reads as coverage, not as damage', () => {
+  // The forgery shape M1 section 6.3 added the refusal for: the exclusion swallows a
   // paragraph as well as the manifest block, so the hash over the remainder
   // MATCHES. The old hero said "Bytes no longer match" on a page whose own
   // check list printed "data hash valid" two panels below.
@@ -510,8 +510,8 @@ test('a file whose text was never searched is not reported as clean', () => {
 });
 
 test('the external hero does not promise an address it has none of', () => {
-  // §A.7.1.2 with a `javascript:` href: the engine refuses to hand the
-  // reference up at all (M1 §3, "manifestUrl is deliberately absent"), so the
+  // section A.7.1.2 with a `javascript:` href: the engine refuses to hand the
+  // reference up at all (M1 section 3, "manifestUrl is deliberately absent"), so the
   // stock sub's closing "The address is shown below." pointed at nothing.
   const noUrl = baseReport({
     state: 'invalid',

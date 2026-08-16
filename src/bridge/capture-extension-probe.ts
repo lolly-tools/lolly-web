@@ -53,7 +53,7 @@ export function hasCaptureExtension(): boolean {
  * Separate from `hasCaptureExtension()` because an installed-but-older extension
  * has the flag and cannot do this, and because the studio decides whether the
  * Website source exists at all before it renders - showing a source that cannot
- * run is the thing plan 97 §9 forbids.
+ * run is the thing plan 97 section 9 forbids.
  */
 export function hasSiteCapture(): boolean {
   if (typeof window === 'undefined') return false;

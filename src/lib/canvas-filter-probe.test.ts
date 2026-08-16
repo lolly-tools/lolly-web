@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * The ctx.filter functional probe - lib/canvas-filter-probe.ts (plan 104 §11 S1).
+ * The ctx.filter functional probe - lib/canvas-filter-probe.ts (plan 104 section 11 S1).
  *
  * Run directly:  node --test shells/web/src/lib/canvas-filter-probe.test.ts
  *

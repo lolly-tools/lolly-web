@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Overview room - the studio's hub and its completion state (plan 97 §5).
+ * The Overview room - the studio's hub and its completion state (plan 97 section 5).
  *
  * Two faces of one room, decided by whether a design system is in force here - 
  * this device's own install or a real one shipped by the catalog, either way:
@@ -12,7 +12,7 @@
  *    many logo slots are filled, how many tokens there are. Every block is a
  *    door into its room. Counts, never a progress bar: nothing here is owed.
  *
- * The website door (plan 97 §9) is deliberately absent rather than disabled - 
+ * The website door (plan 97 section 9) is deliberately absent rather than disabled - 
  * it arrives with M6, gated on a transport that actually works, and a greyed
  * third door would advertise something nobody can use.
  *

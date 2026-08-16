@@ -13,7 +13,7 @@
  * jsdom harness or the zip machinery. `views/free-canvas.ts`'s import panel is
  * the only caller: parse, then file.
  *
- * The template artifact is a plain session (plan §2.2): nothing new has to exist
+ * The template artifact is a plain session (plan section 2.2): nothing new has to exist
  * for a template to be stored, listed, renamed, filed, shared or backed up.
  * Template-ness is metadata in the established `__` namespace on the payload - 
  * `__template: true` plus `__slots` - which is purely additive, so old readers
@@ -103,7 +103,7 @@ export function templateSessionData(
     __toolId: opts.toolId,
     __toolVersion: opts.toolVersion ?? '',
     __label: template.name,
-    // The additive template markers (plan §2.2). Unknown `__` keys are ignored
+    // The additive template markers (plan section 2.2). Unknown `__` keys are ignored
     // by every existing reader, so this needs no format-version bump.
     __template: true,
     __slots: template.slots,
@@ -121,7 +121,7 @@ export function templateSessionData(
  * Best-effort per template: a failed save warns and the rest continue, because
  * half a design system is worth more than an aborted import. The folder is
  * created ONCE, up front, so a partially failed batch still lands somewhere the
- * user can find it. Re-importing the same file mints a second folder (plan §2.8
+ * user can find it. Re-importing the same file mints a second folder (plan section 2.8
  * question 2 - the v1 assumption).
  */
 export async function fileTemplatesAsSessions(

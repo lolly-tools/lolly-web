@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * "Lift layers" - the SURFACE (plans/104 §7, P3b).
+ * "Lift layers" - the SURFACE (plans/104 section 7, P3b).
  *
  * The two halves this file does NOT re-test: the engine's enumeration
  * (`engine/src/svg-layers.ts` owns "which layers, and what markup for each") and the
@@ -349,7 +349,7 @@ test('the dialog states the count, lists every layer, and asks — it does not a
     const before = f.writes();
     const p = await openDialog(f);
     assert.match(p.textContent || '', /Lift layers/);
-    assert.match(p.textContent || '', /3 layers found/, 'the §7 headline, verbatim');
+    assert.match(p.textContent || '', /3 layers found/, 'the section 7 headline, verbatim');
     const rows = [...p.querySelectorAll('.fc-lift-row')];
     assert.equal(rows.length, 3, 'one row per layer');
     assert.match(rows[0]!.textContent || '', /Layer 1/, 'an INDEX, never a name out of the file');
@@ -382,7 +382,7 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
     const lifted = rows.slice(0, 3);
     // P3.2's eff-band ladder, not a fixed 40 px step: three layers get three full
     // rungs of 2 % magnification each, which is z 0 / 23.53 / 46.15 at P = 1200.
-    assert.deepEqual(lifted.map((r) => r.z), [0, 23.53, 46.15], '§7’s auto-stagger, through liftRows');
+    assert.deepEqual(lifted.map((r) => r.z), [0, 23.53, 46.15], 'section 7’s auto-stagger, through liftRows');
     assert.deepEqual(lifted.map((r) => r.shadow), ['depth', 'depth', 'depth']);
     const groups = new Set(lifted.map((r) => r.group));
     assert.equal(groups.size, 1, 'one shared group, so the stack selects and moves as one');

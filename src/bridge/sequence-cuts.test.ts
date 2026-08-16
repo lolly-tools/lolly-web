@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-cuts tests - the contact sheet's DECISION surface (phase 2.5, §4.6).
+ * sequence-cuts tests - the contact sheet's DECISION surface (phase 2.5, section 4.6).
  *
  * WHAT THIS TIER CAN PROVE, and does:
  *   • midpoint sampling - `t_i = totalMs * (i + 0.5) / n`, strictly inside the

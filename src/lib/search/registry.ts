@@ -11,7 +11,7 @@
  * Group presentation is fixed (GROUP_ORDER) - spotlight groups; ranking happens
  * within a group only, by SearchHit.score (lib/search/match.ts scoring). Which
  * group a view "owns", and whether that view live-filters behind the overlay or
- * sends everything to it, is declared in ROUTE_DOMAIN (§2a). Either way the own
+ * sends everything to it, is declared in ROUTE_DOMAIN (section 2a). Either way the own
  * group is HOISTED to the top of the overlay with the larger cap and
  * brand-highlighted, so the current view's results lead the panel even when it
  * occludes the cards behind. The `tier` still records whether the view
@@ -42,7 +42,7 @@ export interface SearchProvider {
   search(tokens: readonly string[], limit: number): Promise<SearchHit[]>;
 }
 
-/** Fixed presentation order (plans/99 §2a - no interleaved global ranking). The
+/** Fixed presentation order (plans/99 section 2a - no interleaved global ranking). The
  *  `ask` group is LAST: it is the fallback affordance ("ask Lolly about this")
  *  under whatever concrete hits the other providers found (plans/103 M0). */
 export const GROUP_ORDER: readonly SearchGroupId[] = ['tools', 'utilities', 'projects', 'catalog', 'settings', 'places', 'docs', 'ask'];
@@ -59,7 +59,7 @@ export const GROUP_LABELS: Record<SearchGroupId, string> = {
   ask: 'Ask Lolly',
 };
 
-/** §2a - which group is a route's own domain, and its tier. Routes absent here
+/** section 2a - which group is a route's own domain, and its tier. Routes absent here
  *  (an unclaimed bar would only show on future M3 routes) show every group. */
 export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' | 'overlay' }> = {
   gallery: { group: 'tools', tier: 'live' },
@@ -70,7 +70,7 @@ export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' |
   dashboard: { group: 'settings', tier: 'overlay' },
 };
 
-/** "See all in <view> →" targets - the explicit ?q= handoff (plans/99 §2a).
+/** "See all in <view> →" targets - the explicit ?q= handoff (plans/99 section 2a).
  *  Only the four list views have one; settings/places/docs groups end plain. */
 export const GROUP_SEE_ALL: Partial<Record<SearchGroupId, (q: string) => string>> = {
   tools: (q) => `#/?q=${encodeURIComponent(q)}`,
@@ -79,7 +79,7 @@ export const GROUP_SEE_ALL: Partial<Record<SearchGroupId, (q: string) => string>
   catalog: (q) => `#/c?q=${encodeURIComponent(q)}`,
 };
 
-/** Per-group row caps (plans/99 §2a). */
+/** Per-group row caps (plans/99 section 2a). */
 export const GROUP_CAP = 5;
 export const OWN_GROUP_CAP = 8;
 

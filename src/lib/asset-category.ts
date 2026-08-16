@@ -25,7 +25,6 @@ export interface LibGroup { key: string; label: string; sub?: LibSubGroup[]; }
 // Backgrounds, not Icons. Headshots and Photos are SEPARATE top-level groups (each
 // collapses on its own). 'other' catches anything untagged.
 export const LIB_GROUPS: LibGroup[] = [
-  { key: 'credentials',   label: 'Content Credentials' },  // "Made with Lolly" demo set - surfaced first for onboarding
   { key: 'logos',         label: 'Logos' },
   { key: 'backgrounds',   label: 'Backgrounds' },
   { key: 'campaign',      label: 'Campaign Photos' },
@@ -50,7 +49,6 @@ export function libCategory(ref: AssetRef | undefined, overrides?: Record<string
   const over = overrides?.[base];
   if (over && LIB_GROUPS.some(g => g.key === over)) return over;
   const t = new Set((ref?.meta?.tags as string[] | undefined) || []);
-  if (t.has('content-credentials')) return 'credentials';  // wins over the family tags these assets also carry
   if (t.has('campaign'))   return 'campaign';   // campaign photos are their own group, checked before 'photo'
   if (t.has('background')) return 'backgrounds';
   if (t.has('logo'))       return 'logos';

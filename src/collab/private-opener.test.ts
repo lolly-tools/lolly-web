@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * private-opener - the `'private'` slot of `lib/collab-launch.ts` (plan 100 §0, §6.1).
+ * private-opener - the `'private'` slot of `lib/collab-launch.ts` (plan 100 section 0, section 6.1).
  *
  * Three properties, and each of them has already been a bug in some codebase:
  *
@@ -9,7 +9,7 @@
  *    is a row that never renders, silently, forever;
  *  - the FLAG is read on every open, not once at registration, so turning it on in the
  *    profile works without a reload and turning it off stops opening things;
- *  - the reply listener (§11.25) lives exactly as long as the dialog. A listener that
+ *  - the reply listener (section 11.25) lives exactly as long as the dialog. A listener that
  *    outlives its dialog would ack a reply into a window that is gone, and the tab that
  *    sent it would close believing it landed.
  *
@@ -196,7 +196,7 @@ test('it opens the INVITER role, carrying the session it was launched from', asy
 
 // ── The handoff to whatever owns co-editing ───────────────────────────────────
 
-test('a connected pair reaches the mount registry, tagged as the inviter side (§6.2a)', async () => {
+test('a connected pair reaches the mount registry, tagged as the inviter side (section 6.2a)', async () => {
   setFlagMirror(PRIVATE_COLLAB_FLAG.id, true);
   const taken: CollabConnection[] = [];
   registerCollabMount((conn) => { taken.push(conn); });
@@ -285,7 +285,7 @@ test('an injected-effects opener with no transport behind it hands the mount not
   assert.equal(takeParked().length, 0);
 });
 
-// ── The reply listener (§11.25) ───────────────────────────────────────────────
+// ── The reply listener (section 11.25) ───────────────────────────────────────────────
 
 test('the reply listener lives exactly as long as the dialog', async () => {
   setFlagMirror(PRIVATE_COLLAB_FLAG.id, true);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/collab-config.ts - typed accessors for the collab capability bits an
- * OPTIONAL control plane may grant, per plans/100 §6.3/§7.7 ("work collab", the
+ * OPTIONAL control plane may grant, per plans/100 section 6.3/section 7.7 ("work collab", the
  * org-rooms track). Reads `OrgConfig.can['collab.join']` / `['collab.edit']`
  * through the existing generic seam (`org/index.ts`'s `orgConfig()`) - this file
  * adds no new network/state surface of its own.
@@ -32,7 +32,7 @@ export function canJoinCollab(): boolean {
 }
 
 /** Whether the current member may make edits inside a work collab (as opposed to
- *  observer-only presence - plans/100 §7.5's writer/observer split). `false` with
+ *  observer-only presence - plans/100 section 7.5's writer/observer split). `false` with
  *  no control plane, no opinion, or an explicit deny - never assume yes. A member
  *  who cannot join at all (`canJoinCollab()` false) cannot edit either, but this
  *  accessor does not itself imply that ordering - callers gate on both. */

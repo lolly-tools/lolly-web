@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * beam-sink - the receiver-side staging driver behind `BeamSink`
- * (plan 100 §6.4, §11.15a, §11.18; the storage half of wave 3's beam).
+ * (plan 100 section 6.4, section 11.15a, section 11.18; the storage half of wave 3's beam).
  *
  * `collab/beam-protocol.ts` is deliberately storage-blind: it defines the frames and
  * the two state machines, and writes every received byte through an injected
@@ -10,14 +10,14 @@
  * are only as good as this driver, so the two plan sections it exists to satisfy are
  * worth restating as properties of THIS file:
  *
- *  - **§11.15a - a 38 MB pack never accumulates in renderer RAM.** `write()` puts one
+ *  - **section 11.15a - a 38 MB pack never accumulates in renderer RAM.** `write()` puts one
  *    chunk into IndexedDB as one row and returns; nothing is buffered per item, per
  *    beam, or anywhere else. The payload is stored as a `Blob`, so reading an item
  *    back at `finalize()` hands out lazy, disk-backed handles that `new Blob(parts)`
  *    concatenates by reference rather than by copying tens of megabytes through the
  *    JS heap. This is also why the module is DOM-free: it runs unchanged in a Worker
  *    (the intended home for pack ingest) or on the main thread.
- *  - **§11.18 - no partial ingest.** `finalize()` SEALS an item; it does not ingest
+ *  - **section 11.18 - no partial ingest.** `finalize()` SEALS an item; it does not ingest
  *    one. Nothing here writes to `user-assets`, `state`, or any other real store, and
  *    `discard()` removes every row for the beam, idempotently and safely mid-write.
  *    The assembled `Blob`s stay in this driver's hand until the receiver reaches
@@ -45,7 +45,7 @@
  * ── Byte-exactness ───────────────────────────────────────────────────────────
  *
  * A transferred asset's bytes must arrive byte-identical - that is the rule that lets
- * C2PA credentials survive a beam (§6.4, the `credentialedBytes` convention from the
+ * C2PA credentials survive a beam (section 6.4, the `credentialedBytes` convention from the
  * catalog's downloads). This driver therefore never transforms a payload: no text
  * decoding, no re-encoding, no MIME sniffing, no separators. It stores the exact
  * chunk and concatenates the exact chunks in seq order. The assembled `Blob` carries
@@ -103,7 +103,7 @@ export const BEAM_STAGING_STORE = 'beam-staging';
 export const STALE_BEAM_MS = 24 * 60 * 60 * 1000;
 
 /** Upper bound for the itemIndex/seq halves of a key range. Both are small integers
- *  in practice (§11.6 caps a chunk at 64 KB and the protocol caps an item at 1 GB),
+ *  in practice (section 11.6 caps a chunk at 64 KB and the protocol caps an item at 1 GB),
  *  so this is a range terminator, not a limit anyone can reach. */
 const MAX_KEY_PART = Number.MAX_SAFE_INTEGER;
 
@@ -119,7 +119,7 @@ export interface BeamStagingRow {
   /** `bytes.size`, denormalised so byte accounting never has to open a payload. */
   readonly size: number;
   /** ms since epoch. The orphan sweep's only clock, and nothing else reads it - 
-   *  convergence and verification are wall-clock-free (§11.7). */
+   *  convergence and verification are wall-clock-free (section 11.7). */
   readonly at: number;
 }
 
@@ -226,7 +226,7 @@ function errText(err: unknown): string {
 
 // ── The sink ──────────────────────────────────────────────────────────────────
 
-/** An item, sealed and assembled. Not yet ingested - §11.18 keeps it here until the
+/** An item, sealed and assembled. Not yet ingested - section 11.18 keeps it here until the
  *  receiver reaches `complete`. */
 export interface BeamStagedItem {
   readonly itemIndex: number;
@@ -492,7 +492,7 @@ export interface ClearStaleBeamsOptions {
   readonly now?: () => number;
   /** Beam ids to spare - the transfers this session has live. A beam being received
    *  right now refreshes its own stamp on every chunk, so this is belt-and-braces for
-   *  a stalled-but-alive transfer (and for §11.8's second tab). */
+   *  a stalled-but-alive transfer (and for section 11.8's second tab). */
   readonly keep?: Iterable<string>;
   readonly log?: (message: string, meta?: Record<string, unknown>) => void;
 }

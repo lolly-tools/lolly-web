@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The presence engine (plan 100 §4.5–§4.8, §11.4, §11.5; wave 1.1).
+ * The presence engine (plan 100 section 4.5–section 4.8, section 11.4, section 11.5; wave 1.1).
  *
  * Everything here runs on FAKE TIME - the engine takes its clock and its timers as
  * options for exactly this reason, so a 30-second eviction is asserted at the
@@ -9,13 +9,13 @@
  *
  * The claims, in order of what a regression would cost:
  *
- *  1. ZERO traffic when alone (§4.7). Not "less" - no frame, and no timer even
+ *  1. ZERO traffic when alone (section 4.7). Not "less" - no frame, and no timer even
  *     scheduled. It is the promise single-player makes to every build.
  *  2. The 50 ms throttle coalesces a burst to one frame per window, and the LAST
  *     state of a burst still lands (trailing flush).
- *  3. TTL eviction at exactly 30 s - and never for an `away` peer (§11.4): a
+ *  3. TTL eviction at exactly 30 s - and never for an `away` peer (section 11.4): a
  *     background tab whose timers Chrome throttled is not a crashed tab.
- *  4. Newest-only per sender (§11.5): the lossy presence lane delivers frames out
+ *  4. Newest-only per sender (section 11.5): the lossy presence lane delivers frames out
  *     of order, and presence is a whole-value register with no field merge to fall
  *     back on.
  *  5. A `null` state leaves immediately, rather than ghosting for the TTL.
@@ -120,7 +120,7 @@ function rig(clientId = 'me'): Rig {
   return { clock, sends, engine };
 }
 
-// ── occupancy scaling (§4.7) ──────────────────────────────────────────────────
+// ── occupancy scaling (section 4.7) ──────────────────────────────────────────────────
 
 test('alone: zero frames and zero timers, however much the local state moves', () => {
   const { clock, sends, engine } = rig();
@@ -168,7 +168,7 @@ test('the last peer leaving puts us back to silence', () => {
   assert.equal(sends.length, announced, 'no traffic once alone again');
 });
 
-// ── send throttle (§4.7) ──────────────────────────────────────────────────────
+// ── send throttle (section 4.7) ──────────────────────────────────────────────────────
 
 test('outbound is coalesced to one frame per 50 ms, and the burst tail still lands', () => {
   const { clock, sends, engine } = rig();
@@ -213,7 +213,7 @@ test('self-refresh re-broadcasts every 15 s so peers never time us out', () => {
   assert.ok(PRESENCE_HEARTBEAT_MS < PRESENCE_TTL_MS, 'a refresh must beat the peers TTL');
 });
 
-// ── TTL, away, explicit removal (§4.7, §11.4) ─────────────────────────────────
+// ── TTL, away, explicit removal (section 4.7, section 11.4) ─────────────────────────────────
 
 test('a silent peer is evicted at exactly 30 s, not before', () => {
   const { clock, engine } = rig();
@@ -270,7 +270,7 @@ test('removal is the transport call, not the TTL', () => {
   assert.equal(rosters.length, 2, 'removing a peer we do not have notifies nobody');
 });
 
-// ── ordering (§11.5) ──────────────────────────────────────────────────────────
+// ── ordering (section 11.5) ──────────────────────────────────────────────────────────
 
 test('newest-only per sender: stale and duplicate frames are dropped', () => {
   const { engine } = rig();
@@ -302,7 +302,7 @@ test('sequences are per sender, so one chatty peer cannot mute a quiet one', () 
 
   engine.receive({ from: 'p1', seq: 40, state: stateOf('p1') });
   assert.equal(engine.receive({ from: 'p2', seq: 1, state: stateOf('p2') }), true);
-  assert.deepEqual(engine.roster().map((p) => p.id), ['p1', 'p2'], 'first-seen order (§4.4)');
+  assert.deepEqual(engine.roster().map((p) => p.id), ['p1', 'p2'], 'first-seen order (section 4.4)');
 });
 
 test('our own frame looped back by a relay never becomes a roster entry', () => {
@@ -311,7 +311,7 @@ test('our own frame looped back by a relay never becomes a roster entry', () => 
   assert.deepEqual(engine.roster(), []);
 });
 
-// ── leaving (§4.7) ────────────────────────────────────────────────────────────
+// ── leaving (section 4.7) ────────────────────────────────────────────────────────────
 
 test('a null state leaves immediately, without waiting out the TTL', () => {
   const { clock, engine } = rig();
@@ -344,7 +344,7 @@ test('destroy broadcasts the clean-disconnect frame and stops everything', () =>
 
   engine.destroy();
   assert.equal(sends.length, announced + 1);
-  assert.equal(sends.at(-1)?.state, null, 'null state = clean leave (§4.7)');
+  assert.equal(sends.at(-1)?.state, null, 'null state = clean leave (section 4.7)');
   assert.ok((sends.at(-1)?.seq ?? 0) > (sends[announced - 1]?.seq ?? 0), 'and it is the newest');
   assert.equal(clock.pending(), 0);
   assert.deepEqual(engine.roster(), []);
@@ -362,7 +362,7 @@ test('destroying while alone says nothing', () => {
   assert.equal(sends.length, 0);
 });
 
-// ── join handshake (§4.7) ─────────────────────────────────────────────────────
+// ── join handshake (section 4.7) ─────────────────────────────────────────────────────
 
 test('the join snapshot carries everyone except the joiner', () => {
   const { engine } = rig('host');
@@ -496,10 +496,10 @@ test('a transport that throws does not take the heartbeat with it', () => {
   assert.equal(engine.roster().length, 1, 'and the roster is untouched by the send failure');
 });
 
-// ── a device that reloads (§11.4, §11.5) ──────────────────────────────────────
+// ── a device that reloads (section 11.4, section 11.5) ──────────────────────────────────────
 
 test('an away peer whose counter restarts is admitted after one TTL, not never', () => {
-  // The away exemption (§11.4) removes eviction, which is the ONLY thing that clears
+  // The away exemption (section 11.4) removes eviction, which is the ONLY thing that clears
   // a sender's sequence bookkeeping - so without the silence rule a background tab
   // that reloads is locked out for the life of the session, not for 30 s.
   const { clock, engine } = rig();

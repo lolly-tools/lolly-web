@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Beam packs - build and ingest (plan 100 §6.4, §11.15a, §11.16, §11.18, §11.24).
+ * Beam packs - build and ingest (plan 100 section 6.4, section 11.15a, section 11.16, section 11.18, section 11.24).
  *
  * `collab/beam-protocol.test.ts` proves the wire. This suite proves the two ends that
  * touch the user's own data, against an in-memory host that behaves like the real
@@ -10,30 +10,30 @@
  *   - **closure**: a session's offer carries exactly the user-local assets it
  *     references - no more (an unreferenced upload never travels), no fewer (a ref
  *     buried in a `blocks` row does), and catalog refs are LISTED, never sent, with
- *     the `resolve: 'local'` marker that makes §11.16's cross-profile honesty a
+ *     the `resolve: 'local'` marker that makes section 11.16's cross-profile honesty a
  *     property of the pack rather than a promise in the UI;
  *   - **checksums are the catalog's own**: a beam item's digest is byte-for-byte what
  *     `scripts/checksum-assets.ts` writes for the same bytes - cross-checked against
  *     that script's real `sriForFile`, because that equality is what makes
  *     receiver-side dedup a string compare;
  *   - **re-key + rewrite round trip**: assets land under receiver-local ids and the
- *     session that arrives after them opens pointing at those ids (§11.18), with a
+ *     session that arrives after them opens pointing at those ids (section 11.18), with a
  *     ref the pack could not carry reported rather than silently lost;
  *   - **dedup**: identical bytes already here are reused - no second row, and the
  *     session's refs point at the row that was already there - but never onto a
  *     machine-owned row the user's library deliberately hides;
  *   - **byte-exactness**: what was staged is what is stored, bit for bit, so an
- *     embedded C2PA credential survives the trip (§6.4);
+ *     embedded C2PA credential survives the trip (section 6.4);
  *   - **sessions never overwrite**: a received session is always a new slot;
- *   - **the manifest describes, it does not decide** (§11.21/§11.22): `type`/`format`/
+ *   - **the manifest describes, it does not decide** (section 11.21/section 11.22): `type`/`format`/
  *     MIME are sniffed from the bytes, provenance is extracted from the bytes, markup
  *     is sanitised or refused, `meta` cannot smuggle Lolly's own bookkeeping keys or a
  *     remote URL onto a local row, and the row is named from the label the human was
  *     actually shown;
- *   - **no partial ingest** (§11.18): a failed write undoes itself, and the whole beam
+ *   - **no partial ingest** (section 11.18): a failed write undoes itself, and the whole beam
  *     can be rolled back;
  *   - **the worker is an optimisation, never a dependency**: a Worker constructor that
- *     throws - or one that never answers - produces the identical pack (§11.15a's
+ *     throws - or one that never answers - produces the identical pack (section 11.15a's
  *     fallback).
  *
  * The last test drives a real `createBeamSender`/`createBeamReceiver` pair over a
@@ -286,7 +286,7 @@ test('a session offer carries exactly its user-local assets, in manifest → ass
 
   const byRef = built.manifest.entries.find((e): e is BeamPackRefEntry => e.kind === 'asset-ref')!;
   assert.equal(byRef.sourceId, LOGO);
-  assert.equal(byRef.resolve, 'local', 'the §11.16 marker: the receiver resolves this from its own catalog');
+  assert.equal(byRef.resolve, 'local', 'the section 11.16 marker: the receiver resolves this from its own catalog');
   assert.deepEqual(built.byReference, [LOGO]);
 
   const session = built.manifest.entries.at(-1) as BeamPackSessionEntry;
@@ -459,7 +459,7 @@ test('a build with no Worker available produces the identical pack', async () =>
   assert.deepEqual(
     withWorker.offer.items.map(i => i.checksum),
     without.offer.items.map(i => i.checksum),
-    '§11.15a’s worker is an optimisation; the pack it produces is the same pack',
+    'section 11.15a’s worker is an optimisation; the pack it produces is the same pack',
   );
 });
 
@@ -515,7 +515,7 @@ test('assets land re-keyed and the session that follows opens pointing at them',
   const photoResult = results[1]! as { kind: 'asset'; id: string; deduped: boolean };
   const mapResult = results[2]! as { kind: 'asset'; id: string; deduped: boolean };
   assert.equal(photoResult.kind, 'asset');
-  assert.ok(photoResult.id.startsWith(BEAM_ID_PREFIX), 'a received upload gets a receiver-local id (§11.18)');
+  assert.ok(photoResult.id.startsWith(BEAM_ID_PREFIX), 'a received upload gets a receiver-local id (section 11.18)');
   assert.notEqual(photoResult.id, PHOTO, 'the sender’s id is never reused as an address');
   assert.equal(ctx.rekey.get(PHOTO), photoResult.id);
 
@@ -559,7 +559,7 @@ test('a received asset is stored byte-exact, typed from its bytes, with attribut
   assert.deepEqual(stored.meta!.tags, ['event-berlin'], 'the sender’s own metadata rides along');
 });
 
-// ── The manifest describes; the bytes decide (§11.21, §11.22) ─────────────────
+// ── The manifest describes; the bytes decide (section 11.21, section 11.22) ─────────────────
 
 test('type, format and MIME are sniffed from the bytes, never taken from the manifest', async () => {
   // The exact shape lib/tts-provenance.ts re-arms the on-device speech-credential heal
@@ -775,7 +775,7 @@ test('a session thumbnail must be a raster data-URL, or the slot arrives without
   }
 });
 
-// ── No partial ingest (§11.18) ────────────────────────────────────────────────
+// ── No partial ingest (section 11.18) ────────────────────────────────────────────────
 
 test('a read-back that disagrees deletes the row it just wrote', async () => {
   const to = makeHost();
@@ -980,7 +980,7 @@ test('a pack survives the real protocol and lands in the receiver’s library', 
       list.push(bytes);
       staged.set(itemIndex, list);
     },
-    finalize() { /* sealing only — ingestion happens after `complete` (§11.18) */ },
+    finalize() { /* sealing only — ingestion happens after `complete` (section 11.18) */ },
     discard() { staged.clear(); },
   };
 
@@ -997,7 +997,7 @@ test('a pack survives the real protocol and lands in the receiver’s library', 
 
   sender.offer();
   assert.equal(receiver.state.phase, 'offered');
-  assert.equal(receiver.state.offer!.totalBytes, built.totalBytes, 'the size is disclosed before consent (§11.24)');
+  assert.equal(receiver.state.offer!.totalBytes, built.totalBytes, 'the size is disclosed before consent (section 11.24)');
   receiver.accept();
   for (let guard = 0; guard < 10_000; guard++) {
     const pulled = await sender.nextChunk();

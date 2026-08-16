@@ -13,7 +13,7 @@
  * though the in-app href drops the lang prefix; any fetch failure resolves to []
  * forever (offline is normal, never an error); the limit caps, best score first.
  *
- * fetch is stubbed globally - the provider is the only fetcher here, and the
+ * fetch is stubbed globally - the provider is the only fetcher in this suite, and the
  * stub records every URL so laziness and the cached-failure invariants are
  * observable.
  */

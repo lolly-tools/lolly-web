@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Stable BOX ids - plan 100 §3's "Hard prerequisite", from the canvas editor's side.
+ * Stable BOX ids - plan 100 section 3's "Hard prerequisite", from the canvas editor's side.
  *
  * Two claims, and the second is the one that used to be false:
  *

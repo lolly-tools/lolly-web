@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * version-assets.ts - copy-on-write preservation for pinned assets (plans/97 §6a).
+ * version-assets.ts - copy-on-write preservation for pinned assets (plans/97 section 6a).
  *
  * A published design-system version records the assets its tokens document named
  * as `{id, version, sha256}`. Publishing copies NO bytes: the overwhelmingly

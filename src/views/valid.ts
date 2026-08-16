@@ -299,7 +299,7 @@ function noCredentialSignal(report: VerifyReport, watermark?: Watermark, mine?: 
 }
 
 // The format chip beside a filename. The three C2PA 2.4 text bindings are said
-// in words - 'code' is "an §A.9 manifest delimiter appeared in this text", and
+// in words - 'code' is "an section A.9 manifest delimiter appeared in this text", and
 // printing the token raw read as a claim about the file's LANGUAGE that the
 // sniffer never made. Every other format keeps its own token, exactly as before,
 // and both the collapsed summary and the full report use this one function so
@@ -532,7 +532,7 @@ function notesHtml(notes: VerifyNotice[], fileIndex: number): string {
   return notes.length ? `<div class="valid-notes">${notes.map((n) => noteHtml(n, fileIndex)).join('')}</div>` : '';
 }
 
-// ── §18.28 ai-disclosure ─────────────────────────────────────────────────────
+// ── section 18.28 ai-disclosure ─────────────────────────────────────────────────────
 // CLAIM CONTENT, not a detection: the signer wrote down which model made this.
 // Worded as the declaration it is ("declares…"), attributed to whoever signed - 
 // which is the same posture as the selfnote line under the credential facts, and
@@ -2493,7 +2493,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     void prefillClaim();
   }
 
-  // ── "Fetch and check" - the §A.7.1.2 / §A.9.3 external credential ───────────
+  // ── "Fetch and check" - the section A.7.1.2 / section A.9.3 external credential ───────────
   //
   // A text asset may REFERENCE its Content Credential instead of carrying it.
   // The engine reports that honestly and never fetches (plans/105 M1); this is
@@ -2644,11 +2644,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // ── The paste path ─────────────────────────────────────────────────────────
   //
-  // C2PA 2.4 puts credentials in text - an HTML document (§A.7), an armour block
-  // in source (§A.9), invisible variation selectors in prose (§A.8) - and text
+  // C2PA 2.4 puts credentials in text - an HTML document (section A.7), an armour block
+  // in source (section A.9), invisible variation selectors in prose (section A.8) - and text
   // arrives by CLIPBOARD far more often than as a file. A page that could only
   // take files would tell someone holding a signed paragraph to invent a file
-  // for it, and would lose the §A.8 wrapper on the way if they retyped it.
+  // for it, and would lose the section A.8 wrapper on the way if they retyped it.
   //
   // Bound at the document (the upscale-dialog precedent) and removed on view
   // teardown. Two rules: FILES win - pasting a screenshot has always been free
@@ -2675,7 +2675,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
    * Pasted text that IS an address is followed instead of checked - but only
    * under the same gate `?src=` uses, and a cross-origin one is refused in
    * words. Everything else becomes a File of the EXACT bytes pasted (never
-   * trimmed, never normalised: §A.8's wrapper and §15.12.1.3's NFC hash both
+   * trimmed, never normalised: section A.8's wrapper and section 15.12.1.3's NFC hash both
    * live in characters an eager cleanup would eat).
    */
   async function handlePastedText(text: string): Promise<void> {
@@ -2798,7 +2798,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       // No file, no link - but text/plain with something in it IS the payload:
       // dragging a selection out of an editor is the same gesture as pasting it,
       // and a C2PA text credential travels in exactly that kind of selection.
-      // Read raw (never trimmed): the invisible characters §A.8 hides a manifest
+      // Read raw (never trimmed): the invisible characters section A.8 hides a manifest
       // in are part of the bytes, and the hash is over all of them.
       const dropped = dt?.getData('text/plain') ?? '';
       if (dropped.trim()) { await handlePastedText(dropped); return; }

@@ -11,7 +11,7 @@
 // `order`) each holding a vertical STACK of sub-slides (`stackOf`). When no frame
 // declares `stackOf` - the M1 case, before the sub-slide field ships - every column
 // holds exactly one frame and the walk is a plain left-to-right line, so the 2D code
-// degrades to linear with no special-casing. Stacks (plan §6) then land as data only.
+// degrades to linear with no special-casing. Stacks (plan section 6) then land as data only.
 
 /** One frame as the conductor extracts it from a `.lolly-frame-page`. */
 export interface FrameSpec {
@@ -76,7 +76,7 @@ export interface FrameState {
   /** Belongs to a column with more than one frame (a real stack) - `pr-stack`. */
   isStack: boolean;
   /** Beyond the live window (|index − active| > viewDistance): unload + aria-hidden.
-   *  This is the rendering monopoly (plan §5.2): only the live window paints. */
+   *  This is the rendering monopoly (plan section 5.2): only the live window paints. */
   hidden: boolean;
 }
 
@@ -148,7 +148,7 @@ export function buildDeck(frames: readonly FrameSpec[]): Deck {
   return { positions, byId, columns, count: positions.length, columnCount: columns.length };
 }
 
-/** Resolve an `s=` address against a deck. Digits count COLUMN HEADS (1-based, plan §6);
+/** Resolve an `s=` address against a deck. Digits count COLUMN HEADS (1-based, plan section 6);
  *  anything else is a frame id (matches any frame, head or sub-slide, regardless of
  *  position - reorder-proof). An `.N` suffix is a 1-based build step, returned 0-based.
  *  Junk / out-of-range → position null (the caller falls back to the first frame),
@@ -188,7 +188,7 @@ export function navDir(from: DeckPosition | null, to: DeckPosition | null): NavD
 /** The state-class assignment for the whole deck at a given active index. Positional,
  *  not direction-aware (direction is a separate root signal). `viewDistance` is the
  *  live window each side of the active frame (reveal's viewDistance; default 1 - the
- *  rendering monopoly keeps only active±1 painting, plan §5.2.1). */
+ *  rendering monopoly keeps only active±1 painting, plan section 5.2.1). */
 export function frameStates(deck: Deck, activeIndex: number, viewDistance = 1): FrameState[] {
   const active = clampIndex(deck, activeIndex);
   return deck.positions.map((pos) => {

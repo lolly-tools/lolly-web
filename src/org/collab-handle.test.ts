@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-handle.ts - the Track B handle adapter (plan 100 §7, wave 3.2).
+ * org/collab-handle.ts - the Track B handle adapter (plan 100 section 7, wave 3.2).
  *
  * Everything is driven through a FAKE PROVIDER: the real one's exported surface
  * (`adapter`, `connect`, `close`, `state`, `on`, `sendPresence`, `outbox`,
@@ -15,7 +15,7 @@
  *     role really does engage `collab-session`'s observer wrapper, which is the only
  *     thing that stops a local edit becoming an op.
  *  2. A peer's `from`/`seq` cross UNCHANGED. Re-stamping either would break the
- *     roster key or the newest-only rule (§11.5) - silently, and only for the peer.
+ *     roster key or the newest-only rule (section 11.5) - silently, and only for the peer.
  *  3. The join-ack roster reaches the presence engine, a LIVER frame supersedes the
  *     placeholder it seeded, and the placeholder does not linger as a ghost.
  *  4. There is no host, so no participant is ever tagged one.
@@ -244,7 +244,7 @@ test('status maps onto the connection alphabet, and reconnecting survives it', (
     connecting: 'connecting',
     joining: 'connecting',
     live: 'live',
-    // Not 'connecting': a reconnect keeps the roster and evicts nobody (§11.3).
+    // Not 'connecting': a reconnect keeps the roster and evicts nobody (section 11.3).
     reconnecting: 'reconnecting',
     closed: 'closed',
   });
@@ -289,7 +289,7 @@ test("an observer's edits never become ops: the session's wrapper engages", asyn
   const w = session(observing);
   assert.equal(w.session.state().role, 'observer', 'the pill reads the ack');
   await w.runtime.setInput('title', 'typed by an observer');
-  assert.deepEqual(observing.adapter.applied, [], 'read everything, write nothing (contract §9)');
+  assert.deepEqual(observing.adapter.applied, [], 'read everything, write nothing (contract section 9)');
   w.session.close();
 
   // The same edit, as a writer, to prove the suppression above is the ROLE and not
@@ -313,7 +313,7 @@ test('a peer frame crosses with its own from and seq — never re-stamped', () =
   fake.presence('conn-9', { from: 'DEVICE-P1', seq: 41, state: peerState({ userId: 'priya' }), away: true });
   assert.equal(seen.length, 1);
   assert.equal(seen[0]?.from, 'DEVICE-P1');
-  assert.equal(seen[0]?.seq, 41, 'the sender\'s counter, carried verbatim (§11.5)');
+  assert.equal(seen[0]?.seq, 41, 'the sender\'s counter, carried verbatim (section 11.5)');
   assert.equal(seen[0]?.away, true);
 
   // A bare Awareness has no envelope: the gateway's connection id names the sender
@@ -419,7 +419,7 @@ test('a subscriber that arrives after the ack still gets the room', () => {
 test('nobody is the host, so nobody is tagged one', () => {
   const fake = fakeProvider();
   const w = session(fake);
-  assert.equal(w.handle.hostClientId, undefined, 'the server owns the session, not a peer (§7.10)');
+  assert.equal(w.handle.hostClientId, undefined, 'the server owns the session, not a peer (section 7.10)');
   assert.equal(Object.hasOwn(w.handle, 'hostClientId'), false, 'absent, not undefined-valued');
 
   fake.setState({ status: 'live', roster: [member({ id: 'conn-a', userId: 'ada', name: 'Ada' })] });
@@ -432,7 +432,7 @@ test('nobody is the host, so nobody is tagged one', () => {
 });
 
 test('an anonymous work peer is still never numbered against a host', () => {
-  // The invitee ordinals are Track A copy (§4.5). With no host declared, `isHost` is
+  // The invitee ordinals are Track A copy (section 4.5). With no host declared, `isHost` is
   // false for everyone and the numbering falls back to plain client-id order - which
   // is exactly what it should do, and never "Invitee 2" beside a "Host" that is not
   // there.
@@ -473,7 +473,7 @@ test('a reconnect greys the pill and evicts nobody', () => {
   fake.setState({ status: 'reconnecting', attempt: 1 });
   const state = w.session.state();
   assert.equal(state.connection, 'reconnecting');
-  assert.deepEqual(state.peers.map(p => p.clientId), ['DEVICE-ADA'], 'a drop is not a leave (§11.3)');
+  assert.deepEqual(state.peers.map(p => p.clientId), ['DEVICE-ADA'], 'a drop is not a leave (section 11.3)');
   w.session.close();
 });
 
@@ -521,7 +521,7 @@ test('self: the device client id, and the SSO name once the gateway states one',
   assert.equal(handle.self.clientId, 'DEVICE-SELF');
   assert.equal(handle.self.name, 'me@local', 'the caller hint stands until the ack');
   fake.setState({ status: 'live', self: member({ id: 'conn-me', userId: 'andy', name: 'Andy Fitzsimon' }) });
-  assert.equal(handle.self.name, 'Andy Fitzsimon', 'the gateway seat wins (§7.8)');
+  assert.equal(handle.self.name, 'Andy Fitzsimon', 'the gateway seat wins (section 7.8)');
   assert.equal(handle.self.colorIndex, undefined, 'this wire carries a hex, never a slot');
 });
 

@@ -19,7 +19,7 @@
  * ## Tier 1 only. Nothing here renders, mounts, or exports.
  *
  * A batch pre-pass runs BEFORE the first row is mounted, so every fact that needs a
- * node is a NAMED GAP, never a zero (`plans/65-preflight-and-cost.md` §4, §6):
+ * node is a NAMED GAP, never a zero (`plans/65-preflight-and-cost.md` section 4, section 6):
  *
  *   - `stage` is `{ known: false, why: 'needs-mount' }`, exactly as the CLI reports
  *     it. Handing the engine an all-false `StageFacts` would make `isSequence`
@@ -47,7 +47,7 @@
  *
  * ## No currency, no rates, no money
  *
- * Counts and findings only, permanently. See `plans/65-preflight-and-cost.md` §6, §8.
+ * Counts and findings only, permanently. See `plans/65-preflight-and-cost.md` section 6, section 8.
  */
 
 import { buildInputModel, isUnit, parseDimension, preflight } from '@lolly/engine';
@@ -89,7 +89,7 @@ export interface BatchRunSettings {
  * {@link createBatchRowCheck} and shared by every row.
  *
  * The palette is the reason this type exists. `host.tokens.colors()` is async and
- * is a property of the BRAND, not of the job (`plans/65-preflight-and-cost.md` §4), so
+ * is a property of the BRAND, not of the job (`plans/65-preflight-and-cost.md` section 4), so
  * resolving it per row would be N awaits for one answer - and `check` is
  * synchronous, so it could not await at all. One resolve, one shared `Fact`.
  */
@@ -274,7 +274,7 @@ export function preflightJobForRow(
   // Bleed: a resolved string means the render applies it; nothing resolved means
   // the render applies NONE, which is a known null and not an unknown (the same
   // reading `tool-actions.ts` takes when the print card is off). A string that
-  // does not parse is the one unknown here: it is a value that exists and could
+  // does not parse is the only real unknown: it is a value that exists and could
   // not be read, never "no bleed".
   const bleedDim = print.bleed ? parseDimension(print.bleed) : null;
   const bleed: Fact<ReturnType<typeof parseDimension>> = print.bleed && !bleedDim
@@ -400,7 +400,7 @@ function formatCaveat(requested: string, chosen: string, manifest: PreflightMani
  * brand's token set. Left in the per-row channel they put a note chip on all 50 rows
  * of a clean 50-row batch, the headline read "Done - 50 files, 50 with notes", and
  * `lolly.txt` carried "Lolly cannot predict the output file size" fifty times. That is
- * exactly the noise `plans/65-preflight-and-cost.md` §6 names ("noise is how a real gap
+ * exactly the noise `plans/65-preflight-and-cost.md` section 6 names ("noise is how a real gap
  * gets skipped"): after one such run nobody reads the chips, and the one row with a
  * real `input.required-blank` is indistinguishable from the 49 without.
  *
@@ -514,7 +514,7 @@ export interface BatchRowCheck {
  * A skipped row's findings are filed under `rowIndex: -1`, which `notesFromFindings`
  * discards by design (correctly - the runner's channel is queue-space). Without this
  * they reached no surface at all: `buildPreflightReport` hard-coded `findings: []` for
- * every unmade row with no runner index, so the one case plan §7 says preflight most
+ * every unmade row with no runner index, so the one case plan section 7 says preflight most
  * exists for ("the skipped, the errored and the cancelled are precisely the set a
  * preflight report is for") shipped as an empty array in `preflight.json`.
  *

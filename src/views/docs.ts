@@ -90,7 +90,14 @@ export async function mountDocs(
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'docs-top-btn' }));
 
   const contentEl = viewEl.querySelector<HTMLElement>('[data-content]')!;
-  const url = docsInfoHref(slug, lang);
+  // 'index' is the docs home, but the built landing page is script-driven (tab strip,
+  // reveal animations) and this reader strips scripts by design, so rehosting it would
+  // show a mostly-hidden page. Until the reader grows a landing mode, the in-app home
+  // is the Quickstart hub: its rail opens with Make something and lists every pathway,
+  // and the footer's "What?" button lands here so the app experience (music, a11y
+  // prefs) travels with the reader (Andy, 2026-08-16).
+  const fetchSlug = slug === 'index' ? 'quickstart' : slug;
+  const url = docsInfoHref(fetchSlug, lang);
 
   const showStatus = (message: string, extra = ''): void => {
     contentEl.innerHTML = `<p class="docs-status">${escape(message)}${extra}</p>`;

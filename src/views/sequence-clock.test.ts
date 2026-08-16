@@ -1362,7 +1362,7 @@ test('audio: a non-module source still goes to decodeAudioData', async () => {
   });
 });
 
-// ── the export-time read/restore seam (plans/104 §6 point 0) ───────────────
+// ── the export-time read/restore seam (plans/104 section 6 point 0) ───────────────
 //
 // The clock is the writer that seam exists for: an export parses and photographs the
 // very elements it has been composing transform/opacity/filter/z-index onto, and the

@@ -12,7 +12,7 @@
  * foot actions, the Overview room, and the import card. Chrome colours flow
  * through tokens.css.
  *
- * `.ds-*` is the design-system studio's own namespace (plan 97 §10); `.start-*`
+ * `.ds-*` is the design-system studio's own namespace (plan 97 section 10); `.start-*`
  * is what the surrounding page has always been called.
  */
 
@@ -513,7 +513,7 @@
   white-space: nowrap;
 }
 
-/* ── The source picker (plan 97 §8) ──────────────────────────────────────────
+/* ── The source picker (plan 97 section 8) ──────────────────────────────────────────
       Stage 1 asks WHAT you have; stage 2 is that source's own control. Only the
       sources that can actually be used are here — there is no disabled tile and
       no "coming soon" line, because a control nobody can press is an apology
@@ -679,7 +679,7 @@
 .ds-pdf-add.is-added { background: hsl(var(--primary) / 0.16); font-weight: 700; }
 .ds-pdf-more { align-self: flex-start; text-decoration: none; }
 
-/* ── The website source (plan 97 §9, M6) ─────────────────────────────────────
+/* ── The website source (plan 97 section 9, M6) ─────────────────────────────────────
       One field and one button, because that is the whole interaction: type an
       address, press the button that names the host it is about to read. The
       stage only exists on a device that can actually read a page (views/start.ts
@@ -797,7 +797,7 @@
   .ds-rail-actions .be-btn { flex: 1 1 auto; }
 }
 
-/* ── The Versions panel (plan 97 §6a) ─────────────────────────────────────────
+/* ── The Versions panel (plan 97 section 6a) ─────────────────────────────────────────
       A foot-pinned panel, not a room, and it looks like one: the same quiet
       surface the Overview room uses, no colour of its own, and NO ANIMATION
       anywhere — there is nothing here worth drawing the eye to, and reduced

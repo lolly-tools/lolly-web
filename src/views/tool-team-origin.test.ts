@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * A team-session origin never outlives the mount that consumed it - INCLUDING the
- * mounts that never happen (plan 100 §7; `org/team-session-origin.ts` rule 3).
+ * mounts that never happen (plan 100 section 7; `org/team-session-origin.ts` rule 3).
  *
  * `org/team-session-origin.test.ts` proves the module: one-shot arming, a mismatch that
  * clears both states, and a release that drops the live one. What it cannot prove is the

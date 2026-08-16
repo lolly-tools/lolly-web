@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The candidate tray's SURFACE (plan 97 §8, M2) - the panel over `tray.ts`.
+ * The candidate tray's SURFACE (plan 97 section 8, M2) - the panel over `tray.ts`.
  *
  * `tray.ts` is the model: what a source scan found, persisted, deduped, and
  * never committed to anything. This module is the one place a person can see
@@ -22,11 +22,11 @@
  * add is one token), a family through the Type room's installer, a name through
  * the head document. A candidate type with no handler renders with Dismiss and
  * NO Add button rather than a dead control or a promise about a later milestone
- * - plan 97 §9, never show something that cannot be used.
+ * - plan 97 section 9, never show something that cannot be used.
  *
  * The tray closes itself when its last pending candidate leaves (added or
  * dismissed): an empty tray is an empty concept, and advertising one is exactly
- * what §9 rules out. `open()` refuses for the same reason - a rescan that finds
+ * what section 9 rules out. `open()` refuses for the same reason - a rescan that finds
  * nothing new must not raise an empty panel.
  *
  * KEYBOARD. Every action here destroys the control that ran it: the list is one
@@ -544,7 +544,7 @@ export function mountTrayUi(shell: HTMLElement, ctx: TrayUiCtx): TrayUi {
     // the empty case has to be refused here too: a rescan whose candidates were
     // all added before returns 0 new ones, and raising a panel reading "0 kept"
     // - whose toggle the view hides in the same tick - is exactly the empty
-    // concept §9 rules out.
+    // concept section 9 rules out.
     if (pending().length === 0) return;
     setOpen(true);
     if (o.focus) focusIn();

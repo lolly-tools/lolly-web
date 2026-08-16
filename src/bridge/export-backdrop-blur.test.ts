@@ -96,7 +96,7 @@ test('a blurred backdrop is reconstructed: content behind is cloned, clipped and
     const svg = await render(fixture(), true);
 
     // The blur itself. CSS blur(6px) is a Gaussian of stdDeviation 6/2 = 3
-    // (Filter Effects §; the two are defined a factor of two apart, and getting this
+    // (Filter Effects section ; the two are defined a factor of two apart, and getting this
     // wrong is the difference between a frosted panel and a smeared one).
     assert.match(svg, /<feGaussianBlur[^>]*stdDeviation="3"/,
       'expected a feGaussianBlur at half the CSS blur radius');

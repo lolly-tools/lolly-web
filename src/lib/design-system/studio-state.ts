@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * studio-state.ts - the Design System studio's save discipline (plan 97 §6).
+ * studio-state.ts - the Design System studio's save discipline (plan 97 section 6).
  *
  * One head document, one write path. Every committed action installs the whole
  * tokens document immediately through `installUserTokens` - the single write
- * chokepoint (plan 97 §3 principle 9) - and what makes immediate safe is the
+ * chokepoint (plan 97 section 3 principle 9) - and what makes immediate safe is the
  * session undo stack kept here plus the rolling checkpoints persisted in
  * `host.state`. There is no draft/committed split to leak.
  *
@@ -70,7 +70,7 @@ export interface StudioStateOptions {
 
 /** The state slot holding the checkpoint ring. */
 export const CHECKPOINTS_KEY = 'design-system.checkpoints.v1';
-/** Rolling history depth (plan 97 §6 / risk 8) - the oldest is evicted past it. */
+/** Rolling history depth (plan 97 section 6 / risk 8) - the oldest is evicted past it. */
 export const CHECKPOINT_LIMIT = 20;
 /** Session undo depth. Snapshots are a few KB of JSON, so this is memory-shaped,
  *  not a product limit. */

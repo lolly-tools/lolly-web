@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Places spotlight provider (plans/99 §2b) - a static registry of
+ * The Places spotlight provider (plans/99 section 2b) - a static registry of
  * navigable views, so "verify", "colour lab" or "spreadsheet" typed anywhere
  * lands on the right route. This is also where the utilities view's non-tool
  * cards (Convert, PDF, Data - cards that link to VIEWS, not fake tools) are

@@ -183,7 +183,7 @@ test('the kbd hint chip advertises ⌃␣, and hides the moment the field has te
   const chip = (): HTMLElement => document.querySelector<HTMLElement>('.gallery-search-kbd')!;
   const release = claimSearchBar({ placeholder: 'T…' });
   assert.ok(chip(), 'the chip renders inside the search box');
-  assert.equal(chip().textContent, '⌃␣'); // ⌃ only - ⌘ is never advertised (plans/99 §2f)
+  assert.equal(chip().textContent, '⌃␣'); // ⌃ only - ⌘ is never advertised (plans/99 section 2f)
   assert.equal(chip().hidden, false);
   type('q');
   assert.equal(chip().hidden, true);  // text → the ✕ takes the corner

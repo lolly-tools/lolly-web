@@ -455,7 +455,7 @@ test('an untimed tool never mounts the ghost layer, whatever lands on the stage'
   f.destroy();
 });
 
-test('a CAMERA is never acquired from the canvas — no click, no marquee (plans/104 §5.4)', () => {
+test('a CAMERA is never acquired from the canvas — no click, no marquee (plans/104 section 5.4)', () => {
   // A camera paints nothing and is minted with no geometry, so a zero-size marker at
   // the origin would be caught by any marquee crossing it and dragged about as if it
   // were artwork. The exclusion rides the SAME acquisition gate the seq-hidden rule

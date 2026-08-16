@@ -75,7 +75,7 @@ import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import type { PickerHost } from './picker.ts';
 import type { UpscaleHost } from './upscale-dialog.ts';
 import type { MatteHost } from './matte-dialog.ts';
-import { mountAudioThumbs } from './picker.ts';
+import { mountAudioThumbs, replaceUserUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
 import { createVizCycle } from '../lib/viz-cycle.ts';
@@ -332,6 +332,12 @@ const ZOOM_IN_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none
 const ZOOM_OUT_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
 const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+// Swap arrows - "replace this file with another", keeping the same id.
+const REPLACE_ICON = icon('repeat', { size: 15 });
+// Replace's file-picker accept for a still-image asset - a subset of UPLOAD_ACCEPT that omits
+// video/audio/lottie/data/PDF/PPTX, so the OS dialog only offers files that can actually stand
+// in for an image. (replaceUserUpload still enforces the kind at ingest as the hard guard.)
+const REPLACE_IMAGE_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,.ico,.cur,.svg,.svgz';
 // Filled play/pause glyphs for the details-modal Lottie playback overlay.
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
@@ -1054,7 +1060,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // The "Your uploads" section - a standard `.cat-group` that is ALWAYS rendered in the
   // browse view (even with zero uploads): its body leads with a drop area, so adding files
-  // to the library is a first-class affordance right here, not just inside the picker.
+  // to the library is a first-class affordance in the grid itself, not just inside the picker.
   // The "Select all / Deselect all" control lives INSIDE the collapsible body (not the
   // header) so it folds away with the grid when the section is collapsed - a bulk-select
   // toggle over a hidden grid just reads as confusing (and it's dropped entirely at 0 items).
@@ -1399,6 +1405,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     actions: [
       { id: 'fav', icon: STAR_ICON, label: () => (allSelectedFav() ? t('Unfavourite') : t('Favourite')) },
       { id: 'hide', icon: icon('eye'), label: () => (allSelectedHidden() ? t('Unhide') : t('Hide')) },
+      { id: 'replace', icon: REPLACE_ICON, label: () => t('Replace'), title: () => t('Swap in a new file, keeping the same image — every saved session, tool and project that uses it updates to the new one'), hidden: () => !singleSelectedUploadRef() },
+      { id: 'rename', icon: PENCIL_ICON, label: () => t('Rename'), title: () => t('Change this upload’s name'), hidden: () => !singleSelectedUploadRef() },
       { id: 'duplicate', icon: COPY_ICON, label: () => t('Duplicate'), title: () => t('Make a copy of each selected image — the copies are selected, ready to move or edit'), hidden: () => !allSelectedUploads() },
       { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download'), title: () => t('Download the selection as one zip — Content Credentials checked and preserved'), hidden: () => !allSelectedUploads() },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'cat-bulk-danger', hidden: () => !allSelectedUploads() },
@@ -1658,7 +1666,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
-    // "Trim margins" (plan 97 §7.3): the retro-trim of an upload that arrived padded,
+    // "Trim margins" (plan 97 section 7.3): the retro-trim of an upload that arrived padded,
     // offering the same before/after card every ingest surface shows. Uploads only - 
     // a catalog asset is an immutable, checksum-validated contract. A still raster or
     // a vector only: an animated raster would come back as a single-frame PNG, which
@@ -1708,7 +1716,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
           ${isUser
-            ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
+            ? `<button type="button" class="btn" data-act="replace">${REPLACE_ICON}<span>${t('Replace…')}</span></button>
+               <button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
                <button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>`
             : (hidden
                 ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>${t('Unhide')}</span></button>`
@@ -2118,6 +2127,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         }
       }
       else if (act === 'recategorise') await recategorise(ref);
+      else if (act === 'replace') await replaceUserAsset(ref);
       else if (act === 'rename') await renameUserAsset(ref);
       else if (act === 'hide') await setHidden(base, true);
       else if (act === 'unhide') await setHidden(base, false);
@@ -2739,10 +2749,73 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     rerender();
   }
 
-  // ── trim margins (plan 97 §7.3) ─────────────────────────────────────────────────
+  /** Open a single-file OS picker and resolve the chosen File (null if cancelled). */
+  function pickOneFile(accept: string): Promise<File | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = accept;
+      input.style.cssText = 'position:fixed;left:-9999px;';
+      const done = (f: File | null): void => { input.remove(); resolve(f); };
+      // 'cancel' (where supported) resolves null; 'change' resolves the file. Clean up either way.
+      input.addEventListener('change', () => done(input.files?.[0] ?? null), { once: true });
+      input.addEventListener('cancel', () => done(null), { once: true });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  /**
+   * Replace the FILE behind one upload, keeping its id - so every saved session, tool and
+   * project that references it redrives with the new image (see picker.replaceUserUpload). The
+   * confirm states the global reach and the honest limit (already-exported/shared copies keep
+   * the old image), and warns when the new file's aspect ratio would reflow existing layouts.
+   */
+  async function replaceUserAsset(ref: AssetRef): Promise<void> {
+    // Offer only compatible files: still images get the image-only accept; other kinds (audio,
+    // video, lottie) fall back to the full accept, with the ingest-time kind guard as backstop.
+    const isImageRef = ref.type === 'raster' || ref.type === 'vector';
+    const file = await pickOneFile(isImageRef ? REPLACE_IMAGE_ACCEPT : UPLOAD_ACCEPT);
+    if (!file || !mounted) return;
+
+    // A materially different aspect ratio reflows layouts sized to the old shape. Best-effort.
+    let reflow = false;
+    try {
+      const nd = await trimmedDimensions(file);
+      const ow = Number(ref.width ?? 0), oh = Number(ref.height ?? 0);
+      if (nd.width && nd.height && ow > 0 && oh > 0) {
+        reflow = Math.abs((nd.width / nd.height) - (ow / oh)) / (ow / oh) > 0.05;
+      }
+    } catch { /* dimensions are a nicety, not a gate */ }
+    if (!mounted) return;
+
+    const message = [
+      reflow ? t('The new image is a different shape, so layouts sized to the old one may shift.') : '',
+      t('The new file replaces this image at the same address, so every saved session, tool and project that uses it shows the new one. Anything you’ve already exported, downloaded or shared keeps the old image.'),
+    ].filter(Boolean).join(' ');
+
+    const ok = await confirmDialog({ title: t('Replace this image?'), message, confirmLabel: t('Replace'), danger: false });
+    if (!ok || !mounted) return;
+
+    try {
+      await replaceUserUpload(host as unknown as Parameters<typeof replaceUserUpload>[0], ref.id, file);
+    } catch (err) {
+      host.log?.('error', 'Catalog replace failed', { id: ref.id, error: String(err) });
+      // Quota / too-large errors carry a user-ready message; everything else gets a plain one.
+      announce((err as { code?: unknown }).code ? (err as Error).message : t('Couldn’t replace that image.'), { assertive: true });
+      return;
+    }
+    if (!mounted) return;
+    await reload();          // the record changed under _listUserAssets
+    if (!mounted) return;
+    rerender();
+    announce(t('Image replaced.'));
+  }
+
+  // ── trim margins (plan 97 section 7.3) ─────────────────────────────────────────────────
   // The retro-trim of an upload that arrived padded - the same offer the dropzone and
   // the asset picker make at ingest, made again later against the STORED bytes. The
-  // card is the confirmation (§14.4): nothing is written until the user takes "Trim",
+  // card is the confirmation (section 14.4): nothing is written until the user takes "Trim",
   // and what is written replaces the original margins for good.
 
   /**
@@ -2858,6 +2931,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   );
   const allSelectedUploads = (): boolean =>
     selected.size > 0 && [...selected].every(id => assetById.get(id)?.source === 'user');
+  // The single selected upload, or null. Replace (one file → one file) and Rename (one
+  // asset's name) only make sense on exactly one of the user's own uploads.
+  const singleSelectedUploadRef = (): AssetRef | null => {
+    if (selected.size !== 1) return null;
+    const ref = assetById.get([...selected][0]!);
+    return ref?.source === 'user' ? ref : null;
+  };
   const allSelectedFav = (): boolean =>
     selected.size > 0 && [...selected].every(id => favSet.has(assetBaseId(id)));
   const allSelectedHidden = (): boolean =>
@@ -2935,6 +3015,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     else if (action === 'delete') { if (allSelectedUploads()) void deleteSelection(); }
     else if (action === 'download') { if (allSelectedUploads()) void downloadSelection(); }
     else if (action === 'duplicate') { if (allSelectedUploads()) void duplicateSelection(); }
+    // Replace + Rename act on exactly one upload; the guard re-checks at dispatch so a
+    // selection that grew under a stale bar can never misroute them.
+    else if (action === 'replace') { const r = singleSelectedUploadRef(); if (r) void replaceUserAsset(r); }
+    else if (action === 'rename') { const r = singleSelectedUploadRef(); if (r) void renameUserAsset(r); }
     else if (action === 'fav') void favouriteSelection();
     else if (action === 'hide') void hideSelection();
   }

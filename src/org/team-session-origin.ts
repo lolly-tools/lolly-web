@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/team-session-origin.ts - where a mounted tool CAME FROM, when it came from a
- * team session on the instance (plans/100 §7; the stitch-2 gap named in
+ * team session on the instance (plans/100 section 7; the stitch-2 gap named in
  * `lib/collab-launch.ts`'s `CollabLaunchContext.sessionId`).
  *
  * ── The gap this closes ────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@
  *  4. **Reloading the tab loses it**, and that is accepted, not worked around. Nothing
  *     here is persisted: `sessionStorage` would survive a reload and thereby survive
  *     every guarantee above. The durable path to a work collab is the invite deep link,
- *     which carries the id in the message (§7 item 9) - this stash only makes the
+ *     which carries the id in the message (section 7 item 9) - this stash only makes the
  *     in-app "I am already looking at that session" path work.
  *
  * Module state, not a DOM/storage/network surface: this file imports nothing, which is

@@ -32,7 +32,7 @@ export interface InboxMessage {
   cta?: { label: string; url: string };
   /** Machine-readable payload for a system-generated message, so the shell can ACT on
    *  it rather than parse the copy - a collab invite's `sessionId`/`toolId` being the
-   *  first (plan 100 §7 item 9). String values only; it is a routing hint, never a
+   *  first (plan 100 section 7 item 9). String values only; it is a routing hint, never a
    *  document, and nothing here reaches the DOM. */
   data?: Record<string, string>;
   dismissible: boolean;
@@ -69,7 +69,7 @@ function ctaHtml(m: InboxMessage): string {
 }
 
 /**
- * Give a collab invite an "Open the collab" action (plan 100 §7 item 9).
+ * Give a collab invite an "Open the collab" action (plan 100 section 7 item 9).
  *
  * Lazy on the message KIND, not just on the banner: a member with an ordinary
  * announcement never fetches the work-collab client, and a member with an invite

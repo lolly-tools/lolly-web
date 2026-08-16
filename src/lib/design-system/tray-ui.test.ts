@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The candidate tray's surface (plan 97 §8, M2) - what it renders, and what a
+ * The candidate tray's surface (plan 97 section 8, M2) - what it renders, and what a
  * press actually commits.
  *
  * Run directly:

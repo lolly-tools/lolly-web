@@ -8,7 +8,7 @@
  * the whole field, and the checkbox tick filled the entire box. Both ship in this
  * app's field primitive, so the defect was on every form control on every page.
  *
- * CSS Backgrounds 3 §3.9 (`background-size`) and §3.6 (`background-position`) are a
+ * CSS Backgrounds 3 section 3.9 (`background-size`) and section 3.6 (`background-position`) are a
  * self-contained bit of arithmetic over four numbers, so they live here as pure
  * functions and are tested as arithmetic. The DOM parts the walker keeps: reading the
  * computed strings, and discovering the image's intrinsic size.
@@ -59,7 +59,7 @@ export function resolveBgSize(value: string, area: Size, intrinsic: Size | null)
     return Number.isFinite(n) ? n : null;
   };
   let w = one(parts[0], area.w);
-  // A single value sets the width; the height is auto (§3.9), NOT the same value.
+  // A single value sets the width; the height is auto (section 3.9), NOT the same value.
   // Getting this wrong squashes every non-square icon.
   let h = one(parts[1], area.h);
 
@@ -166,7 +166,7 @@ export function placeBackground(
   if (tokens.length <= 2) {
     const [a, b] = tokens;
     if (tokens.length === 1) {
-      // One value sets its own axis; the other is centre (§3.6).
+      // One value sets its own axis; the other is centre (section 3.6).
       if (a && VERT.includes(a)) yTok = a;
       else xTok = a ?? '0%';
     } else if (a && b) {

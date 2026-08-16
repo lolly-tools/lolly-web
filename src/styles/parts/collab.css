@@ -1,4 +1,4 @@
-/* ─── Live collaboration — Projects live badge (plan 100 §4.6, §4.8; wave 1.5) ─
+/* ─── Live collaboration — Projects live badge (plan 100 section 4.6, section 4.8; wave 1.5) ─
  *
  * This file owns exactly ONE presence surface: the small avatar-cluster + pulse
  * badge a session tile in `/p` shows when a live collab exists on that slot
@@ -6,7 +6,7 @@
  * `renderCollabBadge`, wired from `views/projects.ts`).
  *
  * IT DOES NOT OWN THE REST OF THE PRESENCE CHROME THE PLAN DESCRIBES. The stage
- * pill, the sidebar remote-focus ring and the canvas cursor/focus overlay (§4.6's
+ * pill, the sidebar remote-focus ring and the canvas cursor/focus overlay (section 4.6's
  * other real estate) are each a self-contained MOUNTED component with its own
  * injected `<style>` sheet — the `music-player.ts`/`neuro-dock.ts` pattern this
  * codebase already uses for lazy, cost-nothing-to-single-player chrome:
@@ -24,7 +24,7 @@
  * `.collab-pill`, `.collab-dot`, `.collab-av`, `.collab-ring`, `.collab-chip` or
  * `.collab-cursor*` — every selector below is prefixed `.collab-tile-`, a family
  * that exists nowhere else in the app, so this file can never collide with a
- * style injected by any of the three (present or future — see §4.6's "real
+ * style injected by any of the three (present or future — see section 4.6's "real
  * estate reserved now" note: that reservation was fulfilled by those components
  * landing directly, not by this stylesheet).
  *
@@ -97,7 +97,7 @@
   font-size: calc(7.5px * var(--a11y-fs));
 }
 .collab-tile-avatar + .collab-tile-avatar { margin-inline-start: -5px; }
-/* An away peer keeps its place in the cluster (§11.4 — away is a display state,
+/* An away peer keeps its place in the cluster (section 11.4 — away is a display state,
  * never a reason to drop someone) but dims: paired with the roster/aria-label
  * naming everyone, never the only signal. */
 .collab-tile-avatar--away { opacity: 0.55; }
@@ -134,7 +134,7 @@
 }
 html[data-a11y-motion="reduce"] .collab-tile-dot { animation: none; }
 
-/* ─── Stage pill placement in editor layouts (plan 100 §4.6, resolved 2026-08-09:
+/* ─── Stage pill placement in editor layouts (plan 100 section 4.6, resolved 2026-08-09:
  * below the zoom HUD in editor layouts, top-right elsewhere) ──────────────────
  *
  * `collab-pill.ts`'s own header explains the default: `.collab-pill--stage` sits

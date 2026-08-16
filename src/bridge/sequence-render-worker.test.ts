@@ -197,7 +197,7 @@ test('hydrateJobLayer round-trips every field the planner reads', () => {
 });
 
 test('a keyframed layer survives structuredClone — the wire is plain data, not a closure', () => {
-  // plans/104 §5.1. The evaluator caches a compiled bezier per ease token and a
+  // plans/104 section 5.1. The evaluator caches a compiled bezier per ease token and a
   // channel index per track; if either ever leaked into the CACHED FORM the track
   // carries, `postMessage` would throw DataCloneError and worker offload would die
   // silently. This is the assertion that keeps the wire boring.
@@ -225,7 +225,7 @@ test('a keyframed layer survives structuredClone — the wire is plain data, not
   assert.equal(legacy.shadowFilter, '');
 });
 
-test('a camera layer contributes zero draws (plans/104 §5.4)', async () => {
+test('a camera layer contributes zero draws (plans/104 section 5.4)', async () => {
   const ctx = stubCtx();
   const cam = layer({ kind: 'camera', z: 200, kf: kfTrackOf('t0_x-100*t1000_x100') });
   const plan = sequenceDrawPlan([hydrateJobLayer(cam)], 500, 1000, { stageW: 1920, stageH: 1080 });
@@ -238,9 +238,9 @@ test('a camera layer contributes zero draws (plans/104 §5.4)', async () => {
   assert.deepEqual(ctx.draws, [], 'and it paints nothing at all');
 });
 
-// ── the compositor restructure (plans/104 §5.5) ─────────────────────────────
+// ── the compositor restructure (plans/104 section 5.5) ─────────────────────────────
 //
-// THE BYTE-IDENTITY FLOOR IS THE FIRST TEST HERE, and it is asserted as a literal call
+// THE BYTE-IDENTITY FLOOR IS THIS FILE'S FIRST TEST, and it is asserted as a literal call
 // sequence rather than as a property, because the promise is literal: a document that
 // uses no depth feature must export the bytes it always exported. A clean layer never
 // asks for a scratch, never enters a blur lane, and issues save → translate →
@@ -412,7 +412,7 @@ test('BYTE-IDENTITY FLOOR: the gate is blur + authored filter and NOTHING else',
   } finally { done(); }
 });
 
-test('a BLURRED layer clips into a padded scratch and composites UNCLIPPED (§5.5)', async () => {
+test('a BLURRED layer clips into a padded scratch and composites UNCLIPPED (section 5.5)', async () => {
   const { made, done } = useScratches();
   try {
     const ctx = opCtx();
@@ -1186,7 +1186,7 @@ test('contract: the offload is opt-in behind the same flag as the video-encode w
 // ── P1a: cameras across the wire, and the w/h channels ──────────────────────
 
 test('the CAMERA crosses the wire as a layer, and both threads derive it the same way', () => {
-  // plans/104 §5.4. The cameras are NOT a second field on the job: the executor derives
+  // plans/104 section 5.4. The cameras are NOT a second field on the job: the executor derives
   // them from the very layers that crossed, using the same `stageCameras` the main
   // thread used over the same `kind`/`z`/`kf`. A second serialisation is a second thing
   // that can disagree, and worker-vs-in-thread sha identity is the property at stake.
@@ -1222,7 +1222,7 @@ test('drawItem: `cameraMoves` reaches itemFx, so a flat shadowed layer is compos
   assert.equal(fx.shadows.length, 1);
 });
 
-test('§5.2 w/h: the draw is sized by the RESOLVED box, growing from the top-left', async () => {
+test('section 5.2 w/h: the draw is sized by the RESOLVED box, growing from the top-left', async () => {
   const ctx = opCtx();
   const w = layer({
     rect: { x: 40, y: 20, w: 100, h: 100, rot: 0 },
@@ -1240,7 +1240,7 @@ test('§5.2 w/h: the draw is sized by the RESOLVED box, growing from the top-lef
   assert.deepEqual(draw?.args, [-100, -50, 200, 100], 'drawn at the resolved size');
 });
 
-test('§5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot REFLOW)', async () => {
+test('section 5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot REFLOW)', async () => {
   // The Lottie machinery, reused: a stretched plate is a stretched picture, while the
   // preview rewraps its text and keeps its border one pixel wide. Parity beats speed,
   // so the layer is re-photographed at the size of the moment - even though it is a
@@ -1268,7 +1268,7 @@ test('§5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot
   assert.equal(asked.length, 0);
 });
 
-test('§5.2 w/h: the live re-capture is the picture that gets DRAWN, on every kind', async () => {
+test('section 5.2 w/h: the live re-capture is the picture that gets DRAWN, on every kind', async () => {
   // The other half of the test above, and the half that was missing: asking for the
   // shot, paying for it, and then drawing the authored-size PLATE stretched to the
   // tweened rect is exactly the failure the channel exists to prevent (text scaled
@@ -1323,7 +1323,7 @@ test('§5.2 w/h: the live re-capture is the picture that gets DRAWN, on every ki
   assert.deepEqual(ctxC.draws.map(tagOf).slice(0, 2), ['live', 'live-over']);
 });
 
-test('§5.5 bg: the projected plate is placed by ITS OWN size and the STAGE centre', async () => {
+test('section 5.5 bg: the projected plate is placed by ITS OWN size and the STAGE centre', async () => {
   // The encoder's dimensions are `Math.round(…) & ~1` - forced even for the codecs - 
   // while the plate is `Math.round((native + 2·bgPad)·S)` and every layer above is drawn
   // in native·S space. Deriving the bg draw from `outW` therefore assumed
@@ -1358,7 +1358,7 @@ test('§5.5 bg: the projected plate is placed by ITS OWN size and the STAGE cent
   assert.equal(tr!.args[1], cy);
 });
 
-test('§5.2 w/h: a clip shape resolves against the TWEENED box, not the authored one', async () => {
+test('section 5.2 w/h: a clip shape resolves against the TWEENED box, not the authored one', async () => {
   // A `circle(50%)` stops being a circle exactly when the box stops being its authored
   // size, so the percentage has to resolve against the box the browser laid out.
   const ctx = opCtx();

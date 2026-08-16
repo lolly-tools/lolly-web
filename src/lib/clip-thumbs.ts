@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Lazy filmstrips + waveforms + stills + node rasters for timeline clip bars
- * (phase 2, §4 of plans/53-fable-timeline-phase-2.md).
+ * (phase 2, section 4 of plans/53-fable-timeline-phase-2.md).
  *
  * A timeline shows one bar per clip, and each bar wants a picture painted into a
  * <canvas>: a strip of frames (video), a peak envelope (audio), or ONE tile-able
@@ -1268,7 +1268,7 @@ async function getDomToImage(): Promise<DomToImageLib | null> {
   return domToImageMore;
 }
 
-// ── the authored-pose seam (plans/104 §6.5) ────────────────────────────────
+// ── the authored-pose seam (plans/104 section 6.5) ────────────────────────────────
 //
 // A thumbnail always shows the box's AUTHORED pose. It is a picture of the clip, not a
 // picture of the frame the playhead happens to be parked on - and once keyframes are in
@@ -1292,7 +1292,7 @@ export interface AuthoredPose {
   /**
    * The AUTHORED inline `width`/`height` - '' when the box sizes itself.
    *
-   * The applier writes these per frame for a `w`/`h` keyframe tween (plans/104 §5.2,
+   * The applier writes these per frame for a `w`/`h` keyframe tween (plans/104 section 5.2,
    * P1 - the one deliberate layout write), so a shot taken mid-tween would otherwise be
    * framed at the stretched size and re-wrap its text. Optional so a seam wired by an
    * older caller still type-checks; absent falls back to the live inline value.
@@ -1364,7 +1364,7 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   // LAYOUT size, not the rendered rect: the stage carries the editor's zoom
   // transform, and sizing off the rect would photograph the box at whatever
   // magnification the user happens to be at - re-wrapping its text every time.
-  // AUTHORED size first (plans/104 §5.2): the applier writes `width`/`height` per frame
+  // AUTHORED size first (plans/104 section 5.2): the applier writes `width`/`height` per frame
   // for a size tween, and a thumbnail must be the clip at rest. Falls back to the live
   // inline value, then to layout - which is what it always was, and what a box with no
   // inline size still resolves to. (A box with NO authored width that is mid-tween is
@@ -1382,7 +1382,7 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   // an injected one) and, more importantly, so it is released when the library call
   // REALLY settles rather than when the caller stops waiting for it.
   //
-  // The AUTHORED pose (plans/104 §6.5) is neutralised on the CLONE - see
+  // The AUTHORED pose (plans/104 section 6.5) is neutralised on the CLONE - see
   // `nodeShotStyle` - because the library's `style` option is applied to the clone
   // after its computed styles are copied across, which is how the fit transform
   // already beats both the editor's zoom and the `tl-shot` park. Nothing on the live
@@ -1469,7 +1469,7 @@ export async function withBorrowedVisibility<T>(el: HTMLElement, fn: () => Promi
   const restore = borrowVisibility(el);
   // The vector twin reads the LIVE subtree - there is no clone to neutralise the
   // applier's pose on, the way `defaultNodeRasterer` does - so the authored values go
-  // back on the element itself for the walk (plans/104 §6.5). A no-op, closure and all,
+  // back on the element itself for the walk (plans/104 section 6.5). A no-op, closure and all,
   // when nothing was composed on this box; and while the box is parked by
   // `borrowVisibility` the park's `!important` transform still wins, so what this
   // actually rescues is the box's opacity and blur.

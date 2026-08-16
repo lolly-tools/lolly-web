@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * private-opener - the `'private'` slot of `lib/collab-launch.ts`: what actually happens
- * when someone presses "Start a collab" in the Share dialog (plan 100 §0, §6.1, §11.25;
+ * when someone presses "Start a collab" in the Share dialog (plan 100 section 0, section 6.1, section 11.25;
  * wave 2.4).
  *
  * `lib/collab-share-private.ts` renders that row, and has been gated on TWO things since
@@ -39,14 +39,14 @@
  * so the only person who ever sees that sentence is a developer running without it, and
  * they are owed the truth rather than a dialog that pretends.
  *
- * ── The seed (§6.1, §12 Q3: transfer-on-connect, one path) ─────────────────────
+ * ── The seed (section 6.1, section 12 Q3: transfer-on-connect, one path) ─────────────────────
  *
  * The inviter serialises its live model ONCE, here, at ceremony start - and it does not
  * have to build that serialisation, because `CollabLaunchContext.baseParts` already IS
  * it: the Share dialog's own `buildShareParams(runtime)` output, the URL-mode encoding of
  * every declared input. `lib/collab-live-mount.ts`'s header explains why URL params are
  * the seed's currency rather than raw values (they are what `parseUrlState` types against
- * the manifest, which is also §6.3's validation rule for a peer's payload).
+ * the manifest, which is also section 6.3's validation rule for a peer's payload).
  *
  * That one value is spent twice, in the two directions it has to travel:
  *
@@ -63,7 +63,7 @@
  *
  * ── The reply leg ──────────────────────────────────────────────────────────────
  *
- * §11.25 calls the answer leg the ceremony's weak point and makes the reply a link too.
+ * section 11.25 calls the answer leg the ceremony's weak point and makes the reply a link too.
  * That link opens `#/join-reply` in a NEW tab, which posts the payload over a
  * `BroadcastChannel`; the listener wired here for the life of the dialog is the other end
  * of it. It drives the dialog's own paste path, so a reply that arrives this way is
@@ -123,7 +123,7 @@ export interface PrivateCollabDeps {
   /** The reply channel. `null` opens none (a browser without `BroadcastChannel`). */
   readonly channel?: ChannelFactory | null | undefined;
   /**
-   * Replace the §11.25 reply listener wholesale. Given a getter for the open dialog,
+   * Replace the section 11.25 reply listener wholesale. Given a getter for the open dialog,
    * returns its teardown (or null for "not listening"). Only a test needs this - it is
    * how the wiring is observed without a real channel behind it.
    */
@@ -177,7 +177,7 @@ export async function openPrivateCollab(
   const open = deps.openCeremony ?? wiring?.openCollabCeremony;
   const effects = deps.effects ?? wiring?.createCollabEffects({
     toolId: ctx.toolId,
-    // Transfer-on-connect (§12 Q3), in band on the ops hello: the acceptor's tool opens
+    // Transfer-on-connect (section 12 Q3), in band on the ops hello: the acceptor's tool opens
     // populated rather than empty-then-converging. Awaited before the dialog exists, so
     // the value is in the transport from its very first frame.
     seed: await wireSeed(seedQuery),

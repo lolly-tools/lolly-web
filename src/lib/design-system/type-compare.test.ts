@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Type room's compare stage (plan 97 §7.2, M4) - what it models, what it
+ * The Type room's compare stage (plan 97 section 7.2, M4) - what it models, what it
  * renders, and what it refuses to pretend.
  *
  * Run directly:

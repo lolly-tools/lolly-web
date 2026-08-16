@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * collab-live-mount - the real mount, both roles (plan 100 §5, §6.2a, §11.17, §12 Q3).
+ * collab-live-mount - the real mount, both roles (plan 100 section 5, section 6.2a, section 11.17, section 12 Q3).
  *
  * What is worth pinning here is not "a mount mounts". It is the four things that are
  * only true if this module is written carefully, and that silently rot if it is not:
@@ -11,7 +11,7 @@
  *      single-player mount, because two runtimes sharing one convergence document
  *      would echo every edit back at each other.
  *   2. EPHEMERAL MEANS EPHEMERAL. The acceptor's `host.state` is memory-backed before
- *      the route is entered, so nothing it saves can reach a slot (§6.2a). This suite
+ *      the route is entered, so nothing it saves can reach a slot (section 6.2a). This suite
  *      runs in Node, where there IS no IndexedDB - so a save that "works" is a save
  *      that never went near one.
  *   3. THE SEED IS THE LIVE MODEL, both ways. The inviter's remount is born with the
@@ -173,7 +173,7 @@ test('merging a seed with the address bar keeps the bar on top (it is the freshe
 
 // ── The mount ─────────────────────────────────────────────────────────────────
 
-test('the acceptor is navigated to the tool, born with the seed (§12 Q3)', async () => {
+test('the acceptor is navigated to the tool, born with the seed (section 12 Q3)', async () => {
   const env = environment();
   await mountLiveCollab(conn({ seed: seedFromQuery('url=https%3A%2F%2Fsuse.com&size=512') }));
 
@@ -324,7 +324,7 @@ test('a handle that is ALREADY closed at arm time leaves nothing behind (both re
   assert.equal(pendingLiveCollab(), null, 'no plan survives a session that is already gone');
   assert.equal(getCollabSessionSource(), undefined,
     'and the registry goes back to DORMANT — a source left registered makes every later '
-    + 'single-player mount allocate a context for an inert factory (§11.14)');
+    + 'single-player mount allocate a context for an inert factory (section 11.14)');
   assert.equal(live, 0, 'the connection-state subscription is not leaked');
   assert.equal(c.closes(), 1, 'the pair is hung up, not left open for the life of the page');
   assert.deepEqual(env.navs, [],
@@ -359,7 +359,7 @@ test("the inviter's live model crosses the remount BY REFERENCE, not through the
   assert.equal(takeCarriedMountState('qr-code'), null, 'one-shot: the next mount is a different session');
 });
 
-test('an ACCEPTOR already in the tool carries nothing — their copy is the peer’s (§6.2a)', async () => {
+test('an ACCEPTOR already in the tool carries nothing — their copy is the peer’s (section 6.2a)', async () => {
   environment({ onToolRoute: () => true });
   await mountLiveCollab(conn({ role: 'acceptor', ephemeral: true, toolId: 'qr-code' }));
 
@@ -387,7 +387,7 @@ test('a pair that dies mid-remount does NOT take the carried model with it', asy
   assert.equal(takeCarriedMountState('qr-code'), null, 'and a new ceremony starts clean');
 });
 
-// ── Ephemerality (§6.2a, §11.17) ──────────────────────────────────────────────
+// ── Ephemerality (section 6.2a, section 11.17) ──────────────────────────────────────────────
 
 test("the acceptor's state bridge is memory-backed, one-shot, and never touches a slot", async () => {
   assert.equal((globalThis as { indexedDB?: unknown }).indexedDB, undefined,
@@ -408,7 +408,7 @@ test("the acceptor's state bridge is memory-backed, one-shot, and never touches 
   assert.deepEqual(await other.list(), []);
 });
 
-test('the inviter keeps the real state — it owns the saved session (§6.2a)', async () => {
+test('the inviter keeps the real state — it owns the saved session (section 6.2a)', async () => {
   environment();
   await mountLiveCollab(conn({ role: 'inviter', ephemeral: false, toolId: 'qr-code' }));
   assert.equal(takeEphemeralState('qr-code'), null, 'no swap, so its saves land where they always did');

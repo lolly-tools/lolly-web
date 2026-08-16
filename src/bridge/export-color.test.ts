@@ -15,7 +15,7 @@
  * walkers, so those paints vanished or turned black in SVG/PDF/EMF export.
  *
  * The cases below are the shapes browsers emit for those inputs. Every one of
- * them returned null before engine/src/css-color.ts. See plans/60-color-spaces.md §4.
+ * them returned null before engine/src/css-color.ts. See plans/60-color-spaces.md section 4.
  *
  * Run directly:  node --test shells/web/src/bridge/export-color.test.ts
  */

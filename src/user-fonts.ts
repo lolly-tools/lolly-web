@@ -389,7 +389,7 @@ export interface InstallFontBytesOptions {
  * Install a font the user already has the BYTES of - an upload, a face pulled
  * out of a PDF or a design file, anything that never came from Google. The
  * second entrance into the role system: until this existed `installGoogleFont`
- * was the only way bytes could become a `font.*` token (plan 97 §4 gap 3), so
+ * was the only way bytes could become a `font.*` token (plan 97 section 4 gap 3), so
  * an uploaded family could be stored but never *assigned*.
  *
  * Everything downstream is deliberately identical to the Google path - the same

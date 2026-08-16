@@ -5,7 +5,7 @@
  * Edit this file to change the swatches everywhere at once.
  *
  * These are the neutral STARTER system's resolved light-theme values
- * (plans/archive/brand-token-contract.md §4/§5), gamut-mapped OKLCH → sRGB hex:
+ * (plans/archive/brand-token-contract.md section 4/section 5), gamut-mapped OKLCH → sRGB hex:
  *   - Primary ramp: hue 250, nine steps 1 (darkest) → 9 (lightest), chroma a
  *     bell over L anchored at the starter primary oklch(60% 0.10 250) (step 5).
  *   - Neutral ramp: the same hue at C ≤ 0.02 - greys tinted toward the primary.

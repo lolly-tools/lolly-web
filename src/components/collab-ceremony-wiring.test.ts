@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The ceremony dialog's SEAMS - the parts that only matter once a real transport is on
- * the other end (plan 100 §6.1, §11.3, §11.25, §11.26; wave 2.2).
+ * the other end (plan 100 section 6.1, section 11.3, section 11.25, section 11.26; wave 2.2).
  *
  * `collab-ceremony.test.ts` pins the screens. This file pins the wiring between them and
  * the thing that actually connects two devices, because every bug here is invisible to a
@@ -13,7 +13,7 @@
  *  - A transport is a peer connection plus three data channels. Every ceremony this
  *    dialog owns hands it back; the one it does not own (the live pair) it must not touch.
  *  - A validation notice is a re-render, and a re-render used to eat the paste field it
- *    was complaining about - the exact text the user needs, at the exact moment §11.25
+ *    was complaining about - the exact text the user needs, at the exact moment section 11.25
  *    calls the ceremony's weak point.
  *  - `showModal()` inerts the whole document outside the dialog, so the shell's
  *    body-level `announce()` cannot be heard from in here at all.
@@ -263,7 +263,7 @@ async function toConnecting(h: Harness): Promise<void> {
   assert.equal(headingText(h.el), STRINGS.connectHeading, 'the inviter should be waiting on ICE');
 }
 
-// ── The ICE seam (§6.1) ───────────────────────────────────────────────────────
+// ── The ICE seam (section 6.1) ───────────────────────────────────────────────────────
 
 test('the transport ICE reaches the machine, and that is the only way a pair connects', async () => {
   const t = transportSource();
@@ -300,7 +300,7 @@ test('the acceptor connects on the same seam, from the screen that only waits', 
   h.close();
 });
 
-// ── The plate seam (§1) ───────────────────────────────────────────────────────
+// ── The plate seam (section 1) ───────────────────────────────────────────────────────
 //
 // `collab-ceremony.test.ts` pins what the plate LOOKS like. What is left for this file is
 // how the dialog gets it: the transport never emits a plate event, so the only way the
@@ -388,8 +388,8 @@ test('the peer op-version hello travels the same seam and lands as the observer-
   const h = open({ role: 'inviter', effects: (ctx) => t.build(ctx.name) });
   await toConnecting(h);
 
-  // §11.19: a signalling payload too small for the op version is settled in band, and
-  // contract §9 makes a major gap a watching join rather than a refusal.
+  // section 11.19: a signalling payload too small for the op version is settled in band, and
+  // contract section 9 makes a major gap a watching join rather than a refusal.
   t.emit({ type: 'peer-op-version', opVersion: '99.0.0' });
   t.emit({ type: 'ice', state: 'connected' });
   t.emit({ type: 'ready' });
@@ -468,7 +468,7 @@ test('a bare CeremonyEffects stays valid: no events, no close, no crash', () => 
   assert.equal(h.el.isConnected, false);
 });
 
-// ── The paste field survives being told it is wrong (§11.25) ──────────────────
+// ── The paste field survives being told it is wrong (section 11.25) ──────────────────
 
 function caretOf(el: Element, selector: string): { value: string; focused: boolean; start: number | null } {
   const field = el.querySelector<HTMLTextAreaElement>(selector);
@@ -559,12 +559,12 @@ test('the acceptor names itself after the probe, so the transport gets a thunk n
 
   typeInto(h.el, '#collab-cer-name', 'Sam');
   // Anything the transport snapshotted at construction would still be reading "Invitee",
-  // and "Invitee" is what the peer would see (§4.5).
+  // and "Invitee" is what the peer would see (section 4.5).
   assert.equal(readName(), 'Sam');
   h.close();
 });
 
-// ── Announcements (§11.26) ────────────────────────────────────────────────────
+// ── Announcements (section 11.26) ────────────────────────────────────────────────────
 
 const liveText = (el: Element): string => el.querySelector('[data-cer-live]')?.textContent ?? '';
 
@@ -595,7 +595,7 @@ test('the live region is inside the dialog, where showModal cannot inert it', as
   h.close();
 });
 
-// ── The ten minutes belong to the invite (§6.1) ───────────────────────────────
+// ── The ten minutes belong to the invite (section 6.1) ───────────────────────────────
 
 test('the countdown is anchored to the mint, not to the screen that shows it', async () => {
   const h = open({ role: 'inviter' });

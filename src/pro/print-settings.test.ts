@@ -9,7 +9,7 @@
  *   - `snapshotFromState` / `rowsFromSnapshot` (pro/sessions.ts) - the persistence
  *     channel, run level AND per row;
  *   - `rowFromBatchRow` (pro/folder-rows.ts) - a saved batch flattened into a
- *     folder export, which used to drop all three (plans/65-preflight-and-cost.md §7).
+ *     folder export, which used to drop all three (plans/65-preflight-and-cost.md section 7).
  *
  * The empty string is deliberately tested as ABSENT, not as "explicitly off": `''`
  * is exactly what the single-tool export panel writes for these fields when its
@@ -143,7 +143,7 @@ test('reloading a snapshot restores each row\'s own print settings', async () =>
   assert.equal(rows[0]!.marks, 'crop');
 });
 
-// ── The saved batch → folder export path (§7's gap) ──────────────────────────
+// ── The saved batch → folder export path (section 7's gap) ──────────────────────────
 
 test('a snapshot row inherits the snapshot\'s run-level print settings', () => {
   const row = rowFromBatchRow({ toolId: 'qr-code' }, ['Group', 'Batch'], RUN);

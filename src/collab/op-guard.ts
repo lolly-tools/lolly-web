@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * op-guard - the check every INBOUND collaboration message passes before it is
- * allowed to become state (plan 100 §6.3 + §11.21, wave 2.4).
+ * allowed to become state (plan 100 section 6.3 + section 11.21, wave 2.4).
  *
- * A paired peer is untrusted input, continuously (§11.22): the threat model equals
+ * A paired peer is untrusted input, continuously (section 11.22): the threat model equals
  * "opened a shared lolly URL", except the URL keeps arriving, forty times a second,
  * from a machine we do not control. Everything below the transport therefore assumes
  * the bytes are hostile until this module has said otherwise. It is the ONE place
@@ -20,10 +20,10 @@
  *     never recurses into a pathological shape.
  *  2. SCHEMA - the canonical `validateCanvasOp` from `@lolly-tools/core`: the SAME
  *     ajv-compiled `schemas/canvas-op.schema.json` lolly-work's gateway runs, so a
- *     private pair and an org room agree on op shape by construction (§6.3).
+ *     private pair and an org room agree on op shape by construction (section 6.3).
  *  3. MANIFEST WHITELIST - an own-property check against the tool's DECLARED inputs
  *     and blocks sub-fields. Both peers run the same tool from their own local copy
- *     (§11.22 - peers send values, never code), so anything the manifest does not
+ *     (section 11.22 - peers send values, never code), so anything the manifest does not
  *     declare has no legitimate sender.
  *  4. CAPS - per-value size, ops per message, and (via `recordAndCheckRate`) ops and
  *     presence frames per second.
@@ -34,7 +34,7 @@
  *
  *   - `{k:'geom', fields:{x: NaN}}` and `{x: Infinity}`. ajv's `type: "number"` is a
  *     `typeof` test; NaN and Infinity are numbers. They land as a box coordinate and
- *     poison every layout computation downstream (§11.11 names NaN explicitly).
+ *     poison every layout computation downstream (section 11.11 names NaN explicitly).
  *   - `origin: {clock: Infinity}`. `type: "integer"` is `!(data % 1)`, and
  *     `Infinity % 1` is NaN, so it passes - an origin that wins every future LWW
  *     merge for the lifetime of the document. (NaN is caught by ajv; Infinity is not.)
@@ -59,23 +59,23 @@
  * DROP vs DISCONNECT. Two different failures wear the same return shape and must not
  * be treated alike by the caller. A single op that is merely *unrecognised* - an
  * input id this build does not declare, an op shape a newer peer minted - is DROPPED
- * (that op only; §11.11: never the batch, never a throw) and the session continues;
- * PWA staleness makes version skew routine (§11.19). A cap breach - depth, array
- * length, batch size, a forbidden key, a rate ceiling - is ABUSE, and §11.21 is
+ * (that op only; section 11.11: never the batch, never a throw) and the session continues;
+ * PWA staleness makes version skew routine (section 11.19). A cap breach - depth, array
+ * length, batch size, a forbidden key, a rate ceiling - is ABUSE, and section 11.21 is
  * explicit that such a peer is disconnected, not silently throttled. `ABUSE_REASONS`
  * is the set the caller tests against so that decision is made from data rather than
  * from a string comparison at the call site.
  *
  * NO WALL CLOCK. `recordAndCheckRate` takes `nowMs` as a parameter and this module
  * never reads `Date.now`, `performance.now` or a `Date` - partly so the rate window
- * is deterministically testable, and partly for the §11.7 rule that an airgapped
+ * is deterministically testable, and partly for the section 11.7 rule that an airgapped
  * device with a wrong clock behaves identically to one with a right one. A test pins
  * the absence by scanning this file's source.
  *
  * SCOPE. Pure module: no DOM, no transport, no timers, no I/O, no state beyond the
  * two rate windows. It does not decide WHAT an op means (that is collab-plumbing's
  * projection) and it does not type-check a value against its input's declared type
- * (that is `applyPatch`'s job, §11.11 - an out-of-whitelist enum or a string for a
+ * (that is `applyPatch`'s job, section 11.11 - an out-of-whitelist enum or a string for a
  * number input is dropped there, per key). It decides only whether a message is
  * allowed to be looked at.
  */
@@ -91,7 +91,7 @@ import { rowIdField } from '../lib/row-id.ts';
 
 /**
  * Why a message, or one op inside it, was refused. Typed rather than free text
- * because the disconnect copy (§11.26 asks for a SPECIFIC cause, never a generic
+ * because the disconnect copy (section 11.26 asks for a SPECIFIC cause, never a generic
  * failure) and the abuse decision both key on it.
  */
 export type OpRejectReason =
@@ -141,15 +141,15 @@ export interface OpRejection {
 
 /**
  * The reasons that mean "this peer is misbehaving, disconnect" rather than "this one
- * op made no sense to this build, drop it" (§11.21: a peer exceeding caps is
+ * op made no sense to this build, drop it" (section 11.21: a peer exceeding caps is
  * disconnected, not throttled silently).
  *
- * The line is drawn where §11.11 draws it. A structural cap breach (depth, array
+ * The line is drawn where section 11.11 draws it. A structural cap breach (depth, array
  * length, node count, batch size, rate) or a prototype key has no innocent sender - 
  * nothing in this codebase can emit one, so seeing one means the peer is not running
  * this protocol in good faith. An out-of-range VALUE, by contrast - an oversized
  * string, a NaN coordinate, an unknown input id, a colour with a semicolon in it - is
- * exactly the case §11.11 says to handle by dropping that key and carrying on: it is
+ * exactly the case section 11.11 says to handle by dropping that key and carrying on: it is
  * what a buggy, half-migrated or newer build genuinely produces.
  */
 export const ABUSE_REASONS: ReadonlySet<OpRejectReason> = new Set<OpRejectReason>([
@@ -205,7 +205,7 @@ export interface PresenceCheckResult {
   readonly rejected: OpRejection[];
 }
 
-/** The two independently-capped inbound lanes (§11.6: ops are reliable-ordered,
+/** The two independently-capped inbound lanes (section 11.6: ops are reliable-ordered,
  *  presence is unordered-lossy, and they ride separate data channels). */
 export type RateKind = 'ops' | 'presence';
 
@@ -235,11 +235,11 @@ export interface OpGuardCaps {
    * unreachable.
    */
   maxNodes: number;
-  /** Max ops in one message (§11.21's ~200). */
+  /** Max ops in one message (section 11.21's ~200). */
   opsPerMessage: number;
-  /** Max ops accepted per second across messages (§11.21's ~200/s). */
+  /** Max ops accepted per second across messages (section 11.21's ~200/s). */
   opsPerSecond: number;
-  /** Max presence frames per second (§11.21's ~40/s). */
+  /** Max presence frames per second (section 11.21's ~40/s). */
   presencePerSecond: number;
   /** Max characters in any single presence string. */
   presenceStringChars: number;
@@ -262,11 +262,11 @@ export interface OpGuardCaps {
 }
 
 /**
- * The shipped ceilings. The numbers §11.21 names (200 ops/message, 200 ops/s,
+ * The shipped ceilings. The numbers section 11.21 names (200 ops/message, 200 ops/s,
  * 40 presence/s, 64 KB per value, 1 MB for longtext) plus the ones it implies.
  *
  * These are the SEMANTIC caps. The transport has its own, tighter, outer bound - 
- * §11.6 keeps every SCTP message ≤64 KB cross-browser - so on the P2P path a
+ * section 11.6 keeps every SCTP message ≤64 KB cross-browser - so on the P2P path a
  * 1 MB longtext arrives chunked or not at all; the longtext ceiling exists for the
  * paths where a whole value legitimately can arrive at once (a catch-up snapshot,
  * a same-process provider, an org room's ws frame).
@@ -294,7 +294,7 @@ export const DEFAULT_OP_GUARD_CAPS: OpGuardCaps = {
  *  sample after the previous one closed. A burst can therefore straddle a boundary
  *  and reach 2× the limit across two adjacent windows - deliberate, because the
  *  consequence of tripping is DISCONNECTION, and a guard that would rather let a
- *  brief overshoot through than falsely accuse a peer is the right bias here. */
+ *  brief overshoot through than falsely accuse a peer is the right bias for this guard. */
 const RATE_WINDOW_MS = 1000;
 
 // ── What the guard knows about the tool ───────────────────────────────────────
@@ -329,7 +329,7 @@ export interface OpGuard {
   checkPresence(raw: unknown): PresenceCheckResult;
   /** Record `count` arrivals on `kind` at `nowMs` and report whether the lane is
    *  still within its per-second ceiling. False means "disconnect this peer"
-   *  (§11.21) - the caller reports it as `'rate-limited'`. */
+   *  (section 11.21) - the caller reports it as `'rate-limited'`. */
   recordAndCheckRate(kind: RateKind, count: number, nowMs: number): boolean;
 }
 
@@ -362,7 +362,7 @@ const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor',
  * `*` kills the comment forms without taking alpha with it.
  *
  * Deliberately a character ban rather than a colour grammar, because the
- * collaborator colour engine (§4.4) emits OKLCH and any grammar this module
+ * collaborator colour engine (section 4.4) emits OKLCH and any grammar this module
  * invented would be the thing that broke the day it emits something new. Function
  * CALLS are the one exception, handled separately below.
  */
@@ -729,7 +729,7 @@ export function createOpGuard(opts: OpGuardOpts): OpGuard {
       const c = cursor as Record<string, unknown>;
       for (const axis of ['x', 'y'] as const) {
         const n = Object.hasOwn(c, axis) ? c[axis] : undefined;
-        // Normalized unit space (plans/99 §5) - a cursor outside 0..1 is not a
+        // Normalized unit space (plans/99 section 5) - a cursor outside 0..1 is not a
         // cursor, and finiteness was already established by the scan.
         if (typeof n !== 'number' || n < 0 || n > 1) return reject('schema', `cursor.${axis}`);
       }
@@ -789,7 +789,7 @@ export function createOpGuard(opts: OpGuardOpts): OpGuard {
       // Unknown keys are deliberately TOLERATED rather than refused. Presence is
       // ephemeral, lossy and forward-compatible by design: refusing a frame because
       // a newer peer added a v1.2 field would make that peer's cursor invisible for
-      // the whole session (§11.19 makes version skew routine), and the shell only
+      // the whole session (section 11.19 makes version skew routine), and the shell only
       // ever reads the fields above. The scan has already bounded whatever is in
       // there. PRESENCE_KEYS exists so the drift test can prove this list is the
       // schema's list - not to gate the frame.

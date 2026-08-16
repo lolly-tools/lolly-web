@@ -6,7 +6,7 @@
    order. */
 @layer views {
 /*
- * The Type room's compare stage (lib/design-system/type-compare.ts, plan 97 §7.2).
+ * The Type room's compare stage (lib/design-system/type-compare.ts, plan 97 section 7.2).
  *
  * ONE SIZE, ONE LINE. Every card sets the same string at --tycmp-size, which the
  * module writes on the stage root from the shared slider. A per-card size would
@@ -24,7 +24,7 @@
  * nothing else.
  *
  * Cards are a responsive grid, not a scroller: side by side on a desktop, stacked
- * on a phone. Same room, different layout (plan 97 §11).
+ * on a phone. Same room, different layout (plan 97 section 11).
  */
 
 .tycmp {

@@ -203,7 +203,7 @@ test('the Versions entry is a LATCH, so ?area=versions is not a one-way door', a
   // moment another room opens leaves retyping the link as the only way home.
   //
   // A source guard rather than a mount: views/start.ts has no DOM test yet (plan
-  // 97 §16 lists one as still owed) and standing the whole studio up for three
+  // 97 section 16 lists one as still owed) and standing the whole studio up for three
   // lines of state would be the wrong trade. Replace this the day that test lands.
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');

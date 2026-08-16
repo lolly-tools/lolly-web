@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The presence chrome of a mounted tool, composed and then taken apart again
- * (plan 100 §4.6, §5).
+ * (plan 100 section 4.6, section 5).
  *
  * `views/tool.ts` cannot be mounted outside Vite, so its own guards are source
  * scans - but the thing those scans guard CAN be mounted, which is half the reason
@@ -12,7 +12,7 @@
  *  1. THE EXPORT INVARIANT. Not one node, class or attribute appears inside the
  *     render surface - the pill is a child of the stage and the overlay layer is a
  *     sibling of the canvas. A collaborator's presence must not be able to change a
- *     byte of an exported PNG (§4.6, §8), and "we were careful" is not a check.
+ *     byte of an exported PNG (section 4.6, section 8), and "we were careful" is not a check.
  *  2. PRESENCE ACTUALLY LANDS. A peer's frame becomes an avatar, a sidebar ring in
  *     that peer's colour, and a cursor node - through the same wiring the tool view
  *     uses, not a test-only path.
@@ -225,7 +225,7 @@ test('inbound ops reach the session — without this wire a collab never RECEIVE
   ]);
 
   // …through the guarded door, not around it: a prototype key is refused before the
-  // adapter sees it (§11.21), which is only true because the ops go through
+  // adapter sees it (section 11.21), which is only true because the ops go through
   // `session.applyRemotePatch` rather than straight to the document.
   push!([{ k: 'param', key: '__proto__', value: 'polluted', origin: { client: 'PEER', clock: 5 } }]);
   assert.equal(remote.length, 1, 'the hostile batch never reached the document');
@@ -234,7 +234,7 @@ test('inbound ops reach the session — without this wire a collab never RECEIVE
   assert.equal(push, null, 'and the lane is unsubscribed with everything else');
 });
 
-test('a §11.19 observer downgrade republishes, so the pill stops claiming you can edit', async () => {
+test('a section 11.19 observer downgrade republishes, so the pill stops claiming you can edit', async () => {
   let role: 'writer' | 'observer' = 'writer';
   let demote: ((next: 'writer' | 'observer') => void) | null = null;
   const transport = fakeHandle({
@@ -272,7 +272,7 @@ test('no presence node, class or attribute ever enters the render surface', asyn
   transport.arrive(peerFrame({ focus: 'headline', cursor: { x: 0.5, y: 0.5 } }));
 
   assert.equal(canvas.innerHTML, '<h1 data-canvas-input="headline">hi</h1>',
-    'the canvas is READ, never written — an export must not move a pixel (§4.6, §8)');
+    'the canvas is READ, never written — an export must not move a pixel (section 4.6, section 8)');
   assert.equal(canvas.querySelector('.collab-canvas-layer'), null);
   assert.equal(canvas.querySelector('.collab-pill'), null);
   assert.equal(canvas.getAttribute('style'), null, 'not even a positioning side effect');
@@ -308,7 +308,7 @@ test('a peer becomes an avatar, a sidebar ring in their colour, and a cursor', a
   assert.equal(row.style.getPropertyValue('--collab-color'), '#00a0a0',
     'in the colour that peer paints themselves (they claimed a hex in our palette)');
   assert.equal(row.querySelector('[data-collab-chips]')?.textContent, 'Priya',
-    'with a name chip, because colour is never the only differentiator (§4.8)');
+    'with a name chip, because colour is never the only differentiator (section 4.8)');
   assert.equal(stage.querySelectorAll('.collab-cursor').length, 1, 'and a cursor node');
 
   // Focus moves away → the ring goes with it, nothing is stranded.
@@ -318,7 +318,7 @@ test('a peer becomes an avatar, a sidebar ring in their colour, and a cursor', a
   collab.teardown();
 });
 
-test('an away peer keeps their roster entry but drops their ring and cursor (§11.4)', async () => {
+test('an away peer keeps their roster entry but drops their ring and cursor (section 11.4)', async () => {
   const { stage, sidebar, collab, transport } = await mount();
   transport.arrive({ ...peerFrame({ focus: 'headline', cursor: { x: 0.5, y: 0.5 } }), away: true });
 
@@ -372,7 +372,7 @@ test('the leave frame goes out BEFORE the transport closes, so peers drop us at 
   collab.teardown();
 
   const leaves = transport.sent.slice(before).filter(f => f.state === null);
-  assert.equal(leaves.length, 1, 'exactly one null-state leave frame (§4.7)');
+  assert.equal(leaves.length, 1, 'exactly one null-state leave frame (section 4.7)');
   assert.equal(transport.closes(), 1);
 });
 
@@ -430,7 +430,7 @@ test('in RTL there is nothing to clear — the HUD is physical, the pill is logi
 //
 // `currentSession` is the reader the beam presses at send time, and `liveSessionState`
 // is the whole of its judgement about what may leave. Both halves are pinned here: what
-// travels (the model, by value) and what must not (the user's own file bytes, §3).
+// travels (the model, by value) and what must not (the user's own file bytes, section 3).
 
 /** An `InputFile` as the runtime holds one - real bytes, plus a blob URL that means
  *  nothing on another origin. */
@@ -455,7 +455,7 @@ test('a picked FILE never leaves the device, however the input is shaped', () =>
   ]);
 
   assert.deepEqual(Object.keys(state).sort(), ['headline', 'logo'],
-    'plan §3 is explicit: `file` inputs never sync, "local file — not shared". Bytes travel '
+    'plan section 3 is explicit: `file` inputs never sync, "local file — not shared". Bytes travel '
     + 'as chunked, checksummed asset ITEMS or not at all');
   // The key is DROPPED, not blanked: an absent input reads as "not set" everywhere,
   // while a null is a value the receiver's tool has to interpret.

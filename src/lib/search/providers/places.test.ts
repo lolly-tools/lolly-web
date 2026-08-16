@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Places spotlight provider (plans/99 §2b): label + keyword matching with
+ * The Places spotlight provider (plans/99 section 2b): label + keyword matching with
  * diacritic folding, and the Batch-mode entry gated on the Pro flag PER SEARCH
  * CALL through the flag mirror (feature-flags.ts flagEnabledSync reads the
  * 'lolly:featureFlags' localStorage mirror, defaulting ON when unset).

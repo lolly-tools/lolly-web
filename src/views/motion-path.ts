@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * motion-path.ts - the PATH a keyframed box travels, drawn over the canvas while that
- * box is selected (plans/104 §8's motion-path bullet, under §6.5's projection rule).
+ * box is selected (plans/104 section 8's motion-path bullet, under section 6.5's projection rule).
  *
  * One polyline per selected animated box, with a diamond at every keyframe time. The
  * numbers are not this module's: `kfMotionPath` (views/timeline-math.ts) samples
  * `pose(t) = evaluateKf → resolveCamera → projectLayer` straight out of the engine and
  * hands over native-px points, which this file maps through the SAME `nativeToStage`
- * the selection outline uses. That division is §6.5's rule made structural - a path
+ * the selection outline uses. That division is section 6.5's rule made structural - a path
  * drawn from raw keyframe offsets would promise a straight line where a camera will
  * actually render a parallax curve, i.e. it would lie about the export.
  *
@@ -48,7 +48,7 @@
  *   2. The stylesheet's own `prefers-reduced-motion` + `html[data-a11y-motion]` blocks,
  *      which stop a layer painted BEFORE the pref flipped from marching on.
  *
- * plans/104 §8's a11y note is the reason there are two: canvas visuals are exempt from
+ * plans/104 section 8's a11y note is the reason there are two: canvas visuals are exempt from
  * the a11y prefs by contract (`a11y-prefs.ts:14–18`), so the lever for anything moving
  * over the canvas is playback policy - and an animated affordance is playback.
  */
@@ -66,7 +66,7 @@ export interface MotionMetrics {
 
 /**
  * The SPATIAL field names (free-canvas's own `cfg`), narrowed to what a path needs - 
- * the box's authored rect, whose CENTRE is what `projectLayer` folds (§4.1's `bx`/`by`).
+ * the box's authored rect, whose CENTRE is what `projectLayer` folds (section 4.1's `bx`/`by`).
  * Structural, so the canvas hands over its resolved config unchanged.
  */
 export interface MotionGeomCfg {
@@ -182,7 +182,7 @@ export function mountMotionPath(opts: MountMotionPathOpts): MotionPathHandle {
    * length are resolved ONCE for the whole paint, not once per box - a camera is a
    * property of the scene, not of the thing looking at it.
    *
-   * A CAMERA box is skipped outright: it has no canvas footprint at all (§5.4), so the
+   * A CAMERA box is skipped outright: it has no canvas footprint at all (section 5.4), so the
    * only path it could draw would be of a rectangle nobody can see. Its move is already
    * visible as the parallax on every OTHER box's path, which is the honest picture.
    */

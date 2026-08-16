@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The walker's layer-identity passthrough (`opts.layerIds` - plans/104 §7),
+ * The walker's layer-identity passthrough (`opts.layerIds` - plans/104 section 7),
  * pinned in both directions.
  *
  * The feature is one guarded block at the walker's g-creation site, and the

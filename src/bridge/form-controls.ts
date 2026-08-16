@@ -104,7 +104,7 @@ export function controlText(d: ControlDesc): ControlText | null {
  * How far along a range control's thumb sits, as 0..1.
  *
  * Mirrors the HTML range-state algorithm's clamping rather than trusting the value:
- * `max` below `min` collapses the range to `min` (§ range state), a non-numeric or
+ * `max` below `min` collapses the range to `min` (section range state), a non-numeric or
  * absent value falls back to the midpoint, and a zero-width range is 0 - all of which
  * appear in real markup and none of which should produce a NaN in a coordinate.
  */

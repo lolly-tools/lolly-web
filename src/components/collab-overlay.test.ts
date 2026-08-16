@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /*
- * collab-overlay.ts - the remote cursor layer (plan 100 §4.3, §4.6, §4.8, §11.14).
+ * collab-overlay.ts - the remote cursor layer (plan 100 section 4.3, section 4.6, section 4.8, section 11.14).
  *
  * Run directly:  node --test shells/web/src/components/collab-overlay.test.ts
  *
  * Everything here runs on a FAKE clock and a FAKE rAF, because the three claims
  * worth pinning are all about time and allocation rather than about pixels:
  *
- *  1. UNIT SPACE MAPS THROUGH THE STAGE'S LIVE RECT (§4.3). Asserted at two zoom
+ *  1. UNIT SPACE MAPS THROUGH THE STAGE'S LIVE RECT (section 4.3). Asserted at two zoom
  *     sizes, since "works at 1×" is exactly the bug normalized coordinates exist to
  *     prevent. jsdom's getBoundingClientRect is all zeros, so the rects are injected
  * - a test that measured the real DOM here would pass vacuously.
@@ -25,7 +25,7 @@
  *     is defined there. Read off the produced DOM rather than from a hand-list, so a
  *     new class with no rule fails here rather than shipping as an unstyled div.
  *
- * Plus the §4.6 invariant that makes the whole feature safe: the layer is mounted
+ * Plus the section 4.6 invariant that makes the whole feature safe: the layer is mounted
  * OUTSIDE the render surface even when a caller asks for it inside - and the
  * re-anchor path a canvas zoom takes, which fires no event of its own.
  */
@@ -139,7 +139,7 @@ test('the same normalized point lands correctly at two zoom sizes', () => {
     'at 1x: 20px stage offset + a quarter of 400px');
 
   // Zoom the stage to 2x. Nothing about the peer changed - this is the whole reason
-  // §4.3 puts normalized coordinates on the wire rather than pixels.
+  // section 4.3 puts normalized coordinates on the wire rather than pixels.
   h.setStageWidth(800);
   h.cursors.reanchor();
   assert.equal(h.transformOf(), 'translate3d(220px, 110px, 0)',
@@ -207,7 +207,7 @@ test('a heartbeat restating the same position does not restart the glide', () =>
   h.setNow(100);
   h.cursors.setPeers([peer('a', 1, 0)]);
   h.setNow(200);
-  h.cursors.setPeers([peer('a', 1, 0)]);   // §4.7's 15 s self-refresh, same coords
+  h.cursors.setPeers([peer('a', 1, 0)]);   // section 4.7's 15 s self-refresh, same coords
   h.setNow(200);
   h.frames.flush();
   assert.equal(h.transformOf(), 'translate3d(420px, 10px, 0)',
@@ -241,7 +241,7 @@ test('a peer with no cursor — or an away peer — holds no node at all', () =>
   h.cursors.setPeers([
     peer('a', 0.5, 0.5),
     { id: 'b', name: 'B', color: '#f00' },                              // no cursor lane
-    peer('c', 0.5, 0.5, { away: true }),                                // hidden tab (§11.4)
+    peer('c', 0.5, 0.5, { away: true }),                                // hidden tab (section 11.4)
     { id: 'd', name: 'D', color: '#f00', cursor: { x: Number.NaN, y: 0 } },
   ]);
   assert.equal(h.cursors.stats().active, 1, 'only the one peer with a real cursor is live');
@@ -254,7 +254,7 @@ test('the ticker runs only while somebody is MOVING — a parked pointer and an 
 
   // An ARRIVAL is not a movement. There is no previous sample to walk from, so the
   // node is placed once and there is nothing left to animate - a live roster is not
-  // by itself a reason to hold a frame loop open (§11.14, and this module's own
+  // by itself a reason to hold a frame loop open (section 11.14, and this module's own
   // "the ticker is not a heartbeat").
   h.cursors.setPeers([peer('a', 0.5, 0.5)]);
   assert.equal(h.frames.pending(), 0, 'a peer who has only ever been at one point costs no loop');
@@ -298,7 +298,7 @@ test('the ticker runs only while somebody is MOVING — a parked pointer and an 
 test('reduced motion draws static dots and starts no ticker at all', () => {
   const h = mount({ still: true });
   h.cursors.setPeers([peer('a', 0.25, 0.5)]);
-  assert.equal(h.frames.pending(), 0, 'no frame loop is started (§4.8)');
+  assert.equal(h.frames.pending(), 0, 'no frame loop is started (section 4.8)');
   assert.equal(h.transformOf(), 'translate3d(120px, 110px, 0)',
     'the position is still painted — a calmer app is not a blind one');
   const node = h.nodes()[0]!;
@@ -361,7 +361,7 @@ test('dispose leaves no rAF pending and releases the pool', () => {
   assert.equal(h.frames.pending(), 0);
 });
 
-// ── the §4.6 invariant ────────────────────────────────────────────────────────
+// ── the section 4.6 invariant ────────────────────────────────────────────────────────
 
 test('the layer mounts OUTSIDE the render surface, however it is asked', () => {
   const host = document.getElementById('host') as HTMLElement;
@@ -436,7 +436,7 @@ test('the module injects its own sheet, and every class it writes is defined the
   // Position must be absolute or every cursor stacks in normal flow and each
   // translate3d offsets from its neighbour's height instead of from the layer.
   assert.match(css, /\.collab-cursor \{[^}]*position: absolute/);
-  // §4.8: chrome type and icon boxes ride the largeText multiplier.
+  // section 4.8: chrome type and icon boxes ride the largeText multiplier.
   assert.ok(!/font-size: \d/.test(css), 'every font-size is a --a11y-fs multiple');
 
   h.cursors.dispose();

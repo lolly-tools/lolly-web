@@ -12,7 +12,7 @@
  *   - `host.capture.page()` → a PNG of the page (DevTools Protocol).
  *   - the Design System studio's website source → the page's markup, stylesheet
  *     text and a few icon/logo files, which `lib/design-system/extract-site.ts`
- *     parses into a census ON DEVICE (plan 97 §9).
+ *     parses into a census ON DEVICE (plan 97 section 9).
  *
  * Nothing here fetches anything itself, and there is no server path: the deployed
  * app's CSP `connect-src` allowlists six hosts, and by decision Lolly runs no

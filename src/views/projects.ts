@@ -130,7 +130,7 @@ const SEARCH_LIMIT = 200;
 interface MountProjectsOpts {
   onBatchRendered?: (files: BatchFile[]) => void;
   /** Raw route query string (#/p?q=…). `q` enters the explicit results mode
-   *  (plans/99 §2a) - read at mount only; exitSearch leaves by replacing the
+   *  (plans/99 section 2a) - read at mount only; exitSearch leaves by replacing the
    *  hash with the q-less form, which remounts (the signature carries ?q=). */
   params?: string;
 }
@@ -226,7 +226,7 @@ export async function mountProjects(
   let viewMode: ViewMode = 'preview';  // 'preview' (tile grid) | 'list'
   let sortBy: SortBy = 'modified';   // display preference - see the SortBy type note
   // The results-mode query (trimmed). Non-empty ONLY via the ?q= URL param - the
-  // spotlight's explicit "See all in Projects →" handoff (plans/99 §2a): typing in the
+  // spotlight's explicit "See all in Projects →" handoff (plans/99 section 2a): typing in the
   // bottom bar feeds the overlay and NEVER reshapes this view, so the user's items
   // can't seem to disappear without obvious context. When set, the view swaps to a
   // flat "results" grid searching the CURRENT scope's WHOLE subtree - every folder
@@ -401,7 +401,7 @@ export async function mountProjects(
 
   // ── search (within the current scope's whole subtree) ───────────────────────
   // Haystacks + matching live in lib/search/projects-source.ts, shared verbatim with
-  // the spotlight's projects provider so the two can't drift (plans/99 §8 M2). That
+  // the spotlight's projects provider so the two can't drift (plans/99 section 8 M2). That
   // move also migrated matching from substring .includes onto the shared folded
   // token-AND matcher - the plan's deliberate unification: every query word must hit
   // (in any field) and diacritics fold, same hits here as in the overlay.
@@ -653,7 +653,7 @@ export async function mountProjects(
       : folderId === UNCAT ? t('Uncategorised')
       : `“${folders.find(f => f.id === folderId)?.name ?? t('this folder')}”`;
     // Results mode always carries an explicit Clear in the status line - BOTH the
-    // results and no-results states (plans/99 §2a: the URL-entered mode needs
+    // results and no-results states (plans/99 section 2a: the URL-entered mode needs
     // unmistakable context AND an unmissable way out). Routed through
     // [data-search-clear] → clearSearchBar → the claim's onClear, so the bar's
     // field and this view exit as one.
@@ -730,7 +730,7 @@ export async function mountProjects(
   }
 
   function shell(heading: string, active: 'tools' | 'projects' | 'catalog', inner: string, { inFolder = false }: { inFolder?: boolean } = {}): string {
-    // projects--searching marks the URL-entered results mode (plans/99 §2a) - it can
+    // projects--searching marks the URL-entered results mode (plans/99 section 2a) - it can
     // never flip mid-view from typing, since live keystrokes go to the spotlight
     // overlay and only ?q= at mount (or exitSearch) changes `query`.
     return `
@@ -752,7 +752,7 @@ export async function mountProjects(
   // The bottom bar is the persistent shell singleton (components/search-bar.ts).
   // Projects claims it with a scope-aware placeholder (it names the CURRENT folder
   // so it's clear a query reaches INTO sub-folders) but NO live-filter tap - typing
-  // feeds the spotlight overlay (plans/99 §2a M2), and only the explicit ?q=
+  // feeds the spotlight overlay (plans/99 section 2a M2), and only the explicit ?q=
   // handoff puts this view into results mode.
   function searchPlaceholder(): string {
     const scopeName = folderId == null ? t('all projects')
@@ -761,7 +761,7 @@ export async function mountProjects(
     return folderId == null ? t('Search all projects…') : tRaw('Search {scope}…', { scope: scopeName });
   }
 
-  // Exit the URL-entered results mode (plans/99 §2a). location.replace with the
+  // Exit the URL-entered results mode (plans/99 section 2a). location.replace with the
   // q-less hash (no new history entry): the projects route signature carries ?q=
   // (main.ts routeSignature), so the hash change remounts the plain grid - the
   // same path the browser's Back button takes out of results mode, so exit
@@ -1020,7 +1020,7 @@ export async function mountProjects(
     applyCollabBadges(root);
   }
 
-  // Live-collab badge (plan 100 §4.6; lib/collab-tile-state.ts) - every session
+  // Live-collab badge (plan 100 section 4.6; lib/collab-tile-state.ts) - every session
   // tile, in both the grid and the search-results list (sessionResultTile reuses
   // the same sessionTile() shape), gets consulted against the dormant-by-default
   // provider registry. No provider registered anywhere in this repo yet, so
@@ -1979,7 +1979,7 @@ export async function mountProjects(
       // not serialised into a link. Hand it to the mount alongside the navigation instead
       // - a one-shot stash the tool view spends on mount, and the only thing that lets the
       // Share dialog's "Work collab" row key a room on the session actually being edited
-      // (org/team-session-origin.ts; plans/100 §7). Armed LAST, immediately before the
+      // (org/team-session-origin.ts; plans/100 section 7). Armed LAST, immediately before the
       // navigation it belongs to, so a failure above leaves nothing armed.
       rememberTeamSessionOrigin({ sessionId, toolId: data.toolId, ...(projectId ? { projectId } : {}) });
       window.location.hash = `#/tool/${data.toolId}${query ? `?${query}` : ''}`;
@@ -2116,7 +2116,7 @@ export async function mountProjects(
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;
   // Claim the shell search bar AFTER reload() - the scope-aware placeholder needs
   // `folders` (and the deleted-folder fallback above) resolved. NO onQuery (the M2
-  // flip, plans/99 §2a): Projects is an overlay-only view, so typing feeds the
+  // flip, plans/99 section 2a): Projects is an overlay-only view, so typing feeds the
   // spotlight and this grid never reshapes under the user's hands. The claim seeds
   // the bar with the ?q= handoff query, and onClear (the bar's ✕/Escape, with no
   // live tap claimed) exits results mode in place.

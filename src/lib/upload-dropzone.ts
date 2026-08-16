@@ -10,7 +10,7 @@
  * sanitise/credential-preserve/animated-sniff); a PDF/.ai converts page(s) to SVG
  * assets via the lazily-loaded pdf-import chunk, and a PowerPoint .pptx converts
  * chosen slide(s) the same way via pptx-import. An image is offered the shared
- * trim-to-content card first (plan 97 §7.3 - see offerTrim below), which is why the
+ * trim-to-content card first (plan 97 section 7.3 - see offerTrim below), which is why the
  * loop stores `await offerTrim(file)` rather than `file`. Ingest is sequential on purpose - 
  * parallel ingest of a big multi-drop would spike memory (each raster decode holds a
  * full bitmap) - and the single-flight guard is module-level so a mid-ingest re-mount
@@ -77,7 +77,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
   let disposed = false;
 
   /**
-   * Plan 97 §7.3: every surface where a user file becomes an asset offers the same
+   * Plan 97 section 7.3: every surface where a user file becomes an asset offers the same
    * trim-to-content card, so a padded logo dropped here behaves like one dropped in
    * the Logos room. Resolves to the file to actually ingest - the trimmed bytes, the
    * original when the user keeps the margins, and the original untouched when the

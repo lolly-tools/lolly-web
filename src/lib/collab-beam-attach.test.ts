@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * attachCollabBeam - where a live collab grows a SEND control, and where it must not
- * (plan 100 §6.4, §7).
+ * (plan 100 section 6.4, section 7).
  *
  * `collab/beam-ui.test.ts` proves the beam works once it exists. This one proves the
  * gate in front of it, which is the half a user can actually be misled by:
  *
  *   - a WORK collab never gets the control. Track B's transport carries ops and presence
- *     and no bulk lane at all (§7), so the absence is STRUCTURAL - there is no flag to
+ *     and no bulk lane at all (section 7), so the absence is STRUCTURAL - there is no flag to
  *     forget, and no code path where a work collab could be handed a beam;
  *   - a mount for a different tool never gets another collab's beam;
  *   - the action's visibility tracks the LANE, not the mount: pre-connect (and after the
@@ -172,7 +172,7 @@ test('another tool\'s mount is never handed this collab\'s beam', async () => {
   assert.equal(
     await attachCollabBeam({ toolId: 'qr-code', host: HOST, currentSession: () => null }),
     null,
-    '§6.2a pins a private collab to the session it was started from',
+    'section 6.2a pins a private collab to the session it was started from',
   );
 });
 

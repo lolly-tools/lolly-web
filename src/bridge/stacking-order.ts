@@ -7,7 +7,7 @@
  * `renderSvgFromHtml` (export.ts) paints strictly in DOM order: an element's
  * background/borders, then its block children, then its inline text, then its
  * generated content. CSS does not paint in DOM order. It paints in
- * **stacking-context order** - CSS 2.1 Appendix E, §E.2 - where every stacking
+ * **stacking-context order** - CSS 2.1 Appendix E, section E.2 - where every stacking
  * context lays down seven layers:
  *
  *   1. the context element's own background and borders
@@ -41,7 +41,7 @@
  * CSSStyleDeclaration) so it unit-tests under plain node:test everywhere.
  */
 
-/** The Appendix E §E.2 layers a walker can DEFER a child into.
+/** The Appendix E section E.2 layers a walker can DEFER a child into.
  *
  *  Layers 1 (the context element's own background/border) and 5 (in-flow inline
  *  content) are never deferred: the walker emits both in place, at the point it
@@ -92,7 +92,7 @@ export interface StackingRole {
   /** Which clause fired - surfaced in logs and asserted per-row by the tests.
    *  `''` when no clause fired. */
   reason: string;
-  /** Which Appendix E §E.2 layer this element's paint unit belongs to inside its
+  /** Which Appendix E section E.2 layer this element's paint unit belongs to inside its
    *  PARENT's stacking context. */
   layer: PaintLayer;
   /** Used z-index. 0 when `auto` - Appendix E sorts layer 6 (auto/0) together. */
@@ -111,7 +111,7 @@ function set(v: string | undefined, initial = 'none'): boolean {
 }
 
 /** Properties whose non-initial value makes a stacking context, so
- *  `will-change: <that>` makes one pre-emptively (CSS Will Change §3 - "if any
+ *  `will-change: <that>` makes one pre-emptively (CSS Will Change section 3 - "if any
  *  non-initial value of a property would create a stacking context on the
  *  element, specifying that property in will-change must create one"). */
 const WILL_CHANGE_CREATORS = new Set([
@@ -122,7 +122,7 @@ const WILL_CHANGE_CREATORS = new Set([
 ]);
 
 /** `contain` keywords that include paint or layout containment. `style` alone
- *  does NOT create a stacking context (CSS Contain 2 §2) - a trap worth a test
+ *  does NOT create a stacking context (CSS Contain 2 section 2) - a trap worth a test
  *  row, because a naive `contain !== 'none'` check gets it wrong. */
 const CONTAIN_CREATORS = ['layout', 'paint', 'content', 'strict'];
 
@@ -162,45 +162,45 @@ export function stackingRole(
     // Top layer (HTML `:modal` dialog, open popover). Painted above every other
     // context in the document, so it must at minimum be a context of its own.
     (isTopLayer && claim('top-layer')) ||
-    // CSS Position L3 §9.9.1. `fixed` and `sticky` create one UNCONDITIONALLY - 
+    // CSS Position L3 section 9.9.1. `fixed` and `sticky` create one UNCONDITIONALLY - 
     // an Appendix-E-literal reading misses this because CSS 2.1 predates sticky
     // and treated fixed as merely positioned.
     ((position === 'fixed' || position === 'sticky') && claim(`position:${position}`)) ||
-    // CSS 2.1 §9.9.1 / Position L3: relative|absolute with a used z-index.
+    // CSS 2.1 section 9.9.1 / Position L3: relative|absolute with a used z-index.
     ((position === 'relative' || position === 'absolute') && !zAuto && claim('position+z-index')) ||
-    // CSS Flexbox §5.4 / CSS Grid §6: a flex/grid ITEM with a non-auto z-index
+    // CSS Flexbox section 5.4 / CSS Grid section 6: a flex/grid ITEM with a non-auto z-index
     // creates a context even at `position: static`.
     (isFlexOrGridItem && claim('flex/grid item + z-index')) ||
-    // CSS Color 3 §3.2: opacity less than 1.
+    // CSS Color 3 section 3.2: opacity less than 1.
     (Number.parseFloat(s.opacity ?? '1') < 1 && claim('opacity')) ||
-    // CSS Transforms 1 §3 - and the individual transform properties, whose
+    // CSS Transforms 1 section 3 - and the individual transform properties, whose
     // INITIAL value is `none`. TRAP: `scale: 1` / `translate: 0px` are non-initial
     // and DO create a context while `transform` still computes to `none`.
     (set(s.transform) && claim('transform')) ||
     (set(s.translate) && claim('translate')) ||
     (set(s.rotate) && claim('rotate')) ||
     (set(s.scale) && claim('scale')) ||
-    // CSS Transforms 2 §6.
+    // CSS Transforms 2 section 6.
     (set(s.perspective) && claim('perspective')) ||
     (set(s.transformStyle, 'flat') && claim('transform-style')) ||
-    // Filter Effects 1 §7.
+    // Filter Effects 1 section 7.
     (set(s.filter) && claim('filter')) ||
     (set(s.backdropFilter) && claim('backdrop-filter')) ||
-    // Compositing and Blending 1 §5.1 and §7.
+    // Compositing and Blending 1 section 5.1 and section 7.
     (set(s.mixBlendMode, 'normal') && claim('mix-blend-mode')) ||
     (set(s.isolation, 'auto') && claim('isolation')) ||
-    // CSS Masking 1 §7.
+    // CSS Masking 1 section 7.
     (set(s.clipPath) && claim('clip-path')) ||
     (set(s.maskImage) && claim('mask-image')) ||
     (set(s.webkitMaskImage) && claim('mask-image')) ||
-    // CSS Containment 2 §2. TRAP: `contain: style` alone does NOT create one.
+    // CSS Containment 2 section 2. TRAP: `contain: style` alone does NOT create one.
     (CONTAIN_CREATORS.some(k => new RegExp(`(^|\\s)${k}(\\s|$)`).test((s.contain || '').toLowerCase())) && claim('contain')) ||
     (/^(size|inline-size)/.test((s.containerType || '').trim().toLowerCase()) && claim('container-type')) ||
     (/^(auto|hidden)$/.test((s.contentVisibility || '').trim().toLowerCase()) && claim('content-visibility')) ||
-    // CSS Will Change §3. TRAP: `will-change: contents` does not create one;
+    // CSS Will Change section 3. TRAP: `will-change: contents` does not create one;
     // `will-change: opacity` does.
     ((s.willChange || '').toLowerCase().split(',').some(p => WILL_CHANGE_CREATORS.has(p.trim())) && claim('will-change')) ||
-    // CSS View Transitions 1 §3.
+    // CSS View Transitions 1 section 3.
     (set(s.viewTransitionName) && claim('view-transition-name'));
 
   return { createsContext, reason, layer: paintLayer(position, positioned, zAuto, zNum, isFlexOrGridItem, s), z: zNum, order };
@@ -208,7 +208,7 @@ export function stackingRole(
 
 /**
  * Which layer this element's own paint unit sits in, inside its parent context.
- * (Appendix E §E.2 steps 3, 4, 5, 8 and 9.)
+ * (Appendix E section E.2 steps 3, 4, 5, 8 and 9.)
  */
 function paintLayer(
   position: string, positioned: boolean, zAuto: boolean, zNum: number,
@@ -223,7 +223,7 @@ function paintLayer(
     if (!zAuto && zNum > 0) return 7;
     return 6;
   }
-  // A static flex/grid item with a non-auto z-index. Flexbox §5.4 paints items
+  // A static flex/grid item with a non-auto z-index. Flexbox section 5.4 paints items
   // as inline blocks in order-modified document order, sorted by z-index. We map
   // that onto Appendix E's buckets by SIGN only, and deliberately leave `z: 0`
   // in layer 3 (where DOM order already puts it) rather than hoisting it past
@@ -242,7 +242,7 @@ function paintLayer(
 /**
  * Ascending stable sort by `z`.
  *
- * Stability IS the spec here, not an implementation detail: Appendix E §E.2
+ * Stability IS part of the spec, not an implementation detail: Appendix E section E.2
  * steps 3 and 9 order each layer "in z-index order (most negative first) then
  * tree order". `Array#sort` has been required-stable since ES2019, and every
  * engine this ships on predates that requirement's adoption by years - but the
@@ -255,7 +255,7 @@ export function sortUnits<T extends { z: number }>(items: readonly T[]): T[] {
 }
 
 /**
- * Order-modified document order (CSS Flexbox §5.4, CSS Grid §6): a flex/grid
+ * Order-modified document order (CSS Flexbox section 5.4, CSS Grid section 6): a flex/grid
  * container paints its items sorted by `order`, ties broken by document order.
  * A non-flex/grid parent must not call this - `order` has no effect there and
  * reordering would be a pure regression.

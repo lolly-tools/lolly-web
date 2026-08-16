@@ -3,7 +3,7 @@
  * Stable row identity - a dependency-free ULID, plus the hidden id field every
  * `blocks` row carries from birth.
  *
- * Why (plan 100 §3, "Hard prerequisite - stable row ids"): a live collab addresses
+ * Why (plan 100 section 3, "Hard prerequisite - stable row ids"): a live collab addresses
  * ops at a ROW, and peers mint rows with no chance to coordinate - so an array
  * position cannot be an identity (a concurrent insert renumbers everything below it,
  * and a late field op would land on someone else's row), and neither can a per-mount
@@ -144,7 +144,7 @@ export interface RowIdInput {
 }
 
 /**
- * The sub-field a row of this input carries its stable id in (plan 100 §3, "Hard
+ * The sub-field a row of this input carries its stable id in (plan 100 section 3, "Hard
  * prerequisite - stable row ids"):
  *
  *  - a CANVAS collection uses the tool's own declared id sub-field, because that id is

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-gl.test.ts - the node-testable half of the P2b GPU compositor (plans/104
- * §6.4). A real WebGL2 context is a browser-tier concern (the parity harness drives that
+ * section 6.4). A real WebGL2 context is a browser-tier concern (the parity harness drives that
  * with `localStorage['lolly.glCompositor'] = '1'` in a real browser); what CAN be pinned
  * here, with no GPU, is the pure MATH that decides whether every tilted quad lands right:
  *

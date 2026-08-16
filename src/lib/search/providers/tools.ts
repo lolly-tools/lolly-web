@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Tools + Utilities spotlight providers (plans/99 §2b) - both read the
+ * The Tools + Utilities spotlight providers (plans/99 section 2b) - both read the
  * synced tool index off window.__toolIndex (catalog/sync.ts owns that global;
  * the provider assembly passes no deps, so the read happens per search call and
  * a mid-session re-sync is picked up automatically).
@@ -9,7 +9,7 @@
  * 'utility'` (the `#/u` view), tools are everything else, and unlisted entries
  * (manifest `listed: false` - mechanisms invoked from context, e.g.
  * asset-export) never surface. Haystacks include the pristine English strings
- * localizeToolIndex stashes on `tool.en` (plans/99 §2e), so a Spanish session
+ * localizeToolIndex stashes on `tool.en` (plans/99 section 2e), so a Spanish session
  * finds "Compress PDF" by "compress" AND by its Spanish name.
  *
  * Haystacks are folded ONCE and cached in a WeakMap keyed on the index OBJECT:
@@ -44,7 +44,7 @@ const readIndex = (): ToolIndexLike | undefined =>
 /** One searchable tool: the index entry + its prebuilt, pre-folded fields. */
 interface Row { tool: IndexTool; fields: SearchField[] }
 
-// Field weights (plans/99 §2b): names lead, tags + id carry vocabulary the
+// Field weights (plans/99 section 2b): names lead, tags + id carry vocabulary the
 // name doesn't ("foil" → Finish Preview), descriptions trail.
 function fieldsFor(tool: IndexTool): SearchField[] {
   const out: SearchField[] = [];

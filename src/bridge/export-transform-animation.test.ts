@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The walker under a RUNNING transform animation (plans/104 §9, P3.1 failure 2).
+ * The walker under a RUNNING transform animation (plans/104 section 9, P3.1 failure 2).
  *
  * The neutralise-and-recurse branches set `el.style.transform = 'none'` and walk the
  * element again. A running CSS transition or animation on `transform` outranks every
- * declaration in every origin (CSS Cascade 5 §6.1), inline `!important` included, so
+ * declaration in every origin (CSS Cascade 5 section 6.1), inline `!important` included, so
  * that assignment did nothing and the recursive call took the same branch again, and
  * again: the app's own gallery walked to 34 455 `<g>` in chains 2 136 deep, and an
  * INFINITE animation had no termination argument at all.
  *
- * A browser is the only possible oracle here. jsdom has no cascade, no animation
+ * Only a browser can be the oracle for this suite. jsdom has no cascade, no animation
  * timeline, no `getAnimations()` and no layout, so every mechanism under test - 
  * "does an animation outrank an inline style", "does cancelling it let the inline
  * style through", "how many groups came out" - is precisely what it cannot model.

@@ -266,7 +266,7 @@
 .gallery-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .gallery-search-clear:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
-/* Spotlight chord hint (plans/99 §2f) — the ⌃␣ <kbd> chip right-aligned inside
+/* Spotlight chord hint (plans/99 section 2f) — the ⌃␣ <kbd> chip right-aligned inside
    the box. Advertises Control-Space ONLY (⌘Space stays bound but silent — the
    locked decision). Decorative: aria-hidden, pointer-events none; search-bar's
    syncClear flips [hidden] the moment the field has text, so it and the ✕

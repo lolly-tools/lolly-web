@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-transport - the JS driver for the native LAN socket transport (plans/110 §4).
+ * native-transport - the JS driver for the native LAN socket transport (plans/110 section 4).
  *
  * The transport itself is Rust (`src-tauri/src/native_transport.rs`): it connects the
  * socket, runs the Noise handshake, and streams framed lane messages. This module is the

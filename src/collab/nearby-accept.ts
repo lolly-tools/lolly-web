@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * nearby-accept - the acceptor's front door for a nearby pairing (plans/110 §3).
+ * nearby-accept - the acceptor's front door for a nearby pairing (plans/110 section 3).
  *
  * The inviter taps a discovered peer (the ceremony's Nearby panel) and hands over the
  * invite over the nearby channel; on THIS device that arrives as a `subscribeInvites`

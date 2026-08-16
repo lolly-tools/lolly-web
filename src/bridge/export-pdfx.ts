@@ -186,7 +186,7 @@ export async function applyPdfX(
  *
  * The embed route is the ONLY one that supplies CMYK profile bytes, and its
  * identity comes from the profile (identifier / registry / info), never from the
- * condition the panel happens to name. See press-profile-embed.ts §identity trap.
+ * condition the panel happens to name. See press-profile-embed.ts section identity trap.
  */
 function outputIntentSpec(
   intentKind: string | null, embed: EmbedResolution | null, log: PdfXLog | null,

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * plate - the connection plate, a private collab's short authentication string
- * (plan 100 §1, §6.1; Andy's decision, 2026-08-10).
+ * (plan 100 section 1, section 6.1; Andy's decision, 2026-08-10).
  *
- * WHAT THIS IS, AND WHAT IT IS NOT. Plan 100 §1 floated a license-plate code as a third
+ * WHAT THIS IS, AND WHAT IT IS NOT. Plan 100 section 1 floated a license-plate code as a third
  * SKIN - six spoken characters standing in for the invite blob, redeemed against a tiny
  * rendezvous. Andy's call reverses the direction: the plate is the CONFIRMATION, never a
  * carrier. It carries no material, needs no rendezvous, and is derived from the pairing
  * that already exists. The link and the QR stay the only things that move SDP, so the
- * "codes need a server" trade in §1 does not apply to this at all - an airgapped pair
+ * "codes need a server" trade in section 1 does not apply to this at all - an airgapped pair
  * gets a plate exactly like everyone else.
  *
- * It is the ZRTP-style SAS (RFC 6189 §7), doing the one job a fingerprint-carrying blob
+ * It is the ZRTP-style SAS (RFC 6189 section 7), doing the one job a fingerprint-carrying blob
  * cannot do on its own: proving the blob was not swapped in flight. Both screens show six
  * characters at the moment they connect; the humans compare them out loud. Matching
  * plates mean both devices hashed the SAME PAIR of DTLS certificate fingerprints, which
@@ -173,7 +173,7 @@ export function formatPlate(symbols: string): string {
 }
 
 /**
- * The SAS domain for the native (Noise-over-TCP) transport, plans/110 §4. DISTINCT from
+ * The SAS domain for the native (Noise-over-TCP) transport, plans/110 section 4. DISTINCT from
  * `PLATE_DOMAIN` on purpose: a native plate is derived from a Noise handshake hash, a
  * DTLS plate from a pair of certificate fingerprints, and separating the domains means a
  * value drawn for one transport can never be read as, or substituted for, the other's.
@@ -196,7 +196,7 @@ function preimageSingle(domain: Uint8Array, value: Uint8Array, counter: number):
 }
 
 /**
- * The plate for a native pairing, from the Noise handshake hash `h` (plans/110 §4).
+ * The plate for a native pairing, from the Noise handshake hash `h` (plans/110 section 4).
  *
  * Unlike {@link derivePlate}, there is no PAIR to order: after a completed Noise XX
  * handshake both peers hold the SAME `h`, a transcript hash over both static keys, both

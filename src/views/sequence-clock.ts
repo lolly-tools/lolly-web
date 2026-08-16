@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sequence-clock.ts - the playhead (Fable timeline, phase 2 §3).
+ * sequence-clock.ts - the playhead (Fable timeline, phase 2 section 3).
  *
  * One mounted composition's *time*: where the playhead is, what that means for
  * every timed box on the live canvas, and - while playing - a conductor that keeps
@@ -522,7 +522,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   const store = createAuthoredStore();
   /**
    * True while the export-time read/restore seam is holding this stage at its AUTHORED
-   * pose (bridge/sequence-dom.ts's writer registry, plans/104 §6 point 0). Set only by
+   * pose (bridge/sequence-dom.ts's writer registry, plans/104 section 6 point 0). Set only by
    * the registry, and always balanced by it.
    */
   let paused = false;
@@ -898,7 +898,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     // the subscriber fan-out below MUST still run.
     try {
       // PAUSED means an export (or another photographer) is holding this stage at its
-      // AUTHORED pose - plans/104 §6 point 0. The clock keeps its own time and keeps
+      // AUTHORED pose - plans/104 section 6 point 0. The clock keeps its own time and keeps
       // fanning out ticks; what it must not do is put a frame back on the DOM between
       // two plate shots, because the exporter reads authored geometry off these very
       // elements. `store` was handed back when the pause was taken, so there is
@@ -1111,7 +1111,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     },
   };
 
-  // The clock announces itself to the export-time read/restore seam (plans/104 §6
+  // The clock announces itself to the export-time read/restore seam (plans/104 section 6
   // point 0): it is the writer whose per-frame transform/opacity/filter/z-index sit on
   // the very elements an export is about to read authored geometry off. `reapply` is
   // the clock's own - re-asserting the CURRENT playhead, so an export that finishes

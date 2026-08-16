@@ -572,7 +572,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     // Matroska bindings are Lolly's (c2pa-rs has a reader for neither). Since the
     // recorder prefers audio/webm, the DEFAULT container is the least portable one - 
     // so the MP3 save is the one that travels, and the affordance should not be coy
-    // about it (plan 102 §5.4).
+    // about it (plan 102 section 5.4).
     const portableCred = container === 'm4a' || container === 'mp3' || container === 'wav';
     natBtn.title = !container
       ? 'Saved without Content Credentials — no embedder for this container.'

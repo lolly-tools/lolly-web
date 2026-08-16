@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-cuts.ts - the CONTACT SHEET: N stills off one timed composition
- * (Fable timeline, phase 2.5 / plans/51-fable-timeline-editing.md §4.6).
+ * (Fable timeline, phase 2.5 / plans/51-fable-timeline-editing.md section 4.6).
  *
  * This is the STILL sibling of sequence-render.ts. Where that module decodes,
  * composites and muxes to produce motion, this one does none of those things: it
@@ -11,7 +11,7 @@
  * still of a sequence is WYSIWYG, and the cheapest way to keep N stills honest is
  * for each of them to be a plain still taken at a different time.
  *
- * THE CONTRACT (§4.6):
+ * THE CONTRACT (section 4.6):
  *   cuts = 1 (default)  the frame at the playhead. Nothing in this module runs;
  *                       the dispatch in export.ts never reaches it. That path must
  *                       stay byte-identical - it is the common one.
@@ -36,13 +36,13 @@
  * back.
  *
  * The last pair is the one deliberate LAYOUT write in the whole applier (plans/104
- * §5.2, P1): the `w`/`h` keyframe channels exist so that a size tween REFLOWS - text
+ * section 5.2, P1): the `w`/`h` keyframe channels exist so that a size tween REFLOWS - text
  * rewraps, a border stays one pixel - which no composited property can fake. It costs
  * a reflow per cut on a stage that keys a size, and nothing at all on one that does
  * not: the write is gated on the track actually mentioning `w` or `h`.
  *
  * AND THE STAGE IT STARTS FROM IS THE AUTHORED ONE. The whole run sits inside
- * `withAuthoredDom` (plans/104 §6 point 0): the preview clock has been writing those
+ * `withAuthoredDom` (plans/104 section 6 point 0): the preview clock has been writing those
  * same properties for whatever frame the playhead is parked on, and this module's
  * session would capture that composed pose as "authored" the first time it touched a
  * box - so every cut would carry the parked frame baked in, and by how much would
@@ -187,7 +187,7 @@ export interface CutsDeps {
 export async function renderSequenceCuts(
   node: Element, format: string, opts: ExportOpts, deps: CutsDeps,
 ): Promise<Blob> {
-  // THE READ/RESTORE SEAM (plans/104 §6 point 0). The comment above about re-capturing
+  // THE READ/RESTORE SEAM (plans/104 section 6 point 0). The comment above about re-capturing
   // the authored styles on cut 2 is the same bug one level up: the PREVIEW CLOCK has
   // already written cut 0. This sheet opens its own session on the live artboard, and
   // `AuthoredStore.get()` captures whatever is on the element the first time it is

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **design-file source** (plan 97 §8, M2) - everything the import flow needs
+ * The **design-file source** (plan 97 section 8, M2) - everything the import flow needs
  * to decide what a dropped file IS, and everything the semantic-mapping card
  * needs once that file turns out to be a token document.
  *
@@ -454,7 +454,7 @@ export function applyMappingChoice(
  * exactly what `withRoleAliases` needs to write an alias rather than a literal.
  * **Never propose roles from this.** `proposeRolesFromTokens(doc, [], null)` is
  * the token-first proposer, it keeps the paths, and it is what the mapping card
- * (§3) runs. This function exists for the other half of §8: "review first",
+ * (section 3) runs. This function exists for the other half of section 8: "review first",
  * where a doc decomposes into candidates the person adds one at a time, and a
  * candidate only ever needs a value and a provenance.
  *

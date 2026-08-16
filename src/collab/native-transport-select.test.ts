@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * native-transport-select (collab/native-transport-select.ts): the full decision table
- * for choosing rtc / native / none (plans/110 §4). Pure - no I/O, no crypto.
+ * for choosing rtc / native / none (plans/110 section 4). Pure - no I/O, no crypto.
  *
  * Run directly:  node --test shells/web/src/collab/native-transport-select.test.ts
  */

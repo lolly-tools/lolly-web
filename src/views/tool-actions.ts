@@ -833,7 +833,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // contributes that audio to the export (resolved live from the sidebar pick), and
   // the card becomes two rows: the tool's audio with a level slider, plus an
   // optional mix-in track whose CENTRE level (off/low/full) sets the bed's gain
-  // while the tool audio plays - full at the top and tail (§6.1). "Generate music"
+  // while the tool audio plays - full at the top and tail (section 6.1). "Generate music"
   // composes a seeded ZzFXM tune on-device (engine composeSong → render worker →
   // transient WAV). Tools without an audio slot keep the single-bed card.
   const hasToolAudioInput = runtime.getModel().some(i => i.type === 'asset' && i.assetType === 'audio');
@@ -974,7 +974,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
   const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
 
-  // ── Contact sheets: the "Frames" control (plans/fable-timeline-editing §4.6) ─
+  // ── Contact sheets: the "Frames" control (plans/fable-timeline-editing section 4.6) ─
   // A still export of a timed composition renders the frame at the playhead
   // (Andy's WYSIWYG rule). `cuts=N` instead samples N stills at equal MIDPOINT
   // intervals across the sequence - raster/SVG come back as a zip of N files, PDF
@@ -1378,7 +1378,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   }
 
   // The depth fact - what the chosen format WILL carry beyond an ordinary 8-bit
-  // image, stated and not offered (plans/61-deeprichpixels.md §10 item 3). Nothing is
+  // image, stated and not offered (plans/61-deeprichpixels.md section 10 item 3). Nothing is
   // rendered unless there is something true to say, so this runs wherever either
   // input to that truth changes: the format, and the HDR toggle. `?depth=` has no
   // panel control by design - it rides the link, so exportDefaults is its only
@@ -1700,7 +1700,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     return false;
   }
-  // The second fidelity guard, and the visible half of plans/104 §12 Q2: a box under a
+  // The second fidelity guard, and the visible half of plans/104 section 12 Q2: a box under a
   // real 3-D pose (a tilted camera, or a per-box perspective tilt) cannot stay vector,
   // because neither SVG nor PDF has a perspective transform. The walkers keep every
   // untilted layer as geometry and embed a per-box raster for the tilted ones - house
@@ -1881,7 +1881,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // PHYSICAL trim out of a bare pixel number nobody declared - a 1200 x 900 px
     // canvas reported as "Trim 1.08 m²", with `bound: 'exact'`, in the state a user
     // passes through every time they clear the width field to retype it. That is the
-    // derivation plan §4 forbids by name, and the real export path does not do it
+    // derivation plan section 4 forbids by name, and the real export path does not do it
     // either: it falls back to the MEASURED DOM box.
     //
     // So an incomplete pair reads as what it actually is - the manifest's pixel
@@ -1974,10 +1974,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // ── Cost panel state. All device-local memory, never written to a URL by syncUrl.
   let lastCounts: readonly Count[] = [];
-  // The explicit per-device reveal (§5): a link opens on counts, and money is shown
+  // The explicit per-device reveal (section 5): a link opens on counts, and money is shown
   // only after the user asks for it here. Never persisted for a confidential card.
   let costRevealed = false;
-  // Opt-in to expired rates this session (§5). Never persisted.
+  // Opt-in to expired rates this session (section 5). Never persisted.
   let costUseExpired = false;
   // The `cost-authoring` slot is mounted at most once, the first time an authoring
   // extension actually RESOLVES into it (not merely when the container exists).
@@ -2540,7 +2540,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const fadeIn  = numCtl('audio-fadein', 0);
         const fadeOut = numCtl('audio-fadeout', 0);
         if (hasToolAudioInput) {
-          // Two-row card (§6.1): the tool's own audio is ALWAYS the primary track
+          // Two-row card (section 6.1): the tool's own audio is ALWAYS the primary track
           // (read live - an emptied slot exports silent), the popup's pick is the
           // optional mix-in bed whose centre level sets its gain under the voice.
           const ref = await resolveToolAudio();

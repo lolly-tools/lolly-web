@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The two pure predicates behind the walkers' transform guard
- * (bridge/transform-neutralise.ts - plans/104 §9 P3.1 failure 2).
+ * (bridge/transform-neutralise.ts - plans/104 section 9 P3.1 failure 2).
  *
  * The guard's BEHAVIOUR needs a real cascade and a real animation timeline, so it is
  * pinned in `export-transform-animation.test.ts`, which drives the real walker in a

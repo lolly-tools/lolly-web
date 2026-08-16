@@ -122,7 +122,7 @@ function serveRepoStatic() {
 //   speech — the on-device voice models (/models/kokoro/, plus /models/whisper/
 //         when staged), downloaded by the 'speech' offline part into the
 //         transformers-cache + lolly-speech buckets the speech runtime reads
-//         (plans/41-tts-stt-programme.md §3). Opt-in, ~110 MB.
+//         (plans/41-tts-stt-programme.md section 3). Opt-in, ~110 MB.
 //
 // Deliberately NOT listed: /catalog/ + /tools/ (the catalog sync + pin engine
 // own those, with checksums), /info/ (docs build emits its own manifest.json),
@@ -152,7 +152,7 @@ export function groupPrecacheFiles(all) {
   // The verify part's models are the TrustMark decoders ONLY — downloaded via
   // lib/trustmark.ts's own IDB path, listed here so the part can state its true
   // size up front. /models/kokoro/ is deliberately NOT here: it belongs to the
-  // 'speech' group below (plans/41-tts-stt-programme.md §3) — counting it in
+  // 'speech' group below (plans/41-tts-stt-programme.md section 3) — counting it in
   // would make the verify part's size lie by ~95 MB.
   const models = all.filter(f => f.url.startsWith('/models/trustmark/'));
   // The speech part's voice models: Kokoro today, Whisper when its STT models

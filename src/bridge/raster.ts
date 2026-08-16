@@ -7,7 +7,7 @@
  * encode-to-bytes. See the RasterAPI contract in `@lolly-tools/core/host-v1`
  * for the shape and the why. This is the DOM/OffscreenCanvas-backed shell impl;
  * the headless CLI leaves `host.raster` undefined and tools feature-detect it
- * (plans/86-worker-isolation-hooks.md §6.1).
+ * (plans/86-worker-isolation-hooks.md section 6.1).
  *
  * Built on the same codec glue `host.images` uses - `decodeImageBitmap` (native
  * decode + the lazy bundled-libheif HEIC fallback, EXIF orientation baked in)

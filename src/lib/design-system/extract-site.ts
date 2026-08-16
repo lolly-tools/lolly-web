@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * extract-site.ts - the pure HTML/CSS → `DesignCensus` parser behind the Design
- * System studio's website source (plan 97 §9 / SS9).
+ * System studio's website source (plan 97 section 9 / SS9).
  *
  * Transport-agnostic on purpose: the Tauri native fetch and the Chrome extension
  * both hand this module the same three things - the page's HTML, the text of the

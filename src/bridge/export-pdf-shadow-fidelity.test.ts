@@ -167,7 +167,7 @@ const ROWS: Row[] = [
   // ── outer box-shadow: vector Gaussian bands ─────────────────────────────────
   // These read HIGHER than the bitmap bake they replaced (0.02% → 0.11%) and that is
   // the accepted trade: a tenth of a percent of mean error - invisible - for output
-  // that is 4.9x smaller and still editable vector. See §13 in the plan.
+  // that is 4.9x smaller and still editable vector. See section 13 in the plan.
   { name: 'soft outer shadow', markup: box('background:#fff;box-shadow:0 6px 16px rgba(0,0,0,0.35)'),
     maxMean: 0.004, maxWorst: 0.14 },                       // Quartz 0.11% / 7.1%
   { name: 'hard outer shadow', markup: box('background:#fff;box-shadow:0 4px 0 rgba(0,0,0,0.5)'),

@@ -20,7 +20,7 @@
  * this document actually contains rather than what a PDF could contain, and a
  * plain text-only document still reads as a single uncluttered column.
  *
- * Design-system hand-offs (plan 97 §8, M5). A guidelines PDF usually holds the
+ * Design-system hand-offs (plan 97 section 8, M5). A guidelines PDF usually holds the
  * exact vector marks, the palette they are drawn in and real font files, so this
  * view keeps everything it already does and gains three doors into the studio:
  * a font row installs its face, a mark goes to the Logos room, and the bar sends
@@ -348,7 +348,7 @@ function vectorsMarkup(x: Extracted): string {
  * a restrictive one is an unambiguous no, and a permissive one still is not the
  * licence. Both are shown per font rather than buried in a general disclaimer.
  *
- * "Add to the design system" (plan 97 §7.2) installs the face through the same
+ * "Add to the design system" (plan 97 section 7.2) installs the face through the same
  * `installFontFromBytes` an upload uses, so a PDF-embedded family lands as an
  * ordinary user font with its embedding statement recorded on the asset. The
  * button is offered only on a face that is a whole installable file: a `cff` or
@@ -952,7 +952,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   }
 
   /**
-   * Install an embedded face as a user font (plan 97 §7.2 / M5).
+   * Install an embedded face as a user font (plan 97 section 7.2 / M5).
    *
    * `installFontFromBytes` is the whole vetting story - the size cap, the magic
    * number, the name table, the `fsType` reading and the variable-axis handling
@@ -1048,7 +1048,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   }
 
   /**
-   * The whole scan to the studio (plan 97 §8).
+   * The whole scan to the studio (plan 97 section 8).
    *
    * Built from what the passes already extracted - the marks and their per-mark
    * fill palettes, and the embedded families - so this costs a census, not a

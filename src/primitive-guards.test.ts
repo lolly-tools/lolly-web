@@ -792,7 +792,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // but no new sink: the roving tabindex + value changes go through setAttribute.
   'lib/curve-editor.ts': 1,
   'lib/catalog-summary.ts': 2,
-  // The Colours room's "Add a colour" control (plan 97 §7.1). Two sinks, both
+  // The Colours room's "Add a colour" control (plan 97 section 7.1). Two sinks, both
   // reviewed 2026-08-08: the row scaffold (t() literals and an icon() constant,
   // with every attribute value escape()d - the placeholder and all three
   // aria-labels), and the found-colours chip row, whose only interpolations are
@@ -803,14 +803,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // admits no `<`, `>`, quote or backslash in a reported value at all, which
   // add-color.test.ts pins directly.
   'lib/design-system/add-color.ts': 2,
-  // The Design-system studio's Overview room (plan 97 §5). Its one sink is
+  // The Design-system studio's Overview room (plan 97 section 5). Its one sink is
   // paint()'s whole-room re-render from overviewHtml(). Reviewed 2026-08-08:
   // every interpolated value is a t() literal, an icon() constant, or escape()d
   // (utils.ts) - the door/card helpers escape their area key, label and value,
   // the palette strip escapes each swatch hex before it reaches a style
   // attribute, and the font list is escaped as one card value.
   'lib/design-system/rooms/overview.ts': 1,
-  // The Design-system studio's Versions panel (plan 97 §6a, M7). Its one sink is
+  // The Design-system studio's Versions panel (plan 97 section 6a, M7). Its one sink is
   // paint()'s whole-panel re-render from the pure versionsHtml(). Reviewed
   // 2026-08-09: the hostile input here is the user's own version LABEL and NOTE,
   // and both are escape()d (utils.ts) wherever they appear - the list row, the
@@ -830,14 +830,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // aria-invalid and the announced refusal are setAttribute/announce(), not
   // markup, so no value newly reaches the sink and the count does not move.
   'lib/design-system/rooms/versions.ts': 1,
-  // The Colours room's roles strip (plan 97 §7.1). Its one sink is
+  // The Colours room's roles strip (plan 97 section 7.1). Its one sink is
   // mountRolesStrip's render() from the pure rolesStripHtml(). Reviewed
   // 2026-08-08: every interpolated value is a t()/tRaw() literal or escape()d
   // (utils.ts) - the role id, label, value line and its title, the swatch hex
   // before it reaches the `--sw` style property, the APCA title and readout,
   // and every <option>/<optgroup> key, name and group heading.
   'lib/design-system/roles.ts': 1,
-  // The candidate tray's panel (plan 97 §8, M2). Two sinks, reviewed 2026-08-09:
+  // The candidate tray's panel (plan 97 section 8, M2). Two sinks, reviewed 2026-08-09:
   // the mount scaffold (t() literals and icon() constants, with both aria-labels
   // escape()d) and the candidate list, which is the pure trayHtml(). Everything
   // interpolated in the second is a t() literal, an icon() constant, a NUMBER
@@ -850,7 +850,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // carries that file name on every row and is escape()d whether or not the
   // candidate also has a provenance detail.
   'lib/design-system/tray-ui.ts': 2,
-  // The trim-to-content offer (plan 97 §7.3, M3). One sink, reviewed 2026-08-09:
+  // The trim-to-content offer (plan 97 section 7.3, M3). One sink, reviewed 2026-08-09:
   // mountTrimOffer's card scaffold, written once and thereafter updated only
   // through textContent and img.src. Its interpolations are t() literals, one
   // icon() constant, NUMBERs (the stepper bounds and its start value), and
@@ -867,7 +867,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // and a dimension string built from numbers. Everything after mount still goes
   // through textContent and img.src.
   'lib/design-system/trim-offer.ts': 1,
-  // The Type room's compare stage (plan 97 §7.2, M4). Two sinks, reviewed
+  // The Type room's compare stage (plan 97 section 7.2, M4). Two sinks, reviewed
   // 2026-08-09: the mount scaffold - t() literals, icon() constants, the NUMBER
   // size bounds, and escape()d strings for the generated field ids, the file
   // input's accept list and the opening specimen text (which is either the
@@ -1004,7 +1004,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //     string-valued field, `color`, is cAttr()'d here AND escAttr()'d again inside the
   //     engine; every other value is a number or one of the six whitelisted head keywords.
   //     No box text, id or user markup can reach it.
-  // 44 → 47 as of 2026-08-12 (plans/104 §7, "Lift layers"). Three writes to the ONE
+  // 44 → 47 as of 2026-08-12 (plans/104 section 7, "Lift layers"). Three writes to the ONE
   // dialog panel this action opens - its reading state, its refusal state and its plan - 
   // reviewed together because they are three renders of the same node:
   //   · every interpolated value is escape()d: the title, the enumerator's own warning
@@ -1015,7 +1015,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //     same provably-safe markup every other sink in this file already carries.
   //   · NOTHING from the artwork reaches the dialog: the layer LABEL is an index this
   //     file mints ("Layer 3"), never a name out of the SVG, which is exactly the
-  //     ingest-time PII strip §7 relies on and also what keeps this sink inert.
+  //     ingest-time PII strip section 7 relies on and also what keeps this sink inert.
   // 47 → 50, 2026-08-14 (plan 112 M4/M5): the Custom CSS, Frame state, and Speaker notes
   //   panels each render one `p.innerHTML` of escape()d values + t() strings + static icon()
   //   markup - the same provably-safe shape the other panel sinks in this file carry.
@@ -1120,7 +1120,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/template-chooser.ts': 1,
   // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
   // (own SVG bodies, guarded by R9) - no interpolated data at any of them.
-  // 5 → 7 on 2026-08-11 (the clip inspector's grouped disclosure, plans/104 §8):
+  // 5 → 7 on 2026-08-11 (the clip inspector's grouped disclosure, plans/104 section 8):
   // the two new sinks are the group header's glyph and its caret, both
   // `el.innerHTML = icon(<literal registry name>)` with no interpolation at all - 
   // the same class as the five above. Every VALUE the new headers show (the group
@@ -1169,7 +1169,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // literal or escapeHtml()'d (the aria-labels, the model <option> id/name pairs);
   // all later writes are textContent / setAttribute, never HTML.
   'views/matte-dialog.ts': 1,
-  // 1 as of 2026-08-09 (plan 100 §11.27, the private-collab QR skin). The one sink
+  // 1 as of 2026-08-09 (plan 100 section 11.27, the private-collab QR skin). The one sink
   // is `qrElementRenderer`'s `box.innerHTML = svg.value`, and the markup is this
   // module's OWN output: `renderQrSvg` builds it from the matrix it just computed,
   // and every caller-supplied option that reaches it (the colours, the label) is
@@ -1268,7 +1268,7 @@ test('R11: the shared escape covers every character an attribute or text node ne
   assert.match(src, /&#39;|&apos;/, "escape must map the single quote to an entity (the pro/index.ts fork's omission)");
 });
 
-// ── R12 (plan 97 §8 - one candidate tray per mounted studio) ─────────────────
+// ── R12 (plan 97 section 8 - one candidate tray per mounted studio) ─────────────────
 // `createTray` is a MODEL, not a connection: each instance holds its own
 // in-memory candidate list and persists that whole list on every write
 // (lib/design-system/tray.ts), so two live instances over `start.tray.v1` do not

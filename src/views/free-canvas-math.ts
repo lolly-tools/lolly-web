@@ -17,7 +17,7 @@
 
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 // The lift ladder is written in MAGNIFICATION and stored as depth; the engine owns
-// the conversion (plans/104 §4.3 - `eff` and `z` are only the same sentence at one
+// the conversion (plans/104 section 4.3 - `eff` and `z` are only the same sentence at one
 // perspective, so nobody re-types the formula).
 import { depthForEff } from '../../../../engine/src/keyframes.ts';
 
@@ -434,13 +434,13 @@ export function reorderZ(boxes: Box[], indices: number[], op: ZOp): Box[] {
   return boxes;
 }
 
-// ── Lift layers (plans/104 §7 P3) ────────────────────────────────────────────
+// ── Lift layers (plans/104 section 7 P3) ────────────────────────────────────────────
 //
 // The engine enumerates an SVG's layers (`enumerateSvgLayers`). This module is the other
 // half: it turns those layers into the rows that REPLACE the source box. It lives
 // here rather than in timeline-math.ts because its neighbours are `seedBox`,
 // `withRect`, and `reorderZ`. It is box synthesis in the canvas's flat model, and
-// it touches no clock. The `z` it writes is the per-box DEPTH FIELD (§5.3, the
+// it touches no clock. The `z` it writes is the per-box DEPTH FIELD (section 5.3, the
 // slider), not a keyframe track: a lifted stack is a static arrangement until
 // someone animates it.
 
@@ -463,7 +463,7 @@ export interface LiftLayerSource {
    * With {@link LiftOptions.viewBox} it is the affine map from the source box's
    * rect to this row's, which is what makes a row CONTENT-SIZED: the 16 px icon
    * gets a 16 px box, so its depth shadow is a 16 px gaussian, not a
-   * full-frame one (plans/104 §9 P3.1 item 1: eleven full-stage shadows abort
+   * full-frame one (plans/104 section 9 P3.1 item 1: eleven full-stage shadows abort
    * the encoder watchdog).
    */
   crop?: { x: number; y: number; w: number; h: number } | null;
@@ -504,7 +504,7 @@ export interface LiftOptions {
   zClamp?: readonly [number, number];
   /** Group id shared by every lifted row, minted by the caller (freshGroupId). */
   group?: string;
-  /** Shadow target pre-set on lifted rows. §7 says `depth`; '' writes none. */
+  /** Shadow target pre-set on lifted rows. section 7 says `depth`; '' writes none. */
   shadow?: string;
   /** Box kind for a row holding an image. Defaults to the source's own kind. */
   kind?: string;
@@ -540,7 +540,7 @@ export const LIFT_EFF_STEP = 0.02;
 
 /**
  * The magnification the TOP of a lifted stack reaches, and never passes,
- * however many layers there are. This is plans/104 §5.3's taste ceiling (the "tasteful
+ * however many layers there are. This is plans/104 section 5.3's taste ceiling (the "tasteful
  * eff 1.05-1.2 band"), which is z = 200 at P = 1200.
  *
  * This is the fix for a content-blind ladder. A fixed 40 px per layer is fine
@@ -578,7 +578,7 @@ export const LIFT_STRENGTH: Readonly<Record<string, number>> = Object.freeze({
  * Rows sharing a rung do NOT share a depth exactly. They spread across that one
  * rung, in paint order, by a fraction of it. plans/104 P3.2 says "one depth, or a
  * whisper apart, at most one band step", and the whisper is doing real work.
- * Equal depths would make the depth sort (§4.2) a tie broken by DOM order, which
+ * Equal depths would make the depth sort (section 4.2) a tie broken by DOM order, which
  * is correct but leaves two plates at one z and a stack with no ordering of its
  * own. A nine-hundredth of a magnification between them keeps every depth
  * DISTINCT and monotone in paint order while the grid still reads as one
@@ -623,7 +623,7 @@ export function liftDepths(
   const step = (top > 0 ? Math.min(LIFT_EFF_STEP, (LIFT_EFF_CEIL - 1) / top) : 0) * k;
   const [lo, hi] = zClamp ?? [-Infinity, Infinity];
   return rungs.map((rung) => {
-    // §4.6's z quantum is 0.01 px, and the ladder is stored, so it quantises here
+    // section 4.6's z quantum is 0.01 px, and the ladder is stored, so it quantises here
     // rather than leaving 23.529411764705884 in a URL.
     const z = Math.round(depthForEff(1 + rung * step) * 100) / 100;
     return Math.min(hi, Math.max(lo, z));
@@ -681,7 +681,7 @@ export const LIFT_PEER_OVERLAP_TOL = 0.25;
  *     inverts do not overlap - draw order only matters where ink meets ink.
  *     Where an inversion WOULD flip overlapping ink, the group causing it gives
  *     up its coherence (its members become singletons) rather than repaint the
- *     picture. plans/104 §4.2 sorts paint order by resolved depth, so this is a
+ *     picture. plans/104 section 4.2 sorts paint order by resolved depth, so this is a
  *     property of the render, not a nicety.
  *
  * Rows with no crop (unmeasured ink, a full-stage layer) are always their own
@@ -849,8 +849,8 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * ink). Closing it means re-deriving the documents at commit time, not re-asking here.
  *
  * Note on `shadow: depth` at z = 0: the derivation is a pure function of z
- * (§12.5), and at z = 0 it is still a 10 px ground shadow - the bottom layer is
- * lifted off the surface too, which is the look §7 asks for. Pass `shadow: ''`
+ * (section 12.5), and at z = 0 it is still a 10 px ground shadow - the bottom layer is
+ * lifted off the surface too, which is the look section 7 asks for. Pass `shadow: ''`
  * for a lift that changes nothing but the layering.
  */
 export function liftRows(
@@ -1025,7 +1025,7 @@ export function applyLift(boxes: Box[], index: number, rows: Box[]): Box[] {
  * saved session - because the file extension and the `data:` MIME are the only other
  * honest signals available WITHOUT fetching. The markup sniff proper happens later and
  * elsewhere: `enumerateSvgLayers` is the thing that decides whether bytes really are a
- * liftable SVG, and it says so in words the dialog prints (§7). This predicate only
+ * liftable SVG, and it says so in words the dialog prints (section 7). This predicate only
  * decides whether the menu entry appears, so it errs towards offering: an entry that
  * opens a dialog saying "this file has no <svg> root" teaches more than a missing one.
  *
@@ -1392,7 +1392,7 @@ export function gradientAngleAt(w: number, h: number, px: number, py: number, sn
   return ((deg % 360) + 360) % 360;
 }
 
-// ── Frame primitive - membership + cascade geometry (plan 93 §5/§10) ──────────
+// ── Frame primitive - membership + cascade geometry (plan 93 section 5/section 10) ──────────
 //
 // A "frame" is an ordinary box (kind === 'frame') that OWNS the boxes whose centre
 // falls inside it. Membership is derived here, DOM-free, so the carousel strip is
@@ -1596,7 +1596,7 @@ export function migrateCarouselToFrames(record: CarouselRecord): CarouselRecord 
   return { ...record, boxes: [...frames, ...stamped] };
 }
 
-// ── Frames AS scenes - turn frame order into a timeline sequence (plan 92 §Frames) ─
+// ── Frames AS scenes - turn frame order into a timeline sequence (plan 92 section Frames) ─
 //
 // "Frames are scenes": the frame ORDER is a slideshow. Sequencing a frame doc lays every
 // frame end-to-end in TIME on a scenes lane, so the sequence clock can gate the canvas to

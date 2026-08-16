@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Proof for the hook-Worker executor core (hook-worker.worker.ts) - M2,
- * plans/86-worker-isolation-hooks.md §13.1.
+ * plans/86-worker-isolation-hooks.md section 13.1.
  *
  * Drives `createHookWorkerCore` with a stub port + a mock main-thread host
  * dispatcher, exactly as sequence-render-worker.test.ts drives its worker core,

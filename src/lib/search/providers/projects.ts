@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Projects spotlight provider (plans/99 §2b) - the user's OWN items:
+ * The Projects spotlight provider (plans/99 section 2b) - the user's OWN items:
  * folders (by name) and saved sessions (label/filename/tool name/tool id, plus
  * the literal 'batch' keyword), matched through the SAME shared source the
  * projects view uses (lib/search/projects-source.ts), so the overlay and the

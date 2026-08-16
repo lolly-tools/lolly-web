@@ -37,7 +37,7 @@ import {
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
 import { namespaceInlinedSvgIds } from './svg-inline-ids.ts';
-// The walkers' transform neutralise + re-entry guard (plans/104 §9 P3.1).
+// The walkers' transform neutralise + re-entry guard (plans/104 section 9 P3.1).
 import { neutraliseTransform, newNeutraliseGuard } from './transform-neutralise.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
@@ -186,7 +186,7 @@ export interface ExportOpts {
    *  over an 8-bit canvas render is padding). First shipped consumer: the 16-bit
    *  HDR PNG path (export-hdr-png.ts, via deepHdrPng below), which honours a
    *  depth=8 opt-out and earns its bits from the float view transform.
-   *  See plans/61-deeprichpixels.md §10. */
+   *  See plans/61-deeprichpixels.md section 10. */
   depth?: 8 | 16 | 'float' | 'auto';
   /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
    *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
@@ -221,7 +221,7 @@ export interface ExportOpts {
    *  sequence: png/jpg/webp/svg come back as one ZIP of `<filename>-01.<ext>`
    *  members, pdf as ONE document of N pages. Ignored by every non-still format
    *  and by any node that is not a [data-sequence] stage. See bridge/
-   *  sequence-cuts.ts and plans/51-fable-timeline-editing.md §4.6. */
+   *  sequence-cuts.ts and plans/51-fable-timeline-editing.md section 4.6. */
   cuts?: number;
   onProgress?: (done: number, total: number) => void;
   fps?: number;
@@ -250,7 +250,7 @@ export interface ExportOpts {
    *  fidelity to a live page. */
   backdropBlur?: boolean;
   /** Page snapshots: paint in CSS stacking-context order (CSS 2.1 Appendix E
-   *  §E.2) instead of DOM order. Negative-z children paint behind their
+   *  section E.2) instead of DOM order. Negative-z children paint behind their
    *  parent's in-flow content. Positioned descendants paint above
    *  non-positioned ones. Each layer is z-sorted. Each hoist stops at the
    *  next stacking-context creator (see the table in bridge/stacking-order.ts).
@@ -270,7 +270,7 @@ export interface ExportOpts {
    *  wrong. */
   stackingOrder?: boolean;
   /** Stamp `data-box-id` onto the per-element `<g>` in the SVG walker's output,
-   *  wherever the walked element already carries one (plans/104 §7 - the "Lift
+   *  wherever the walked element already carries one (plans/104 section 7 - the "Lift
    *  layers" identity passthrough). Off by default and byte-identical when off:
    *  the one guarded block at the g-creation site is the whole feature, so a
    *  normal tool export cannot differ. On, a Lolly screenshot lifts along the
@@ -654,7 +654,7 @@ async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif'
 }
 
 // ── audio-only export (wav / mp3 / m4a / opus) ───────────────────────────────
-// The picture is not the deliverable here: the file IS the sound. Where that
+// For this path the picture is not the deliverable: the file IS the sound. Where that
 // sound comes from is TOOL-SPECIFIC, and this dispatch never guesses. Two ways
 // in, checked in this order:
 //
@@ -1073,7 +1073,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
       // HDR PNG goes DEEP: the same `hdr=` request routes through the engine's
       // float view transform and its own 16-bit PNG writer instead of the 8-bit
-      // canvas transform + chunk splice (plans/61-deeprichpixels.md §10 item 2 - 
+      // canvas transform + chunk splice (plans/61-deeprichpixels.md section 10 item 2 - 
       // 8-bit PQ is the banding defect). Metadata, pixel marks and C2PA
       // compatibility all carry over; see bridge/export-hdr-png.ts. Returns null
       // if anything goes wrong, and the legacy 8-bit path below still runs.
@@ -1083,7 +1083,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       }
       // HDR JPEG goes GAIN MAP: the same `hdr=` request now writes an ISO
       // 21496-1 / Ultra HDR gain-map JPEG - a real SDR base image with the HDR
-      // appended as a gain map (plans/61-deeprichpixels.md §4.2, §6 B2). That is the
+      // appended as a gain map (plans/61-deeprichpixels.md section 4.2, section 6 B2). That is the
       // only HDR still output that renders as HDR in Chromium/Safari/Android and
       // degrades to a perfect ordinary JPEG everywhere else, which is what the
       // legacy PQ-tagged JPEG below never did. `depth=8` opts out to that legacy
@@ -2108,7 +2108,7 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // warning, no shadow. (Coloured drop-shadows escaped by accident: their computed
   // value nests an rgba(), which parseCssFilter's flat tokeniser refuses, so they fell
   // through to the hatch. A parser limitation is not a policy.) Declaring it makes the
-  // PDF walker take the per-element raster escape hatch instead - plan 104 §2, P1d.
+  // PDF walker take the per-element raster escape hatch instead - plan 104 section 2, P1d.
   if (s.filter && s.filter !== 'none'
       && !(vectorCaps?.dropShadow && parseDropShadowFilter(s.filter))
       && !(vectorCaps?.cssFilter && parseCssFilter(s.filter))) return `filter:${s.filter}`;
@@ -2477,7 +2477,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   // warning line a walk may spend saying a transform could not be stilled.
   const neutralise = newNeutraliseGuard();
   const warnTransform = (m: string): void => { _host?.log?.('warn', `svg: ${m}`); };
-  // How many elements went out as a posed raster instead of vector (plans/104 §12 Q2).
+  // How many elements went out as a posed raster instead of vector (plans/104 section 12 Q2).
   // Counted rather than logged per element: a lifted stack under a tilted camera is
   // every layer, and one line naming the total is the honest report. It is also what
   // the amber notice in the export panel is telling the user in advance.
@@ -2521,7 +2521,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   // ── Stacking-context paint order (opts.stackingOrder) ────────────────────────
   //
   // The walk stays a single DOM-order pass; correctness comes from DEFERRED
-  // APPEND. A child whose Appendix E §E.2 layer is 2, 6 or 7 is built exactly as
+  // APPEND. A child whose Appendix E section E.2 layer is 2, 6 or 7 is built exactly as
   // before but left DETACHED, parked in its stacking context's frame, and
   // appended when that context finishes. Layers 3 and 4 append immediately, as
   // they always have.
@@ -2560,9 +2560,9 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     /** Last own-paint node when contentG === g, else null. See the finalisation
      *  block for why layer 2 cannot just insert at firstChild. */
     anchor: ChildNode | null;
-    neg: PaintUnit[];   // §E.2 step 3 - negative z, most negative first
-    z0: PaintUnit[];    // §E.2 step 8 - positioned, z-index auto|0, TREE order
-    pos: PaintUnit[];   // §E.2 step 9 - positive z, least positive first
+    neg: PaintUnit[];   // section E.2 step 3 - negative z, most negative first
+    z0: PaintUnit[];    // section E.2 step 8 - positioned, z-index auto|0, TREE order
+    pos: PaintUnit[];   // section E.2 step 9 - positive z, least positive first
   }
   /** What a child inherits. `frame === null` ⇒ the flag is off ⇒ every append is
    *  the append this walker has always done. */
@@ -2608,7 +2608,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
    *
    *  KNOWN LIMITATION: this only makes a top-layer box a stacking CONTEXT so its
    *  internals order correctly. It does NOT lift it above the rest of the
-   *  document (HTML §top layer) and `::backdrop` is not modelled at all
+   *  document (HTML section top layer) and `::backdrop` is not modelled at all
    *  (pseudoDescriptor sees only ::before/::after). On the measured fixtures
    *  that is the single largest remaining paint-order defect - ~36 points of
    *  local-gallery's loss, against ~2 points for everything this flag fixes - 
@@ -2632,7 +2632,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // <clipPath> already lives in <defs> with a stable id in ROOT coordinates,
     // so this costs one attribute and no geometry.
     //
-    // KNOWN LIMITATION (CSS 2.1 §11.1.1): an absolutely-positioned box is NOT
+    // KNOWN LIMITATION (CSS 2.1 section 11.1.1): an absolutely-positioned box is NOT
     // clipped by a non-positioned ancestor's `overflow`, and `fixed` escapes
     // almost all clips. We re-apply every crossed clip anyway. Deliberate: that
     // is exactly what the walker does today, and getting the containing-block
@@ -2683,7 +2683,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const ct = controlText(d);
     if (!ct) return;
 
-    // Clip to the content box. This is the §7 "only when necessary" case: an
+    // Clip to the content box. This is the section 7 "only when necessary" case: an
     // over-long option label or an unscrolled textarea genuinely does not paint
     // past the field on screen, and there is no geometry trick that crops text.
     const clipId = `fcctl-${++uid}`;
@@ -2835,7 +2835,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const opacity = parseFloat(style.opacity ?? '1');
     if (opacity === 0) return;
 
-    // `display: contents` generates NO box of its own (CSS Display 3 §3.1: the element
+    // `display: contents` generates NO box of its own (CSS Display 3 section 3.1: the element
     // is replaced by its contents for layout). getBoundingClientRect() is therefore
     // 0x0, and the `rect.width < 0.5` guard below would drop the element AND its whole
     // subtree - content the reader plainly sees.
@@ -2883,7 +2883,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // Neutralise through the guarded helper, never by hand: a RUNNING transform
       // animation/transition outranks any inline declaration, and the un-neutralised
       // re-entry that follows is what turned one gallery tile into 2 136 nested
-      // groups (plans/104 §9 P3.1 - see bridge/transform-neutralise.ts). `null` means
+      // groups (plans/104 section 9 P3.1 - see bridge/transform-neutralise.ts). `null` means
       // the transform survived and nothing was touched, so this element falls through
       // to the AABB path below, whose rect already carries the rotation.
       const restore = neutraliseTransform(el, neutralise, warnTransform);
@@ -2901,7 +2901,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // been set to 'none', so the recursive call's getComputedStyle reports
           // `transform: none`.
           //   • forceContext - without it the element stops looking like a stacking
-          //     context (CSS Transforms 1 §3) on the way in, and its descendants
+          //     context (CSS Transforms 1 section 3) on the way in, and its descendants
           //     would hoist straight out of a rotation that is about to be applied.
           //   • placeDirect - without it `g` would be deferred a SECOND time into
           //     the same frame, leaving gRot empty and painting the element twice
@@ -2950,7 +2950,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       }
     }
 
-    // ── A real 3-D pose: per-element raster, never the AABB (plans/104 §12 Q2) ──
+    // ── A real 3-D pose: per-element raster, never the AABB (plans/104 section 12 Q2) ──
     //
     // SVG has no perspective transform, so `parseCssMatrix` refuses a `matrix3d` that
     // carries a perspective row and BOTH branches above decline. Falling through from
@@ -2960,7 +2960,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // exported as a `<rect>`, with no notice (measured: two cards under `rx −45`,
     // 495 B of SVG, zero `matrix3d`, zero `<image>`, two upright rects).
     //
-    // §12 Q2 is the decision, and spike S2 cleared it unreserved: keep every untilted
+    // section 12 Q2 is the decision, and spike S2 cleared it unreserved: keep every untilted
     // layer vector and embed a per-box captured raster for the tilted ones, with the
     // amber notice (`tool-actions.ts`'s fidelity row). On Chromium the capture is
     // indistinguishable from the preview - flat-region diff 0.012–0.045/255, ink IoU
@@ -2992,7 +2992,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       }
       // Capture refused (a corner behind the eye, dom-to-image failed). Say so, then
       // fall through - an AABB rectangle is wrong, but it is what this walker did
-      // before §12 Q2 and it is better than a hole.
+      // before section 12 Q2 and it is better than a hole.
       _host?.log?.('warn', `svg: tilted <${tag}> could not be captured; falling back to its bounding box`);
     }
 
@@ -3008,7 +3008,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // it is not emitted. Cheapest possible clip reduction - it removes the node and
     // its whole subtree rather than emitting them and then hiding them. The rows
     // scrolled out of a long list are the case that pays.
-    // ...except when its containing block escapes that box. CSS 2.1 §11.1.1: an
+    // ...except when its containing block escapes that box. CSS 2.1 section 11.1.1: an
     // absolutely-positioned element is NOT clipped by a non-positioned ancestor's
     // overflow, and `fixed` escapes almost every clip - such a node is genuinely
     // visible outside the box, and dropping it would delete content the reader saw.
@@ -3023,7 +3023,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     expand(ctx.bounds, x, y, w, h);
 
     const g = document.createElementNS(NS, 'g');
-    // ── Layer identity passthrough (opts.layerIds - plans/104 §7) ────────────
+    // ── Layer identity passthrough (opts.layerIds - plans/104 section 7) ────────────
     //
     // The walker emits one <g> per element in ROOT coordinates and has always
     // stamped ZERO identity on it, so a Lolly screenshot imported back in was one
@@ -3102,7 +3102,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // with the shadow colour and Gaussian-blurred, painted BEHIND the background.
     // EMF/EPS/DXF (opts.noBoxShadow) have no blur primitive, and used to get no shadow
     // at all rather than an ugly hard-edged offset shape. They can have one: a blur is
-    // reproducible as concentric bands (§13), and for a format with no alpha the bands
+    // reproducible as concentric bands (section 13), and for a format with no alpha the bands
     // have to be non-overlapping RINGS at absolute coverage - svg-ir flattens every
     // shape against the page background independently, so overlapping increments never
     // accumulate and come out far too light.
@@ -3166,7 +3166,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           ? `rgba(${col[0]},${col[1]},${col[2]},${col[3]})`
           : `rgb(${col[0]},${col[1]},${col[2]})`;
         // CSS paints an outer shadow "as if the border box were opaque" and clips it
-        // away INSIDE that box (Backgrounds §7.1.1). Painting the whole shape and
+        // away INSIDE that box (Backgrounds section 7.1.1). Painting the whole shape and
         // covering it with the background only works when the background is opaque - 
         // over a translucent panel the shadow shows straight through, which measured
         // 6.2% mean / 36% worst-pixel error against the bitmap on this app's frosted
@@ -3175,7 +3175,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         // With no blur the hole is pure geometry: one evenodd path, shadow shape minus
         // border box, and no clip at all (so it survives EMF/EPS too). With a blur the
         // order matters - CSS blurs and THEN clips - and no amount of geometry
-        // reproduces that, so this is the §7 case where a clip is genuinely the
+        // reproduces that, so this is the section 7 case where a clip is genuinely the
         // mechanism rather than a shortcut.
         // The hole is a HAIR smaller than the border box. Two antialiased edges meeting
         // exactly leaves a seam of background showing between the shadow and the box - 
@@ -3339,7 +3339,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         filt.setAttribute('height', String(n2(h + 2 * bpad)));
         filt.setAttribute('color-interpolation-filters', 'sRGB');
         const fe = document.createElementNS(NS, 'feGaussianBlur');
-        // CSS blur(Npx) is a Gaussian with stdDeviation N/2 (Filter Effects §.
+        // CSS blur(Npx) is a Gaussian with stdDeviation N/2 (Filter Effects section .
         fe.setAttribute('stdDeviation', String(n2(bfPx / 2)));
         filt.appendChild(fe);
         defs.appendChild(filt);
@@ -4028,7 +4028,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     // ── The stacking context this element's descendants live in ───────────────
     // `parentG` is the in-flow pointer and `ctx.frame` is the stacking pointer.
-    // Splitting them is what makes Appendix E §E.2 step 8's parenthetical fall
+    // Splitting them is what makes Appendix E section E.2 step 8's parenthetical fall
     // out for free: an element that is POSITIONED but does NOT create a context
     // (`position: relative; z-index: auto`) is deferred into layer 6, its
     // in-flow children append into its own contentG and travel with it, and a
@@ -4047,7 +4047,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           content: contentG,
           // When there is no overflow clip, contentG IS g - so a layer-2 unit
           // inserted at firstChild would land BEHIND this element's own
-          // box-shadow/background/border, which §E.2 step 3 puts first. Anchor
+          // box-shadow/background/border, which section E.2 step 3 puts first. Anchor
           // on the last own-paint node instead. With a clip group, contentG is
           // empty and firstChild is already the right place (anchor null).
           anchor: contentG === g ? g.lastChild : null,
@@ -4075,10 +4075,10 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // and never enters this walker.)
     //
     // A flex/grid container paints its items in ORDER-MODIFIED document order
-    // (CSS Flexbox §5.4, CSS Grid §6), not raw document order. Pure reorder: the
+    // (CSS Flexbox section 5.4, CSS Grid section 6), not raw document order. Pure reorder: the
     // visit PREDICATE is untouched, and it doesn't need to change, because
     // `position: absolute|fixed` blockifies computed display (CSS Display 3
-    // §2.7) - so every layer-2/6/7 child already fails the inlineFlow test and
+    // section 2.7) - so every layer-2/6/7 child already fails the inlineFlow test and
     // is already visited today.
     const kids: Element[] = stackingOrder && isFlexOrGridContainer(style.display)
       ? orderModifiedChildren(renderedChildren(el),
@@ -4166,7 +4166,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── CSS generated content (::before/::after markers) ──────────────────────
     // pseudoDescriptor only models the ABSOLUTELY POSITIONED marker idiom, so
     // every pseudo it emits is by construction a positioned descendant - i.e.
-    // §E.2 layer 6/7 (or 2 for a negative-z scrim), never in-flow content. In
+    // section E.2 layer 6/7 (or 2 for a negative-z scrim), never in-flow content. In
     // stacking mode each one therefore gets its own <g> and is placed like any
     // other positioned child, which stops a marker from hiding under a later
     // sibling's background.
@@ -4180,7 +4180,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           }
         : undefined);
 
-    // ── Finalise this stacking context (CSS 2.1 Appendix E §E.2) ──────────────
+    // ── Finalise this stacking context (CSS 2.1 Appendix E section E.2) ──────────────
     // Everything deferred by descendants is appended here, in spec order. This
     // runs AFTER emitInlineTextSvg and svgPseudoContent, so layers 6 and 7 land
     // after layer-5 inline content automatically - a positioned child declared
@@ -4216,7 +4216,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   // directly. Handing it a frame nobody finalises would silently drop the whole
   // page if the export root ever happened to be positioned.
   await visitSvgNode(node, rootG, { frame: null, clips: [] });
-  // ONE line for the whole walk (plans/104 §12 Q2): what did not stay vector, and why.
+  // ONE line for the whole walk (plans/104 section 12 Q2): what did not stay vector, and why.
   // The user was told in advance by the export panel's amber row; this is the record in
   // the log, and it is what a CLI or a headless caller has instead of that row.
   if (tiltedRasters) {
@@ -4578,7 +4578,7 @@ interface PseudoDescriptor {
 
 /**
  * Does this element establish the containing block for an ABSOLUTELY positioned
- * descendant? `position !== static` is only the first clause of CSS Position 3 §3.
+ * descendant? `position !== static` is only the first clause of CSS Position 3 section 3.
  *
  * Missing the rest is not academic. `.profile-link` (the top-right profile pill) is
  * `position: static` with `backdrop-filter: blur(4px)` from the shared `.btn--glass`
@@ -4593,7 +4593,7 @@ function establishesAbsContainingBlock(cs: CSSStyleDeclaration): boolean {
   if (cs.position !== 'static') return true;
   const s = cs as unknown as Record<string, string | undefined>;
   if (cs.transform && cs.transform !== 'none') return true;
-  // The individual transform properties are equally sufficient (Transforms 2 §3).
+  // The individual transform properties are equally sufficient (Transforms 2 section 3).
   for (const k of ['translate', 'rotate', 'scale']) {
     const v = s[k];
     if (v && v !== 'none') return true;
@@ -4642,7 +4642,7 @@ function isPaintSkipped(el: Element, style: CSSStyleDeclaration): boolean {
 // absolutely-positioned marker idiom - a pseudo has no getBoundingClientRect, so its
 // box is computed from its containing block (nearest positioned ancestor) padding box
 // + the pseudo's own left/top/size. The padding box's origin is the padding EDGE - 
-// just inside the border, NOT inside the padding (CSS 2.1 §10.1) - so the offset adds
+// just inside the border, NOT inside the padding (CSS 2.1 section 10.1) - so the offset adds
 // border widths only. Inline/static generated content isn't modelled.
 function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   const ps = window.getComputedStyle(el, name);
@@ -4916,7 +4916,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
         const f = span > 0 ? (t - a.at) / span : 0;
         if (!a.cc || !b.cc) return f < 0.5 ? a : b;
         // sRGB interpolation, PREMULTIPLIED - matching what the browser paints for
-        // the same conic (CSS Color 4 §12.3). Lerping the channels raw instead drags
+        // the same conic (CSS Color 4 section 12.3). Lerping the channels raw instead drags
         // a `red → transparent` sweep through dark red at 50% instead of holding red
         // and fading it, so the exported fan disagreed with the screen. The engine
         // owns the maths (one interpolator for every format).
@@ -4966,7 +4966,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
   }
   if (hardStopped && bands.length) {
     // A repeating gradient's bands tile around the circle; a non-repeating one paints
-    // its first and last colours out to the ends of the sweep (CSS Images 3 §5.4).
+    // its first and last colours out to the ends of the sweep (CSS Images 3 section 5.4).
     const emit = (from: number, to: number, col: string, op: number): void => {
       const lo = Math.max(0, from), hi = Math.min(1, to);
       if (hi - lo > 1e-9 && op > 0) wedge(lo, hi, col, op);   // a clear band paints nothing
@@ -6652,7 +6652,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
 }
 
 /**
- * plans/104 §12 Q2 - capture ONE element that carries a real 3-D pose, with the pose
+ * plans/104 section 12 Q2 - capture ONE element that carries a real 3-D pose, with the pose
  * intact, for a vector export to embed as a per-box `<image>`.
  *
  * Separate from {@link rasterizeNodeToDataUrl} because that function CANNOT do this,
@@ -6688,7 +6688,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
  *
  * The returned `rect` is where the caller must place the image - the posed AABB grown
  * by the effect spill, in the element's own client coordinates. `getBoundingClientRect`
- * is exact against an analytic projection in both engines (S2 §3a), so the placement
+ * is exact against an analytic projection in both engines (S2 section 3a), so the placement
  * needs no second implementation of the projection.
  *
  * Null on any failure, so the caller can fall through to what it did before.
@@ -6799,7 +6799,7 @@ function transformOriginPx(style: CSSStyleDeclaration, cssW: number, cssH: numbe
 // KNOWN LIMITATION - paint order. This walker paints in DOM order and has no
 // z-index handling, exactly as the SVG walker did before `ExportOpts.
 // stackingOrder`. That flag was added on the SVG side only (page snapshots go
-// out as SVG), so SVG/EMF/EPS/DXF can paint in CSS 2.1 Appendix E §E.2 order and
+// out as SVG), so SVG/EMF/EPS/DXF can paint in CSS 2.1 Appendix E section E.2 order and
 // PDF cannot. A deliberate, recorded divergence in two walkers whose comments
 // otherwise ask that they stay mirrored: PDF has no deferred-append equivalent
 // here, because it emits drawing operators straight into a content stream rather
@@ -6864,7 +6864,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     if (rotDeg) {
       // Guarded neutralise, exactly as the SVG walker does it - a running transform
       // animation outranks the inline style, and the re-entry that follows recurses
-      // per attempt (plans/104 §9 P3.1; bridge/transform-neutralise.ts). `null` = the
+      // per attempt (plans/104 section 9 P3.1; bridge/transform-neutralise.ts). `null` = the
       // transform survived, so fall through to the AABB path with its rect as-is.
       const restore = neutraliseTransform(el, neutralise, warnTransform);
       if (restore) {
@@ -6903,7 +6903,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       }
     }
 
-    // A real 3-D pose: per-element raster, never the AABB (plans/104 §12 Q2). The SVG
+    // A real 3-D pose: per-element raster, never the AABB (plans/104 section 12 Q2). The SVG
     // walker's branch carries the full reasoning and the S2 numbers; this is the mirror,
     // and it has to exist here too because PDF inherits the same `parseCssMatrix`
     // refusal and therefore the same wrong picture (a tilted card as an upright
@@ -9744,7 +9744,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
             ? { level: opts.audio.duck ?? 1, startSec: introMs / 1000, endSec: (introMs + bodyMs) / 1000 }
             : undefined,
         };
-        // A mix-in bed (a tool with its own audio, §6.1) rides the same graph:
+        // A mix-in bed (a tool with its own audio, section 6.1) rides the same graph:
         // the primary plays once and the bed's envelope ducks under its extent.
         let bedBuffer: AudioBuffer | null = null;
         if (opts.audio.mix?.url) {
@@ -10555,7 +10555,7 @@ function addWatermarkOverlay(node: HTMLElement): () => void {
 // and the live editor is untouched afterwards. Mirrors the watermark overlay's
 // add/remove-in-finally discipline above.
 //
-// ⚑ ONE EXEMPTION: `[data-cam]` - the plans/104 §5.4 CAMERA MARKER. It wears
+// ⚑ ONE EXEMPTION: `[data-cam]` - the plans/104 section 5.4 CAMERA MARKER. It wears
 // `data-export-hide` for the same reason everything else here does (nothing may draw
 // it), but it is not chrome: it is the MODEL element both evaluators key their camera
 // branch off. `layerKind` (sequence-plan) and `readTiming` (sequence-dom) ask the LIVE

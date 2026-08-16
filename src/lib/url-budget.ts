@@ -16,7 +16,7 @@
  * (encodeModelParam) that buildShareParams itself now consumes. That makes
  * "the gauge's number" and "the copied link" the same bytes by construction.
  * syncUrl / shrinkUrl are left untouched; the gauge reads THIS model, never the
- * raw address bar (plan 115 §3).
+ * raw address bar (plan 115 section 3).
  *
  * Pure and DOM-free by design (unit-tested in url-budget.test.ts). The one thing
  * that lives in the DOM - the export-panel controls - is read once by the shell's

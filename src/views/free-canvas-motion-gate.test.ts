@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The motion path's OPEN GATE (plans/104 §8) - free-canvas's half of the overlay.
+ * The motion path's OPEN GATE (plans/104 section 8) - free-canvas's half of the overlay.
  *
  * `motion-path.test.ts` owns the module: its export contract, its geometry, its
  * reduced-motion branch. What it cannot see is the sentence free-canvas writes above

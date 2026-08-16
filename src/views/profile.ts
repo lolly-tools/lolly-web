@@ -246,7 +246,7 @@ const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-
 // (e.g. "dark" → Appearance). The label is passed through t() at render time;
 // keywords stay as an English aid.
 // EXPORTED for the spotlight settings provider (lib/search/providers/settings.ts,
-// plans/99 §2b - settings findability is first-class): every entry becomes a
+// plans/99 section 2b - settings findability is first-class): every entry becomes a
 // search hit deep-linking to #/profile?focus=<id>, which the handler below
 // honours for ANY section here, not just the collapsibles.
 export interface ProfileNavSection {
@@ -868,7 +868,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // it into view, expanding a collapsible first (setting `open` fires the toggle
   // that lazy-loads storage/images - and the initial-open check at the bottom
   // catches it too). Same open+scroll the rail's jump() does. Was collapsibles
-  // only; widened for the spotlight settings provider (plans/99 §2b), which
+  // only; widened for the spotlight settings provider (plans/99 section 2b), which
   // links every NAV_SECTIONS id here - so a share link, a screenshot recipe or
   // a search hit can land on Appearance or Accessibility too.
   if (focusParam && NAV_SECTIONS.some(s => s.id === focusParam)) {

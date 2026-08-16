@@ -23,7 +23,7 @@ import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/m
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG, isFlagOnSync, PRIVATE_COLLAB_FLAG } from '../feature-flags.ts';
 import { getCollabOpener, openCollabLaunch } from '../lib/collab-launch.ts';
-import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
+import { syncCatalog, prefetchAssetsById, defaultHiddenToolIds } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { getInjectedTools } from '../lib/injected-tools.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -71,7 +71,7 @@ interface GalleryTool {
   /** Pristine English name/description, stashed by catalog/sync.ts's
    *  localizeToolIndex before it overlays a translation - searched alongside
    *  the localized strings so "compress" finds Compress PDF in any session
-   *  language (plans/99 §2e). Absent in English sessions. */
+   *  language (plans/99 section 2e). Absent in English sessions. */
   en?: { name?: string; description?: string };
   version?: string;
   status?: string;
@@ -402,7 +402,7 @@ export interface GalleryMountOpts {
 
 export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts: GalleryMountOpts = {}): Promise<void> {
   document.title = opts.only ? 'Utilities — Lolly' : 'Lolly';
-  // #/?q=<text> restores a handed-off search (plans/99 §2c): raw for the field's
+  // #/?q=<text> restores a handed-off search (plans/99 section 2c): raw for the field's
   // display value, lowercased below for `query` (the same normalisation the input
   // handler applies at each keystroke).
   const initialQuery = (new URLSearchParams(opts.params || '').get('q') || '').trim();
@@ -522,8 +522,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // tile from the browse grid, search results and the featured strip, behind the
   // grey "Show hidden tools" box that sits last in the grid. Deep links (#/tool/<id>,
   // URL mode, the CLI) keep working - this is a browse-surface overlay, like the
-  // catalog's hidden assets.
-  const hiddenTools = loadHiddenTools(profile);
+  // catalog's hidden assets. A fresh profile starts with the brand's shipped
+  // `defaultHiddenTools` merged in (until the user first edits the overlay), so a
+  // curated gallery opens tidy - exactly how hidden ASSETS seed their defaults.
+  const hiddenTools = loadHiddenTools(profile, defaultHiddenToolIds());
   let showHiddenTools = false;   // ephemeral reveal, per mount (matches the catalog's showHidden)
 
   // Multi-selection of tiles - tool ids plus `view:<id>` card keys. A closure Set so
@@ -1334,7 +1336,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // Per-tool search haystacks, folded ONCE at mount (the tool set is stable - 
   // see allTools above): localized name/description PLUS the pristine English
-  // stash (`en`, written by localizeToolIndex - plans/99 §2e) so a Spanish
+  // stash (`en`, written by localizeToolIndex - plans/99 section 2e) so a Spanish
   // session still finds "Compress PDF" by "compress", plus the tags. Weights
   // are all 1 - this view only gates on match/no-match, it never ranks.
   const searchFields = new Map<string, SearchField[]>(allTools.map(t => [

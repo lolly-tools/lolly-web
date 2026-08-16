@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * versions.ts - the versioned design-system model (plans/97 §6a).
+ * versions.ts - the versioned design-system model (plans/97 section 6a).
  *
  * Run with:
  *   node --import ./tests/css-stub.mjs --test "shells/web/src/lib/design-system/versions.test.ts"
@@ -260,7 +260,7 @@ test('diffTokenDocs reports added, changed and removed leaves across sets', () =
 
 // ─── The engine alias ────────────────────────────────────────────────────────
 // This module became a re-export of engine/src/design-version.ts (engine 1.109.0,
-// plans/97 §6a M7). Every test above still runs against the real implementation
+// plans/97 section 6a M7). Every test above still runs against the real implementation
 // through it; this last one guards the seam itself, because a re-export list is
 // the one kind of code that can lose a symbol with no error anywhere - the import
 // simply resolves to undefined at the call site, in a room nobody typechecks twice.

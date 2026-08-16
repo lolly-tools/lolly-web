@@ -2,7 +2,7 @@
 /**
  * CSS `filter` → SVG filter primitives.
  *
- * Every CSS shorthand filter is DEFINED by the Filter Effects spec (§18.1) as an
+ * Every CSS shorthand filter is DEFINED by the Filter Effects spec (section 18.1) as an
  * equivalent SVG filter - `grayscale(x)` is a specific feColorMatrix, `contrast(x)`
  * a specific feComponentTransfer. So this is a translation table, not an
  * approximation, and the numbers below are the spec's own matrices rather than
@@ -39,7 +39,7 @@ function amount(raw: string, dflt: number): number {
 /** Luminance coefficients from the spec's grayscale/sepia/saturate matrices. */
 const LR = 0.2126, LG = 0.7152, LB = 0.0722;
 
-/** saturate(s) as a 5×4 colour matrix (Filter Effects §18.1, `feColorMatrix type=saturate`). */
+/** saturate(s) as a 5×4 colour matrix (Filter Effects section 18.1, `feColorMatrix type=saturate`). */
 function saturateMatrix(s: number): number[] {
   // Laid out as the 5x4 matrix it is. One number per line is technically the same
   // array and completely unreadable next to the spec.

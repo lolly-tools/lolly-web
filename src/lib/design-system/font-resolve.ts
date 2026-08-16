@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * font-resolve.ts - the pure family-name resolver of plan 97 §7.2 (gap 3).
+ * font-resolve.ts - the pure family-name resolver of plan 97 section 7.2 (gap 3).
  *
  * A face discovered inside a PDF or on a website arrives as one string and
  * nothing else: "ABCDEF+Inter-SemiBold", "HelveticaNeue-Bold",
@@ -59,7 +59,7 @@ export interface ParsedFaceName {
 
 /** What a source said about the bytes behind a face. Both fields are optional: unsaid is unknown. */
 export interface FaceSourceMeta {
-  /** The document embedded only the glyphs it printed (PDF §9.6.4 "ABCDEF+" marker). */
+  /** The document embedded only the glyphs it printed (PDF section 9.6.4 "ABCDEF+" marker). */
   subset?: boolean;
   /** The font's own OS/2 fsType permission, as `font-utils.ts` reports it. */
   embedding?: string;
@@ -129,7 +129,7 @@ const NOISE = new Set(['mt', 'ps', 'psmt', 'variable', 'vf', 'var']);
 
 /** File extensions a dropped file carries into its face name. */
 const FONT_EXT_RE = /\.(?:ttf|otf|woff2?|eot|pfb|pfa|cff|ttc)$/i;
-/** The PDF subset marker: six capitals and a plus (PDF 32000-1 §9.6.4). */
+/** The PDF subset marker: six capitals and a plus (PDF 32000-1 section 9.6.4). */
 const SUBSET_PREFIX_RE = /^[A-Z]{6}\+/;
 /** A three digit weight written as a number: "Roboto700", "Inter 600". */
 const NUMERIC_WEIGHT_RE = /^(?:[1-9]00|1000)$/;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The two blur lanes, headless (plan 104 §5.5, §11 S1).
+ * The two blur lanes, headless (plan 104 section 5.5, section 11 S1).
  *
  * What Node can prove about a blur is everything except the pixels an engine paints:
  * the parse of the authored filter, the spill geometry a scratch is sized from, the
@@ -266,7 +266,7 @@ test('blurLadder: below the visible threshold there is no lane to take', () => {
 });
 
 test('the degenerate band delivers the NEAREST expressible blur, never a stranded residual', () => {
-  // THE MEASURED CASE (plans/104 §9.2 M1 browser verify): a 3840×2160 layer at sigma 3
+  // THE MEASURED CASE (plans/104 section 9.2 M1 browser verify): a 3840×2160 layer at sigma 3
   // takes shrink 4, which leaves a residual of 0.559 - and 0.559 landed in the band
   // where the Wells construction collapses to all-width-1 boxes. `[]` there meant the
   // two resamples WERE the whole blur, delivered at 0.72×/0.82× of the request.

@@ -29,7 +29,7 @@
   /* A FLOOR under the master, raised only by the high-contrast branch at the bottom of
      this sheet. It is a second token rather than a `max()` written back into
      --onion-master because a custom property whose value references ITSELF is a cycle
-     (CSS Custom Properties L1 §3.2) — it computes to the guaranteed-invalid value, not
+     (CSS Custom Properties L1 section 3.2) — it computes to the guaranteed-invalid value, not
      to the inherited one, which would take every opacity below down with it. */
   --onion-floor: 0;
 

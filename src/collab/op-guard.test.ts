@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * op-guard tests - plan 100 §6.3 / §11.21, wave 2.4.
+ * op-guard tests - plan 100 section 6.3 / section 11.21, wave 2.4.
  * Run directly:  node --test shells/web/src/collab/op-guard.test.ts
  *
  * What is actually being proved here, in rising order of what it would cost to lose:
@@ -120,7 +120,7 @@ test('a valid v1.1 collection-scoped batch passes, on both collection shapes', (
 });
 
 test('a param binding descriptor is data-plane, not a value, and still passes', () => {
-  // §6: a binding syncs as a descriptor and the live datum never travels. The guard
+  // section 6: a binding syncs as a descriptor and the live datum never travels. The guard
   // lets it through (schema-legal, whitelisted key); what to DO with it is the
   // projection's decision, not the boundary's.
   assert.equal(reasonFor({
@@ -138,7 +138,7 @@ test('a partially bad batch drops only the bad ops (never the batch, never a thr
   assert.equal(r.ok.length, 1);
   assert.equal(r.ok[0], good);
   assert.deepEqual(reasons(r), ['unknown-input', 'unknown-field']);
-  // §11.11's survivable skew - none of it means "disconnect".
+  // section 11.11's survivable skew - none of it means "disconnect".
   for (const rej of r.rejected) assert.equal(ABUSE_REASONS.has(rej.reason), false);
 });
 
@@ -245,7 +245,7 @@ test('every peer-derived rejection detail is bounded, because the contract says 
 });
 
 test('an abuse breach clears the whole message, not just the op that tripped it', () => {
-  // §11.21 says a peer that breaches a cap is DISCONNECTED. Handing the caller ops
+  // section 11.21 says a peer that breaches a cap is DISCONNECTED. Handing the caller ops
   // to apply from the very message it is disconnecting over lets the two decisions
   // disagree; `batch-too-large` already behaved this way and the rest did not.
   const g = guard();
@@ -258,7 +258,7 @@ test('an abuse breach clears the whole message, not just the op that tripped it'
     assert.equal(r.ok.length, 0, 'nothing from an abusive message is applied');
     assert.ok(r.rejected.some((x) => ABUSE_REASONS.has(x.reason)), 'and the caller is told to disconnect');
   }
-  // An ordinary skew rejection still drops only its own op (§11.11 - unchanged).
+  // An ordinary skew rejection still drops only its own op (section 11.11 - unchanged).
   const skew = g.checkOps([good, { k: 'param', key: 'nope', value: 'x', origin: origin(2) }]);
   assert.equal(skew.ok.length, 1);
 });
@@ -428,7 +428,7 @@ test('ops per message trips exactly at the boundary, and takes the whole batch',
 });
 
 test('the abuse set is exactly the structural breaches, not the value ones', () => {
-  // §11.11 says an out-of-range VALUE drops that key and the session continues; only
+  // section 11.11 says an out-of-range VALUE drops that key and the session continues; only
   // a structural breach means the peer is not playing the protocol.
   // `clock-out-of-range` sits here rather than with the value refusals: a Lamport
   // clock is minted by `++` from zero, so nothing running this protocol in good
@@ -464,7 +464,7 @@ test('presence has its own, separate, 40/s lane', () => {
     assert.equal(g.recordAndCheckRate('presence', 1, i), true, `frame ${i + 1}`);
   }
   assert.equal(g.recordAndCheckRate('presence', 1, max), false);
-  // Exhausting presence must not touch the ops lane (separate channels, §11.6).
+  // Exhausting presence must not touch the ops lane (separate channels, section 11.6).
   assert.equal(g.recordAndCheckRate('ops', 1, max), true);
 });
 
@@ -498,7 +498,7 @@ test('an unusable timestamp cannot permanently condemn a peer', () => {
 });
 
 test('the module reads no wall clock', () => {
-  // §11.7: nothing in the convergence path may depend on wall time, and the rate
+  // section 11.7: nothing in the convergence path may depend on wall time, and the rate
   // window is deterministic only because `nowMs` is injected.
   // Comments stripped first - the module's own header NAMES what it must not call,
   // and a scan that cannot tell prose from code would fail on the documentation.
@@ -651,7 +651,7 @@ test('presence refuses a forbidden key anywhere in the frame', () => {
 test('an unknown presence key is tolerated, not refused', () => {
   // Presence is ephemeral, lossy and forward-compatible: refusing a frame because a
   // newer peer added a v1.2 field would make that peer's cursor invisible for the
-  // whole session (§11.19). The structural scan has already bounded it.
+  // whole session (section 11.19). The structural scan has already bounded it.
   const g = guard();
   const frame = presence({ someFutureField: { nested: 'value' } });
   const r = g.checkPresence(frame);

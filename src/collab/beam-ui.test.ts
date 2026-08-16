@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * beam-ui - the door into the beam (plan 100 §6.4).
+ * beam-ui - the door into the beam (plan 100 section 6.4).
  *
  * `beam-session.test.ts` proves the four wires are connected. What it cannot prove is
  * that anything ever OPENS one: until this module, the whole beam stack shipped complete
@@ -16,7 +16,7 @@
  *   3. a refusal is a value, never a throw - a closed lane and an empty reader come back
  *      as `{ ok: false, reason }` so the caller can say something true;
  *   4. an ACCEPTOR's two hosts go in opposite directions - packed from the ephemeral
- *      working copy (§11.17), landed in the real library (§6.4). One host for both made
+ *      working copy (section 11.17), landed in the real library (section 6.4). One host for both made
  *      the toast report a success that evaporated at teardown.
  *
  * The lane pair is `beam-session.test.ts`'s, narrowed to what a transport publishes: the
@@ -322,10 +322,10 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   assert.deepEqual(
     result.ok ? [...result.byReference] : null,
     ['suse/logo/primary'],
-    'a catalog ref is LISTED, never sent (§11.16) — the receiver resolves it locally',
+    'a catalog ref is LISTED, never sent (section 11.16) — the receiver resolves it locally',
   );
 
-  // Consent, through the toast port - the only door there is (§11.24).
+  // Consent, through the toast port - the only door there is (section 11.24).
   const offered = receiverToast.events.find((e) => e.t === 'offer-received');
   assert.ok(offered && offered.t === 'offer-received', 'the receiver was never shown an offer');
   assert.equal(offered.offer.name, 'Design', 'the offer is named from the live label');
@@ -372,7 +372,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
 
 test('an acceptor packs from the ephemeral copy and lands a gift in the REAL library', async () => {
   // The one mount in the shell that holds two `BeamPackHost`s at once. `views/tool.ts`
-  // swaps `host.state` for a memory bridge before the runtime exists (§11.17), so an
+  // swaps `host.state` for a memory bridge before the runtime exists (section 11.17), so an
   // acceptor's working copy can never reach a slot on their device - and for a WHILE the
   // beam was handed that same clone for both directions, which meant an accepted pack was
   // written into a store that dies with the mount. Worse than losing it outright: the
@@ -451,14 +451,14 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
 
   const landed = [...library.sessions.values()];
   assert.equal(landed.length, 1,
-    'an accepted beam must land in the receiver\'s real library — §6.4 promises it lands '
+    'an accepted beam must land in the receiver\'s real library — section 6.4 promises it lands '
     + 'attributed, with the storage meter updated honestly, and a memory store keeps '
     + 'neither promise past teardown');
   assert.equal(landed[0]!.data.headline, 'A gift');
 
   assert.equal(ephemeral.sessions.size, 1,
     'and NOT in the ephemeral store: the only slot there is still the working copy it '
-    + 'started with, so §11.17 is untouched by the gift landing');
+    + 'started with, so section 11.17 is untouched by the gift landing');
 
   inviter.close();
   acceptor.close();

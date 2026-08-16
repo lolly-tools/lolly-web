@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * `filter: blur()` and `filter: drop-shadow()` reaching PDF export (plan 104 §2, P1d).
+ * `filter: blur()` and `filter: drop-shadow()` reaching PDF export (plan 104 section 2, P1d).
  *
  * Until this landed they did not reach it at all, and did so SILENTLY: the PDF walker
  * has no `filter` branch, but `detectUnsupportedCss` declared any parseable filter

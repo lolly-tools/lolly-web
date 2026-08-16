@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Versions panel - publish, activate, restore (plan 97 §6a, M7).
+ * The Versions panel - publish, activate, restore (plan 97 section 6a, M7).
  *
  * A foot-pinned panel rather than a room, because versioning acts on the WHOLE
  * design system rather than on one part of it, and because a studio that has
  * never published must not carry a sixth room advertising machinery it does not
  * need. `views/start.ts` hides its rail entry until `hasPublishableSystem()`
  * says there is something to publish (or a `?area=versions` link asks for it
- * directly), which is plan 97 §5's "hidden until the system has content".
+ * directly), which is plan 97 section 5's "hidden until the system has content".
  *
  * WHAT THIS FILE OWNS: the copy, the markup and which press calls what. Every
  * byte that reaches disk goes through `../versions-io.ts`, which goes through

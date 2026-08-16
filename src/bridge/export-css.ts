@@ -9,7 +9,7 @@
  * parser. They USED to be a `rgba?(int,int,int)` regex commented "always
  * rgb/rgba from getComputedStyle" - false since browsers began serialising
  * non-legacy colours in their own space, which silently dropped the paint of
- * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/60-color-spaces.md §4).
+ * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/60-color-spaces.md section 4).
  */
 import { parseCssLength, cornerRadii, uniformRadius, parseColorToSrgb8 } from "@lolly/engine";
 import type { CornerRadii, CornerPair } from "../../../../engine/src/css-box.ts";
@@ -45,7 +45,7 @@ export function parseCssLen(val: string | null | undefined, refPx: number): numb
 }
 
 // Resolve a computed style's four border-radius corners for a w×h box into the
-// CSS §5.5 corner-overlap-clamped geometry, via the engine (the single source of
+// CSS section 5.5 corner-overlap-clamped geometry, via the engine (the single source of
 // truth shared by the SVG and PDF walkers - see engine/src/css-box.js).
 //
 // Returns { radii, uniform }: `radii` is the four clamped [h,v] corners; `uniform`

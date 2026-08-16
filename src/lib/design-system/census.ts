@@ -2,7 +2,7 @@
 /**
  * `DesignCensus` - the one shape every design-system source scans into.
  *
- * Plan 97 §8: a Source scans material into a census, the census feeds the role
+ * Plan 97 section 8: a Source scans material into a census, the census feeds the role
  * proposer, and everything lands as candidates in the tray. Until now
  * `proposeBrandRoles` only spoke Penpot's `PenpotUsage`, so a guidelines PDF, a
  * screenshot or a logo SVG had no route to the same proposal at all. This module

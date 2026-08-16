@@ -5,7 +5,7 @@
 // their own footer); the only other consumer is the component library's in-flow
 // specimen. This module stays markup-only so that split holds.
 import { escape } from '../utils.ts';
-import { t, docsHref } from '../i18n.ts';
+import { t, docsAppHref } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { jellyActive } from '../lib/jelly.ts';
 
@@ -18,6 +18,7 @@ export const NAV_ICONS = {
   zap: icon('zap'),
   help: icon('help'),
   dashboard: icon('dashboard'),
+  open: icon('upload'),
 } as const;
 
 /** The standard `.gallery-search` field + its ✕ clear button (Tools gallery + Catalogue
@@ -30,7 +31,7 @@ export const NAV_ICONS = {
 export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string; kbdHint?: { label: string; title: string } }): string {
   const cls = opts.className ?? 'gallery-search';
   const value = opts.value ?? '';
-  // The spotlight chord hint (plans/99 §2f): a decorative <kbd> chip right-aligned
+  // The spotlight chord hint (plans/99 section 2f): a decorative <kbd> chip right-aligned
   // inside the box. aria-hidden - it duplicates nothing (the chord is a shortcut,
   // not the only path) and screen-reader users get the combobox semantics instead.
   // Starts hidden when the field already has text (the ✕ takes that corner);
@@ -98,17 +99,25 @@ function navItem(o: { href: string; nativeClass: string; variant?: string; style
     // `.gallery-nav-link` (their `.gallery-footer > .btn` display/flex rules would
     // fight the jelly host box). `size="sm"` gives compact padding; the visible
     // .gallery-nav-label span keeps its class so the mobile label-hide still works.
-    // nosemgrep: lolly-href-escape-is-not-scheme-validation - footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsHref('index') → '/info/…')
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsAppHref('index') → '#/docs/index')
     return `<jelly-button class="gallery-nav-jelly" size="sm"${o.variant ? ` variant="${o.variant}"` : ''}${o.style ?? ''} data-href="${escape(o.href)}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</jelly-button>`;
   }
   // nosemgrep: lolly-href-escape-is-not-scheme-validation - same four literal footerNav() routes as the jelly branch above
   return `<a href="${escape(o.href)}" class="${o.nativeClass}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</a>`;
 }
 
-/** The shared bottom bar: [Pro?] [Dashboard]  <search>  [Verify] [What?]. */
+/** The shared bottom bar: [Open] [Pro?] [Dashboard]  <search>  [Verify] [What?]. */
 export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   if (jellyActive()) ensureNavHandler();
   const label = (txt: string) => `<span class="gallery-nav-label">${txt}</span>`;
+  // "Open" is an ACTION, not a route - it opens the OS file picker to import a
+  // .lolly / design / image (drop-router's openDropFilePicker). So it's a button,
+  // not a link, wired document-level in main.ts on the [data-open-file] hook.
+  const openAria = t('Open a file — import a .lolly, design or image');
+  const openInner = `${NAV_ICONS.open}${label(t('Open'))}`;
+  const open = jellyActive()
+    ? `<jelly-button class="gallery-nav-jelly" size="sm" variant="platinum" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</jelly-button>`
+    : `<button type="button" class="gallery-nav-link btn" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</button>`;
   const pro = proEnabled ? navItem({
     href: '#/pro', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
     aria: t('Open Batch mode — for power users'), inner: `${NAV_ICONS.zap}${label(t('Pro'))}`,
@@ -124,12 +133,17 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
     style: ' style="--jelly-fill:hsl(151 57% 42%);--jelly-label:#fff"',
     aria: t('Verify Content Credentials — check any file on-device'), inner: `${NAV_ICONS.shield}${label(t('Verify'))}`,
   });
+  // In-app route, not the static /info page (Andy, 2026-08-16): the reader who
+  // taps "What?" keeps the app experience - the music keeps playing and the a11y
+  // prefs stay applied - because #/docs rehosts the same built pages inside the
+  // shell. The static /info URLs remain the share/SEO surface (docsHref).
   const whatIs = navItem({
-    href: docsHref('index'), nativeClass: 'gallery-info-link btn', variant: 'platinum',
+    href: docsAppHref('index'), nativeClass: 'gallery-info-link btn', variant: 'platinum',
     aria: t('What is Lolly? — about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
   });
   return `
     <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}">
+      ${open}
       ${pro}
       ${dashboard}
       ${searchHtml}

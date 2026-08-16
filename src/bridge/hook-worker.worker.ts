@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Hook Worker (M2, plans/86-worker-isolation-hooks.md §13.1) - the DOM-free
+ * Hook Worker (M2, plans/86-worker-isolation-hooks.md section 13.1) - the DOM-free
  * executor that runs a tool's hooks.js OFF the main thread.
  *
  * A hook is compiled here with `new Function('host', src)` exactly as the
@@ -82,8 +82,8 @@ const OMIT_METHODS = new Set([
   'media.start', 'media.stop', 'media.subscribe',
   'recorder.meter', 'profile.subscribe', 'export.render',
   // Sync feature-detects that are NOT the isAvailable family and are NOT yet
-  // seeded (§14 follow-up): omit them so they can't be mis-proxied as a
-  // truthy Promise a hook branches on synchronously (the §1-edge-1 hazard). A
+  // seeded (section 14 follow-up): omit them so they can't be mis-proxied as a
+  // truthy Promise a hook branches on synchronously (the section 1-edge-1 hazard). A
   // tool that actually reads these must not opt into isolation until they seed.
   'upscale.backend', 'upscale.models', 'upscale.modelBytes',
   'matte.backend', 'matte.models', 'matte.modelBytes',

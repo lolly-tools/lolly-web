@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * feature-flags.ts - the PRIVATE_COLLAB_FLAG slice (plans/100 §6.3/§0).
+ * feature-flags.ts - the PRIVATE_COLLAB_FLAG slice (plans/100 section 6.3/section 0).
  *
  * The flag is ON by default as of 2026-08-10 (it shipped opt-in in wave 2.6), and this
  * file is the truth table for what that means, because "on by default" is three separate
@@ -156,7 +156,7 @@ test('governed default OFF: an unset user choice picks up the instance default, 
 test('governed + hidden OFF: forced default wins over the toggle AND a saved user value', async () => {
   reset();
   // The instance stages the ceremony as fleet-wide OFF and hides the switch - exactly
-  // the "force it off fleet-wide" lever plans/100 §6.3 calls for, and the one the
+  // the "force it off fleet-wide" lever plans/100 section 6.3 calls for, and the one the
   // default going ON makes essential rather than decorative.
   governed({ [PRIVATE_COLLAB_FLAG.id]: { default: false, hidden: true } });
   await initOrg();

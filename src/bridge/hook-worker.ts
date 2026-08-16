@@ -204,7 +204,7 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
   // (those come from the worker). An export hook that reads render state must read
   // it from the DOM (ctx.node), NOT from module vars an isolated interactive hook
   // wrote - those live in the worker closure (see the overlay-export refactor,
-  // plans/86 §18); this split is only sound once that holds.
+  // plans/86 section 18); this split is only sound once that holds.
   const inRealm = await inRealmHookExecutor(tool, host);
 
   return {

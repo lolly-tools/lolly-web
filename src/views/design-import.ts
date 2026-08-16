@@ -2087,7 +2087,7 @@ export async function ingestPenpotExportsAsAssets(
 // Penpot components → Design templates
 // ---------------------------------------------------------------------------
 //
-// The third Penpot route (plan: penpot-design-system.md §2). A design
+// The third Penpot route (plan: penpot-design-system.md section 2). A design
 // system's component MASTERS are exactly the reusable layouts a
 // non-designer wants, so each one becomes a saved session with its text
 // runs and image fills marked as fill-in-the-blank slots.
@@ -2217,7 +2217,7 @@ async function parsePenpotBinfileTemplates(
   }
 
   const collected = collectPenpotComponents(records, pages, { fileId });
-  // One aggregated line for libraries this export does not carry (plan §2.3):
+  // One aggregated line for libraries this export does not carry (plan section 2.3):
   // the instances themselves still import fine on the board path, they are full
   // copies, so nothing regressed - there is simply no master to template.
   if (collected.externals.instances > 0) {

@@ -8,7 +8,7 @@
  * this device. It is EMPTY by default, so `getCanvasSyncProvider()` returns
  * undefined and the canvas renders exactly as today - single-player, no
  * network, no server. This repo (`lolly`) ships no server, no socket, and no
- * persistence for collaboration (plans/99-canvas-op-contract.md §1.1) - this
+ * persistence for collaboration (plans/99-canvas-op-contract.md section 1.1) - this
  * file is the dormant door for that, nothing more.
  *
  * It knows nothing about WHO registers a provider: a deployment's optional
@@ -29,7 +29,7 @@
  * exactly like `registerSessionSource` is wired there today - but lolly-work
  * has no adapter to inject via the rail yet, so wiring the call site now would
  * be dead code with no registrant. Until then this seam is inert and behaviour
- * is byte-identical to single-player (plans/99 §1.1).
+ * is byte-identical to single-player (plans/99 section 1.1).
  */
 
 import type { CanvasSyncAdapter } from '@lolly-tools/core/canvas-op-v1';

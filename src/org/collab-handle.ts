@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/collab-handle - the Track B ADAPTER: one work-collab provider, seen as the
- * `CollabSessionHandle` a mounted tool actually needs (plan 100 §7, wave 3.2).
+ * `CollabSessionHandle` a mounted tool actually needs (plan 100 section 7, wave 3.2).
  *
  * `org/collab-provider.ts` speaks the gateway's wire; `lib/collab-session.ts`
  * composes presence, colours and op plumbing for a mount. Neither imports the other,
@@ -61,7 +61,7 @@
  *    `from` would be actively wrong: that is the sender's CONNECTION id, while the
  *    roster key the whole presence engine (and the focus overlay, and the colour
  *    assignment) is built on is the per-device client id. Re-stamping `seq` would be
- *    worse - it is the ONLY thing that resolves an unordered lane (§11.5), and it is
+ *    worse - it is the ONLY thing that resolves an unordered lane (section 11.5), and it is
  *    the sender's counter, not ours.
  *  - a bare `Presence`/`Awareness` (what `CanvasSyncAdapter.presence` takes, which a
  *    handle is explicitly allowed to implement `sendPresence` as). It carries no
@@ -78,7 +78,7 @@
  *
  * The `join-ack` roster is the only thing that tells a joiner who is already in the
  * room, and it must reach the presence engine or the room can sit MUTUALLY SILENT:
- * the engine sends nothing at all while its roster is empty (§4.7 - not "cheap when
+ * the engine sends nothing at all while its roster is empty (section 4.7 - not "cheap when
  * alone", *nothing*), so a lone incumbent is silent, and a joiner whose engine also
  * knows nobody is silent too. Two people, one room, neither visible, forever.
  *
@@ -119,15 +119,15 @@
  * ── THERE IS NO HOST ──────────────────────────────────────────────────────────
  *
  * `hostClientId` is left ABSENT, and its absence is a statement rather than a gap.
- * Track A is asymmetric by design (§6.2a: the inviter owns the session, holds the
+ * Track A is asymmetric by design (section 6.2a: the inviter owns the session, holds the
  * persistence, and is the catch-up source), which is what lets a nameless peer read
  * as "Host". A work collab has no such peer: the SERVER owns persistence and
- * authority (§7.10 - the availability guarantee Track A structurally cannot make),
+ * authority (section 7.10 - the availability guarantee Track A structurally cannot make),
  * so every participant is a member of a room. `createCollabSession` reads the
  * absence exactly that way - `isHost` is `hostClientId !== undefined && … === id`,
  * so it is false for everyone and no "Host" tag is rendered. The invitee ordinals
  * fall out the same way and stay unused in practice: identity here comes from SSO
- * (§7.8), so participants have real names and are never numbered.
+ * (section 7.8), so participants have real names and are never numbered.
  *
  * ── WHAT THIS DELIBERATELY DOES NOT DO ────────────────────────────────────────
  *
@@ -138,7 +138,7 @@
  *    (this file's whole job) and nothing more: the stream is a verbatim forward of the
  *    provider's `{ kind: 'ops' }` events. What is still emphatically NOT here is the
  *    GUARD. Those ops are untrusted input and must pass the shared op guard
- *    (`collab/op-guard.ts`, plan 100 §11.21) before they reach the runtime - the
+ *    (`collab/op-guard.ts`, plan 100 section 11.21) before they reach the runtime - the
  *    provider's structural gate (`isCanvasOp`) is an envelope check, not the boundary - 
  *    and that happens exactly once, inside `session.applyRemotePatch`, which the MOUNT
  *    calls. Guarding here would mean this file knew about the tool's input model, which
@@ -148,7 +148,7 @@
  *    The roster carries a `color` HEX from the server's palette and no index, and
  *    inventing a slot from it would be a guess; the session already handles an
  *    unrecognised hex honestly (claim it if it is in our palette, otherwise
- *    re-derive by roster order - §11.16).
+ *    re-derive by roster order - section 11.16).
  *  - **Reconnect policy, retries, the outbox.** All the provider's. This adapter
  *    reports states and never acts on them.
  */
@@ -167,7 +167,7 @@ import type { RosterEntry } from './collab-protocol.ts';
 import type { WorkCollabHandle, WorkCollabStatus } from './collab-provider.ts';
 
 /**
- * The ceiling on a WRAPPED payload's own `from` (plan 100 §11.21).
+ * The ceiling on a WRAPPED payload's own `from` (plan 100 section 11.21).
  *
  * Mirrors `collab/rtc-transport.ts`'s `MAX_CLIENT_ID_CHARS` exactly - duplicated
  * rather than imported, on purpose: this file and that one deliberately do not
@@ -198,13 +198,13 @@ export const ROSTER_SEED_SEQ = 0;
 export const ROSTER_RETIRE_SEQ = ROSTER_SEED_SEQ + 1;
 
 /**
- * The provider's socket status as the pill's dot reads it (plan 100 §4.6).
+ * The provider's socket status as the pill's dot reads it (plan 100 section 4.6).
  *
  * Three of the provider's six statuses are one thing to a human - `'idle'` (built,
  * never connected), `'connecting'` (socket opening) and `'joining'` (open, ack
  * outstanding) are all "not usable yet, nothing is wrong". `'reconnecting'` is
  * first-class and must NOT collapse into `'connecting'`: it means we were live, the
- * roster is still real, and nobody is being evicted (§11.3).
+ * roster is still real, and nobody is being evicted (section 11.3).
  *
  * Pure and exported so the mapping is a test rather than a walkthrough.
  */
@@ -495,7 +495,7 @@ export function createWorkCollabHandle(
     }
     if (event.kind === 'presence') { onPresence(event.from, event.frame); return; }
     // Verbatim, including the join-ack snapshot seed the provider delivers on this
-    // same lane - that IS this copy's initial state (§7.3), so a handle that filtered
+    // same lane - that IS this copy's initial state (section 7.3), so a handle that filtered
     // it would mount a joiner on an empty document.
     if (event.kind === 'ops') publishOps(event.ops);
   });
@@ -506,7 +506,7 @@ export function createWorkCollabHandle(
     get clientId(): string {
       return clientId;
     },
-    /** The gateway's seat once it has stated one (SSO - §7.8), the caller's hint
+    /** The gateway's seat once it has stated one (SSO - section 7.8), the caller's hint
      *  before that. Live, though note `createCollabSession` snapshots it at
      *  construction: see the header on building the handle after `'live'`. */
     get name(): string | undefined {

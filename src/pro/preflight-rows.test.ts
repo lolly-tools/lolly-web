@@ -12,7 +12,7 @@
  * pins the collector to it - a drift in either direction fails here rather than
  * shipping a confident report about a job nobody ran.
  *
- * The other three cases are the ones plan §7 names: a clean row, a row with a
+ * The other three cases are the ones plan section 7 names: a clean row, a row with a
  * finding, and a SKIPPED row, which has no queue position at all and is exactly the
  * case preflight most needs to explain.
  */
@@ -50,7 +50,7 @@ const CTX = { srcIndex: 0 };
 test('a clean row produces NOTHING — not one note, not one refusal', () => {
   // The per-row channel is a claim about THIS row. `refuse.output-file-size` fires on
   // every job ever, so left in here it put a chip on all 50 cards of a clean 50-row
-  // batch and made the headline read "50 with notes" - the noise plan §6 names.
+  // batch and made the headline read "50 with notes" - the noise plan section 6 names.
   // svg: no pixel count to report, so a clean row has genuinely nothing to say.
   const m = toPreflightManifest(manifestOf({ render: { width: 1200, height: 900, formats: ['svg'] } }));
   assert.deepEqual(preflightRow({ toolId: 'demo', values: { title: 'hello' } }, m, 0, CTX, ENV), []);

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-wire - the byte format for the native transport's lanes (plans/110 §4).
+ * native-wire - the byte format for the native transport's lanes (plans/110 section 4).
  *
  * The native transport (`native-transport.ts`) carries raw bytes per lane; this module is
  * the encode/decode that turns a collab message into those bytes and an inbound frame back
  * into the SAME `RtcInboundMessage` shape the WebRTC transport produces. That shared shape
  * is the whole point: a native session can then be adapted into `createRtcCollabHandle`
- * unchanged, so the op-ordering, presence roster, and §6.2 divergence backstop - and the
- * §11.21 op validation, which runs DOWNSTREAM in the handle, not in the transport - are all
+ * unchanged, so the op-ordering, presence roster, and section 6.2 divergence backstop - and the
+ * section 11.21 op validation, which runs DOWNSTREAM in the handle, not in the transport - are all
  * reused, not reimplemented. A native pair uses this codec on both ends, so it only has to
  * be self-consistent; it does not need to match the WebRTC channels' exact bytes (native
  * never talks to WebRTC).
@@ -29,7 +29,7 @@ const dec = new TextDecoder();
 const BEAM_JSON = 0x6a; // 'j'
 const BEAM_BINARY = 0x62; // 'b'
 
-/** An outbound ops-lane message: a canvas op, or the one-shot hello (§6.1). */
+/** An outbound ops-lane message: a canvas op, or the one-shot hello (section 6.1). */
 export type OpsOutbound =
   | { readonly kind: 'op'; readonly op: unknown }
   | { readonly kind: 'hello'; readonly clientId?: string; readonly opVersion?: string; readonly seed?: string };

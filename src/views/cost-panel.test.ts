@@ -114,7 +114,7 @@ test('expired rates suppress money and show the expiry reason; no figure', () =>
   assert.match(body, /expired/i);
 });
 
-test('opting in to expired rates shows the working, stamped with the expiry date (§5)', () => {
+test('opting in to expired rates shows the working, stamped with the expiry date (section 5)', () => {
   const v = costView(working({ expired: true }), ctx({ money: money({ expired: true, useExpiredAnyway: true }) }));
   assert.equal(v.mode, 'working');
   // The figure must carry the expiry caveat WITH it - a lapsed total never reads as current.

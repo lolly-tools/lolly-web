@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-transport-select - which transport carries a private collab (plans/110 §4).
+ * native-transport-select - which transport carries a private collab (plans/110 section 4).
  *
  * A pure decision, no I/O and no crypto: given the local platform, whether WebRTC even
  * exists here, the user's preference, and (when accepting) the invite's declared kind,
  * choose `'rtc'` (WebRTC data channels, the default and the only cross-shell option),
- * `'native'` (the Noise-over-TCP LAN transport of plans/110 §4, Tauri↔Tauri only), or
+ * `'native'` (the Noise-over-TCP LAN transport of plans/110 section 4, Tauri↔Tauri only), or
  * `'none'` (no viable transport - an honest refusal, e.g. WebRTC-absent Linux with no
  * native invite to accept).
  *
@@ -23,7 +23,7 @@
  * NATIVE IS NEARBY-ONLY (security decision, 2026-08-13). The native transport connects a
  * socket, and the socket-open is restricted to a peer found by nearby discovery (an
  * address that came from an mDNS advert, not an attacker-authored token) and further to a
- * private/link-local range (plans/110 §5). So a native invite can ONLY be MINTED for a
+ * private/link-local range (plans/110 section 5). So a native invite can ONLY be MINTED for a
  * nearby pairing (`origin: 'nearby'`); a QR/link pairing (`origin: 'link'`) never yields
  * native, whatever the preference - it uses WebRTC, or refuses when WebRTC is absent.
  * A received `native` invite is by construction nearby-originated (only the nearby

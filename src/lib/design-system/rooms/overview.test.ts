@@ -202,7 +202,7 @@ test('COPY: the room says design system, never brand, and owns nothing', () => {
     overviewHtml({ furnished: false, colors: [], colorCount: 0, fonts: [], logoCount: 0, tokenCount: 0 }),
     overviewHtml({ furnished: true, colors: ['#ff6600'], colorCount: 1, fonts: ['Outfit'], logoCount: 1, tokenCount: 1 }),
   ].join('\n');
-  assert.equal(/\bbrand\b/i.test(shown), false, '"brand" is not this room\'s word (plan 97 §3)');
+  assert.equal(/\bbrand\b/i.test(shown), false, '"brand" is not this room\'s word (plan 97 section 3)');
   assert.equal(/\byour\b/i.test(shown), false, 'no possessives on the material');
   assert.equal(shown.includes('—'), false, 'no em-dashes in user-facing copy');
 });

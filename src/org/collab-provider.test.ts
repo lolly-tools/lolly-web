@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/collab-provider.ts + org/collab-protocol.ts - the work-collab client
- * (plan 100 §7, wave 3.1).
+ * (plan 100 section 7, wave 3.1).
  *
  * Everything is driven through injected seams: a fake WebSocket constructor, a
  * Map-backed outbox store, a captured timer, and a deterministic jitter source. No
@@ -257,7 +257,7 @@ test('an observer never sends an ops frame and never queues one', async () => {
   await h.handle.persisted();
   assert.equal(h.store.data.has(KEY()), false);
 
-  // Presence is a different lane and stays open to observers (plan 100 §7.5).
+  // Presence is a different lane and stays open to observers (plan 100 section 7.5).
   h.handle.adapter.presence({ userId: 'u1', name: 'Sam', color: '#0af', cursor: { x: 0, y: 0 }, selection: [] });
   assert.equal(h.socket().framesOfType('presence').length, 1);
   h.handle.close();
@@ -406,7 +406,7 @@ test('join-ack docState seeds local state and reaches the runtime as ops', async
 
   const seeded = h.events.filter((e) => e.kind === 'ops').flatMap((e) => [...e.ops]);
   assert.ok(seeded.some((op) => op.k === 'param' && op.key === 'title'));
-  // Geometry stays on the geometry lane, even in a snapshot seed (plans/99 §4.3).
+  // Geometry stays on the geometry lane, even in a snapshot seed (plans/99 section 4.3).
   assert.ok(seeded.some((op) => op.k === 'geom' && op.id === 'r1'));
   h.handle.close();
 });

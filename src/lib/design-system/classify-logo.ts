@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Logo variant classification (plan 97 §7.3) - pure heuristics that propose a
+ * Logo variant classification (plan 97 section 7.3) - pure heuristics that propose a
  * slot in the orientation × treatment matrix so a dropped logo file lands
  * somewhere sensible instead of asking the user to pick from eight boxes.
  *

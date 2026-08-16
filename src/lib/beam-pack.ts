@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * beam-pack - what a **Beam** actually carries, and what happens to it on arrival
- * (plan 100 §6.4, §11.15a, §11.16, §11.18, §11.24).
+ * (plan 100 section 6.4, section 11.15a, section 11.16, section 11.18, section 11.24).
  *
  * `collab/beam-protocol.ts` is the wire: frames, consent, ordering, integrity. It
  * knows nothing about sessions, uploads, or IndexedDB. THIS module is the
@@ -14,7 +14,7 @@
  *
  * ── The pack layout ───────────────────────────────────────────────────────────
  *
- * A beam is NOT a zip. §6.4 says "nothing new on disk format", and the backup bundle
+ * A beam is NOT a zip. section 6.4 says "nothing new on disk format", and the backup bundle
  * (`data-transfer.ts`) already answers the shape question: metadata in one JSON part
  * (`assets.json`), each file's bytes in a part of their own (`assets/blobs/*`). A beam
  * uses that same split, streamed instead of archived:
@@ -28,15 +28,15 @@
  * A zip would lose the two properties the beam needs. Byte-exactness: a
  * received asset's checksum must equal the one the sender's catalog already holds,
  * or receiver-side dedup stops being a string compare and C2PA credentials stop
- * surviving the trip (§6.4). And streaming: the protocol discloses a per-item size and
- * stages each item as it lands (§11.15a), which a single archive member cannot do.
+ * surviving the trip (section 6.4). And streaming: the protocol discloses a per-item size and
+ * stages each item as it lands (section 11.15a), which a single archive member cannot do.
  *
  * **Assets before sessions is essential, not tidiness.** A session's asset refs are
- * rewritten to the receiver's re-keyed ids at ingest (§11.18), so every asset a session
+ * rewritten to the receiver's re-keyed ids at ingest (section 11.18), so every asset a session
  * points at must already have landed - and the protocol sends items strictly in
  * declared order, so ordering them here is the whole mechanism.
  *
- * ── The closure rule (§11.16, stated so it can be tested) ─────────────────────
+ * ── The closure rule (section 11.16, stated so it can be tested) ─────────────────────
  *
  * "Send the assets this session uses" means exactly the ones the receiver could not
  * otherwise resolve. Walking the saved session JSON, every asset ref lands in one of
@@ -50,12 +50,12 @@
  *     it would push a private brand pack across a profile boundary that the receiver
  *     never opted into. A receiver on the same profile resolves it for free; a
  *     receiver on a different one gets the existing broken-ref affordance and the
- *     manifest says plainly which ids those were. That is §11.16's cross-profile
+ *     manifest says plainly which ids those were. That is section 11.16's cross-profile
  *     honesty: the pack never claims a cross-profile render will be faithful.
  *   - a **baked** ref (`meta.baked === true`) - nothing to do, its bytes ride inside
  *     the session JSON as a `data:` URL and resolve on any device.
  *
- * ── Ingest (§11.18) ──────────────────────────────────────────────────────────
+ * ── Ingest (section 11.18) ──────────────────────────────────────────────────────────
  *
  *   - **Ids are re-keyed.** A user-upload id is receiver-local, unlike the permanent
  *     catalog-id contract, so an arriving asset gets a fresh `user/beam/*` id and the
@@ -71,12 +71,12 @@
  *     `storeUserUpload`, whose job is normalising an unknown file). The digest
  *     is checked against the manifest before the write and, by default, re-read from
  *     the store and checked again after it, so "in === out" is asserted, not assumed.
- *     The ONE deliberate exception is markup (§11.22, below), which is sanitised -
+ *     The ONE deliberate exception is markup (section 11.22, below), which is sanitised -
  *     and markup is exactly the family that carries no C2PA hard binding, so nothing
  *     the byte-exactness rule exists to protect is inside it.
  *   - **Nothing the peer SAYS about a file describes the row.** See below.
  *
- * ── What a beam does not trust (§11.21, §11.22, §11.24) ──────────────────────
+ * ── What a beam does not trust (section 11.21, section 11.22, section 11.24) ──────────────────────
  *
  * The manifest is peer-controlled input, and the receiver's own device is what acts on
  * it. Three classes of manifest field used to be essential on the receiving side.
@@ -112,7 +112,7 @@
  * under their own name. The sanitiser is injected ({@link BeamSvgSanitiser}) and the
  * default fails CLOSED: a runtime with no DOM refuses the item rather than storing it.
  *
- * ── Where the heavy work runs (§11.15a) ──────────────────────────────────────
+ * ── Where the heavy work runs (section 11.15a) ──────────────────────────────────────
  *
  * Hashing is the expensive part of a build (a tag pack is tens of MB) and it is the
  * one part that is pure and DOM-free, so it runs in `beam-pack-worker.ts`. The worker
@@ -216,7 +216,7 @@ export const PACK_MAX_ID_CHARS = 64;
 export const PACK_MAX_LABEL_CHARS = 80;
 
 /** The id namespace every beamed asset lands in. Receiver-local by construction
- *  (§11.18), and distinguishable from `user/upload/*` in the manage-uploads UI. */
+ *  (section 11.18), and distinguishable from `user/upload/*` in the manage-uploads UI. */
 export const BEAM_ID_PREFIX = 'user/beam/';
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ export interface BeamPackAssetEntry {
 /**
  * There is deliberately NO `credential`/`aiGenerated` on the wire.
  *
- * Provenance that is IN the bytes survives a beam because the bytes do (§6.4). A
+ * Provenance that is IN the bytes survives a beam because the bytes do (section 6.4). A
  * provenance CLAIM travelling beside them would let a peer tell the receiver's device
  * what to assert about a file, including "this is AI-generated" onto a photograph,
  * or the reverse: omitting the claim to launder a real AI origin away. The receiver
@@ -280,7 +280,7 @@ export interface BeamPackSessionEntry {
 }
 
 /** A catalog asset a session uses. Carries NO payload item; the receiver resolves it
- *  from its own catalog, or shows a broken ref (§11.16). The marker is the point. */
+ *  from its own catalog, or shows a broken ref (section 11.16). The marker is the point. */
 export interface BeamPackRefEntry {
   readonly kind: 'asset-ref';
   readonly sourceId: string;
@@ -296,7 +296,7 @@ export interface BeamPackManifest {
   readonly minReader: number;
   readonly kind: BeamKind;
   readonly name: string;
-  /** The sender's chosen display name (§11.23: chosen, never leaked). Optional. */
+  /** The sender's chosen display name (section 11.23: chosen, never leaked). Optional. */
   readonly fromName?: string;
   readonly entries: readonly BeamPackEntry[];
 }
@@ -442,7 +442,7 @@ const FALLBACK_TYPES = new Set(['raster', 'video', 'audio', 'lottie', 'font', 't
 const OPAQUE_MIME = 'application/octet-stream';
 
 /**
- * What to store a received file as, read out of the file (§11.21).
+ * What to store a received file as, read out of the file (section 11.21).
  *
  * The manifest's `type`/`format` survive only as a label on an unrecognised container,
  * and even then the MIME is forced opaque. That is the whole defence against a peer
@@ -528,7 +528,7 @@ async function defaultSanitizeSvg(bytes: Uint8Array): Promise<Uint8Array> {
 /**
  * Depth cap on the saved-session walk. A session is JSON, so it cannot be cyclic, but
  * it CAN be deep. On the ingest side it is peer-controlled input, where unbounded
- * recursion risks a stack overflow (§11.21's JSON depth cap, applied to the one
+ * recursion risks a stack overflow (section 11.21's JSON depth cap, applied to the one
  * recursive read this module does).
  */
 const MAX_WALK_DEPTH = 64;
@@ -537,7 +537,7 @@ const MAX_WALK_DEPTH = 64;
 export interface SessionAssetRefs {
   /** Sender-local uploads - these must travel, or the session renders broken. */
   readonly user: readonly string[];
-  /** Catalog assets - listed only; the receiver resolves them locally (§11.16). */
+  /** Catalog assets - listed only; the receiver resolves them locally (section 11.16). */
   readonly library: readonly string[];
 }
 
@@ -619,7 +619,7 @@ export interface RefRewriteResult<T> {
 
 /**
  * Rewrite a received session's user-asset refs to the receiver's re-keyed ids
- * (§11.18). Pure, immutable, and the exact inverse of the closure rule above:
+ * (section 11.18). Pure, immutable, and the exact inverse of the closure rule above:
  *
  *   - a `user` ref whose base id is in `rekey` gets the new id (its modifier suffix
  *     rides along) and loses its `url`. A sender's `blob:` URL is meaningless here,
@@ -683,7 +683,7 @@ function defaultWorkerFactory(): BeamPackWorkerLike {
   return new Worker(new URL('./beam-pack-worker.ts', import.meta.url), { type: 'module' }) as unknown as BeamPackWorkerLike;
 }
 
-/** Hash in place. The §11.15a fallback, and what the CLI-shaped/headless path uses. */
+/** Hash in place. The section 11.15a fallback, and what the CLI-shaped/headless path uses. */
 async function hashHere(blobs: readonly Blob[]): Promise<string[]> {
   const out: string[] = [];
   for (const blob of blobs) out.push(await sriSha256(new Uint8Array(await blob.arrayBuffer())));
@@ -704,7 +704,7 @@ export function hashTimeoutFor(blobs: readonly Blob[]): number {
  *
  * Blobs cross by structured clone, so the bytes are not copied into the message. The
  * worker reads each one and releases it before the next, which keeps a 38 MB pack
- * from sitting in renderer RAM (§11.15a). Every failure mode resolves the same way,
+ * from sitting in renderer RAM (section 11.15a). Every failure mode resolves the same way,
  * by hashing in place: no `Worker` constructor, a CSP that refuses the URL, a worker
  * that dies mid-hash, or a worker that simply never answers (a throttled background
  * tab, a blob whose backing store went away mid-read). That last case is why there is
@@ -782,7 +782,7 @@ export type BeamPackSource =
       readonly fromName?: string;
       readonly workerFactory?: BeamPackWorkerFactory | null;
     }
-  /** "Everything tagged X" - the tag pack (§6.4). */
+  /** "Everything tagged X" - the tag pack (section 6.4). */
   | {
       readonly from: 'tag';
       readonly host: BeamPackHost;
@@ -799,7 +799,7 @@ export interface BuiltBeamOffer {
   /** Feed straight to `createBeamSender({ source })`. */
   readonly source: BeamSource;
   readonly totalBytes: number;
-  /** Catalog ids this pack expects the receiver to resolve locally (§11.16). Surfaced
+  /** Catalog ids this pack expects the receiver to resolve locally (section 11.16). Surfaced
    *  so the sender's UI can say "3 brand images resolve on their device" honestly. */
   readonly byReference: readonly string[];
   /** Release the retained blobs once the beam is over. */
@@ -844,7 +844,7 @@ const encoder = new TextEncoder();
  * Everything expensive happens once, here: the records are read, the blobs are hashed
  * (in the worker), and the manifest is sealed. After this returns, `source.read()` is
  * a pure slice, so the transport's pace is the only thing that governs the transfer.
- * That is the property `nextChunk()` backpressure depends on (§11.6).
+ * That is the property `nextChunk()` backpressure depends on (section 11.6).
  */
 export async function buildBeamOffer(source: BeamPackSource): Promise<BuiltBeamOffer> {
   // The pack's own labels (STRINGS) ride the lazy `collab` namespace. Awaited here, at
@@ -952,7 +952,7 @@ export async function buildBeamOffer(source: BeamPackSource): Promise<BuiltBeamO
   });
 
   // The by-reference entries: catalog assets the session uses. No payload, a marker,
-  // and the receiver's own catalog does the rest (§11.16).
+  // and the receiver's own catalog does the rest (section 11.16).
   for (const id of libraryIds) {
     entries.push({ kind: 'asset-ref', sourceId: id, label: clamp(id, PACK_MAX_LABEL_CHARS), resolve: 'local' });
   }
@@ -1052,11 +1052,11 @@ export async function buildBeamOffer(source: BeamPackSource): Promise<BuiltBeamO
  */
 export interface BeamIngestContext {
   readonly host: BeamPackHost;
-  /** The peer's chosen display name, for attribution. Never a profile field (§11.23). */
+  /** The peer's chosen display name, for attribution. Never a profile field (section 11.23). */
   readonly fromName?: string;
   /** Set by ingesting item 0. */
   manifest?: BeamPackManifest;
-  /** Sender asset id → receiver asset id (§11.18's re-key). */
+  /** Sender asset id → receiver asset id (section 11.18's re-key). */
   readonly rekey: Map<string, string>;
   /** Slots minted during THIS beam, so two sessions in one pack cannot collide. */
   readonly minted: Set<string>;
@@ -1100,7 +1100,7 @@ export function createBeamIngest(
 }
 
 /**
- * Undo everything this beam wrote (§11.18's "no partial ingest", completed).
+ * Undo everything this beam wrote (section 11.18's "no partial ingest", completed).
  *
  * `ingestBeamItem` is per-item by construction: the sink hands items over one at a
  * time, so a pack that fails on item 9 of 14 has already put eight rows on the device.
@@ -1173,7 +1173,7 @@ export type BeamIngestResult =
       readonly label: string;
       /** Refs pointed at a re-keyed asset. */
       readonly rewritten: number;
-      /** User refs this pack did not carry - they render as broken refs (§11.16). */
+      /** User refs this pack did not carry - they render as broken refs (section 11.16). */
       readonly unresolved: readonly string[];
     };
 
@@ -1220,7 +1220,7 @@ function parseManifest(text: string): BeamPackManifest {
 }
 
 /**
- * Peer-controlled metadata, made safe to carry onto a local record (§11.21 applied to
+ * Peer-controlled metadata, made safe to carry onto a local record (section 11.21 applied to
  * the one free-form field a beam has).
  *
  * `meta` is the assets bridge's open bag: the widest surface an ingest exposes, and
@@ -1370,7 +1370,7 @@ function isLibraryRow(id: string): boolean {
 }
 
 /**
- * An existing row holding exactly these bytes, or null - the §6.4 dedup.
+ * An existing row holding exactly these bytes, or null - the section 6.4 dedup.
  *
  * The size prefilter keeps this cheap: hashing is the whole cost, and only a row of
  * the identical byte length can possibly match. A row that already carries a
@@ -1409,7 +1409,7 @@ async function findDuplicate(
  * is why ingest does not reuse the picker's `storeUserUpload`, whose job is to
  * normalise an unknown file. Doing that here would change the bytes, break the checksum
  * the sender disclosed, and destroy the embedded C2PA binding the beam exists to
- * preserve (§6.4). The digest is checked before the write and, by default, re-read from
+ * preserve (section 6.4). The digest is checked before the write and, by default, re-read from
  * the store and checked again after it. A read-back that disagrees deletes the row it
  * just wrote rather than leaving a corrupt one behind.
  *
@@ -1476,7 +1476,7 @@ export async function ingestBeamItem(
     const records = await ctx.host.assets._exportUserAssets();
     const existing = await findDuplicate(storedChecksum, storedBytes.length, records);
     if (existing) {
-      // Dedup by checksum (§6.4). The re-key still records the mapping, so a session
+      // Dedup by checksum (section 6.4). The re-key still records the mapping, so a session
       // arriving later points at the row that was already here.
       if (sourceId) ctx.rekey.set(sourceId, existing);
       return { kind: 'asset', id: existing, sourceId, label, deduped: true };
@@ -1505,7 +1505,7 @@ export async function ingestBeamItem(
       meta: {
         ...(safeMeta(entry.meta) ?? {}),
         name: label,
-        // Attribution (§6.4: received items land attributed). `meta` is the record's
+        // Attribution (section 6.4: received items land attributed). `meta` is the record's
         // free-form field; there is no dedicated provenance column. So the source
         // is written both as data (`beamFrom`) and as copy (`beamNote`), and the
         // sender's own id is kept so a re-beam can be recognised as the same file.
@@ -1525,7 +1525,7 @@ export async function ingestBeamItem(
     ctx.written.push({ kind: 'asset', id });
 
     // "In === out", asserted rather than assumed: the bytes are read back out of the
-    // store and re-digested. Without this, the byte-exactness promise (§6.4, and the
+    // store and re-digested. Without this, the byte-exactness promise (section 6.4, and the
     // C2PA binding that depends on it) would rest on nobody ever adding a normalising
     // step to the write path. A disagreement DELETES the row: otherwise the failure
     // this catches would leave a permanently corrupt file in the library plus a
@@ -1544,7 +1544,7 @@ export async function ingestBeamItem(
     return { kind: 'asset', id, sourceId, label, deduped: false };
   }
 
-  // A session. Never overwrites: a new slot, always (§11.18).
+  // A session. Never overwrites: a new slot, always (section 11.18).
   let data: Record<string, unknown>;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes));

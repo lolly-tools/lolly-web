@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The loopback pair - plan 100 §10's "two real runtimes in one process" proof
+ * The loopback pair - plan 100 section 10's "two real runtimes in one process" proof
  * (wave 1.6).
  *
  * Every piece below this file is already unit-tested in isolation, and that is
@@ -17,7 +17,7 @@
  *    two `ReferenceCanvasDoc`s, two `createCollabSession`s over the real
  *    `attachCollabPlumbing`, the real presence engine, the real `createHistory`
  *    undo model wired in mountTool's order (history wrapper first, collab wrapper
- *    outside it - `views/tool.ts` §"Undo / redo", `collab-plumbing.ts` header).
+ *    outside it - `views/tool.ts` section "Undo / redo", `collab-plumbing.ts` header).
  *  - FAKE: the transport. `LoopbackWire` is the whole of it - one side's outbound
  *    ops become the other's `applyRemotePatch`, one side's presence frames become
  *    the other's `presenceIn`. That is precisely the `CollabSessionHandle`
@@ -30,7 +30,7 @@
  * delegates convergence to a `ReferenceCanvasDoc` and puts everything the LOCAL
  * doors produce (`onLocalChange`'s return, `apply`'s single op) on the wire.
  * `applyRemotePatch` is the remote door and sends nothing - which is where an echo
- * storm would come from if the seam ever blurred, and §5 of this file measures it.
+ * storm would come from if the seam ever blurred, and section 5 of this file measures it.
  *
  * ── ONE HONEST LIMITATION, STATED RATHER THAN HIDDEN ──────────────────────────
  *
@@ -85,8 +85,8 @@ import { ROW_ID_FIELD, ulid } from './row-id.ts';
 /**
  * Scalars of three types + one generic `blocks` collection + a HOOK that derives
  * both a declared input (`mirror`) and an extras-only key (`tally`) on every
- * change. The hook is what makes §5's claim testable at all: derived state is
- * re-derived locally on each peer and must never become ops (§11.9), and the two
+ * change. The hook is what makes section 5's claim testable at all: derived state is
+ * re-derived locally on each peer and must never become ops (section 11.9), and the two
  * peers' derivations must agree, which is the determinism the render hash reads.
  *
  * `formats: ['png']` keeps the engine from synthesising the `convertPaths` input
@@ -282,7 +282,7 @@ interface Node {
   /** Declared input id → value, the comparable projection of the input model. */
   values(): Record<string, InputValue>;
   hydrated(): string;
-  /** Flip the tab hidden/visible (§11.4's away flag). */
+  /** Flip the tab hidden/visible (section 11.4's away flag). */
   hide(hidden: boolean): void;
 }
 
@@ -295,7 +295,7 @@ interface Lanes {
 interface Wire {
   readonly a: Node;
   readonly b: Node;
-  /** The transport's join handshake (§4.7): each side's snapshot, minus the
+  /** The transport's join handshake (section 4.7): each side's snapshot, minus the
    *  joiner's own entry, plus a `live` connection event. */
   join(): void;
   /** Buffer ops instead of delivering them - a partition, which is how two edits
@@ -305,7 +305,7 @@ interface Wire {
   release(order?: 'a-first' | 'b-first'): void;
   /**
    * Stop DELIVERING one side's presence frames (they are still counted as sent).
-   * This is §11.4's real shape: a background tab whose timers are throttled to
+   * This is section 11.4's real shape: a background tab whose timers are throttled to
    * ~1/min keeps a perfectly healthy channel while its heartbeat stops arriving.
    * It is also the only way to make the away exemption testable - with both
    * engines live, A's own 15 s heartbeat refreshes B's TTL and nobody would ever
@@ -313,7 +313,7 @@ interface Wire {
    *
    * DIRECTIONAL, and that matters: a symmetric cut also makes the SILENT side
    * evict the healthy one, and an engine with an empty roster sends nothing at
-   * all (§4.7), so the backgrounded tab could never announce its own return. Only
+   * all (section 4.7), so the backgrounded tab could never announce its own return. Only
    * the starved side goes quiet here.
    */
   blackout(side: 'a' | 'b' | null): void;
@@ -352,7 +352,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
     const events = stream<CollabConnectionState>();
     const presenceOut: PresenceFrame[] = [];
 
-    // A fake Document, so the away flag (§11.4) is drivable without jsdom.
+    // A fake Document, so the away flag (section 11.4) is drivable without jsdom.
     const visibility = new Set<() => void>();
     const fakeDoc = {
       hidden: false,
@@ -442,7 +442,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
   const wire: Wire = {
     a, b,
     join() {
-      // The handshake the transport owes the presence engine (§4.7): the full set
+      // The handshake the transport owes the presence engine (section 4.7): the full set
       // MINUS the joiner's own entry (tldraw's orphan bug). One frame each is
       // enough to bootstrap - the receiving engine answers immediately, because a
       // client that has been dutifully silent is otherwise invisible to the
@@ -482,7 +482,7 @@ async function loopback(clock: FakeClock, opts: { names?: [string, string] } = {
 
 // ── comparison helpers ────────────────────────────────────────────────────────
 
-/** FNV-1a over the hydrated template - the render-hash proxy §10 asks for. The
+/** FNV-1a over the hydrated template - the render-hash proxy section 10 asks for. The
  *  hydrated string IS what the shell builds the DOM (and therefore the export)
  *  from, so equality here is the strongest determinism claim available without a
  *  browser. */
@@ -619,7 +619,7 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
   assertConverged(w, 'concurrent remove');
   assert.deepEqual(itemsOf(w.a).map(r => r.label), ['b-one'], 'both removals stuck');
 
-  // The determinism claim §10 actually asks for, stated once, at the end.
+  // The determinism claim section 10 actually asks for, stated once, at the end.
   const hash = renderHash(w.a.hydrated());
   assert.equal(renderHash(w.b.hydrated()), hash, 'render hash identical across the pair');
   assert.ok(w.a.hydrated().includes('<m>mirror:'), 'the hook-derived input is in the render');
@@ -646,7 +646,7 @@ test('interleaved scalar + blocks edits on both sides converge to one model, one
  * WHY IT WAS INVISIBLE ELSEWHERE: every unit test delivers a remote op to a side
  * that has NOT concurrently written the same key, which is the only case where "raw
  * op value" and "converged value" agree. It takes two real runtimes and a partition
- * to separate them, which is exactly what §10 asked this file for.
+ * to separate them, which is exactly what section 10 asked this file for.
  *
  * THE FIX: `flush()` now snapshots `adapter.state()` after `applyRemotePatch` and
  * builds the patch from the CONVERGED value of each touched key. That is also what a
@@ -703,7 +703,7 @@ test('a remote write that LOSES the merge does not stomp the local model', async
 });
 
 test('a constrained value converges in the MODEL even though the doc carries the raw write', async () => {
-  // §11.11: an out-of-range remote value is clamped by the receiver's own
+  // section 11.11: an out-of-range remote value is clamped by the receiver's own
   // constraints, not dropped. Both peers clamp identically, so the models
   // converge - while the doc keeps the literal that crossed the wire. Documented
   // here because "doc == model" is the assumption a future reader would make.
@@ -740,7 +740,7 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
   w.a.session.refreshLocation();
   clock.advance(PRESENCE_HEARTBEAT_MS * 3);
 
-  assert.equal(w.a.presenceOut.length, 0, 'nothing to say, nobody to hear (§4.7)');
+  assert.equal(w.a.presenceOut.length, 0, 'nothing to say, nobody to hear (section 4.7)');
   assert.equal(w.b.presenceOut.length, 0, 'and the same on the other side');
   assert.equal(clock.pending(), 0, 'not even a timer scheduled while alone');
 
@@ -766,10 +766,10 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
   assert.equal(w.a.presenceOut.length, 2, 'exactly one frame for the whole burst');
   assert.equal(
     w.b.session.state().peers[0]!.focus, focusToken,
-    'and B\'s roster shows the focus within one throttle window (§4.1, §4.7)',
+    'and B\'s roster shows the focus within one throttle window (section 4.1, section 4.7)',
   );
 
-  // ── away (§11.4): a hidden tab says so, and is never evicted ─────────────
+  // ── away (section 11.4): a hidden tab says so, and is never evicted ─────────────
   w.a.hide(true);
   clock.advance(PRESENCE_THROTTLE_MS);
   assert.equal(w.b.session.state().peers[0]!.away, true, 'the away flag crossed');
@@ -793,7 +793,7 @@ test('presence: silent while alone, one throttled frame carries focus, away cros
   // ── leave: the clean `null` frame removes immediately, not at the TTL ────
   assert.equal(w.b.session.state().peers.length, 1, 'A is still in the roster');
   w.a.session.close();
-  assert.equal(w.b.session.state().peers.length, 0, 'a clean leave removes at once (§4.7)');
+  assert.equal(w.b.session.state().peers.length, 0, 'a clean leave removes at once (section 4.7)');
   assert.equal(
     w.a.presenceOut.at(-1)?.state, null,
     'and the leave really was the `null` frame, sent while the wire was still up',
@@ -843,7 +843,7 @@ test('undo is local-user-scoped: A\'s undo re-converges the pair and never touch
   );
   assert.equal(w.b.values().title, 'A wrote this');
 
-  // A undoes. Per §5 a replay is just another local edit: it syncs.
+  // A undoes. Per section 5 a replay is just another local edit: it syncs.
   await w.a.undo();
   await w.settle();
 
@@ -854,7 +854,7 @@ test('undo is local-user-scoped: A\'s undo re-converges the pair and never touch
   assert.deepEqual(w.a.history.sizes(), { undo: 0, redo: 1 }, 'A\'s own stack moved');
   assert.deepEqual(
     w.b.history.sizes(), { undo: 1, redo: 0 },
-    'B\'s stack is untouched — my undo never moves your history (§10)',
+    'B\'s stack is untouched — my undo never moves your history (section 10)',
   );
 
   // And B's own undo still undoes B's edit, not A's.
@@ -920,7 +920,7 @@ test('op counts on the wire match the edits made: no echo, no hook-derived re-em
   const all = [...w.a.adapter.sent, ...w.b.adapter.sent];
   assert.ok(
     all.every(o => o.k !== 'param' || o.key !== 'mirror'),
-    'the hook-written input is never an op (§11.9)',
+    'the hook-written input is never an op (section 11.9)',
   );
   assert.ok(
     all.every(o => o.k === 'param' || o.k === 'order' || !('row' in o) || !('tally' in o.row)),
@@ -935,7 +935,7 @@ test('op counts on the wire match the edits made: no echo, no hook-derived re-em
 
   // POSITIVE CONTROL. `mirror` is absent above because the HOOK wrote it, not
   // because the seam refuses that input - typed by hand it crosses like any
-  // other scalar. Without this, the §11.9 assertion could pass for the wrong
+  // other scalar. Without this, the section 11.9 assertion could pass for the wrong
   // reason forever.
   await w.a.set('mirror', 'typed by hand');
   await w.settle();

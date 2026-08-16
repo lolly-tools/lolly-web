@@ -4,7 +4,7 @@
    when Vite injects this chunk. Do not rely on load order. */
 @layer views {
 /*
- * The candidate tray (lib/design-system/tray-ui.ts, plan 97 §8) — one DOM, two
+ * The candidate tray (lib/design-system/tray-ui.ts, plan 97 section 8) — one DOM, two
  * layouts:
  *
  *   ≥641px  a DOCK: a small fixed panel on the inline-end edge of the studio.

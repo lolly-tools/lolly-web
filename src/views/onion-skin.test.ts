@@ -466,7 +466,7 @@ test('onion.css: layered, pointer-transparent, non-dashed, and colour-blind safe
 
 test('onion.css: no custom property is defined in terms of ITSELF', () => {
   // A declaration whose value references its own property is a cycle (CSS Custom
-  // Properties L1 §3.2): it computes to the guaranteed-invalid value, and it does NOT
+  // Properties L1 section 3.2): it computes to the guaranteed-invalid value, and it does NOT
   // fall through to the inherited one. The high-contrast branch was written as
   // `--onion-master: max(var(--onion-master), 0.6)` on the ghost, intending to floor the
   // value the LAYER writes inline - which instead invalidated every opacity built on it,

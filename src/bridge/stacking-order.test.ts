@@ -39,7 +39,7 @@ const ROWS: Row[] = [
   { name: 'position:relative with z-index:auto is NOT a context',
     s: { position: 'relative', zIndex: 'auto' }, ctx: false, layer: 6, z: 0 },
 
-  // ── positioning (CSS 2.1 §9.9.1, Position L3 §9.9.1) ──────────────────────
+  // ── positioning (CSS 2.1 section 9.9.1, Position L3 section 9.9.1) ──────────────────────
   { name: 'relative + z-index:5', s: { position: 'relative', zIndex: '5' }, ctx: true, reason: 'position+z-index', layer: 7, z: 5 },
   { name: 'absolute + z-index:-1', s: { position: 'absolute', zIndex: '-1' }, ctx: true, reason: 'position+z-index', layer: 2, z: -1 },
   { name: 'absolute + z-index:0', s: { position: 'absolute', zIndex: '0' }, ctx: true, reason: 'position+z-index', layer: 6, z: 0 },
@@ -48,7 +48,7 @@ const ROWS: Row[] = [
   { name: 'fixed creates a context unconditionally', s: { position: 'fixed', zIndex: 'auto' }, ctx: true, reason: 'position:fixed', layer: 6 },
   { name: 'sticky creates a context unconditionally', s: { position: 'sticky', zIndex: 'auto' }, ctx: true, reason: 'position:sticky', layer: 6 },
 
-  // ── flex/grid items (Flexbox §5.4, Grid §6) ───────────────────────────────
+  // ── flex/grid items (Flexbox section 5.4, Grid section 6) ───────────────────────────────
   { name: 'static flex item + z-index:3', s: { position: 'static', zIndex: '3' }, parentDisplay: 'flex',
     ctx: true, reason: 'flex/grid item + z-index', layer: 7, z: 3 },
   { name: 'static grid item + z-index:-2', s: { position: 'static', zIndex: '-2' }, parentDisplay: 'grid',
@@ -85,7 +85,7 @@ const ROWS: Row[] = [
   { name: 'content-visibility:visible is not', s: { contentVisibility: 'visible' }, ctx: false },
   { name: 'view-transition-name', s: { viewTransitionName: 'hero' }, ctx: true, reason: 'view-transition-name' },
 
-  // ── floats (Appendix E §E.2 step 5) ───────────────────────────────────────
+  // ── floats (Appendix E section E.2 step 5) ───────────────────────────────────────
   { name: 'float:left → layer 4', s: { float: 'left' }, ctx: false, layer: 4 },
   { name: 'float on a POSITIONED box is not a float (position wins)',
     s: { float: 'left', position: 'absolute', zIndex: '2' }, ctx: true, layer: 7, z: 2 },
@@ -98,7 +98,7 @@ const ROWS: Row[] = [
   // like an explicit layer-6 member and hoist the entire page.
   { name: "TRAP z-index:'auto' must not read as an explicit 0",
     s: { position: 'static', zIndex: 'auto' }, ctx: false, layer: 3, z: 0 },
-  // CSS Contain 2 §2: style containment alone creates no stacking context.
+  // CSS Contain 2 section 2: style containment alone creates no stacking context.
   { name: 'TRAP contain:style is NOT a creator', s: { contain: 'style' }, ctx: false },
   { name: 'contain:paint IS', s: { contain: 'paint' }, ctx: true, reason: 'contain' },
   { name: 'contain:layout IS', s: { contain: 'layout' }, ctx: true, reason: 'contain' },

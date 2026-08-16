@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * versions.ts - the versioned design-system model (plans/97 §6a), re-exported.
+ * versions.ts - the versioned design-system model (plans/97 section 6a), re-exported.
  *
  * The implementation moved to `engine/src/design-version.ts` in engine 1.109.0.
  * It had to: the descendant-exclusion discovery rule, the slug grammar and the

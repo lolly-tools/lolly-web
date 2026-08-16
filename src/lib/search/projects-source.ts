@@ -3,7 +3,7 @@
  * The projects search source (plans/99 M2) - the ONE definition of how a saved
  * session or folder is matched, and how a session opens, shared by BOTH
  * views/projects.ts and the spotlight's projects provider
- * (lib/search/providers/projects.ts). Extracted per plans/99 §8 M2 so the two
+ * (lib/search/providers/projects.ts). Extracted per plans/99 section 8 M2 so the two
  * surfaces cannot drift: same haystack, same token semantics, same open target.
  *
  * Matching is lib/search's folded token-AND (plans/99 principle 1) - this is

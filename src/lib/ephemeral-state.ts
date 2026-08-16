@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * ephemeral-state - a memory-backed `host.state` for a runtime whose saves must
- * never reach this device's session store (plan 100 §11.17, wave 0.5).
+ * never reach this device's session store (plan 100 section 11.17, wave 0.5).
  *
- * The acceptor of a private collab edits the INVITER's session (§6.2a: the inviter
+ * The acceptor of a private collab edits the INVITER's session (section 6.2a: the inviter
  * owns persistence). Their working copy is ephemeral - no slot written, nothing in
  * their Projects view - until they deliberately "Save a copy". The plan's ruling on
  * how to get there is the reason this file is four lines of logic rather than an

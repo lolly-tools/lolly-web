@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Collaborator colours, derived from the active design system (plans/100 §4.4).
+ * Collaborator colours, derived from the active design system (plans/100 section 4.4).
  *
  * A collab paints one colour per person - the focus ring on a sidebar row, the
  * cursor and focus region on the canvas overlay, the avatar in the collab pill.
@@ -39,7 +39,7 @@
  * COLOUR IS NEVER THE ONLY DIFFERENTIATOR - that is what makes the trade
  * affordable. Rings and cursors carry a 1px theme-contrast halo (the
  * selection-handle convention) and a name chip, and the roster spells everyone
- * out; §4.8 of the plan makes it an a11y requirement, not a nicety. This module
+ * out; section 4.8 of the plan makes it an a11y requirement, not a nicety. This module
  * is one of three signals, so it may aim for "clearly a different person" rather
  * than "readable as 14px text".
  */
@@ -166,7 +166,7 @@ export const HIGH_CONTRAST_SURFACES = {
  */
 export const BRAND_THEME_SURFACES = ['#0c322c', '#14433c', '#1b4b44', '#1c4f48', '#1d534b'] as const;
 
-/** Minimum hue separation between two concurrent collaborators (plan §4.4). */
+/** Minimum hue separation between two concurrent collaborators (plan section 4.4). */
 export const COLLAB_MIN_DELTA_H = 50;
 
 /**

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Beam pack hashing worker (plan 100 §11.15a: "beam work stays off the main thread").
+ * Beam pack hashing worker (plan 100 section 11.15a: "beam work stays off the main thread").
  *
  * Building a pack is one expensive step and a lot of cheap ones. The expensive step is
  * the SHA-256 over every file's bytes - a tag pack is tens of megabytes, and hashing it
@@ -13,7 +13,7 @@
  * not copy its bytes across the boundary - the worker reads each blob and lets it go
  * before touching the next, which is what stops a 38 MB pack from being resident in the
  * renderer twice. Web Crypto has no streaming digest, so ONE item is materialised at a
- * time inside the worker; that is the memory profile §11.15a asks for, and the reason
+ * time inside the worker; that is the memory profile section 11.15a asks for, and the reason
  * this is a loop rather than a `Promise.all`.
  *
  * The digest itself is `sriSha256` imported from the protocol - deliberately the very

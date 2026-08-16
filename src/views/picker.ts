@@ -535,7 +535,7 @@ async function render(
       </div>
       ${opts.allowUpload ? `
         <!-- Where the shared trim-to-content card mounts, between the scrolling body and
-             the upload row that raised the question (plan 97 §7.3). Empty + hidden at rest. -->
+             the upload row that raised the question (plan 97 section 7.3). Empty + hidden at rest. -->
         <div class="asset-picker-trim trimo-host" hidden></div>
         <footer class="asset-picker-footer">
           <label class="asset-picker-upload">
@@ -1072,7 +1072,7 @@ async function render(
   }
 
   /**
-   * The trim-to-content offer on the picker's upload flow (plan 97 §7.3) - the path
+   * The trim-to-content offer on the picker's upload flow (plan 97 section 7.3) - the path
    * EVERY tool's asset input goes through, so a padded logo dropped straight into a
    * tool gets the same before/after card as one added in the design-system studio.
    *
@@ -1495,7 +1495,7 @@ async function render(
   // pane keeps its exact field set at the call site. `q` arrives trimmed +
   // lowercased from the search box; tokenize() folds it the rest of the way
   // (diacritics), so "café" finds "cafe" and the reverse. Empty query matches
-  // everything - search is a filter here, not a mode.
+  // everything - search acts as a filter, not a mode.
   let lastQ = '';
   let lastQTokens: string[] = [];
   const searchMatches = (q: string, ...fields: Array<string | null | undefined>): boolean => {
@@ -3339,7 +3339,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   // The depth of what we are actually STORING - the twin of the catalog label
   // scripts/checksum-assets.ts writes, so a user's own image carries the same
-  // written origin a pack asset does (plans/61-deeprichpixels.md §10 item 6).
+  // written origin a pack asset does (plans/61-deeprichpixels.md section 10 item 6).
   //
   // Deliberately sniffed from `blob`, not from `raw` above: those two answer
   // different questions and only one of them is honest here. `raw` is the
@@ -3423,6 +3423,89 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   // Re-resolve via the public API so we get a proper AssetRef with object URL.
   return host.assets.get(id);
+}
+
+/**
+ * Replace the FILE behind one existing upload, KEEPING its id - so every saved session,
+ * tool, template and project folder that references `targetId` redrives with the new bytes on
+ * next mount (the runtime re-resolves asset refs by id). Baked refs and version-pinned frozen
+ * bytes are the intended exceptions: their bytes were snapshotted and are not re-read.
+ *
+ * The new file goes through the SAME full ingest as a fresh upload (format sniff, dimensions,
+ * resize, and its OWN C2PA / AI provenance - extracted from the NEW file, never inherited from
+ * the replaced asset, which would launder a different image's disclosure; this is the one place
+ * a replace deliberately diverges from commitTrim, whose derivative-of-the-same-image edit DOES
+ * carry the credential forward). To reuse all of that ingest without threading a target-id
+ * override through storeUserUpload's format-normalising recursion, we ingest to a throwaway id,
+ * then re-key the resulting record onto `targetId` with a bumped `version` (so the
+ * `user:<id>:<format>:<version>` object-URL cache changes and the grid + sessions stop painting
+ * the old bytes) and drop the throwaway. The display name is kept from the replaced asset (its
+ * extension re-matched to the new bytes, the honesty renameExt keeps); the id never changes - it
+ * is a permanent contract.
+ */
+type ReplaceHost = PickerHost & {
+  assets: PickerHost['assets'] & {
+    _exportUserAssets(): Promise<Array<UserAssetRecordInput & { id: string; type?: string; version?: string; checksum?: string }>>;
+  };
+};
+
+// raster + vector are both "still image" kinds - a replace may swap between them - but turning
+// an image slot into a video/audio/lottie/data one would silently break every consumer.
+function assetKindOf(type?: string): string {
+  return type === 'raster' || type === 'vector' ? 'image' : (type ?? 'other');
+}
+
+export async function replaceUserUpload(host: ReplaceHost, targetId: string, file: File): Promise<AssetRef> {
+  // Full ingest of the NEW bytes to a throwaway id. Its provenance is the new file's own.
+  const fresh = await storeUserUpload(host, file);
+  const bail = async (msg: string, code?: string): Promise<never> => {
+    await host.assets._deleteUserAsset(fresh.id).catch(() => {});
+    throw Object.assign(new Error(msg), code ? { code } : {});
+  };
+  const recs = await host.assets._exportUserAssets();
+  const freshRec = recs.find((r) => r.id === fresh.id);
+  if (!freshRec) return bail('replace: the freshly-ingested record could not be read back');
+  const oldRec = recs.find((r) => r.id === targetId);
+
+  // Guard the destructive cases: a document (PDF/PPTX/.ai) lands as an unreadable format:'bin'
+  // raster, and swapping an image slot for a video/audio/lottie would break every consumer.
+  // Refuse (and drop the throwaway) rather than overwrite the kept id with junk - the id is a
+  // permanent contract every session already points at.
+  if (freshRec.format === 'bin') {
+    return bail(t('That file can’t be used as an image. Try a PNG, JPG, SVG or WebP.'), 'REPLACE_KIND_MISMATCH');
+  }
+  if (oldRec?.type && assetKindOf(freshRec.type) !== assetKindOf(oldRec.type)) {
+    return bail(t('You can only replace this with the same kind of file (for example, an image with an image).'), 'REPLACE_KIND_MISMATCH');
+  }
+
+  const oldName = oldRec?.meta?.name;
+  const { id: _throwaway, checksum: _staleChecksum, ...carried } = freshRec;
+
+  // Drop the throwaway FIRST: leaving it until after the target write makes the target's quota
+  // check double-count the new bytes (a net-zero replace could spuriously fail near quota) and,
+  // on a failed write, strands it as a visible duplicate. The blob handle captured in `carried`
+  // stays readable after the row is deleted (a structured-clone snapshot), so the re-key works.
+  await host.assets._deleteUserAsset(fresh.id).catch(() => {});
+
+  await host.assets._uploadUserAsset({
+    ...carried,
+    id: targetId,
+    // Bump so the user:<id>:<format>:<version> cache key changes and every ref redrives.
+    version: String(Date.now()),
+    // Replace swaps BYTES only - keep the asset's existing display name verbatim (Rename is the
+    // separate verb for the name; mangling a user label like "Headshot v2.1" via renameExt would
+    // be wrong). The format badge tracks `format`, not the label's extension.
+    meta: { ...carried.meta, ...(oldName != null ? { name: String(oldName) } : {}) },
+  });
+
+  // The re-key went through _uploadUserAsset, which (unlike _restampUserAsset / _deleteUserAsset)
+  // does NOT drop a stale clip proxy - so a video replace would keep scrubbing the OLD frames.
+  // Drop it here (a no-op when there is no proxy); the timeline scrubs the new bytes until a
+  // fresh proxy builds on demand.
+  await import('../lib/clip-proxy.ts').then((m) => m.deleteProxy(targetId)).catch(() => {});
+
+  // A fresh AssetRef for the replaced id (new version ⇒ new object URL).
+  return (await host.assets.get(targetId)) ?? { ...fresh, id: targetId };
 }
 
 /**

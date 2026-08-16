@@ -9,7 +9,7 @@
  * re-renders just those tools, off the critical path, and the gallery lazily
  * swaps the new image in.
  *
- * Performance is the whole constraint here:
+ * Performance constrains everything in this module:
  *   - SCOPE: only tools flagged `personalized` in the catalog index AND able to
  *     export a raster format (so the result is usable as an <img>) are touched.
  *     For the current catalog that's two tools; the other ~24 are never rendered

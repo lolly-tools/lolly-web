@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * views/export-depth.ts - the export panel's pro-format grouping and depth fact
- * (plans/61-deeprichpixels.md §10 item 3).
+ * (plans/61-deeprichpixels.md section 10 item 3).
  *
  * Run directly:  node --test shells/web/src/views/export-depth.test.ts
  *
@@ -132,7 +132,7 @@ test('an HDR JPEG says NOTHING, because the gain map is not guaranteed', () => {
 });
 
 test('HDR AVIF and HDR TIFF say nothing, because they are still 8-bit', () => {
-  // renderBitmap / renderTiff keep the legacy transform (§9b "untouched on
+  // renderBitmap / renderTiff keep the legacy transform (section 9b "untouched on
   // purpose"). Stating a depth here would be the export-side padding lie.
   for (const f of ['avif', 'tiff', 'webp', 'pdf', 'svg']) {
     assert.equal(depthFact(f, { hdr: true }), null, f);

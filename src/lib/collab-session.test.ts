@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The collab session composition layer (plan 100 §4.6, §5).
+ * The collab session composition layer (plan 100 section 4.6, section 5).
  *
  * Every piece this module composes is already tested on its own, so what is worth
  * pinning here is only what COMPOSITION can get wrong - and each of these has a
  * specific way of failing silently:
  *
- *  1. ZERO TRAFFIC WHEN ALONE survives the wiring (§4.7). The presence engine
+ *  1. ZERO TRAFFIC WHEN ALONE survives the wiring (section 4.7). The presence engine
  *     promises it; a session that pushed a frame on every focus change would break
  *     it from the outside, and single-player would start paying for a feature it
  *     does not have.
@@ -19,12 +19,12 @@
  *     deterministic: a peer's own broadcast colour is honoured, an unknown one is
  *     re-derived, and nobody doubles up.
  *  5. An observer's edits never become ops, while remote ops still land (contract
- *     §9 - read everything, write nothing).
+ *     section 9 - read everything, write nothing).
  *  6. `close()` leaves NOTHING behind - zero armed timers (asserted through the
  *     injected timer hook, the only honest way), the runtime's setInput restored,
  *     the transport closed, and a clean `null` leave frame sent while the wire was
  *     still up.
- *  7. THE GUARD IS ACTUALLY ON BOTH INBOUND WIRES (§6.3, §11.21). `op-guard.ts`
+ *  7. THE GUARD IS ACTUALLY ON BOTH INBOUND WIRES (section 6.3, section 11.21). `op-guard.ts`
  *     proves what the guard decides; these cases prove it is CONSULTED - that a
  *     refused op cannot reach `runtime.applyPatch` or the converging document, that
  *     a refused presence frame cannot reach the roster, and that structural abuse
@@ -301,7 +301,7 @@ test('alone: focus changes cost nothing on the wire, and arm no timer', () => {
   focusIn(root.querySelector('[data-input-id="subtitle"]')!);
   clock.advance(PRESENCE_HEARTBEAT_MS * 3);
 
-  assert.equal(w.sent.length, 0, 'nothing to say, nobody to hear (plan 100 §4.7)');
+  assert.equal(w.sent.length, 0, 'nothing to say, nobody to hear (plan 100 section 4.7)');
   assert.equal(clock.pending(), 0, 'and not even a timer scheduled');
   session.close();
   root.remove();
@@ -465,7 +465,7 @@ test("colours: a peer's own broadcast colour is honoured, an unknown one is re-d
   });
 
   // P1 paints itself blue and says so; P2 is on a different brand pack, so its hex
-  // is not one of ours at all (§11.16) and has to be re-derived locally.
+  // is not one of ours at all (section 11.16) and has to be re-derived locally.
   w.deliver({ from: 'P1', seq: 1, state: peerState({ userId: 'P1', color: '#0000AA' }) });
   w.deliver({ from: 'P2', seq: 1, state: peerState({ userId: 'P2', color: '#123456' }) });
 
@@ -746,7 +746,7 @@ test('a throwing subscriber does not stop the ones after it', () => {
 });
 
 test('the "Invitee 2+" ordinal is the same on every device, not lowest-for-whoever-is-asking', () => {
-  // §4.5's numbering is consumed by collabDisplayName, which feeds the avatar title,
+  // section 4.5's numbering is consumed by collabDisplayName, which feeds the avatar title,
   // the roster row, the stack's aria-label, the focus chip and every announce()
   // string. If two devices number the same two people differently, each side calls
   // ITSELF "Invitee" and the other "Invitee 2" - two people with two different names
@@ -784,7 +784,7 @@ test('the "Invitee 2+" ordinal is the same on every device, not lowest-for-whoev
     'and they still agree once a host is declared');
 });
 
-// ── the guard on the two inbound wires (§6.3, §11.21) ─────────────────────────
+// ── the guard on the two inbound wires (section 6.3, section 11.21) ─────────────────────────
 
 /** One op origin. The client id is a peer's, because that is the point. */
 const from = (clock: number, client = 'P1'): { client: string; clock: number } => ({ client, clock });
@@ -805,7 +805,7 @@ function guarded(items: InputModelItem[], over: Parameters<typeof wire>[0] = {})
 }
 
 test('drop-class malice is refused per-op, and the valid ops beside it still apply', async () => {
-  // §11.11's rule, which is also §11.19's forward-compatibility rule: an op this
+  // section 11.11's rule, which is also section 11.19's forward-compatibility rule: an op this
   // build cannot make sense of costs that op and nothing else. An input id we do not
   // declare (a newer peer), an object-valued input addressed on the scalar lane, and
   // an over-sized string are all things a buggy or half-migrated peer genuinely
@@ -840,7 +840,7 @@ test('a prototype key condemns the whole message and leaves as an abuse event', 
   // The other half of the split. A `__proto__` collection id, and an own `__proto__`
   // inside an `add` row, are both schema-VALID (op-guard.test.ts asserts that against
   // the canonical ajv validator) and both become object keys downstream. Nothing in
-  // this codebase can emit one, so §11.21 treats the sender as hostile: the batch is
+  // this codebase can emit one, so section 11.21 treats the sender as hostile: the batch is
   // condemned entire - including the perfectly good op travelling with it - and the
   // verdict goes out for the transport to act on.
   const g = guarded([text('title', 'before'), blocks('items', [{ [ROW_ID_FIELD]: 'AAA', label: 'a' }])]);
@@ -884,7 +884,7 @@ test('a prototype key condemns the whole message and leaves as an abuse event', 
 });
 
 test('a presence flood raises the abuse event, and the flooding frame never lands', () => {
-  // §11.21's ~40 frames/s. The window is measured on the INJECTED clock, which never
+  // section 11.21's ~40 frames/s. The window is measured on the INJECTED clock, which never
   // advances here - so this is one second's worth of traffic by construction, with no
   // sleeping and no dependence on how fast the machine runs the loop.
   const g = guarded([text('title', '')]);
@@ -911,7 +911,7 @@ test('a presence flood raises the abuse event, and the flooding frame never land
 test('a presence frame that would poison a CSS value is dropped, not escalated', () => {
   // A colour is painted into a style value, so `url(…)` in one is a network fetch
   // from the viewer's browser to an address the peer chose. It is refused - but it is
-  // a VALUE, and a value out of range is exactly what §11.11 says to drop and carry
+  // a VALUE, and a value out of range is exactly what section 11.11 says to drop and carry
   // on with, so the peer keeps its seat.
   const g = guarded([text('title', '')]);
   const log = captureWarn();

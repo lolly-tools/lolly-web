@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * sdp-codec - the invite/accept payload of a private collab (plan 100 §6.1, wave 2.1).
+ * sdp-codec - the invite/accept payload of a private collab (plan 100 section 6.1, wave 2.1).
  *
  * THE PROBLEM. Non-trickle ICE makes the whole signaling channel exactly two
  * payloads, and the humans are the channel: A shows an invite, B shows an answer.
  * A real Chrome data-channel offer is ~2.5 KB of SDP against a ~2,953-byte absolute
- * QR ceiling and a ~100-byte *practical* scanning budget (§2.9) - so the SDP itself
+ * QR ceiling and a ~100-byte *practical* scanning budget (section 2.9) - so the SDP itself
  * cannot be the payload. Almost none of it varies: the m-line, the transport, the
  * SCTP port and the session boilerplate are identical on every browser and are
  * reconstructed from a template here. What actually varies is five things:
@@ -16,7 +16,7 @@
  * compact binary record with the invite metadata, dresses in a text skin, and
  * reconstructs on the far side into a valid SDP for `setRemoteDescription`.
  *
- * THE FINGERPRINT IS THE TRUST ROOT (§6.1). Because it rides inside the invite, the
+ * THE FINGERPRINT IS THE TRUST ROOT (section 6.1). Because it rides inside the invite, the
  * channel the humans used to exchange the blob *is* the authentication: a hostile
  * intermediary can drop the pairing but cannot MITM it. Two consequences enforced
  * here rather than documented and hoped for: only SHA-256/384/512 fingerprints are
@@ -25,7 +25,7 @@
  * decoded payload can inject an SDP line (a `\r\n` inside an ufrag would otherwise
  * let a hostile invite append `a=` attributes of its own choosing).
  *
- * DEFENSIVE BY CONTRACT (§11.21). This payload arrives from a stranger's QR code or
+ * DEFENSIVE BY CONTRACT (section 11.21). This payload arrives from a stranger's QR code or
  * a pasted link - it is untrusted input, exactly like a shared URL. Every public
  * function returns `CodecResult<T>` and NEVER throws: length caps before decode, a
  * version byte, exact-consumption parsing (trailing bytes are an error, not slack),
@@ -66,10 +66,10 @@
  *   version field: u8 lead. `0x80` exactly → a compact `major.minor.patch` as three
  *   u8s (so "1.108.0" costs 4 bytes, not 8); otherwise the lead is a byte length.
  *
- * `opVersion` is the inviter's `CANVAS_OP_VERSION`: contract §9 turns a MAJOR skew
+ * `opVersion` is the inviter's `CANVAS_OP_VERSION`: contract section 9 turns a MAJOR skew
  * into observer-only, and the acceptor has to know that BEFORE it answers, so it
  * cannot wait for the connection. It is flag-gated rather than mandatory so an
- * answer-shaped or minimal invite pays nothing for it (§11.19).
+ * answer-shaped or minimal invite pays nothing for it (section 11.19).
  *
  * Two encodings earn their complexity. **ICE credentials pack at 6 bits per char**
  * because RFC 5245's `ice-char` set is `ALPHA / DIGIT / "+" / "/"` - exactly 64
@@ -84,7 +84,7 @@
  * up as a number: a LAN invite (tool id + versions + name + colour + opVersion) is
  * **148 B** with three mDNS host candidates, **105 B** with an IPv4 host + srflx pair
  * and **98 B** with a single host candidate; the matching answers are **115 B** and
- * **72 B**. All inside the ≤150 B the QR budget in §6.1 asks for.
+ * **72 B**. All inside the ≤150 B the QR budget in section 6.1 asks for.
  *
  * ── The two text skins ─────────────────────────────────────────────────────────
  *
@@ -105,7 +105,7 @@
  * encoding) is denser still (~990 bits here) but its alphabet includes SPACE and
  * `$ % * + . / :`: a token that cannot be double-click-selected, survives chat
  * clients badly, and needs escaping in a URL. Since this same skin IS the paste
- * fallback everywhere BarcodeDetector is missing (§11.27), the ~6 % symbol saving
+ * fallback everywhere BarcodeDetector is missing (section 11.27), the ~6 % symbol saving
  * loses to "selectable, unambiguous, typeable". RFC 4648's alphabet also omits
  * 0/1/8/9 precisely so O/0, I/1 and B/8 cannot be copied down wrong.
  *
@@ -122,7 +122,7 @@
 /** Bump ONLY with a new binary shape; old tokens must fail loudly, never silently. */
 export const SDP_CODEC_VERSION = 1;
 
-/** Query params the ceremony uses for the two legs (§6.1, §11.25). */
+/** Query params the ceremony uses for the two legs (section 6.1, section 11.25). */
 export const INVITE_PARAM = 'inv';
 export const ANSWER_PARAM = 'ans';
 
@@ -134,7 +134,7 @@ export const MAX_CANDIDATES = 8;
 export const MAX_TOOL_ID_BYTES = 64;
 export const MAX_VERSION_BYTES = 32;
 export const MAX_NAME_BYTES = 48;
-/** RFC 5245 §15.4 minimums - libwebrtc enforces them, so we refuse them early. */
+/** RFC 5245 section 15.4 minimums - libwebrtc enforces them, so we refuse them early. */
 export const MIN_UFRAG_CHARS = 4;
 export const MIN_PWD_CHARS = 22;
 const MAX_ICE_CHARS = 127;
@@ -152,7 +152,7 @@ export interface DtlsFingerprint {
 }
 
 export interface IceCandidate {
-  /** `relay` never appears: no TURN in OSS (§6.2a), so it is dropped at extract. */
+  /** `relay` never appears: no TURN in OSS (section 6.2a), so it is dropped at extract. */
   type: 'host' | 'srflx';
   protocol: 'udp' | 'tcp';
   /** IPv4, IPv6, an mDNS `<uuid>.local` name, or any other host token, verbatim. */
@@ -173,21 +173,21 @@ export interface SdpMaterial {
   setupRole: SetupRole;
 }
 
-/** What an invite carries beyond the connection material (§6.1). */
+/** What an invite carries beyond the connection material (section 6.1). */
 export interface InviteMeta {
   v: typeof SDP_CODEC_VERSION;
   /** The tool both peers must already have - probed locally before accepting. */
   toolId: string;
   toolVersion: string;
   engineVersion: string;
-  /** Chosen display name, never a profile field (§11.23). */
+  /** Chosen display name, never a profile field (section 11.23). */
   name?: string;
-  /** Index into the brand-derived collaborator palette (§4.4). 0..254. */
+  /** Index into the brand-derived collaborator palette (section 4.4). 0..254. */
   colorIndex?: number;
   /**
    * The inviter's `CANVAS_OP_VERSION`. Optional in the wire shape (flag-gated, free
    * when absent) but the acceptor needs it before answering: a MAJOR skew means
-   * observer-only, not "find out once connected" (contract §9, §11.19).
+   * observer-only, not "find out once connected" (contract section 9, section 11.19).
    */
   opVersion?: string;
 }
@@ -297,7 +297,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
  *
  * The second half of the list is not padding. `name` is a stranger's display string
  * in a pairing whose whole trust model is "the person you meant to pair with"
- * (§11.23), and the C0/C1 scan alone let two attacks through the chip: an
+ * (section 11.23), and the C0/C1 scan alone let two attacks through the chip: an
  * unterminated RIGHT-TO-LEFT OVERRIDE reverses the chrome printed after it, and a
  * zero-width space or ZWNBSP renders a chip pixel-identical to another
  * collaborator's name. Neither appears in a name a person would type, so refusing
@@ -592,7 +592,7 @@ const TOOL_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
  * Ids that would resolve on a bare object's prototype chain. The charset above
  * refuses `__proto__` only incidentally (its leading `_`), and `constructor` /
  * `prototype` are ordinary lowercase words that sail through - but the decoded id
- * goes straight into the acceptor's "do I actually have this tool?" probe (§6.1),
+ * goes straight into the acceptor's "do I actually have this tool?" probe (section 6.1),
  * and a probe that indexes a plain-object catalog map would answer *yes* for a tool
  * that does not exist. Three words refused here beats requiring every future
  * consumer to remember to use a `Map`.
@@ -929,7 +929,7 @@ export interface ExtractOptions {
  * Deliberately lenient about line endings, attribute placement (Firefox puts the
  * fingerprint at session level, Chrome at media level) and candidate extensions,
  * and deliberately strict about what it keeps: component 1 only, udp/tcp only,
- * host/srflx only - `relay` is dropped on principle (no TURN in OSS, §6.2a) and
+ * host/srflx only - `relay` is dropped on principle (no TURN in OSS, section 6.2a) and
  * `prflx` never appears in SDP.
  */
 export function extract(sdp: string, opts: ExtractOptions = {}): CodecResult<SdpMaterial> {
@@ -1024,18 +1024,18 @@ function parseCandidateLine(rest: string, keepPriority: boolean): IceCandidate |
  * is template rather than payload.
  *
  * `max-message-size` is stated as Chrome's 262,144 even when the peer is Firefox
- * (which advertises ~1 GB): the value only bounds what WE send, and §11.6 caps every
+ * (which advertises ~1 GB): the value only bounds what WE send, and section 11.6 caps every
  * message at 64 KB regardless - understating it is free, guessing high is not.
  *
  * `a=ice-options:trickle` is deliberately ABSENT and `a=end-of-candidates` present:
- * the ceremony is non-trickle by construction (§2.9), and a static payload cannot
+ * the ceremony is non-trickle by construction (section 2.9), and a static payload cannot
  * carry a live back-channel. Saying "trickle" would leave the peer waiting for
  * candidates that can never arrive.
  */
 const SCTP_PORT = 5000;
 const MAX_MESSAGE_SIZE = 262144;
 
-/** RFC 8445 §5.1.2.1 type preferences; component 1 throughout. */
+/** RFC 8445 section 5.1.2.1 type preferences; component 1 throughout. */
 const TYPE_PREF: Readonly<Record<IceCandidate['type'], number>> = { host: 126, srflx: 100 };
 
 function candidatePriority(c: IceCandidate, index: number): number {
@@ -1043,7 +1043,7 @@ function candidatePriority(c: IceCandidate, index: number): number {
   return TYPE_PREF[c.type] * 0x1000000 + local * 256 + 255;
 }
 
-/** Same type+protocol share a foundation, per RFC 8445 §5.1.1.3. */
+/** Same type+protocol share a foundation, per RFC 8445 section 5.1.1.3. */
 function candidateFoundation(c: IceCandidate): number {
   return (c.type === 'host' ? 1 : 2) + (c.protocol === 'tcp' ? 2 : 0);
 }
@@ -1074,7 +1074,7 @@ function sessionId(m: SdpMaterial): string {
 /**
  * Rebuild a valid single-data-channel SDP from the material. `kind` decides the
  * one thing an offer and an answer genuinely disagree about: an answer must never
- * say `actpass` (RFC 5763 §5) - it picks a role - so an answer built from
+ * say `actpass` (RFC 5763 section 5) - it picks a role - so an answer built from
  * `actpass` material is coerced to `active`, which is what a browser answerer
  * chooses anyway.
  */
@@ -1104,7 +1104,7 @@ export function reconstruct(material: SdpMaterial, kind: 'offer' | 'answer'): Co
     material.candidates.forEach((c, i) => {
       const priority = c.priority ?? candidatePriority(c, i);
       let line = `a=candidate:${candidateFoundation(c)} 1 ${c.protocol} ${priority} ${c.address} ${c.port} typ ${c.type}`;
-      // raddr/rport are diagnostics only (RFC 8445 §5.1.3); browsers themselves emit
+      // raddr/rport are diagnostics only (RFC 8445 section 5.1.3); browsers themselves emit
       // the null pair when the base is withheld, so it is the honest reconstruction.
       if (c.type === 'srflx') line += ' raddr 0.0.0.0 rport 0';
       if (c.protocol === 'tcp') line += c.tcpActive ? ' tcptype active' : ' tcptype passive';

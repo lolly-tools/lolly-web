@@ -12,13 +12,13 @@
  *    back at all, and promoting on it skips the acceptor's answer screen (see the
  *    "ICE-connected is not session-usable" section);
  *  - the 10-minute re-arm fires exactly at the boundary and mints a NEW invite;
- *  - a missing tool is a refusal, not a broken join (plan 100 §6.1);
- *  - ICE `disconnected` is transient and `failed` is not (§11.3) - the single most
+ *  - a missing tool is a refusal, not a broken join (plan 100 section 6.1);
+ *  - ICE `disconnected` is transient and `failed` is not (section 11.3) - the single most
  *    expensive thing to get wrong, because conflating them shows a re-pair dialog every
  *    time a Wi-Fi packet goes missing;
  *  - cancel works from every non-terminal phase, and a late effect result can never
  *    resurrect a cancelled ceremony;
- *  - an op-contract major gap joins observer-only rather than refusing (contract §9).
+ *  - an op-contract major gap joins observer-only rather than refusing (contract section 9).
  */
 
 import { test } from 'node:test';
@@ -223,7 +223,7 @@ test('acceptor: idle → reading-invite → creating-answer → awaiting-connect
   assert.equal(m.state.peer?.name, 'Priya');
   await settle();
 
-  // §6.1: the tool probe GATES the answer - answering first and discovering the tool is
+  // section 6.1: the tool probe GATES the answer - answering first and discovering the tool is
   // missing afterwards is exactly the broken join the probe exists to prevent.
   assert.equal(answerCallsAtProbe, 0);
   assert.equal(calls.checkTool, 1);
@@ -244,7 +244,7 @@ test('acceptor: idle → reading-invite → creating-answer → awaiting-connect
   assert.equal(clock.pending, 0);
 });
 
-// ── The 10-minute re-arm (§6.1) ────────────────────────────────────────────────────
+// ── The 10-minute re-arm (section 6.1) ────────────────────────────────────────────────────
 
 test('an unanswered invite re-arms at exactly 10 minutes, minting a fresh offer', async () => {
   const clock = new TestClock();
@@ -291,7 +291,7 @@ test('re-arming is bounded: after the last one the ceremony fails with timeout, 
   assert.equal(clock.pending, 0);
 });
 
-// ── The tool-presence gate (§6.1) ──────────────────────────────────────────────────
+// ── The tool-presence gate (section 6.1) ──────────────────────────────────────────────────
 
 test('a missing tool is an honest terminal refusal, and no answer is ever minted', async () => {
   const clock = new TestClock();
@@ -322,7 +322,7 @@ test('a MAJOR tool-version gap refuses; a minor one connects with a note', async
   assert.equal(refused.state.phase, 'failed');
   assert.equal(refused.state.cause, 'version-major-mismatch');
 
-  // Minor skew is the PWA-staleness case (§11.19): connect, and say so.
+  // Minor skew is the PWA-staleness case (section 11.19): connect, and say so.
   const minor = new TestClock();
   const soft = createCeremony({
     role: 'acceptor',
@@ -340,7 +340,7 @@ test('a MAJOR tool-version gap refuses; a minor one connects with a note', async
   assert.equal(soft.state.toolVersionNote, 'minor-skew', 'the note survives to the connected UI');
 });
 
-// ── Op-contract version skew → observer-only (contract §9) ─────────────────────────
+// ── Op-contract version skew → observer-only (contract section 9) ─────────────────────────
 
 test('an op-contract MAJOR mismatch joins observer-only rather than refusing', async () => {
   const clock = new TestClock();
@@ -384,7 +384,7 @@ test('an undeclared op version is silence, not a gap — the in-band hello settl
   assert.equal(m.state.phase, 'connected');
   assert.equal(m.state.observerOnly, false, 'unknown must not be treated as incompatible');
 
-  // …and the ops channel's hello arrives before the first op, which is all §9 needs.
+  // …and the ops channel's hello arrives before the first op, which is all section 9 needs.
   m.send({ type: 'peer-op-version', opVersion: '2.0.0' });
   assert.equal(m.state.observerOnly, true);
   assert.equal(m.state.phase, 'connected', 'a version claim is not a ceremony step');
@@ -393,7 +393,7 @@ test('an undeclared op version is silence, not a gap — the in-band hello settl
   assert.equal(m.state.observerOnly, false);
 });
 
-// ── ICE: disconnected vs failed (§11.3) ────────────────────────────────────────────
+// ── ICE: disconnected vs failed (section 11.3) ────────────────────────────────────────────
 
 async function connectedInviter(): Promise<{ m: CeremonyMachine; clock: TestClock; calls: Calls }> {
   const clock = new TestClock();
@@ -472,7 +472,7 @@ test('a re-invite does not inherit the dead pairing\'s readiness', async () => {
   assert.equal(m.state.phase, 'connected');
 });
 
-test('ICE failed on a live acceptor ends the collab: the inviter owns the session (§6.2a)', async () => {
+test('ICE failed on a live acceptor ends the collab: the inviter owns the session (section 6.2a)', async () => {
   const clock = new TestClock();
   const { effects, calls } = stub();
   const m = createCeremony({ role: 'acceptor', effects, timers: clock });
@@ -978,7 +978,7 @@ test('an ICE failure that lands during the mint is read on entry too, not only a
   assert.equal(m.state.cause, 'ice-failed-isolation-suspected');
 });
 
-// ── The answer leg's weak point (§11.25) ───────────────────────────────────────────
+// ── The answer leg's weak point (section 11.25) ───────────────────────────────────────────
 
 test('a garbled answer is retryable: back to waiting with a note, and the next one connects', async () => {
   const clock = new TestClock();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * trim-offer.ts - the reusable "trim to content" offer (plan 97 §7.3, gap 4).
+ * trim-offer.ts - the reusable "trim to content" offer (plan 97 section 7.3, gap 4).
  *
  * One offer, four surfaces: the Logos room, the shared upload dropzone, the
  * asset picker's upload flow, and the catalogue details panel. A padded logo
@@ -8,7 +8,7 @@
  * into the studio, so the affordance is a property of "a user file becomes an
  * asset", not of one room.
  *
- * ORDERING (the gotcha plan 97 §4 records as gap 4): the trim runs BEFORE
+ * ORDERING (the gotcha plan 97 section 4 records as gap 4): the trim runs BEFORE
  * `storeUserUpload`. That path's `normalizeSvg` strips the root width/height and
  * preserves the authored box, after which a viewBox rewrite has nothing left to
  * bite on and silently no-ops. So a caller ingests `onResolve`'s file, never the
@@ -29,11 +29,11 @@
  * that overflows its own viewBox keeps every unit of overflow. Each change
  * re-derives from the ORIGINAL bytes - pads do not compound.
  *
- * PERMANENCE. Trimming is permanent for the stored asset (plan 97 §14.4): the
+ * PERMANENCE. Trimming is permanent for the stored asset (plan 97 section 14.4): the
  * original margins are not kept, and the card says so rather than letting the
  * default-on trim quietly take them.
  *
- * THREE ANSWERS, not two (plan 97 §11, Esc-to-close parity). "Trim" and "Keep
+ * THREE ANSWERS, not two (plan 97 section 11, Esc-to-close parity). "Trim" and "Keep
  * original margins" both CHOOSE A FILE and are reported through `onResolve`.
  * Escape and the card's own ✕ are a DISMISSAL: the user is backing out of the
  * whole thing, and that is `onCancel`, a separate channel because on three of
@@ -79,7 +79,7 @@ export interface TrimProposal {
 
 // ── Pure half ────────────────────────────────────────────────────────────────
 
-/** Stepper ceiling (plan 97 §7.3: a small padding stepper, default 0). */
+/** Stepper ceiling (plan 97 section 7.3: a small padding stepper, default 0). */
 export const TRIM_PAD_MAX = 32;
 
 /** Below this much area removed the margins are rounding, not margins: offering

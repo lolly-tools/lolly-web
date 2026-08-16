@@ -9,7 +9,7 @@
  * the host view (start.ts) drives visibility by setting `data-active-tab` on
  * the editor root - every panel stays mounted (and wired) whichever tab shows:
  *
- *  1. logos - the Logos room (plan 97 §7.3). Level 0 is one multi-file drop
+ *  1. logos - the Logos room (plan 97 section 7.3). Level 0 is one multi-file drop
  *                 zone: each file is classified (classify-logo.ts), proposes one
  *                 of the eight slots and waits as a confirm chip, and a placed
  *                 colour SVG offers generated mono / reverse siblings. Under it,
@@ -19,14 +19,14 @@
  *                 shared trim-to-content offer first (trim-offer.ts), and an SVG
  *                 feeds the Colours room's "found in the logo" primary
  *                 suggestion, with its other colours going to the tray.
- *  2. color - the Colours room (plan 97 §7.1). Level 0 leads: "Add a colour"
+ *  2. color - the Colours room (plan 97 section 7.1). Level 0 leads: "Add a colour"
  *                 writes exactly one token, and the Roles strip says which
  *                 swatch plays each part. The expert controls - Generate a
  *                 starter palette, Shade curves, Contrast, Print - are folded
  *                 into four wings below it. The palette (every swatch an
  *                 editable tile + the OKLCH wheel) and optional gradient tokens
  *                 sit in the side pane.
- *  3. type - the Type room (plan 97 §7.2). Level 0 is four ROLE CARDS
+ *  3. type - the Type room (plan 97 section 7.2). Level 0 is four ROLE CARDS
  *                 (Primary, Headings, Code, Italic - brand-vars.ts's FONT_SLOTS),
  *                 each showing the face that serves it on a live one-line
  *                 specimen. A card opens the COMPARE STAGE inline
@@ -48,7 +48,7 @@
  *
  * Everything persists to the one `user/tokens/brand` install via the bridge's
  * single write chokepoint (installUserTokens → bust → the next get()/colors()/
- * resolve() re-reads). ONE save discipline (plan 97 §6): every commit-level
+ * resolve() re-reads). ONE save discipline (plan 97 section 6): every commit-level
  * action persists immediately and a session undo stack (Ctrl/Cmd+Z, scoped to
  * the Colours room) is the safety net - there is no draft, no dirty flag, and
  * no confirm dialog where an undo suffices.
@@ -237,11 +237,11 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
   return true;
 }
 
-// ── Type room: the four role cards (plan 97 §7.2, level 0) ───────────────────
+// ── Type room: the four role cards (plan 97 section 7.2, level 0) ───────────────────
 /**
  * The faces the chrome, the tools and every export read - brand-vars.ts's
  * FONT_SLOTS, in the order the room shows them. `brand` is the TOKEN id and it
- * is never renamed (§3 rule 9); "Primary" is the word on screen, because nobody
+ * is never renamed (section 3 rule 9); "Primary" is the word on screen, because nobody
  * calls their body face "the brand face".
  *
  * `css` is the exact `font-family` value the card's specimen paints in, so each
@@ -495,13 +495,13 @@ function printLockHtml(): string {
 }
 
 // ── Per-space faces: what this colour becomes everywhere else ────────────────
-// The generalisation of the print lock, per plans/60-color-spaces.md §11.3. Each
+// The generalisation of the print lock, per plans/60-color-spaces.md section 11.3. Each
 // row is a target the swatch can be expressed in; each is either DERIVED from
 // the canonical value or AUTHORED, and an authored one wins at export.
 //
 // The sRGB row is the reason for this feature. It is the BAKE: what most
 // viewers, most print pipelines, and every older browser actually receive. The
-// automatic §14.2 map picks the nearest colour by ΔE, but a brand will often
+// automatic section 14.2 map picks the nearest colour by ΔE, but a brand will often
 // prefer a DIFFERENT sRGB green: one that looks like the same brand colour to a
 // human even though it is not the closest by measurement. So the row is
 // editable, and any drift from the automatic answer is shown, not hidden.
@@ -533,7 +533,7 @@ function deriveFace(canonical: string, target: string): string | [number, number
   if (target === 'srgb') {
     // MAPPED, not clipped. `colorToHexString` alone would clip each channel, and a
     // clip is not what the platform does to an out-of-gamut colour - CSS Color 4
-    // §14.2 preserves L and H and reduces C. This row IS that bake, so it has to
+    // section 14.2 preserves L and H and reduces C. This row IS that bake, so it has to
     // show the same answer a browser would.
     const rgb = gamutMapSrgb(colorToSrgb(c));
     return colorToHexString({ space: 'srgb', components: rgb, alpha: c.alpha, missing: 0 });
@@ -876,7 +876,7 @@ export interface BrandEditorOptions {
    *  swallowed, never surfaced as a failed edit. Additive since plan 97 M1. */
   checkpoint?: (label: string) => Promise<void>;
   /**
-   * The host's already-loaded candidate tray (plan 97 §8).
+   * The host's already-loaded candidate tray (plan 97 section 8).
    *
    * There must be exactly ONE live tray per mounted studio. It persists its
    * whole candidate list on every write, so two instances over the same storage
@@ -898,13 +898,13 @@ export interface BrandEditorOptions {
 export interface BrandEditorHandle {
   teardown: () => void;
   /** Retained only so an older caller still compiles. Every commit in the studio
-   *  persists immediately (plan 97 §6), so there is never a draft to save and
+   *  persists immediately (plan 97 section 6), so there is never a draft to save and
    *  never a pending state to report - start.ts consulted neither, verified. */
   saveDraft: () => void;
   isDirty: () => boolean;
   /** Add n colours as n swatches, through the Colours room's own write - one
    *  `addSwatch` each, one persist, no derive and nothing suggested-into (plan
-   *  97 §3 principle 1). Returns how many landed.
+   *  97 section 3 principle 1). Returns how many landed.
    *
    *  This is the ONLY correct way for another surface (the tray) to add a
    *  colour: it writes into the live document this editor holds, so an add can
@@ -1095,7 +1095,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
           ${panelHead(t('Logos'), t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'))}
-          ${/* Level 0 (plan 97 §7.3): one multi-file drop zone. Each file is
+          ${/* Level 0 (plan 97 section 7.3): one multi-file drop zone. Each file is
                 read for shape and ink, proposes a slot, and waits for a tap - 
                 the matrix below stays exactly as it was, per-slot drops and
                 all. The trim offer mounts between the two. */''}
@@ -1117,7 +1117,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab be-tab--split" data-be-tab-panel="color">
       <div class="be-split-main">
       ${/* ── Level 0: the one control. Adding a colour writes exactly one token
-             (plan 97 §7.1) - nothing is derived, suggested-into, or demanded. */''}
+             (plan 97 section 7.1) - nothing is derived, suggested-into, or demanded. */''}
       <div class="be-panel be-addcolor">
         ${panelHead(t('Add a colour'), t('Paste or pick any colour, in any notation. One colour adds one token, nothing else. Paste a list and every colour in it becomes a chip you can add.'))}
         <div data-be-addcolor></div>
@@ -1374,7 +1374,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-tab" data-be-tab-panel="type">
-      ${/* ── Level 0 (plan 97 §7.2): the four role cards. Each shows the face
+      ${/* ── Level 0 (plan 97 section 7.2): the four role cards. Each shows the face
              that serves its role right now and opens the compare stage scoped
              to it. Nothing on a card commits anything. */''}
       <div class="be-panel be-typecards">
@@ -1492,7 +1492,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               <div data-be-subst-mount></div>
             </details>
             ${/* What this colour becomes everywhere else (plans/60-color-spaces.md
-                  §11.3). Folded, and BELOW the print substitutes: those are the
+                  section 11.3). Folded, and BELOW the print substitutes: those are the
                   established control and this widens the same idea, so leading
                   with it would make the familiar row look like the afterthought. */''}
             <details class="be-subst-details be-faces-details" data-be-faces-details>
@@ -1622,7 +1622,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     } catch { return null; }
   };
 
-  // ── Session undo (plan 97 §6) ───────────────────────────────────────────────
+  // ── Session undo (plan 97 section 6) ───────────────────────────────────────────────
   // The one save discipline means every commit writes straight through, so the
   // destructive actions need a way back. Snapshots are whole documents - a few
   // KB of JSON - so the cap is memory-shaped, not a product limit. Checkpoints
@@ -1662,7 +1662,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   /**
    * Push the edited doc to the install (debounced) + refresh chrome & pickers.
    * The ONE write, and the one save discipline: every commit-level action in
-   * this room calls it immediately (plan 97 §6). Every caller is a Colour-tab
+   * this room calls it immediately (plan 97 section 6). Every caller is a Colour-tab
    * surface (palette tiles, wheel, locks, generator, the add row), so this is
    * also the one place that flags colour-tab activity to the host.
    */
@@ -1719,7 +1719,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // Nothing here writes. renderPreview paints ONLY the wing's own preview - the
   // ramps + specimen cards - which is a proposal, not the system: the app's
   // chrome, the palette and the install all keep showing what is actually
-  // installed until Replace palette is confirmed (plan 97 §3 principle 1).
+  // installed until Replace palette is confirmed (plan 97 section 3 principle 1).
   const renderPreview = (): void => {
     const next = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
     if (!next) return; // a half-typed hex mid-edit - keep the last good preview
@@ -2333,7 +2333,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // The old flow derived straight into the doc behind a confirm dialog. Now the
   // derive builds a candidate document, a review card says exactly what changes,
   // and only its own button swaps it in - with an undo snapshot taken first, so
-  // no confirm dialog stands where an undo suffices (plan 97 §3 principle 3).
+  // no confirm dialog stands where an undo suffices (plan 97 section 3 principle 3).
 
   /** What a Replace would do, counted from the two documents. Pure - computed
    *  before anything is swapped, so the card can be honest and then cancelled. */
@@ -2892,7 +2892,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   paletteHooks.push(syncPalSelect);
   bulkbar?.querySelector<HTMLElement>('[data-be-bulk-cancel]')?.addEventListener('click', exitPalSelect);
-  // No confirm dialog: undo is the safety net (plan 97 §3 principle 3). The
+  // No confirm dialog: undo is the safety net (plan 97 section 3 principle 3). The
   // gradient-stop side effect moves from a pre-hoc warning to a post-hoc
   // statement, and the per-swatch semantics are byte-for-byte what they were.
   bulkbar?.querySelector<HTMLElement>('[data-be-bulk-del]')?.addEventListener('click', () => {
@@ -3397,14 +3397,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   // ── Level 0: Add a colour ───────────────────────────────────────────────────
   // The module parses; this callback is the only thing that writes. One colour
-  // in, one addSwatch out - nothing derived, nothing suggested-into (plan 97 §3
+  // in, one addSwatch out - nothing derived, nothing suggested-into (plan 97 section 3
   // principle 1). Notation is preserved as typed: storageFormatOf maps `#…`→hex,
   // `rgb(…)`→rgb, `hsl(…)`→hsl and everything else to the app's LCH default.
   /**
    * The room's write for "here are n colours" - one `addSwatch` each, one
    * persist for the batch. Returns how many landed.
    *
-   * Exposed on the handle as `addColors` (plan 97 §2b) because it writes into
+   * Exposed on the handle as `addColors` (plan 97 section 2b) because it writes into
    * the doc THIS editor is holding. A caller that keeps its own snapshot of the
    * installed document and writes into that instead would reinstall the snapshot
    * - silently reverting every edit made in the room since it was taken. There
@@ -3531,7 +3531,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   repaintPalette();
 
-  // ── Type (the Type room, plan 97 §7.2) ───────────────────────────────────────
+  // ── Type (the Type room, plan 97 section 7.2) ───────────────────────────────────────
   // Three layers, top to bottom: the four ROLE CARDS (level 0 - what serves each
   // role, and the one action that changes it), the COMPARE STAGE they open (six
   // faces at one size on one specimen; nothing installs until a card is chosen),
@@ -3661,7 +3661,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     void paintRoleCards();
   };
   void paintFonts();
-  // ── The compare stage (plan 97 §7.2) ────────────────────────────────────────
+  // ── The compare stage (plan 97 section 7.2) ────────────────────────────────────────
   // type-compare.ts renders candidates side by side and installs NOTHING; this
   // block owns opening it, seeding it, persisting a choice and closing it.
   //
@@ -3723,7 +3723,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   /**
    * Persist one stage choice. The stage hands over a candidate and this decides
    * the rail: a Google pick through `installGoogleFont`, a file through
-   * `installFontFromBytes` (plan 97 §4 gap 3 - the second entrance into the role
+   * `installFontFromBytes` (plan 97 section 4 gap 3 - the second entrance into the role
    * system), then the role that OPENED the stage is assigned through the same
    * withFontRoleToken writers the list rows use.
    *
@@ -4021,7 +4021,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // colour. The note lives in the Add hero, where the colour lands.
   const suggestEl = $('[data-be-suggest]') as HTMLElement | null;
   /** Add the colour, give it the primary role, and point the Generate wing's
-   *  picker at it - one motion, persisted immediately (plan 97 §6). */
+   *  picker at it - one motion, persisted immediately (plan 97 section 6). */
   const takePrimaryFromLogo = (hex: string): void => {
     const name = nameColor(hex);
     const path = addSwatch(doc, 'custom', name, serializeColor(hex, 'lch'));
@@ -4037,7 +4037,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette();
     persist(true);
   };
-  // The candidate tray (plan 97 §8) - the HOST's, whenever it has one, because
+  // The candidate tray (plan 97 section 8) - the HOST's, whenever it has one, because
   // two live trays over one storage key erase each other (see BrandEditorOptions
   // .tray). Only a host that mounts no tray of its own falls through to the
   // second branch, which creates one lazily - and only when a mark actually has
@@ -4059,7 +4059,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   /**
    * The colours a mark carries beyond the one the hero offers. They used to be
    * dropped on the floor; now they wait in the tray for as long as the user
-   * likes (plan 97 §8) and nothing is added to the palette on their account.
+   * likes (plan 97 section 8) and nothing is added to the palette on their account.
    */
   const trayColorsFromLogo = async (colors: string[], label: string): Promise<void> => {
     if (!colors.length) return;
@@ -4093,7 +4093,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       // ONCE, though. That call just wrote a custom swatch, gave it the primary
       // role and persisted, so from here on there IS something of the user's:
       // the second file of a multi-file drop must OFFER rather than take (plan
-      // 97 §7.3 keeps exactly one auto-set, primary on a first-ever install).
+      // 97 section 7.3 keeps exactly one auto-set, primary on a first-ever install).
       // Without this line every extra logo adds another swatch and reassigns the
       // role, and the last file dropped silently wins.
       isUserBrand = true;
@@ -4119,7 +4119,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if ((e.target as HTMLElement).closest('[data-be-suggest-dismiss]')) suggestEl.hidden = true;
   });
 
-  // ── Level 0: multi-file intake → classify → confirm chip (plan 97 §7.3) ─────
+  // ── Level 0: multi-file intake → classify → confirm chip (plan 97 section 7.3) ─────
   // A dropped file is never filed silently. Each one is classified by the pure
   // heuristics in classify-logo.ts, proposes one of the eight slots, and waits as
   // a confirm chip; under LOGO_CONFIRM_MIN the chip leads with the slot menu
@@ -4137,7 +4137,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const LOGO_MAX_BYTES = 4 * 1024 * 1024;
   const isSvgLogoFile = (f: File): boolean => /^image\/svg(\+xml)?$/i.test(f.type);
   /** Below this the classification is guesswork, so the chip leads with the slot
-   *  menu and nothing is one tap away (plan 97 §14.5: an ambiguous file always
+   *  menu and nothing is one tap away (plan 97 section 14.5: an ambiguous file always
    *  gets the confirm chip, never a silent placement). */
   const LOGO_CONFIRM_MIN = 0.6;
   /** How many files may wait at once - past this a queue stops being a list and
@@ -4246,7 +4246,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * placement drops the user on <body>. Called for a USER answer only; on the
    * abandon path the whole surface is going away.
    *
-   * ORDERING (trim-offer.ts's own rule, plan 97 §4 gap 4): this MUST run BEFORE
+   * ORDERING (trim-offer.ts's own rule, plan 97 section 4 gap 4): this MUST run BEFORE
    * the store path - storeUserUpload's normaliser strips the root width/height,
    * after which a viewBox rewrite has nothing left to bite on. A file with no
    * margin worth removing never sees a card at all.
@@ -4447,7 +4447,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
 
   /**
-   * Marks sent over from another view (plan 97 §8, M5 - the PDF exploder's
+   * Marks sent over from another view (plan 97 section 8, M5 - the PDF exploder's
    * "Send to the Design System studio"). They go through addLogoFiles, the very
    * same door a multi-file drop uses: classified, chipped, and waiting for a tap.
    * A mark lifted off page 3 of a guidelines PDF is exactly as much of a guess as
@@ -4696,7 +4696,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const tileSel = `[data-logo-file="${variant}"][data-identity="${identity}"]`;
     try {
       // The same trim offer the intake chips get - the affordance belongs to
-      // "a user file becomes an asset", not to one control (plan 97 §7.3).
+      // "a user file becomes an asset", not to one control (plan 97 section 7.3).
       const picked = await withTrimOffer(file, () => refocus(tileSel));
       if (!root.isConnected) return;
       if (!picked) return;   // backed out of the trim card: nothing is installed
@@ -4881,7 +4881,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       // after an unmount (nothing here was ever a draft).
       void applyChromeBrandVars(host);
     },
-    saveDraft: () => {},   // no-op: every commit persists immediately (plan 97 §6)
+    saveDraft: () => {},   // no-op: every commit persists immediately (plan 97 section 6)
     isDirty: () => false,  // nothing is ever pending
     addColors: (entries) => addColorEntries(entries),
     exportPack,

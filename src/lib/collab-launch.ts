@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-launch - a generic seam for opening a collab's invite/ceremony flow,
- * per plans/100 §0's two flavours ("Work collab" / "Private collab").
+ * per plans/100 section 0's two flavours ("Work collab" / "Private collab").
  *
  * The sibling of lib/approval-request.ts one purpose over - same last-wins
  * single-opener shape - except a collab has TWO independent openers, one per
- * track, because the two flows are structurally different (§1): a work collab
+ * track, because the two flows are structurally different (section 1): a work collab
  * (org rooms, Track B) is registered from `org/` when the control plane grants
  * it; a private collab (P2P, Track A) is an OSS individual feature registered
  * from the ceremony UI, never from `org/`. Keeping them as two named slots
@@ -19,7 +19,7 @@
  *
  * The `'work'` slot is registered by `org/collab-work-opener.ts`, from `org/`'s
  * member branch, and ONLY on an instance whose control plane grants `collab.join`
- * (§7 item 9). So on a plain deployment - no control plane at all, which is every
+ * (section 7 item 9). So on a plain deployment - no control plane at all, which is every
  * public build - `getCollabOpener('work')` still returns `undefined`,
  * `openCollabLaunch('work', …)` is still a no-op returning `false`, and
  * `org/collab-share.ts`'s row still renders nothing. That is dormancy by ABSENCE
@@ -28,7 +28,7 @@
  *
  * The `'private'` slot is NOT dormant by default any more: `collab/private-
  * opener.ts` registers it unconditionally as a side effect of being imported, and
- * `main.ts` imports it for exactly that effect (wave 2.4, plans/100 §6.1) - so on
+ * `main.ts` imports it for exactly that effect (wave 2.4, plans/100 section 6.1) - so on
  * every boot of this app `getCollabOpener('private')` returns a real function,
  * not `undefined`. What the flag decides is what that function DOES, not whether
  * it exists: it checks `isFlagOnSync(PRIVATE_COLLAB_FLAG)` itself and returns
@@ -41,7 +41,7 @@
  * without a reload, in both directions).
  */
 
-/** The two collab flavours, matching plans/100 §0's naming exactly. */
+/** The two collab flavours, matching plans/100 section 0's naming exactly. */
 export type CollabTrack = 'private' | 'work';
 
 /** The small, product-neutral context an opener needs to start the ceremony
@@ -61,7 +61,7 @@ export interface CollabLaunchContext {
    * one (`org/session-source.ts`'s `TeamSessionRef.id`). Absent for every ordinary
    * local session, which is the common case and the reason it is optional.
    *
-   * A work collab is a room keyed by that id (plans/100 §7), so the `'work'` opener
+   * A work collab is a room keyed by that id (plans/100 section 7), so the `'work'` opener
    * cannot start one without it - while a private collab never uses it at all, since
    * Track A pairs two devices rather than joining a server room. Hence a field on the
    * shared context rather than a second opener signature: the two tracks read the

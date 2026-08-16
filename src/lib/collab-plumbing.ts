@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-plumbing - the transport-blind seam between ONE mounted tool's runtime and
- * a registered collaboration provider (plan 100 §5, wave 0.5).
+ * a registered collaboration provider (plan 100 section 5, wave 0.5).
  *
  * INERTNESS IS THE CONTRACT. `attachCollabPlumbing` asks `getCanvasSyncProvider()`
  * for an adapter and returns `null` when there is none - it does not wrap
  * `runtime.setInput`, does not schedule a frame, does not read IndexedDB, does not
- * mint an id. With no provider registered (this repo ships none - plans/99 §1.1)
+ * mint an id. With no provider registered (this repo ships none - plans/99 section 1.1)
  * a tool mount is byte-identical to single-player, and its co-located test proves
  * that with a call-count spy rather than by inspection.
  *
- * The two directions, per §5:
+ * The two directions, per section 5:
  *
  *  - OUTBOUND. mountTool already wraps `runtime.setInput` once for undo history - 
  *    the one chokepoint every control and every canvas commit flows through. We wrap
  *    that wrapper, so a local edit becomes ops for the adapter. A history REPLAY
  *    (undo/redo) is a local edit and syncs like any other: it is just another LWW
- *    write (§5, §11.15). Only a remote apply is excluded. Deliberately NOT wrapped:
+ *    write (section 5, section 11.15). Only a remote apply is excluded. Deliberately NOT wrapped:
  *    `runtime.setInputNoHistory`, the escape hatch for writes that are not user
  *    edits - deck slide navigation through it is *location*, which is a presence
- *    field (§4.2), not a document write, and forcing every peer to my slide is the
+ *    field (section 4.2), not a document write, and forcing every peer to my slide is the
  *    bug that would cause.
  *
  *  - INBOUND. `applyRemotePatch(ops)` coalesces per animation frame and lands the
  *    batch through `runtime.applyPatch` - the engine's atomic multi-input apply
- *    (§5). That path never re-enters `setInput`, so remote values (a) cannot record
+ *    (section 5). That path never re-enters `setInput`, so remote values (a) cannot record
  *    an undo step and (b) cannot echo back out as ops. The `applyingRemote` guard is
  *    belt-and-braces for a future refactor that routes it differently, and is held
  *    only across the SYNCHRONOUS part of the apply (see flush()). The VALUES in that
@@ -33,7 +33,7 @@
  *    hold. See {@link ConvergedRead} for why reading the payload instead makes two
  *    peers' documents converge while their models permanently diverge.
  *
- * WHAT CROSSES THE SEAM (plan 100 §3, plans/99 §7):
+ * WHAT CROSSES THE SEAM (plan 100 section 3, plans/99 section 7):
  *  - a scalar input → one `ParamOp` keyed by the input id;
  *  - a `blocks` input → the box ops, scoped by `col` = the input id (v1.1), keyed by
  *    the row's stable ULID (lib/row-id.ts), with geometry fields on the geometry
@@ -60,7 +60,7 @@
  *     adapter-minted AddOp it must override.
  *
  * No wall clock anywhere in this file: ordering is `(clock, client)` only, so an
- * airgapped device with a wrong clock converges identically (§11.7).
+ * airgapped device with a wrong clock converges identically (section 11.7).
  */
 
 import {
@@ -96,7 +96,7 @@ export interface CollabRuntime {
 
 export interface CollabPlumbingOpts {
   /** The adapter to talk to. Defaults to the registered provider; passing one
-   *  explicitly is how tests (and a loopback pair, plan 100 §10) drive this. */
+   *  explicitly is how tests (and a loopback pair, plan 100 section 10) drive this. */
   adapter?: CanvasSyncAdapter;
   /** This device's collab client id. Defaults to the per-device persisted ULID. */
   clientId?: string;
@@ -115,7 +115,7 @@ export interface CollabPlumbing {
   detach(): void;
 }
 
-// ── Per-device identity + the Lamport clock (plan 100 §5) ──────────────────────
+// ── Per-device identity + the Lamport clock (plan 100 section 5) ──────────────────────
 
 /** Key of the collab client id inside the 'profile' KV store - a sibling of the
  *  'me' record, like lib/offline-pins.ts and lib/instance.ts. Never localStorage. */
@@ -126,7 +126,7 @@ let clientIdInit: Promise<string> | null = null;
 
 /**
  * This device's collab client id - a random ULID with no linkage to the profile,
- * the identity, or anything else (§11.23: "the per-device collab client id is a
+ * the identity, or anything else (section 11.23: "the per-device collab client id is a
  * random ULID with no linkage to anything"). Synchronous, so plumbing never blocks
  * a mount; mints an in-memory id if `initCollabClientId()` has not resolved yet.
  */
@@ -160,7 +160,7 @@ export function initCollabClientId(): Promise<string> {
       // Persist ONLY when there is nothing durable to keep. If a mount beat this
       // init and minted an in-memory id, that id serves this session - but writing
       // it over the stored one would destroy this device's identity permanently,
-      // which is the opposite of what "per-device, IDB-persisted" means (§5).
+      // which is the opposite of what "per-device, IDB-persisted" means (section 5).
       if (durable === null) await db.put('profile', id, CLIENT_ID_KEY);
       return id;
     } catch {
@@ -191,7 +191,7 @@ function nextClock(): number {
   return ++clock;
 }
 
-/** Absorb a clock we have seen, so the next op we mint beats it (plans/99 §8). */
+/** Absorb a clock we have seen, so the next op we mint beats it (plans/99 section 8). */
 function observeClock(seen: number): void {
   if (seen > clock) clock = seen;
 }
@@ -232,7 +232,7 @@ const GEOM_ROLE_KEYS = ['xField', 'yField', 'wField', 'hField', 'rotationField']
  * The geometry field NAMES this collection uses. The contract requires the shell to
  * resolve its own config to the roles before crossing the seam, so a tool that
  * renames `x` keeps the geometry lane (a move must never invalidate a raster - 
- * plans/99 §4.3). Both peers run the same tool, so both resolve the same names.
+ * plans/99 section 4.3). Both peers run the same tool, so both resolve the same names.
  */
 function resolveGeomFields(item: Pick<InputModelItem, 'canvas'>): readonly string[] {
   const cfg = item.canvas;
@@ -326,7 +326,7 @@ function defaultRaf(fn: () => void): void {
   else setTimeout(fn, 0);
 }
 
-// ── The merge result, not the wire value (plan 100 §5, §11.15) ─────────────────
+// ── The merge result, not the wire value (plan 100 section 5, section 11.15) ─────────────────
 
 /**
  * Reads the value a key holds in the DOCUMENT after a batch has been applied - which
@@ -413,7 +413,7 @@ export function attachCollabPlumbing(
 
   function paramOpFor(item: InputModelItem, value: InputValue): ParamOp | null {
     // Objects never cross: ParamValue is a scalar or a {bind} descriptor, and a
-    // `file`/`asset`/`vector`/`table` value is neither (plan 100 §3, plans/99 §7).
+    // `file`/`asset`/`vector`/`table` value is neither (plan 100 section 3, plans/99 section 7).
     if (!isScalar(value)) return null;
     if (Object.is(item.value, value)) return null;   // an identical re-write is not an edit
     return { k: 'param', key: item.id, value, origin: { client, clock: nextClock() } };
@@ -530,7 +530,7 @@ export function attachCollabPlumbing(
     const setField = (id: string, field: string, value: unknown): void => {
       const row = rows.get(id);
       // No resurrection: a field write on an unknown/removed id creates nothing
-      // (plan 100 §3 - "objects cannot be brought into existence by writing a
+      // (plan 100 section 3 - "objects cannot be brought into existence by writing a
       // property to an unassigned ID"). The id field itself is never a payload.
       if (!row || field === idField) return;
       if (Object.is(row[field], value)) return;
@@ -614,7 +614,7 @@ export function attachCollabPlumbing(
 
     for (const op of ops) {
       if (op.k === 'param') {
-        // Own-property whitelist against the declared inputs (§11.21): an id this
+        // Own-property whitelist against the declared inputs (section 11.21): an id this
         // build does not declare, or one on the wrong lane, dies here rather than
         // reaching the model. `__proto__` and friends are simply not input ids.
         const item = byId.get(op.key);
@@ -677,9 +677,9 @@ export function attachCollabPlumbing(
   return {
     applyRemotePatch(ops) {
       if (detached || !ops.length) return;
-      // Coalesce per frame (§5): a burst of remote ops is ONE apply, so one hook
+      // Coalesce per frame (section 5): a burst of remote ops is ONE apply, so one hook
       // pass and one paint. Unbounded by design for now - the hidden-tab queue cap
-      // + full-state resync is §11.13, and belongs with the transport (wave 2.3).
+      // + full-state resync is section 11.13, and belongs with the transport (wave 2.3).
       // Appended one at a time, not spread: this is untrusted input, and a spread
       // of a hostile-sized array is an argument-count crash rather than a queue.
       for (const op of ops) queue.push(op);

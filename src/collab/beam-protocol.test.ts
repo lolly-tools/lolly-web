@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The beam transfer protocol (plan 100 §6.4, §11.6, §11.15a, §11.18, §11.24).
+ * The beam transfer protocol (plan 100 section 6.4, section 11.6, section 11.15a, section 11.18, section 11.24).
  *
  * Everything here runs the REAL machines against a fake transport pair and an
  * in-memory sink, so the properties the plan actually promises are asserted rather
  * than described:
  *
  *   - a beam round-trips **byte-exact**, with every item's SRI SHA-256 verified
- *     against the offer AND against `item-done` (§6.4: byte-exactness is what lets
+ *     against the offer AND against `item-done` (section 6.4: byte-exactness is what lets
  *     C2PA credentials survive a beam, and what makes receiver-side dedup a string
  *     compare);
  *   - the **consent gate** holds: bytes before `accept` are a typed violation, not
- *     an early start (§11.24);
+ *     an early start (section 11.24);
  *   - **nothing survives a transfer that did not complete** - `discard()` fires
  *     exactly once on decline, violation, cancel, source failure and dispose
- *     (§11.18);
+ *     (section 11.18);
  *   - the sender is **pull-based**: not one frame leaves without a `nextChunk()`,
  *     so a real transport's `bufferedamountlow` is the whole backpressure story
- *     (§11.6);
+ *     (section 11.6);
  *   - peer input is untrusted: replayed and skipped `seq`, oversized offers,
  *     inconsistent totals and wrong wire versions all end in a typed cancel.
  *
@@ -422,7 +422,7 @@ test('decline sends nothing and still discards staging', async () => {
   assert.equal(sink.writes.length, 0);
   assert.deepEqual(wires.toReceiver.map((m) => m.t), ['offer'], 'the offer was the only thing sent');
   await receiver.drain();
-  assert.equal(sink.discards(), 1, '§11.18 is unconditional — a declined beam discards too');
+  assert.equal(sink.discards(), 1, 'section 11.18 is unconditional — a declined beam discards too');
 });
 
 test('a chunk header before accept is a protocol violation, not an early start', async () => {
@@ -864,7 +864,7 @@ function deadWire(): BeamWire {
 }
 
 test('a receiver whose wire dies still latches terminal and still discards', async () => {
-  // The §11.18 latch used to run AFTER the cancel frame, so a wire that threw
+  // The section 11.18 latch used to run AFTER the cancel frame, so a wire that threw
   // skipped `end()` entirely: phase stayed `receiving`, `discard()` never fired,
   // and the receiver went on staging bytes from the peer it had just judged to be
   // violating the protocol.

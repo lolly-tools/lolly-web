@@ -11,7 +11,7 @@
  * window.open is inert, and the default provider chunk is another builder's
  * file - none of them belong in this suite.
  *
- * Covered: the MIN_QUERY_LENGTH gate; group order + the §2a own-domain lead
+ * Covered: the MIN_QUERY_LENGTH gate; group order + the section 2a own-domain lead
  * (own group hoisted first + brand-highlighted, both tiers); the 5/8 caps; the see-all handoff
  * href; the arrow walk + Enter/⌘Enter activation through the seams; the
  * '#/p?' same-route remount special case; the stale-response guard; outside
@@ -165,7 +165,7 @@ test('live-adapt route (gallery): the own group hoists first and is brand-highli
   type('ab');
   await settle();
   // gallery's own domain is tools - hoisted to the top so its results lead the
-  // panel even when it occludes the live-filtered cards behind (§2a).
+  // panel even when it occludes the live-filtered cards behind (section 2a).
   assert.deepEqual(groupLabels(), ['Tools', 'Projects', 'Settings']);
   // ...and marked for the brand highlight: the own label + only the own rows.
   assert.ok(document.querySelector('.spotlight-group-label--own')?.textContent === 'Tools');

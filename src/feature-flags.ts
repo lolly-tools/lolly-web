@@ -88,7 +88,7 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
   info: 'Checks a print export before you download: bleed, resolution, ink coverage and plate counts appear above the Download button. It never blocks an export.',
 };
 
-// ON by default since 2026-08-10: private collab (Track A, plans/100 §6) - the P2P
+// ON by default since 2026-08-10: private collab (Track A, plans/100 section 6) - the P2P
 // invite/accept ceremony that lets two devices co-edit a tool session directly, no
 // account/server/CSP change. What this flag gates is the ENTRY POINTS to that
 // ceremony, and only those: the Share-dialog row (lib/collab-share-private.ts), the
@@ -96,7 +96,7 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
 // (collab/join-route.ts). It does NOT gate the mount that receives a connection - 
 // installLiveCollabMount() runs unconditionally at module scope in main.ts and reads
 // no flag, deliberately, because that mount is shared with the Track-B org provider
-// (plans/100 §5) and gating it on a Track-A flag would break the other track. The
+// (plans/100 section 5) and gating it on a Track-A flag would break the other track. The
 // mount is inert until a ceremony hands it a CollabConnection, so the entry points
 // are the whole door.
 //
@@ -131,7 +131,7 @@ export const PRIVATE_COLLAB_FLAG: FeatureFlag = {
   info: 'Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.',
 };
 
-// ON by default: nearby discovery (plans/110 §3) - advertise/browse for other Lolly
+// ON by default: nearby discovery (plans/110 section 3) - advertise/browse for other Lolly
 // devices on the same network so an invite can be handed over by tapping a name instead
 // of scanning a QR. Like PRIVATE_COLLAB_FLAG, this gates the ENTRY POINTS only (the
 // ceremony's Nearby section and any share-sheet nearby rows). Registration of a provider
@@ -155,7 +155,7 @@ export const NEARBY_DISCOVERY_FLAG: FeatureFlag = {
 // All five ids match the control plane's own GOVERNABLE_FLAGS (lolly-work
 // `server/src/policy/feature-flags.ts`), `private-collab` included since it was added
 // there - so an instance really can force this flag on or off fleet-wide, and hide the
-// toggle with it (plan 100 §6.3/§11.24). The `builtinDefault` recorded server-side must
+// toggle with it (plan 100 section 6.3/section 11.24). The `builtinDefault` recorded server-side must
 // keep matching each flag's `default` here, or an instance that chose "inherit" would be
 // told the wrong thing; the two moved together on 2026-08-10 for `private-collab`.
 export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id, PRIVATE_COLLAB_FLAG.id, NEARBY_DISCOVERY_FLAG.id];

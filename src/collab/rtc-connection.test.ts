@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * rtc-connection - Track A's producer for the transport-agnostic mount seam
- * (plan 100 §5, §6.1, §6.2a, §12 Q3).
+ * (plan 100 section 5, section 6.1, section 6.2a, section 12 Q3).
  *
  * Two things are worth pinning, and they are both about TIME.
  *
@@ -11,7 +11,7 @@
  *      is why the acceptor's tool opens populated instead of empty-then-converging.
  *   2. Waiting is BOUNDED. A peer that sends no seed (an older build; a state too big
  *      for one 64 KB frame, which `rtc-transport` drops rather than lose the op-version
- *      declaration beside it) must not hold the tool closed - §6.2's late joiner gets
+ *      declaration beside it) must not hold the tool closed - section 6.2's late joiner gets
  *      the state from the peer anyway, just later.
  *
  * Run directly:  node --test shells/web/src/collab/rtc-connection.test.ts
@@ -66,7 +66,7 @@ const ceremony = (over: Partial<CeremonyConnectedHandle> = {}): CeremonyConnecte
  * Timers that fire only when a test says so, filtered by delay.
  *
  * The filter matters: this one seam feeds BOTH the seed deadline and (through the
- * handle) the §6.2 divergence backstop a live transport arms at construction. Firing
+ * handle) the section 6.2 divergence backstop a live transport arms at construction. Firing
  * indiscriminately would restate the document mid-assertion; counting indiscriminately
  * would call a backstop "a seed wait".
  */
@@ -96,10 +96,10 @@ test('the connection is transport-agnostic: a session handle and one way to hang
   const conn = rtcCollabConnection({ role: 'acceptor', ceremony: ceremony(), transport: wire, timers: timers() });
 
   assert.ok(conn.handle.adapter, 'what createCollabSession takes, built here where the transport is');
-  assert.equal(conn.handle.self.clientId, 'device-b', 'the per-device id, never a profile field (§11.23)');
+  assert.equal(conn.handle.self.clientId, 'device-b', 'the per-device id, never a profile field (section 11.23)');
   assert.equal(conn.handle.self.name, 'Priya', 'the name the human typed into the ceremony');
   assert.equal(conn.toolId, 'qr-code');
-  assert.equal(conn.ephemeral, true, "§6.2a: the acceptor's copy never lands in a slot");
+  assert.equal(conn.ephemeral, true, "section 6.2a: the acceptor's copy never lands in a slot");
 
   conn.close();
   assert.equal(wire.closed(), 1, 'closing the session closes the transport under it');
@@ -114,7 +114,7 @@ test('the inviter is never ephemeral and never waits for a seed it already holds
     seed: { url: 'https://suse.com' },
     timers: clock,
   });
-  assert.equal(conn.ephemeral, false, '§6.2a: the inviter owns the saved session');
+  assert.equal(conn.ephemeral, false, 'section 6.2a: the inviter owns the saved session');
   assert.deepEqual(conn.seed, { url: 'https://suse.com' });
   assert.equal(conn.seedLater, undefined, 'nothing to wait for — and waiting would delay its own remount');
   assert.equal(clock.armed(SEED_WAIT_MS), 0, 'no seed deadline armed for a value we hold');
@@ -142,7 +142,7 @@ test('a peer that sends no seed resolves the wait instead of holding the tool cl
   const conn = rtcCollabConnection({ role: 'acceptor', ceremony: ceremony(), transport: transport(), timers: clock });
   assert.equal(clock.armed(SEED_WAIT_MS), 1);
   clock.fire(SEED_WAIT_MS);
-  assert.equal(await conn.seedLater!, undefined, '§6.2: convergence delivers the state, just later');
+  assert.equal(await conn.seedLater!, undefined, 'section 6.2: convergence delivers the state, just later');
 });
 
 test('a seed arriving after the deadline cannot resurrect a settled wait', async () => {
@@ -157,5 +157,5 @@ test('a seed arriving after the deadline cannot resurrect a settled wait', async
 
 test('the deadline is a bound on absurdity, not a budget anyone hits honestly', () => {
   assert.ok(SEED_WAIT_MS > 0 && SEED_WAIT_MS <= 3_000,
-    'the hello is the first frame on a channel that just opened — §7 wants join-to-interactive under 3 s');
+    'the hello is the first frame on a channel that just opened — section 7 wants join-to-interactive under 3 s');
 });

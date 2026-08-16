@@ -12,8 +12,8 @@
  * rather than a pile of template literals in the view:
  *
  *  1. **A carrier problem is not an accusation.** The engine reports a dozen
- *     distinct ways a text credential can be present-but-unusable (§A.7.1.4,
- *     §A.8.7.1, §A.9.3/§A.9.5, §15.12.1.3), and most of them are producer bugs,
+ *     distinct ways a text credential can be present-but-unusable (section A.7.1.4,
+ *     section A.8.7.1, section A.9.3/section A.9.5, section 15.12.1.3), and most of them are producer bugs,
  *     truncated copies or invisible characters lost in a clipboard - NOT
  *     evidence that anyone changed the content. `manifest.inaccessible` in
  *     particular means "the credential is over there", and must never render as
@@ -28,12 +28,12 @@ import type { VerifyReport, TextBinding } from './valid-verdict.ts';
 
 // ── Honest format labels ─────────────────────────────────────────────────────
 // `report.format` is a sniff result, not a language claim: 'code' means "at
-// least one §A.9 manifest DELIMITER appeared in this text", never "this is
+// least one section A.9 manifest DELIMITER appeared in this text", never "this is
 // JavaScript". The summary line used to print the sniff token verbatim, which
 // read as a file-type verdict the sniffer never made.
 //
 // 'code' says MARKER, not "armour block", and the difference is the whole point:
-// the sniffer sets it on ONE delimiter, which is the §A.9.5 case the engine
+// the sniffer sets it on ONE delimiter, which is the section A.9.5 case the engine
 // deliberately reports as "no credential here" (prose that quotes a delimiter is
 // byte-identical to a damaged block, so nothing is claimed either way). The old
 // label asserted a block on the very line that goes on to deny one - the only
@@ -289,10 +289,10 @@ function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
   };
 }
 
-/** The §A.8 wrapper-count notice, worded from what the assertion actually
+/** The section A.8 wrapper-count notice, worded from what the assertion actually
  *  selected rather than from the raw count: at extraction time more than one
- *  wrapper is a NOTICE (§A.8.4.1 hands selection to the exclusions), and only
- *  more than one MATCH is the §15.12.1.3.1 rejection. */
+ *  wrapper is a NOTICE (section A.8.4.1 hands selection to the exclusions), and only
+ *  more than one MATCH is the section 15.12.1.3.1 rejection. */
 function wrapperNotice(b: TextBinding): VerifyNotice {
   const n = b.wrappers ?? 0;
   if ((b.matchedWrappers ?? 0) > 1) {
@@ -488,7 +488,7 @@ export function suppressModifiedBadge(notes: VerifyNotice[]): boolean {
   return notes.some((n) => n.id === 'reserialized');
 }
 
-// ── §18.28 ai-disclosure ─────────────────────────────────────────────────────
+// ── section 18.28 ai-disclosure ─────────────────────────────────────────────────────
 
 export interface AiDisclosureRow {
   /** modelName, else modelIdentifier - null when the claim disclosed neither. */

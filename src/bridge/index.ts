@@ -119,7 +119,7 @@ export async function createBridge(): Promise<WebHost> {
   // `pick` is attached below (line ~99), so the factory return is intentionally
   // missing it here; the cast reconciles that with the AssetsAPI-typed field.
   // Copy-on-write preservation of bytes a published design-system version pins
-  // (plans/97 §6a). Assigned AFTER tokens exists - the preserver reads the head
+  // (plans/97 section 6a). Assigned AFTER tokens exists - the preserver reads the head
   // document to find the version ledger - so the option closes over the binding
   // rather than the value, the same late-binding trick createTokensAPI(host) uses.
   // With nothing published it returns on a property read, so an unversioned

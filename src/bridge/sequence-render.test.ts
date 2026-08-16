@@ -34,7 +34,7 @@ test('contract: the raster pass clears the phase-2 clock\'s off-playhead class',
   // window, and dom-to-image copies the computed style wholesale - so without this
   // every clip but the scrubbed one exports blank.
   const render = strip(read('./sequence-render.ts'));
-  // The named list grew with the read/restore seam (plans/104 §6 point 0) - what the
+  // The named list grew with the read/restore seam (plans/104 section 6 point 0) - what the
   // contract pins is that OFF_CLASS comes from the applier, not that it comes alone.
   assert.match(render, /import\s*\{[^}]*\bOFF_CLASS\b[^}]*\}\s*from\s*'\.\/sequence-dom\.ts'/,
     'OFF_CLASS must be imported from the DOM applier, never restated as a literal');
@@ -74,7 +74,7 @@ test('contract: the frame cap applies to every buffered path, not just gif/apng'
   assert.match(src, /activeFrameWindow\(L, usedGrid,/, 'one grid for the loop and the windows');
 });
 
-test('contract: both mix graphs consume the ONE bed-duck envelope (§6.1)', () => {
+test('contract: both mix graphs consume the ONE bed-duck envelope (section 6.1)', () => {
   // The bed's gain automation lives once, in audio-envelope.ts - a bed must duck
   // identically under a tool's own audio (export.ts) and under a sequence's audio
   // boxes (this module). Restating the ramp scheduling in either graph is how the
@@ -127,7 +127,7 @@ test('fitRect places media the way object-fit does', () => {
   assert.deepEqual(fitRect('contain', '', 0, 0, 200, 100), { x: 0, y: 0, w: 200, h: 100 });
 });
 
-// ── plate capture: pad + the filter rule (plans/104 §5.5) ──────────────────
+// ── plate capture: pad + the filter rule (plans/104 section 5.5) ──────────────────
 
 test('plateShotFrame: pad 0 is byte-for-byte the shot this file has always taken', () => {
   // THE FLOOR. A document that uses no depth must export the bytes it exported before
@@ -159,7 +159,7 @@ test('plateShotFrame: a hostile pad is no pad, never a NaN-sized canvas', () => 
   }
 });
 
-// ── plate geometry, asked of the planner (plans/104 §5.5) ───────────────────
+// ── plate geometry, asked of the planner (plans/104 section 5.5) ───────────────────
 
 function demandLayer(over: Partial<SeqLayer> = {}): SeqLayer {
   return {
@@ -181,7 +181,7 @@ test('plateWindowDemands: a document with no effects asks for nothing extra', ()
   // The byte-identity floor, expressed as geometry: pad 0 means `plateShotFrame` is
   // the shot it always was, and maxEff 1 means `S * 1` is exactly `S`.
   const d = plateWindowDemands([demandLayer(), demandLayer({ idx: 1, kind: 'video' })], GRID, 1000);
-  // `maxW`/`maxH` are the layer's own box until a `w`/`h` key stretches it (§5.2 P1),
+  // `maxW`/`maxH` are the layer's own box until a `w`/`h` key stretches it (section 5.2 P1),
   // and `sized` false is what keeps its plate a ONE-SHOT static capture.
   assert.deepEqual(d.get(0), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
   assert.deepEqual(d.get(1), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
@@ -244,7 +244,7 @@ test('plateWindowDemands: a lifted layer asks for more resolution than a flat on
 });
 
 test('contract: every PLANNED layer is photographed clean, and the stage background is not', () => {
-  // §5.5: `PlanItem.blur` is the WHOLE blur (authored + kf `b` + DOF) and the executor
+  // section 5.5: `PlanItem.blur` is the WHOLE blur (authored + kf `b` + DOF) and the executor
   // applies it, so a plate that still carried the element's own filter would blur
   // twice. The stage background is not a planned layer - no PlanItem carries its alpha
   // or its blur - so it keeps both, exactly as it always kept its opacity.
@@ -262,7 +262,7 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
   assert.ok(!/el\.style\.filter = 'none'/.test(src),
     'never `filter: none`, which would out-specify (and lose) a stylesheet-authored filter');
   assert.match(src, /const plateOpts: RasterOpts = \{\s*opaque: true,\s*neutralFilter: neutralOf\(L\.idx\),\s*neutralClipPath: clipNeutralOf\(L\.idx\),\s*pad: padOf\(L\.idx\),\s*\};/,
-    'one plate recipe, shared by every planned layer; all three of its numbers are per-layer (§5.5)');
+    'one plate recipe, shared by every planned layer; all three of its numbers are per-layer (section 5.5)');
   // P1 obligation 5b: the plate must NOT carry the clip-path when the compositor owns
   // the fx, or the shadow casts from the clipped silhouette instead of the real one.
   // Same posture as the filter - remove the INLINE declaration, never write a value.
@@ -286,13 +286,13 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
     'a video layer\'s second live plate is the transparent one, as its static twin is');
   assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,\s*\)/,
     'and is handed the same per-layer pad, scale and ownership the static plates were shot at');
-  // §5.4: a camera is a pose over time. `drawItem` already refuses to draw one; the
+  // section 5.4: a camera is a pose over time. `drawItem` already refuses to draw one; the
   // plates loop must refuse to photograph its marker div in the first place.
   assert.match(src, /L\.kind !== 'audio' && L\.kind !== 'camera'/,
     'a camera contributes no plate, exactly as an audio bed contributes none');
 });
 
-test('contract: the whole render runs inside the authored-DOM scope (plans/104 §6 point 0)', () => {
+test('contract: the whole render runs inside the authored-DOM scope (plans/104 section 6 point 0)', () => {
   // `parseSequenceStage` reads each box's rotation, opacity and blur off its INLINE
   // STYLE, and the preview clock has been writing exactly those. The scope has to wrap
   // the parse AND the plates AND the frame loop (the hybrid lottie path re-photographs
@@ -314,7 +314,7 @@ test('contract: the whole render runs inside the authored-DOM scope (plans/104 �
     'sequence-dom.ts owns the seam');
 });
 
-// ── P1a: the camera reaches the plates (plans/104 §5.5) ─────────────────────
+// ── P1a: the camera reaches the plates (plans/104 section 5.5) ─────────────────────
 
 /** A camera clip, in the shape `stageCameras` derives from a `[data-cam]` box. */
 const cam = (over: Partial<{ start: number | null; end: number | null; base: Record<string, number>; track: ReturnType<typeof kfTrackOf> }> = {}) => ({
@@ -322,7 +322,7 @@ const cam = (over: Partial<{ start: number | null; end: number | null; base: Rec
   base: over.base ?? null, track: over.track ?? null,
 });
 
-test('§5.5 the eff ladder is REAL once a camera exists: a dolly asks for sharper plates', () => {
+test('section 5.5 the eff ladder is REAL once a camera exists: a dolly asks for sharper plates', () => {
   // P0 could only reach eff > 1 through authored depth. The whole point of P1 is that
   // the CAMERA gets there too - a flat board flown toward is magnified, and a plate
   // shot at S and then blown up by eff is a soft plate.
@@ -341,7 +341,7 @@ test('§5.5 the eff ladder is REAL once a camera exists: a dolly asks for sharpe
     'a ramp is sized for its deepest frame, not for t=0');
 });
 
-test('§5.5 the camera also moves ownership: a flat shadowed layer needs a pad under a pan', () => {
+test('section 5.5 the camera also moves ownership: a flat shadowed layer needs a pad under a pan', () => {
   // P1 obligation 1. A plate is shot ONCE for the whole render, so a camera that moves
   // makes every projectable layer compositor-owned - and a compositor-owned shadow
   // needs room to spill, which is exactly what a plate shot at the box edge does not
@@ -355,7 +355,7 @@ test('§5.5 the camera also moves ownership: a flat shadowed layer needs a pad u
     'under a moving camera the compositor owns it, so the plate must make room');
 });
 
-test('§5.5 bg-as-layer: the overscan is the camera\'s own reveal, derived not guessed', () => {
+test('section 5.5 bg-as-layer: the overscan is the camera\'s own reveal, derived not guessed', () => {
   // No camera → 0, and at 0 the bg plate is the artboard-sized canvas it always was
   // and the executor takes its untransformed full-canvas draw.
   assert.equal(bgOverscanPad(1920, 1080, GRID, { stageW: 1920, stageH: 1080 }), 0);
@@ -386,7 +386,7 @@ test('§5.5 bg-as-layer: the overscan is the camera\'s own reveal, derived not g
 test('contract: the executor PROJECTS the background rather than pinning it to the canvas', () => {
   // The defect this pins: the bg plate drew full-canvas and untransformed while every
   // layer above it was projected, so a pan slid the whole composition across frozen
-  // wallpaper - the opposite of a camera move (§5.5).
+  // wallpaper - the opposite of a camera move (section 5.5).
   const src = strip(read('./sequence-render.worker.ts'));
   assert.match(src, /if \(!camMoves && bgPad === 0\) \{\s*ctx\.drawImage\(job\.bg, 0, 0, job\.outW, job\.outH\);/,
     'with no camera it is byte-for-byte the one-line draw it always was');
@@ -396,7 +396,7 @@ test('contract: the executor PROJECTS the background rather than pinning it to t
     'the plate is captured with the overscan, and with nothing when there is none');
 });
 
-test('§5.5 the blur scratches are priced against the plate budget (P1 obligation 3)', () => {
+test('section 5.5 the blur scratches are priced against the plate budget (P1 obligation 3)', () => {
   // They are pooled ACROSS layers and frames and `takeStage` RESIZES rather than
   // reallocating, so the peak is the single largest filtered layer - not their sum.
   const owned = { w: 640, h: 360, pad: 30, owned: true };

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * collab-focus - remote focus decorations: the sidebar ring and the canvas outline
- * (plan 100 §4.1, §4.6, §4.8, §11.14).
+ * (plan 100 section 4.1, section 4.6, section 4.8, section 11.14).
  *
- * Focus, not x/y, is the presence primitive that ships on EVERY tool (§4.1): the
+ * Focus, not x/y, is the presence primitive that ships on EVERY tool (section 4.1): the
  * canvas is a rendered preview rather than a freeform surface, so "Priya is editing
  * the Headline" is both truer and cheaper than a floating arrow. One roster stream
  * therefore drives TWO decorations, and the interesting part of this module is that
@@ -20,7 +20,7 @@
  *  - **The CANVAS is the user's artwork.** Nothing here writes a class, an attribute
  *    or a node into it - not once, not "just a data attribute". Two independent
  *    reasons, and either alone would be enough: an export must stay byte-identical
- *    (§4.6), and the tool's own paint replaces `#tool-canvas`'s innerHTML wholesale,
+ *    (section 4.6), and the tool's own paint replaces `#tool-canvas`'s innerHTML wholesale,
  *    so anything written in would be clobbered within a keystroke anyway. Outlines
  *    are therefore drawn on a SIBLING overlay layer, positioned from the annotated
  *    elements' `getBoundingClientRect`, and re-anchored on paint / scroll / resize.
@@ -37,13 +37,13 @@
  * insert renumbers every row below it, and a cache would point the ring at the wrong
  * card exactly when a collaborator is adding rows.
  *
- * REMOTE FOCUS IDS ARE UNTRUSTED INPUT (§11.21). They are matched by SCANNING
+ * REMOTE FOCUS IDS ARE UNTRUSTED INPUT (section 11.21). They are matched by SCANNING
  * `dataset` values, never by interpolating into a `querySelector` string: a peer
  * controls that string, and a crafted or merely malformed one is a thrown
  * `SyntaxError` at best and a selector that matches somewhere else at worst. The
  * scan costs a walk of a handful of nodes and removes the class of bug entirely.
  *
- * A11Y (§4.8). Colour is never the only differentiator - the sidebar wash is paired
+ * A11Y (section 4.8). Colour is never the only differentiator - the sidebar wash is paired
  * with a name CHIP, the canvas outline with a name LABEL and a theme-ground hairline
  * that reads as a shape rather than a hue, and every focus handoff is spoken through
  * `announce()`. The chips are `aria-hidden` ON PURPOSE and that is not an oversight:
@@ -51,7 +51,7 @@
  * absorbed into the wrapped control's accessible name and a screen-reader user would
  * hear "Headline Priya" as the field's label. The live region carries the same
  * information without corrupting the form. Reduced motion removes the outline's
- * transition (rings do not move on their own, so they need nothing else - §4.8).
+ * transition (rings do not move on their own, so they need nothing else - section 4.8).
  * Every glyph and offset in the sheet below is `calc(<px> * var(--a11y-fs))`.
  *
  * IT CARRIES ITS OWN STYLESHEET, injected into `<head>` on first mount, exactly like
@@ -122,7 +122,7 @@ const CSS = `
 html[data-a11y-motion="reduce"] .input-row.is-remote-focus,
 html[data-a11y-motion="reduce"] .block-item.is-remote-focus { transition: none; }
 
-/* The chip stack: everyone on this row, most-recent first (§4.6). It takes over
+/* The chip stack: everyone on this row, most-recent first (section 4.6). It takes over
    the absolute placement so the chips can flow inside it; decorateRow no longer
    states any of this inline, which is what lets the offset scale with a11y-fs. */
 [data-collab-chips] {
@@ -278,7 +278,7 @@ export interface FocusPeer {
   readonly color: string;
   /** `Presence.focus`: an input id, or `"<blocksId>:<rowId>"`. */
   readonly focus?: string | null;
-  /** A hidden tab (§11.4). An away peer keeps its roster entry but drops its ring - 
+  /** A hidden tab (section 11.4). An away peer keeps its roster entry but drops its ring - 
    *  a stale ring on a field nobody is looking at is worse than none. */
   readonly away?: boolean;
 }
@@ -329,7 +329,7 @@ export interface CollabFocus {
   dispose(): void;
 }
 
-/** The row-level state class, per plan §4.6 ("Sidebar: `.input-row.is-remote-focus`")
+/** The row-level state class, per plan section 4.6 ("Sidebar: `.input-row.is-remote-focus`")
  * - styled by this module's own injected sheet, which names it verbatim. */
 export const REMOTE_FOCUS_CLASS = 'is-remote-focus';
 /** Marker on the chip stack this module appends, so a re-apply finds its own node. */
@@ -341,7 +341,7 @@ export const CHIP_STACK_ATTR = 'data-collab-chips';
 interface Entry {
   peer: FocusPeer;
   target: FocusTarget;
-  /** Monotonic tick of the peer's LAST focus change - "most-recent wins" (§4.6). */
+  /** Monotonic tick of the peer's LAST focus change - "most-recent wins" (section 4.6). */
   seq: number;
 }
 
@@ -437,7 +437,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
   /** peerId → the tick its CURRENT focus was adopted at. Held across heartbeats so
    *  "most recent wins" means most recently MOVED, not most recently heard from. */
   const lastSeq = new Map<string, number>();
-  /** peerId → its ring; plus a free list, so churn allocates nothing (§11.14). */
+  /** peerId → its ring; plus a free list, so churn allocates nothing (section 11.14). */
   const rings = new Map<string, RingNode>();
   const pool: RingNode[] = [];
   let seq = 0;
@@ -528,7 +528,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
 
   /**
    * Ring the row in the most-recent collaborator's colour and stack everyone's chip
-   * on it (§4.6: "most-recent-wins when two people sit on one input (both show in
+   * on it (section 4.6: "most-recent-wins when two people sit on one input (both show in
    * the roster)" - the stack is the roster, in place).
    *
    * NOTHING ABOUT THE PLACEMENT IS INLINE. The sheet's `.collab-focus-chip` rule
@@ -562,7 +562,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
       const chip = el.ownerDocument.createElement('span');
       chip.className = 'collab-focus-chip';
       chip.style.setProperty('--collab-color', entry.peer.color);
-      // textContent, never innerHTML: display names arrive over the wire (§11.21).
+      // textContent, never innerHTML: display names arrive over the wire (section 11.21).
       chip.textContent = entry.peer.name;
       stack.appendChild(chip);
     }
@@ -640,7 +640,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
       node.root.style.transition = still ? 'none' : '';
       node.root.style.width = `${r.width + RING_PAD * 2}px`;
       node.root.style.height = `${r.height + RING_PAD * 2}px`;
-      // transform, not top/left: the sheet's own note (§11.14) - position moves must
+      // transform, not top/left: the sheet's own note (section 11.14) - position moves must
       // not cost the overlay a layout pass on every re-anchor.
       node.root.style.transform =
         `translate3d(${r.left - layerRect.left - RING_PAD}px, ${r.top - layerRect.top - RING_PAD}px, 0)`;
@@ -730,7 +730,7 @@ export function createCollabFocus(opts: CollabFocusOptions = {}): CollabFocus {
         const target = parseFocus(focus);
         if (!target) continue;
         // `seq` only advances on a real focus CHANGE, so "most recent" survives every
-        // heartbeat re-statement of the same presence (§4.7's 15 s refresh).
+        // heartbeat re-statement of the same presence (section 4.7's 15 s refresh).
         const entry: Entry = { peer, target, seq: moved ? ++seq : (lastSeq.get(peer.id) ?? ++seq) };
         lastSeq.set(peer.id, entry.seq);
         next.push(entry);

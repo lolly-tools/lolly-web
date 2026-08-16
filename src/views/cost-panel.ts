@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The cost panel - "Cost, worked out from your rate card"
- * (plans/65-preflight-and-cost.md §6, Phases 4/5).
+ * (plans/65-preflight-and-cost.md section 6, Phases 4/5).
  *
  * The engine owns the ARITHMETIC (`engine/src/rate-card.ts` `computeCost`, integer
  * minor units, no formatting); `@lolly-tools/core` owns the CURRENCY formatter and
@@ -77,7 +77,7 @@ export interface CostView {
   readonly revealPrompt?: string;
   /** The opt-in-to-expired action label, present only when expiry withheld money. */
   readonly expiredAction?: string;
-  /** `The file says: …. Lolly has not verified this.` - reported speech (§5). */
+  /** `The file says: …. Lolly has not verified this.` - reported speech (section 5). */
   readonly reportedSource?: string;
   readonly rows?: readonly CostRowVM[];
   readonly adjustments?: readonly CostAdjustmentVM[];
@@ -92,7 +92,7 @@ export interface CostView {
    */
   readonly total?: string | null;
   /**
-   * The expiry stamp on a figure computed from opted-in expired rates (§5). Present
+   * The expiry stamp on a figure computed from opted-in expired rates (section 5). Present
    * only on the working path when the card had lapsed and the user opted in - the
    * caveat rides WITH the figure so a lapsed total is never read as a current one.
    */
@@ -255,7 +255,7 @@ export function costView(working: CostWorking | null, ctx: CostPanelContext): Co
     }
   }
 
-  // §5: if money is shown despite an expired card, it was reached only by the explicit
+  // section 5: if money is shown despite an expired card, it was reached only by the explicit
   // opt-in, so the figure is stamped with the expiry date - inseparable from the total.
   const expiredNote = ctx.money.expired && ctx.money.useExpiredAnyway
     ? figureExpiredNote(claimedDate(ctx.validUntil, ctx.locale) || (ctx.validUntil ?? ''))

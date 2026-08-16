@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Collaborator colours (plans/100 §4.4) - property tests against the REAL packs.
+ * Collaborator colours (plans/100 section 4.4) - property tests against the REAL packs.
  *
  * The whole module is a set of guarantees about colours nobody has drawn yet, so
  * examples prove almost nothing here: an assertion that lolly-start's second

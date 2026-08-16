@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * qr-skin - the QR half of the private-collab ceremony: draw one, scan one
- * (plan 100 §6.1 skin 2, §2.9, §11.27; wave 2.6).
+ * (plan 100 section 6.1 skin 2, section 2.9, section 11.27; wave 2.6).
  *
- * The ceremony is two payloads and the humans are the channel (§6.1). The link skin
+ * The ceremony is two payloads and the humans are the channel (section 6.1). The link skin
  * covers "paste it into something we already trust"; this module covers the other
  * skin - "hold your laptops together" - which is the one that works with no network
  * at all, and is therefore the airgap case's primary path rather than a nicety.
@@ -83,7 +83,7 @@
  * including the 4-module quiet zone the spec requires: a transparent QR inherits
  * whatever is behind it, which on this app's dark theme is the failure above.
  *
- * ── Scanning is a progressive rung, never a dead end (§11.27) ───────────────────
+ * ── Scanning is a progressive rung, never a dead end (section 11.27) ───────────────────
  *
  * `BarcodeDetector` is Chromium-only (and even there it needs a platform barcode
  * backend, which some Linux builds lack - the API can exist and support NO formats).
@@ -100,7 +100,7 @@
  * exactly as `bridge/media.ts` and `views/picker.ts` do it, with the same
  * teardown discipline (stop every track when the dialog closes). This module takes a
  * video element that is already playing and reads frames off it. That split keeps one
- * camera-permission story in the shell. Note §11.1's happy
+ * camera-permission story in the shell. Note section 11.1's happy
  * accident: the camera grant that scanning needs is also what makes the browser stop
  * hiding host IPs behind mDNS names, so the scan prompt improves the odds that the
  * pairing it is part of connects at all.
@@ -121,7 +121,7 @@ export const QR_MAX_VERSION = 10;
 /** Error-correction level, fixed. Present as a constant so callers can print it. */
 export const QR_EC_LEVEL = 'M';
 
-/** ISO/IEC 18004 §6.3.8: four light modules on every side, or scanners lose the edge. */
+/** ISO/IEC 18004 section 6.3.8: four light modules on every side, or scanners lose the edge. */
 export const QR_QUIET_ZONE = 4;
 
 /** QR's 45-symbol alphanumeric set, in value order (index = the symbol's value). */
@@ -212,7 +212,7 @@ function fail(code: QrErrorCode, reason: string): QrFailure {
 const EC_PER_BLOCK_M: readonly number[] = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
 const BLOCKS_M: readonly number[] = [0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
 
-/** Character-count-indicator widths, by mode, for versions 1–9 and 10–26 (§8.4). */
+/** Character-count-indicator widths, by mode, for versions 1–9 and 10–26 (section 8.4). */
 const COUNT_BITS: Readonly<Record<QrMode, readonly [number, number]>> = {
   alphanumeric: [9, 11],
   byte: [8, 16],
@@ -221,7 +221,7 @@ const COUNT_BITS: Readonly<Record<QrMode, readonly [number, number]>> = {
 const MODE_INDICATOR: Readonly<Record<QrMode, number>> = { alphanumeric: 0b0010, byte: 0b0100 };
 
 /**
- * Total data-bearing modules in a symbol, before ECC (§7.4.10's derivation, in closed
+ * Total data-bearing modules in a symbol, before ECC (section 7.4.10's derivation, in closed
  * form). Function patterns scale with the version in a way that is exactly expressible,
  * so this is arithmetic rather than a fourth table to keep in sync.
  */
@@ -245,7 +245,7 @@ function dataCodewords(version: number): number {
   return totalCodewords(version) - EC_PER_BLOCK_M[version]! * BLOCKS_M[version]!;
 }
 
-/** Alignment-pattern centre coordinates (§6.3.5), computed rather than tabulated. */
+/** Alignment-pattern centre coordinates (section 6.3.5), computed rather than tabulated. */
 function alignmentCentres(version: number): number[] {
   if (version === 1) return [];
   const numAlign = Math.floor(version / 7) + 2;
@@ -309,7 +309,7 @@ function writePayload(bits: number[], mode: QrMode, text: string, bytes: Uint8Ar
   if (text.length % 2 === 1) appendBits(bits, ALNUM_INDEX.get(text[text.length - 1]!)!, 6);
 }
 
-/** §8.4.9: terminator, byte alignment, then alternating 0xEC / 0x11 to fill. */
+/** section 8.4.9: terminator, byte alignment, then alternating 0xEC / 0x11 to fill. */
 function toDataCodewords(bits: number[], capacityBits: number): Uint8Array {
   const terminator = Math.min(4, capacityBits - bits.length);
   for (let i = 0; i < terminator; i++) bits.push(0);
@@ -326,7 +326,7 @@ function toDataCodewords(bits: number[], capacityBits: number): Uint8Array {
   return out;
 }
 
-// ── GF(256) and Reed–Solomon (§8.5) ───────────────────────────────────────────
+// ── GF(256) and Reed–Solomon (section 8.5) ───────────────────────────────────────────
 
 // The field is GF(2^8) modulo x^8 + x^4 + x^3 + x^2 + 1 (0x11D), generator 2.
 const GF_EXP = new Uint8Array(512);
@@ -379,7 +379,7 @@ export function rsEncode(data: Uint8Array, degree: number): Uint8Array {
 }
 
 /**
- * §8.6: split the message into blocks, append each block's EC codewords, then
+ * section 8.6: split the message into blocks, append each block's EC codewords, then
  * interleave data across blocks and EC across blocks. Block sizes come out of the
  * division rather than a table - the short blocks come first, which is what the
  * standard's grouping means in practice.
@@ -437,7 +437,7 @@ function isDark(g: Grid, x: number, y: number): boolean {
   return g.dark[y * g.size + x] === 1;
 }
 
-/** BCH(15,5) over the 5 data bits, then the §8.9 mask 0x5412 so 0 is never all-light. */
+/** BCH(15,5) over the 5 data bits, then the section 8.9 mask 0x5412 so 0 is never all-light. */
 function formatBits(mask: number): number {
   // Level M is `00`; the mask number is the low three bits.
   const data = (0b00 << 3) | mask;
@@ -446,7 +446,7 @@ function formatBits(mask: number): number {
   return (((data << 10) | rem) ^ 0x5412) & 0x7fff;
 }
 
-/** BCH(18,6) over the version number (§8.10). Only versions ≥ 7 carry it. */
+/** BCH(18,6) over the version number (section 8.10). Only versions ≥ 7 carry it. */
 function versionBits(version: number): number {
   let rem = version;
   for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
@@ -472,7 +472,7 @@ function drawAlignment(g: Grid, cx: number, cy: number): void {
 }
 
 /**
- * The 15 format bits, twice (§8.9). Called once during the function pass with mask 0
+ * The 15 format bits, twice (section 8.9). Called once during the function pass with mask 0
  * purely to RESERVE the modules, then again with the chosen mask to write the truth.
  */
 function drawFormat(g: Grid, mask: number): void {
@@ -523,7 +523,7 @@ function drawFunctionPatterns(g: Grid, version: number): void {
   }
 }
 
-/** §8.7: two-module-wide columns, right to left, snaking up then down, skipping col 6. */
+/** section 8.7: two-module-wide columns, right to left, snaking up then down, skipping col 6. */
 function drawCodewords(g: Grid, codewords: Uint8Array): void {
   let i = 0;
   for (let right = g.size - 1; right >= 1; right -= 2) {
@@ -564,7 +564,7 @@ function applyMask(g: Grid, mask: number): void {
   }
 }
 
-// §8.8.2's four rules. N1 = 3, N2 = 3, N3 = 40, N4 = 10.
+// section 8.8.2's four rules. N1 = 3, N2 = 3, N3 = 40, N4 = 10.
 const FINDER_LIKE = [
   [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
   [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1],
@@ -786,7 +786,7 @@ export function renderQrSvg(text: string, opts: QrEncodeOptions & QrSvgOptions =
 }
 
 /**
- * The `opts.renderQr` shape the ceremony dialog documents (§6.1): text in, SVG out.
+ * The `opts.renderQr` shape the ceremony dialog documents (section 6.1): text in, SVG out.
  * Throws {@link QrRenderError} - the only throwing export in this module - because the
  * callback signature has nowhere to put a failure. Callers that would rather branch
  * than catch should use {@link renderQrSvg}; either way an over-capacity payload means
@@ -847,7 +847,7 @@ export function createQrElementRenderer(
   };
 }
 
-// ── Scan (§11.27) ─────────────────────────────────────────────────────────────
+// ── Scan (section 11.27) ─────────────────────────────────────────────────────────────
 
 /** The slice of `BarcodeDetector` this module uses, typed structurally - the DOM lib has none. */
 interface BarcodeDetectorLike {
@@ -1087,7 +1087,7 @@ export async function scanQrFromVideo(video: QrVideoLike, opts: QrScanOptions = 
  *   role: 'acceptor',
  *   effects: transportBundle,
  *   renderQr: createQrElementRenderer(),
- *   // Absent `scan` is what makes the dialog hide the option entirely (§11.27).
+ *   // Absent `scan` is what makes the dialog hide the option entirely (section 11.27).
  *   scan: cap.supported ? async () => {
  *     const stream = await navigator.mediaDevices.getUserMedia({
  *       video: { facingMode: 'environment' }, audio: false,

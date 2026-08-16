@@ -853,7 +853,7 @@ function genKeyboard(_n: number, total: number, sampleRate: number, rnd: () => n
 function genWhite(_n: number, total: number, sampleRate: number, rnd: () => number): Float32Array {
   const out = new Float32Array(total);
   // Not raw white: a gentle top cut takes off the fizz that makes flat white
-  // fatiguing over an afternoon, which is the whole use case here.
+  // fatiguing over an afternoon, and long listening is what this generator is for.
   let lp = 0;
   const a = lpCoef(12000, sampleRate);
   for (let i = 0; i < total; i++) { lp += a * ((rnd() * 2 - 1) - lp); out[i] = lp; }

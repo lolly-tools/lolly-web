@@ -301,7 +301,7 @@ test('an UNSELECTED animated box is not drawn, and a selected CAMERA is skipped'
     f.handle.paint([]);
     assert.equal(f.lines().length, 0, 'nothing selected, nothing drawn');
     f.handle.paint(['cam']);
-    assert.equal(f.lines().length, 0, 'a camera has no canvas footprint to trace (§5.4)');
+    assert.equal(f.lines().length, 0, 'a camera has no canvas footprint to trace (section 5.4)');
     f.handle.paint(['a']);
     assert.equal(f.groups().length, 1, 'and the ordinary box still draws');
     assert.equal(f.groups()[0]!.getAttribute('data-box-id'), 'a',
@@ -348,7 +348,7 @@ test('a moving CAMERA bends the path — a flat one would lie about what the exp
     const pts = nums(panned.lines()[0]!);
     assert.equal(pts[0], flatPts[0], 'both start where the camera is still at 0');
     assert.notEqual(pts[pts.length - 2], flatPts[flatPts.length - 2],
-      'and diverge as the camera pans — §6.5: a path must be projected or it lies');
+      'and diverge as the camera pans — section 6.5: a path must be projected or it lies');
     // camX = +200 subtracts from the projected centre at eff = 1: 300 − 200 = 100.
     assert.equal(pts[pts.length - 2], sx(100));
   } finally { panned.teardown(); }

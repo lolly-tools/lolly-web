@@ -6,7 +6,7 @@
  * engine, no DOM. Everything goes through instanceFetch/instancePath, so a remote
  * instance base works exactly as the same-origin one.
  *
- * Maps the server contract (plans/08 §6b) onto the seam's neutral types. A failed
+ * Maps the server contract (plans/08 section 6b) onto the seam's neutral types. A failed
  * request degrades to an empty list / null rather than throwing into the view.
  */
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -24,7 +24,7 @@ async function getJson<T>(path: string): Promise<T | null> {
   }
 }
 
-/** The server structure of one full session (plans/08 §6b). */
+/** The server structure of one full session (plans/08 section 6b). */
 interface SessionBody {
   toolId?: string;
   toolVersion?: string;

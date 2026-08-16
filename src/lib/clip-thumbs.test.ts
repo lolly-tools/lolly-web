@@ -1080,7 +1080,7 @@ test('drainNodeRasters: an export waits the in-flight shot out, but is never hel
   });
 });
 
-// ── the authored-pose seam (plans/104 §6.5) ────────────────────────────────
+// ── the authored-pose seam (plans/104 section 6.5) ────────────────────────────────
 //
 // A thumbnail is a picture of the CLIP, not of the frame the playhead is parked on.
 // The authored values live in the applier's AuthoredStore, which this module cannot

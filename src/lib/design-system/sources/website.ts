@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The **website source** (plan 97 §9, M6) - a first-party site as design-system
+ * The **website source** (plan 97 section 9, M6) - a first-party site as design-system
  * material, on the two shells that can actually read one.
  *
- * §9's decision is the structure of this file: **no server fetch, ever**. The
+ * section 9's decision is the structure of this file: **no server fetch, ever**. The
  * deployed PWA cannot reach an arbitrary origin at all (`connect-src` allowlists
  * six hosts, so this dies at CSP before CORS is even asked), and `api/ingest`
  * was ruled out rather than built. So the reading is done by whatever on-device
@@ -49,7 +49,7 @@
  * The parsing itself is not here: `extract-site.ts` is the pure HTML/CSS →
  * census reader, and this module is the transport seam around it - address
  * validation, the fetch, pairing logo bytes onto the URLs the parser found, and
- * the §9 bonus of feeding a screenshot through the image census so colours
+ * the section 9 bonus of feeding a screenshot through the image census so colours
  * painted by a webfont or a canvas (which no stylesheet declares) are seen too.
  *
  * Everything with judgement in it is a pure exported function taking plain data,
@@ -655,11 +655,11 @@ const captureExt = captureBridge as {
  * shape the scan reads. Two things happen on the way through: the answer goes
  * through `coerceFetchResult`, the single place a wire payload becomes a typed
  * one for both transports (and the single place the caps are enforced), and no
- * screenshot is asked for. §9 offers the page AS PAINTED as a bonus census, but
+ * screenshot is asked for. section 9 offers the page AS PAINTED as a bonus census, but
  * the extension paints one through a DevTools attach, which shows the person a
  * "being debugged" banner: a second, unannounced thing for one press of a
  * button whose sentence promised a read. It is carried when it arrives, so
- * asking for it later is a one-word change here.
+ * asking for it later is a one-word change in this function.
  */
 function createExtensionSiteTransport(): SiteTransport | null {
   const make = captureExt.createExtensionSiteTransport;
@@ -732,7 +732,7 @@ function tauriSiteFetch(invoke: TauriInvoke): (url: string, opts?: { timeoutMs?:
 /**
  * The way this device can read a page, or `null`.
  *
- * `null` is required: §9's decision is that the Website source exists only
+ * `null` is required: section 9's decision is that the Website source exists only
  * where a real transport does, and the source picker must not render the tile
  * otherwise. There is no third branch to add later - a server fetch was ruled
  * out, not deferred.
@@ -830,7 +830,7 @@ const errText = (err: unknown): string => String((err as { message?: unknown })?
 /**
  * A screenshot's painted colours as a census, or null.
  *
- * §9's bonus, and the reason it is worth the code: a stylesheet only declares
+ * section 9's bonus, and the reason it is worth the code: a stylesheet only declares
  * what a stylesheet can declare. A wordmark set in a webfont, a hero drawn into
  * a canvas, a brand colour that only exists inside a background image - none of
  * those appear in `extract-site.ts`'s output at all, and all of them are in the

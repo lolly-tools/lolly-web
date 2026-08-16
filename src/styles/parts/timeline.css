@@ -355,7 +355,7 @@
 .tl-ease { max-width: 11ch; }
 
 /* ─── Inspector groups (progressive disclosure) ──────────────────────────────
-   Time / Animate / Keyframes / Sound — and P1's Camera (plans/104 §8). A header
+   Time / Animate / Keyframes / Sound — and P1's Camera (plans/104 section 8). A header
    that reads as resolved VALUES when shut, and the controls that produced them
    when open.
 
@@ -460,7 +460,7 @@
 .tl-group:not(.is-open) .tl-group-caret { transform: rotate(-90deg); }
 [dir="rtl"] .tl-group:not(.is-open) .tl-group-caret { transform: rotate(90deg); }
 
-/* ─── The group popover (plans/104 §8, M2.5) ─────────────────────────────────
+/* ─── The group popover (plans/104 section 8, M2.5) ─────────────────────────────────
    An open group's body is NOT in the strip any more: `mountBodyPopover` mounts it on
    the body, positioned ABOVE the transport (the panel is docked at the bottom, so
    "below the anchor" would open into the tracks). Which means the body finally gets
@@ -505,7 +505,7 @@
 .tl-group-pop .tl-kf-time { width: 7em; }
 .tl-group-pop .tl-kf-list { max-height: 168px; }
 .tl-group-pop .tl-kf-row { gap: 6px; }
-/* The pose block: one row per channel, and the §5.2 fact ("size is not keyframable")
+/* The pose block: one row per channel, and the section 5.2 fact ("size is not keyframable")
    rides its `title` rather than standing on screen as grey text. */
 .tl-kf-pose {
   display: flex;
@@ -515,7 +515,7 @@
 }
 .tl-group-body { display: inline-flex; align-items: center; gap: 8px; }
 
-/* ─── Keyframes group (plans/104 §8) ─────────────────────────────────────────
+/* ─── Keyframes group (plans/104 section 8) ─────────────────────────────────────────
    The inspector is a horizontal strip, and this group stays in it: the latch line,
    the pose fields, the note, the list and the way out all flow INLINE. Only the
    list itself stacks, and it is bounded and scrolls — a clip with forty poses must
@@ -581,7 +581,7 @@
 
 /* The ANIMATE segment's chip is a PAIR — "Rise · Fade" — and the generic 22ch cap
    ellipsed it mid-first-kind in languages whose transition names are longer than
-   English's (§8's M2.6 low: "Animate chip never ellipses before the second kind").
+   English's (section 8's M2.6 low: "Animate chip never ellipses before the second kind").
    Capping is the wrong tool on a chip that carries two facts: the strip it sits in is
    a horizontal scroller (`.tl-inspector`), so an uncapped segment makes the row a
    little wider and scrolls, while a capped one silently deletes the second half of
@@ -589,7 +589,7 @@
 .tl-group[data-group="animate"] > .tl-group-head,
 .tl-group[data-group="animate"] .tl-group-chip { max-width: none; }
 
-/* ─── The depth slider (plans/104 §5.3) ──────────────────────────────────────
+/* ─── The depth slider (plans/104 section 5.3) ──────────────────────────────────────
    Slider AND number on one row: the slider scrubs the tasteful 0–300 band, the
    number takes the whole field range (−300…900). The row is the popover's own
    `.tl-field` (label, then controls), so only the slider's flex behaviour is new. */
@@ -602,7 +602,7 @@
 .tl-kf-slider:disabled { opacity: 0.5; }
 .tl-group-pop .tl-kf-pose-row .tl-kf-pose-num { flex: 0 0 auto; }
 
-/* ─── The docked curve editor (plans/104 §8, M2.7) ───────────────────────────
+/* ─── The docked curve editor (plans/104 section 8, M2.7) ───────────────────────────
    ONE surface: the plot lives at the bottom of the Keyframes popup instead of in a
    nested popover of its own. It carries no transform/filter of its own — the
    containing-block trap this whole file is written around — and the editor's own
@@ -620,7 +620,7 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* ─── The Camera group (plans/104 §8) ────────────────────────────────────────
+/* ─── The Camera group (plans/104 section 8) ────────────────────────────────────────
    Five preset moves that each write a whole track, then the pose channels — plus
    Orbit, which is present and inert until tilt lands (P2). The presets wrap rather
    than scroll: they are six short words, and a row that has to be scrolled to reach
@@ -653,7 +653,7 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* ─── Diamonds on the bars (plans/104 §8) ────────────────────────────────────
+/* ─── Diamonds on the bars (plans/104 section 8) ────────────────────────────────────
    POINTER SUGAR. The strip is aria-hidden and its dots are non-interactive
    `<span>`s, because a `role="option"` bar may not own interactive children — the
    same rule the `.tl-seam` chips and the `.tl-dropslot` live under. Everything a
@@ -683,7 +683,7 @@
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 .tl-kf-dot:hover { background: hsl(var(--foreground) / 0.85); }
-/* The SELECTED diamond draws large — the state §3 records from the reference tool.
+/* The SELECTED diamond draws large — the state section 3 records from the reference tool.
    Size and paint only: growing it must not move it, so the margin grows with it. */
 .tl-kf-dot.is-selected {
   margin: -7px 0 0 -7px;

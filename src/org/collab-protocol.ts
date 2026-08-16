@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * org/collab-protocol - the WORK-COLLAB wire protocol (plan 100 §7, wave 3.1).
+ * org/collab-protocol - the WORK-COLLAB wire protocol (plan 100 section 7, wave 3.1).
  *
  * Types + pure helpers only: no socket, no DOM, no module state. This file is the
  * shell's written-down copy of the gateway contract implemented in lolly-work
@@ -41,9 +41,9 @@
  * with a stated reason instead of an unexplained reconnect loop. A hosted work
  * collab on a remote base needs a server-side answer first (a same-site cookie
  * attribute the deployment can actually set, or a one-time ticket in the URL) - 
- * plan 100 §7 gains that line before the remote case ships.
+ * plan 100 section 7 gains that line before the remote case ships.
  *
- * CSP (plan 100 §11.8 records that WebRTC is invisible to CSP; a WebSocket is NOT).
+ * CSP (plan 100 section 11.8 records that WebRTC is invisible to CSP; a WebSocket is NOT).
  * `connect-src 'self'` - what vercel.json and deploy/docker/nginx.conf both ship - 
  * covers the same-origin `wss:` upgrade this module allows, because 'self' matches
  * the page's own origin across the http→ws scheme pair. Nothing else is reachable,
@@ -54,7 +54,7 @@
  * that a frame is a JSON object with a known `t`, and each handler validates what it
  * actually reads. Ops get a structural gate (`isCanvasOp`) - deliberately NOT the
  * deep one: the ajv `validateCanvasOp` + shared op guard is separate concurrent work
- * (plan 100 §11.21), and the integration must route inbound ops through it once it
+ * (plan 100 section 11.21), and the integration must route inbound ops through it once it
  * lands. See the concerns note in org/collab-provider.ts.
  */
 
@@ -81,12 +81,12 @@ export const COLLAB_OP_VERSION = CANVAS_OP_VERSION;
 
 /** A joiner is either allowed to write ops or is present read-only. A version-major
  *  mismatch, or a principal without `session.edit`, resolves to 'observer' (plan 100
- *  §7.6 / plans/99 §9) - never to a refused join. */
+ *  section 7.6 / plans/99 section 9) - never to a refused join. */
 export type CollabRole = 'writer' | 'observer';
 
 /** One participant as the gateway lists them (lolly-work rooms.ts `RosterEntry`).
  *  Identity comes from the org session (SSO), so names are real names - plan 100
- *  §4.5.
+ *  section 4.5.
  *
  *  `id` is the CONNECTION id and is what `peer-leave` names; `userId` is the
  *  principal, and one principal can hold several connections (two tabs, a phone).
@@ -127,8 +127,8 @@ export interface WireDocState extends WireBoxes {
  * this file's to make: the contract's own `Presence`/`Awareness` (what
  * `CanvasSyncAdapter.presence` takes), and the shell's richer `PresenceFrame`
  * (`lib/collab-presence.ts`), which wraps a presence state with the per-sender
- * `seq` that the newest-only rule for an unordered lane needs (plan 100 §11.5) and
- * an `away` bit (§11.4). Typing this `Presence` here would quietly forbid the
+ * `seq` that the newest-only rule for an unordered lane needs (plan 100 section 11.5) and
+ * an `away` bit (section 11.4). Typing this `Presence` here would quietly forbid the
  * second, which is the one the wave-1 presence engine actually produces.
  */
 export type CollabPresencePayload = unknown;
@@ -463,7 +463,7 @@ function isBoxRow(v: unknown): v is BoxRow {
   return Object.values(v as Record<string, unknown>).every(isScalar);
 }
 
-/** True for a literal or a `{bind}` provider descriptor (plans/99 §6). */
+/** True for a literal or a `{bind}` provider descriptor (plans/99 section 6). */
 export function isParamValue(v: unknown): v is ParamValue {
   if (isScalar(v)) return true;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
@@ -476,7 +476,7 @@ export function isParamValue(v: unknown): v is ParamValue {
  * Structural gate for one inbound op: the discriminant, the origin stamp, and the
  * fields that op kind cannot work without. Enough that nothing downstream reads
  * `undefined` off a hostile frame - NOT enough to be the security boundary, which is
- * the ajv validator plus the manifest own-property whitelist (plan 100 §11.21).
+ * the ajv validator plus the manifest own-property whitelist (plan 100 section 11.21).
  */
 export function isCanvasOp(v: unknown): v is CanvasOp {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
@@ -541,7 +541,7 @@ function boxesToOps(
     // Membership + paint order first, with an EMPTY row, then the fields as their
     // own ops - so `withoutHeldKeys` can drop exactly one field of one box without
     // having to take apart an `add`, and so the geometry lane stays a `geom` op
-    // (plans/99 §4.3: a move must never invalidate a raster).
+    // (plans/99 section 4.3: a move must never invalidate a raster).
     out.push({ k: 'add', id, row: {}, orderKey: keys[i]!, origin, ...scope });
     const geom: Partial<Record<GeometryField, number>> = {};
     let geomChanged = false;

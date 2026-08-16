@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * org/team-session-origin.ts - the stash that threads a TEAM session's instance-side id
- * from the Projects open to the Share dialog's "Work collab" row (plans/100 §7; the
+ * from the Projects open to the Share dialog's "Work collab" row (plans/100 section 7; the
  * stitch-2 gap that left `CollabLaunchContext.sessionId` populated by nobody).
  *
  * Two halves, in one file because they are one claim:

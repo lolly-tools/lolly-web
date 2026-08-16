@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * recolor-logo.ts - derived logo variants by pure SVG recolour (plan 97 §7.3).
+ * recolor-logo.ts - derived logo variants by pure SVG recolour (plan 97 section 7.3).
  *
  * From a placed colour SVG the Logos room offers two GENERATED marks, added
  * only on tap: a **mono** version (every paint becomes one ink) and a

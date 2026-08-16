@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * versions-io.ts - publishing, activating and restoring design-system versions
- * (plans/97 §6a). The Versions panel's whole vocabulary, with no DOM in it.
+ * (plans/97 section 6a). The Versions panel's whole vocabulary, with no DOM in it.
  *
  * The rules this module exists to hold in one place:
  *   - **The bytes go through the chokepoint.** Nothing here writes an asset

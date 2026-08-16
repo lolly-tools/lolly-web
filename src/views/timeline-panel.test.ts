@@ -446,10 +446,10 @@ interface Harness {
   canvasEl: HTMLElement;
   panel: {
     destroy(): void; setOpen(v: boolean): void; isOpen(): boolean;
-    /** The playhead-contextual write seam free-canvas commits through (plans/104 §8). */
+    /** The playhead-contextual write seam free-canvas commits through (plans/104 section 8). */
     kfPoseIds(ids: readonly string[]): string[];
     kfPoseWrite(boxes: Box[], ids: readonly string[], delta: Record<string, number>, mode?: 'add' | 'set'): Box[];
-    /** Camera mode, entered by SELECTION (plans/104 §8) - the P1 half of the same seam. */
+    /** Camera mode, entered by SELECTION (plans/104 section 8) - the P1 half of the same seam. */
     cameraModeId(): string;
     cameraWrite(boxes: Box[], delta: Record<string, number>): Box[];
     cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null;
@@ -747,7 +747,7 @@ test('a lost pointer capture does not wedge the panel into ignoring the model fo
 /** The inspector control sitting under a given field label. */
 function field(root: HTMLElement, label: string): HTMLInputElement {
   // BOTH scopes: a shut group keeps its body in its own segment inside `.tl-inspector`,
-  // and an OPEN one has lent it to the body-mounted popover (plans/104 §8's M2.5
+  // and an OPEN one has lent it to the body-mounted popover (plans/104 section 8's M2.5
   // revision), which is not a descendant of the panel at all.
   const rows = Array.from(root.ownerDocument!.querySelectorAll<HTMLElement>(
     '.tl-inspector .tl-field, .tl-group-pop .tl-field'));
@@ -1882,7 +1882,7 @@ test('a frame bar upgrades from its fill to a photograph of the box', async () =
         const card = ops.get(thumbCanvas(h, 'card')) ?? [];
         assert.deepEqual(calls, ['card'], 'the box itself was photographed, not the bar');
         assert.equal(card.some((o) => o.op === 'fillRect'), true, 'the underlay went down first');
-        // ONCE, at the leading edge, at its own aspect - never tiled (plans/104 §8's
+        // ONCE, at the leading edge, at its own aspect - never tiled (plans/104 section 8's
         // M2.5 revision, point 4). A filmstrip repeats because it is a picture of time
         // passing; a photograph of a card is identical in every tile, so a wide bar read
         // as the same 6px thumbnail printed twenty times. The fill carries the rest.
@@ -3400,7 +3400,7 @@ test('the panel declines Ctrl/Cmd/Alt chords — Save, Find, Open and browser zo
     el.dispatchEvent(ok);
     assert.equal(ok.defaultPrevented, true, 'bare `s` is still the panel\'s');
 
-    // …and the documented exception IS taken (plans/104 §8): Alt+←/→ walks keyframes.
+    // …and the documented exception IS taken (plans/104 section 8): Alt+←/→ walks keyframes.
     // Asserted here, beside the rule it is an exception to, so the two can never drift
     // into "the guard was quietly relaxed".
     for (const key of ['ArrowLeft', 'ArrowRight']) {
@@ -3752,13 +3752,13 @@ test('a keyboard trim that hits a wall costs no undo entry — but still reads b
   } finally { h.teardown(); }
 });
 
-// ── the clip inspector's grouped disclosure (plans/104 §8) ────────────────────
+// ── the clip inspector's grouped disclosure (plans/104 section 8) ────────────────────
 //
 // The row this replaced was eleven labelled inputs in a horizontal overflow scroller,
 // and the keyframe row would have made it fourteen. It is now THREE groups - Time,
 // Animate, Keyframes - each a disclosure button whose SHUT state reads as the resolved
 // values, with the controls that produced them one press away. (Sound was a fourth
-// until §8's M2.6 pass: mute is one bit, so it is a toggle on the strip rather than a
+// until section 8's M2.6 pass: mute is one bit, so it is a toggle on the strip rather than a
 // door onto a switch, and the A/V link went back to the clip context menu.)
 //
 // Three properties these pin, because all three are contracts rather than looks:
@@ -3826,7 +3826,7 @@ test('the inspector renders GROUPS, each an icon + a text label + a disclosure b
       Array.from(h.root.querySelectorAll<HTMLElement>('.tl-inspector .tl-group')).map((g) => g.dataset.group),
       ['time', 'animate'],
       'a plain timed clip gets Time and Animate — no Keyframes, which it has not earned, '
-      + 'and no Sound, which §8\'s M2.6 pass turned into a plain toggle on the strip',
+      + 'and no Sound, which section 8\'s M2.6 pass turned into a plain toggle on the strip',
     );
     for (const gid of ['time', 'animate']) {
       const head = groupHead(h.root, gid);
@@ -3878,13 +3878,13 @@ test('a shut group reads as its values: the summary chips', async () => {
     // fmtTime/fmtDur the transport pill and the trim badge use, and spelled out here
     // rather than re-derived, so a change to either formatter has to be looked at.
     // TIME keeps its numeric readout: it is the primary glance value of a clip, and
-    // §8's M2.6 pass names it as the one segment that stays as it was.
+    // section 8's M2.6 pass names it as the one segment that stays as it was.
     assert.deepEqual(groupChips(h.root, 'time'), ['0:03.0', '2.0s', '×1']);
     assert.equal(fmtDur(2), '2.0s', 'the chip is the panel\'s own duration vocabulary');
     // Animate: the two KIND names, ONE chip, one separator dot - and nothing else.
     // M2.5 printed `In: Rise · 400ms · Ease out` / `Out: Cut (no animation)`, which is
     // every field of the group re-rendered on the door of the group ("chips must not
-    // duplicate the popup's contents", §8 M2.6).
+    // duplicate the popup's contents", section 8 M2.6).
     assert.deepEqual(groupChips(h.root, 'animate'), ['Rise · Fade']);
     const chip = groupChips(h.root, 'animate').join('');
     assert.equal(/\d/.test(chip), false, 'no ms anywhere in it');
@@ -3924,7 +3924,7 @@ test('an UNTIMED box opens Time (the only promotion route there is) and summaris
     // No mute toggle either: there is nothing playing to silence.
     assert.equal(h.root.querySelector('.tl-inspector .tl-mute'), null);
     assert.deepEqual(groupChips(h.root, 'time'), ['Always on']);
-    // SHUT - like every group since §8's M2.5 revision. Nothing auto-discloses on a
+    // SHUT - like every group since section 8's M2.5 revision. Nothing auto-discloses on a
     // selection: a popover that opens itself over the canvas because you clicked a box
     // is a popover you then have to dismiss.
     assert.equal(groupHead(h.root, 'time').getAttribute('aria-expanded'), 'false');
@@ -4103,7 +4103,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
   const plain = mount([clip('a', 0, 3)], 40, ADD_KINDS, kfCfg);
   try {
     plain.select(['a']);
-    // The disclosure law (plans/51:80, restated by 104 §8) is satisfied by the group
+    // The disclosure law (plans/51:80, restated by 104 section 8) is satisfied by the group
     // being SHUT around a single action, not by the door being unreachable: a feature
     // with no way in is not progressive disclosure, it is an unshipped feature.
     const g = group(plain.root, 'keyframes');
@@ -4147,7 +4147,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
     assert.ok(group(cam.root, 'keyframes'), 'a camera always shows it');
     assert.deepEqual(groupChips(cam.root, 'keyframes'), ['Not animated']);
     setGroup(cam.root, 'keyframes', true);
-    // The group's OWN "+Keyframe" is gone: §8's M2.5 revision gave the action two homes
+    // The group's OWN "+Keyframe" is gone: section 8's M2.5 revision gave the action two homes
     // (the transport's additive cluster and the canvas contextual bar) and neither of
     // them is behind a disclosure. The latch READOUT is what the group keeps.
     assert.equal(inspEl('.tl-kf-add'), null, 'no third copy of the action hidden in here');
@@ -4172,7 +4172,7 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
   // not animation - so it should not cost a keyframe track to reach. On a box with no
   // track the Depth control now sits beside the Animate door (KF_CFG declares `zField`),
   // and setting it writes the box's `z` through the same base path the pose row uses off a
-  // diamond: it mints the scene camera (depth needs one to be seen) but NO track - §8's
+  // diamond: it mints the scene camera (depth needs one to be seen) but NO track - section 8's
   // "nobody keyframes by accident" holds because a property write is not a keyframe.
   const depthCfg = { cfgPatch: { kfField: 'kf', zField: 'z' } };
   const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, depthCfg);
@@ -4204,7 +4204,7 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
 });
 
 test('a SOUND is offered no keyframe affordance anywhere — not a group, not a door, not a diamond', async () => {
-  // §8's disclosure law, the other way round: "Every other box has no keyframe affordance
+  // section 8's disclosure law, the other way round: "Every other box has no keyframe affordance
   // anywhere in the UI - not a disabled one, not an empty one." `kfActionIds` excludes
   // audio (plan 101 owns keyframed gain), so an inspector that offered the group anyway
   // gave the user an Animate door onto exactly the x/y/s/r/o track "+Keyframe" refuses to
@@ -4243,7 +4243,7 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
   // directive 3's own surface ("Ease selects get real width in the popover"): the flow the
   // revision exists to fix was the flow that broke.
   //
-  // The ANIMATE group is the surface now: §8's M2.7 docked the KEYFRAME curve editor
+  // The ANIMATE group is the surface now: section 8's M2.7 docked the KEYFRAME curve editor
   // inside the Keyframes popup itself (one surface, no nested popover), so the
   // transition curves are what still spawn a `.tl-ease-pop` from inside a card - and
   // the `isInside` exemption that keeps the card up is the same one.
@@ -4276,7 +4276,7 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
 });
 
 test('the A/V link is offered by the CLIP MENU alone — the inspector strip carries no copy', async () => {
-  // §8's M2.6 pass: "The link/detach affordance returns to the clip context menu (its
+  // section 8's M2.6 pass: "The link/detach affordance returns to the clip context menu (its
   // pre-M2 home)". M2.5 had put a second copy in the Sound group beside the mute, and
   // when that group became a bare toggle the copy had nowhere honest to live: detaching
   // audio grows a whole second bar on another lane, which is not a sibling of a mute
@@ -4305,7 +4305,7 @@ test('the A/V link is offered by the CLIP MENU alone — the inspector strip car
   } finally { closeOverlays(); h.teardown(); }
 });
 
-// ── mute: a toggle, not a group (plans/104 §8's M2.6 pass) ────────────────────
+// ── mute: a toggle, not a group (plans/104 section 8's M2.6 pass) ────────────────────
 //
 // "SOUND stops being a popover group entirely: it becomes a speaker/mute icon toggle
 // on the strip (direct click flips mute - the NLE convention), no popup."
@@ -4431,7 +4431,7 @@ test('the groups work right-to-left', () => {
   assert.ok(block.includes('border-inline-start'), 'the chip separator is a logical border');
 });
 
-// ── the keyframe surface (plans/104 §8, workstream I2) ───────────────────────
+// ── the keyframe surface (plans/104 section 8, workstream I2) ───────────────────────
 //
 // Four things are pinned here, and each is a rule rather than a look:
 //
@@ -4545,9 +4545,9 @@ test('the latch header flips No keyframe here ⇄ Keyframe @ …, and the pose f
 
     await seek(h, 2000);
     assert.equal(state(), 'No keyframe here', 'parked between diamonds');
-    // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (§5.3):
+    // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (section 5.3):
     // `z` is the one pose channel with a base field of its own, so off a diamond an
-    // edit there writes the BASE - §8's own rule - rather than inventing a keyframe.
+    // edit there writes the BASE - section 8's own rule - rather than inventing a keyframe.
     // The other three have nothing to write and stay inert.
     assert.deepEqual(poseDisabled(), [false, true, true, true],
       'no keyframe to pose: everything but Depth is inert (they still READ, see below)');
@@ -4578,7 +4578,7 @@ test('an on-diamond pose edit rewrites exactly ONE keyframe, as a full pose, in 
     const track = parse(kfOf(h, 'a'));
     assert.equal(track.length, 2, 'no keyframe was added');
     assert.deepEqual({ ...track[0]!.v }, { x: 0 }, 'the OTHER keyframe is untouched, sparse channels and all');
-    // The edited one is now a FULL pose over the box's active channel set (§8: "every
+    // The edited one is now a FULL pose over the box's active channel set (section 8: "every
     // diamond is a complete honest pose") - x, which the track already animates, plus
     // the channel just edited. Its x is the value it already held, not a neutral.
     assert.deepEqual({ ...track[1]!.v }, { x: 40, o: 0.5 });
@@ -4633,7 +4633,7 @@ test('parked OFF a diamond, nothing can write the track — the base is what an 
 });
 
 test('a CLOSED panel arms nothing: no playhead on screen, no redirection', async () => {
-  // §8's model is "the playhead's position IS the arm". `setOpen(false)` pauses the
+  // section 8's model is "the playhead's position IS the arm". `setOpen(false)` pauses the
   // clock but keeps its time, so without an explicit gate a canvas drag on an animated
   // box would still write a keyframe - with no latch header, no diamonds, no transport
   // and no "+Keyframe" anywhere to explain where it came from.
@@ -4661,7 +4661,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     await seek(h, 1500);
     assert.deepEqual(values(), ['300', '1', '1', '0'], 'on a diamond, the pose it holds');
 
-    // OFF a diamond they are inert but NOT blank (§8's M2.5 revision, point 3: blanking
+    // OFF a diamond they are inert but NOT blank (section 8's M2.5 revision, point 3: blanking
     // was honest and read as broken). They print what the box is actually striking at
     // the playhead - `kfPoseAt` → the engine's own `evaluateKf`, the same arithmetic the
     // preview and the export read - so a disabled field is a live readout rather than a
@@ -4670,7 +4670,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     await seek(h, 750);
     const mid = values();
     assert.deepEqual(pose().map((n) => n.disabled), [false, true, true, true],
-      'still inert — except Depth, which has a base field to write (§5.3)');
+      'still inert — except Depth, which has a base field to write (section 5.3)');
     assert.notDeepEqual(mid, ['', '', '', ''], 'and no longer blank');
     const z = Number(mid[0]);
     assert.ok(z > 0 && z < 300, `depth reads between its two diamonds (got ${mid[0]})`);
@@ -4684,7 +4684,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
 
     // `min`/`max` are the spinner's range, not a validator: a typed value commits
     // verbatim on `change`, and the engine's WIRE clamp for z is far wider than the
-    // FIELD's (§5.1). The inspector is a named `KF_Z_FIELD_CLAMP` enforcement site.
+    // FIELD's (section 5.1). The inspector is a named `KF_Z_FIELD_CLAMP` enforcement site.
     await seek(h, 1500);
     const depth = pose()[0]!;
     depth.value = '5000';
@@ -4696,7 +4696,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the "size is not keyframable" claim is GONE — w/h are channels now (§5.2 reversed)', async () => {
+test('the "size is not keyframable" claim is GONE — w/h are channels now (section 5.2 reversed)', async () => {
   // P1 reversed it (Andy, 2026-08-12 hands-on: "I can't change width and height of
   // elements and have them tween"). The wire carries `w`/`h`, a resize ON a diamond
   // writes them, and a standing sentence - or a tooltip - saying otherwise is now a
@@ -4711,7 +4711,7 @@ test('the "size is not keyframable" claim is GONE — w/h are channels now (§5.
     assert.ok(wrap, 'the pose fields are one block');
     assert.equal(wrap!.title, '', 'and the tooltip that claimed size could never tween went with it');
     assert.equal(inspAll('.tl-kf-pose .tl-kf-pose-num').length, 4, 'all four channels are inside it');
-    // The depth slider is the fifth control on that block - the §5.3 scrub band, beside
+    // The depth slider is the fifth control on that block - the section 5.3 scrub band, beside
     // the number that still takes the whole field range.
     const slider = inspEl<HTMLInputElement>('.tl-kf-pose .tl-kf-slider');
     assert.ok(slider, 'Depth has a slider');
@@ -4758,7 +4758,7 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
   try {
     const b = kfBtn(h);
     // The WHOLE cluster, in order - pinned end to end rather than by a slice, because
-    // the position of this one button is the assertion. §8's M2.6 pass moved it out of
+    // the position of this one button is the assertion. section 8's M2.6 pass moved it out of
     // the additive trio (where M2.5 put it, reasoning it was the fourth thing the panel
     // can ADD) to the tail, AFTER the keyboard sheet: `… zoom− zoom+ expand ⌨ ◇`.
     // The IDENTITY class only (`classList[1]`, the token `btn()` mints after `tl-btn`) - 
@@ -4822,7 +4822,7 @@ test('+Keyframe at a diamond UPDATES it; off one it adds; both are a single comm
 });
 
 test('+Keyframe on an UNTIMED box promotes it AND keys it in ONE commit', async () => {
-  // §8's M2.5 revision, directive 1: "on an untimed selected object it AUTO-PROMOTES
+  // section 8's M2.5 revision, directive 1: "on an untimed selected object it AUTO-PROMOTES
   // onto the timeline and writes the first keyframe in the same single commit (one undo
   // step - the existing promote() writer + writeKfPose composed)". The count is the
   // assertion: two writers, ONE array, ONE commit, therefore one ⌘Z.
@@ -4886,7 +4886,7 @@ test('audio has no pose to strike, so +Keyframe leaves it out of a mixed selecti
 });
 
 test('K is the SAME action from the keyboard — including the auto-promotion', async () => {
-  // §8's M2.5 revision: "K stays" and routes through the one action, so a keyboard user
+  // section 8's M2.5 revision: "K stays" and routes through the one action, so a keyboard user
   // gets the whole feature rather than the half of it that existed before the button
   // did. Which means K now opens the door too: the panel being up with something
   // selected IS the disclosure (the revision says so in as many words), and the M2 rule
@@ -5108,14 +5108,14 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
   assert.equal((moveBranch.match(/\bcommit\(/g) ?? []).length, 1,
     'ONE commit in the move branch, however the selection splits between posed and moved');
   assert.ok(/rotKf\s*=\s*g\.type === 'rotate'/.test(sizeBranch),
-    'ROTATE is a pose channel, and the branch says so (plans/104 §5.2)');
-  // …and so is RESIZE, since P1 (§5.2 REVERSED): on a diamond it writes `w`/`h`
+    'ROTATE is a pose channel, and the branch says so (plans/104 section 5.2)');
+  // …and so is RESIZE, since P1 (section 5.2 REVERSED): on a diamond it writes `w`/`h`
   // ABSOLUTELY ('set' - a dragged handle produces the new width, not a change to it),
   // plus the origin shift an nw/n/w handle also makes, as a relative x/y delta.
   assert.ok(/sizeKf\s*=\s*g\.type === 'resize'/.test(sizeBranch),
     'RESIZE is one too, and the branch says which is which');
   assert.ok(/kfPoseWrite\(boxes, \[rotId\], \{ w: live\.w, h: live\.h \}, 'set'\)/.test(sizeBranch),
-    "and it writes them with 'set', because w/h are absolute px (§5.2)");
+    "and it writes them with 'set', because w/h are absolute px (section 5.2)");
   assert.equal((sizeBranch.match(/\bcommit\(/g) ?? []).length, 3,
     'the three mutually exclusive endings of one gesture — posed rotate, posed size, base write');
   // Bounded to the BRANCH, not "everything after it": onGestureEnd is not the last
@@ -5123,13 +5123,13 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
   // slice would read that one as this branch's.
   const gs = end.slice(end.indexOf("if (g.type === 'gscale'"), end.indexOf('function applyLiveRect'));
   assert.equal(gs.includes('kfPoseWrite('), false,
-    'group scale ALWAYS writes the base — §5.2 keeps that rule even now that a single-box resize poses');
+    'group scale ALWAYS writes the base — section 5.2 keeps that rule even now that a single-box resize poses');
 });
 
 test('the KEYBOARD move is redirected exactly like the pointer one, and declines the SEEK chord only', () => {
   // The nudge is the accessible equivalent of a drag, so it must get the SAME
-  // model-write semantics (plans/104 §8): on a diamond it poses, off one it moves.
-  // And it reserves Alt+←/→ - the panel's keyframe walk (§9.2: "free-canvas arrow-nudge
+  // model-write semantics (plans/104 section 8): on a diamond it poses, off one it moves.
+  // And it reserves Alt+←/→ - the panel's keyframe walk (section 9.2: "free-canvas arrow-nudge
   // declines Alt (the seek chord)") - so the chord means one thing in the editor.
   // ONLY that pair, though: Alt+↑/↓ is not a chord anyone binds, and declining it as well
   // made it a key that did nothing anywhere (the panel binds on its own root, so it never
@@ -5148,7 +5148,7 @@ test('the KEYBOARD move is redirected exactly like the pointer one, and declines
     'ONE commit, however the selection splits — one undo step, like the drag');
 });
 
-// ── P1: the camera, the depth slider, and §8's M2.6/M2.7 polish ───────────────
+// ── P1: the camera, the depth slider, and section 8's M2.6/M2.7 polish ───────────────
 //
 // Everything below is the PRODUCT surface of plans/104 P1. The numbers it leans on
 // are the engine's (`resolveCamera`, `projectDepth`, `KF_Z_FIELD_CLAMP`) and the
@@ -5176,8 +5176,8 @@ const cameraOf = (h: Harness): Box | undefined => h.boxes.find((b) => String(b.k
 const CAM_KINDS = [...ADD_KINDS, { id: 'camera', label: 'Camera', seed: { kind: 'camera' } }];
 
 test('the depth slider writes the BASE off a diamond, and mints the scene camera exactly once', async () => {
-  // §5.3 + §5.4. Depth is the one pose channel with a field of its own, so off a
-  // diamond an edit there is §8's "edits write the base" rather than an invented
+  // section 5.3 + section 5.4. Depth is the one pose channel with a field of its own, so off a
+  // diamond an edit there is section 8's "edits write the base" rather than an invented
   // keyframe - and the FIRST such edit is what auto-creates the untimed scene camera,
   // in the SAME array, so lifting a box is one commit and one undo step.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, CAM_KINDS, KF_CFG);
@@ -5245,7 +5245,7 @@ test('the depth slider scrubs the tasteful band and the number takes the whole f
     setGroup(h.root, 'keyframes', true);
     await seek(h, 1500);
     // A hand-driven value past the band still lands inside the FIELD clamp: `min`/`max`
-    // are the spinner's range, and the commit is what enforces (§5.1 names this site).
+    // are the spinner's range, and the commit is what enforces (section 5.1 names this site).
     const depth = inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!;
     depth.value = '-5000';
     depth.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -5319,7 +5319,7 @@ test('the shift-drag tilt gesture is held to the same band, composed rather than
 });
 
 test('cameraTiltPreview reports the ABSOLUTE tilt a shift-drag would land, clamped (A2/A4)', async () => {
-  // The canvas tilt HUD reads this. A camera drag previews nothing on the stage (§8
+  // The canvas tilt HUD reads this. A camera drag previews nothing on the stage (section 8
   // commits on release), so the number the user sees during the drag IS this call - and
   // it must equal what `cameraWrite` would commit: the current pose plus the delta, held
   // to the band, never a raw unheld delta.
@@ -5367,7 +5367,7 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
     // P2 added TILT X / TILT Y between the pans and the dolly - the order a shot is set
     // up in (where the camera is, which way it is pointing, how far away it is).
     assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Tilt X', 'Tilt Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
-      'the §4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
+      'the section 4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
     assert.equal(labels.some((l) => /zoom/i.test(l ?? '')), false, 'never "zoom" — eff(z = camZ) = 1 for every p');
     const chips = inspAll<HTMLElement>('.tl-cam-chip');
     assert.deepEqual(chips.map((c) => c.textContent), ['Drag', 'Drag', 'Shift-drag', 'Shift-drag', 'Scroll'],
@@ -5377,7 +5377,7 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta', async () => {
+test('a camera preset writes the whole track in ONE commit, at the section 4.6 quanta', async () => {
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
   const { serialiseKf } = await import('../../../../engine/src/keyframes.ts');
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
@@ -5436,7 +5436,7 @@ test('a camera preset scales its timing to the scene length (A1#5)', async () =>
 
 // This test used to assert the OPPOSITE - that Orbit was offered, `aria-disabled`, and
 // carried the reason "Needs tilt (coming)" in both its tooltip and its accessible name.
-// P2 IS that tilt (plans/104 §6.4: `rx`/`ry` now project through a homography), so the
+// P2 IS that tilt (plans/104 section 6.4: `rx`/`ry` now project through a homography), so the
 // dimmed twin is gone and Orbit comes out of the same preset loop as every other move.
 // The inversion is the point of keeping the test at this name: a reason that has stopped
 // being true must not be left standing on a control, and the form of the failure if
@@ -5510,7 +5510,7 @@ test('a preset applied with NO camera mints the scene camera and keys it in the 
     await frames(3);
     assert.equal(cameraOf(h), undefined, 'precondition: no camera');
     // Reach the writer the way the Camera group does - the group only exists on a
-    // camera, so this is the "camera mode entered" door of §5.4's three.
+    // camera, so this is the "camera mode entered" door of section 5.4's three.
     const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
     const cam = { id: 'cam', kind: 'camera', start: '', dur: '' } as Box;
     const h2 = mount([...h.boxes, cam], 40, CAM_KINDS, KF_CFG);
@@ -5578,7 +5578,7 @@ test('cameraWrite folds a gesture into the SCENE DEFAULT, and refuses a moving c
 });
 
 test('the camera gesture map: the canvas hands the WHEEL to the view unless a camera is armed', () => {
-  // §8: "plain wheel = dolly (camZ, preventDefault; Cmd/Ctrl-wheel stays VIEW zoom,
+  // section 8: "plain wheel = dolly (camZ, preventDefault; Cmd/Ctrl-wheel stays VIEW zoom,
   // Space+drag stays VIEW pan)". The separation is the whole reason camera mode can be
   // a selection rather than a mode, so it is pinned at the source: free-canvas is the
   // only listener that could claim the notch, and it must decline three ways.
@@ -5643,7 +5643,7 @@ test('clicking a diamond opens the Keyframes popup ON that keyframe', async () =
     dot.dispatchEvent(pointer('pointerup', 60));
     await frames(3);
     const pop = groupPopEl();
-    assert.ok(pop, 'the Keyframes popup opened on the press (§8 M2.7 (a))');
+    assert.ok(pop, 'the Keyframes popup opened on the press (section 8 M2.7 (a))');
     assert.equal(pop!.getAttribute('aria-label'), 'Keyframes', 'and it is that group, not another');
     assert.equal((inspEl('.tl-kf-state') as HTMLElement).textContent, 'Keyframe @ 0:01.5',
       'ON the keyframe that was pressed: the playhead went with the selection');
@@ -5682,7 +5682,7 @@ test('the curve editor is DOCKED in the Keyframes popup, and a drag switches the
     assert.equal(sel.value, 'eo', 'the docked plot and the select are showing the same curve');
 
     // Drag a handle: one commit, and the select is now on a Custom option it did not
-    // have before - "they can use presets to learn" (§8's M2.7 (b)). Re-queried, because
+    // have before - "they can use presets to learn" (section 8's M2.7 (b)). Re-queried, because
     // the close/open above minted a new editor.
     const live = inspEl<HTMLElement>('.tl-kf-dock .ease-ed-plot')!;
     const handle = inspEl<Element>('.tl-kf-dock .ease-ed-handle')!;
@@ -5716,7 +5716,7 @@ test('M2.6 lows: no focusable node in the aria-hidden strip, and the enlarged ma
       'precondition: the playhead\'s diamond draws large');
 
     // A ROW REBUILD mints new dots. The latch answer has not changed, so its memo would
-    // skip the re-mark and the enlarged diamond would silently vanish (§8's M2.6 low).
+    // skip the re-mark and the enlarged diamond would silently vanish (section 8's M2.6 low).
     h.notify();
     await frames(3);
     assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, true],
@@ -5763,7 +5763,7 @@ test('M2.6 low: the Animate chip is never capped, so its second kind cannot be e
 });
 
 test('an untimed camera reads as "Camera" on its Always-on chip, never as "Clip"', async () => {
-  // The chip IS the affordance the implicit scene camera is discovered through (§5.4),
+  // The chip IS the affordance the implicit scene camera is discovered through (section 5.4),
   // and every media probe reads '' on a box that paints nothing - so without a model
   // branch it wore the fallback label of the one thing it is not.
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('a', 0, 5)], 40, CAM_KINDS, KF_CFG);
@@ -5784,7 +5784,7 @@ test('the camera add-kind is offered by the panel\'s + menu, with its own glyph'
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam\'s half of §5.2', async () => {
+test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam\'s half of section 5.2', async () => {
   // free-canvas hands the handle's resulting WIDTH, not a change to it, so the seam has
   // to take a value rather than a delta. The mode is the caller's to choose because only
   // the caller knows which reading its gesture produced: a drag is relative, a resize is

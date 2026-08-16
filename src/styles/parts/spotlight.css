@@ -101,7 +101,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   text-overflow: ellipsis;
 }
 
-/* The explicit ?q= handoff row closing a group (plans/99 §2a). */
+/* The explicit ?q= handoff row closing a group (plans/99 section 2a). */
 .spotlight-see-all {
   justify-content: space-between;
   color: hsl(var(--primary));
@@ -112,7 +112,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
 }
 .spotlight-see-all-arrow { flex: none; }
 
-/* ─── The current view's own group (plans/99 §2a) ────────────────────────────
+/* ─── The current view's own group (plans/99 section 2a) ────────────────────────────
    Hoisted to the top of the panel (spotlight.ts) and washed in the brand accent
    so the results for the view you're ON read as "here". Discovery no longer
    depends on seeing the live-filtered cards behind the panel, which it can

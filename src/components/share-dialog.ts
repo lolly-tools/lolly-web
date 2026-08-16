@@ -24,13 +24,17 @@ import { AUTO_PACK_MIN, SHARE_WARN_LEN, type ShareFidelity } from '../lib/url-bu
  *  has the host + session the link builder never sees. `build(includeLicensed)` returns
  *  the file + a summary of what it carries; `save` delivers it (download / native share). */
 export interface ShareDialogLolly {
-  build: (includeLicensed: boolean) => Promise<{ blob: Blob; filename: string; summary: LollySummary }>;
+  build: (opts?: { includeLicensed?: boolean; includeTool?: boolean }) => Promise<{ blob: Blob; filename: string; summary: LollySummary }>;
   save: (blob: Blob, filename: string) => Promise<void>;
   /** Hand the built file to the OS share sheet (Web Share / AirDrop / Android share).
    *  Resolves false when there's no share target, so the caller falls back to save().
    *  Present only when the host exposes `export.share` - the "Send to…" button is
    *  feature-detected off it. */
   share?: (blob: Blob, filename: string) => Promise<boolean>;
+  /** The "include the tool" offer (plans/114 Wave 7): resolved lazily after the dialog
+   *  opens, so a `custom` tool defaults the toggle on. When present, the File panel shows
+   *  an "Include the tool" checkbox whose state feeds `build({ includeTool })`. */
+  toolOffer?: () => Promise<{ trust: 'signed-catalog' | 'custom'; suggested: boolean }>;
 }
 
 // AUTO_PACK_MIN (auto-adopt the packed form) and SHARE_WARN_LEN (warn "very long")
@@ -227,6 +231,10 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
                 : `<button type="button" class="btn share-file-btn" data-lolly-share>Send to…</button>`)
             : ''}
         </div>
+        ${lolly.toolOffer ? `<label class="share-file-tool" data-lolly-tool-wrap hidden>
+          <input type="checkbox" data-lolly-tool>
+          <span data-lolly-tool-label>Include the tool</span>
+        </label>` : ''}
         <div class="share-file-licensed" data-lolly-licensed hidden></div>
       </div>` : ''}
       ${showLinkOptions ? `
@@ -426,9 +434,26 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   });
 
   const licensedEl = dialog.querySelector<HTMLElement>('[data-lolly-licensed]');
+
+  // The "include the tool" toggle: revealed once the offer resolves (a `custom` tool -
+  // a fork / private-brand tool a recipient likely lacks - defaults it checked). Its live
+  // state feeds every .lolly build below.
+  const toolCheck = dialog.querySelector<HTMLInputElement>('[data-lolly-tool]');
+  if (lolly?.toolOffer && toolCheck) {
+    lolly.toolOffer().then((offer) => {
+      toolCheck.checked = offer.suggested;
+      const label = dialog.querySelector('[data-lolly-tool-label]');
+      if (label) label.textContent = offer.trust === 'custom'
+        ? 'Include the tool — opens on devices that don’t have it'
+        : 'Include the tool (opens even without the catalog)';
+      dialog.querySelector('[data-lolly-tool-wrap]')?.removeAttribute('hidden');
+    }).catch(() => { /* no offer ⇒ the toggle stays hidden, tool travels by reference */ });
+  }
+  const includeTool = (): boolean => !!toolCheck?.checked;
+
   const lollyBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-download]');
   if (lolly && lollyBtn) {
-    wireLollyDelivery(lolly, lollyBtn, licensedEl, (b, f) => lolly.save(b, f),
+    wireLollyDelivery(lolly, lollyBtn, licensedEl, (b, f) => lolly.save(b, f), includeTool,
       { idle: 'Download .lolly', done: 'Downloaded', fail: 'Could not build the file', verb: 'Download' });
   }
   const shareBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-share]');
@@ -436,7 +461,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     const share = lolly.share;
     // OS share sheet, with a download fallback when the sheet declines (no target).
     wireLollyDelivery(lolly, shareBtn, licensedEl,
-      async (b, f) => { if (!(await share(b, f))) await lolly.save(b, f); },
+      async (b, f) => { if (!(await share(b, f))) await lolly.save(b, f); }, includeTool,
       { idle: 'Send to…', done: 'Shared', fail: 'Could not share', verb: 'Send' });
   }
 
@@ -482,6 +507,7 @@ function wireLollyDelivery(
   btn: HTMLButtonElement,
   licensedEl: HTMLElement | null,
   deliver: (blob: Blob, filename: string) => Promise<void>,
+  includeTool: () => boolean,
   labels: DeliveryLabels,
 ): void {
   const busy = (on: boolean, label?: string) => { btn.toggleAttribute('disabled', on); if (label) btn.textContent = label; };
@@ -492,10 +518,11 @@ function wireLollyDelivery(
   btn.addEventListener('click', async () => {
     if (licensedEl) { licensedEl.hidden = true; licensedEl.textContent = ''; }
     busy(true, 'Preparing…');
+    const withTool = includeTool();
     let built: Awaited<ReturnType<ShareDialogLolly['build']>>;
-    try { built = await lolly.build(false); } catch { fail(); return; }
+    try { built = await lolly.build({ includeLicensed: false, includeTool: withTool }); } catch { fail(); return; }
     if (!built.summary.hasLicensed) { void run(built.blob, built.filename); return; }
-    offerLicensedChoice(built, lolly, licensedEl, busy, run, fail, labels);
+    offerLicensedChoice(built, lolly, licensedEl, busy, run, fail, withTool, labels);
   });
 }
 
@@ -509,6 +536,7 @@ function offerLicensedChoice(
   busy: (on: boolean, label?: string) => void,
   run: (blob: Blob, filename: string) => Promise<void>,
   fail: () => void,
+  includeTool: boolean,
   labels: DeliveryLabels,
 ): void {
   busy(false, labels.idle);
@@ -530,6 +558,6 @@ function offerLicensedChoice(
   licensedEl.querySelector<HTMLButtonElement>('[data-lolly-include]')!.addEventListener('click', async () => {
     licensedEl.hidden = true;
     busy(true, 'Preparing…');
-    try { const full = await lolly.build(true); await run(full.blob, full.filename); } catch { fail(); }
+    try { const full = await lolly.build({ includeLicensed: true, includeTool }); await run(full.blob, full.filename); } catch { fail(); }
   });
 }

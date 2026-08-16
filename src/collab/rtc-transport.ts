@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * rtc-transport - the WebRTC half of a private collab (plan 100 §6.1, §6.2, §11.3, §11.5, §11.6).
+ * rtc-transport - the WebRTC half of a private collab (plan 100 section 6.1, section 6.2, section 11.3, section 11.5, section 11.6).
  *
  * This is the only module in the shell that touches `RTCPeerConnection`. It
  * owns the peer connection, the three data channels, and the mapping from
@@ -25,7 +25,7 @@
  * *typechecked* rather than assumed: no cast, so a DOM-lib change that
  * broke the subset would fail `tsc`, not production.
  *
- * ── Non-trickle gathering is the whole point of the ceremony (§6.1) ───────────────
+ * ── Non-trickle gathering is the whole point of the ceremony (section 6.1) ───────────────
  *
  * The humans are the signalling channel: A shows one blob, B shows one
  * back. That only works if every candidate is already inside the blob, so
@@ -38,7 +38,7 @@
  * with the host candidates in it pairs; a ceremony that timed out waiting
  * for the internet does not.
  *
- * ── `disconnected` is not death (§11.3) ──────────────────────────────────────────
+ * ── `disconnected` is not death (section 11.3) ──────────────────────────────────────────
  *
  * ICE `disconnected` self-heals in seconds on a UDP blip. It moves this
  * module's connection state to `'reconnecting'` and nothing else: no
@@ -55,7 +55,7 @@
  * universally implemented; a browser that reports only one still drives
  * the ceremony correctly.
  *
- * ── ICE-connected is NOT session-usable: `{ type: 'ready' }` is (§6.2) ───────────
+ * ── ICE-connected is NOT session-usable: `{ type: 'ready' }` is (section 6.2) ───────────
  *
  * The one signal that means "this pair can carry a session" is the ops
  * channel being OPEN on this side. Data channels only open once BOTH
@@ -142,7 +142,7 @@
  * diagnostic read, and the pairing's trust root is not something to hand
  * out a mutable handle to.
  *
- * ── The isolation heuristic (§11.1, §11.2, §11.26) ───────────────────────────────
+ * ── The isolation heuristic (section 11.1, section 11.2, section 11.26) ───────────────────────────────
  *
  * "It didn't connect" is a support ticket; "this network blocks
  * device-to-device traffic" is a shrug and a hotspot. The difference is
@@ -157,16 +157,16 @@
  * where a pair formed and DTLS then failed, a different story from
  * isolation that must not borrow its copy.
  *
- * ── Three channels, three jobs (§6.2, §11.6) ─────────────────────────────────────
+ * ── Three channels, three jobs (section 6.2, section 11.6) ─────────────────────────────────────
  *
  *   ops       ordered + reliable      the convergence lane; also carries the hello
- *   presence  unordered, 0 retransmits  cursors/focus; stale frames are expected (§11.5)
- *   beam      ordered + reliable      bulk transfer, on its OWN channel (§11.6)
+ *   presence  unordered, 0 retransmits  cursors/focus; stale frames are expected (section 11.5)
+ *   beam      ordered + reliable      bulk transfer, on its OWN channel (section 11.6)
  *
  * Beam gets its own channel because a 38 MB pack sharing the ops channel
  * would queue every edit behind it: head-of-line blocking that would make
  * co-editing feel broken for the whole duration of a transfer. Every frame
- * is capped at {@link MAX_FRAME_BYTES} (§11.6's cross-browser SCTP
+ * is capped at {@link MAX_FRAME_BYTES} (section 11.6's cross-browser SCTP
  * ceiling): oversize is refused as a typed result, never sent and never
  * allowed to kill the channel.
  *
@@ -174,7 +174,7 @@
  * have them: `PresenceEngine.snapshot()` relays OTHER peers' frames
  * verbatim, so re-stamping would corrupt the join handshake. Only an
  * unstamped frame gets this client's id and the next sequence number
- * (§11.5, the receiver applies newest-only).
+ * (section 11.5, the receiver applies newest-only).
  *
  * ── Integration points, deliberately not imported ────────────────────────────────
  *
@@ -201,19 +201,19 @@
  *
  *  - **Op validation.** Inbound ops are shape-checked as an envelope and
  *    handed on verbatim. `validateCanvasOp` + the manifest's own-property
- *    whitelist (§11.21) run where the tool's input model is in scope, not here.
- *  - **Rate caps.** §11.21 wants ~200 ops/s and ~40 presence/s, with a peer
+ *    whitelist (section 11.21) run where the tool's input model is in scope, not here.
+ *  - **Rate caps.** section 11.21 wants ~200 ops/s and ~40 presence/s, with a peer
  *    that exceeds them disconnected rather than silently throttled. The
  *    counters belong with the policy that acts on them (the session layer
  *    holds the roster and the disconnect); what this module owns is the
  *    per-frame size cap, which is a wire property.
  *  - **Reconnect policy.** It reports the states; `ceremony.ts` decides
- *    what a drop means, and only the inviter arms a fresh invite (§6.2a).
+ *    what a drop means, and only the inviter arms a fresh invite (section 6.2a).
  *  - **The presence roster.** Frames pass through unreordered and
- *    unmerged; newest-only is `lib/collab-presence.ts`'s rule (§11.5).
+ *    unmerged; newest-only is `lib/collab-presence.ts`'s rule (section 11.5).
  *
  * No wall clock anywhere: every deadline is a delta handed to the injected
- * timers, so a device with a wrong clock (the airgap case, §11.7) behaves
+ * timers, so a device with a wrong clock (the airgap case, section 11.7) behaves
  * identically.
  */
 
@@ -231,27 +231,27 @@ import type { PresenceFrame, PresenceState } from '../lib/collab-presence.ts';
  * How long non-trickle gathering may take before the blob is minted with
  * whatever candidates exist. Host candidates land in milliseconds; this
  * ceiling exists for the srflx lookup that never returns on a network with
- * no route out (§6.1).
+ * no route out (section 6.1).
  */
 export const GATHER_TIMEOUT_MS = 5_000;
 
-/** Cross-browser SCTP-safe ceiling for one message (§11.6). */
+/** Cross-browser SCTP-safe ceiling for one message (section 11.6). */
 export const MAX_FRAME_BYTES = 64 * 1024;
 
-/** `bufferedAmountLowThreshold` for the beam channel - the pull point (§6.4). */
+/** `bufferedAmountLowThreshold` for the beam channel - the pull point (section 6.4). */
 export const BEAM_LOW_THRESHOLD = 256 * 1024;
 
 /** A peer's client id is a ULID; this only has to be generous enough not to be a rule. */
 export const MAX_CLIENT_ID_CHARS = 64;
 
-/** The three lanes, in the order they are created (§6.2, §11.6). */
+/** The three lanes, in the order they are created (section 6.2, section 11.6). */
 export const LANES = ['ops', 'presence', 'beam'] as const;
 export type RtcLane = (typeof LANES)[number];
 
 /**
  * Channel options per lane. `presence` is the lossy one on purpose: a
  * cursor sample that arrives late is worse than one that never arrives,
- * which is why §11.5 puts a sequence number on every frame instead of
+ * which is why section 11.5 puts a sequence number on every frame instead of
  * asking SCTP to keep order.
  */
 export const CHANNEL_INIT: Readonly<Record<RtcLane, RTCDataChannelInit>> = {
@@ -317,7 +317,7 @@ export interface RtcPeerConnectionLike {
   setRemoteDescription(description: RtcDescriptionLike): Promise<void>;
   addEventListener(type: string, listener: RtcListener): void;
   removeEventListener(type: string, listener: RtcListener): void;
-  /** Optional: absent in some webviews (§11.29), and the heuristic degrades honestly. */
+  /** Optional: absent in some webviews (section 11.29), and the heuristic degrades honestly. */
   getStats?(): Promise<RtcStatsLike>;
   close(): void;
 }
@@ -326,7 +326,7 @@ export type RtcPeerConnectionCtor = new (config?: RTCConfiguration) => RtcPeerCo
 
 /**
  * The ambient constructor, or `null` where WebRTC does not exist (a Tauri
- * Linux webview with webkitgtk's WebRTC off, §11.29, an honest refusal, not
+ * Linux webview with webkitgtk's WebRTC off, section 11.29, an honest refusal, not
  * a crash).
  *
  * The assignment matters beyond its one line: it is the
@@ -353,7 +353,7 @@ const REAL_TIMERS: RtcTimers = {
 
 // ── Public shapes ─────────────────────────────────────────────────────────────────
 
-/** Chosen identity, never a profile field (§11.23). */
+/** Chosen identity, never a profile field (section 11.23). */
 export interface RtcSelfIdentity {
   /**
    * Display name, or absent for an anonymous peer.
@@ -366,13 +366,13 @@ export interface RtcSelfIdentity {
    * ceremony dialog's `CeremonyEffectsContext.name` getter is written against.
    */
   readonly name?: string | (() => string | undefined);
-  /** Slot in the derived collaborator palette; travels as a u8 (§4.4). */
+  /** Slot in the derived collaborator palette; travels as a u8 (section 4.4). */
   readonly colorIndex?: number;
-  /** Resolved colour, carried for the local UI only - the peer re-derives (§4.4). */
+  /** Resolved colour, carried for the local UI only - the peer re-derives (section 4.4). */
   readonly colour?: string;
 }
 
-/** The tool the pair must both have (§6.1). Required to mint an invite. */
+/** The tool the pair must both have (section 6.1). Required to mint an invite. */
 export interface RtcToolRef {
   readonly id: string;
   /** Defaults to {@link UNKNOWN_VERSION}: the codec refuses an EMPTY version field on
@@ -392,7 +392,7 @@ export const UNKNOWN_VERSION = '0.0.0';
 /**
  * Structurally identical to `collab-session.ts`'s `CollabConnectionState`, so the
  * adapter is a rename and not a mapping. `'reconnecting'` is a first-class state, not
- * a synonym for trouble (§11.3).
+ * a synonym for trouble (section 11.3).
  */
 export type RtcConnectionState = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
@@ -401,7 +401,7 @@ export type RtcLaneState = 'absent' | 'connecting' | 'open' | 'closed';
 export type RtcGatheringState = 'idle' | 'gathering' | 'complete' | 'timed-out';
 
 /**
- * Why a failure *now* would have happened: the input to §11.26's per-cause copy.
+ * Why a failure *now* would have happened: the input to section 11.26's per-cause copy.
  *
  * Read it when the ceremony reports a failure. Before that it is a live
  * read of what is still missing (a pair that has not formed yet reads as
@@ -410,13 +410,13 @@ export type RtcGatheringState = 'idle' | 'gathering' | 'complete' | 'timed-out';
  * mistaken for a verdict.
  */
 export type RtcDiagnosis =
-  /** It was live and then died - different copy from never having connected (§11.3). */
+  /** It was live and then died - different copy from never having connected (section 11.3). */
   | 'connection-lost'
-  /** We gathered nothing at all: no usable interface, or mDNS fully blocked (§11.1). */
+  /** We gathered nothing at all: no usable interface, or mDNS fully blocked (section 11.1). */
   | 'no-local-candidates'
   /** The peer's blob carried no candidates - their side, not this network. */
   | 'no-remote-candidates'
-  /** Both sides had candidates and no pair ever formed: client isolation (§11.2). */
+  /** Both sides had candidates and no pair ever formed: client isolation (section 11.2). */
   | 'isolation-suspected'
   /** A pair formed and the connection still failed - DTLS/SCTP, not the network path. */
   | 'handshake-failed';
@@ -429,7 +429,7 @@ export interface RtcTransportState {
   readonly lanes: Readonly<Record<RtcLane, RtcLaneState>>;
   /** True once this pair has been connected at all: ICE reached connected,
    *  or every lane opened. It is what turns a late failure into
-   *  `connection-lost` rather than a network diagnosis (§11.3): they DID
+   *  `connection-lost` rather than a network diagnosis (section 11.3): they DID
    *  reach each other once. */
   readonly everConnected: boolean;
   /** Candidates gathered locally for the blob we minted. */
@@ -440,7 +440,7 @@ export interface RtcTransportState {
   readonly candidatePairSeen: boolean;
   /** See {@link RtcDiagnosis}. */
   readonly diagnosis: RtcDiagnosis;
-  /** The §11.2 heuristic, as the failure copy wants it: `diagnosis` is isolation. */
+  /** The section 11.2 heuristic, as the failure copy wants it: `diagnosis` is isolation. */
   readonly isolationSuspected: boolean;
 }
 
@@ -463,7 +463,7 @@ export type RtcInboundMessage =
       readonly kind: 'hello';
       readonly clientId?: string;
       readonly opVersion?: string;
-      /** The inviter's packed session seed (§6.1) - see {@link RtcTransportOptions.seed}. */
+      /** The inviter's packed session seed (section 6.1) - see {@link RtcTransportOptions.seed}. */
       readonly seed?: string;
     }
   | { readonly lane: 'presence'; readonly kind: 'presence'; readonly frame: PresenceFrame }
@@ -588,7 +588,7 @@ export interface RtcTransport {
 
 export interface RtcTransportOptions {
   readonly role: CeremonyRole;
-  /** This device's collab client id (a random ULID, §11.23). Stamped on the hello. */
+  /** This device's collab client id (a random ULID, section 11.23). Stamped on the hello. */
   readonly clientId: string;
   /** Defaults to the ambient `RTCPeerConnection`; a test passes its fake. */
   readonly rtc?: RtcPeerConnectionCtor | null;
@@ -600,11 +600,11 @@ export interface RtcTransportOptions {
   /** This device's `CANVAS_OP_VERSION`; defaults to the pinned one. */
   readonly opVersion?: string;
   /**
-   * Packed `z`-param session seed, or absent for "you'll receive it on connect" (§6.1).
+   * Packed `z`-param session seed, or absent for "you'll receive it on connect" (section 6.1).
    *
    * It travels IN BAND, on the ops-channel hello, never in the invite blob.
-   * The blob is sized for a QR (§6.1 wants ≤150 B, `MAX_PAYLOAD_BYTES` caps
-   * it at 512) and a packed session state does not fit; §12 Q3 leans
+   * The blob is sized for a QR (section 6.1 wants ≤150 B, `MAX_PAYLOAD_BYTES` caps
+   * it at 512) and a packed session state does not fit; section 12 Q3 leans
    * transfer-on-connect for exactly this reason. The hello still lands
    * before the first op, and it is dropped from the frame instead of being
    * allowed to push the hello over {@link MAX_FRAME_BYTES}, because losing
@@ -626,7 +626,7 @@ export interface RtcTransportOptions {
  *
  * `colorIndex` rides alongside rather than inside the invite because the
  * two are different things: `CollabPeer.colour` is a resolved hex the
- * receiving shell MAY use, and the wire carries a palette SLOT (§4.4) that
+ * receiving shell MAY use, and the wire carries a palette SLOT (section 4.4) that
  * the receiver resolves against its own derived palette. Stuffing the
  * index into the colour field would produce a peer chip painted `"3"`.
  */
@@ -641,7 +641,7 @@ export interface DecodedInvite {
  * `accept` event takes. Everything the acceptor needs BEFORE it answers
  * (tool id, versions, the inviter's chosen name) comes out of the same
  * blob that carries the connection material, which is why the probe can
- * happen before a single packet moves (§6.1).
+ * happen before a single packet moves (section 6.1).
  */
 export function inviteFromToken(token: string, skin: TokenSkin | 'auto' = 'auto'): CodecResult<DecodedInvite> {
   const decoded = decodePayload(token, skin);
@@ -672,7 +672,7 @@ export function inviteFromToken(token: string, skin: TokenSkin | 'auto' = 'auto'
  *
  * The answer record carries connection material only (the codec spends no
  * bytes on metadata it does not need), so the peer's name arrives in band
- * instead, on the presence lane. A failure here is the §11.25 retryable
+ * instead, on the presence lane. A failure here is the section 11.25 retryable
  * one: a bad paste is a step to repeat, not a ceremony to end.
  */
 export function answerFromToken(token: string, skin: TokenSkin | 'auto' = 'auto'): CodecResult<CollabAnswer> {
@@ -685,7 +685,7 @@ export function answerFromToken(token: string, skin: TokenSkin | 'auto' = 'auto'
 }
 
 /**
- * Is this frame over the SCTP ceiling (§11.6)?
+ * Is this frame over the SCTP ceiling (section 11.6)?
  *
  * Every UTF-16 code unit costs at most 3 UTF-8 bytes (a surrogate pair is 2
  * units = 4 bytes), so a frame under a third of the cap is provably fine
@@ -703,7 +703,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Shape-check an inbound presence frame (§11.21, every remote byte is untrusted).
+ * Shape-check an inbound presence frame (section 11.21, every remote byte is untrusted).
  *
  * Only the envelope is checked here: `from`/`seq`/`away` are this module's
  * contract with the roster, while `state` is the session's to validate
@@ -853,13 +853,13 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
   let candidatePairSeen = false;
   let everConnected = false;
   /**
-   * Sticky between a `disconnected` and the next real `connected`/`completed` (§11.3).
+   * Sticky between a `disconnected` and the next real `connected`/`completed` (section 11.3).
    *
    * A UDP blip does not go straight back: `RTCIceTransport` legally
    * returns through `checking` (Chrome does), and `connectionState:
    * 'connecting'` maps to the same thing, while the SCTP channels stay
    * open throughout, so the lane test alone would read `live` again
-   * halfway through the recovery. §11.3 wants the avatar greyed for the
+   * halfway through the recovery. section 11.3 wants the avatar greyed for the
    * duration of the reconnect, not un-greyed and re-greyed.
    */
   let recovering = false;
@@ -1011,7 +1011,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
     return snapshot;
   }
 
-  // ── connection state (§11.3) ───────────────────────────────────────────────────
+  // ── connection state (section 11.3) ───────────────────────────────────────────────────
 
   function recomputeConnection(): void {
     if (closed) {
@@ -1065,7 +1065,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
    * "the network would not let these two devices see each other" from
    * "they saw each other and the handshake failed": two failures with the
    * same shape and completely different copy. Fire-and-forget: a stack
-   * without `getStats` (§11.29) simply keeps the ICE-reached-connected
+   * without `getStats` (section 11.29) simply keeps the ICE-reached-connected
    * path as its only evidence.
    */
   function samplePairs(): void {
@@ -1139,7 +1139,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
    * A re-invite always gets a NEW peer connection: a dropped WebRTC
    * connection can never be resumed, its ICE credentials are spent, and
    * reusing the object would mint an offer whose candidates the peer has
-   * already failed to reach (§6.1, §11.3).
+   * already failed to reach (section 6.1, section 11.3).
    */
   function newPeerConnection(): RtcPeerConnectionLike | null {
     if (!ctor) return null;
@@ -1269,7 +1269,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
       publish();
     });
     listen(channel, 'error', () => {
-      // Not fatal on its own: ICE decides whether the session is over (§11.3).
+      // Not fatal on its own: ICE decides whether the session is over (section 11.3).
       log('rtc-transport: data channel error', lane);
     });
     listen(channel, 'message', (event) => {
@@ -1304,7 +1304,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
     recomputeConnection();
     publish();
     // The hello goes out before anything else on the lane, so a peer whose signalling
-    // blob was too small for an op version still learns it before the first op (§11.19).
+    // blob was too small for an op version still learns it before the first op (section 11.19).
     if (lane === 'ops') {
       sendHello();
       // ...and only NOW is this pairing a session. Announced before
@@ -1374,8 +1374,8 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
   }
 
   /**
-   * The in-band op-contract declaration (§11.19, contract §9) and the
-   * session seed (§6.1). The signalling blob is byte-starved (sized for a
+   * The in-band op-contract declaration (section 11.19, contract section 9) and the
+   * session seed (section 6.1). The signalling blob is byte-starved (sized for a
    * QR), so neither is guaranteed a slot in it; the ops channel says both
    * in its first frame, which still lands before the first op, and that is
    * all either contract requires.
@@ -1419,7 +1419,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
     try {
       parsed = JSON.parse(data);
     } catch {
-      // Untrusted input: a peer's malformed frame is dropped, never thrown (§11.21).
+      // Untrusted input: a peer's malformed frame is dropped, never thrown (section 11.21).
       log('rtc-transport: unparsable frame', lane);
       return;
     }
@@ -1443,7 +1443,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
     if (parsed.t === 'hello') {
       const peerId = typeof parsed.c === 'string' ? parsed.c : undefined;
       const peerOpVersion = typeof parsed.v === 'string' ? parsed.v : undefined;
-      // The seed is a packed URL fragment from a stranger (§11.21): typed here, and
+      // The seed is a packed URL fragment from a stranger (section 11.21): typed here, and
       // validated where it is applied - the same rule any shared lolly link follows.
       const peerSeed = typeof parsed.s === 'string' && parsed.s.length > 0 ? parsed.s : undefined;
       emit('message', { lane: 'ops', kind: 'hello', clientId: peerId, opVersion: peerOpVersion, seed: peerSeed });
@@ -1454,7 +1454,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
       emit('message', { lane: 'ops', kind: 'op', op: parsed.d });
       return;
     }
-    // An unknown envelope from a newer peer is ignored, not fatal (§11.19).
+    // An unknown envelope from a newer peer is ignored, not fatal (section 11.19).
     log('rtc-transport: unknown ops envelope', parsed.t);
   }
 
@@ -1465,7 +1465,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
     return null;
   }
 
-  // ── the ceremony effects (§6.1) ────────────────────────────────────────────────
+  // ── the ceremony effects (section 6.1) ────────────────────────────────────────────────
 
   /**
    * Wait for non-trickle gathering, bounded. On expiry the blob is minted
@@ -1538,7 +1538,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
    * call instead of snapshotted at construction: the acceptor builds its
    * transport for the tool probe and only then asks the human what to be
    * called, so a cached value would put the profile prefill on the wire
-   * and silently discard what they typed (§4.5, §11.23).
+   * and silently discard what they typed (section 4.5, section 11.23).
    */
   function selfName(): string | undefined {
     const name = opts.self?.name;
@@ -1619,7 +1619,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
       if (!conn) return { ok: false, detail: 'could not open a peer connection' };
       // The channels must exist BEFORE the offer: an m=application section
       // only appears in the SDP once there is something to carry, and the
-      // acceptor's `ondatachannel` is how it ever sees these three (§6.2).
+      // acceptor's `ondatachannel` is how it ever sees these three (section 6.2).
       if (!createChannels(conn)) return { ok: false, detail: 'could not open the data channels' };
       try {
         const offer = await conn.createOffer();
@@ -1668,7 +1668,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
       remoteApplied = true;
       try {
         // `ondatachannel` is already wired by `newPeerConnection`, so the three channels
-        // are caught the moment the remote description names them (§6.2).
+        // are caught the moment the remote description names them (section 6.2).
         await conn.setRemoteDescription({ type: 'offer', sdp: remote.value });
         const answer = await conn.createAnswer();
         await conn.setLocalDescription(answer);
@@ -1693,7 +1693,7 @@ export function createRtcTransport(opts: RtcTransportOptions): RtcTransport {
       const conn = pc;
       if (!conn) return { ok: false, detail: 'no local connection to apply an answer to' };
       const decoded = decodePayload(answer.signal, 'auto');
-      // §11.25: an unreadable reply is a step the humans repeat, not a ceremony that
+      // section 11.25: an unreadable reply is a step the humans repeat, not a ceremony that
       // ends. Only a local stack failure below is non-retryable.
       if (!decoded.ok) return { ok: false, retryable: true, detail: decoded.reason };
       if (decoded.value.kind !== 'answer') {

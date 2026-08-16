@@ -12,6 +12,7 @@ import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.ts'
 import { currentLang } from '../i18n.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
+import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
 
 // Loaded tools are cached so selecting the same template across many rows - the
 // primary power-user workflow - loads each template only once.
@@ -36,8 +37,15 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
  *  doesn't need lang in its key. */
 export async function getTool(toolId: string): Promise<LoadedTool> {
   if (toolCache.has(toolId)) return toolCache.get(toolId)!;
-  const promise = getToolIntegrity().then((integrity) =>
-    loadTool(toolId, makeFetchFile(toolId), { lang: currentLang(), integrity: integrity ?? undefined }));
+  // A sideloaded tool (installed from a .lolly) loads from its device-local bucket with
+  // NO signed-catalog integrity - the recipient's catalog has no authority over it; its
+  // bytes were verified at import (see lib/installed-tools.ts). A catalog tool takes the
+  // network path with the signed-catalog check as before.
+  const promise = isToolInstalled(toolId).catch(() => false).then((installed) =>
+    installed
+      ? loadTool(toolId, installedFetchFile(toolId), { lang: currentLang() })
+      : getToolIntegrity().then((integrity) =>
+          loadTool(toolId, makeFetchFile(toolId), { lang: currentLang(), integrity: integrity ?? undefined })));
   toolCache.set(toolId, promise);
   try {
     const tool = await promise;

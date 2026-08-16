@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * rtc-connection - Track A's producer for `lib/collab-mount.ts`'s transport-agnostic
- * seam: a connected ceremony becomes a `CollabConnection` (plan 100 §5, §6.1, §6.2a,
- * §12 Q3; wave 2.5).
+ * seam: a connected ceremony becomes a `CollabConnection` (plan 100 section 5, section 6.1, section 6.2a,
+ * section 12 Q3; wave 2.5).
  *
  * The seam used to carry an `RtcTransport` and the ceremony's dialog handle, which made
  * it Track A's shape wearing a generic name - an org room has neither. It now carries a
@@ -19,10 +19,10 @@
  * `private-collab` flag defaults; it is ON as of 2026-08-10). Living here, it rides the
  * same lazily-imported ceremony chunk as `join-route.ts`, which is the code that needs it.
  *
- * ── The seed latch (§6.1, §12 Q3) ─────────────────────────────────────────────
+ * ── The seed latch (section 6.1, section 12 Q3) ─────────────────────────────────────────────
  *
  * The acceptor's session state arrives IN BAND, on the ops-lane hello - never in the
- * invite blob, which is sized for a QR (§6.1). But the ceremony reaches `connected` off
+ * invite blob, which is sized for a QR (section 6.1). But the ceremony reaches `connected` off
  * an ICE event, and ICE connects before the SCTP data channel the hello rides on. So the
  * connection is handed to the mount BEFORE its seed exists, every time.
  *
@@ -34,11 +34,11 @@
  * exactly the door this uses.
  *
  * A seed that never lands is NOT an error and the promise still resolves (with
- * `undefined`) once the deadline passes: §6.2's late joiner gets the full state from the
+ * `undefined`) once the deadline passes: section 6.2's late joiner gets the full state from the
  * peer through ordinary convergence, so the seed only ever buys a faster, already-
  * populated first paint.
  *
- * ── The beam link (§6.4) ───────────────────────────────────────────────────────
+ * ── The beam link (section 6.4) ───────────────────────────────────────────────────────
  *
  * The paired channel is a general encrypted conduit; co-editing is one payload type on
  * it, and the bulk lane is another (`collab/beam-ui.ts`). The transport is the only
@@ -48,7 +48,7 @@
  *
  * It is an ADDITIVE mixin on the return type rather than a field of the seam's own
  * interface, and that is the point: `lib/collab-mount.ts` is transport-agnostic, an org
- * room has no beam and never will (§7 - the server path carries ops and presence), so
+ * room has no beam and never will (section 7 - the server path carries ops and presence), so
  * the mount reads it structurally and a work collab simply answers "none". The send
  * control is then absent on Track B by construction, not by a flag someone has to
  * remember to check.
@@ -67,7 +67,7 @@ import type { RtcTransport } from './rtc-transport.ts';
  * How long the acceptor's mount may wait for the in-band seed before opening the tool
  * empty and letting convergence fill it in.
  *
- * Sized against §7's join-to-interactive target (<3 s) minus the tool load that follows:
+ * Sized against section 7's join-to-interactive target (<3 s) minus the tool load that follows:
  * the hello is the FIRST frame on a reliable ordered channel that has just opened, so in
  * practice this resolves in milliseconds. It exists so a peer that sends no seed at all
  * (an older build, a state too big for one frame) cannot hold the tool closed.
@@ -78,7 +78,7 @@ export const SEED_WAIT_MS = 1_500;
  * The clock/timer seam, so the wait is provable at CPU speed rather than in real time.
  *
  * Structurally `CeremonyTimers`, and forwarded to the handle as such: a connected
- * transport arms the §6.2 divergence backstop the moment the handle exists, so a caller
+ * transport arms the section 6.2 divergence backstop the moment the handle exists, so a caller
  * that fakes THIS clock and not that one has a real 20-second timer running behind its
  * test. One seam, both timers.
  */
@@ -93,7 +93,7 @@ const REAL_TIMERS: RtcConnectionTimers = {
 };
 
 export interface RtcConnectionInput {
-  /** Which end of the ceremony this is. Decides the session host AND, per §6.2a, which
+  /** Which end of the ceremony this is. Decides the session host AND, per section 6.2a, which
    *  side's copy is ephemeral. */
   readonly role: CeremonyRole;
   /** The dialog's connected handle - the chosen names and the observer-only verdict. */
@@ -138,7 +138,7 @@ function latchSeed(
 
     off = transport.on('message', (message) => {
       if (message.lane !== 'ops' || message.kind !== 'hello') return;
-      // A hello with no seed is the ordinary "you'll receive it on connect" case (§6.1)
+      // A hello with no seed is the ordinary "you'll receive it on connect" case (section 6.1)
       // and is NOT the end of the wait: this pair sends exactly one hello, but a
       // restarted lane may send another, and the frame that carries the seed is the one
       // worth waiting for.
@@ -156,7 +156,7 @@ function latchSeed(
  * The handle is built HERE rather than at mount time because only this side of the
  * ceremony holds the transport, and because the register index the backstop depends on
  * must start indexing from the pair's first frame - not from whenever a tool finished
- * loading (§6.2's divergence backstop rests on "the index mirrors the document").
+ * loading (section 6.2's divergence backstop rests on "the index mirrors the document").
  */
 export function rtcCollabConnection(input: RtcConnectionInput): CollabConnection & CollabBeamCapable {
   const { role, ceremony, transport } = input;
@@ -167,7 +167,7 @@ export function rtcCollabConnection(input: RtcConnectionInput): CollabConnection
     timers,
     self: {
       clientId: transport.clientId,
-      // The name the human typed into the ceremony, never a profile field (§11.23).
+      // The name the human typed into the ceremony, never a profile field (section 11.23).
       // Empty stays empty: `collab-session.ts` renders the "Host"/"Invitee N" fallback
       // for an anonymous peer, and a blank string is how it is told there is one.
       name: ceremony.localName || undefined,
@@ -191,16 +191,16 @@ export function rtcCollabConnection(input: RtcConnectionInput): CollabConnection
     close: () => { handle.close(); },
     toolId: ceremony.toolId,
     launch: input.launch,
-    // §6.2a: the inviter owns the saved session, so the acceptor's copy never lands in a
+    // section 6.2a: the inviter owns the saved session, so the acceptor's copy never lands in a
     // slot on this device.
     ephemeral: role === 'acceptor',
     seed: input.seed,
     seedLater,
-    // §6.4. The transport is published whole because `CollabBeamTransport` is exactly
+    // section 6.4. The transport is published whole because `CollabBeamTransport` is exactly
     // the two members a beam uses (`beam` and `on`), and narrowing it to a fresh object
     // here would mean a second shape to keep in step with the transport's. The names
-    // are the ceremony's - what the human typed, never a profile field (§11.23) - and
-    // an empty one stays absent so `beam-session.ts` renders the §4.5 role fallback.
+    // are the ceremony's - what the human typed, never a profile field (section 11.23) - and
+    // an empty one stays absent so `beam-session.ts` renders the section 4.5 role fallback.
     beam: {
       transport,
       role,

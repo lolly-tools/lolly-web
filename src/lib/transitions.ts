@@ -98,7 +98,7 @@ export const EASINGS = Object.freeze({
   'ease-in-out': 'Ease in and out',
   overshoot: 'Overshoot',
   anticipate: 'Anticipate',
-  // Added with the keyframe grammar (plan 104 §5.1), which names eight presets and
+  // Added with the keyframe grammar (plan 104 section 5.1), which names eight presets and
   // round-trips every one of them BY NAME through `engine/src/keyframes.ts`. Adding
   // them here rather than only in the engine is what keeps ONE vocabulary: a curve
   // authored on a transition and one authored on a keyframe are the same curve, and

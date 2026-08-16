@@ -51,7 +51,7 @@
     opacity var(--pr-dur) linear;
   backface-visibility: hidden;
   /* Contain layout+paint so a slide's internals never invalidate the stage (the
-     rendering monopoly, plan §5.2). */
+     rendering monopoly, plan section 5.2). */
   contain: layout paint;
 }
 

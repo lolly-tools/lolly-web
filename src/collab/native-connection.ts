@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * native-connection - a live native session as a `CollabConnection` (plans/110 §4).
+ * native-connection - a live native session as a `CollabConnection` (plans/110 section 4).
  *
  * The mirror of `collab/rtc-connection.ts` for the native LAN transport. It adapts a
  * `NativeTransportHandle` (byte lanes over the Tauri commands, `native-transport.ts`) into
  * the surfaces the collab mount consumes, REUSING `createRtcCollabHandle` - so the op
- * ordering, the presence roster, the §6.2 divergence backstop, and the §11.21 op validation
+ * ordering, the presence roster, the section 6.2 divergence backstop, and the section 11.21 op validation
  * (which runs in the handle, not the transport) are all shared, not reimplemented.
  *
  * ── The two places native genuinely differs from WebRTC (verify on-device) ──────
@@ -196,13 +196,13 @@ export interface NativeConnectionInput {
   readonly role: CeremonyRole;
   readonly clientId: string;
   readonly opVersion?: string;
-  /** The chosen display name (§11.23), never a profile field. */
+  /** The chosen display name (section 11.23), never a profile field. */
   readonly localName?: string;
   readonly peerName?: string;
   readonly toolId?: string;
   /** Inviter only: the Share-dialog context. */
   readonly launch?: CollabLaunchContext;
-  /** Inviter only: the packed session seed to send over the ops-lane hello (§6.1). */
+  /** Inviter only: the packed session seed to send over the ops-lane hello (section 6.1). */
   readonly seedQuery?: string;
 }
 
@@ -226,7 +226,7 @@ export function nativeCollabConnection(input: NativeConnectionInput): CollabConn
     self: { clientId, name: input.localName || undefined },
   });
 
-  // The inviter announces itself + seeds the acceptor over the ops-lane hello (§6.1). The
+  // The inviter announces itself + seeds the acceptor over the ops-lane hello (section 6.1). The
   // hello is not an op, so it goes through the raw handle + codec, not `sendOp`.
   if (role === 'inviter') {
     const hello = encodeOps({
@@ -244,7 +244,7 @@ export function nativeCollabConnection(input: NativeConnectionInput): CollabConn
     close: () => { collabHandle.close(); },
     toolId: input.toolId,
     launch: input.launch,
-    // §6.2a: the inviter owns the saved session; the acceptor's copy is ephemeral.
+    // section 6.2a: the inviter owns the saved session; the acceptor's copy is ephemeral.
     ephemeral: role === 'acceptor',
     beam: {
       transport: nativeBeamTransport(handle, transport.bus),

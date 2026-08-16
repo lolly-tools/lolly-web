@@ -138,7 +138,7 @@ const fmtIcon = (fmt: string): string => {
 /**
  * SEAM (Phase 1) - the two readers of the opaque per-row payload, and the ONLY code
  * in this module that touches a note's insides. They are written against the shape
- * `Finding` is specified to have (`packages/core/src/preflight.ts`, §3 of
+ * `Finding` is specified to have (`packages/core/src/preflight.ts`, section 3 of
  * plans/65-preflight-and-cost.md: `{ severity, message, … }`) so Phase 1 lands as an
  * `import type` plus `runBatchWithProgress<Finding>(…)` and nothing here changes. A
  * caller carrying a different payload overrides them per run.

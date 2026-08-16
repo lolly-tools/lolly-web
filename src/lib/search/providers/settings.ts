@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The spotlight SETTINGS provider (plans/99 §2b) - settings findability is
+ * The spotlight SETTINGS provider (plans/99 section 2b) - settings findability is
  * first-class (Andy's mid-build directive): "contrast", "dark mode", "jelly",
  * "storage" or "focus music" typed in the bottom bar anywhere in the app must
  * surface the right settings destination.
