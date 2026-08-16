@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * In-app documentation reader — navigation extraction + derivation (#/docs).
+ *
+ * The reader (views/docs.ts) fetches a built /info/<lang>/<slug>.html page and
+ * rehosts its `.docs-content` fragment into #view. That same fetched document ALSO
+ * carries the site's real navigation — the top pathways bar, the docs sidebar rail,
+ * and the footer sitemap — which the reader used to throw away, stranding the reader
+ * on a single page with no way to reach any other doc. This module pulls those nodes
+ * out of the parsed document, rewrites their `/info/*.html` links to the in-app reader
+ * route, and (for the on-page table of contents) DERIVES a fresh nav from the rehosted
+ * content's stamped heading ids. Everything here is progressive: a piece the fetched
+ * page happens not to have is a silent `null`, never an error.
+ *
+ * All DOM is built with real nodes (importNode / createElement + textContent) rather
+ * than a raw-HTML sink, so the module adds nothing to the primitive-guards R10 ledger.
+ */
+import { t } from '../i18n.ts';
+
+/**
+ * Rewrite an in-fragment `/info/<lang>/<slug>.html` link (± `#anchor`, ± `?query`) to
+ * the in-app reader route, so internal navigation stays in the SPA (music keeps
+ * playing, no full page reload) rather than leaving to the static site.
+ *
+ *   - Any `<lang>` prefix is dropped — the reader already runs in the app's locale.
+ *   - A trailing `#anchor` is CARRIED as `?h=<anchor>` (a second '#' can't ride a hash
+ *     route; the reader reads `?h=` and scrolls that heading into view). This is the
+ *     fix for the old gap where the anchor was silently discarded.
+ *   - `index.html` is the marketing LANDING, which has no `.docs-content` fragment, so
+ *     `#/docs/index` would render "could not be displayed". It maps to the app front
+ *     door `/#/` instead — still an in-app navigation, never a dead reader route.
+ *
+ * Returns null for a link this rule does not own (signed screenshots, downloads, app
+ * `/#/…` links, external URLs) — the caller then leaves the href untouched.
+ */
+export function toReaderHref(href: string): string | null {
+  const m = /^\/info\/(?:[a-z][a-z-]*\/)?([^/]+?)\.html(?:\?[^#]*)?(?:#(.*))?$/.exec(href);
+  if (!m) return null;
+  if (m[1] === 'index') return '/#/';
+  const anchor = m[2] ? m[2].trim() : '';
+  return anchor ? `#/docs/${m[1]}?h=${encodeURIComponent(anchor)}` : `#/docs/${m[1]}`;
+}
+
+/** Rewrite every internal `/info` doc link inside `root` to the in-app reader route,
+ *  in place. Non-doc links (external, downloads, app routes) are left as they are. */
+export function rewriteDocLinks(root: ParentNode): void {
+  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => {
+    const reader = toReaderHref(a.getAttribute('href') || '');
+    if (reader) a.setAttribute('href', reader);
+  });
+}
+
+/** Deep-clone a node from the parsed /info document into THIS document and rewrite its
+ *  internal doc links. Null-safe so a missing landmark is a graceful skip. */
+function adopt(src: Element | null): HTMLElement | null {
+  if (!src) return null;
+  const el = document.importNode(src, true) as HTMLElement;
+  rewriteDocLinks(el);
+  return el;
+}
+
+/**
+ * The docs SIDEBAR rail (cross-doc nav) — the fetched page's own `.docs-sidebar`,
+ * which already marks the CURRENT page `.active` (we fetched that page's build, so its
+ * rail is contextually correct for free) and carries the AI / inclusive-design landmark
+ * chips. Links rewritten to `#/docs/…`.
+ */
+export function extractSidebar(doc: Document): HTMLElement | null {
+  return adopt(doc.querySelector('.docs-sidebar'));
+}
+
+/** The footer SITEMAP — the whole docs index (`.footer-sitemap`), links rewritten. */
+export function extractSitemap(doc: Document): HTMLElement | null {
+  return adopt(doc.querySelector('.footer-sitemap'));
+}
+
+/**
+ * The top PATHWAYS section switcher — the `.nav-group` anchors from the fetched page's
+ * top bar (Quickstart · For Creators · For Builders · For Operators · Trust), rebuilt
+ * into a compact bar. Rebuilt rather than cloned so the search box + language menu that
+ * ride the same `<nav>` are dropped. The fetched page marks the active pathway, which
+ * we carry across.
+ */
+export function extractPathways(doc: Document): HTMLElement | null {
+  const anchors = Array.from(doc.querySelectorAll<HTMLAnchorElement>('.nav-group a[href]'));
+  if (!anchors.length) return null;
+  const bar = document.createElement('nav');
+  bar.className = 'docs-pathways';
+  bar.setAttribute('aria-label', t('Documentation sections'));
+  for (const src of anchors) {
+    const a = document.createElement('a');
+    a.className = 'docs-pathway';
+    a.textContent = (src.textContent || '').trim();
+    const rewritten = toReaderHref(src.getAttribute('href') || '');
+    if (rewritten) {
+      a.setAttribute('href', rewritten);
+    } else {
+      // A pathway that isn't an /info doc link (shouldn't happen) stays a real link
+      // out rather than a dead in-app route.
+      a.setAttribute('href', src.getAttribute('href') || '#');
+      a.target = '_blank';
+      a.rel = 'noopener';
+    }
+    if (src.classList.contains('active')) a.classList.add('active');
+    bar.appendChild(a);
+  }
+  return bar;
+}
+
+export interface DocsToc {
+  /** The `<nav class="docs-toc">` element, ready to mount. */
+  el: HTMLElement;
+  /** The content headings the TOC links to, in document order — for scroll-spy. */
+  headings: HTMLElement[];
+}
+
+/**
+ * Derive an on-page table of contents from the rehosted content's stamped heading ids
+ * (h2 / h3 — the build stamps both). Returns null when there are fewer than two h2
+ * sections, since a single section is not a table of contents. Each link scroll-jumps
+ * within the reader (the caller wires the click to `scrollToHeading`); the `data-toc-target`
+ * carries the raw id so the caller need not re-parse the href.
+ */
+export function buildToc(content: ParentNode): DocsToc | null {
+  const heads = Array.from(content.querySelectorAll<HTMLElement>('h2[id], h3[id]'));
+  if (heads.filter((h) => h.tagName === 'H2').length < 2) return null;
+
+  const nav = document.createElement('nav');
+  nav.className = 'docs-toc';
+  nav.setAttribute('aria-label', t('On this page'));
+
+  const head = document.createElement('div');
+  head.className = 'docs-toc-head';
+  head.textContent = t('On this page');
+  nav.appendChild(head);
+
+  const list = document.createElement('ul');
+  list.className = 'docs-toc-list';
+  const headings: HTMLElement[] = [];
+  for (const h of heads) {
+    const id = h.id;
+    if (!id) continue;
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.className = h.tagName === 'H3' ? 'docs-toc-link is-h3' : 'docs-toc-link is-h2';
+    a.setAttribute('href', `#${id}`);
+    a.dataset.tocTarget = id;
+    a.textContent = (h.textContent || '').trim();
+    li.appendChild(a);
+    list.appendChild(li);
+    headings.push(h);
+  }
+  nav.appendChild(list);
+  return { el: nav, headings };
+}

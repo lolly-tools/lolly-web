@@ -35,31 +35,38 @@ import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
+import {
+  rewriteDocLinks,
+  extractSidebar,
+  extractSitemap,
+  extractPathways,
+  buildToc,
+} from '../lib/docs-nav.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** The reader drives the theme toggle + home fab; HostV1 covers both. */
 type DocsHost = HostV1;
 
-/** Rewrite an in-fragment `/info/<lang>/<slug>.html` link to the in-app reader route
- *  `#/docs/<slug>`, so internal navigation stays in the SPA (music keeps playing, no
- *  full page reload) rather than leaving to the static site. Any lang prefix is dropped
- *  — the reader already runs in the app's current locale — and a trailing #anchor/?query
- *  is dropped (a second '#' can't ride a hash route). Non-.html /info links (signed
- *  screenshots, downloads) and app links (`/#/…`) are left untouched. Returns null for a
- *  link this rule does not own. */
-function toReaderHref(href: string): string | null {
-  const m = /^\/info\/(?:[a-z][a-z-]*\/)?([^/]+?)\.html(?:[#?].*)?$/.exec(href);
-  return m ? `#/docs/${m[1]}` : null;
-}
-
-/** The chrome-only shell the fragment (or a status message) drops into. */
+/** The chrome + navigation shell the fragment (or a status message) drops into.
+ *  `inner` seeds the content column; the pathways / sidebar / TOC / sitemap slots
+ *  start empty + hidden and are filled from the fetched page once it parses (each a
+ *  graceful no-op if that page lacks the landmark). The scaffold is fixed class markup
+ *  + component HTML + t() labels only — no free/user text reaches this sink. */
 function shellHtml(inner: string): string {
   return `
     ${backPillHtml()}
     <div class="docs-topright" data-topright>
       ${homeFabHtml({ className: 'docs-top-btn' })}
     </div>
-    <div class="docs-reader" data-reader>${inner}</div>`;
+    <div class="docs-reader" data-reader>
+      <div class="docs-pathways-slot" data-pathways hidden></div>
+      <div class="docs-reader-grid">
+        <div class="docs-sidebar-slot" data-sidebar hidden></div>
+        <div class="docs-content-col" data-content>${inner}</div>
+        <div class="docs-toc-slot" data-toc hidden></div>
+      </div>
+      <div class="docs-sitemap-slot" data-sitemap hidden></div>
+    </div>`;
 }
 
 export async function mountDocs(
@@ -82,11 +89,11 @@ export async function mountDocs(
   mountHomeFab(viewEl);
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'docs-top-btn' }));
 
-  const readerEl = viewEl.querySelector<HTMLElement>('[data-reader]')!;
+  const contentEl = viewEl.querySelector<HTMLElement>('[data-content]')!;
   const url = docsInfoHref(slug, lang);
 
   const showStatus = (message: string, extra = ''): void => {
-    readerEl.innerHTML = `<p class="docs-status">${escape(message)}${extra}</p>`;
+    contentEl.innerHTML = `<p class="docs-status">${escape(message)}${extra}</p>`;
   };
 
   let html: string;
@@ -131,10 +138,7 @@ export async function mountDocs(
   fragment.querySelectorAll('script, style, .listen-bar').forEach((el) => el.remove());
 
   // Rewrite internal doc links to the in-app reader so navigation stays in the SPA.
-  fragment.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => {
-    const reader = toReaderHref(a.getAttribute('href') || '');
-    if (reader) a.setAttribute('href', reader);
-  });
+  rewriteDocLinks(fragment);
 
   // Adopt the fragment into this document and mount it. `.docs-content` is a <main> in the
   // built page, but #view is ALREADY <main id="view"> — a nested/second <main> is an
@@ -145,7 +149,7 @@ export async function mountDocs(
   const node = document.createElement('article');
   node.className = imported.className;
   node.replaceChildren(...Array.from(imported.childNodes));
-  readerEl.replaceChildren(node);
+  contentEl.replaceChildren(node);
 
   // Scroll a heading (by fragment id) into view within #view. Returns whether the
   // heading exists, so a click handler can preventDefault only when it will act.
@@ -168,6 +172,36 @@ export async function mountDocs(
     e.preventDefault();
   };
   node.addEventListener('click', onAnchorClick as EventListener);
+
+  // ── Navigation: cross-doc (pathways / sidebar / footer sitemap) + in-page (TOC) ──
+  // The fetched page's real nav lives OUTSIDE .docs-content, so the reader used to throw
+  // it away and strand you on one page. Pull each landmark out of `doc` and fill its slot
+  // (links already rewritten to #/docs/… by the extractors); the TOC is DERIVED from the
+  // rehosted content's stamped heading ids. Every fill is a graceful no-op when absent.
+  const fillSlot = (sel: string, el: HTMLElement | null): void => {
+    if (!el) return;
+    const slot = viewEl.querySelector<HTMLElement>(sel);
+    if (!slot) return;
+    slot.replaceChildren(el);
+    slot.hidden = false;
+  };
+  fillSlot('[data-pathways]', extractPathways(doc));
+  fillSlot('[data-sidebar]', extractSidebar(doc));
+  fillSlot('[data-sitemap]', extractSitemap(doc));
+  const toc = buildToc(node);
+  if (toc) {
+    const tocSlot = viewEl.querySelector<HTMLElement>('[data-toc]');
+    if (tocSlot) {
+      tocSlot.replaceChildren(toc.el);
+      tocSlot.hidden = false;
+      // TOC links (`#<id>` + data-toc-target) scroll within the reader, never the route.
+      toc.el.addEventListener('click', (e) => {
+        const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[data-toc-target]');
+        if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0) return;
+        if (scrollToHeading(a.dataset.tocTarget || '', 'smooth')) e.preventDefault();
+      });
+    }
+  }
 
   // ── M3: interactive "Try it" embeds (progressive enhancement) ─────────────────
   // ADDITIVE: turn the static, C2PA-signed tool screenshots into live affordances under
