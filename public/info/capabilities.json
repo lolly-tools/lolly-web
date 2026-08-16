@@ -1,0 +1,960 @@
+{
+  "generator": "lolly",
+  "license": "MPL-2.0",
+  "offers": 0,
+  "url": "https://lolly.tools",
+  "formats": [
+    {
+      "token": "SVG",
+      "name": "SVG",
+      "category": "Vector",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "vector",
+        "alpha",
+        "text-as-paths",
+        "embeds-bitmaps",
+        "provenance"
+      ]
+    },
+    {
+      "token": "PDF",
+      "name": "PDF",
+      "category": "Vector",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "vector",
+        "print",
+        "text-as-paths",
+        "embeds-bitmaps",
+        "provenance",
+        "encryption"
+      ]
+    },
+    {
+      "token": "PNG",
+      "name": "PNG",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "lossless",
+        "hdr",
+        "provenance"
+      ]
+    },
+    {
+      "token": "JPG",
+      "name": "JPG",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "lossy",
+        "hdr",
+        "provenance"
+      ]
+    },
+    {
+      "token": "WEBP",
+      "name": "WebP",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "lossless",
+        "lossy",
+        "provenance"
+      ]
+    },
+    {
+      "token": "GIF",
+      "name": "GIF",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "animation",
+        "provenance"
+      ]
+    },
+    {
+      "token": "TIFF",
+      "name": "TIFF",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "lossless",
+        "hdr",
+        "provenance"
+      ]
+    },
+    {
+      "token": "AVIF",
+      "name": "AVIF",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "lossy",
+        "hdr",
+        "provenance"
+      ]
+    },
+    {
+      "token": "PSD",
+      "name": "PSD",
+      "category": "Layered",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "layers",
+        "raster",
+        "alpha",
+        "cmyk"
+      ]
+    },
+    {
+      "token": "MP4",
+      "name": "MP4",
+      "category": "Motion",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "animation",
+        "lossy",
+        "audio",
+        "provenance"
+      ]
+    },
+    {
+      "token": "WEBM",
+      "name": "WebM",
+      "category": "Motion",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "animation",
+        "lossy",
+        "audio",
+        "provenance"
+      ]
+    },
+    {
+      "token": "MP3",
+      "name": "MP3",
+      "category": "Audio",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "audio",
+        "lossy"
+      ]
+    },
+    {
+      "token": "M4A",
+      "name": "M4A",
+      "category": "Audio",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "audio",
+        "lossy",
+        "provenance"
+      ]
+    },
+    {
+      "token": "PPTX",
+      "name": "PPTX",
+      "category": "Document",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "editable-text",
+        "vector",
+        "embeds-bitmaps",
+        "data-table"
+      ]
+    },
+    {
+      "token": "CSV",
+      "name": "CSV",
+      "category": "Data",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "data-table"
+      ]
+    },
+    {
+      "token": "JSON",
+      "name": "JSON",
+      "category": "Data",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "data-table"
+      ]
+    },
+    {
+      "token": "Penpot",
+      "name": "Penpot",
+      "category": "Vector",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "editable-text",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "Illustrator",
+      "name": "Illustrator",
+      "category": "Vector",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "editable-text",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "InDesign",
+      "name": "InDesign",
+      "category": "Vector",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "editable-text",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "Figma",
+      "name": "Figma",
+      "category": "Vector",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "editable-text",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "HEIC",
+      "name": "HEIC",
+      "category": "Raster",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "raster",
+        "lossy"
+      ]
+    },
+    {
+      "token": "PSB",
+      "name": "PSB",
+      "category": "Layered",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "layers",
+        "raster",
+        "alpha",
+        "cmyk"
+      ]
+    },
+    {
+      "token": "XCF",
+      "name": "XCF",
+      "category": "Layered",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "layers",
+        "raster",
+        "alpha"
+      ]
+    },
+    {
+      "token": "MOV",
+      "name": "MOV",
+      "category": "Motion",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "animation",
+        "lossy",
+        "audio"
+      ]
+    },
+    {
+      "token": "Lottie",
+      "name": "Lottie",
+      "category": "Motion",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "animation"
+      ]
+    },
+    {
+      "token": "WAV",
+      "name": "WAV",
+      "category": "Audio",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "audio",
+        "lossless"
+      ]
+    },
+    {
+      "token": "Opus",
+      "name": "Opus",
+      "category": "Audio",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "audio",
+        "lossy",
+        "provenance"
+      ]
+    },
+    {
+      "token": "OGG",
+      "name": "OGG",
+      "category": "Audio",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "audio",
+        "lossy"
+      ]
+    },
+    {
+      "token": "FLAC",
+      "name": "FLAC",
+      "category": "Audio",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "audio",
+        "lossless"
+      ]
+    },
+    {
+      "token": "MIDI",
+      "name": "MIDI",
+      "category": "Audio",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "audio",
+        "sequenced"
+      ]
+    },
+    {
+      "token": "MOD",
+      "name": "MOD",
+      "category": "Audio",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "audio",
+        "sequenced"
+      ]
+    },
+    {
+      "token": "GLB",
+      "name": "GLB",
+      "category": "3D",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "3d"
+      ]
+    },
+    {
+      "token": "glTF",
+      "name": "glTF",
+      "category": "3D",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "3d"
+      ]
+    },
+    {
+      "token": "CMYK PDF",
+      "name": "Print PDF (CMYK)",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "cmyk",
+        "print",
+        "text-as-paths",
+        "embeds-bitmaps",
+        "provenance",
+        "encryption"
+      ]
+    },
+    {
+      "token": "EPS",
+      "name": "EPS",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "text-as-paths",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "CMYK EPS",
+      "name": "EPS (CMYK)",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "cmyk",
+        "text-as-paths",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "EMF",
+      "name": "EMF",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "text-as-paths"
+      ]
+    },
+    {
+      "token": "DXF",
+      "name": "DXF",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "text-as-paths",
+        "print"
+      ]
+    },
+    {
+      "token": "CMYK TIFF",
+      "name": "Print TIFF (CMYK)",
+      "category": "Raster",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "raster",
+        "cmyk",
+        "print",
+        "lossless"
+      ]
+    },
+    {
+      "token": "EXR",
+      "name": "EXR",
+      "category": "Raster",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "raster",
+        "hdr",
+        "deep-color",
+        "lossless",
+        "alpha"
+      ]
+    },
+    {
+      "token": "Radiance HDR",
+      "name": "Radiance HDR",
+      "category": "Raster",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "raster",
+        "hdr",
+        "deep-color"
+      ]
+    },
+    {
+      "token": "ICO",
+      "name": "ICO",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "lossless"
+      ]
+    },
+    {
+      "token": "APNG",
+      "name": "Animated PNG",
+      "category": "Motion",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "animation",
+        "lossless",
+        "provenance"
+      ]
+    },
+    {
+      "token": "Animated WebP",
+      "name": "Animated WebP",
+      "category": "Motion",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "animation",
+        "lossy",
+        "provenance"
+      ]
+    },
+    {
+      "token": "Animated SVG",
+      "name": "Animated SVG",
+      "category": "Motion",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "animation",
+        "text-as-paths",
+        "alpha",
+        "provenance"
+      ]
+    },
+    {
+      "token": "HTML",
+      "name": "HTML",
+      "category": "Document",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "editable-text",
+        "embeds-bitmaps"
+      ]
+    },
+    {
+      "token": "MD",
+      "name": "Markdown",
+      "category": "Document",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "editable-text"
+      ]
+    },
+    {
+      "token": "TXT",
+      "name": "Plain Text",
+      "category": "Document",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "editable-text"
+      ]
+    },
+    {
+      "token": "ICS",
+      "name": "ICS",
+      "category": "Data",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "calendar"
+      ]
+    },
+    {
+      "token": "VCF",
+      "name": "VCF",
+      "category": "Data",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "contacts"
+      ]
+    },
+    {
+      "token": "DTCG",
+      "name": "DTCG",
+      "category": "Tokens",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "design-tokens",
+        "palette"
+      ]
+    },
+    {
+      "token": "Tokens Studio",
+      "name": "Tokens Studio",
+      "category": "Tokens",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "design-tokens",
+        "palette"
+      ]
+    },
+    {
+      "token": "ASE",
+      "name": "ASE",
+      "category": "Tokens",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "palette"
+      ]
+    },
+    {
+      "token": "GPL",
+      "name": "GPL",
+      "category": "Tokens",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "palette"
+      ]
+    },
+    {
+      "token": "CSS variables",
+      "name": "CSS variables",
+      "category": "Tokens",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "palette",
+        "design-tokens",
+        "editable-text"
+      ]
+    },
+    {
+      "token": "SCSS",
+      "name": "SCSS",
+      "category": "Tokens",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "palette",
+        "editable-text"
+      ]
+    },
+    {
+      "token": "ZIP",
+      "name": "ZIP",
+      "category": "Bundle",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "multi-file-bundle",
+        "encryption"
+      ]
+    },
+    {
+      "token": "SVGZ",
+      "name": "SVGZ",
+      "category": "Vector",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "vector",
+        "lossless",
+        "text-as-paths",
+        "provenance"
+      ]
+    },
+    {
+      "token": "BMP",
+      "name": "BMP",
+      "category": "Raster",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "raster",
+        "alpha",
+        "lossless"
+      ]
+    },
+    {
+      "token": "WMF",
+      "name": "WMF",
+      "category": "Vector",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "vector",
+        "text-as-paths"
+      ]
+    },
+    {
+      "token": "WOFF",
+      "name": "WOFF",
+      "category": "Font",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "font",
+        "lossless"
+      ]
+    },
+    {
+      "token": "TTF",
+      "name": "TTF",
+      "category": "Font",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "font",
+        "lossless"
+      ]
+    },
+    {
+      "token": "OTF",
+      "name": "OTF",
+      "category": "Font",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "font",
+        "lossless"
+      ]
+    },
+    {
+      "token": "XLSX",
+      "name": "XLSX",
+      "category": "Data",
+      "dir": "in",
+      "reads": true,
+      "writes": false,
+      "roundTrips": false,
+      "features": [
+        "data-table"
+      ]
+    },
+    {
+      "token": "EPUB",
+      "name": "EPUB",
+      "category": "Document",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "multi-file-bundle",
+        "editable-text"
+      ]
+    },
+    {
+      "token": "DOCX",
+      "name": "DOCX",
+      "category": "Document",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "editable-text"
+      ]
+    },
+    {
+      "token": "ODT",
+      "name": "ODT",
+      "category": "Document",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "editable-text"
+      ]
+    },
+    {
+      "token": "GZ",
+      "name": "gzip",
+      "category": "Bundle",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "compression",
+        "lossless"
+      ]
+    },
+    {
+      "token": "TAR",
+      "name": "tar",
+      "category": "Bundle",
+      "dir": "both",
+      "reads": true,
+      "writes": true,
+      "roundTrips": true,
+      "features": [
+        "multi-file-bundle"
+      ]
+    }
+  ]
+}
