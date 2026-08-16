@@ -133,9 +133,13 @@ export async function mountDocs(
   const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[—-]\s*Lolly\s*$/, '').trim();
   if (pageTitle) document.title = tRaw('{name} — Lolly', { name: pageTitle });
 
-  // Sanitise: never run a fetched page's scripts, drop its <style> (own styling comes
-  // from docs.css), and drop the Listen bar (no narration player in Phase 1).
-  fragment.querySelectorAll('script, style, .listen-bar').forEach((el) => el.remove());
+  // Sanitise: never run a fetched page's scripts, and drop the Listen bar (the dock owns
+  // narration now). KEEP <style>: the only style nodes inside `.docs-content` are a figure's
+  // OWN scoped block (e.g. `.cmp-fig` for the comparison matrix) — the page-global CSS lives
+  // in <head>, which we never extract. Those blocks also DEFINE the figure's local tokens
+  // (`--cmp-*`), so stripping them left figures unstyled and their headings mashed. This is
+  // our own trusted, brand-scoped build output, not arbitrary fetched markup.
+  fragment.querySelectorAll('script, .listen-bar').forEach((el) => el.remove());
 
   // Rewrite internal doc links to the in-app reader so navigation stays in the SPA.
   rewriteDocLinks(fragment);

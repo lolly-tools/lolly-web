@@ -327,3 +327,59 @@
   .docs-content h1 { font-size: 2.25rem; }
   .docs-content .md-cols { grid-template-columns: 1fr; gap: 2.25rem; }
 }
+
+/* ── In-app docs reader: chrome + navigation (M2) ─────────────────────────────
+   The reader rehosts a docs page's CONTENT plus its real navigation — the section
+   pathways, the docs sidebar rail, the footer sitemap — and a DERIVED on-page TOC.
+   All token-driven so it themes light/dark/brand and follows the active brand. */
+
+.docs-reader { max-width: 84rem; margin: 0 auto; padding: 4.75rem 1.5rem 3rem; box-sizing: border-box; }
+
+/* SAFETY FIRST: never let a rehosted/chrome icon size itself to the page (the
+   blown-up palette bug). Scoped to CHROME + NAV only — never .docs-content, whose
+   shots/figures are meant to be full width. */
+.docs-topright .docs-top-btn svg,
+.docs-back-pill svg { width: 20px; height: 20px; }
+.docs-pathways svg, .docs-pathways img,
+.docs-sidebar-slot svg, .docs-sidebar-slot img,
+.docs-toc-slot svg, .docs-toc-slot img,
+.docs-sitemap-slot svg, .docs-sitemap-slot img { width: 1.05em; height: 1.05em; max-width: 1.25em; max-height: 1.25em; flex: none; }
+
+/* top section pathways (Quickstart · For Creators · For Builders · For Operators · Trust) */
+.docs-pathways { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; padding: 0 0 1rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 1.75rem; }
+.docs-pathway { font: 600 .95rem/1.4 var(--font-brand, system-ui, sans-serif); color: hsl(var(--muted-foreground)); text-decoration: none; padding: .2rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+.docs-pathway:hover { color: hsl(var(--foreground)); }
+.docs-pathway.active { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+
+/* three-column grid: sidebar | content | on-page TOC */
+.docs-reader-grid { display: grid; grid-template-columns: 14rem minmax(0, 1fr) 13rem; gap: 2.75rem; align-items: start; }
+.docs-content-col { min-width: 0; }
+
+/* docs sidebar rail (extracted .docs-sidebar) */
+.docs-sidebar-slot { position: sticky; top: 4.75rem; align-self: start; max-height: calc(100vh - 6.5rem); overflow-y: auto; font-size: .9rem; }
+.docs-sidebar-slot :is(ul, ol) { list-style: none; margin: 0; padding: 0; }
+.docs-sidebar-slot a { display: flex; align-items: center; gap: .55rem; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .32rem .55rem; border-radius: 7px; line-height: 1.35; }
+.docs-sidebar-slot a:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.docs-sidebar-slot a.active { color: hsl(var(--primary)); font-weight: 600; background: hsl(var(--primary) / .09); }
+.docs-sidebar-slot :is(.docs-sidebar-group, h2, h3, .sidebar-head) { font: 700 .68rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin: 1.1rem 0 .4rem .55rem; }
+
+/* on-page table of contents (derived from stamped heading ids) */
+.docs-toc-slot { position: sticky; top: 4.75rem; align-self: start; max-height: calc(100vh - 6.5rem); overflow-y: auto; }
+.docs-toc-head { font: 700 .68rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-bottom: .65rem; }
+.docs-toc-list { list-style: none; margin: 0; padding: 0; border-left: 1px solid hsl(var(--border)); }
+.docs-toc-link { display: block; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .28rem .85rem; font-size: .85rem; line-height: 1.35; border-left: 2px solid transparent; margin-left: -1px; }
+.docs-toc-link.is-h3 { padding-left: 1.7rem; font-size: .82rem; }
+.docs-toc-link:hover { color: hsl(var(--foreground)); border-left-color: hsl(var(--muted-foreground) / .5); }
+
+/* footer sitemap (extracted .footer-sitemap) */
+.docs-sitemap-slot { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid hsl(var(--border)); font-size: .88rem; color: hsl(var(--muted-foreground)); }
+.docs-sitemap-slot :is(ul, ol) { list-style: none; margin: 0; padding: 0; }
+.docs-sitemap-slot a { color: hsl(var(--muted-foreground)); text-decoration: none; }
+.docs-sitemap-slot a:hover { color: hsl(var(--primary)); }
+
+/* responsive: fold the rails away on narrow screens (content + TOC-in-flow) */
+@media (max-width: 1024px) {
+  .docs-reader-grid { grid-template-columns: minmax(0, 1fr); }
+  .docs-sidebar-slot { display: none; }
+  .docs-toc-slot { position: static; max-height: none; margin-bottom: 1.5rem; }
+}
