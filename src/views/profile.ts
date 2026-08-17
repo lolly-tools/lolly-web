@@ -259,6 +259,7 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
   { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light mode colour color sound look' },
   { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce' },
+  { id: 'renders-section', icon: 'image', label: 'Your renders', keywords: 'renders downloads library save copy export tag auto-save' },
   { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
   { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
@@ -501,6 +502,31 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // re-renders these rows in place so their control kind swaps with the rest.
   const a11yListHtml = () => A11Y_ROWS.map(a11yRow).join('');
 
+  // ── Renders auto-save (WP-B) ─────────────────────────────────────────────────
+  // A single toggle for "keep a copy of every render in my library". Default ON:
+  // unset means on, so an untouched profile keeps its renders. Same control kinds
+  // + label wiring as the a11y rows so it swaps with the Jelly flag too.
+  const renderSaveRow = (on: boolean) => {
+    const tip = helpTip(t('Every image, audio clip and video you download is also kept in your library under a Renders tag, so you can find it again without re-exporting. Identical files are only kept once, and large videos ask first. Nothing about the file you downloaded changes.'));
+    const ctlId = 'save-renders';
+    const checked = on ? ' checked' : '';
+    const control = jellyOn
+      ? `<jelly-switch id="${escape(ctlId)}" class="feature-flag-jelly" data-save-renders size="sm" label="${escape(t('Save my renders to my library'))}"${checked}></jelly-switch>`
+      : `<input type="checkbox" id="${escape(ctlId)}" class="feature-flag-input" data-save-renders aria-describedby="${tip.id}"${checked}>
+        <span class="feature-flag-switch" aria-hidden="true"></span>`;
+    return `
+    <li>
+      <label class="feature-flag" for="${escape(ctlId)}">
+        <span class="feature-flag-label">${escape(t('Save my renders to my library'))}<span class="feature-flag-info a11y-pref-info help-tip-host">${tip.button}${tip.pop}</span></span>
+        ${control}
+      </label>
+    </li>`;
+  };
+  // Mutable so a Jelly-flag re-render keeps this toggle in step with the live
+  // choice (same pattern as a11yState above).
+  let renderSaveState = profile.saveRenders !== false;
+  const renderSaveListHtml = () => renderSaveRow(renderSaveState);
+
   viewEl.innerHTML = `
     ${backPillHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
@@ -612,6 +638,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <h2>${t('Accessibility')}</h2>
         <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
+        </ul>
+      </section>
+
+      <section class="profile-card" id="renders-section">
+        <h2>${t('Your renders')}</h2>
+        <p class="profile-appearance-sub">${t('Keep a copy of everything you download, ready to reopen or reuse.')}</p>
+        <ul class="feature-flags profile-a11y-prefs" id="render-save-prefs">${renderSaveListHtml()}
         </ul>
       </section>
 
@@ -811,6 +844,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // Rebuilt from a11yState (not the DOM), which the pref listener keeps current.
       const a11yList = viewEl.querySelector('#a11y-prefs');
       if (a11yList) a11yList.innerHTML = a11yListHtml();
+      const renderSaveList = viewEl.querySelector('#render-save-prefs');
+      if (renderSaveList) renderSaveList.innerHTML = renderSaveListHtml();
       // The identity form swaps its controls in place too, carrying any unsaved
       // edits across (both control kinds expose `.value` on the [name] element).
       const form = viewEl.querySelector('#profile-form');
@@ -836,6 +871,18 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const key = input.dataset.a11y as keyof A11yPrefs;
     a11yState[key] = input.checked;   // keeps a jelly-flag re-render in step with the live state
     await setA11yPref(host, key, input.checked);
+    announce(input.checked ? t('Enabled') : t('Disabled'));
+  });
+
+  // Renders auto-save toggle - auto-saves to the profile like the flags above.
+  // Stored on profile.saveRenders (default ON = unset), never localStorage.
+  viewEl.querySelector('#render-save-prefs')?.addEventListener('change', async e => {
+    const input = (e.target as Element).closest<HTMLInputElement>('[data-save-renders]');
+    if (!input) return;
+    renderSaveState = input.checked;   // keep a jelly-flag re-render in step
+    const current = await host.profile.get();
+    await host.profile.set!({ ...current, saveRenders: input.checked });
+    liveProfile = { ...current, saveRenders: input.checked };
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 

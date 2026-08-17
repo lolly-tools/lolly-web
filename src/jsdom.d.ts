@@ -5,6 +5,12 @@
 // This mirrors shells/cli/src/jsdom.d.ts and shells/tui/src/jsdom.d.ts — an ambient
 // module declaration (a non-module .d.ts), not an augmentation of the untyped package.
 declare module 'jsdom' {
+  /** Where jsdom routes a page's own errors. Declared for the same reason
+   *  shells/cli/src/run.ts has quietVirtualConsole: a test can then swallow the
+   *  noise jsdom makes over CSS its parser is too old to understand. */
+  export class VirtualConsole {
+    on(event: 'jsdomError', listener: (err: Error) => void): this;
+  }
   export class JSDOM {
     constructor(html?: string, options?: { pretendToBeVisual?: boolean; [key: string]: unknown });
     readonly window: Window & typeof globalThis;

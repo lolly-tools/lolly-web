@@ -45,7 +45,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components/body-popover.ts';
 import {
-  filmstrip, peaks, stillFrames, nodeStill, nodeKey, peekNodeRaster, nodeRasterPending,
+  filmstrip, frameAt, peaks, stillFrames, nodeStill, nodeKey, peekNodeRaster, nodeRasterPending,
   nodeRasterFailed, onNodeShotSettled, releaseClipThumbs, onIdle, svgMarkup, withBorrowedVisibility,
   setAuthoredPoseSeam, MAX_NODE_RASTER_NODES,
 } from '../lib/clip-thumbs.ts';
@@ -97,7 +97,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, ttsWordsOf } from './timeline-captions.ts';
 import { fmtBytes } from '../lib/format.ts';
-import type { AssetRef, AudioLevel, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
+import type { AssetRef, AudioLevel, HostV1, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
 
@@ -135,6 +135,23 @@ export interface TimelineHost {
   assets?: {
     _deleteUserAsset?(id: string): Promise<void>;
     get?(id: string): Promise<AssetRef | null>;
+    /** "Export frame": persist a native-resolution PNG grabbed at the playhead
+     *  as a new user asset (mirrors MatteAssetRecordInput/UpscaleAssetRecordInput -
+     *  the shape every on-device-transform dialog already saves through). */
+    _uploadUserAsset?(record: {
+      id: string;
+      type: AssetRef['type'];
+      format: string;
+      blob?: Blob;
+      version?: string;
+      width?: number;
+      height?: number;
+      meta?: Record<string, unknown>;
+    }): Promise<void>;
+  };
+  /** "Export frame"'s second half: the same PNG bytes, offered as a plain download. */
+  export?: {
+    download(blob: Blob, filename: string): Promise<void>;
   };
 }
 
@@ -2301,6 +2318,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // Exactly the writers that already exist - the context menu is a second DOOR onto
       // them, never a second implementation (see promote/demote above).
       el.appendChild(menuItem(t('Split at playhead'), 'scissors', act(() => { selectAndReveal([ctxId]); splitAtPlayhead(); })));
+      // Video only, and absent (never greyed) otherwise - the same offered-only-
+      // where-real rule as Join/Subtitles below.
+      if (canExportFrame(ctxId)) {
+        el.appendChild(menuItem(t('Export frame'), 'camera', act(() => { void exportFrameAt(ctxId); }),
+          { sub: t('Saves the frame under the playhead as a PNG, at full resolution.') }));
+      }
       // Join is offered only where it is REAL: a cut whose two sides are still perfectly
       // contiguous, on either side of this clip. Everywhere else the item is absent
       // rather than disabled - a menu of greyed-out rows teaches nothing.
@@ -2313,6 +2336,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       } else if (canDetach(ctxId)) {
         el.appendChild(menuItem(t('Detach audio'), 'volumeOff', act(() => detachAudioAt(ctxId)),
           { sub: t('Puts the sound on its own lane so you can move and trim it separately.') }));
+      }
+      // Mute clip audio: a SECOND DOOR onto the inspector's mute toggle (the same
+      // `cfg.muteField` write, never a second implementation - see the promote/demote
+      // rule above). Offered only where there is sound to silence - a clip with its own
+      // audio, or one of a detached-audio pair - the same offered-only-where-real rule
+      // as Join/Detach above, never on a silent still.
+      if (canDetach(ctxId) || partner) {
+        const muted = rows[i]![cfg.muteField] === true || rows[i]![cfg.muteField] === 'true';
+        el.appendChild(menuItem(muted ? t('Unmute clip') : t('Mute clip'), muted ? 'volumeOff' : 'volumeOn',
+          act(() => write(patchBox(getBoxes(), ctxId, { [cfg.muteField]: muted ? '' : 'true' }))),
+          { sub: t('Silences this clip’s own sound without removing it.') }));
       }
       // Subtitles, for a clip with sound - absent (never greyed) when no timing
       // source is reachable, the same offered-only-where-real rule as Join.
@@ -5657,6 +5691,103 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // ahead of the playhead, and the panel's one selection writer keeps it on screen.
     if (split.length) selectAndReveal(split);
     announce(split.length > 1 ? t('Split {n} clips', { n: String(split.length) }) : t('Clip split'));
+  }
+
+  // ── Export frame: a native-resolution PNG of the frame under the playhead ────
+
+  /** May "Export frame" be offered for this box? Video only - a still/audio/lottie
+   *  has no per-instant frame to grab. */
+  function canExportFrame(id: string): boolean {
+    return !!id && mediaOf(id).kind === 'video';
+  }
+
+  /**
+   * Decode the frame under the playhead from the clip's ORIGINAL asset - never the
+   * scrub proxy (lib/clip-proxy.ts's non-negotiable rule) - at the media's own
+   * native resolution, save it as a new user-catalog asset, and hand the same bytes
+   * to the browser's download flow. `mediaOf(id).url` is read straight off the
+   * mounted `<video>` element's `currentSrc`/`src`, which - by the same invariant
+   * that keeps every OTHER export path honest (see bridge/export.ts and
+   * sequence-render.ts's own header) - is never swapped to a proxy: only
+   * lib/clip-thumbs.ts's OWN filmstrip/waveform capture ever resolves one, which is
+   * exactly why this calls `frameAt` and not `filmstrip`.
+   */
+  async function exportFrameAt(id: string): Promise<void> {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return;
+    const media = mediaOf(id);
+    if (media.kind !== 'video' || !media.url) {
+      announce(t('This clip has no video frame to export'));
+      return;
+    }
+    const timing = boxTiming(rows[i]!, cfg);
+    const start = timing.start ?? 0;
+    const speed = timing.speed ?? 1;
+    // The bar's own local-time mapping (clipIn plus elapsed playhead time, scaled by
+    // speed) - the same arithmetic `out0` uses above to bound a filmstrip's window.
+    const localSec = timing.clipIn + Math.max(0, clock.t() / 1000 - start) * speed;
+    announce(t('Capturing frame…'));
+    const bitmap = await frameAt(media.url, localSec);
+    if (!bitmap) { announce(t('Could not capture that frame')); return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      try { bitmap.close?.(); } catch { /* already gone */ }
+      announce(t('Could not capture that frame'));
+      return;
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    try { bitmap.close?.(); } catch { /* already gone */ }
+    const rawBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!rawBlob) { announce(t('Could not capture that frame')); return; }
+
+    // Provenance: extracting a frame invents no pixels, so this is a c2pa.edited
+    // step - never a generated-content claim - and the clip's own source asset is
+    // kept as an ingredient when its bytes carry a credential. This is a plain,
+    // editor-initiated derived asset (not a `renders` output), so it is left
+    // UNTAGGED. Never blocks the save: both the ingredient read and the stamp are
+    // try/catch, exactly like the Matte and Upscale dialogs' own save path.
+    let blob = rawBlob;
+    try {
+      const [{ stampDerivedC2pa }, { extractC2paStore, prepareC2paIngredientFromStore }] = await Promise.all([
+        import('../bridge/export.ts'), import('@lolly/engine'),
+      ]);
+      const ingredient = await (async () => {
+        try {
+          const srcBytes = new Uint8Array(await (await fetch(media.url)).arrayBuffer());
+          const ex = extractC2paStore(srcBytes);
+          return ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
+        } catch {
+          return null; // source bytes unreachable - export continues without an ingredient
+        }
+      })();
+      blob = await stampDerivedC2pa(host as unknown as HostV1, rawBlob, 'png', {
+        title: 'Exported frame',
+        tool: 'Sequence editor',
+        actions: [{ action: 'c2pa.edited', description: 'Frame extracted from a video clip' }],
+        ...(ingredient ? { ingredients: [ingredient] } : {}),
+        dimensions: `${canvas.width}×${canvas.height}`,
+      });
+    } catch (e) {
+      host.log?.('warn', `Export frame: provenance stamp failed — ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const now = Date.now();
+    const filename = `frame-${now}.png`;
+    try {
+      await host.assets?._uploadUserAsset?.({
+        id: `user/frame/${now}`, type: 'raster', format: 'png', blob, version: '1.0.0',
+        width: canvas.width, height: canvas.height,
+        meta: { name: filename, bytes: blob.size },
+      });
+    } catch (e) {
+      host.log?.('warn', `Export frame: save failed — ${e instanceof Error ? e.message : String(e)}`);
+    }
+    await host.export?.download?.(blob, filename);
+    announce(t('Frame exported'));
   }
 
   // ── A/V link: detach audio, re-attach, and the through-edit join ─────────────

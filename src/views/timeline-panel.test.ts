@@ -73,7 +73,7 @@ const {
 const { fmtDelta, fmtDur } = await import('./timeline-math.ts');
 // The SAME module instance the panel holds (a dynamic import of an already-evaluated
 // module is the same record), so the seam installed here is the one it calls.
-const { _setNodeRasterer, clearClipThumbCache } = await import('../lib/clip-thumbs.ts');
+const { _setNodeRasterer, clearClipThumbCache, _setFrameAtImpl } = await import('../lib/clip-thumbs.ts');
 
 /** The phase-1 field mapping, exactly as sequence-studio's manifest declares it. */
 const cfg = {
@@ -5806,4 +5806,57 @@ test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam
       'add over an unauthored size is the size itself (neutral 0), which is why the default is safe but not right');
     assert.equal(h.commits.length, 0, 'the seam never commits — the caller owns the write');
   } finally { closeOverlays(); h.teardown(); }
+});
+
+// ── Export frame (WP-D) ────────────────────────────────────────────────────
+
+test('Export frame decodes the clip\'s ORIGINAL asset at its own local media time — never a registered scrub proxy', async () => {
+  const { noteScrubSource, setProxyUrl, resetScrubCache } = await import('../lib/scrub-registry.ts');
+  const calls: Array<{ url: string; tSec: number }> = [];
+  _setFrameAtImpl(async (url, tSec) => { calls.push({ url, tSec }); return null; });
+  const h = mount([{ id: 'v', start: 1, dur: 4, lane: 'seq', clipIn: 2, speed: 2 } as Box]);
+  try {
+    paintVideo(h, 'v', 20);
+    const video = h.canvasEl.querySelector('video') as HTMLVideoElement;
+    // Deterministic identity for the "original" URL, independent of jsdom's own
+    // (unspecified, here) src-attribute resolution.
+    Object.defineProperty(video, 'src', { value: 'blob:clip-original-abc', configurable: true });
+    h.panel.setOpen(false); h.panel.setOpen(true);
+
+    // Register a scrub proxy for EXACTLY this URL - the same registration path a real
+    // upload wires (bridge/assets.ts's noteScrubSource + the proxy build's setProxyUrl).
+    // If "Export frame" ever swapped it in - the way filmstrip()/scrubUrl() deliberately
+    // do for a scrubbing preview - this is the proxy it would pick up.
+    noteScrubSource('blob:clip-original-abc', 'user/video/1');
+    setProxyUrl('user/video/1', 'blob:proxy-fake', false);
+
+    // Playhead at 2s, on a box that starts at 1s, trimmed in 2s of media and playing
+    // at 2×: one second of timeline has elapsed since the box's own start, which is
+    // two seconds of MEDIA at 2× - so the frame under the playhead sits at
+    // clipIn(2) + (2 - 1) × 2 = 4s into the source file.
+    await seek(h, 2000);
+
+    rightClick(h.bar('v'));
+    const item = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim().startsWith('Export frame'))!;
+    assert.ok(item, '"Export frame" is offered for a video clip');
+    click(item);
+    await frames(3);
+
+    assert.equal(calls.length, 1, 'the decode was attempted exactly once');
+    assert.equal(calls[0]!.url, 'blob:clip-original-abc', 'the ORIGINAL asset url — never the registered proxy');
+    assert.notEqual(calls[0]!.url, 'blob:proxy-fake', 'the proxy is never the id this resolves to');
+    assert.equal(calls[0]!.tSec, 4, 'clipIn + elapsed×speed — the box\'s own local-media-time mapping');
+  } finally {
+    _setFrameAtImpl(null);
+    resetScrubCache();
+    h.teardown();
+  }
+});
+
+test('Export frame is offered only for a video clip — absent, never greyed, on anything else', () => {
+  const h = mount([clip('card', 0, 3)]);
+  try {
+    assert.equal(ctxLabels(h, 'card').includes('Export frame'), false);
+  } finally { h.teardown(); }
 });

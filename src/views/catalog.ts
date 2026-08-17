@@ -54,6 +54,7 @@ import { wireDisclosure } from '../components/body-popover.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { autoplayLottieThumbs, mountLottieMarker, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
+import { extractAssetMetadata } from '../lib/asset-metadata.ts';
 import { confirmDialog, choiceDialog, promptDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { armViewEnter } from '../view-enter.ts';
 import {
@@ -75,6 +76,7 @@ import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import type { PickerHost } from './picker.ts';
 import type { UpscaleHost } from './upscale-dialog.ts';
 import type { MatteHost } from './matte-dialog.ts';
+import type { ExtractAudioHost } from '../lib/extract-audio.ts';
 import { mountAudioThumbs, replaceUserUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
@@ -1666,6 +1668,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
+    // "Extract audio" (WP-C): decode a video's sound track on-device and save it as
+    // an audio user asset. Video only - it is nonsensical anywhere else - and only
+    // where the browser can decode audio at all. A catalog-side extraction is its own
+    // derived asset (no 'renders' tag), with the source video carried as an ingredient.
+    const canExtractAudio = ref.type === 'video' && !ref.meta?._placeholder
+      && typeof (window.AudioContext ?? (window as { webkitAudioContext?: unknown }).webkitAudioContext) !== 'undefined';
     // "Trim margins" (plan 97 section 7.3): the retro-trim of an upload that arrived padded,
     // offering the same before/after card every ingest surface shows. Uploads only - 
     // a catalog asset is an immutable, checksum-validated contract. A still raster or
@@ -1699,6 +1707,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>${t('ID')}</dt><dd><code>${escape(ref.id)}</code></dd></div>
           ${tags.length ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<span class="cat-tag">${escape(String(tag))}</span>`).join('')}</dd></div>` : ''}
         </dl>
+        <div class="cat-details-tech" data-tech hidden></div>
         ${showVerify ? `<div class="cat-details-cred">
           <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">${t('This file’s Content Credential records a Lolly export, intact.')}</span></div>
           <div class="cat-cred-panels" hidden></div>
@@ -1712,6 +1721,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
           ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
+          ${canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : ''}
           <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
@@ -1754,6 +1764,21 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     detailsDialog = dlg;
     detailsModal = modal;
     if (!wasOpen) playSfx('whisper'); // airy elevation as the asset details rise in (silent on ←/→ paging)
+
+    // Technical metadata (resolution, DPI, EXIF, audio/video props, page count, viewBox…):
+    // extract off-thread and fill the initially-hidden panel. Cancel/stale-safe - ←/→ paging
+    // re-runs openDetails per asset, so a slow result must not overwrite a newer asset's panel.
+    void extractAssetMetadata(ref).then(techFields => {
+      if (detailsDialog !== dlg) return;          // modal closed or paged to another asset
+      if (!techFields.length) return;             // nothing readable - leave the panel hidden
+      const box = dlg.querySelector<HTMLElement>('[data-tech]');
+      if (!box) return;
+      box.innerHTML = `<div class="cat-tech-head">${t('Details')}</div>`
+        + `<dl class="cat-details-meta">${techFields
+            .map(f => `<div><dt>${escape(f.label)}</dt><dd>${escape(f.value)}</dd></div>`)
+            .join('')}</dl>`;
+      box.hidden = false;
+    }).catch(() => { /* never blocks the modal */ });
 
     // "Made with Lolly" is only honest when the stored file genuinely carries an intact
     // Lolly credential, so reveal the lockup lazily off the authoritative verifier rather
@@ -2124,6 +2149,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           else openDetails(ref); // cancelled - restore the asset the user was inspecting
         } catch (err) {
           host.log('error', act === 'upscale' ? 'Upscale failed' : 'Background removal failed', { id: ref.id, error: String(err) });
+        }
+      }
+      else if (act === 'extract-audio') {
+        // Decode THIS video's sound track on-device, save it as an audio user asset
+        // (its own derived asset - no 'renders' tag), then show it. The source video's
+        // own Content Credential rides forward as an ingredient.
+        try {
+          const { openExtractAudioDialog } = await import('../lib/extract-audio.ts');
+          const made = await openExtractAudioDialog(host as unknown as ExtractAudioHost, {
+            source: ref, sourceName: name,
+            ...(ref.meta?.aiGenerated === 'full' || ref.meta?.aiGenerated === 'partial' ? { aiGenerated: ref.meta.aiGenerated } : {}),
+          });
+          if (made) { await reload(); rerender(); openDetails(made); }
+          else openDetails(ref); // cancelled - restore the asset the user was inspecting
+        } catch (err) {
+          host.log('error', 'Extract audio failed', { id: ref.id, error: String(err) });
         }
       }
       else if (act === 'recategorise') await recategorise(ref);

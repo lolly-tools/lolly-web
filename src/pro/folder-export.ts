@@ -211,6 +211,19 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
   const file = files[0]!;
   const name = file.name.replace(/^\d+-/, '');   // strip runBatch's sequence prefix → bare name
   host.export.download(file.blob, name);
+  // Auto-save the same credentialed bytes into the personal library ('renders'
+  // tag). Best-effort + non-blocking, deduped + toggle-gated inside the helper.
+  void (async () => {
+    try {
+      const { saveRenderToLibrary } = await import('../lib/save-render.ts');
+      await saveRenderToLibrary(host as unknown as Parameters<typeof saveRenderToLibrary>[0], {
+        blob: file.blob,
+        format: file.fmt || (name.split('.').pop() ?? 'bin'),
+        toolId: row.toolId || 'render',
+        name: name.replace(/\.[a-z0-9]{1,5}$/i, ''),
+      });
+    } catch { /* library save is best-effort */ }
+  })();
   if (mount) mount.innerHTML = `<p class="pro-progress-msg"><strong>Downloaded ${escape(name)}.</strong></p>`;
   playSfx('victory'); // a single render finished - the subtle "ta-da" (the ding fired inside runBatch)
   return { files, name };

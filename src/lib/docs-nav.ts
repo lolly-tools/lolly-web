@@ -26,9 +26,10 @@ import { t } from '../i18n.ts';
  *   - A trailing `#anchor` is CARRIED as `?h=<anchor>` (a second '#' can't ride a hash
  *     route; the reader reads `?h=` and scrolls that heading into view). This is the
  *     fix for the old gap where the anchor was silently discarded.
- *   - `index.html` is the marketing LANDING, which has no `.docs-content` fragment, so
- *     `#/docs/index` would render "could not be displayed". It maps to the app front
- *     door `/#/` instead - still an in-app navigation, never a dead reader route.
+ *   - `index.html` is the LANDING, and since plans/123 the reader rehosts it like any
+ *     other page (its `.docs-landing` fragment is the second extraction marker), so it
+ *     maps to `#/docs/index` with everything else. It used to divert to the app front
+ *     door `/#/`, because a landing mount rendered "could not be displayed".
  *
  * Returns null for a link this rule does not own (signed screenshots, downloads, app
  * `/#/…` links, external URLs) - the caller then leaves the href untouched.
@@ -36,9 +37,30 @@ import { t } from '../i18n.ts';
 export function toReaderHref(href: string): string | null {
   const m = /^\/info\/(?:[a-z][a-z-]*\/)?([^/]+?)\.html(?:\?[^#]*)?(?:#(.*))?$/.exec(href);
   if (!m) return null;
-  if (m[1] === 'index') return '/#/';
   const anchor = m[2] ? m[2].trim() : '';
   return anchor ? `#/docs/${m[1]}?h=${encodeURIComponent(anchor)}` : `#/docs/${m[1]}`;
+}
+
+/**
+ * Rewrite a link that points at the APP ITSELF to the equivalent in-SPA hash link. The
+ * built pages link out to the deployed app absolutely, in two shapes:
+ *
+ *   /                          /?lang=de                 → the app root
+ *   /#/tool/qr-code?url=…      /?lang=de#/tool/filter    → a route on the app root
+ *
+ * Followed as written, each is a full page load: the reader unmounts, the music stops,
+ * and the locale is re-picked from the query. The route form keeps its own `#/…` (the
+ * `?lang=` is redundant in-app, where the locale is already live), and the bare root
+ * resolves to the dashboard `#/d` - the app front door for someone who is standing in
+ * the app already.
+ *
+ * Returns null for everything else, including `/info/…` doc links (toReaderHref owns
+ * those) and any absolute URL - so a caller can run both rewriters over one fragment.
+ */
+export function toAppHref(href: string): string | null {
+  const m = /^\/(?:\?[^#]*)?(#\/.*)?$/.exec(href);
+  if (!m) return null;
+  return m[1] ?? '#/d';
 }
 
 /** Rewrite every internal `/info` doc link inside `root` to the in-app reader route,

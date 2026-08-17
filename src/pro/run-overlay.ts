@@ -539,9 +539,11 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     onBatchRendered?.(files); // host-injected usage metric (see main.js)
 
     // Deliver: one zip when possible; spaced sequential downloads as a fallback.
+    let delivered = false;
     try {
       const zip = await buildZip(files, { zipName: `${zipBaseName}.zip`, author, csv, zipLock, password: strongPassword, unmade, noted, runNotes, retryOf, preflight });
       saveBlob(zip, `${zipBaseName}.zip`);
+      delivered = true;
       draw(`<strong>Done — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
       announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);
       // The whole queue finished - celebrate: the big trumpet for a real batch, the subtle
@@ -563,10 +565,27 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
           delayMs: 600,
           onSaved: (n, tot) => draw(`<strong>Saving ${n} / ${tot}…</strong>`),
         });
+        delivered = true;
         draw(`<strong>Done — ${files.length} files downloaded${tail}.</strong>`);
         announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} downloaded${tail}.`);
         if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) - big trumpet for a batch, subtle "ta-da" for one
       }
+    }
+    // Auto-save each delivered member's credentialed bytes into the personal
+    // library ('renders' tag). Only when the files actually reached the user (a
+    // failed encrypted-zip build delivers nothing). Best-effort + non-blocking;
+    // the helper dedupes and honours the profile toggle. `results` push a
+    // successful row's outcome in the same order `files` are appended, so the
+    // ok-rows line up with the members positionally.
+    if (delivered) {
+      const okRows = results.filter((r): r is Extract<typeof r, { ok: true }> => r.ok).map(r => r.row);
+      const members = files.map((f, i) => ({ blob: f.blob, name: f.name, format: f.fmt, toolId: okRows[i]?.toolId ?? 'render' }));
+      void (async () => {
+        try {
+          const { saveBatchRendersToLibrary } = await import('../lib/save-render.ts');
+          await saveBatchRendersToLibrary(host as unknown as Parameters<typeof saveBatchRendersToLibrary>[0], members);
+        } catch { /* library save is best-effort */ }
+      })();
     }
     offerRetry();
     return { files, results, cancelled: cancelRequested };

@@ -14,6 +14,11 @@
  * pathways / sidebar / sitemap / TOC nav slots, honours a ?h= deep link, and renders a
  * .docs-status message on a 404 or a fetch throw.
  *
+ * Plus LANDING MODE (plans/123): slug 'index' fetches the real /info/index.html instead of
+ * the old quickstart alias, rehosts its `.docs-landing` body, drops the rails, hydrates the
+ * audience tabs without touching location.hash, opens a deep-linked FAQ <details>, points
+ * the app links back into this SPA, and injects the scoped band stylesheet once.
+ *
  * routeLang is always passed as 'de' (a non-English locale) so the English-only narration
  * block in mountDocs is skipped - that block reaches into the app-global audio dock, which
  * is out of scope for a hermetic reader test. With lang 'de' the fetch URL becomes
@@ -21,13 +26,23 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
+
+// jsdom's CSS parser predates @scope, so appending the landing stylesheet raises a
+// "Could not parse CSS stylesheet" jsdomError that dumps the whole sheet into the test
+// log. Nothing here reads computed style (jsdom applies no layout anyway), so that one
+// error is swallowed and every other page error still prints.
+const virtualConsole = new VirtualConsole();
+virtualConsole.on('jsdomError', (err: Error) => {
+  if (!/Could not parse CSS stylesheet/.test(err.message)) process.stderr.write(`[jsdom] ${err.message}\n`);
+});
 
 // jsdom globals pinned onto globalThis BEFORE the dynamic import of the module under test -
 // docs.ts and its import graph expect a browser realm (DOMParser, CSS.escape, localStorage).
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   url: 'https://lolly.tools/#/docs/quickstart',
   pretendToBeVisual: true,
+  virtualConsole,
 });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
@@ -81,6 +96,62 @@ const PAGE_HTML = `<!doctype html><html><head><title>Quickstart — Lolly</title
   <footer class="footer-sitemap">
     <a href="/info/quickstart.html">Quickstart</a>
   </footer>
+</body></html>`;
+
+/**
+ * The built LANDING page, shaped like the real /info/de/index.html: a `.docs-landing`
+ * <main> (never a `.docs-content`), the site-sentence <title>, the floating listen bar,
+ * the app links in both built forms (`/?lang=de` for the app root, `/?lang=de#/tool/…`
+ * for a seeded tool), the sticky quicknav, the audience jump pills over stacked
+ * always-open cards (plan 123 D1), and an FAQ <details>. It ships no `.docs-sidebar`,
+ * exactly as the real landing does.
+ *
+ * Two headings carry ids the real landing does not stamp: with them the "no TOC in
+ * landing mode" assertion has teeth (the same two headings fill the TOC on a doc page).
+ */
+const LANDING_HTML = `<!doctype html><html>
+<head><title>Lolly - assets that stay the same so everything else can change</title></head>
+<body>
+  <nav class="nav-group">
+    <a href="/info/creators.html">For Creators</a>
+    <a href="/info/builders.html">For Builders</a>
+  </nav>
+  <main class="docs-landing page-index"><style>.listen-bar{display:flex}</style>
+    <div class="listen-bar listen-bar-float"><button class="docs-listen">Listen</button></div>
+    <section class="hero reveal">
+      <a href="/?lang=de" class="hero-logo-link" aria-label="Open Lolly"><img src="/info/icon.svg" alt=""></a>
+      <a href="/?lang=de" class="btn btn-primary">Launch App</a>
+      <a href="/info/quickstart.html" class="btn">Read the quickstart</a>
+    </section>
+    <nav class="quicknav" aria-label="On this page">
+      <div class="quicknav-inner"><a href="#make">Make something</a><a href="#faq">FAQ</a></div>
+    </nav>
+    <section class="make-section" id="make">
+      <h2 id="make-heading">Make something, right now</h2>
+      <a class="make-card" href="/?lang=de#/tool/qr-code?url=https%3A%2F%2Flolly.tools&amp;color=%231a1a2e">QR code</a>
+      <a class="make-card" href="/#/u">All the utilities</a>
+    </section>
+    <section class="audience-section">
+      <h2 id="audience-heading">Who is it for?</h2>
+      <div class="audience-tabs" role="navigation" aria-label="Who is it for?">
+        <a class="audience-tab" href="#anyone">Anyone</a>
+        <a class="audience-tab" href="#press">Press</a>
+      </div>
+      <div class="audience-panels">
+        <div class="audience-card" id="anyone">Everyday jobs.</div>
+        <div class="audience-card" id="press">Press kits.</div>
+      </div>
+      <div class="audience-panels machines-panels">
+        <div class="audience-card" id="ai">Always open.</div>
+      </div>
+    </section>
+    <section class="faq-section" id="faq">
+      <details class="faq-item" id="faq-opt-in"><summary>What happens when I opt in?</summary>
+        <div class="faq-a">Nothing leaves the device.</div>
+      </details>
+    </section>
+  </main>
+  <footer><div class="footer-sitemap"><a href="/info/index.html">What?</a></div></footer>
 </body></html>`;
 
 /** A fresh, DOCUMENT-CONNECTED mount element. mountDocs bails after fetch when the view is
@@ -205,6 +276,145 @@ test('a ?h=<id> deep link mounts cleanly when the heading exists', async () => {
   assert.ok(article!.querySelector('#some-id'), 'the deep-link target heading is present in the DOM');
 
   view.remove();
+});
+
+// ── Landing mode (#/docs/index, plans/123) ───────────────────────────────────
+
+test('slug index fetches the real landing page, not the old quickstart alias', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+
+  await mountDocs(view, host, 'index', 'de', '');
+
+  assert.ok(fetchUrls.includes('/info/de/index.html'), `fetched the landing (saw ${JSON.stringify(fetchUrls)})`);
+  assert.ok(
+    !fetchUrls.some((u) => u.includes('quickstart')),
+    'the index -> quickstart alias is gone',
+  );
+
+  const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing');
+  assert.ok(article, 'the .docs-landing body is rehosted into an <article>');
+  assert.ok(article!.classList.contains('page-index'), 'the page-index class rides across');
+  assert.equal(article!.classList.contains('docs-content'), false, 'the landing is NOT a .docs-content');
+  assert.ok(article!.querySelector('.hero'), 'the hero band came with it');
+  assert.equal(article!.querySelector('script'), null, 'fetched scripts are still stripped');
+  assert.equal(article!.querySelector('.listen-bar'), null, 'the listen bar is still stripped');
+
+  const reader = view.querySelector<HTMLElement>('[data-reader]')!;
+  assert.ok(reader.classList.contains('docs-reader--landing'), 'the reader carries the landing modifier');
+
+  // The landing <title> is the site sentence; the reader keeps its own tab title.
+  assert.ok(/Documentation/.test(document.title), `kept the reader title (saw ${document.title})`);
+  assert.ok(!/stay the same/.test(document.title), 'did not adopt the marketing sentence as the tab title');
+
+  view.remove();
+});
+
+test('landing mode drops the sidebar and TOC rails but keeps pathways + sitemap', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+
+  await mountDocs(view, host, 'index', 'de', '');
+
+  // The landing ships no .docs-sidebar, so the slot has nothing to fill.
+  assert.equal(view.querySelector<HTMLElement>('[data-sidebar]')!.hidden, true, 'the sidebar slot stays hidden');
+  // Two stamped h2 ids are present: on a doc page they would build a TOC.
+  assert.equal(view.querySelector<HTMLElement>('[data-toc]')!.hidden, true, 'no TOC is derived in landing mode');
+  assert.equal(view.querySelector('[data-toc] .docs-toc'), null, 'the TOC slot is empty, not merely hidden');
+
+  const pathways = view.querySelector<HTMLElement>('[data-pathways]')!;
+  assert.equal(pathways.hidden, false, 'the pathways bar still fills from .nav-group');
+  const sitemap = view.querySelector<HTMLElement>('[data-sitemap]')!;
+  assert.equal(sitemap.hidden, false, 'the footer sitemap still fills');
+  assert.ok(
+    sitemap.querySelector('a[href="#/docs/index"]'),
+    'the sitemap "What?" link now routes to the in-app landing rather than the app root',
+  );
+
+  view.remove();
+});
+
+test('landing app links are rewritten to in-SPA routes (Launch App lands on #/d)', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+
+  await mountDocs(view, host, 'index', 'de', '');
+
+  const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing')!;
+  assert.equal(
+    article.querySelectorAll('a[href="#/d"]').length, 2,
+    'both app-root links (hero mark + Launch App CTA) point at the dashboard',
+  );
+  assert.equal(article.querySelector('a[href^="/?lang=de"]'), null, 'no locale-root link survives');
+  // Read the seeded links by class: nwsapi (jsdom's selector engine) does not match an
+  // attribute selector whose quoted value carries the '?'/'%'/'&' of a real tool link.
+  const seeded = article.querySelectorAll<HTMLAnchorElement>('.make-card');
+  assert.equal(
+    seeded[0]!.getAttribute('href'),
+    '#/tool/qr-code?url=https%3A%2F%2Flolly.tools&color=%231a1a2e',
+    'a seeded tool link keeps its params and stays in the SPA',
+  );
+  assert.equal(seeded[1]!.getAttribute('href'), '#/u', 'a bare app route drops the leading slash');
+  // The doc links on the landing keep going through the reader rewriter.
+  assert.ok(article.querySelector('a[href="#/docs/quickstart"]'), 'internal doc links still route to the reader');
+
+  view.remove();
+});
+
+test('an audience pill is a plain #id jump the reader intercepts, never a route write', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+
+  await mountDocs(view, host, 'index', 'de', '');
+
+  const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing')!;
+  const pills = article.querySelectorAll<HTMLAnchorElement>('.audience-tab');
+  // Plan 123 D1: jump pills over stacked, always-open cards - no tab state anywhere.
+  assert.equal(pills[1]!.getAttribute('href'), '#press', 'a pill is a bare #id anchor');
+  assert.equal(article.querySelector('[aria-selected]'), null, 'no tab state survives the restack');
+  assert.ok(article.querySelector<HTMLElement>('#press'), 'every card is present and open in the DOM');
+
+  const hashBefore = window.location.hash;
+  const click = new window.MouseEvent('click', { bubbles: true, cancelable: true });
+  pills[1]!.dispatchEvent(click);
+  assert.equal(click.defaultPrevented, true, 'the reader intercepts the jump (scrolls in-view instead of navigating)');
+  assert.equal(window.location.hash, hashBefore, 'a pill click never writes location.hash (that IS the route)');
+
+  view.remove();
+});
+
+test('a ?h= FAQ id opens the <details> before the scroll', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+  await mountDocs(view, host, 'index', 'de', 'h=faq-opt-in');
+
+  const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing')!;
+  const faq = article.querySelector<HTMLDetailsElement>('#faq-opt-in')!;
+  assert.equal(faq.open, true, 'a deep-linked FAQ item is opened before the scroll');
+
+  view.remove();
+});
+
+test('the scoped landing stylesheet is injected exactly once, with the reveal neutralizer', async () => {
+  stubOkFetch(LANDING_HTML);
+  const view = freshView();
+  await mountDocs(view, host, 'index', 'de', '');
+  view.remove();
+
+  const view2 = freshView();
+  stubOkFetch(LANDING_HTML);
+  await mountDocs(view2, host, 'index', 'de', '');
+  view2.remove();
+
+  const tags = document.head.querySelectorAll('style[data-docs-landing]');
+  assert.equal(tags.length, 1, 'the <style> is a module singleton across mounts');
+  const css = tags[0]!.textContent || '';
+  assert.ok(css.includes('@scope (.docs-landing)'), 'the band CSS is wrapped in @scope so it cannot reach the shell');
+  assert.ok(
+    /\.docs-reader--landing \.reveal[\s\S]*opacity: 1/.test(css),
+    'the scroll-reveal neutralizer is present (the observer script is stripped, so bands would be invisible)',
+  );
+  assert.ok(css.includes('.docs-reader--landing .quicknav'), 'the in-fragment quicknav is hidden in landing mode');
 });
 
 test('a non-ok response renders a .docs-status message and mounts no article', async () => {

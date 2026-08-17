@@ -12,7 +12,8 @@
  * client-rendering markdown (which would need localized `.md` twins the build doesn't
  * yet emit), it fetches the built per-locale page `/info/<lang>/<slug>.html` (English is
  * unprefixed, `/info/<slug>.html` - exactly docsHref/docsInfoHref), extracts the tested
- * `.docs-content` fragment with DOMParser, and injects it into #view. That reuses the
+ * `.docs-content` fragment with DOMParser (or `.docs-landing` on the front door, see
+ * LANDING MODE below and lib/docs-landing.ts), and injects it into #view. That reuses the
  * exact static-build output, works for all 27 locales for free, shows the committed
  * neutral signed screenshots as <img>, and picks up the active brand purely via CSS
  * (styles/parts/docs.css's scoped legacy-var bridge → the app's brand-reactive slots).
@@ -24,6 +25,14 @@
  *   - the `.listen-bar` (Phase 1 has no narration player).
  *   - the masthead / nav / sidebar / footer (all live OUTSIDE `.docs-content`, so the
  *     fragment naturally excludes them). Theme/brand-reactive mastheads are M3.
+ *
+ * LANDING MODE (#/docs/index, plans/123). The /info front door is a docs page like any
+ * other now: `slug === 'index'` fetches /info/index.html, rehosts its `.docs-landing`
+ * body, and adds `docs-reader--landing` to the reader shell (one full-width column, no
+ * sidebar, no table of contents). What the landing needs beyond a plain rehost - the
+ * scoped band stylesheet, the scroll-reveal neutralizer, the in-SPA link rewrites -
+ * lives in lib/docs-landing.ts. This view used to alias 'index' to the Quickstart
+ * page, because the landing shipped no rehostable fragment.
  */
 import '../styles/parts/docs.css';
 import { escape } from '../utils.ts';
@@ -35,6 +44,8 @@ import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
+import { enhanceDocsFormats } from '../lib/docs-formats.ts';
+import { ensureLandingStyles, adaptLandingLinks } from '../lib/docs-landing.ts';
 import {
   rewriteDocLinks,
   extractSidebar,
@@ -81,6 +92,16 @@ export async function mountDocs(
   const lang: Lang =
     normalizeLang(routeLang) ?? normalizeLang(new URLSearchParams(params).get('lang')) ?? currentLang();
 
+  // Deep link: a spotlight/Ask result, a rewritten in-page anchor, or a doc link whose
+  // '#heading' was carried across as ?h= (a second '#' cannot ride a hash route).
+  const deepLink = new URLSearchParams(params).get('h');
+
+  // LANDING MODE (plans/123): #/docs/index is the front door, not a doc page. The built
+  // /info landing marks its body `.docs-landing` rather than `.docs-content`, and the
+  // reader answers with its own modifier class - one full-width column, no sidebar, no
+  // table of contents, plus the band CSS and tab hydration lib/docs-landing.ts owns.
+  const isLanding = slug === 'index';
+
   document.title = tRaw('{name} — Lolly', { name: t('Documentation') });
 
   // Paint the chrome + a pending state immediately, then swap in the body once fetched.
@@ -88,16 +109,15 @@ export async function mountDocs(
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'docs-top-btn' }));
+  if (isLanding) {
+    // Both before the fetch, so the loading state already sits in the landing's own
+    // single-column shell and the band CSS is parsed by the time the fragment lands.
+    viewEl.querySelector('[data-reader]')?.classList.add('docs-reader--landing');
+    ensureLandingStyles();
+  }
 
   const contentEl = viewEl.querySelector<HTMLElement>('[data-content]')!;
-  // 'index' is the docs home, but the built landing page is script-driven (tab strip,
-  // reveal animations) and this reader strips scripts by design, so rehosting it would
-  // show a mostly-hidden page. Until the reader grows a landing mode, the in-app home
-  // is the Quickstart hub: its rail opens with Make something and lists every pathway,
-  // and the footer's "What?" button lands here so the app experience (music, a11y
-  // prefs) travels with the reader (Andy, 2026-08-16).
-  const fetchSlug = slug === 'index' ? 'quickstart' : slug;
-  const url = docsInfoHref(fetchSlug, lang);
+  const url = docsInfoHref(slug, lang);
 
   const showStatus = (message: string, extra = ''): void => {
     contentEl.innerHTML = `<p class="docs-status">${escape(message)}${extra}</p>`;
@@ -127,7 +147,10 @@ export async function mountDocs(
   if (!viewEl.isConnected) return;
 
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const fragment = doc.querySelector('.docs-content');
+  // Two extraction markers: `.docs-content` on every doc page, `.docs-landing` on the
+  // front door. The landing is kept out of `.docs-content` on purpose (see
+  // lib/docs-landing.ts); everything below treats the two the same way.
+  const fragment = doc.querySelector('.docs-content, .docs-landing');
   if (!fragment) {
     showStatus(
       t('That documentation page could not be displayed.'),
@@ -137,8 +160,17 @@ export async function mountDocs(
   }
 
   // Title from the fetched page (falls back to the slug) - for the tab and history entry.
+  // The landing keeps the reader's own "Documentation" title: its <title> is the site
+  // sentence ("Lolly - assets that stay the same so everything else can change"), which
+  // the suffix strip cannot shorten and which reads as a marketing line in a tab strip.
   const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[—-]\s*Lolly\s*$/, '').trim();
-  if (pageTitle) document.title = tRaw('{name} — Lolly', { name: pageTitle });
+  if (pageTitle && !isLanding) document.title = tRaw('{name} — Lolly', { name: pageTitle });
+
+  // The formats page's detail-dialog data rides in an inert `<script type=
+  // "application/json">`, which the strip below removes with every other script -
+  // so read it out FIRST and hand it to the enhancer after mount (the reader's
+  // "no fetched scripts survive" invariant stays intact). Null on any other page.
+  const fmtCatalogRaw = fragment.querySelector('#fmt-catalog-data')?.textContent ?? null;
 
   // Sanitise: never run a fetched page's scripts, and drop the Listen bar (the dock owns
   // narration now). KEEP <style>: the only style nodes inside `.docs-content` are a figure's
@@ -164,9 +196,20 @@ export async function mountDocs(
 
   // Scroll a heading (by fragment id) into view within #view. Returns whether the
   // heading exists, so a click handler can preventDefault only when it will act.
+  // A target inside a closed <details> is opened first, all the way up the chain: the
+  // landing's FAQ is a list of `details.faq-item` (the static page runs its own opener
+  // script for the same reason), and any doc page's disclosure block gets the same
+  // treatment. Scrolling to a hidden answer would land on the summary and look broken.
   const scrollToHeading = (id: string, behavior: ScrollBehavior): boolean => {
     const target = id ? node.querySelector(`#${CSS.escape(id)}`) : null;
     if (!target) return false;
+    for (
+      let d = target.closest('details');
+      d && node.contains(d);
+      d = d.parentElement?.closest('details') ?? null
+    ) {
+      d.open = true;
+    }
     try { target.scrollIntoView({ behavior, block: 'start' }); } catch { /* jsdom has no layout */ }
     return true;
   };
@@ -199,7 +242,11 @@ export async function mountDocs(
   fillSlot('[data-pathways]', extractPathways(doc));
   fillSlot('[data-sidebar]', extractSidebar(doc));
   fillSlot('[data-sitemap]', extractSitemap(doc));
-  const toc = buildToc(node);
+  // The landing gets no table of contents: its own sticky quicknav already jumps between
+  // bands (hidden in landing mode), and the bands are sections of a front door rather
+  // than headings of an article. Its pathways + sitemap slots fill as on any page; it
+  // ships no `.docs-sidebar`, so that slot stays hidden on its own.
+  const toc = isLanding ? null : buildToc(node);
   if (toc) {
     const tocSlot = viewEl.querySelector<HTMLElement>('[data-toc]');
     if (tocSlot) {
@@ -224,12 +271,21 @@ export async function mountDocs(
   // throws. See lib/docs-tryit.ts.
   void hydrateDocsTryIt(node);
 
+  // Formats page: re-wire the three-zone table's chips to the detail dialog the
+  // static site opens on click (lib/docs-formats.ts). No-op on every other page.
+  enhanceDocsFormats(node, fmtCatalogRaw);
+
+  // Landing mode: adapt the front door's outward app links to in-SPA routes
+  // (lib/docs-landing.ts). The audience strip needs no hydration since plan 123 D1 -
+  // its pills are plain #id jump links the anchor handler above already intercepts,
+  // and every card is open on both surfaces.
+  if (isLanding) adaptLandingLinks(node);
+
   // Deep-link: a spotlight/Ask docs result routes here as #/docs/<slug>?h=<anchor>
   // (the section heading rides a ?h= query param, since a second '#' can't ride the
-  // hash route). Scroll that heading into view now that the fragment is in the DOM - 
+  // hash route). Scroll that heading into view now that the fragment is in the DOM -
   // a no-op when absent or the id isn't on the page.
-  const initialHeading = new URLSearchParams(params).get('h');
-  if (initialHeading) scrollToHeading(initialHeading, 'auto');
+  if (deepLink) scrollToHeading(deepLink, 'auto');
 
   // ── Narration "Listen" dock (unified audio-dock migration, Phase 2a) ──────────
   // ADDITIVE: the reader had no player. Content-gated - mounted ONLY when this slug
@@ -257,7 +313,7 @@ export async function mountDocs(
     }
   }
 
-  armViewEnter(viewEl, '.docs-content');
+  armViewEnter(viewEl, '.docs-content, .docs-landing');
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     node.removeEventListener('click', onAnchorClick as EventListener);

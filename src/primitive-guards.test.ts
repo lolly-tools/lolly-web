@@ -114,6 +114,10 @@ const SHOW_MODAL_ALLOWED: Record<string, number> = {
   // in the view template) with a setAttribute('open') fallback for no-dialog engines.
   // It doesn't mint a dialog or re-implement focus/teardown, so it isn't a lifecycle fork.
   'views/dashboard.ts': 1,
+  // Same pattern: opens the docs formats page's rehosted static <dialog class="fmt-dialog">
+  // (from the built /info page) on a chip click, with the setAttribute('open') fallback.
+  // Native <form method="dialog"> owns Escape/✕/focus; no lifecycle is re-implemented.
+  'lib/docs-formats.ts': 1,
 };
 
 test('R1 (rec 4): the <dialog> lifecycle is minted only by components/modal.ts (mountModal)', () => {
@@ -945,8 +949,8 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 10,
-  // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks - 
+  'views/catalog.ts': 11,  // +1 2026-08-17: asset-metadata tech panel (data-tech fill) — label + value both escape()d
+  // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks -
   // the head, the sign-in button, the clear button, and the active-session status - 
   // each interpolating only icon() registry glyphs (lib/icons.ts) and t() literal
   // labels. No user or page-supplied text reaches any sink (the URL is only ever
@@ -1051,7 +1055,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // `.asset-picker-trim` slot); the fix made offerTrim's answer nullable so a
   // dismissal stores nothing.
   'views/picker.ts': 27,
-  'views/profile.ts': 22,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon()
+  'views/profile.ts': 23,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) - both t() strings escape()d, the button markup is static
   'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)
   'views/record-control.ts': 6,

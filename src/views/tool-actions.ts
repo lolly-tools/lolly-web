@@ -2686,6 +2686,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // The exact bytes handed to host.export.download - hashed into the export-
       // history record below so /verify can later match a file back to this device.
       let downloadedBlob: Blob | null = null;
+      // A multi-page export downloads a ZIP bundle, not a single render. Flag it so the
+      // 'renders' auto-save skips it: saving the zip under the per-page format tag would
+      // write a corrupt asset (a .zip stored as if it were a png/svg/pdf).
+      let downloadedIsZip = false;
       // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
       // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
       // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
@@ -2747,6 +2751,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const { buildZip } = await import('../pro/zip.ts');
           const zipBlob = await buildZip(files, { zipName: filename });
           downloadedBlob = zipBlob;
+          downloadedIsZip = true;
           await host.export.download(zipBlob, `${filename}.zip`);
         }
       } else {
@@ -2822,6 +2827,28 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const contentHash = downloadedBlob ? await hashBlob(downloadedBlob) : undefined;
           await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now(), ...(contentHash ? { contentHash } : {}) });
         } catch { /* history is best-effort */ }
+      })();
+      // Auto-save the SAME credentialed bytes into the personal library (the
+      // 'renders' tag). Best-effort + non-blocking: the file has already reached
+      // the user. Deduped by checksum and gated by the profile toggle inside the
+      // helper; large/video renders confirm first (the download is never gated).
+      void (async () => {
+        try {
+          if (!downloadedBlob || downloadedIsZip) return;
+          const { saveRenderToLibrary } = await import('../lib/save-render.ts');
+          const dimNum = (v: number | string | undefined): number | undefined => {
+            const n = typeof v === 'string' ? Number(v) : v;
+            return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+          };
+          await saveRenderToLibrary(host as unknown as Parameters<typeof saveRenderToLibrary>[0], {
+            blob: downloadedBlob,
+            format: fmt,
+            toolId: manifest.id,
+            name: filename,
+            width: dimNum(opts.width),
+            height: dimNum(opts.height),
+          });
+        } catch { /* saving to the library is best-effort */ }
       })();
     } catch (err) {
       revokeTrackUrls();

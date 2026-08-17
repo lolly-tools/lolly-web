@@ -19,4 +19,4 @@
  * When this is external, CSP connect-src must include the host (see vercel.json), and
  * the deploy MUST pass the same VITE_MODELS_BASE the .vercelignore exclusion assumes.
  */
-export const MODELS_BASE: string = (import.meta.env.VITE_MODELS_BASE ?? '').replace(/\/+$/, '');
+export const MODELS_BASE: string = (import.meta.env?.VITE_MODELS_BASE ?? '').replace(/\/+$/, '');

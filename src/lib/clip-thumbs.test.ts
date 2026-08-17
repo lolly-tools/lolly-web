@@ -63,6 +63,7 @@ import {
   createSeekQueue,
   onIdle,
   filmstrip,
+  frameAt,
   stillFrames,
   stillKey,
   svgDataUrl,
@@ -490,6 +491,24 @@ test('filmstrip: an already-aborted signal resolves empty promptly', async () =>
   const ctrl = new AbortController();
   ctrl.abort();
   assert.deepEqual(await filmstrip('video.mp4', { count: 4, h: 40, clipInSec: 0, clipOutSec: 2 }, ctrl.signal), []);
+});
+
+// ── frameAt (the "Export frame" read path - see views/timeline-panel.test.ts for
+// the behavioural, DI-seam-backed coverage of the caller: node has no video decode,
+// so what is testable here is the same headless failure policy as filmstrip's) ────
+
+test('frameAt: resolves null (never throws) with no DOM available', async () => {
+  assert.equal(await frameAt('video.mp4', 1.5), null);
+});
+
+test('frameAt: an empty url resolves null', async () => {
+  assert.equal(await frameAt('', 1.5), null);
+});
+
+test('frameAt: an already-aborted signal resolves null promptly', async () => {
+  const ctrl = new AbortController();
+  ctrl.abort();
+  assert.equal(await frameAt('video.mp4', 1.5, ctrl.signal), null);
 });
 
 // ── stills (image / lottie / tool-clip bars) ─────────────────────────────────

@@ -840,6 +840,84 @@ export function filmstrip(assetUrl: string, opts: FilmstripOpts, signal?: AbortS
   );
 }
 
+/**
+ * A SINGLE frame decoded from a clip's ORIGINAL asset, at the media's own native
+ * resolution - the read path behind the sequence editor's "Export frame" action.
+ *
+ * Deliberately NOT built on `filmstrip()`: filmstrip swaps in the scrub proxy via
+ * `scrubUrl()` (a lossy, downscaled re-encode - see lib/clip-proxy.ts) and caps its
+ * canvas at a bar-sized target height, both exactly right for a scrubbing filmstrip
+ * and exactly wrong for an export. `frameAt` reads `assetUrl` EXACTLY as given - no
+ * proxy swap of any kind - and draws at the decoded video's own `videoWidth`/
+ * `videoHeight`. It also skips the shared filmstrip probe/cache entirely: an export
+ * is a rare, deliberate action rather than a scrub-time hot path, so a dedicated
+ * throwaway `<video>` costs nothing and can't be starved by (or starve) a
+ * concurrent filmstrip capture on the pooled one.
+ *
+ * Resolves null - never throws - on any decode failure, an aborted signal, a
+ * CORS-tainted canvas, or no DOM. The returned bitmap is caller-owned: close it
+ * once drawn/encoded.
+ */
+async function decodeFrameAt(assetUrl: string, tSec: number, signal?: AbortSignal): Promise<ImageBitmap | null> {
+  if (!assetUrl || !hasDom() || typeof createImageBitmap !== 'function') return null;
+  if (signal?.aborted) return null;
+  const v = document.createElement('video');
+  v.preload = 'auto';
+  v.muted = true;
+  v.defaultMuted = true;
+  v.autoplay = false;
+  v.setAttribute('playsinline', '');
+  v.setAttribute('aria-hidden', 'true');
+  v.style.cssText = 'position:absolute;left:-99999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(v);
+  try {
+    if (isCrossOrigin(assetUrl)) v.crossOrigin = 'anonymous';
+    v.src = assetUrl;
+    try { v.load(); } catch { /* some engines auto-load */ }
+    const ok = await waitMetadata(v, signal);
+    if (!ok || signal?.aborted) return null;
+    const dur = v.duration;
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
+    if (!Number.isFinite(dur) || dur <= 0 || !vw || !vh) return null;
+    const at = Math.max(0, Math.min(Number.isFinite(tSec) ? tSec : 0, Math.max(0, dur - 0.01)));
+    // A fresh queue rather than the shared `probeQueue`: this video is our own, so a
+    // single-shot seek pump is all it ever has to serialise.
+    const queue = createSeekQueue(v, (el, sig) => waitSeekLanded(el as HTMLVideoElement, sig));
+    const landed = await queue.seek(at, { signal });
+    if (signal?.aborted) return null;
+    if (landed === null && v.readyState < 2 /* HAVE_CURRENT_DATA */) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = vw;
+    canvas.height = vh;
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    if (!ctx) return null;
+    ctx.drawImage(v, 0, 0, vw, vh);
+    return await createImageBitmap(canvas);
+  } catch {
+    return null;
+  } finally {
+    try { v.pause?.(); v.removeAttribute('src'); v.load?.(); v.remove(); } catch { /* already detached */ }
+  }
+}
+
+let frameAtImpl: typeof decodeFrameAt = decodeFrameAt;
+
+/**
+ * Test seam: swap the video-decode implementation for a fake. Node has no real
+ * video decode - exactly the reason `nodeStill`'s dom-to-image shot needs
+ * `_setNodeRasterer` - so a behavioural test of a caller (e.g. the sequence
+ * editor's "Export frame" action) installs a fake here rather than trying to make
+ * jsdom present a real frame. Pass null to restore the real implementation.
+ */
+export function _setFrameAtImpl(fn: typeof decodeFrameAt | null): void {
+  frameAtImpl = fn ?? decodeFrameAt;
+}
+
+export function frameAt(assetUrl: string, tSec: number, signal?: AbortSignal): Promise<ImageBitmap | null> {
+  return frameAtImpl(assetUrl, tSec, signal);
+}
+
 // ── stills (image / lottie / tool-render bars) ──────────────────────────────
 //
 // Everything that is not video and not audio still has A PICTURE - an uploaded
