@@ -58,7 +58,7 @@ let pendingLogos: File[] = [];
 export function stashPendingLogoFiles(files: File[]): PendingLogoSend {
   const sized = files.filter((f) => {
     if (f.size <= PENDING_LOGO_MAX_BYTES) return true;
-    console.warn(`[design-system] "${f.name}" is over the 4 MB mark limit — not sent`);
+    console.warn(`[design-system] "${f.name}" is over the 4 MB mark limit - not sent`);
     return false;
   });
   if (sized.length > PENDING_LOGO_MAX_FILES) {

@@ -9,8 +9,23 @@
  */
 interface ImportMetaEnv {
   readonly PROD: boolean;
+  // External base URL for the on-device model files (Vercel Blob); '' / undefined
+  // means same-origin /models/. Read only by lib/models-base.ts.
+  readonly VITE_MODELS_BASE?: string;
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+/**
+ * Vite's `?raw` suffix: the file's text as the default export. Declared for `.css`
+ * only, which is the one use in the shell - lib/docs-landing.ts reads
+ * styles/parts/docs-landing.css as a string so it can wrap it in `@scope` before
+ * injecting it, instead of letting an unscoped sheet loose in the app. A blanket
+ * `*?raw` would also swallow typos in ordinary specifiers.
+ */
+declare module '*.css?raw' {
+  const source: string;
+  export default source;
 }

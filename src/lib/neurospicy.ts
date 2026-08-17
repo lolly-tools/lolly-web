@@ -316,7 +316,7 @@ function startRadioStream(url: string, id: string): void {
     // A cleared src (our own stop) is not a failure, and an already-untapped element that
     // errors is a real stream problem - leave it silent, as before.
     if (!el.getAttribute('src') || !radioSource) return;
-    console.warn('[lolly:neuro] the station refused a CORS-tapped load — replaying it without the analyser tap');
+    console.warn('[lolly:neuro] the station refused a CORS-tapped load - replaying it without the analyser tap');
     untappedHosts.add(streamHost(url));
     dropRadioEl();
     if (state.loopId === id && state.enabled && !paused && !isSfxMuted()) startRadioStream(url, id);

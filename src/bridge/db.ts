@@ -206,7 +206,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
       // that didn't close, or one stuck mid-upgrade). Without this it would just
       // hang silently; the timeout below turns that into an actionable error.
       wasBlocked = true;
-      console.warn('[db] IndexedDB open is blocked — another Lolly tab/window is holding the database open.');
+      console.warn('[db] IndexedDB open is blocked - another Lolly tab/window is holding the database open.');
     },
     terminated() {
       console.error('[db] IndexedDB connection terminated unexpectedly.');
@@ -294,7 +294,7 @@ async function openHealed(timeoutMs?: number): Promise<IDBPDatabase> {
   // never on a healthy DB.
   const missing = REQUIRED_STORES.filter(name => !db.objectStoreNames.contains(name));
   if (missing.length) {
-    console.warn('[db] Rebuilding corrupted lolly DB — missing stores:', missing.join(', '));
+    console.warn('[db] Rebuilding corrupted lolly DB - missing stores:', missing.join(', '));
     db.close();
     await idbDelete(DB_NAME);
     db = await openOnce(timeoutMs);

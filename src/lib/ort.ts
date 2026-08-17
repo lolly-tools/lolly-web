@@ -32,6 +32,7 @@
 // deliberately NOT unified, they're how you trace one detector without the other.
 
 import { openDB } from '../bridge/db.ts';
+import { MODELS_BASE } from './models-base.ts';
 
 type OrtModule = typeof import('onnxruntime-web');
 
@@ -185,7 +186,7 @@ export function createModelFetcher(
 
     if (cacheOnly) { dbg('fetch', { file: fileName, source: 'cache-only-miss' }); return null; }
 
-    const url = `/models/${dir}/${fileName}`;
+    const url = `${MODELS_BASE}/models/${dir}/${fileName}`;
     let resp: Response;
     try {
       resp = await fetch(url);

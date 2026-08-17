@@ -245,7 +245,7 @@ function brandChrome() {
   // the SUSE default ('lolly.tools'); a non-SUSE brand gets its own host here, and an
   // unknown brand gets '' so the guard no-ops rather than force-redirecting somewhere
   // wrong. (The lolly.art/start split folds into lolly.tools on 2026-08-29.)
-  const CANON_BY_PROFILE = { suse: 'lolly.tools', start: 'lolly.art' };
+  const CANON_BY_PROFILE = { suse: 'lolly.tools', 'lolly-start': 'lolly.art' };
   return {
     name: 'lolly-brand-chrome',
     transformIndexHtml(html) {

@@ -1002,6 +1002,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     void openExample(tile.dataset.toolId!, idx, tile);
   });
 
+  // The cover links (.gcar-open carousel covers, .gtile-hero tile previews) are
+  // aria-hidden duplicates of the card's real name link, kept clickable for mouse +
+  // right-click-open. They must never RECEIVE focus: focus inside an aria-hidden
+  // subtree is exactly what trips Chrome's "Blocked aria-hidden ... descendant retained
+  // focus" console warning. Preventing mousedown's default blocks the focus move (and
+  // text-selection) without cancelling the click, so navigation and open-in-new-tab
+  // still fire. tabindex="-1" already keeps them out of the tab order.
+  masonry?.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).closest('.gcar-open, .gtile-hero')) e.preventDefault();
+  });
+
   const searchStatus = viewEl.querySelector<HTMLElement>('.gallery-search-status');
   const filterFab  = viewEl.querySelector<HTMLButtonElement>('.filter-fab');
   const filterPop  = viewEl.querySelector<HTMLElement>('.filter-popover');

@@ -142,7 +142,7 @@ export function resolveSlot(
  */
 export function registerExtension(ext: WebExtension, channel: ExtensionChannel): Disposer {
   if (!SLOT_REGISTRY.some(s => s.id === ext.slot)) {
-    console.warn(`extensions: unknown slot "${ext.slot}" — refusing "${ext.id}"`);
+    console.warn(`extensions: unknown slot "${ext.slot}" - refusing "${ext.id}"`);
     return () => {};
   }
   if (ext.contract && !satisfiesRange(EXTENSION_CONTRACT_VERSION, ext.contract)) {
@@ -157,7 +157,7 @@ export function registerExtension(ext: WebExtension, channel: ExtensionChannel):
   // fail-closed rather than stack a second live record, which a `multi` slot would
   // double-mount and whose only guard today is the `single` slice(0,1).
   if (list.some(r => r.ext.id === ext.id)) {
-    console.warn(`extensions: "${ext.id}" already registered in slot "${ext.slot}" — refusing duplicate`);
+    console.warn(`extensions: "${ext.id}" already registered in slot "${ext.slot}" - refusing duplicate`);
     return () => {};
   }
   const rec: Registered = { ext, channel, seq: seq++ };
