@@ -1102,8 +1102,11 @@ function peekUrlLang(): string | null {
 /** Tools renamed inside the id-break window. parseRoute is the single funnel for every
  *  share link, bookmark, docs link, AND saved-session resume URL (`#/tool/<storedId>?slot=`),
  *  so aliasing the old id here - and ONLY here - keeps all of them resolving instead of
- *  404-ing on the retired id. `layout-studio` → `design` (the Design tool). */
-const RENAMED_TOOL_IDS: Record<string, string> = { 'layout-studio': 'design' };
+ *  404-ing on the retired id. `layout-studio` → `design` (the Design tool), and
+ *  `sequence-studio` → `design` too: the sequence editor merged into design's timeline
+ *  (2026-08-14) but the standalone tool's links were never redirected, which broke the
+ *  permanent-id contract for every old sequence share link and docs recipe. */
+const RENAMED_TOOL_IDS: Record<string, string> = { 'layout-studio': 'design', 'sequence-studio': 'design' };
 const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
 
 function parseRoute(): Route {

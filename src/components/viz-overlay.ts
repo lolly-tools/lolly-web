@@ -52,7 +52,7 @@ import {
   musicPlayerBodyHtml, trackPickerHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
 import { vizSupported } from '../lib/viz-support.ts';
-import { neuroDemoActive } from '../lib/neuro-demo.ts';
+import { neuroDemoActive, DEMO_VIZ_PRESET_ID, demoVizWave, pumpVizDemoFrames } from '../lib/neuro-demo.ts';
 import { CYCLE_CHOICES, loadCycleSeconds, saveCycleSeconds } from '../lib/viz-cycle.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -379,7 +379,7 @@ function ensureStyles(doc: Document): void {
 const START_PRESET_ID = 'aderrasi-veil-of-steel-steel-storm-mash0000-bob-ross-finally-loses-it';
 
 function startPresetId(): string {
-  if (neuroDemoActive()) return DEMO_PRESET_ID;   // a capture must open on the same preset every run
+  if (neuroDemoActive()) return DEMO_VIZ_PRESET_ID;   // a capture must open on the same preset every run
   if (prefersReducedMotion()) return defaultVizPresetId(true);
   // Only once the artist index is in can we know the pin resolves. Before
   // that, this falls through to the brand-native draw, and the post-initStock
@@ -391,32 +391,9 @@ function startPresetId(): string {
 
 // ── the ?neuro demo (lib/neuro-demo.ts) - deterministic, silent, capture-only ─
 
-/** The preset a ?neuro demo pins instead of the random start: the first `calm`
- *  entry in VIZ_PRESETS (Aurora). Hardcoded so a registry reorder shows up as a
- *  visible screenshot diff rather than silently drifting the baseline. */
-const DEMO_PRESET_ID = 'aurora';
-
-/**
- * The demo's injected audio: a fixed 1024-byte time-domain window of summed
- * sines around the webaudio silence midpoint (128), generated once. With
- * `seed: 0` and `deterministic: true`, every capture renders the visualizer
- * from identical input: no analyser, no AudioContext, no sound.
- */
-let demoWaveCache: Uint8Array | null = null;
-function demoWave(): Uint8Array {
-  if (!demoWaveCache) {
-    const w = new Uint8Array(1024);
-    for (let i = 0; i < w.length; i++) {
-      const t = i / w.length;
-      w[i] = Math.round(128
-        + 42 * Math.sin(2 * Math.PI * 3 * t)
-        + 22 * Math.sin(2 * Math.PI * 7 * t + 1.3)
-        + 11 * Math.sin(2 * Math.PI * 13 * t + 2.1));
-    }
-    demoWaveCache = w;
-  }
-  return demoWaveCache;
-}
+// The pinned preset, injected wave and fixed-frame pump all live in
+// lib/neuro-demo.ts now (DEMO_VIZ_PRESET_ID / demoVizWave / pumpVizDemoFrames),
+// shared with the dock's DockViz renderer so both surfaces settle identically.
 
 /**
  * The saved cycle interval, delegated to lib/viz-cycle.ts.
@@ -1488,7 +1465,7 @@ async function mountOnce(s: Surface): Promise<void> {
       // readable so the SVG walker's toDataURL sees the frame instead of a
       // cleared buffer.
       neuroDemoActive()
-        ? { audio: { frame: () => ({ wave: demoWave(), seed: 0 }) }, deterministic: true, driven: true, capture: true }
+        ? { audio: { frame: () => ({ wave: demoVizWave(), seed: 0 }) }, deterministic: true, driven: true, capture: true }
         : undefined);
   } catch (err) {
     onError(err);
@@ -1510,40 +1487,12 @@ async function mountOnce(s: Surface): Promise<void> {
   refreshNote(s);
 }
 
-/** Demo frames rendered before the picture freezes, and how many per rAF tick.
- *  180 x 1/60s = three seconds of simulated time, enough for the pinned
- *  preset's blend-in to finish and the field to mature. Batched so
- *  SwiftShader (the docs pipeline's software GL) never blocks the main
- *  thread for the whole sequence. */
-const DEMO_FRAMES = 180;
-const DEMO_BATCH = 12;
-
-/** Step a ?neuro demo surface through a FIXED frame sequence, then stop.
- *  The frozen end state is the point: with a pinned preset, injected wave,
- *  seeded randomness and a fixed frame count, every capture of the page
- *  serialises the identical image. The demo link is a capture affordance
- *  first, and a still, fully-formed field beats a live loop that makes the
- *  baseline churn. When the sequence completes, `data-demo-settled` on the
- *  surface root is the signal a capture recipe's waitMs must outlast. */
+/** Step a ?neuro demo surface through the shared FIXED frame sequence
+ *  (lib/neuro-demo.ts), stamping `data-demo-settled` on THIS surface's root.
+ *  The alive guard stands the pump down if the surface was torn down or
+ *  remounted under it. */
 function pumpDemoFrames(s: Surface, handle: VizHandle): void {
-  // Frame 0 must be the fresh-mount state: a surface that inherited any
-  // rendered history (the dock's inline viz runs its own pump before the
-  // panel opens, and a rebuilt panel continues the prior picture) would carry
-  // a different feedback trail into the fixed sequence, and the capture
-  // would differ run to run.
-  handle.reset();
-  let done = 0;
-  const tick = (): void => {
-    // Stand down if the surface was torn down or remounted under the pump.
-    if (s.handle !== handle || !handle.running()) return;
-    for (let i = 0; i < DEMO_BATCH && done < DEMO_FRAMES; i++, done++) handle.renderFrame(1 / 60);
-    if (done < DEMO_FRAMES) { requestAnimationFrame(tick); return; }
-    // Stamped on THIS surface's root; a capture recipe's waitSelector must name the
-    // surface it frames (.viz-panel[data-demo-settled]) - the dock's inline surface
-    // is also a .viz-surface and settles on its own clock.
-    s.root.dataset.demoSettled = 'true';
-  };
-  requestAnimationFrame(tick);
+  pumpVizDemoFrames(handle, () => s.handle === handle, s.root);
 }
 
 /** Tear a surface down without touching the others. */

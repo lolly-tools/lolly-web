@@ -36,6 +36,7 @@ import {
 import { getSfxVolume, setSfxVolume } from './sfx.ts';
 import { SOMAFM_HOME, radioAvailable } from './radio.ts';
 import { vizSupported } from './viz-support.ts';
+import { neuroDemoActive, DEMO_VIZ_PRESET_ID, demoVizWave, pumpVizDemoFrames } from './neuro-demo.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 import { icon, hasIcon } from './icons.ts';
 import { mountViz, type VizHandle } from './butterchurn-viz.ts';
@@ -193,6 +194,15 @@ class NeuroDockViz implements DockViz {
     await this.ensureData();
     if (this.destroyed || this.canvas !== canvas || this.handle) return;
     const palette = this.currentPalette();
+    // The ?neuro=viz capture affordance (lib/neuro-demo.ts): the enlarged viz
+    // lives in this dock now, so the deterministic demo contract the panel
+    // carried has to hold here too - pinned preset, injected wave, seeded
+    // randomness, a driven fixed-frame pump instead of the live rAF loop, and
+    // `data-demo-settled` on the dock root when the picture freezes. Without
+    // this branch a ?neuro=viz capture is a live loop that never settles and a
+    // baseline that churns every run.
+    const demo = neuroDemoActive();
+    if (demo) this.presetId = DEMO_VIZ_PRESET_ID;
     let handle: VizHandle | null = null;
     try {
       handle = await mountViz(canvas, this.host, this.presetId,
@@ -200,7 +210,9 @@ class NeuroDockViz implements DockViz {
         // pixelRatioCap 2 → crisp when the window is enlarged/fullscreen (the backdrop
         // just resamples down). `analyser` forces the silent idle source when there's no
         // live audio yet.
-        { pixelRatioCap: 2, ...(analyser ? { audio: { analyser } } : {}) });
+        demo
+          ? { pixelRatioCap: 2, audio: { frame: () => ({ wave: demoVizWave(), seed: 0 }) }, deterministic: true, driven: true, capture: true }
+          : { pixelRatioCap: 2, ...(analyser ? { audio: { analyser } } : {}) });
     } catch (err) {
       console.error('[lolly:viz] mount failed', err);
       return;
@@ -210,6 +222,13 @@ class NeuroDockViz implements DockViz {
     if (this.destroyed || this.canvas !== canvas || this.handle) { handle.destroy(); return; }
     this.handle = handle;
     this.mountedAnalyser = analyser;
+    if (demo) {
+      // Stamp the dock window root (`section.audio-dock`, the canvas's parent) - the
+      // element a capture recipe frames. No auto-cycle: a preset change would repaint
+      // the frozen field.
+      pumpVizDemoFrames(handle, () => this.handle === handle, canvas.closest('.audio-dock') ?? canvas.parentElement);
+      return;
+    }
     // An ARTIST preset opened on the fallback - fetch + apply the real one now.
     if (this.isStock(this.presetId)) void this.applyStock(this.presetId);
     this.startCycle();   // resume auto-cycling once there is a renderer to drive

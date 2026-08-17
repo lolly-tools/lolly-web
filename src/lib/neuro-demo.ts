@@ -103,3 +103,81 @@ export async function applyNeuroDemo(host: NeurospicyHost, mode: NeuroDemoMode):
     dock.showNeuroDock(host, { animateIn: false, forceExpanded: true });
   }
 }
+
+// ── the deterministic viz-demo kit ───────────────────────────────────────────
+// Shared by BOTH visualiser surfaces - the viz-overlay panel
+// (components/viz-overlay.ts) and the dock's DockViz renderer
+// (lib/neurospicy-dock-host.ts) - so a ?neuro=viz capture renders the identical
+// frozen field whichever surface hosts it. One source, because the two drifted
+// once: when the enlarged viz moved from the panel into the dock (2026-08-14)
+// the demo pump stayed behind in the panel, the dock ran a live loop instead,
+// and the incl-neuro-viz docs baseline could never settle again. Import-free,
+// per this module's own top-level rule.
+
+/** The preset a ?neuro demo pins instead of the random start: the first `calm`
+ *  entry in VIZ_PRESETS (Aurora). Hardcoded so a registry reorder shows up as a
+ *  visible screenshot diff rather than silently drifting the baseline. */
+export const DEMO_VIZ_PRESET_ID = 'aurora';
+
+/** Frames the demo pump renders before freezing (enough for the preset's
+ *  blend-in to finish and the field to mature), batched so SwiftShader (the
+ *  docs pipeline's software GL) never blocks the main thread for the whole
+ *  sequence. */
+export const DEMO_VIZ_FRAMES = 180;
+export const DEMO_VIZ_BATCH = 12;
+
+/**
+ * The demo's injected audio: a fixed 1024-byte time-domain window of summed
+ * sines around the webaudio silence midpoint (128), generated once. With
+ * `seed: 0` and `deterministic: true` on the mount, every capture renders the
+ * visualizer from identical input: no analyser, no AudioContext, no sound.
+ */
+let demoVizWaveCache: Uint8Array | null = null;
+export function demoVizWave(): Uint8Array {
+  if (!demoVizWaveCache) {
+    const w = new Uint8Array(1024);
+    for (let i = 0; i < w.length; i++) {
+      const t = i / w.length;
+      w[i] = Math.round(128
+        + 42 * Math.sin(2 * Math.PI * 3 * t)
+        + 22 * Math.sin(2 * Math.PI * 7 * t + 1.3)
+        + 11 * Math.sin(2 * Math.PI * 13 * t + 2.1));
+    }
+    demoVizWaveCache = w;
+  }
+  return demoVizWaveCache;
+}
+
+/** The slice of VizHandle the pump needs (structural, so this module stays
+ *  import-free of lib/butterchurn-viz.ts). */
+export interface DemoVizHandle {
+  reset(): void;
+  renderFrame(elapsed?: number): void;
+  running(): boolean;
+}
+
+/**
+ * Step a ?neuro demo surface through the FIXED frame sequence, then stop. The
+ * frozen end state is the point: with a pinned preset, injected wave, seeded
+ * randomness and a fixed frame count, every capture of the page serialises the
+ * identical image. When the sequence completes, `data-demo-settled` on
+ * `stampRoot` is the signal a capture recipe's waitSelector blocks on.
+ *
+ * `alive` is the caller's identity guard - it must return false once the
+ * surface was torn down or remounted under the pump, so a stale pump never
+ * drives a replaced handle or stamps a dead root.
+ */
+export function pumpVizDemoFrames(handle: DemoVizHandle, alive: () => boolean, stampRoot: Element | null): void {
+  // Frame 0 must be the fresh-mount state: a surface that inherited rendered
+  // history would carry a different feedback trail into the fixed sequence,
+  // and the capture would differ run to run.
+  handle.reset();
+  let done = 0;
+  const tick = (): void => {
+    if (!alive() || !handle.running()) return;
+    for (let i = 0; i < DEMO_VIZ_BATCH && done < DEMO_VIZ_FRAMES; i++, done++) handle.renderFrame(1 / 60);
+    if (done < DEMO_VIZ_FRAMES) { requestAnimationFrame(tick); return; }
+    stampRoot?.setAttribute('data-demo-settled', 'true');
+  };
+  requestAnimationFrame(tick);
+}
