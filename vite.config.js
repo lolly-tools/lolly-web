@@ -241,11 +241,17 @@ function brandChrome() {
   }
   if (!profile) profile = 'suse';
   const isSuse = profile === 'suse';
+  // Canonical host for the origin guard baked into index.html. index.html hardcodes
+  // the SUSE default ('lolly.tools'); a non-SUSE brand gets its own host here, and an
+  // unknown brand gets '' so the guard no-ops rather than force-redirecting somewhere
+  // wrong. (The lolly.art/start split folds into lolly.tools on 2026-08-29.)
+  const CANON_BY_PROFILE = { suse: 'lolly.tools', start: 'lolly.art' };
   return {
     name: 'lolly-brand-chrome',
     transformIndexHtml(html) {
       if (isSuse) return html; // index.html already carries the SUSE chrome
       return html
+        .replace("var CANON = 'lolly.tools';", `var CANON = '${CANON_BY_PROFILE[profile] ?? ''}';`)
         .replace('<meta name="theme-color" content="#0c322c" />', `<meta name="theme-color" content="${NEUTRAL}" />`)
         .replace(/\n\s*<link rel="preload" as="font"[^>]*SUSE\[wght\][^>]*>/, '');
     },

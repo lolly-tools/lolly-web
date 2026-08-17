@@ -92,8 +92,12 @@ export async function createBridge(): Promise<WebHost> {
     // 'capture') are gated in the gallery and tool view. Other shells override
     // capabilities-provided.js to declare their own set.
     capabilities: extCapture ? [...PROVIDED_CAPABILITIES, 'capture'] : PROVIDED_CAPABILITIES,
-    log: (level: 'debug' | 'info' | 'warn' | 'error', msg: string, ctx?: object) =>
-      console[level === 'debug' ? 'log' : level](`[${level}]`, msg, ctx ?? ''),
+    log: (level: 'debug' | 'info' | 'warn' | 'error', msg: string, ctx?: object) => {
+      // Quiet production console: diagnostic levels (debug/info) are dropped in the
+      // shipped app; warn/error always surface so real problems still stand out.
+      if (import.meta.env.PROD && (level === 'debug' || level === 'info')) return;
+      console[level === 'debug' ? 'log' : level](`[${level}]`, msg, ctx ?? '');
+    },
   } as WebHost;
 
   // Order matters: assets depends on db; export depends on host for watermark style.

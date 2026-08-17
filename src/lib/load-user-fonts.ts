@@ -6,12 +6,13 @@
 
 import { getInstalledFonts } from './font-asset-handler.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
+import { debug } from './debug.ts';
 
 const FONT_STYLE_ID = 'user-fonts-style';
 
 export async function loadUserFonts(host: HostV1): Promise<void> {
   try {
-    console.log('[load-user-fonts] Loading user fonts...');
+    debug('[load-user-fonts] Loading user fonts...');
 
     // Remove existing style tag if present
     const existingStyle = document.getElementById(FONT_STYLE_ID);
@@ -21,11 +22,11 @@ export async function loadUserFonts(host: HostV1): Promise<void> {
 
     const fonts = await getInstalledFonts(host);
     if (!fonts.length) {
-      console.log('[load-user-fonts] No user fonts to load');
+      debug('[load-user-fonts] No user fonts to load');
       return;
     }
 
-    console.log('[load-user-fonts] Loading', fonts.length, 'fonts');
+    debug('[load-user-fonts] Loading', fonts.length, 'fonts');
 
     // Create style tag for @font-face rules
     const style = document.createElement('style');
@@ -35,7 +36,7 @@ export async function loadUserFonts(host: HostV1): Promise<void> {
     // For each installed font, load the blob and create a @font-face rule
     for (const font of fonts) {
       try {
-        console.log('[load-user-fonts] Loading font blob for', font.family);
+        debug('[load-user-fonts] Loading font blob for', font.family);
 
         if (!host.state || !host.state.load) {
           console.warn('[load-user-fonts] host.state not available');
@@ -47,7 +48,7 @@ export async function loadUserFonts(host: HostV1): Promise<void> {
 
         if (stored?.blob) {
           const blobUrl = URL.createObjectURL(stored.blob);
-          console.log('[load-user-fonts] Created blob URL for', font.family);
+          debug('[load-user-fonts] Created blob URL for', font.family);
 
           // Determine font format
           const format = stored.format === 'woff2' ? 'woff2' :
@@ -75,7 +76,7 @@ export async function loadUserFonts(host: HostV1): Promise<void> {
     if (css) {
       style.textContent = css;
       document.head.appendChild(style);
-      console.log('[load-user-fonts] ✓ User fonts loaded and @font-face rules injected');
+      debug('[load-user-fonts] ✓ User fonts loaded and @font-face rules injected');
     }
   } catch (e) {
     console.error('[load-user-fonts] Error:', e instanceof Error ? e.message : e);

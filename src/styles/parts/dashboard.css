@@ -454,9 +454,9 @@
   background-image: conic-gradient(hsl(var(--muted-foreground) / .25) 25%, transparent 0 50%, hsl(var(--muted-foreground) / .25) 0 75%, transparent 0);
   background-size: 9px 9px;
 }
-.dash-readout-name { font-weight: 600; font-family: var(--font-sans, system-ui, sans-serif); }
+.dash-readout-name { font-weight: 600; font-family: var(--font-brand, 'SUSE', ui-sans-serif, system-ui, sans-serif); }
 .dash-readout-hex { color: hsl(var(--foreground)); }
-.dash-readout-cmyk { color: hsl(var(--muted-foreground)); font-size: calc(.78rem * var(--a11y-fs)); font-family: var(--font-sans, system-ui, sans-serif); }
+.dash-readout-cmyk { color: hsl(var(--muted-foreground)); font-size: calc(.78rem * var(--a11y-fs)); font-family: var(--font-brand, 'SUSE', ui-sans-serif, system-ui, sans-serif); }
 .dash-readout-cmyk.is-measured { color: hsl(var(--primary)); font-weight: 600; }
 .dash-readout:not(.is-active) .dash-readout-hex,
 .dash-readout:not(.is-active) .dash-readout-cmyk { display: none; }

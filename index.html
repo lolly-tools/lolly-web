@@ -2,6 +2,28 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <!-- Canonical-origin guard. Runs before the deferred module scripts, so it
+       fires while the head parses. The lolly.* domain family funnels to the
+       canonical host (lolly.tools on this SUSE build) via Vercel redirects, but
+       the root document "/" on the www.* primary domains (www.lolly.to,
+       www.lolly.tools) is served from a sticky edge cache as a 200 shell rather
+       than redirecting. Its relative /assets/*.js module scripts then 308
+       cross-origin with a text/plain body, which browsers refuse to load as ES
+       modules ("disallowed MIME type text/plain"). Bounce off the alternate to
+       the canonical before those scripts are even fetched. Scoped to the lolly
+       public domain family, so Vercel preview URLs (*.vercel.app) and localhost
+       are never touched; brandChrome() (vite.config.js) rewrites CANON for
+       non-SUSE brands, e.g. lolly.art, and blanks it (guard off) for any brand
+       with no canonical host. -->
+  <script>
+    (() => {
+      var CANON = 'lolly.tools';
+      var h = location.hostname;
+      if (CANON && h !== CANON && /(^|\.)lolly\.[a-z]{2,}$/.test(h)) {
+        location.replace('https://' + CANON + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
   <!-- Page pinch-zoom is enabled (WCAG 1.4.4 — never lock it). The mobile
        controls sheet is position:fixed and would otherwise strand off-screen
        while zoomed; a VisualViewport shim (main.js) re-pins it to the visible

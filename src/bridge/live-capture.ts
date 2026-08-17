@@ -200,7 +200,7 @@ function mountLiveOverlay(rect: DOMRect, o: { withPanel: boolean; allowInsidePil
       `position:fixed;left:${rect.left + rect.width / 2}px;top:${pillTop}px;transform:translateX(-50%)`,
       'display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px',
       'background:rgba(20,20,24,.85);color:#fff;backdrop-filter:blur(6px)',
-      'font:600 13px/1.2 system-ui,sans-serif;white-space:nowrap',
+      'font:600 13px/1.2 SUSE,system-ui,sans-serif;white-space:nowrap',
       'animation:lolly-lc-pop 120ms ease-out',
     ].join(';');
     dot = document.createElement('span');

@@ -138,7 +138,7 @@
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 .pr-counter {
-  font: 500 13px/1 system-ui, sans-serif;
+  font: 500 13px/1 SUSE, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   padding: 0 8px;
   min-width: 3.5em;
@@ -227,7 +227,7 @@
 .pr-sp-nextwrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pr-sp-now { min-height: 0; }
 .pr-sp-tag {
-  font: 600 11px/1 system-ui, sans-serif;
+  font: 600 11px/1 SUSE, system-ui, sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.5);
@@ -259,14 +259,14 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  font: 400 clamp(15px, 1.5vw, 20px)/1.5 system-ui, sans-serif;
+  font: 400 clamp(15px, 1.5vw, 20px)/1.5 SUSE, system-ui, sans-serif;
   color: rgba(255, 255, 255, 0.86);
   white-space: pre-wrap;
   padding-right: 6px;
 }
 .pr-sp-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .pr-sp-counter {
-  font: 500 14px/1 system-ui, sans-serif;
+  font: 500 14px/1 SUSE, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   min-width: 4em;
   text-align: center;

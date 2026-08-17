@@ -201,7 +201,7 @@ export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: R
         cx.fillStyle = labelInk;
         cx.textAlign = 'center';
         cx.textBaseline = 'middle';
-        cx.font = `600 ${lay.size}px system-ui, sans-serif`;
+        cx.font = `600 ${lay.size}px SUSE, system-ui, sans-serif`;
         cx.fillText(label, lay.cx, lay.cy);
       }
     }

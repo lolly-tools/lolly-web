@@ -107,6 +107,14 @@ interface ViewElement extends HTMLElement {
   _cleanup?: () => void;
 }
 
+// A friendly hello for anyone who opens the console. Paired with the one-line
+// "ready" summary emitted once the catalog lands (see boot()), these are the only
+// two logs a normal production load prints: catalog/font diagnostics are dev-only
+// (lib/debug.ts) and host.log('info'|'debug') is suppressed in prod
+// (bridge/index.ts), so the console stays clean and orderly. Genuine warnings and
+// errors are never silenced.
+console.log('%c🍭 Welcome to Lolly', "font:600 13px/1.6 'SUSE',system-ui,-apple-system,sans-serif;color:#e0457b");
+
 // Apply localStorage theme immediately - before the profile loads - so there
 // is no visible flash between the inline FOUC script and full JS boot.
 initTheme();
@@ -942,6 +950,19 @@ async function boot(): Promise<void> {
     const ids = defaultFavouriteAssetIds();
     if (ids.length) await saveFavouriteAssets(host as unknown as Parameters<typeof saveFavouriteAssets>[0], profile, new Set(ids));
   }).catch(() => { /* seeding is best-effort; a failed write just means no pins this run */ });
+
+  // The console's one informative "ready" line, printed once the catalog lands.
+  // With the low-level diagnostics gone (dev-only / prod-suppressed), a normal
+  // load reads cleanly: the greeting above, then this. Purely cosmetic, wrapped
+  // so it can never surface as an error.
+  catalogReady.then(() => {
+    const tools = window.__toolIndex?.tools?.length;
+    console.log(
+      `%cLolly ready%c  ${tools ?? '—'} tools · works offline · lolly.tools/docs`,
+      "font:600 12px 'SUSE Mono',ui-monospace,monospace;color:#e0457b",
+      "font:400 12px 'SUSE Mono',ui-monospace,monospace;color:#8a94a0",
+    );
+  }).catch(() => { /* the summary is cosmetic; never surface as a failure */ });
 
   // The gallery can paint instantly from a CACHED index, then silently refresh
   // when the network sync lands. But a brand-new user has no cache, and painting

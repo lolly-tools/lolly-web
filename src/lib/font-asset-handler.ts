@@ -7,6 +7,7 @@
 import { parseFontMetadata, detectFontFormat } from './font-utils.ts';
 import type { FontMetadata } from './font-utils.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
+import { debug } from './debug.ts';
 
 export interface InstalledFont {
   id: string;
@@ -30,14 +31,14 @@ export async function installFontAsset(
   onProgress?: (percent: number) => void
 ): Promise<InstalledFont | null> {
   try {
-    console.log(`[font-install] Starting install for ${file.name}`, { size: file.size, type: file.type });
+    debug(`[font-install] Starting install for ${file.name}`, { size: file.size, type: file.type });
 
     // Read file as ArrayBuffer
     let buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const result = reader.result as ArrayBuffer;
-        console.log(`[font-install] File read complete: ${file.name} (${result.byteLength} bytes)`);
+        debug(`[font-install] File read complete: ${file.name} (${result.byteLength} bytes)`);
         resolve(result);
       };
       reader.onerror = () => {
@@ -74,13 +75,13 @@ export async function installFontAsset(
       console.warn(`[font-install] Could not extract metadata from ${file.name}`);
       return null;
     }
-    console.log(`[font-install] Metadata extracted: ${metadata.family} ${metadata.weight}${metadata.style}`);
+    debug(`[font-install] Metadata extracted: ${metadata.family} ${metadata.weight}${metadata.style}`);
 
     const format = detectFontFormat(buffer);
-    console.log(`[font-install] Detected format: ${format}`);
+    debug(`[font-install] Detected format: ${format}`);
 
     const familySlug = metadata.family.toLowerCase().replace(/\s+/g, '-');
-    console.log(`[font-install] Family slug: ${familySlug}`);
+    debug(`[font-install] Family slug: ${familySlug}`);
 
     // Load font registry to find next index
     if (!host.state || !host.state.load || !host.state.save) {
@@ -91,11 +92,11 @@ export async function installFontAsset(
     const registry = (await host.state.load(FONT_REGISTRY_KEY)) as Record<string, number> | null;
     const fontIndexMap = registry || {};
     const nextIndex = (fontIndexMap[familySlug] || 0) + 1;
-    console.log(`[font-install] Asset index: ${nextIndex}`);
+    debug(`[font-install] Asset index: ${nextIndex}`);
 
     // Create asset ID
     const assetId = `user/fonts/${familySlug}/${nextIndex}`;
-    console.log(`[font-install] Asset ID: ${assetId}`);
+    debug(`[font-install] Asset ID: ${assetId}`);
 
     // Store blob
     const blob = new Blob([buffer], { type: file.type || 'application/octet-stream' });
@@ -124,20 +125,20 @@ export async function installFontAsset(
     };
 
     // Save to IndexedDB via host.state
-    console.log(`[font-install] Saving font data to state...`);
+    debug(`[font-install] Saving font data to state...`);
     await host.state.save('font-asset:' + assetId, {
       blob,
       metadata: asset.meta,
       format,
       fileSize: buffer.byteLength,
     });
-    console.log(`[font-install] ✓ Font data saved`);
+    debug(`[font-install] ✓ Font data saved`);
 
     // Update the font registry
-    console.log(`[font-install] Updating font registry...`);
+    debug(`[font-install] Updating font registry...`);
     fontIndexMap[familySlug] = nextIndex;
     await host.state.save(FONT_REGISTRY_KEY, fontIndexMap);
-    console.log(`[font-install] ✓ Font registry updated`);
+    debug(`[font-install] ✓ Font registry updated`);
 
     onProgress?.(100);
 
@@ -150,7 +151,7 @@ export async function installFontAsset(
       fileSize: buffer.byteLength,
       installedAt: asset.meta.installedAt,
     };
-    console.log(`[font-install] ✓ Font installation complete:`, result);
+    debug(`[font-install] ✓ Font installation complete:`, result);
     return result;
   } catch (e) {
     console.error('[font-install] Font installation failed:', e instanceof Error ? e.message : e);
@@ -166,7 +167,7 @@ export async function installFontAsset(
  */
 export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> {
   try {
-    console.log('[font-asset-handler] getInstalledFonts: reading font registry...');
+    debug('[font-asset-handler] getInstalledFonts: reading font registry...');
     if (!host.state || !host.state.load) {
       console.warn('[font-asset-handler] host.state not available');
       return [];
@@ -174,10 +175,10 @@ export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> 
 
     // Read font registry
     const registry = (await host.state.load(FONT_REGISTRY_KEY)) as Record<string, number> | null;
-    console.log('[font-asset-handler] Font registry:', registry);
+    debug('[font-asset-handler] Font registry:', registry);
 
     if (!registry || Object.keys(registry).length === 0) {
-      console.log('[font-asset-handler] No fonts in registry');
+      debug('[font-asset-handler] No fonts in registry');
       return [];
     }
 
@@ -187,7 +188,7 @@ export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> 
     for (const [familySlug, lastIndex] of Object.entries(registry)) {
       for (let i = 0; i <= lastIndex; i++) {
         const assetId = `user/fonts/${familySlug}/${i}`;
-        console.log('[font-asset-handler] Loading font asset:', assetId);
+        debug('[font-asset-handler] Loading font asset:', assetId);
 
         const stored = (await host.state.load('font-asset:' + assetId)) as
           | { metadata: FontMetadata & { installedAt: number }; format: string; fileSize: number }
@@ -195,7 +196,7 @@ export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> 
           | undefined;
 
         if (stored?.metadata) {
-          console.log('[font-asset-handler] ✓ Loaded', assetId);
+          debug('[font-asset-handler] ✓ Loaded', assetId);
           fonts.push({
             id: assetId,
             family: stored.metadata.family,
@@ -206,12 +207,12 @@ export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> 
             installedAt: stored.metadata.installedAt,
           });
         } else {
-          console.log('[font-asset-handler] Not found:', assetId);
+          debug('[font-asset-handler] Not found:', assetId);
         }
       }
     }
 
-    console.log('[font-asset-handler] Returning', fonts.length, 'fonts:', fonts);
+    debug('[font-asset-handler] Returning', fonts.length, 'fonts:', fonts);
     return fonts.sort((a, b) => a.family.localeCompare(b.family));
   } catch (e) {
     console.error('[font-asset-handler] getInstalledFonts error:', e instanceof Error ? e.message : e);
@@ -224,7 +225,7 @@ export async function getInstalledFonts(host: HostV1): Promise<InstalledFont[]> 
  */
 export async function removeFontAsset(host: HostV1, fontId: string): Promise<boolean> {
   try {
-    console.log('[font-asset-handler] Removing font:', fontId);
+    debug('[font-asset-handler] Removing font:', fontId);
     if (!host.state || !host.state.delete || !host.state.load || !host.state.save) {
       console.error('[font-asset-handler] host.state APIs not available');
       return false;
@@ -232,7 +233,7 @@ export async function removeFontAsset(host: HostV1, fontId: string): Promise<boo
 
     // Remove from state
     await host.state.delete('font-asset:' + fontId);
-    console.log('[font-asset-handler] ✓ Font data deleted');
+    debug('[font-asset-handler] ✓ Font data deleted');
 
     // Update registry (optional cleanup - keep it simple for now)
     // The registry still has the entry, but the data is gone

@@ -173,7 +173,7 @@ function renderOfflineChip(offline: boolean): void {
     chip.style.cssText = [
       'position:fixed', 'left:12px', 'bottom:12px', 'z-index:2147483647',
       'pointer-events:none', 'padding:6px 10px', 'border-radius:999px',
-      'font:500 12px/1.2 system-ui,-apple-system,sans-serif', 'color:#fff',
+      'font:500 12px/1.2 SUSE,system-ui,-apple-system,sans-serif', 'color:#fff',
       'background:rgba(20,20,20,.82)', 'box-shadow:0 1px 4px rgba(0,0,0,.3)',
     ].join(';');
     document.body.appendChild(chip);
