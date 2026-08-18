@@ -623,6 +623,11 @@ const SVG = {
   alignB: '<line x1="3.5" y1="20" x2="20.5" y2="20"/><rect x="5.5" y="4" width="4.5" height="13" rx="1"/><rect x="14" y="9" width="4.5" height="8" rx="1"/>',
   distH: '<line x1="4" y1="3.5" x2="4" y2="20.5"/><line x1="20" y1="3.5" x2="20" y2="20.5"/><rect x="9" y="7" width="6" height="10" rx="1"/>',
   distV: '<line x1="3.5" y1="4" x2="20.5" y2="4"/><line x1="3.5" y1="20" x2="20.5" y2="20"/><rect x="7" y="9" width="10" height="6" rx="1"/>',
+  // Flip (mirror) - two arrowheads facing across a dashed mirror axis: one side solid, the
+  // other its outline reflection, so the glyph reads as "turn this over about the line". The
+  // pair shares one axis line and one triangle, rotated 90deg between them, so they read as a set.
+  flipH: '<line x1="12" y1="2.5" x2="12" y2="21.5" stroke-dasharray="3 2.5"/><path d="M9.2 5 3.8 12l5.4 7z" fill="currentColor" stroke="none"/><path d="M14.8 5 20.2 12l-5.4 7z"/>',
+  flipV: '<line x1="2.5" y1="12" x2="21.5" y2="12" stroke-dasharray="3 2.5"/><path d="M5 9.2 12 3.8l7 5.4z" fill="currentColor" stroke="none"/><path d="M5 14.8 12 20.2l7-5.4z"/>',
   group: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="6.5" y="6.5" width="5" height="5" rx="1"/><rect x="12.5" y="12.5" width="5" height="5" rx="1"/>',
   ungroup: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
   clip: '<rect x="3" y="3" width="12" height="12" rx="2"/><circle cx="15.5" cy="15.5" r="5.5"/>',
@@ -1008,6 +1013,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const hasHeadCfg = !!(cv.headStartField || cv.headEndField);
   const hasBindCfg = !!(cv.bindStartField || cv.bindEndField);
   const hasRouteCfg = !!cv.routeField;
+  // ── Flip (mirror) ─────────────────────────────────────────────────────────────
+  // Flip is opt-in per tool, and gated on the box sub-fields being DECLARED rather than on a
+  // `canvas.*Field` key. The canvas block in schemas/tool.schema.json is a CLOSED SET whose
+  // every new key is a breaking change for older shells (the engine validates a manifest
+  // against that same schema at load), so the flag is the presence of the fixed-named `flipH`
+  // + `flipV` sub-fields instead - the same "is the field declared" test `hasIdField` uses.
+  // The names match what the tool's hooks.js reads when it folds the mirror into the box
+  // transform, so overlay and render agree by convention. A tool that declares neither is
+  // offered no flip and is byte-identical - like `pathField` gates the vector section.
+  const FLIP_H_FIELD = 'flipH';
+  const FLIP_V_FIELD = 'flipV';
+  const canFlip = (input.fields || []).some((f) => f.id === FLIP_H_FIELD)
+    && (input.fields || []).some((f) => f.id === FLIP_V_FIELD);
   /** The committed bound-path layer's class, hidden while a drag re-routes it live. */
   const boundLayerClass = cv.pathLayerClass || 'lolly-connectors';
   const hasDashArrayCfg = !!cv.strokeDashArrayField;
@@ -2908,6 +2926,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       { sep: true },
       ...(outlinableCount ? [
         { label: t('Outline text'), icon: icon(SVG.outlineText), run: () => void outlineTextOnSelection() },
+        { sep: true } as PopItem,
+      ] : []),
+      // Flip (mirror) - primary direct-manipulation actions on the selection, so they sit
+      // high in the menu. Present only for a tool that declares the flip sub-fields
+      // (`canFlip`), disabled with nothing selected like every action above.
+      ...(canFlip ? [
+        { label: t('Flip horizontal'), icon: icon(SVG.flipH), run: () => applyFlip('h'), disabled: !has } as PopItem,
+        { label: t('Flip vertical'), icon: icon(SVG.flipV), run: () => applyFlip('v'), disabled: !has } as PopItem,
         { sep: true } as PopItem,
       ] : []),
       // Stacking order - icons only, 2×2: columns are magnitude (one step │ all the
@@ -5701,6 +5727,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const idx = selIndices(boxes);
     if (idx.length < 3) return;
     commit(distributeBoxes(boxes, idx, axis as Axis, cfg));
+  }
+
+  /**
+   * Mirror the selection horizontally ('h') or vertically ('v'). The flip is a per-box
+   * boolean the tool's hooks.js folds into the box transform as a NEGATIVE SCALE about the
+   * box centre (transform-origin 50% 50%) - so it mirrors the artwork itself, on the canvas
+   * AND in every export (the vector walkers read that inline transform as a 2-D affine and
+   * keep the mirror; see engine's isAxisAlignedMat), not just the on-canvas preview.
+   *
+   * TOGGLES each box's own flag, so the action is its own inverse and a mixed selection
+   * (some already flipped) un-flips those and flips the rest. Mirror-IN-PLACE per box: a
+   * multi-box flip mirrors every member about ITS OWN centre, not the selection's combined
+   * bounds - each box keeps its position and turns over in place. Group-bounds
+   * mirroring would have to move boxes (reflect each centre across the selection midline)
+   * and re-bucket frames; per-box mirror needs neither and never surprises the user with a
+   * box that jumped. One commit for the whole selection - one undo step. No-op on a tool
+   * that declares no flip fields (`canFlip`).
+   */
+  function applyFlip(axis: 'h' | 'v'): void {
+    if (!canFlip) return;
+    const field = axis === 'h' ? FLIP_H_FIELD : FLIP_V_FIELD;
+    const boxes = getBoxes();
+    const sel = new Set(selIndices(boxes));
+    if (!sel.size) return;
+    commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: !boolOf(b[field], false) } : b)));
   }
 
   function duplicateSelection(): void {
@@ -10057,7 +10108,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
       return;
     }
-    // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only - 
+    // Flip the selection: Shift+H mirrors horizontally, Shift+V vertically (Figma/Sketch's
+    // keys). Shift-qualified deliberately - bare V is already the Pointer tool below (the
+    // Illustrator convention), so bare V would hijack it, and the pair stays symmetric behind
+    // one modifier. Checked BEFORE the V/P tool letters so Shift+V flips rather than arming the
+    // pointer; it falls through to the pointer when nothing is selected or the tool has no flip
+    // field, so that path is untouched. After `typingTarget()` above, so a field/text edit
+    // types the letter instead. Cmd/Ctrl/Alt variants are left alone.
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && canFlip && selection.size
+        && (e.key === 'h' || e.key === 'H' || e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
+      applyFlip(e.key === 'v' || e.key === 'V' ? 'v' : 'h');
+      return;
+    }
+    // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only -
     // ⌘V is paste and ⌘P is print - and after `typingTarget()`, so a live text edit or any
     // focused field gets the letter typed into it instead. Neither letter meant anything
     // here before (the only unmodified keys taken are Escape/Enter/F2/Delete/arrows, and

@@ -77,6 +77,7 @@ import type { PickerHost } from './picker.ts';
 import type { UpscaleHost } from './upscale-dialog.ts';
 import type { MatteHost } from './matte-dialog.ts';
 import type { ExtractAudioHost } from '../lib/extract-audio.ts';
+import type { VideoJobHost } from '../lib/video-jobs.ts';
 import { mountAudioThumbs, replaceUserUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
@@ -1674,6 +1675,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // derived asset (no 'renders' tag), with the source video carried as an ingredient.
     const canExtractAudio = ref.type === 'video' && !ref.meta?._placeholder
       && typeof (window.AudioContext ?? (window as { webkitAudioContext?: unknown }).webkitAudioContext) !== 'undefined';
+    // Streaming on-device VIDEO processing (WP-G): background-remove to a transparent
+    // animated WebP/APNG, crop, or upscale - each opens the shared video-job dialog and
+    // runs as a WP-F background job. Video only, and only where WebCodecs can decode
+    // (mediabunny needs VideoDecoder); crop/upscale also need the video encoder.
+    // Matte offers TWO methods in the dialog - the on-device model (if a model is staged)
+    // and the deterministic COLOUR KEY (decode only, no model) - so the affordance appears
+    // for any decodable video; the dialog offers whichever methods are actually available.
+    const videoDecodable = ref.type === 'video' && !ref.meta?._placeholder
+      && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined';
+    const videoEncodable = typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined';
+    const canVideoMatte = videoDecodable;
+    const canVideoCrop = videoDecodable && videoEncodable;
+    const canVideoUpscale = videoDecodable && videoEncodable && host.upscale?.isAvailable() === true;
     // "Trim margins" (plan 97 section 7.3): the retro-trim of an upload that arrived padded,
     // offering the same before/after card every ingest surface shows. Uploads only - 
     // a catalog asset is an immutable, checksum-validated contract. A still raster or
@@ -1722,6 +1736,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
           ${canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : ''}
+          ${canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
+          ${canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
+          ${canVideoUpscale ? `<button type="button" class="btn cat-act-vid-upscale" data-act="vid-upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
@@ -2166,6 +2183,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         } catch (err) {
           host.log('error', 'Extract audio failed', { id: ref.id, error: String(err) });
         }
+      }
+      else if (act === 'vid-matte' || act === 'vid-crop' || act === 'vid-upscale') {
+        // Process THIS video on-device (background-remove / crop / upscale). The shared
+        // dialog starts a WP-F background job and closes; the result lands as a plain
+        // derived user asset (no 'renders' tag) with container-level C2PA, the source
+        // video carried as an ingredient. onComplete refreshes a still-open catalog.
+        const op = act === 'vid-matte' ? 'matte' : act === 'vid-crop' ? 'crop' : 'upscale';
+        try {
+          const { openVideoJobDialog } = await import('./video-job-dialog.ts');
+          await openVideoJobDialog(host as unknown as VideoJobHost, {
+            op, source: ref, sourceName: name,
+            ...(ref.meta?.aiGenerated === 'full' || ref.meta?.aiGenerated === 'partial' ? { aiGeneratedSource: ref.meta.aiGenerated } : {}),
+            onComplete: () => { if (mounted) { void reload().then(rerender); } },
+          });
+        } catch (err) {
+          host.log('error', 'Video job failed', { id: ref.id, error: String(err) });
+        }
+        openDetails(ref); // restore the asset the user was inspecting
       }
       else if (act === 'recategorise') await recategorise(ref);
       else if (act === 'replace') await replaceUserAsset(ref);

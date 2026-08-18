@@ -20,7 +20,7 @@
  *   1. **Set a colour** - in any space. The picker, a free-text field, the
  *      brand rail. This is the only thing a first-time visitor needs to
  *      understand.
- *   2. **The charts** - where it sits, four ways, with the comparison-target
+ *   2. **The charts** - where it lands, four ways, with the comparison-target
  *      control that sets what they draw: sRGB, Display-P3, Rec.2020, and a
  *      press profile if you have added one. High up, because they are the
  *      reason to open the page.
@@ -3037,7 +3037,7 @@ function shellHtml(): string {
 
     <header class="lab-head">
       <h1>${escape(t('Colour Lab'))}</h1>
-      <p class="lab-sub">${escape(t('Everything about one colour: where it sits in perceptual space, which displays can show it, how much room is left, and what it is called in every notation.'))}</p>
+      <p class="lab-sub">${escape(t('Everything about one colour: where it lands in perceptual space, which displays can show it, how much room is left, and what it is called in every notation.'))}</p>
     </header>
 
     <!-- 1 · SET A COLOUR. Three ways in, none of them in a sidebar. -->
@@ -3077,7 +3077,7 @@ function shellHtml(): string {
          control comes with them because it governs what they draw. -->
     <section class="lab-step-block">
       <h2 class="lab-h2 lab-step-h">
-        <span class="lab-step-n" aria-hidden="true">2</span>${escape(t('Where it sits'))}
+        <span class="lab-step-n" aria-hidden="true">2</span>${escape(t('Plotted on a colour space'))}
       </h2>
       ${/* Full width, directly above the charts: it governs all four of them, so
             it reads as a control over the whole row rather than a setting tucked

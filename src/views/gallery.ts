@@ -2237,7 +2237,7 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   href: '#/lab',
   icon: 'palette',
   name: t('Colour Lab'),
-  description: t('Inspect any colour: where it sits in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
+  description: t('Inspect any colour: where it lands in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
 }, {
   id: 'spreadsheet',
   href: '#/data',

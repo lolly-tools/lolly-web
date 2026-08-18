@@ -133,16 +133,18 @@ const LANDING_HTML = `<!doctype html><html>
     </section>
     <section class="audience-section">
       <h2 id="audience-heading">Who is it for?</h2>
-      <div class="audience-tabs" role="navigation" aria-label="Who is it for?">
-        <a class="audience-tab" href="#anyone">Anyone</a>
-        <a class="audience-tab" href="#press">Press</a>
+      <input class="aud-radio" type="radio" name="audience" id="aud-anyone" checked>
+      <input class="aud-radio" type="radio" name="audience" id="aud-press">
+      <div class="audience-tabs">
+        <label class="audience-tab" for="aud-anyone">Anyone</label>
+        <label class="audience-tab" for="aud-press">Press</label>
       </div>
       <div class="audience-panels">
         <div class="audience-card" id="anyone">Everyday jobs.</div>
         <div class="audience-card" id="press">Press kits.</div>
       </div>
-      <div class="audience-panels machines-panels">
-        <div class="audience-card" id="ai">Always open.</div>
+      <div class="machines-band">
+        <div class="machine-card machine-card--agents" id="ai">Always open, never radio-gated.</div>
       </div>
     </section>
     <section class="faq-section" id="faq">
@@ -361,23 +363,27 @@ test('landing app links are rewritten to in-SPA routes (Launch App lands on #/d)
   view.remove();
 });
 
-test('an audience pill is a plain #id jump the reader intercepts, never a route write', async () => {
+test('the audience tabs are CSS-only radios: a pill click checks its radio, never the route', async () => {
   stubOkFetch(LANDING_HTML);
   const view = freshView();
 
   await mountDocs(view, host, 'index', 'de', '');
 
+  // Plan 123 D1 final form: hidden radio siblings + <label> pills; visibility is the
+  // stylesheet's `:checked ~ .audience-panels` pairing, so the rehosted fragment needs
+  // no hydration at all - the markup below is what must survive the rehost intact.
   const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing')!;
-  const pills = article.querySelectorAll<HTMLAnchorElement>('.audience-tab');
-  // Plan 123 D1: jump pills over stacked, always-open cards - no tab state anywhere.
-  assert.equal(pills[1]!.getAttribute('href'), '#press', 'a pill is a bare #id anchor');
-  assert.equal(article.querySelector('[aria-selected]'), null, 'no tab state survives the restack');
-  assert.ok(article.querySelector<HTMLElement>('#press'), 'every card is present and open in the DOM');
+  const radios = article.querySelectorAll<HTMLInputElement>('input.aud-radio');
+  const pills = article.querySelectorAll<HTMLLabelElement>('label.audience-tab');
+  assert.equal(radios.length, 2, 'the radio group survives the rehost');
+  assert.equal(radios[0]!.checked, true, 'the first tab opens checked');
+  assert.equal(pills[1]!.htmlFor, radios[1]!.id, 'each pill labels its radio');
+  assert.equal(article.querySelector('[aria-selected]'), null, 'no scripted tab state anywhere');
 
   const hashBefore = window.location.hash;
-  const click = new window.MouseEvent('click', { bubbles: true, cancelable: true });
-  pills[1]!.dispatchEvent(click);
-  assert.equal(click.defaultPrevented, true, 'the reader intercepts the jump (scrolls in-view instead of navigating)');
+  pills[1]!.click();
+  assert.equal(radios[1]!.checked, true, 'a pill click checks its radio (native label activation)');
+  assert.equal(radios[0]!.checked, false, 'the radio group is exclusive');
   assert.equal(window.location.hash, hashBefore, 'a pill click never writes location.hash (that IS the route)');
 
   view.remove();

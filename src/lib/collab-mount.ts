@@ -11,7 +11,7 @@
  * dormant by default, a throwing registrant swallowed so a ceremony can never be broken
  * by the thing it hands off to.
  *
- * WHERE IT SITS IN THE CHAIN, because four registries is three too many to hold in your
+ * WHERE THIS LIVES IN THE CHAIN, because four registries is three too many to hold in your
  * head: the ceremony ends with a live pair and nowhere to put it; `collab-session-source`
  * is asked, per tool mount, whether THIS tool on THIS slot is in a collab. Nothing joins
  * those two facts. That join is the registrant here - given a {@link CollabConnection} it

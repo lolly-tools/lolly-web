@@ -660,11 +660,13 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // names + numeric/boolean attrs), and the read-error banner (escape()d message) - all
   // user-data interpolations go through escape() (utils.ts).
   'views/data.ts': 4,
-  // The in-app docs reader (#/docs, M2 Phase 1). Both sinks are safe: the view scaffold
-  // (shellHtml - t() labels + lib/icons markup, no free text) and the error banner
-  // (escape()d message). The rehosted /info page fragment is injected as a PARSED node
-  // (DOMParser), not via a sink, and has its <script>/<style>/.listen-bar stripped.
-  'views/docs.ts': 2,
+  // The in-app docs reader (#/docs, M2 Phase 1). All three sinks are safe: the view
+  // scaffold (shellHtml - t() labels + lib/icons markup, no free text), the error banner
+  // (escape()d message), and the full-width toggle's glyph (a TRUSTED lib/icons string;
+  // its label is an aria attribute, never HTML). The rehosted /info page fragment is
+  // injected as a PARSED node (DOMParser), not via a sink, and has its
+  // <script>/<style>/.listen-bar stripped.
+  'views/docs.ts': 3,
   // The in-app docs "Try it" hydration (M3). One insertAdjacentHTML sink: a TRUSTED
   // static icon (lib/icons.ts glyph string) appended to the pill; the label beside it is
   // set via textContent, never interpolated as HTML. No user/manifest string reaches a sink.
@@ -950,6 +952,8 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
   'views/catalog.ts': 11,  // +1 2026-08-17: asset-metadata tech panel (data-tech fill) — label + value both escape()d
+  'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
+  'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
   // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks -
   // the head, the sign-in button, the clear button, and the active-session status - 
   // each interpolating only icon() registry glyphs (lib/icons.ts) and t() literal

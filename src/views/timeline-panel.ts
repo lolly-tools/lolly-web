@@ -98,6 +98,7 @@ import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, ttsWordsOf } from './timeline-captions.ts';
 import { fmtBytes } from '../lib/format.ts';
 import type { AssetRef, AudioLevel, HostV1, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
+import type { VideoJobHost } from '../lib/video-jobs.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
 
@@ -128,6 +129,11 @@ export interface TimelineHost {
    *  "Script a voiceover" button and the transcription arm of Generate subtitles.
    *  Feature-detected like `recorder`, never capability-gated. */
   speech?: SpeechAPI;
+  /** The optional on-device background remover (v1.103). Not required to OFFER the clip
+   *  context menu's "Remove background…" (the shared video-job dialog also has a model-free
+   *  colour-key method), but carried on the host so the dialog can use the model method
+   *  when a model is staged. Feature-detected like `speech`, never capability-gated. */
+  matte?: NonNullable<HostV1['matte']>;
   /** The user-asset store, for retiring a take that a RE-take has superseded - and only
    *  once the replacement has been committed to the model (see finishTake) - plus `get`,
    *  which resolves a box's persisted ref back to a LIVE one (fresh object URL and full
@@ -2323,6 +2329,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (canExportFrame(ctxId)) {
         el.appendChild(menuItem(t('Export frame'), 'camera', act(() => { void exportFrameAt(ctxId); }),
           { sub: t('Saves the frame under the playhead as a PNG, at full resolution.') }));
+      }
+      // Remove background: make a transparent alternative asset for this video clip's
+      // source on device (the shared video-job dialog, op 'matte'). Offered only where
+      // it is real - the same video + staged-model gate the catalog detail modal uses.
+      if (canVideoMatte(ctxId)) {
+        el.appendChild(menuItem(t('Remove background…'), 'scissors', act(() => { void videoMatteAt(ctxId); }),
+          { sub: t('Makes a transparent copy you can swap onto this track.') }));
       }
       // Join is offered only where it is REAL: a cut whose two sides are still perfectly
       // contiguous, on either side of this clip. Everywhere else the item is absent
@@ -5788,6 +5801,57 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     await host.export?.download?.(blob, filename);
     announce(t('Frame exported'));
+  }
+
+  // ── Remove background: a transparent alternative for a video clip's source ────
+
+  /** May "Remove background…" be offered for this box? A video clip the browser can
+   *  decode (WebCodecs) - the same video-matte gate the catalog detail modal (WP-G) uses.
+   *  The dialog offers the on-device model (if staged) AND the model-free colour key, so a
+   *  staged model is NOT required. Absent (never greyed) otherwise, like Export frame. */
+  function canVideoMatte(id: string): boolean {
+    return !!id
+      && mediaOf(id).kind === 'video'
+      && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined';
+  }
+
+  /**
+   * Open the shared video-job dialog (op 'matte') on this clip's ORIGINAL source video.
+   * The source is resolved via refOf(id) - the box's persisted asset ref - and re-fetched
+   * by its permanent id (fresh object URL + full meta), NEVER the scrub proxy: the same
+   * original-asset rule Export frame follows above, for the same reason (a proxy is a
+   * lossy downscaled re-encode). The dialog starts a WP-F background job and closes; the
+   * transparent asset lands in the user catalog when it finishes.
+   *
+   * We CREATE the asset; the follow-on track swap is left to the user. A "replace this
+   * clip's source" write is deliberately NOT wired here: the box's asset-field name and
+   * shape are the tool's own, and a video→transparent-WebP swap changes the media KIND
+   * (a still animated raster, no per-clip timing/audio) - not a safe, general edit for
+   * the panel to make blind. Creating the asset (and letting the user swap it in from the
+   * asset picker) is the honest, non-destructive half.
+   */
+  async function videoMatteAt(id: string): Promise<void> {
+    if (!canVideoMatte(id)) { announce(t('This clip has no video to process')); return; }
+    const ref = refOf(id);
+    const refId = typeof ref?.id === 'string' ? ref.id : '';
+    // Re-resolve the ORIGINAL asset by its permanent id - the box's stored ref, never a
+    // proxy - exactly like the subtitle path (wordsForBox) does.
+    let source: AssetRef | null = null;
+    if (refId && host.assets?.get) {
+      try { source = await host.assets.get(refId); } catch { /* resolve failed → bail below */ }
+    }
+    if (!source) { announce(t('Couldn’t find this clip’s source video')); return; }
+    const sourceName = (source.meta?.name as string | undefined) ?? source.id;
+    const ai = source.meta?.aiGenerated;
+    try {
+      const { openVideoJobDialog } = await import('./video-job-dialog.ts');
+      await openVideoJobDialog(host as unknown as VideoJobHost, {
+        op: 'matte', source, sourceName,
+        ...(ai === 'full' || ai === 'partial' ? { aiGeneratedSource: ai } : {}),
+      });
+    } catch (err) {
+      host.log?.('error', `Remove background: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // ── A/V link: detach audio, re-attach, and the through-edit join ─────────────

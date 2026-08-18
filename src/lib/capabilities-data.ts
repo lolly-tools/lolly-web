@@ -21,6 +21,10 @@ const ICONS = {
   grid:      I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'),
   extension: I('<path d="M4 7h4V5a2 2 0 1 1 4 0v2h4v4h2a2 2 0 1 1 0 4h-2v4H4z"/>'),
   transfer:  I('<path d="M4 7h13M13 3l4 4-4 4"/><path d="M20 17H7M11 21l-4-4 4-4"/>'),
+  users:     I('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+  package:   I('<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),
+  present:   I('<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>'),
+  ask:       I('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
   globe:     I('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/>'),
   desktop:   I('<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'),
   phone:     I('<rect x="6" y="2" width="12" height="20" rx="2"/><line x1="10" y1="18" x2="14" y2="18"/>'),
@@ -144,6 +148,23 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'The URL is the design', desc: 'Every input lives in the link — paste it to a colleague, bookmark it, or commit it.' },
         { name: 'Shortest link', desc: 'A big design would make a long URL; the Share dialog offers a <strong>Shortest link</strong> that packs the whole state into a compact token so it stays short enough to paste anywhere — the readable form is always there too.' },
         { name: 'Act-on-open flags', desc: 'Add <code>&amp;export</code> to download on open, or <code>&amp;copy</code> to arm copy-to-clipboard.' },
+      ] },
+      { icon: ICONS.package, title: 'Share it whole (.lolly)', keywords: 'lolly file share download fidelity verdict licensed art carry tool trust gate drop import airdrop send zip', features: [
+        { name: 'One file, everything in it', desc: '<strong>Download .lolly</strong> writes the design as a single file - the session plus the images you added from your device - so it opens complete on a machine that has never seen your brand.' },
+        { name: 'An honest verdict first', desc: 'When a link cannot carry everything, the Share dialog says exactly what would go missing and offers the file instead.' },
+        { name: 'You choose how much travels', desc: 'Your name goes in only if your profile opts in; licensed art is held back unless you include it; the tool itself can ride along.' },
+        { name: 'A consent gate on arrival', desc: 'A carried tool never runs silently - the recipient is asked <strong>Trust this tool?</strong> before its code can run, and declining still saves the shared work to their Projects.' },
+        { name: 'Drop to open', desc: 'Drop a <code>.lolly</code> onto the app: assets land in the library, the session lands in Projects, and every part is checked against the file’s own checksums on the way in.' },
+      ] },
+      { icon: ICONS.users, title: 'Work together, no internet', keywords: 'collaborate collaboration co-edit live two devices peer to peer p2p invite qr code presence focus hotspot offline beam no server', features: [
+        { name: 'Two devices, one design', desc: 'One person shares an invite - a link, a QR code or a short code - the other accepts, and both devices hold the same session live, presence and focus rings included.' },
+        { name: 'No server in the middle', desc: 'It works on any shared network, including a phone hotspot with no internet at all, because nothing relays through a cloud.' },
+        { name: 'Your undo stays yours', desc: 'A change arriving from the other device never lands on your undo stack, so undo only ever takes back something you did.' },
+      ] },
+      { icon: ICONS.present, title: 'Present it, full screen', keywords: 'present presentation slides deck fullscreen stage kiosk loop keyboard advance pptx frames', features: [
+        { name: 'Frames become slides', desc: 'A design’s frames present in order on a full-screen stage, advanced from the keyboard, with a kiosk loop for a stand or a lobby screen.' },
+        { name: 'The deck is a link', desc: 'Add <code>?present</code> and the link opens straight into the presentation; the address follows the slide you are on, so what you send is the slide you see.' },
+        { name: 'Fix the deck, then present it', desc: 'Import a PPTX, rebrand it, and present from the same tool - no export round-trip in the middle.' },
       ] },
       { icon: ICONS.save, title: 'Save, organise & share', shot: 'projects', keywords: 'save named session continue folders organise nest drag rename projects', features: [
         { name: 'Named sessions', desc: 'Keep multiple saved sessions per tool, all device-local; Continue resumes your most recent.' },
@@ -308,6 +329,9 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.bot, title: 'AI agents', shot: 'um-compact-shortkeys', keywords: 'llm ai prompt tokens deterministic cheap no drift hallucination', features: [
         { name: 'Cheap & deterministic', desc: 'A parameterised URL is a few tokens and always renders the same press-quality result locally — no prompt drift, no stochastic surprises in production.' },
+      ] },
+      { icon: ICONS.ask, title: 'Ask the app', keywords: 'ask help question answer citation retrieval manual docs quote no hallucination chatbot', features: [
+        { name: 'The manual’s own words', desc: 'Ask a question and the answer is a sentence retrieved from the documentation, quoted with a link to its source - never a generated guess. The AI stance, running inside the product it describes.' },
       ] },
       { icon: ICONS.image, title: 'On-device AI & media', keywords: 'ai upscale onnx webgpu background removal alpha matte text to speech kokoro tts audio reactivity local machine no server', features: [
         { name: 'Runs on your machine, never a server', desc: 'The AI touches are local: <strong>image upscaling</strong> (ONNX / WebGPU) and <strong>background removal</strong> (alpha matte), a bundled <strong>text-to-speech</strong> voice (Kokoro) that returns audio with word timings for captions, and <strong>audio reactivity</strong> that reads a finished clip into a per-frame track to drive motion. No prompt, no upload — and an AI-generated or AI-enhanced result records that in its Content Credential (an IPTC digital-source-type), so the provenance is never laundered away.' },

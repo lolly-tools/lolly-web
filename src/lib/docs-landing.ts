@@ -43,13 +43,31 @@ const STYLE_MARK = 'data-docs-landing';
 
 /**
  * The element defaults the fragment assumes from the static page's global CSS, which the
- * reader does not import. Only the one that fails LOUDLY is carried: every inline icon in
- * the fragment ships a viewBox and no width/height, so with no rule at all each one
- * balloons to the CSS default 300x150 (or stretches to fill its flex parent). It sits
- * INSIDE the scope block and at the lowest possible specificity (0,0,1), so all 19 of the
- * file's own `.x svg{...}` sizing rules still win.
+ * reader does not import - a verbatim mirror of build.ts's base rules (its CSS template,
+ * the block after the token variables), because the band rules were authored ON TOP of
+ * them. Without this block the fragment inherits the APP's chrome defaults instead and
+ * every band "forgets its sizing": 14px body text where the site is 16px, section h2s at
+ * 21px/700 where the landing's grammar is 2rem/900/uppercase, collapsed paragraph
+ * rhythm, and viewBox-only icons ballooning to the CSS default 300x150. Everything sits
+ * INSIDE the scope block at element specificity (0,0,1) - `:scope` is the `.docs-landing`
+ * root itself - so every one of the file's own class rules still wins.
  */
-const ELEMENT_BASELINE = 'svg{width:1em;height:1em;flex:none}';
+const ELEMENT_BASELINE = `
+:scope{font-size:16px;line-height:1.65;color:var(--text);font-family:'SUSE',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+svg{width:1em;height:1em;flex:none}
+a{color:var(--green);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'SUSE Mono','SF Mono','Fira Code',monospace;font-size:.875em;background:hsl(var(--muted));padding:.15em .35em;border-radius:3px}
+pre{background:hsl(var(--muted));color:hsl(var(--foreground));padding:1.25rem 1.5rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;line-height:1.5;margin-bottom:1.25rem}
+pre code{background:none;padding:0;color:inherit;font-size:1em}
+h1,h2,h3,h4{line-height:1.25;font-weight:700;margin:0}
+h2{font-size:2rem;letter-spacing:0;font-weight:900;text-transform:uppercase}
+p{margin:0 0 2rem}
+ul{padding-left:1.25rem;margin:0 0 1rem}
+li{margin-bottom:.35rem}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+strong{font-weight:600}
+`;
 
 /**
  * Landing-mode overrides. Unscoped and last in the tag, keyed off the reader's

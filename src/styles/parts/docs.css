@@ -62,7 +62,10 @@
 /* ── View shell ─────────────────────────────────────────────────────────────── */
 .docs-view {
   min-height: 100%;
-  overflow-y: auto;
+  /* NO overflow-y:auto here (2026-08-17): the view grows and the DOCUMENT scrolls, so
+   * an overflow value made this the nearest scroll container for position:sticky - a
+   * scrollport that never scrolls - and silently broke the sidebar and TOC rails'
+   * stickiness. With overflow untouched they stick against the real viewport. */
 }
 .docs-reader {
   max-width: 52rem;
@@ -162,7 +165,7 @@
 
 .docs-content code {
   font-family: 'SUSE Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 0.875em; background: hsl(var(--muted)); padding: 0.15em 0.35em; border-radius: 3px;
+  font-size: 0.875em; background: hsl(var(--card) / 1); padding: 0.15em 0.35em; border-radius: 3px;
 }
 .docs-content pre {
   background: hsl(var(--muted)); padding: 1.25rem 1.5rem; border-radius: 8px;
@@ -184,13 +187,31 @@
   overflow-x: auto; margin-bottom: 2rem; border-radius: 1em;
   box-shadow: 0 0 0 1px hsl(var(--border)), 0 0.2rem 0.4rem #00000018;
 }
-.docs-content table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
-.docs-content th, .docs-content td { padding: 0.6rem 0.9rem; text-align: left; border-bottom: 1px solid var(--border); }
+.docs-content table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.docs-content th, .docs-content td { padding: 0.6rem 0.9rem; text-align: left; border-bottom: 1px solid var(--border);vertical-align: top;border-bottom:1px solid var(--green) }
 .docs-content th { font-weight: 700; color: var(--dark); }
 .docs-content tr:last-child td { border-bottom: none; }
 
+/* The static site's base safety net for inline icon SVGs, scoped: every `<!--i:-->`
+ * icon ships only a viewBox, so without this each one balloons to the CSS default
+ * 300x150 (the ai-stance giant-icon bug). Element specificity (0,1,1) on purpose - a
+ * figure's own co-located <style> sits later in the document, so its sizing rules win
+ * every tie, exactly as the static page's more-specific contexts beat its global net. */
+.docs-content svg { width: 1em; height: 1em; flex: none; }
+
+/* A figure spans the whole content column (Andy, 2026-08-17): the co-located figure
+ * styles centre it with side margins, which on a wide comparison table just donates
+ * space to the gutters and forces more horizontal scrolling than needed. The scroll
+ * remains the escape hatch; the column is used first. */
+.docs-content .docs-figure { margin-inline: 0; }
+
 /* ── Images & screenshots ───────────────────────────────────────────────────── */
 .docs-content img { max-width: min(100%, 40em); height: auto; margin: 0 auto; display: block; }
+/* Inline video, mirroring build.ts's .doc-video sizing (the beatrice-warde giant-video
+ * bug: a bare <video> has no intrinsic constraint in the reader). */
+.docs-content video { max-width: 100%; height: auto; }
+.docs-content .doc-video { margin: 0 auto 1rem; max-width: min(420px, 100%); }
+.docs-content .doc-video video { width: 100%; display: block; border-radius: 10px; }
 /* App screenshots (docs/shots captures) read at full column width, framed like a window. */
 .docs-content img[src*="/info/shots/"] {
   max-width: 100%; min-width: 50%; border-radius: 1.2em;
@@ -208,7 +229,7 @@
  * static page's own scripts, which the reader does not run). The signed shot itself still
  * renders, and the app's /verify surface remains the credential check. Follow-up: port the
  * CSS-only :focus-within reveal, or link the puck to #/verify?src=. */
-.docs-content .shot-cred { display: none; }
+.docs-content .shot-cred, .docs-landing .shot-cred { display: none; }
 
 /* "Try it in the app" deep link under a screenshot — points at a real app route. */
 .docs-content .shot-try {
@@ -362,7 +383,7 @@
 .docs-sitemap-slot svg, .docs-sitemap-slot img { width: 1.05em; height: 1.05em; max-width: 1.25em; max-height: 1.25em; flex: none; }
 
 /* top section pathways (Quickstart · For Creators · For Builders · For Operators · Trust) */
-.docs-pathways { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; padding: 0 0 1rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 1.75rem; }
+.docs-pathways { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; padding: 0 0 1rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 1.75rem;margin-top:4em; }
 .docs-pathway { font: 600 .95rem/1.4 var(--font-brand, system-ui, sans-serif); color: hsl(var(--muted-foreground)); text-decoration: none; padding: .2rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
 .docs-pathway:hover { color: hsl(var(--foreground)); }
 .docs-pathway.active { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
@@ -385,6 +406,8 @@
 .docs-toc-list { list-style: none; margin: 0; padding: 0; border-left: 1px solid hsl(var(--border)); }
 .docs-toc-link { display: block; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .28rem .85rem; font-size: .85rem; line-height: 1.35; border-left: 2px solid transparent; margin-left: -1px; }
 .docs-toc-link.is-h3 { padding-left: 1.7rem; font-size: .82rem; }
+/* Scroll-spy state: the section under the reading line. */
+.docs-toc-link.active { color: hsl(var(--primary)); border-left-color: hsl(var(--primary)); font-weight: 600; }
 .docs-toc-link:hover { color: hsl(var(--foreground)); border-left-color: hsl(var(--muted-foreground) / .5); }
 
 /* footer sitemap (extracted .footer-sitemap) */
@@ -427,9 +450,25 @@
 
    The band CSS itself is NOT here: it is styles/parts/docs-landing.css, the one file
    docs/build.ts inlines and lib/docs-landing.ts injects wrapped in @scope. */
+/* Full-width reading (the topright toggle): the ENTIRE viewport for the big reference
+   tables - the rails fold away too, since with them the content track only gains a
+   sliver. One click back restores the rails. */
+.docs-reader--wide { max-width: none; padding: 0 1.75rem; }
+.docs-reader--wide .docs-reader-grid { grid-template-columns: minmax(0, 1fr); }
+.docs-reader--wide [data-sidebar],
+.docs-reader--wide [data-toc] { display: none; }
+
+.docs-reader--landing { max-width: none; padding: 0; }
 .docs-reader--landing .docs-reader-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .docs-reader--landing [data-sidebar],
 .docs-reader--landing [data-toc] { display: none; }
+/* Full-bleed pulls the pathways bar under the reader's FIXED chrome (back pill left,
+   home/theme cluster right), so in landing mode the bar keeps clear of both; on narrow
+   screens it drops below the pill instead, where there is no room beside it. */
+.docs-reader--landing .docs-pathways-slot { padding-inline: 8.5rem 8rem; }
+@media (max-width: 700px) {
+  .docs-reader--landing .docs-pathways-slot { padding-inline: 1rem; margin-top: 3.2rem; }
+}
 
 /* ── The three-zone formats table (#/docs/formats) ────────────────────────────
  * The formats page composes a rich table + a click-to-open detail dialog whose

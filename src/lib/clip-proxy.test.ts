@@ -688,6 +688,7 @@ const PROXY_CONSUMERS: Record<string, string> = {
   'bridge/db.ts': 'comments only: it declares the derived-media store the proxies live in',
   'views/timeline-panel.ts': 'comment only: cites the proxy rule to AVOID it — frame export decodes the ORIGINAL asset, never the proxy',
   'views/timeline-panel.test.ts': 'imports scrub-registry only to PROVE the frame export resolves the original asset id, not a proxy',
+  'lib/video-jobs.ts': 'comments only: cites the clip-proxy decode APPROACH — the pipeline decodes the ORIGINAL asset via mediabunny, never a proxy',
 };
 
 /** Every .ts under shells/web/src, repo-relative to it. */

@@ -14,7 +14,7 @@
  * rule at fixed bounds, and the destroy story. Per-view behavioural
  * differences that are real (not accidental drift) stay configurable:
  * whether there's a dedicated Fit button vs the readout doubling as reset,
- * where Fit sits, and whether the readout is itself a control (stage-nav
+ * where the Fit control lives, and whether the readout is itself a control (stage-nav
  * toggles Fit/Actual on it) or a plain live-region readout (multi-edit's
  * "N across" is announced, not clicked).
  *

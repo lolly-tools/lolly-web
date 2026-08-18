@@ -384,6 +384,12 @@ async function getDomToImage(): Promise<DomToImage> {
   return domToImageMore!;
 }
 
+// Test-only seam: inject a fake dom-to-image-more so a headless test can assert the
+// frame source's direct-canvas short-circuit (and its throw fall-through) WITHOUT
+// bundling the real library. Mirrors the `HOOK_BUDGET_MS`-style test hooks elsewhere;
+// never called by shipping code.
+export function __setDomToImageForTest(d: unknown): void { domToImageMore = (d as DomToImage | null) ?? null; }
+
 export function createExportAPI(host: WebHost) {
   _host = host;
   return {
@@ -8887,7 +8893,9 @@ function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
   };
 }
 
-async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
+// Exported for the co-located frame-source test (direct-canvas short-circuit +
+// hang-safe fall-through). Shipping callers reach it through the render functions below.
+export async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
   // Round to EVEN: H.264 (yuv420p) rejects odd dimensions, so an odd export size (e.g. a
@@ -9035,6 +9043,28 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
       scrubAnimations(node, t * durationMs);
       if (window.__lollyCaptureScreenshot)
         return captureViaExternalScreenshot(targetW, targetH, window.__lollyCaptureScreenshot);
+      // ── Direct-canvas capture (opt-in, per-node) ──────────────────────────────
+      // A raster tool that already holds the FINISHED frame on a working <canvas>
+      // (the filter tool's glitch shimmer) can register node.__lollyFrameCanvas(t,
+      // durationMs) to hand that canvas back directly - bypassing __lollyFrameDrive,
+      // the static-chrome probe, AND dom-to-image. It removes the per-frame cost this
+      // path exists to avoid: baking the frame to a ~1.7MB PNG and having dom-to-image
+      // re-decode that nested-base64 <svg><image> every frame (slow, and the source of
+      // an intermittent decode HANG). Treated as SYNCHRONOUS - a canvas render returning
+      // an HTMLCanvasElement, no new await - and fully guarded: ANY throw (or a nullish
+      // return) falls straight through to the dom-to-image path below, so a broken hook
+      // can never wedge the loop or drop the export. Normalised to the target pixel size
+      // exactly like dom-to-image's own output, so the two paths frame identically.
+      const frameCanvas = (node as unknown as { __lollyFrameCanvas?: (t: number, durationMs: number) => HTMLCanvasElement | null }).__lollyFrameCanvas;
+      if (typeof frameCanvas === 'function') {
+        try {
+          const cv = frameCanvas(t, durationMs);
+          if (cv) return normalizeCanvas(cv, targetW, targetH);
+          _host?.log?.('warn', 'frame capture: __lollyFrameCanvas returned nothing; falling back to full rasterise');
+        } catch (e) {
+          _host?.log?.('warn', `frame capture: __lollyFrameCanvas threw, falling back to full rasterise: ${(e as Error)?.message ?? e}`);
+        }
+      }
       framesTaken++;
       // Probe on the SECOND frame, never the first: renderIco takes exactly one
       // frame per size, where caching a chrome layer is pure overhead, and by the

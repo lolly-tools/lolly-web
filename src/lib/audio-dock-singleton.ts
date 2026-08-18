@@ -153,7 +153,9 @@ function ensureDock(): { composed: ComposedHost; controller: DockController; el:
     openSections: { music: false, atmosphere: false },
     placement,
     onClose: () => onCloseDock(),
-    onCollapse: (size) => { if (!neuroDemoActive()) setNeuroDockCollapsed(size === 'mini'); },
+    onCollapse: (size) => {
+      if (!neuroDemoActive() && !suppressCollapsePersist) setNeuroDockCollapsed(size === 'mini');
+    },
   });
   ensureStyles();
   el = controller.el;
@@ -204,11 +206,26 @@ export function unregisterMusicSource(): void {
   else controller.refresh();
 }
 
+/** Guards the neuro collapse pref against PROGRAMMATIC collapse writes: narration's
+ *  arrive-collapsed default below must never rewrite the music dock's remembered size. */
+let suppressCollapsePersist = false;
+
 /** Register (or replace) the NARRATION source and show the window. */
 export function registerNarrationSource(block: DockNarrationPlayer): void {
   const d = ensureDock();
+  const appearing = !isAudioDockVisible();
   d.composed.setNarration(block);
   d.controller.refresh();
+  // Narration arrives COLLAPSED (Andy, 2026-08-17): a docs page's player must not
+  // distract from the content, so a dock appearing FOR narration starts as the mini
+  // pill - expanding is one tap. A dock already on screen (music playing) keeps
+  // whatever state the user gave it. Not on phones: under 520px the app CSS hides
+  // the mini dock entirely (the neuro flow has its own chip there), which for
+  // narration-only would leave no way to reach the player.
+  if (appearing && !d.composed.hasMusic() && !window.matchMedia('(max-width: 520px)').matches) {
+    suppressCollapsePersist = true;
+    try { d.controller.setCollapse('mini'); } finally { suppressCollapsePersist = false; }
+  }
   showAudioDock();
 }
 

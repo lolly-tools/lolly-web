@@ -44,6 +44,7 @@ import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
+import { icon } from '../lib/icons.ts';
 import { enhanceDocsFormats } from '../lib/docs-formats.ts';
 import { ensureLandingStyles, adaptLandingLinks } from '../lib/docs-landing.ts';
 import {
@@ -114,6 +115,30 @@ export async function mountDocs(
     // single-column shell and the band CSS is parsed by the time the fragment lands.
     viewEl.querySelector('[data-reader]')?.classList.add('docs-reader--landing');
     ensureLandingStyles();
+  } else {
+    // Full-width reading toggle (Andy, 2026-08-17): the 52rem-based measure is right
+    // for prose and wrong for the big reference tables (threat-model, the credentials
+    // engineering matrix). Device-local for now - the same first home the gallery's
+    // hide-previews toggle had before it earned a profile field; migrate it the same
+    // way if it sticks. The landing gets no toggle: it is already full-bleed.
+    const WIDE_KEY = 'lolly-docs-wide';
+    const readerEl = viewEl.querySelector<HTMLElement>('[data-reader]');
+    const wideBtn = document.createElement('button');
+    wideBtn.type = 'button';
+    wideBtn.className = 'docs-top-btn';
+    wideBtn.setAttribute('aria-label', t('Use the full window width'));
+    wideBtn.innerHTML = icon('full-width');
+    const applyWide = (on: boolean): void => {
+      readerEl?.classList.toggle('docs-reader--wide', on);
+      wideBtn.setAttribute('aria-pressed', String(on));
+    };
+    applyWide(localStorage.getItem(WIDE_KEY) === '1');
+    wideBtn.addEventListener('click', () => {
+      const on = !readerEl?.classList.contains('docs-reader--wide');
+      applyWide(on);
+      try { localStorage.setItem(WIDE_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+    });
+    viewEl.querySelector('[data-topright]')?.prepend(wideBtn);
   }
 
   const contentEl = viewEl.querySelector<HTMLElement>('[data-content]')!;
@@ -240,6 +265,9 @@ export async function mountDocs(
     slot.hidden = false;
   };
   fillSlot('[data-pathways]', extractPathways(doc));
+  // The strip's prepended "Welcome" tab is the landing itself - active only there
+  // (the per-page .active marks ride across from the fetched nav for the rest).
+  if (isLanding) viewEl.querySelector('.docs-pathway-home')?.classList.add('active');
   fillSlot('[data-sidebar]', extractSidebar(doc));
   fillSlot('[data-sitemap]', extractSitemap(doc));
   // The landing gets no table of contents: its own sticky quicknav already jumps between
@@ -247,6 +275,7 @@ export async function mountDocs(
   // than headings of an article. Its pathways + sitemap slots fill as on any page; it
   // ships no `.docs-sidebar`, so that slot stays hidden on its own.
   const toc = isLanding ? null : buildToc(node);
+  let stopSpy: (() => void) | null = null;
   if (toc) {
     const tocSlot = viewEl.querySelector<HTMLElement>('[data-toc]');
     if (tocSlot) {
@@ -258,6 +287,31 @@ export async function mountDocs(
         if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0) return;
         if (scrollToHeading(a.dataset.tocTarget || '', 'smooth')) e.preventDefault();
       });
+      // Scroll-spy (Andy, 2026-08-17): the sticky rail alone just parks the list - the
+      // TOC should FOLLOW the reading position. The current section is the last heading
+      // above the reading line (120px under the top edge); cheap enough to run on the
+      // scroll event directly, and the listener dies with the view.
+      const links = new Map(
+        toc.headings.map((h) => [h.id, toc.el.querySelector<HTMLAnchorElement>(`a[data-toc-target="${CSS.escape(h.id)}"]`)]),
+      );
+      const spy = (): void => {
+        let current: HTMLElement | null = null;
+        for (const h of toc.headings) {
+          if (h.getBoundingClientRect().top <= 120) current = h;
+          else break;
+        }
+        links.forEach((a, id) => a?.classList.toggle('active', id === (current ?? toc.headings[0])?.id));
+      };
+      // The document is the real scroller (the view grows; see .docs-view in docs.css),
+      // but listen on the view as well so a future height-constrained layout keeps the
+      // spy without anyone remembering this line.
+      viewEl.addEventListener('scroll', spy, { passive: true });
+      window.addEventListener('scroll', spy, { passive: true });
+      stopSpy = () => {
+        viewEl.removeEventListener('scroll', spy);
+        window.removeEventListener('scroll', spy);
+      };
+      spy();
     }
   }
 
@@ -317,6 +371,7 @@ export async function mountDocs(
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     node.removeEventListener('click', onAnchorClick as EventListener);
+    stopSpy?.();
     // Order: detach the narration block from the shared window (the window stays if music
     // is still registered) before dropping the host (stops audio, removes the <audio> tap).
     unregisterNarrationSource();

@@ -58,6 +58,7 @@ import { installGlobalReveal } from './lib/reveal.ts';
 import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
 import { initOrg } from './org/index.ts';
 import { initSelectPreview } from './select-preview.ts';
+import { mountJobToast } from './lib/job-toast.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
 import { beginViewFade } from './view-fade.ts';
@@ -693,6 +694,12 @@ function trackVisualViewport(): void {
 async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
+
+  // The global async-job progress toast (plans/124 WP-F). Mounted once here, on
+  // document.body OUTSIDE main#view, so it survives every router view teardown -
+  // a video/retouch job keeps showing progress after the user leaves the catalog.
+  // Idempotent; owns nothing until startJob() is first called.
+  mountJobToast();
 
   // Installing the PWA re-arms the one-time offline nudge (views/offline-nudge.ts):
   // an install puts an icon on the device while precaching only the shell, so a

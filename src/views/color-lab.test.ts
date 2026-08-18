@@ -402,7 +402,7 @@ test('the page reads as one narrowing sequence, in order', async () => {
   const heads = [...view.querySelectorAll('.lab-step-h')].map(h => (h.textContent ?? '').trim());
   assert.equal(heads.length, 5, `five steps, got ${heads.length}`);
   assert.match(heads[0]!, /Set a colour/);
-  assert.match(heads[1]!, /Where it sits/);
+  assert.match(heads[1]!, /Plotted on a colour space/);
   assert.match(heads[2]!, /Every notation/);
   assert.match(heads[3]!, /Tones and blends/);
   assert.match(heads[4]!, /Displayable range and readability/);

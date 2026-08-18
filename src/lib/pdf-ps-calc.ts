@@ -14,7 +14,7 @@
  * fill, and a colour-heavy page - the Brand Studio colours tab is the reference
  * case - prints as a white ghost of itself.
  *
- * WHERE it sits: the SHELL, next to the rest of the PDF byte work. The pure engine
+ * WHERE this lives: the SHELL, next to the rest of the PDF byte work. The pure engine
  * receives pre-sampled colour, never a PostScript program (see pdf-shading.ts for
  * the classifier that does the sampling). This module itself is DOM-free and
  * dependency-free so it is directly unit-testable.

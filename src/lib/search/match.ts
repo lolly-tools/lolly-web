@@ -57,7 +57,7 @@ function matchQuality(text: string, token: string): 0 | 1 | 2 {
  *
  * AND semantics: every token must match at least one field, else 0. Each
  * matching token contributes the best available `weight` across the fields - 
- * doubled where it sits at a word boundary - and the item's score is the sum.
+ * doubled where it hits a word boundary - and the item's score is the sum.
  * An empty token list scores 0 (an empty query means "don't rank", not
  * "everything matches" - callers gate on query length before ranking).
  */

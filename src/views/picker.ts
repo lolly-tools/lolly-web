@@ -76,6 +76,7 @@ import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { Folder, FolderItem, FolderHost } from '../folders.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
+import type { VideoJobHost } from '../lib/video-jobs.ts';
 
 /** Every file kind the upload surfaces can ingest - the `accept` list for any
  *  affordance that feeds storeUserUpload (the picker's footer input, the catalog's
@@ -277,6 +278,12 @@ let upscaleEnabled = false;
 // one model is STAGED - models() is empty until a model's licence + weights are
 // verified, so the affordance stays hidden rather than opening a dead dialog.
 let matteEnabled = false;
+// True when a VIDEO asset could have its background removed on-device (plan 124 WP-G):
+// the browser can decode video (WebCodecs' VideoDecoder, mediabunny's floor) AND a matte
+// model is staged - the same gate the catalog detail modal uses. Read by the per-video
+// card affordance (vidMatteButton), which - like the two flags above - is a module-level
+// renderer that can't see render()'s closure, so the flag is module-level too.
+let videoMatteEnabled = false;
 
 /**
  * Clicking an image slot that already holds a live Lolly render doesn't jump
@@ -392,6 +399,13 @@ async function render(
   // the per-ref raster check lives in the module-level card renderers (upscaleButton).
   upscaleEnabled = host.upscale?.isAvailable() === true;
   matteEnabled = host.matte?.isAvailable() === true && (host.matte.models().length > 0);
+  // Streaming on-device VIDEO background removal (WP-G): needs only that the browser can
+  // decode video (WebCodecs). The shared dialog offers two methods - the on-device model
+  // (if one is staged) and the deterministic COLOUR KEY (no model at all) - so the
+  // affordance appears wherever a video can be decoded, not only where a model is staged.
+  // A video-only affordance, so it needs no slot-type gate (a video card only ever appears
+  // in a slot that offers video picks) - like matteButton relies on the ref being raster.
+  videoMatteEnabled = typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined';
 
   // A pasted https URL that is NOT a Lolly link can still become an image where the
   // shell can capture pages (extension installed / Tauri) - see showUrlFallback.
@@ -913,6 +927,35 @@ async function render(
       } catch (err) {
         host.log('error', 'Failed to remove background', { id, error: String(err) });
         announce(t('Couldn’t open background removal for this image.'), { assertive: true });
+      }
+      return;
+    }
+    // The VIDEO mirror of the [data-matte-id] handler (WP-G): background-remove THIS
+    // video on device via the shared video-job dialog. Unlike the still cut-out (which
+    // returns synchronously), a video job runs in the BACKGROUND - the dialog starts it
+    // and closes at once, and the saved transparent asset arrives later via onComplete,
+    // where it behaves like a normal pick (the same collect-toast / close routing).
+    const vcut = (e.target as HTMLElement).closest<HTMLElement>('[data-vidmatte-id]');
+    if (vcut) {
+      e.preventDefault();
+      const id = vcut.dataset.vidmatteId!;
+      const known = candidateById.get(id) ?? userAssets.find(a => a.id === id);
+      const sourceName = (known?.meta?.name as string | undefined) ?? id;
+      try {
+        const ref = await host.assets.get(id);
+        const ai = ref.meta?.aiGenerated;
+        const { openVideoJobDialog } = await import('./video-job-dialog.ts');
+        await openVideoJobDialog(host as unknown as VideoJobHost, {
+          op: 'matte', source: ref, sourceName,
+          ...(ai === 'full' || ai === 'partial' ? { aiGeneratedSource: ai } : {}),
+          onComplete: (made) => {
+            if (collect) { void collect.onAsset(made).then(collectToast); return; }
+            close(made);
+          },
+        });
+      } catch (err) {
+        host.log('error', 'Failed to remove background from video', { id, error: String(err) });
+        announce(t('Couldn’t open background removal for this video.'), { assertive: true });
       }
       return;
     }
@@ -1605,12 +1648,13 @@ async function render(
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
     const upBtn = upscaleButton(ref, name);
     const cutBtn = matteButton(ref, name);
+    const vidBtn = vidMatteButton(ref, name);
     const inner = `${thumb}
         <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
     // A raster folder image splits into wrapper + pick button (like a user card) so the
-    // Upscale / Remove-background siblings are valid HTML; everything else stays the
-    // single plain pick button.
-    if (!upBtn && !cutBtn) {
+    // Upscale / Remove-background siblings are valid HTML; a video image does the same
+    // for its Remove-background sibling. Everything else stays the single plain pick button.
+    if (!upBtn && !cutBtn && !vidBtn) {
       return `
       <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}" title="${escapeHtml(name)}">
         ${inner}
@@ -1624,6 +1668,7 @@ async function render(
         </button>
         ${upBtn}
         ${cutBtn}
+        ${vidBtn}
         ${formatBadge(ref)}
       </div>`;
   }
@@ -2430,6 +2475,17 @@ function matteButton(ref: AssetRef, name: string): string {
   return `<button type="button" class="asset-picker-card-matte" data-matte-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Remove background'))}" aria-label="${escapeHtml(tRaw('Remove background from {name}', { name }))}">${icon('scissors', { size: 14 })}</button>`;
 }
 
+// The VIDEO sibling of matteButton (WP-G): a hover/focus-revealed "Remove background"
+// on a VIDEO card that opens the shared video-job dialog (op 'matte') to make a
+// transparent alternative asset on-device. Same escaped idiom and it reuses the
+// .asset-picker-card-matte styling, so it adds no new raw-HTML sink and no new CSS.
+// Gated on videoMatteEnabled (video decode + a staged matte model); a placeholder /
+// dataless stub has no bytes to process, so it opts out.
+function vidMatteButton(ref: AssetRef, name: string): string {
+  if (!videoMatteEnabled || ref.type !== 'video' || ref.meta?._placeholder) return '';
+  return `<button type="button" class="asset-picker-card-matte" data-vidmatte-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Remove background'))}" aria-label="${escapeHtml(tRaw('Remove background from {name}', { name }))}">${icon('scissors', { size: 14 })}</button>`;
+}
+
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
@@ -2449,13 +2505,15 @@ function card(ref: AssetRef): string {
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   const upBtn = upscaleButton(ref, String(name));
   const cutBtn = matteButton(ref, String(name));
+  const vidBtn = vidMatteButton(ref, String(name));
   const inner = `${thumb}
       <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       <span class="asset-picker-id">${escapeHtml(ref.id)}</span>`;
   // A raster library card splits into wrapper + pick button (mirroring the user card)
-  // so the Upscale / Remove-background siblings are valid HTML; everything non-raster
-  // stays the exact single plain pick button it was before.
-  if (!upBtn && !cutBtn) {
+  // so the Upscale / Remove-background siblings are valid HTML; a video card does the
+  // same for its Remove-background sibling. Everything with no action stays the exact
+  // single plain pick button it was before.
+  if (!upBtn && !cutBtn && !vidBtn) {
     return `
     <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
       ${inner}
@@ -2470,6 +2528,7 @@ function card(ref: AssetRef): string {
       </button>
       ${upBtn}
       ${cutBtn}
+      ${vidBtn}
       ${formatBadge(ref)}
     </div>
   `;
@@ -2591,6 +2650,7 @@ function userCard(ref: AssetRef): string {
       <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(tRaw('Delete {name}', { name: String(name) }))}">×</button>
       ${upscaleButton(ref, String(name))}
       ${matteButton(ref, String(name))}
+      ${vidMatteButton(ref, String(name))}
       ${formatBadge(ref)}
     </div>
   `;

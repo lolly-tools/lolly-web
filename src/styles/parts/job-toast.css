@@ -1,0 +1,189 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/*
+ * Global job progress toast (lib/job-toast.ts) - the async-job foundation's
+ * only chrome (plans/124 section 9, WP-F). Body-level fixed, so router view
+ * teardown never reaches it; below modals (native <dialog> top-layer always
+ * wins) and the topbar dropdowns, above ordinary content.
+ *
+ * The bar is a CANDY STRIPE built from brand tokens, never colour literals (the
+ * box-colour rule): it re-themes with the active brand and stays visually tied
+ * to the brand-hued icon.svg mark. `--brand-primary`/`--brand-secondary` are set
+ * by brand-vars.ts only when the brand declares those slots, so every use falls
+ * back to the shell's own accent triples and always resolves.
+ *
+ * Chrome-only: every font size rides `calc(13px * var(--a11y-fs))` and every
+ * icon box the same multiplier, exactly like the rest of the shell chrome. The
+ * stripe drift is fully disabled under reduced motion (OS query AND the app
+ * pref attribute), matching prefersReducedMotion() in lib/a11y-prefs.ts.
+ */
+
+.job-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 9500;                 /* above content + the bottom snackbars (9000), below topbar dropdowns (99999+) and modals (top layer) */
+  width: min(360px, calc(100vw - 2rem));
+  color: hsl(var(--foreground));
+  font-family: inherit;
+  /* Two brand hues drive the stripe; declared once here so the pill mini-bar and
+     the per-row bars read as one component. */
+  --candy-a: var(--brand-primary, hsl(var(--primary)));
+  --candy-b: var(--brand-secondary, hsl(var(--accent)));
+}
+.job-toast[hidden] { display: none; }
+
+/* ── Collapsed pill ─────────────────────────────────────────────────────────
+   A container (visual pill) holding the expand button + optional count + ✕.
+   The ✕ is a sibling, never nested inside the expand button (no button-in-button). */
+.job-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  box-shadow: 0 8px 28px hsl(0 0% 0% / 0.24);
+}
+.job-pill:hover { border-color: hsl(var(--ring)); }
+.job-pill-main {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 0.3rem;
+  border: 0; background: none; color: inherit; font: inherit;
+  padding: 0; margin: 0; text-align: left; cursor: pointer;
+}
+.job-pill-title {
+  font-size: calc(12.5px * var(--a11y-fs));
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-pill-count {
+  flex: 0 0 auto;
+  min-width: calc(18px * var(--a11y-fs));
+  height: calc(18px * var(--a11y-fs));
+  padding: 0 0.3rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 700;
+  border-radius: 999px;
+  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+  background: var(--brand-primary, hsl(var(--primary)));
+}
+
+/* ── Candy-stripe bar (shared: pill mini-bar + per-row bars) ─────────────────*/
+.job-bar {
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: hsl(var(--muted));
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.6);
+}
+.job-pill .job-bar { height: 6px; }
+.job-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  /* Diagonal barber-pole tile: a 45deg two-hue stripe whose 28px tile repeats,
+     so animating background-position by exactly one tile drifts it seamlessly. */
+  background-image: linear-gradient(
+    45deg,
+    var(--candy-a) 25%, var(--candy-b) 25%, var(--candy-b) 50%,
+    var(--candy-a) 50%, var(--candy-a) 75%, var(--candy-b) 75%
+  );
+  background-size: 28px 28px;
+  transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: job-candy-drift 0.85s linear infinite;
+}
+/* Indeterminate (no known total): the stripe fills the whole track and just
+   drifts, reading as "working" without a false completion figure. */
+.job-bar--indef .job-bar-fill { width: 100% !important; }
+
+@keyframes job-candy-drift { to { background-position: 28px 0; } }
+
+/* Motion off - OS query AND the app pref, the two halves prefersReducedMotion()
+   ORs. The stripe stays (it is the brand mark), only the drift stops. */
+html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .job-bar-fill { animation: none; transition: none; }
+}
+
+/* ── Cancel ✕ (pill + per-row) ──────────────────────────────────────────────*/
+.job-x {
+  flex: 0 0 auto;
+  /* Icon box rides the chrome icon scale with the glyph it holds. */
+  width: calc(24px * var(--a11y-fs));
+  height: calc(24px * var(--a11y-fs));
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  font-size: calc(14px * var(--a11y-fs));
+  line-height: 1;
+}
+.job-x:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+
+/* ── Expanded panel ─────────────────────────────────────────────────────────*/
+.job-panel {
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.1);
+  background: hsl(var(--card));
+  box-shadow: 0 12px 40px hsl(0 0% 0% / 0.28);
+  overflow: hidden;
+}
+.job-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.55rem 0.5rem 0.55rem 0.85rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.job-panel-title { font-size: calc(13px * var(--a11y-fs)); font-weight: 700; }
+.job-list {
+  list-style: none; margin: 0; padding: 0.35rem 0;
+  max-height: 50vh; overflow-y: auto;
+}
+.job-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  padding: 0.45rem 0.85rem;
+}
+.job-row-title {
+  grid-column: 1;
+  font-size: calc(12.5px * var(--a11y-fs));
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-row .job-x { grid-column: 2; grid-row: 1 / -1; align-self: center; }
+.job-row-bar-wrap { grid-column: 1; }
+.job-row-meta {
+  grid-column: 1;
+  display: flex; align-items: baseline; gap: 0.4rem;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  line-height: 1.3;
+}
+.job-row-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-row-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
+/* Terminal-state word - done reads as the brand accent (a finished render is a
+   win, the --primary precedent from run-overlay's render-time pill), failed as
+   destructive, cancelled/queued as muted. Never a one-sided border. */
+.job-row-status { font-size: calc(11.5px * var(--a11y-fs)); font-weight: 700; }
+.job-row-status--done { color: var(--brand-primary, hsl(var(--primary))); }
+.job-row-status--failed { color: hsl(var(--destructive)); }
+.job-row-status--cancelled,
+.job-row-status--queued { color: hsl(var(--muted-foreground)); font-weight: 600; }
+
+.job-panel-note {
+  margin: 0;
+  padding: 0.4rem 0.85rem 0.6rem;
+  font-size: calc(10.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  border-top: 1px solid hsl(var(--border));
+}

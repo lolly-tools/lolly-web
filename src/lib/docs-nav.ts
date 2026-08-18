@@ -109,6 +109,14 @@ export function extractPathways(doc: Document): HTMLElement | null {
   const bar = document.createElement('nav');
   bar.className = 'docs-pathways';
   bar.setAttribute('aria-label', t('Documentation sections'));
+  // The front door itself, ahead of the pathway hubs (Andy, 2026-08-17): the strip
+  // used to start at Quickstart with no way back to the docs home the footer "What?"
+  // pill lands on. views/docs.ts marks it active when the reader IS on the landing.
+  const home = document.createElement('a');
+  home.className = 'docs-pathway docs-pathway-home';
+  home.textContent = t('Welcome');
+  home.setAttribute('href', '#/docs/index');
+  bar.appendChild(home);
   for (const src of anchors) {
     const a = document.createElement('a');
     a.className = 'docs-pathway';
