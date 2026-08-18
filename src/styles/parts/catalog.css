@@ -72,10 +72,16 @@
   .cat-toolbar {
     top: calc(52px + env(safe-area-inset-top, 0px));
     gap: 7px; padding: 6px 8px;
-    max-width: calc(100vw - 20px);
+    /* Bounded by the .catalog content box (max-width:100% relative to it), never 100vw:
+       the base rule already caps at 100%, and pinning to the container is what keeps the
+       centred pill from ever poking past a phone edge. */
+    max-width: 100%;
     flex-wrap: wrap; justify-content: center;
   }
   .cat-toolbar .cat-count { display: none; }
+  /* The segmented type filter stays whole (one flex item the toolbar wraps around), but is
+     allowed to wrap its own options as a last-resort overflow guard on the narrowest phones. */
+  .cat-typefilter { flex-wrap: wrap; justify-content: center; max-width: 100%; }
   /* The type filters collapse to icon-only too on mobile (they keep their labels on desktop;
      the .cat-showhidden buttons are already icon-only everywhere). aria-label + title keep
      them named for assistive tech and long-press tooltips. */
@@ -331,7 +337,17 @@
 /* Reserve room so the bar never sits over the last row (mobile stacks the footer + bar). */
 .catalog.has-selection { padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
 @media (max-width: 640px) {
-  .cat-bulkbar { flex-wrap: wrap; justify-content: center; width: min(92vw, 420px); border-radius: var(--radius); }
+  .cat-bulkbar { flex-wrap: wrap; justify-content: center; gap: 10px; width: min(92vw, 420px); max-width: calc(100vw - 16px); border-radius: var(--radius); }
+  /* Icon-only actions on a phone: up to seven verbs (Favourite, Hide, Replace, Rename,
+     Duplicate, Download, Delete) would overflow the pill with their text. These buttons
+     carry NO aria-label - their accessible name IS the label span (bulk-bar.ts) - so the
+     label is VISUALLY-HIDDEN (kept for assistive tech), never display:none. Icons stay. */
+  .cat-bulkbar-actions { flex-wrap: wrap; justify-content: center; gap: 4px; }
+  .cat-bulkbar-actions .btn { gap: 0; padding-left: 10px; padding-right: 10px; }
+  .cat-bulkbar-actions .btn > span {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
 }
 
 .cat-empty {
@@ -709,6 +725,11 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-zoom-hud {
   display: inline-flex; align-items: center; gap: 2px;
   margin-inline: auto;
+  /* Solid dark pill so the white controls stay readable over ANY art (they used to vanish
+     over a pale image). */
+  background: hsl(0 0% 0% / .66);
+  border-radius: 999px;
+  padding: 2px 4px;
 }
 .cat-zoom-hud:empty { display: none; }
 .cat-zoom-btn {
@@ -720,6 +741,10 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-zoom-btn:hover { background: #ffffff26; }
 .cat-zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .cat-zoom-pct { min-width: 46px; font-variant-numeric: tabular-nums; color: white; background: transparent; appearance: none;    border: 0;}
+/* Hairline before the interpolation toggle + its "pixel-accurate is on" highlight. */
+.cat-zoom-sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: #ffffff40; }
+.cat-zoom-interp.is-active { background: #ffffff33; color: #fff; }
+.cat-zoom-interp.is-active:hover { background: #ffffff4d; }
 /* Play/pause overlay for the details-modal Lottie player. Bottom-left of the preview, clear of
    the centred zoom HUD and the vertically-centred prev/next chevrons. z-index above the stage so
    the stage's wheel/drag surface doesn't swallow the click. */

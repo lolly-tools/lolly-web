@@ -114,6 +114,13 @@
           if (ax.hidePreviews) document.documentElement.dataset.a11yPreviews = 'hidden';
         }
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      // Performance UI (feature-flags.ts perf-ui, its FOUC mirror): reflect the flag from
+      // the feature-flag mirror before paint so a lower-powered device never flashes the
+      // full-effect chrome for a beat. Absent/false ⇒ no attribute ⇒ full chrome (default).
+      try {
+        var ff = JSON.parse(localStorage.getItem('lolly:featureFlags') || 'null');
+        if (ff && ff['perf-ui']) document.documentElement.setAttribute('data-perf-ui', '');
+      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
       // Apply the saved language's <html lang> before paint (glyph fallback/Han
       // unification depends on it) — the FOUC-mirror half of i18n.ts's canonical
       // profile.lang store. A hand-inlined alias map + LANG_META.htmlLang mirror

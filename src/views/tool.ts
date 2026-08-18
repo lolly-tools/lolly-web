@@ -292,6 +292,10 @@ export interface RunExportOpts {
   imprint?: boolean;
   /** Opt-in durable Content Credential (neural TrustMark mark) for raster exports. */
   durable?: boolean;
+  /** EMF text mode (the export panel's "Outline fonts" chip; same values as the
+   *  CLI --text flag). EMF defaults to live GDI text records; 'outline' forces
+   *  text-as-paths. Other formats ignore it. */
+  text?: 'outline' | 'live';
   durableId?: number;
   /** Opt-in HDR (Rec.2100 PQ) raster export from ?hdr=1. Raster (png/jpeg/avif/tiff) only. */
   hdr?: boolean;

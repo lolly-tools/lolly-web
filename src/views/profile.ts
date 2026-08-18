@@ -45,7 +45,8 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, isFlagOn, flagHidden, setFlagMirror, applyPerfUi } from '../feature-flags.ts';
+import { mountPerfHud, unmountPerfHud } from '../lib/perf-hud.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { stopAtmosphere } from '../lib/atmosphere.ts';
@@ -418,7 +419,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <li class="feature-flag-divider" aria-hidden="true"></li>
             ${flagRow(NEUROSPICY_FLAG)}
             ${flagRow(JELLY_FLAG)}
-            ${flagRow(PRO_FLAG)}
+            ${flagRow(PERFORMANCE_UI_FLAG)}
+            ${flagRow(PERF_HUD_FLAG)}
             ${flagRow(STRIP_UPLOAD_META_FLAG)}
             ${flagRow(PREFLIGHT_FLAG)}
             ${flagRow(PRIVATE_COLLAB_FLAG)}`;
@@ -821,6 +823,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // Keep the synchronous mirror in step so the Neurospicy player (rendered in
     // popovers, outside the profile-aware views) reflects the change on next render.
     setFlagMirror(flagId, input.checked);
+    // Performance UI applies on the spot: reflect it onto <html> so the gated stylesheet
+    // switches immediately - no reload, and off restores the full chrome byte-for-byte.
+    if (flagId === PERFORMANCE_UI_FLAG.id) applyPerfUi(input.checked);
+    // Performance HUD mounts/unmounts on the spot (the mirror above is already set, so
+    // mountPerfHud's own perfHudOn() gate passes when turning on). Off removes the element
+    // and stops its rAF loop, leaving no residue.
+    if (flagId === PERF_HUD_FLAG.id) { if (input.checked) mountPerfHud(); else unmountPerfHud(); }
     // Toggling the Neurospicy feature: silence any loop when turning it off (the UI is
     // gone, so leave no invisible audio), and show/hide the bottom-right dock to match.
     if (flagId === NEUROSPICY_FLAG.id) {

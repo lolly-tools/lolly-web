@@ -28,6 +28,7 @@
 import { subscribe, jobsSnapshot, cancelJob, type Job, type JobStatus } from './jobs.ts';
 import { t, tRaw } from '../i18n.ts';
 import { isTauriShell } from './instance-choice.ts';
+import { mountPerfHud } from './perf-hud.ts';
 
 let root: HTMLElement | null = null;
 let expanded = false;
@@ -62,6 +63,10 @@ export function mountJobToast(): void {
   document.addEventListener('keydown', onKeydown);
   subscribe(render);
   render(jobsSnapshot());
+  // Same body-level floating cluster: the opt-in Performance HUD (lib/perf-hud.ts)
+  // mounts here for a returning power user. It reads its own flag and no-ops when
+  // off, so with the flag off this call renders nothing and starts no rAF loop.
+  mountPerfHud();
 }
 
 function onKeydown(e: KeyboardEvent): void {

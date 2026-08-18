@@ -44,7 +44,6 @@
 import { footerNav, gallerySearchBox } from './footer-nav.ts';
 import { t } from '../i18n.ts';
 import { jellyActive } from '../lib/jelly.ts';
-import { flagEnabledSync, PRO_FLAG } from '../feature-flags.ts';
 import { SEARCH_DEBOUNCE_MS } from '../lib/search/match.ts';
 
 export interface SearchBarClaim {
@@ -92,7 +91,6 @@ let spotlightListboxId = '';
 // Rendered-state fingerprints - a re-render happens only when one of these
 // changes, never while a view is mounted (see the module invariant above).
 let renderedJelly = false;
-let renderedPro = false;
 let renderedPlaceholder = '';
 let debounce: ReturnType<typeof setTimeout> | undefined;
 
@@ -132,11 +130,10 @@ function applyCombobox(): void {
 function render(): void {
   const { placeholder, ariaLabel } = labels();
   renderedJelly = jellyActive();
-  renderedPro = flagEnabledSync(PRO_FLAG.id);
   renderedPlaceholder = placeholder;
   const tpl = document.createElement('template');
   tpl.innerHTML = footerNav({
-    proEnabled: renderedPro,
+    proEnabled: true,   // Batch/Pro available to everyone now (flag retired)
     searchHtml: gallerySearchBox({
       placeholder, ariaLabel, value: currentClaim?.value ?? '',
       // Advertise ⌃␣ ONLY - ⌘Space stays bound but silent (plans/99 section 2f, locked).
@@ -242,7 +239,7 @@ export function applySearchBarRoute(nextMode: FooterMode, nextRouteName: string)
   }
   spotlightHook?.onRouteChanged(nextRouteName, nextMode);
   if (!footerEl) return;
-  if (jellyActive() !== renderedJelly || flagEnabledSync(PRO_FLAG.id) !== renderedPro) render();
+  if (jellyActive() !== renderedJelly) render();
   footerEl.hidden = mode !== 'search';
   viewEl()?.classList.toggle('has-search-footer', mode === 'search');
 }

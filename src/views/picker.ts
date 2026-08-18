@@ -2640,7 +2640,9 @@ function userCard(ref: AssetRef): string {
       ? videoThumb(ref.url, 'asset-picker-thumb')
       : ref.type === 'audio'
         ? audioThumb(ref, 'asset-picker-thumb')
-        : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
+        : ref.type === 'text' || ref.type === 'data'
+          ? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">${ref.type === 'text' ? '¶' : '▦'}</span>`
+          : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   return `
     <div class="asset-picker-card asset-picker-card-user">
       <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}">
@@ -3148,13 +3150,23 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   const isData = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio
     && /\.(xlsx|csv|tsv)$/i.test(file.name);
 
+  // A plain-TEXT document (.txt/.md) - stored VERBATIM as a type:'text' asset so a
+  // poem, note or prose file lives in the catalogue with its REAL extension, can be
+  // read/analysed (the verify view's text-signal analysis, OCR is not needed - the
+  // bytes ARE the text) or dropped into a text input. Without this it fell through to
+  // the raster branch and became a dimensionless "BIN" image (extFromMime returns
+  // 'bin' for text/plain and empty MIMEs). .json stays on the Lottie path; .csv/.tsv
+  // stay data. Detected after every media + data test so a real one always wins.
+  const isText = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio && !isData
+    && (/\.(txt|md|markdown|text)$/i.test(file.name) || /^text\/(plain|markdown)$/i.test(file.type));
+
   // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video - 
   // both from the HEADER BYTES, since an animated raster shares its MIME with the
   // still form and an OS can hand over a blank/wrong type or extension. The magic
   // bytes are the source of truth (that is the whole reason to byte-sniff); MIME/name
   // only widen which files we bother to read. (Audio is verbatim - nothing to sniff.)
   let animatedKind: 'gif' | 'apng' | 'webp' | null = null;
-  if (!isLottie && !isVector && !isAudio && !isMidi && !isModule && !isData) {
+  if (!isLottie && !isVector && !isAudio && !isMidi && !isModule && !isData && !isText) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
     // Byte-level video backstop: a real mp4/webm handed over with a wrong extension
     // AND a blank/non-video MIME would otherwise fall to downscaleRaster and be
@@ -3282,6 +3294,13 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // From your library" source reads back through readXlsx/parseDataRows. No dimensions.
     assertVerbatimSize(file, MAX_DATA_BYTES, t('data file'));
     format = /\.xlsx$/i.test(file.name) ? 'xlsx' : /\.tsv$/i.test(file.name) ? 'tsv' : 'csv';
+  } else if (isText) {
+    // Verbatim: a text document is kept byte-for-byte. Format is the REAL extension so
+    // the badge reads TXT/MD and renameExt keeps the right suffix - never the 'bin'
+    // the raster fall-through used to stamp. No dimensions (text has none).
+    assertVerbatimSize(file, MAX_DATA_BYTES, t('text file'));
+    const ext = file.name.toLowerCase().match(/\.(txt|md|markdown|text)$/)?.[1];
+    format = ext === 'markdown' ? 'md' : ext === 'text' ? 'txt' : (ext ?? 'txt');
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' - it
@@ -3431,7 +3450,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   const record: UserAssetRecordInput = {
     id,
-    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : isData ? 'data' : 'raster',
+    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : isData ? 'data' : isText ? 'text' : 'raster',
     format,
     blob,
     width,

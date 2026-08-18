@@ -21,7 +21,7 @@ import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
 import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/match.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { hiddenCategories, flagEnabled, PRO_FLAG, isFlagOnSync, PRIVATE_COLLAB_FLAG } from '../feature-flags.ts';
+import { hiddenCategories, isFlagOnSync, PRIVATE_COLLAB_FLAG, perfUiOn } from '../feature-flags.ts';
 import { getCollabOpener, openCollabLaunch } from '../lib/collab-launch.ts';
 import { syncCatalog, prefetchAssetsById, defaultHiddenToolIds } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
@@ -509,7 +509,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // the hidden set must name that key too or they'd leak into the only-view.
     ? new Set<string | undefined>([...new Set(index.tools.map(t => t.category ?? 'other'))].filter(c => c !== opts.only))
     : hiddenCategories(profile).add('utility');
-  const proEnabled = flagEnabled(profile, PRO_FLAG.id);
+  const proEnabled = true;   // Batch/Pro is available to everyone now (flag retired)
 
   // The user's starred tools - held in memory for this mount, persisted to the profile
   // on every toggle. Read here (before the featured row) because a favourite is also
@@ -677,7 +677,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // mis-scaled or blank. Cover Flow also has to keep its rAF loop running to lay the
   // fan out (see featured-row.ts, `if (coverflow || !reduced) startRaf()`), so it can
   // never be fully still. The filmstrip is both vector-expressible and static.
-  if (captureNeutralPinned()) featuredView = 'gallery';
+  // perf-ui forces the flat filmstrip too (reusing the capture path): Cover Flow's 3-D fan
+  // keeps a rAF loop running just to lay itself out, so it can never be still - the whole
+  // point of the perf mode. Off by default ⇒ byte-identical.
+  if (captureNeutralPinned() || perfUiOn()) featuredView = 'gallery';
 
   // Utilities live in the grid like every other category now - their own "Utilities"
   // filter pill, always sorted LAST (categoryRank → Infinity). The old bottom carousel
@@ -1168,6 +1171,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!tool) return;
     const fmt = displayFormatOf(tool.formats);
     if (!fmt) return;
+    // perf-ui: skip the live grid-tile preview render (renderFeaturedVariant / renderFeaturedPages
+    // rasterise on the main thread) - settle the tile on its static icon instead. Adding has-art
+    // stops the waiting tracer so it reads as done, not stuck. Off by default ⇒ byte-identical.
+    if (perfUiOn()) { gcar.classList.add('has-art'); return; }
     if (gcar.dataset.paged === '1') { await hydratePaged(gcar, toolId!, tool); return; }
     const looks = resolveExamples(tool);
     for (const slide of gcar.querySelectorAll<HTMLElement>('.gcar-slide--ex')) {

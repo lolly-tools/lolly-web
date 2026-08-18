@@ -228,6 +228,13 @@ export interface ExportOpts {
   repeat?: number;
   dither?: boolean;
   convertPaths?: boolean;
+  /** EMF text mode (same name/values as the CLI's --text flag). EMF defaults to
+   *  'live' - real GDI font + string records, editable in Office and Google
+   *  Drawings, with per-run outline fallback for anything GDI text can't express.
+   *  'outline' forces the old always-text-as-paths behaviour (the export panel's
+   *  "Outline fonts" chip). Other formats ignore it: SVG has convertPaths, and
+   *  WMF/EPS/DXF stay always-outlined. */
+  text?: 'outline' | 'live';
   /** Vector export escape-hatch: when a node uses CSS the SVG/PDF walker can't express,
    *  embed it as a raster instead of dropping it. On by default; set false to A/B the
    *  pure-vector output (used by the byte-identical regression test). */
@@ -1954,10 +1961,14 @@ async function renderSvgz(node: Element, opts: ExportOpts = {}): Promise<Blob> {
 }
 
 async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
+  // Live text records are the default (editable in Office / Google Drawings);
+  // opts.text === 'outline' (the "Outline fonts" chip) forces text-as-paths.
+  const outline = opts.text === 'outline';
   let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
   if (!svgEl) {
-    // HTML-layout tool with no inline <svg>: synthesise an outlined SVG first.
-    const svgBlob = await renderSvgFromHtml(node, { ...opts, convertPaths: true, noBoxShadow: true });
+    // HTML-layout tool with no inline <svg>: synthesise an SVG first - outlined,
+    // or with positioned <text> runs that the live walk below keeps as records.
+    const svgBlob = await renderSvgFromHtml(node, { ...opts, convertPaths: outline, noBoxShadow: true });
     const xml = await svgBlob.text();
     svgEl = new DOMParser().parseFromString(xml, 'image/svg+xml').documentElement;
   }
@@ -1965,9 +1976,13 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
     host: _host,
     getComputedStyle: (el: Element) => window.getComputedStyle(el),
     background: opts.background,
+    textMode: outline ? 'outline' : 'live',
   });
   const bytes = emitEmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
-  return new Blob([bytes as BlobPart], { type: 'image/emf' });
+  // application/x-msmetafile, not the RFC 7903 image/emf: Google Drive only
+  // routes a metafile into Google Drawings (and from there Slides) under the
+  // legacy type - image/emf uploads sit in Drive as an unopenable blob.
+  return new Blob([bytes as BlobPart], { type: 'application/x-msmetafile' });
 }
 
 // WMF is the 16-bit ancestor of EMF - a sixth sink on the exact same outlined-SVG →
@@ -1988,7 +2003,9 @@ async function renderWmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
     label: 'WMF',
   });
   const bytes = emitWmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
-  return new Blob([bytes as BlobPart], { type: 'image/wmf' });
+  // Same legacy metafile type as EMF (see renderEmf) - Google Drive's Drawings
+  // import matches application/x-msmetafile for WMF too.
+  return new Blob([bytes as BlobPart], { type: 'application/x-msmetafile' });
 }
 
 // EPS is a fourth sink on the SVG vector pipeline (alongside SVG, PDF, and EMF):

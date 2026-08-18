@@ -431,12 +431,28 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const s = parseFloat(elS?.getAttribute('data-audio-start') ?? '');
     return Number.isFinite(s) && s > 0 ? s : 0;
   };
+  // ── Keyframe animations (window.__lollyAnim) ───────────────────────────────
+  // A tool that animates a single stage (not a whole timeline) publishes its loop
+  // on window.__lollyAnim {active, loopMs}, e.g. D3 Chart Studio's "Animate by
+  // column" charts. The exported clip should default to exactly one loop, so the
+  // export bar seeds Duration from loopMs and keeps following it (until the user
+  // types their own value), the same rule sequences use. This is deliberately NOT
+  // a [data-sequence] stage: those route motion export through the compositor,
+  // whereas an animated tool renders its own frames via __lollyFrameRender.
+  const animDurationS = (): number | null => {
+    const a = (window as unknown as { __lollyAnim?: { active?: boolean; loopMs?: number } }).__lollyAnim;
+    if (!a || a.active === false) return null;
+    const ms = Number(a.loopMs);
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
+  };
   const seqInitialDuration = seqDurationS();
-  const defaultDuration = seqInitialDuration ?? videoDefaults.duration ?? 5;
-  // A sequence can legitimately run far past the 60s the recording field allows for
-  // ordinary "record the animation for a while" tools, so it takes the timeline's own
-  // ceiling (1 hour). Non-sequence tools keep the existing 60s cap.
-  const durationMax = seqInitialDuration != null ? MAX_TIME_S : 60;
+  const animInitialDuration = seqInitialDuration != null ? null : animDurationS();
+  const defaultDuration = seqInitialDuration ?? animInitialDuration ?? videoDefaults.duration ?? 5;
+  // A sequence (or a long animation loop) can legitimately run far past the 60s the
+  // recording field allows for ordinary "record the animation for a while" tools, so
+  // it takes the timeline's own ceiling (1 hour). Non-timed tools keep the 60s cap.
+  const durationMax = (seqInitialDuration != null || animInitialDuration != null) ? MAX_TIME_S : 60;
 
   // Directional glyphs that live inside the dimension inputs: ↔ marks width,
   // ↕ marks height, so the two fields read as "wide × tall" without labels.
@@ -894,8 +910,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <input type="checkbox" class="field-check" data-action="full-page" ${exportDefaults.nostage ? 'checked' : ''}>
           Full page
         </label>` : '';
-  const settingsRow = (optionChips || videoChip || htmlChip)
-    ? `<div class="export-settings">${optionChips}${htmlChip}${videoChip}</div>`
+  // Outline-fonts chip - EMF only. EMF keeps text LIVE by default (real GDI text
+  // records, editable in Office / Google Drawings); this forces the old
+  // text-as-paths output for when exact glyphs matter more than editability.
+  const hasEmf  = formats.includes('emf');
+  const emfChip = hasEmf ? `
+        <label class="export-option" data-emf-only style="display:${initialFmt === 'emf' ? 'flex' : 'none'}"
+               title="${escape(t('Convert text to vector outlines so it looks identical everywhere. Off, text stays editable in Office and Google Slides but uses whatever fonts that device has.'))}">
+          <input type="checkbox" class="field-check" data-action="emf-outline">
+          ${t('Outline fonts')}
+        </label>` : '';
+  const settingsRow = (optionChips || videoChip || htmlChip || emfChip)
+    ? `<div class="export-settings">${optionChips}${htmlChip}${emfChip}${videoChip}</div>`
     : '';
 
   // Tier 4 - actions. Copy · Save · Share share one equal-width row; Download is
@@ -1040,14 +1066,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   function syncSequenceUi(): void {
     const isSeq = !!seqStageEl();
     const secs  = seqDurationS();
+    // An animated tool (window.__lollyAnim) seeds Duration from its loop when this
+    // isn't a sequence; the sequence timeline wins if a tool were somehow both.
+    const animSecs = isSeq ? null : animDurationS();
+    const derived  = secs ?? animSecs;
+    const timed    = isSeq || animSecs != null;
     if (durationEl) {
-      // A timeline may legitimately outrun the 60s recording cap - take the
-      // timeline's own ceiling while this is a sequence, restore 60s if it stops
-      // being one (every clip deleted).
-      const max = isSeq ? String(MAX_TIME_S) : '60';
+      // A timeline (or a long animation loop) may legitimately outrun the 60s
+      // recording cap - take the 1-hour ceiling while it's timed, restore 60s if it
+      // stops being one (every clip deleted, or the animation cleared).
+      const max = timed ? String(MAX_TIME_S) : '60';
       if (durationEl.max !== max) durationEl.max = max;
-      if (secs != null && !durationUserSet) {
-        const next = String(secs);
+      if (derived != null && !durationUserSet) {
+        const next = String(derived);
         if (durationEl.value !== next) durationEl.value = next;
       }
     }
@@ -1343,6 +1374,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       el.querySelectorAll<HTMLElement>('[data-seq-still-only]').forEach(c => { c.style.display = isStillFmt(fmt) ? 'flex' : 'none'; });
       if (!isVideoFmt(fmt)) stopAudioPreview();   // the audio card is hidden - don't keep a preview playing under it
       el.querySelectorAll<HTMLElement>('[data-html-only]').forEach(c => { c.style.display = fmt === 'html' ? 'flex' : 'none'; });
+      el.querySelectorAll<HTMLElement>('[data-emf-only]').forEach(c => { c.style.display = fmt === 'emf' ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach(c => { c.style.display = isPrintFmt(fmt) ? 'flex' : 'none'; });
       syncBarsDefault(fmt);
@@ -2617,6 +2649,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...audioOpt,
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
+        // EMF text mode: live GDI text records by default; the "Outline fonts"
+        // chip forces the old text-as-paths output (same values as CLI --text).
+        ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
         ...(isPrintFmt(fmt) ? { ...printOpts(), barStyle: SEPARATING_FORMATS.has(fmt) ? 'cmyk-verify' as const : 'rgb-swatches' as const } : {}),
         // The brand palette drives the colour bar for EVERY print format now, not just
         // CMYK: the CMYK paths ALSO do exact brand-swatch matching against it (see

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The Places spotlight provider (plans/99 section 2b): label + keyword matching with
- * diacritic folding, and the Batch-mode entry gated on the Pro flag PER SEARCH
- * CALL through the flag mirror (feature-flags.ts flagEnabledSync reads the
- * 'lolly:featureFlags' localStorage mirror, defaulting ON when unset).
+ * diacritic folding, and the Batch-mode entry that is always present now (Batch/Pro is
+ * available to everyone; the pro-batch flag was retired).
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test shells/web/src/lib/search/providers/places.test.ts
@@ -50,15 +49,12 @@ test('a label hit (w3) outranks a keyword-only hit (w1)', async () => {
   assert.equal(hits[0]?.href, '#/start');
 });
 
-test('Batch mode rides the Pro flag, evaluated per call (not at module load)', async () => {
-  // Mirror unset → flagEnabledSync defaults ON → Batch mode present.
+test('Batch mode is always in the registry (available to everyone; pro-batch flag retired)', async () => {
+  // No flag gate any more - Batch mode is present regardless of the mirror.
   localStorage.removeItem(FLAG_MIRROR_KEY);
   assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/pro');
-  // Flag off in the mirror → gone, on the SAME provider instance.
+  // A stale 'pro-batch' entry (from before the flag was retired) no longer hides it.
   localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify({ 'pro-batch': false }));
-  assert.equal((await provider.search(tokenize('batch'), 5)).length, 0);
-  // Back on → back in the registry.
-  localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify({ 'pro-batch': true }));
   assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/pro');
   localStorage.removeItem(FLAG_MIRROR_KEY);
 });

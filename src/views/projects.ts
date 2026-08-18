@@ -35,6 +35,7 @@ import {
 import type { PickerHost } from './picker.ts';   // type-only (erased); the value is lazy-imported in openAddPicker
 import { wireTileSelect } from '../lib/tile-select.ts';
 import { wireTileContextMenu, menuItemHtml } from '../lib/context-menu.ts';
+import { loadProjectFavourites, saveProjectFavourites } from '../lib/project-favourites.ts';
 import { bulkBarHtml as buildBulkBar, syncBulkBar as syncSharedBulkBar, wireEscapeClearsSelection } from '../lib/bulk-bar.ts';
 import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import { playProjectsAah, cancelArrivalAah } from '../lib/sfx.ts';
@@ -57,7 +58,6 @@ import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.t
 import { openShareDialog } from '../components/share-dialog.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { openFolderOverlay } from '../folder-overlay.ts';
-import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { serializeUrlState } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
@@ -165,6 +165,11 @@ const FILTER_ICON = icon('filterLines');
 // Context-menu glyphs (lucide house style). None of these existed in the codebase.
 const OPEN_ICON = icon('externalLink', { strokeWidth: 1.9 });
 const EDIT_ICON = icon('pen', { strokeWidth: 1.9 });
+// lucide "copy" - duplicate a saved session into a fresh, independent copy.
+const DUPLICATE_ICON = icon('duplicate', { strokeWidth: 1.9 });
+// Star - favourite / unfavourite. Filled when the item is already a favourite.
+const STAR_ICON = icon('star', { strokeWidth: 1.9 });
+const STAR_FILLED_ICON = icon('star', { filled: true });
 const SHEET_ICON = icon('grid', { strokeWidth: 1.9 });
 const MOVE_ICON = icon('move', { strokeWidth: 1.9 });
 const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
@@ -223,6 +228,8 @@ export async function mountProjects(
   // render() wipes viewEl.innerHTML - the selection is re-emitted from this Map each
   // render, and toggles update just the affected tile + the bulk bar in place.
   const selected = new Map<string, SelectKind>();
+  // Starred project refs (folders / sessions / images), loaded from the profile in reload().
+  let favourites = new Set<string>();
   let viewMode: ViewMode = 'preview';  // 'preview' (tile grid) | 'list'
   let sortBy: SortBy = 'modified';   // display preference - see the SortBy type note
   // The results-mode query (trimmed). Non-empty ONLY via the ?q= URL param - the
@@ -273,6 +280,7 @@ export async function mountProjects(
       (host as ProjectsHost).state.sizes().catch(() => ({}) as Record<string, number>),
       host.profile.get().catch(() => null),
     ]);
+    favourites = loadProjectFavourites(profile);
     headshotUrl = profile?.headshot?.id
       ? (await host.assets.get(profile.headshot.id).catch(() => null))?.url || ''
       : '';
@@ -498,6 +506,7 @@ export async function mountProjects(
       ? createTile('team', TEAM_ICON, t('Team projects'), t('Shared with you on this instance'))
       : '';
     return shell(t('Projects'), 'projects', `
+      ${favourites.size ? `<div class="projects-featured" data-fav-strip></div>` : ''}
       ${invite}
       <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
         ${folderTiles}${looseTiles}${createFolder}${createTool}${teamTile}
@@ -792,6 +801,8 @@ export async function mountProjects(
       { id: 'render', icon: RENDER_ICON, label: () => t('Render selection'), extraClass: 'projects-render projects-bulk-render' },
       { id: 'edit', icon: EDIT_ICON, label: () => t('Edit together'), title: () => t('Open the selected sessions side by side with one combined sidebar'), hidden: () => !editableSelection() },
       { id: 'sheet', icon: SHEET_ICON, label: () => t('Edit as sheet'), title: () => t('Open the whole selection as rows in the batch grid — no size limit'), hidden: () => !sheetableSelection() },
+      { id: 'duplicate', icon: DUPLICATE_ICON, label: () => t('Duplicate'), title: () => t('Copy each selected creation beside the original'), hidden: () => ![...selected.values()].includes('session') },
+      { id: 'favourite', icon: STAR_ICON, label: () => [...selected.keys()].every(r => favourites.has(r)) ? t('Unfavourite') : t('Favourite') },
       { id: 'move', icon: MOVE_ICON, label: () => t('Move to…') },
       { id: 'newfolder', icon: FOLDER_PLUS_ICON, label: () => t('New folder') },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'projects-bulk-danger' },
@@ -997,7 +1008,7 @@ export async function mountProjects(
         sessionEntries: [...entries].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
         imageRefs, sessionSizes: sizes, nameById,
         showCreateFolder: true,
-        allowBatchExport: flagEnabled(profile, PRO_FLAG.id),
+        allowBatchExport: true,   // Batch is available to everyone now (Pro flag retired)
         showRecentExports: true,
         onResume: (entry) => resumeSession(entry.slot),
         onDelete: () => {},
@@ -1016,6 +1027,7 @@ export async function mountProjects(
 
     wireDrag(root);
     mountUncatRibbon(root);
+    mountFavStrip(root);
     syncBulkBar();   // reflect a selection that survived this re-render
     applyCollabBadges(root);
   }
@@ -1111,6 +1123,8 @@ export async function mountProjects(
     if (action === 'render') { renderSelection(); return; }
     if (action === 'edit') { editSelection(); return; }
     if (action === 'sheet') { editAsSheet(); return; }
+    if (action === 'duplicate') { duplicateSelection(); return; }
+    if (action === 'favourite') { favouriteSelection(); return; }
     if (action === 'move') { moveSelection(); return; }
     if (action === 'newfolder') { newFolderFromSelection(); return; }
     if (action === 'delete') { deleteSelection(); return; }
@@ -1180,10 +1194,14 @@ export async function mountProjects(
   // `ref` come through the shared wireTileContextMenu's target: folder or session,
   // "Move to…" opens the drill-down picker (no more flat all-folders-at-once list).
   function tileMenuHtml(kind: string, ref: string): string {
+    // Favourite / unfavourite row - a folder, session or image can be starred to the strip up top.
+    const fav = (): string => menuItem('fav', favourites.has(ref) ? STAR_FILLED_ICON : STAR_ICON,
+      favourites.has(ref) ? t('Remove from favourites') : t('Add to favourites'));
     if (kind === 'folder') {
       return [
         menuItem('open-folder', OPEN_ICON, t('Open')),
         menuItem('rename', EDIT_ICON, t('Rename folder')),
+        fav(),
         menuItem('move-folder', MOVE_ICON, t('Move to…')),
         menuItem('render', RENDER_ICON, t('Render folder'), { render: true }),
         menuItem('delete', TRASH_ICON, t('Delete folder'), { danger: true }),
@@ -1195,6 +1213,7 @@ export async function mountProjects(
       const isUpload = ref.startsWith('user/');
       return [
         menuItem('open-image', OPEN_ICON, t('Preview')),
+        fav(),
         menuItem('move-image', MOVE_ICON, t('Move to…')),
         menuItem('delete-image', TRASH_ICON, isUpload ? t('Delete image') : t('Remove from folder'), { danger: true }),
       ].join('');
@@ -1205,6 +1224,8 @@ export async function mountProjects(
     return [
       menuItem('open', OPEN_ICON, t('Open')),
       menuItem('rename-session', EDIT_ICON, t('Rename')),
+      menuItem('duplicate-session', DUPLICATE_ICON, t('Duplicate')),
+      fav(),
       menuItem('move', MOVE_ICON, t('Move to…')),
       canShare ? menuItem('share', SHARE_ICON, t('Share link')) : '',
       menuItem('render-session', RENDER_ICON, t('Render'), { render: true }),
@@ -1223,6 +1244,8 @@ export async function mountProjects(
       + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
         menuItem('render', RENDER_ICON, t('Render selection'), { render: true }),
         ...(sheetableSelection() ? [menuItem('sheet', SHEET_ICON, t('Edit as sheet'))] : []),
+        ...([...selected.values()].includes('session') ? [menuItem('duplicate', DUPLICATE_ICON, t('Duplicate'))] : []),
+        menuItem('favourite', STAR_ICON, [...selected.keys()].every(r => favourites.has(r)) ? t('Unfavourite') : t('Favourite')),
         menuItem('move', MOVE_ICON, t('Move to…')),
         menuItem('newfolder', FOLDER_PLUS_ICON, t('New folder from selection')),
         menuItem('delete', TRASH_ICON, t('Delete'), { danger: true }),
@@ -1241,6 +1264,7 @@ export async function mountProjects(
     // button (no enclosing tile) - fall back to the header <h2> in that case.
     if (act === 'rename') startRename(tileEl || viewEl.querySelector<HTMLElement>('.projects-title[data-rename-folder]'), ref);
     else if (act === 'render') renderFolder(ref);
+    else if (act === 'fav') toggleFavourite(ref);
     else if (act === 'delete') deleteFolderCascade(ref);
     else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
     else if (act === 'move-folder') {
@@ -1253,6 +1277,7 @@ export async function mountProjects(
     }
     else if (act === 'open') resumeSession(ref);
     else if (act === 'rename-session') startRenameSession(tileEl, ref);
+    else if (act === 'duplicate-session') duplicateSession(ref);
     else if (act === 'move') {
       openMovePicker({
         title: t('Move to…'),
@@ -1277,6 +1302,27 @@ export async function mountProjects(
       });
     }
     else if (act === 'delete-image') { await deleteImage(ref); }
+  }
+
+  // Favourite / unfavourite a ref (folder, session, or image). Persists to the profile and
+  // repaints so the item's menu label + the favourites strip update.
+  async function toggleFavourite(ref: string): Promise<void> {
+    if (favourites.has(ref)) favourites.delete(ref); else favourites.add(ref);
+    if (profile) await saveProjectFavourites(host, profile, favourites);
+    if (!mounted) return;
+    await reload(); render();
+  }
+  // Bulk favourite (the selection bar): star every selected ref, or - when the whole selection
+  // is already starred - unstar it, in one repaint.
+  async function favouriteSelection(): Promise<void> {
+    const refs = [...selected.keys()];
+    if (!refs.length) return;
+    const allFav = refs.every(r => favourites.has(r));
+    for (const r of refs) { if (allFav) favourites.delete(r); else favourites.add(r); }
+    if (profile) await saveProjectFavourites(host, profile, favourites);
+    if (!mounted) return;
+    await reload(); render();
+    announce(allFav ? t('Removed from favourites') : t('Added to favourites'));
   }
 
   // Remove a folder image: a catalog REFERENCE just leaves the folder (the shared asset is
@@ -1557,6 +1603,67 @@ export async function mountProjects(
     } catch (e) { if (host.log) host.log('warn', 'projects: rename failed', { error: String(e) }); }
   }
 
+  // Duplicate a saved session: copy its stored inputs to a FRESH slot filed beside the
+  // original, named "… copy". Referenced assets are shared, not re-encoded (a copy of the
+  // creation, not its bytes) - the same reference semantics Move keeps. The copy reuses the
+  // source's thumbnail so it reads right before it's ever opened. A batch slot is keyed by
+  // its label, so a colliding name gets a "copy 2/3…" bump; a single-tool slot is unique by
+  // timestamp and needs none.
+  // The core copy, WITHOUT the reload/render/announce - so a bulk run can duplicate many and
+  // repaint once. `alsoTaken` carries the slots minted earlier in the same bulk loop, so two
+  // copies of the same tool made in the SAME millisecond (Date.now() ties) still get distinct
+  // slots. Returns the new slot, or null on skip/failure.
+  async function duplicateSessionCore(slot: string, alsoTaken?: Set<string>): Promise<string | null> {
+    const entry = entryBySlot().get(slot);
+    if (!entry) return null;
+    try {
+      const data = await (host as ProjectsHost).state.load(slot);
+      if (!data) return null;
+      const base = entry.label || entry.filename || toolName(entry.toolId) || t('Untitled');
+      let name = t('{name} copy', { name: base });
+      const batch = isBatchSlot(slot);
+      const taken = entryBySlot();
+      const isTaken = (s: string): boolean => taken.has(s) || alsoTaken?.has(s) === true;
+      let newSlot = batch ? BATCH_SLOT_PREFIX + name : `${entry.toolId}:${Date.now()}`;
+      // Guarantee a fresh slot even inside a bulk loop (same-ms timestamps, or a batch name clash).
+      for (let n = 2; isTaken(newSlot); n++) {
+        name = t('{name} copy {n}', { name: base, n });
+        newSlot = batch ? BATCH_SLOT_PREFIX + name : `${entry.toolId}:${Date.now()}-${n}`;
+      }
+      data.__label = name;
+      if (!batch) data.__export_filename = name;   // single-tool export filename tracks the name
+      await (host as ProjectsHost).state.save(newSlot, data, entry.thumb || '');
+      // File beside the original: same folder, or loose (Uncategorised) if it was loose.
+      const owner = ownerByRef.get(slot);
+      if (owner) await store.moveItem(newSlot, owner.id, 'session');
+      alsoTaken?.add(newSlot);
+      return newSlot;
+    } catch (e) { if (host.log) host.log('warn', 'projects: duplicate failed', { error: String(e) }); return null; }
+  }
+
+  // Duplicate a saved session: copy its stored inputs to a FRESH slot filed beside the
+  // original, named "… copy". Referenced assets are shared, not re-encoded (a copy of the
+  // creation, not its bytes) - the same reference semantics Move keeps. The copy reuses the
+  // source's thumbnail so it reads right before it's ever opened.
+  async function duplicateSession(slot: string): Promise<void> {
+    if (!(await duplicateSessionCore(slot)) || !mounted) return;
+    await reload(); render();
+    announce(t('Session duplicated'));
+  }
+
+  // Bulk Duplicate (the selection bar): copy every selected SESSION beside its original in one
+  // repaint. Folders and images in the selection are skipped - only creations duplicate.
+  async function duplicateSelection(): Promise<void> {
+    const slots = [...selected].filter(([, kind]) => kind === 'session').map(([ref]) => ref);
+    if (!slots.length) return;
+    const made = new Set<string>();
+    let n = 0;
+    for (const slot of slots) if (await duplicateSessionCore(slot, made)) n++;
+    if (!mounted) return;
+    await reload(); render();
+    announce(t('{n} duplicated', { n }));
+  }
+
   // "+ New asset": open the shared, host-owned asset picker (the SAME Library / Saved
   // creations / Projects / Tools dialog that fills a tool image slot) in "collect into
   // this folder" mode. Every pick ADDS to the current folder and the dialog stays open
@@ -1727,6 +1834,52 @@ export async function mountProjects(
       if (v && (FEATURED_VIEWS as readonly string[]).includes(v)) return v as FeaturedViewMode;
     } catch { /* storage off */ }
     return 'gallery';
+  }
+
+  // The favourites strip at the top of the Projects ROOT view: a browsable ribbon of the
+  // user's starred folders / sessions / images, like the gallery + catalog favourites strips.
+  // Mounts only at root (its [data-fav-strip] element exists only in rootHtml), so it is
+  // mutually exclusive with the Uncategorised ribbon and both can share featuredHandle.
+  function favEntries(): FeaturedEntry[] {
+    const out: FeaturedEntry[] = [];
+    for (const ref of favourites) {
+      const e = entryBySlot().get(ref);
+      if (e) {   // a favourited saved session
+        const name = e.label || e.filename || toolName(e.toolId);
+        const tn = toolName(e.toolId);
+        out.push({ id: ref, name, preview: e.thumb || undefined, href: resumeHref(e), featured: { blurb: name !== tn ? tn : undefined } });
+        continue;
+      }
+      const folder = folders.find(f => f.id === ref);
+      if (folder) {   // a favourited folder - cover = its first member's preview
+        let cover: string | undefined;
+        for (const i of folder.items) {
+          const p = previewForRef(i.ref);
+          if (p && 'thumb' in p && p.thumb) { cover = p.thumb; break; }
+          if (p && 'url' in p && p.url) { cover = p.url; break; }
+        }
+        out.push({ id: ref, name: folder.name, preview: cover, href: '#/p/' + ref, featured: { blurb: t('Folder') } });
+        continue;
+      }
+      const img = imageRefs.get(ref);   // a favourited folder image - opens the folder it lives in
+      const imgOwner = img?.url ? ownerByRef.get(ref) : null;
+      // Only show it with a valid href (its folder); without one the featured strip would fall
+      // back to a dead #/tool/<ref> route, so an owner-less image is simply left off the strip.
+      if (img?.url && imgOwner) out.push({ id: ref, name: String(img.meta?.name ?? ''), preview: img.url, href: '#/p/' + imgOwner.id, featured: { blurb: t('Image') } });
+    }
+    return out;
+  }
+  function mountFavStrip(root: HTMLElement): void {
+    const mount = root.querySelector<HTMLElement>('[data-fav-strip]');
+    if (!mount) return;
+    const tiles = favEntries();
+    if (!tiles.length) { mount.remove(); return; }   // all favourites vanished (deleted elsewhere)
+    featuredHandle = mountFeaturedRow(mount, tiles, host, {
+      viewMode: readFeaturedView(),
+      ariaLabel: t('Favourites'),
+      tileDragOut: false,
+      tileMenu: false,
+    });
   }
 
   // Hydrate the Uncategorised preview ribbon: the shared Featured strip over the loose

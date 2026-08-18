@@ -60,3 +60,4 @@
 @import './parts/overrides.css'    layer(overrides); /* cross-cutting overrides (top-right FAB/profile cluster) */
 @import './parts/a11y.css'         layer(a11y);
 @import './parts/rtl.css'          layer(a11y); /* RTL correctness rules (Arabic) — accessibility layer, wins over views */
+@import './parts/perf-ui.css'; /* Performance UI (perf-ui flag) — UNLAYERED on purpose, so its !important strip of blur/shadow/blend outranks every layer. Gated on html[data-perf-ui]: absent by default ⇒ no-op. */

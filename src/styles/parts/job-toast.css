@@ -187,3 +187,77 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   color: hsl(var(--muted-foreground));
   border-top: 1px solid hsl(var(--border));
 }
+
+/* ── Performance HUD (lib/perf-hud.ts, perf-hud flag) ────────────────────────
+   Opt-in diagnostic overlay in the same body-level floating cluster as the toast
+   above. Floated clear of the bottom search bar with the same visual-viewport and
+   safe-area idiom the footer itself uses (styles/parts/gallery.css), and parked
+   bottom-LEFT so it never sits under the toast bottom-right pill. DRAGGABLE: a pointer-drag
+   on the header switches it to inline top/left (lib/perf-hud.ts clamps it fully
+   on-screen). Chrome-only, box-coloured from tokens, and every glyph/font size
+   rides calc(Npx * var(--a11y-fs)) like the rest of the shell chrome. */
+.perf-hud {
+  position: fixed;
+  left: calc(var(--vv-left, 0px) + 1rem);
+  /* Above the fixed footer bar (~3.4rem) + its safe-area pad, so it never overlaps
+     the search bar. Drag replaces both with inline top/left. */
+  bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 4.5rem);
+  z-index: 9490;                 /* above content + the footer (50); just under the job toast (9500) */
+  width: max-content;
+  min-width: 150px;
+  max-width: min(280px, calc(100vw - 2rem));
+  color: hsl(var(--foreground));
+  font-family: inherit;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.1);
+  background: hsl(var(--card));
+  box-shadow: 0 12px 40px hsl(0 0% 0% / 0.28);
+  overflow: hidden;
+  user-select: none;
+}
+.perf-hud[hidden] { display: none; }
+
+/* Drag handle - the whole header. touch-action:none so a touch-drag repositions
+   instead of scrolling the page under it. */
+.perf-hud-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  cursor: grab;
+  touch-action: none;
+}
+.perf-hud.is-dragging .perf-hud-head { cursor: grabbing; }
+.perf-hud-grip { display: inline-flex; color: hsl(var(--muted-foreground)); }
+.perf-hud-grip svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
+.perf-hud-title {
+  font-size: calc(10.5px * var(--a11y-fs));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.perf-hud-body { display: flex; flex-direction: column; padding: 0.3rem 0.1rem; }
+.perf-hud-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.2rem 0.55rem;
+}
+.perf-hud-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: calc(11.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.perf-hud-label svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); flex-shrink: 0; }
+.perf-hud-value {
+  font-size: calc(13px * var(--a11y-fs));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

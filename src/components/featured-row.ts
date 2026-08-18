@@ -27,6 +27,7 @@
 
 import { escape } from '../utils.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { perfUiOn } from '../feature-flags.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import { renderFeaturedVariant, displayFormatOf } from '../lib/featured-render.ts';
 import { toolSeedHref } from '../lib/seed-url.ts';
@@ -209,7 +210,10 @@ export function mountFeaturedRow(
   // marquee and no example/preset cross-fade. A favourite shows the tool's single
   // committed template, swipe/drag only. Cover Flow and the Projects ribbon keep
   // their motion.
-  const reduced = prefersReducedMotion() || captureNeutralPinned() || opts.staticStrip === true;
+  // perf-ui folds in here so ONE flag both stills the drift loop (line ~888) AND skips the
+  // progressive variant rasterisation (line ~913) - the tile falls back to its static
+  // preview/icon, exactly as under reduced motion. Off by default ⇒ byte-identical.
+  const reduced = prefersReducedMotion() || captureNeutralPinned() || opts.staticStrip === true || perfUiOn();
   let coverflow = opts.viewMode === 'coverflow';
   // Drag-out mode (Projects "Uncategorised" ribbon): each tile is a native HTML5 drag
   // source so a loose session can be dragged onto a "Move to" folder. The consumer wires

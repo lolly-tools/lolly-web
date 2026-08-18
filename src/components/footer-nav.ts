@@ -67,7 +67,8 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
 }
 
 export interface FooterNavOpts {
-  /** Pro link only shows when Batch mode is enabled (flagEnabled(profile, PRO_FLAG.id)). */
+  /** Whether to show the Batch link. Always true now that Batch/Pro is available to everyone
+   *  (the pro-batch flag was retired); kept as a prop so the bar stays presentation-only. */
   proEnabled: boolean;
   /** The middle search field - gallerySearchBox(...). */
   searchHtml: string;

@@ -23,7 +23,7 @@
 import { parseSvgPath, parseColorToSrgb8 } from '@lolly/engine';
 import type { HostV1, TextPathResult } from '@lolly-tools/core/host-v1';
 import type { PathSegment } from '../../../../engine/src/svg-path.ts';
-import type { VectorPathPrim, VectorImagePrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
+import type { VectorPathPrim, VectorImagePrim, VectorTextPrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
 import { gaussianShadowRings } from '../../../../engine/src/css-box.ts';
 import { canVectoriseText, featureSettingsToHb, letterSpacingPx } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
@@ -184,6 +184,8 @@ interface LeafTextGeometry {
   gAvg: number;
   rAvg: number;
   elemOpacity: number;
+  /** The leaf's composed CTM - the live-text branch reads rotation/skew off it. */
+  et: Mat;
 }
 
 /** Context the caller provides to resolve host services + environment. */
@@ -193,6 +195,14 @@ export interface SvgIrContext {
   background?: string;
   /** User-facing label for log/error text. Defaults to 'EMF'. */
   label?: string;
+  /** 'outline' (default) shapes every <text> to paths via host.text - the
+   *  original text-as-paths guarantee, still what WMF/EPS/DXF ask for. 'live'
+   *  (the EMF default since 1.128) keeps a plain run as a `text` prim so the
+   *  emitter writes a real font + string record and the run stays editable;
+   *  anything GDI text can't express faithfully (tracking, OpenType features,
+   *  a stroke, skew or non-uniform scale, a centred dominant-baseline) falls
+   *  back to the outline path per run, so fidelity never regresses. */
+  textMode?: 'outline' | 'live';
 }
 
 /** Normalized vector IR consumed by engine/src/emf.js and engine/src/eps.js. */
@@ -343,6 +353,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
 
   const prims: VectorPrim[] = [];
   const textApi = host?.text || null;
+  const liveText = ctx.textMode === 'live';
   // <filter> defs, indexed by id. SKIP keeps the walk out of <defs>, so the only way
   // to see them is to look them up by the id a shape references.
   const filterCache = new Map<string, SvgDropShadow | null>();
@@ -415,7 +426,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     else if (tag === 'polygon') d = pointsPath(el.getAttribute('points'), true);
     else if (tag === 'polyline') d = pointsPath(el.getAttribute('points'), false);
     else if (tag === 'line') { d = `M${len(prop(el, style, 'x1'), vbW)},${len(prop(el, style, 'y1'), vbH)} L${len(prop(el, style, 'x2'), vbW)},${len(prop(el, style, 'y2'), vbH)}`; forceStrokeOnly = true; }
-    else if (tag === 'text') { await emitText(el, style, { mapPt, gAvg, rAvg, elemOpacity }); return; }
+    else if (tag === 'text') { await emitText(el, style, { mapPt, gAvg, rAvg, elemOpacity, et }); return; }
     else if (tag === 'image') {
       // The vector rasterise escape-hatch (visitSvgNode) emits <image href="data:…">
       // for a node whose CSS the walker can't express. Decode it to an opaque RGB
@@ -527,6 +538,61 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     });
   }
 
+  // Try to express one <text> run as a LIVE text prim (textMode 'live'). Returns
+  // null whenever any aspect needs the outline fallback - deliberately
+  // conservative, because the null paths are exactly the runs whose look
+  // depends on shaping the outline path would otherwise bake in.
+  function liveTextPrim(el: Element, style: StyleMap, m: LeafTextGeometry, r: {
+    raw: string; rgb: RgbTuple; family: string; weight: string; italic: boolean;
+    fontSize: number; letterSpacingCss: string | null | undefined; cs: CSSStyleDeclaration | null;
+  }): VectorTextPrim | null {
+    // GDI text has no stroke, no tracking, no OpenType feature toggles.
+    const strokeStr = prop(el, style, 'stroke', null);
+    if (strokeStr && parseColor(strokeStr)) return null;
+    if (letterSpacingPx(r.letterSpacingCss)) return null;
+    const feats = prop(el, style, 'font-feature-settings', null) ?? r.cs?.fontFeatureSettings;
+    if (feats && feats !== 'normal') return null;
+    // Vertical alignment: GDI has TA_BASELINE and TA_TOP; a centred baseline
+    // (d3 tick labels' dominant-baseline:central) has no counterpart.
+    const domBase = (prop(el, style, 'dominant-baseline', null) ?? r.cs?.dominantBaseline ?? '').trim();
+    let baseline: 'alphabetic' | 'top';
+    if (domBase === 'text-before-edge' || domBase === 'hanging') baseline = 'top';
+    else if (!domBase || domBase === 'auto' || domBase === 'alphabetic') baseline = 'alphabetic';
+    else return null;
+    // The CTM must be a similarity transform: escapement carries rotation, but
+    // GDI text has no skew and no anisotropic scale.
+    const { et } = m;
+    const sx = Math.hypot(et.a, et.b), sy = Math.hypot(et.c, et.d);
+    if (!(sx > 0 && sy > 0)) return null;
+    if (Math.abs(et.a * et.c + et.b * et.d) / (sx * sy) > 0.001) return null;  // skew
+    if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.01) return null;              // anisotropic transform
+    if (Math.abs(regX - regY) / Math.max(regX, regY) > 0.01) return null;      // anisotropic region scale
+    const rotation = Math.atan2(et.b, et.a) * 180 / Math.PI;
+
+    // An empty/unresolvable family stays live with an EMPTY face name - legal
+    // GDI for "the renderer's default font". Substitution is the live contract;
+    // the outline path would just throw here (no font to shape with), costing
+    // the CLI a Chromium escalation for a run that reads fine either way.
+    const face = gdiFaceName(r.family) ?? '';
+    if (!face) warn(`live text run "${r.raw.slice(0, 24)}" has no resolvable font-family - the reader's default font will render it`);
+
+    const wRaw = r.weight.trim().toLowerCase();
+    const weightNum = wRaw === 'bold' ? 700 : Number.isFinite(parseFloat(wRaw)) ? Math.round(parseFloat(wRaw)) : 400;
+
+    const { x, y } = m.mapPt(len(prop(el, style, 'x'), vbW), len(prop(el, style, 'y'), vbH));
+    const anchor = prop(el, style, 'text-anchor', null) ?? r.cs?.textAnchor ?? 'start';
+    return {
+      type: 'text', x, y, text: r.raw,
+      fontFamily: face,
+      fontSize: r.fontSize * sx * regX,
+      weight: weightNum, italic: r.italic,
+      fill: rgbObj(r.rgb),
+      align: anchor === 'middle' ? 'center' : anchor === 'end' ? 'right' : 'left',
+      baseline,
+      ...(Math.abs(rotation) > 0.01 ? { rotation } : {}),
+    };
+  }
+
   // Outline a <text> run to a filled path prim via host.text.toPath.
   async function emitText(el: Element, style: StyleMap, m: LeafTextGeometry): Promise<void> {
     const raw = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -546,6 +612,17 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const italic = (prop(el, style, 'font-style', null) ?? cs?.fontStyle) === 'italic';
     const fontSize = parseFloat(prop(el, style, 'font-size', null) ?? cs?.fontSize ?? '16');
     const letterSpacingCss = prop(el, style, 'letter-spacing', null) ?? cs?.letterSpacing;
+
+    // ── LIVE branch (EMF's default since 1.128): keep the run as a text prim so
+    // the emitter writes a real GDI font + string record and it stays editable
+    // in Office / Google Drawings. Needs NO host.text - the renderer's own
+    // metrics lay the run out. Anything GDI text can't express faithfully falls
+    // through to the outline path below, per run, so fidelity never regresses.
+    if (liveText) {
+      const live = liveTextPrim(el, style, m, { raw, rgb, family, weight, italic, fontSize, letterSpacingCss, cs });
+      if (live) { prims.push(live); return; }
+    }
+
     const fontStyleObj = { fontFamily: family, fontWeight: weight, fontStyle: italic ? 'italic' : 'normal',
       letterSpacing: letterSpacingCss };
     // SUSE statics, the user's own Google fonts, or the platform face - this
@@ -628,4 +705,19 @@ function shiftSeg(seg: PathSegment, dx: number, dy: number): PathSegment {
 
 function safeComputed(fn: (el: Element) => CSSStyleDeclaration, el: Element): CSSStyleDeclaration | null {
   try { return fn(el); } catch { return null; }
+}
+
+// First concrete face of a CSS font-family stack, unquoted, as a GDI face name.
+// CSS generics map to the face Windows-era renderers actually carry - a live
+// record naming a literal "sans-serif" would substitute unpredictably. A Map,
+// not an object literal, so a family named "constructor" can't walk the prototype.
+const GENERIC_FACES = new Map<string, string>([
+  ['sans-serif', 'Arial'], ['serif', 'Times New Roman'], ['monospace', 'Courier New'],
+  ['cursive', 'Comic Sans MS'], ['fantasy', 'Impact'], ['system-ui', 'Segoe UI'],
+  ['ui-sans-serif', 'Segoe UI'], ['ui-serif', 'Times New Roman'], ['ui-monospace', 'Consolas'],
+]);
+function gdiFaceName(stack: string): string | null {
+  const first = (stack || '').split(',')[0]?.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  if (!first) return null;
+  return GENERIC_FACES.get(first.toLowerCase()) ?? first;
 }

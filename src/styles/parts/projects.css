@@ -342,15 +342,16 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    Floating, bottom-centre, above content but below the fixed view-toggle (99999).
    Shown by JS (syncBulkBar toggles [hidden]) whenever the selection is non-empty. */
 .projects-bulkbar {
-  /* Sits ABOVE the fixed footer bar (search + nav links) rather than over it. */
-  position: fixed; left: 50%; bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 9000;
-  display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px);
+  /* Sits ABOVE the fixed footer bar (search + nav links), and spans the full viewport width
+     (inset a little) so every action fits on one row instead of wrapping into a pill. */
+  position: fixed; left: 12px; right: 12px; bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); z-index: 9000;
+  display: flex; align-items: center; gap: 12px;
   padding: 8px 10px 8px 16px; border: 1px solid hsl(var(--border));
   border-radius: 999px; background: hsl(var(--card)); box-shadow: 0 12px 32px hsl(0 0% 0% / 0.28);
 }
 .projects-bulkbar[hidden] { display: none; }
 .projects-bulkbar-count { font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; white-space: nowrap; }
-.projects-bulkbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.projects-bulkbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; justify-content: center; }
 .projects-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: calc(12.5px * var(--a11y-fs)); }
 .projects-bulkbar-actions .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 /* Two-class so the destructive red beats the generic `.btn { color: foreground }`
@@ -367,9 +368,18 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 /* Phones: let the bar wrap its buttons and hug the safe area (clear the home
    indicator with env(safe-area-inset-bottom), matching the app's other bottom bars). */
 @media (max-width: 560px) {
-  /* Phones: the footer wraps to two rows (search over the nav pills), so lift the bar higher to clear it. */
-  .projects-bulkbar { flex-direction: column; align-items: stretch; border-radius: var(--radius); bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); padding: 10px 12px; gap: 8px; }
-  .projects-bulkbar-clear { position: absolute; top: 8px; right: 8px; }
+  /* Phones: a full-width ICON-ONLY row above the two-row footer (lifted to clear it). Labels
+     are clipped (kept for assistive tech), so all the actions fit without wrapping. */
+  .projects-bulkbar { flex-direction: row; align-items: center; border-radius: 999px; bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); padding: 8px 10px; gap: 8px; }
+  .projects-bulkbar-clear { position: static; }
+  .projects-bulkbar-count { font-size: calc(11.5px * var(--a11y-fs)); }
+  .projects-bulkbar-actions { flex: 1 1 auto; justify-content: space-around; gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .projects-bulkbar-actions::-webkit-scrollbar { display: none; }
+  .projects-bulkbar-actions .btn { padding: 8px; gap: 0; }
+  .projects-bulkbar-actions .btn > span {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
 }
 
 /* ─── Projects: mobile layout ────────────────────────────────────────────────

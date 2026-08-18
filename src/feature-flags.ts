@@ -5,10 +5,8 @@
  * Stored on the profile (`profile.featureFlags`, keyed by flag id) so they ride
  * the normal profile persistence and sync. Every flag defaults to ON when unset.
  *
- * Two kinds:
- *  - CATEGORY_FLAGS hide a tool-category section from the gallery (nothing else).
- *  - PRO_FLAG hides the "Batch" link in the gallery footer (the /pro route itself
- *    still works via a deep link).
+ * CATEGORY_FLAGS hide a tool-category section from the gallery (nothing else); the rest are
+ * standalone feature toggles. (Batch/Pro is available to everyone now, so it is no longer a flag.)
  */
 
 import type { Profile } from '@lolly-tools/core/host-v1';
@@ -37,7 +35,6 @@ export const CATEGORY_FLAGS: readonly FeatureFlag[] = [
   { id: 'cat-developer', label: 'Offline Utilities',  category: 'utility'  },
 ];
 
-export const PRO_FLAG: FeatureFlag = { id: 'pro-batch', label: 'Pro', pill: 'batch mode' };
 
 // Standalone feature toggles (not a gallery category, not Pro). Neurospicy Mode - 
 // the background focus-music player - is opt-out here (ON by default like every flag).
@@ -87,6 +84,58 @@ export const PREFLIGHT_FLAG: FeatureFlag = {
   default: false,
   info: 'Checks a print export before you download: bleed, resolution, ink coverage and plate counts appear above the Download button. It never blocks an export.',
 };
+
+// Opt-IN (default OFF): Performance UI - a simplified, cheaper-to-paint chrome for weaker
+// devices. When ON it strips the GPU-expensive chrome effects (backdrop blur, shadows,
+// blend modes) and pauses decorative previews until hovered. Reflected onto <html> by
+// applyPerfUi below; the whole effect is a single gated stylesheet (styles/parts/perf-ui.css),
+// so with the flag OFF nothing matches and the UI is byte-identical - the a11y-prefs additive
+// rule. Deliberately CHROME-ONLY: it never reaches the tool canvas or the export stages, so a
+// render (and its export, whose geometry is shared with the CLI) is never altered.
+export const PERFORMANCE_UI_FLAG: FeatureFlag = {
+  id: 'perf-ui',
+  label: 'Performance UI',
+  pill: 'lighter',
+  default: false,
+  info: 'Simplifies the interface to paint faster on lower-powered devices: turns off the blur, shadows and blend effects in the app chrome, and animates previews only while you hover them. It never changes anything you make - your exports are identical either way.',
+};
+
+/** Reflect the Performance UI flag onto <html> so the gated stylesheet can apply. Absent
+ *  attribute ⇒ full chrome (the default). Best-effort, like the localStorage mirror. */
+export function applyPerfUi(on: boolean): void {
+  try { document.documentElement.toggleAttribute('data-perf-ui', on); } catch { /* no DOM */ }
+}
+
+/** Synchronous read of the Performance UI flag, for JS sites that must decide whether to
+ *  run expensive decorative work (rAF visualisers, live preview rasterisation, the Cover
+ *  Flow fan). OFF by default, so an ungated caller behaves exactly as before. Pairs with
+ *  a11y-prefs' prefersReducedMotion(): a decorative loop should idle on EITHER signal. */
+export function perfUiOn(): boolean {
+  return isFlagOnSync(PERFORMANCE_UI_FLAG);
+}
+
+// Opt-IN (default OFF): Performance HUD - a small, draggable, body-level diagnostic overlay
+// showing live stats (FPS, this device's memory + CPU threads) for debugging and power
+// users. SEPARATE from perf-ui: that flag LIGHTENS the chrome to paint faster, this one only
+// OBSERVES and changes nothing. Mounted in the same body-level floating cluster as the job
+// toast (lib/perf-hud.ts, via the job-toast boot hook and the profile toggle); with the flag
+// OFF nothing mounts and no rAF loop runs, so the app is byte-identical (the opt-in rule).
+// Its FPS loop is a diagnostic, so it runs while shown regardless of reduced-motion. Read
+// synchronously by perfHudOn() below.
+export const PERF_HUD_FLAG: FeatureFlag = {
+  id: 'perf-hud',
+  label: 'Performance HUD',
+  pill: 'debug',
+  default: false,
+  info: 'Shows a small, draggable overlay with live performance stats — frames per second, plus this device’s memory and CPU threads — for debugging and power users. It only watches; it never changes anything you make or export.',
+};
+
+/** Synchronous read of the Performance HUD flag - the gate that decides whether to mount the
+ *  diagnostic overlay and run its FPS loop. OFF by default, so with nothing stored nothing
+ *  mounts and the app stays byte-identical. Pairs with mountPerfHud()/unmountPerfHud(). */
+export function perfHudOn(): boolean {
+  return isFlagOnSync(PERF_HUD_FLAG);
+}
 
 // ON by default since 2026-08-10: private collab (Track A, plans/100 section 6) - the P2P
 // invite/accept ceremony that lets two devices co-edit a tool session directly, no
@@ -228,7 +277,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // entry - which is what makes a fresh device read it as on (PRIVATE_COLLAB_FLAG
   // since 2026-08-10; it stays in this list because the list is "every standalone
   // flag", not "every opt-in one").
-  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG]) {
+  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG]) {
     if (eff[f.id] === undefined && f.default === false) eff[f.id] = false;
   }
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }

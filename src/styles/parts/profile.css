@@ -171,6 +171,61 @@
   }
   .profile-view .profile-nav-item.is-active { border-color: hsl(var(--primary) / .5); }
   .profile-view .profile-nav-empty { display: none; }
+  /* Stack the fields + headshot/theme columns: side by side, the .6fr headshot column
+     couldn't shrink enough and shoved the card past the viewport. */
+  .profile-view .profile-details-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+}
+
+/* Phones: the section nav becomes a SOLID, floating icon-only bar pinned just above the
+   bottom search footer; the identity fields stack to one column; and the view clips its own
+   horizontal overflow as a safety net. */
+@media (max-width: 560px) {
+  .profile-view .profile-fields { grid-template-columns: 1fr; }
+  /* Last-resort guard so no child can push the page sideways on a narrow phone. */
+  .profile-view { overflow-x: clip; }
+
+  /* Float the nav as its OWN bar above the persistent search footer (--footer-h), over the
+     scrolling cards, rather than a sticky top strip. Only the pill catches input, so taps
+     pass through the empty gutters to the content below. */
+  .profile-view .profile-nav {
+    position: fixed; top: auto; z-index: 40;
+    left: var(--vv-left, 0px); right: var(--vv-right, 0px);
+    /* Clear the WHOLE footer (search field + bottom nav row ~= the .has-search-footer 5.5rem
+       clearance), not just --footer-h, plus a gap, so the bar floats above it not on it. */
+    bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 6.5rem);
+    max-height: none; overflow: visible;
+    padding: 0 .6rem; background: none;
+    pointer-events: none;
+  }
+  /* The settings-search box has no room on the icon bar (and the shell search sits below). */
+  .profile-view .profile-nav-search { display: none; }
+  /* The bar itself: SOLID/opaque so cards scrolling under it stay legible, rounded, lifted;
+     grows with its icons up to the viewport, then scrolls horizontally. */
+  .profile-view .profile-nav-list {
+    pointer-events: auto;
+    flex-direction: row; flex-wrap: nowrap; gap: .3rem; justify-content: flex-start;
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    width: max-content; max-width: 100%; margin: 0 auto;
+    padding: .35rem .45rem;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    box-shadow: 0 4px 18px hsl(0 0% 0% / .3);
+  }
+  .profile-view .profile-nav-list::-webkit-scrollbar { display: none; }
+  /* Icon-only pills: no label shown (kept for assistive tech), the active one filled solid. */
+  .profile-view .profile-nav-item {
+    flex: 0 0 auto; width: auto; gap: 0; padding: .55rem; border: 0; border-radius: 999px;
+  }
+  .profile-view .profile-nav-item .profile-nav-text {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  /* Active = a strong primary TINT + ring (not a solid fill: the solid primary-on-
+     primary-foreground recipe lives once in buttons.css - R2). Clear on the icon bar. */
+  .profile-view .profile-nav-item.is-active { background: hsl(var(--primary) / .22); color: hsl(var(--primary)); box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / .55); }
+  /* Clear the raised floating bar so the last card can scroll fully into view above it. */
+  .profile-view .profile-layout { padding-bottom: calc(env(safe-area-inset-bottom) + 10rem); }
 }
 
 /* (The old two-button .profile-footer toolbar is retired — the shell's persistent
@@ -264,7 +319,9 @@
 
 /* Form: "use my details" toggle (a pill that hugs its label) + actions row */
 .profile-view .profile-check {
-  min-width:19em;
+  /* Cap at the container: a bare 19em (304px) overflowed a narrow phone, forcing the whole
+     page wider than the viewport and clipping every card off the left edge. */
+  min-width: min(19em, 100%);
   display: inline-flex; align-items: center; gap: .55rem;
   margin: 0 auto 0 0; padding: .4rem .8rem; /* margin-right:auto keeps the buttons on the right */
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);

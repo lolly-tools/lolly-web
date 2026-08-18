@@ -16,6 +16,7 @@
 import { hexToOklch, contrastRatio } from '@lolly/engine';
 import { tokenValueToHex } from '../brand-vars.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
+import { perfUiOn } from '../feature-flags.ts';
 
 /** The chip palette: [box-fill, ink] pairs. Brand-derived when tokens are
  * loaded (see brandChipPairs); this SUSE set is the fallback for a tokenless
@@ -179,7 +180,7 @@ function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, st
  */
 export function celebrateBurst(x: number, y: number, host?: ChipPairsHost): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
-  if (prefersReducedMotion()) return; // calm mode - no blast
+  if (prefersReducedMotion() || perfUiOn()) return; // calm/perf mode - no blast
   void chipPairs(host).then(palette => burstWith(x, y, palette));
 }
 

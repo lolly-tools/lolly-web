@@ -20,7 +20,7 @@ import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-pref
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
+import { hydrateFeatureFlags, flagEnabledSync, isFlagOnSync, setJellyDefault, applyPerfUi, PERFORMANCE_UI_FLAG } from './feature-flags.ts';
 // Side-effect only: registers the "Private collab" Share-dialog row into the
 // generic lib/share-sections.ts seam (plan 100 section 0/section 6, Track A - an OSS
 // individual feature, not under org/). The row itself stays gated on the
@@ -834,6 +834,10 @@ async function boot(): Promise<void> {
   // (or without) the profile - the Sound control's Neurospicy player in popovers - can
   // gate synchronously.
   hydrateFeatureFlags(profile as Parameters<typeof hydrateFeatureFlags>[0]);
+  // Reflect the Performance UI flag onto <html> from first paint (the index.html
+  // pre-paint script already did this from the mirror; this reconciles it against the
+  // just-hydrated profile). Opt-in, so default OFF ⇒ attribute absent ⇒ full chrome.
+  applyPerfUi(isFlagOnSync(PERFORMANCE_UI_FLAG));
   // The persistent bottom search bar (plans/99 M1) - one instance for the whole
   // session, mounted after #view. Needs t() (initI18n above) and the flag mirror
   // (hydrateFeatureFlags above, for the Pro link); hidden until the first

@@ -38,6 +38,7 @@ import { SOMAFM_HOME, radioAvailable } from './radio.ts';
 import { vizSupported } from './viz-support.ts';
 import { neuroDemoActive, DEMO_VIZ_PRESET_ID, demoVizWave, pumpVizDemoFrames } from './neuro-demo.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
+import { perfUiOn } from '../feature-flags.ts';
 import { icon, hasIcon } from './icons.ts';
 import { mountViz, type VizHandle } from './butterchurn-viz.ts';
 import { VIZ_PRESETS, vizPresetById, defaultVizPresetId } from './viz-presets.ts';
@@ -172,7 +173,9 @@ class NeuroDockViz implements DockViz {
 
   // ── renderer lifecycle ────────────────────────────────────────────────────────
   async mount(canvas: HTMLCanvasElement): Promise<void> {
-    if (this.destroyed || !this.vizEnabled || !vizSupported()) return;
+    // The rich dock visualiser idle-animates off a silent analyser even with nothing
+    // playing, so it's an ambient loop - don't start it under reduced motion or perf-ui.
+    if (this.destroyed || !this.vizEnabled || !vizSupported() || prefersReducedMotion() || perfUiOn()) return;
     // Render IMMEDIATELY, audio or not: use the live analyser when it exists (reactive),
     // else a silent one (idle animation). When the live analyser first appears we remount
     // so the picture starts reacting.

@@ -333,6 +333,10 @@ const SLIDERS_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none
 const PENCIL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const ZOOM_IN_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
 const ZOOM_OUT_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+// A 2x2 pixel grid - the smooth ⇄ pixel-accurate interpolation toggle in the zoom pill.
+const INTERP_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
+// Four corner brackets - the "zoom to fit" (reset to 100%) button in the zoom pill.
+const FIT_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
 const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 // Swap arrows - "replace this file with another", keeping the same id.
@@ -384,7 +388,8 @@ function attachZoom(dlg: HTMLDialogElement): void {
   // naturalWidth, and the SVG arrives asynchronously - so we read the aspect from its viewBox and
   // re-fit once it lands, rather than from decode()/load.
   const isLottie = media.hasAttribute('data-lottie-src');
-  const MIN = 1, MAX = 16;               // 100%…1600%
+  const isVideo = media.tagName === 'VIDEO';   // a <video class="cat-thumb"> is pan/zoomable too
+  const MIN = 0.15, FIT = 1, MAX = 20;   // out to 15%, fit=100%, in to 2000%
   const PAD = 20;                        // matches .cat-zoom-stage padding
   let s = 1, tx = 0, ty = 0;
   // The s=1 "fit" box: the largest aspect-preserving rectangle inside the padded stage.
@@ -411,6 +416,10 @@ function attachZoom(dlg: HTMLDialogElement): void {
     // preserveAspectRatio keeps the art undistorted meanwhile - measureBase re-runs on load).
     let ar = availW / availH;
     if (img.naturalWidth > 0 && img.naturalHeight > 0) ar = img.naturalWidth / img.naturalHeight;
+    else if (isVideo) {
+      const v = media as HTMLVideoElement;
+      if (v.videoWidth > 0 && v.videoHeight > 0) ar = v.videoWidth / v.videoHeight;
+    }
     else if (isLottie) {
       const vb = media.querySelector('svg')?.viewBox?.baseVal;
       if (vb && vb.width > 0 && vb.height > 0) ar = vb.width / vb.height;
@@ -445,7 +454,9 @@ function attachZoom(dlg: HTMLDialogElement): void {
     // pure translations, but the -50% must be present so the art's centre = stage centre + (tx,ty).
     media.style.transform = `translate(-50%, -50%) translate(${tx}px, ${ty}px)`;
     hud?.setReadout(`${Math.round(s * 100)}%`);
-    stage.classList.toggle('is-zoomed', s > MIN + 0.001);
+    // "zoomed" (pannable) only when the art is bigger than the fit box; at or below fit it is
+    // centred with nothing to pan.
+    stage.classList.toggle('is-zoomed', s > FIT + 0.001);
   };
   const zoomTo = (next: number, ox = 0, oy = 0): void => {
     const s2 = Math.min(MAX, Math.max(MIN, next));
@@ -454,7 +465,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     tx = ox - (s2 / s) * (ox - tx);
     ty = oy - (s2 / s) * (oy - ty);
     s = s2;
-    if (s <= MIN + 0.001) { s = MIN; tx = 0; ty = 0; }
+    if (s <= FIT + 0.001) { tx = 0; ty = 0; }   // fit or zoomed out ⇒ re-centre
     clampPan();
     apply();
   };
@@ -462,19 +473,40 @@ function attachZoom(dlg: HTMLDialogElement): void {
     const r = stage.getBoundingClientRect();
     return [e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)];
   };
-  // No dedicated Fit button here (unlike the tool stage) - the readout itself
-  // IS the reset control, since MIN (100%) already means "fit".
+  // A dedicated Fit button (leading the pill) resets to FIT (100%, the largest aspect-fit
+  // box); the readout also resets on click, so either returns to fit.
+  // Interpolation toggle, docked in the pill after a hairline (the HUD's `extras` slot):
+  // smooth (bicubic, the default) ⇄ pixel-accurate (nearest-neighbor), so pixel-peepers can
+  // read the exact pixels when zoomed in. Skipped for a Lottie - inline SVG has no raster to
+  // sharpen. `image-rendering: pixelated` on the media is the whole effect.
+  let pixelated = false;
+  const interpBtn = document.createElement('button');
+  interpBtn.type = 'button';
+  interpBtn.className = 'cat-zoom-btn cat-zoom-interp';
+  interpBtn.innerHTML = INTERP_ICON;
+  interpBtn.setAttribute('aria-pressed', 'false');
+  interpBtn.setAttribute('aria-label', t('Pixel-accurate zoom'));
+  interpBtn.title = t('Smooth / pixel-accurate');
+  interpBtn.addEventListener('click', () => {
+    pixelated = !pixelated;
+    media.style.imageRendering = pixelated ? 'pixelated' : '';
+    interpBtn.classList.toggle('is-active', pixelated);
+    interpBtn.setAttribute('aria-pressed', String(pixelated));
+  });
   const hud = hudEl ? mountZoomHud(hudEl, {
     ariaLabel: t('Zoom'),
-    classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct' },
+    classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct', fit: 'cat-zoom-fit', sep: 'cat-zoom-sep' },
     initialReadout: '100%',
     onZoom: (dir) => zoomTo(s * (dir > 0 ? 1.5 : 1 / 1.5)),
-    onFit: () => { s = MIN; tx = 0; ty = 0; apply(); },
+    onFit: () => { s = FIT; tx = 0; ty = 0; apply(); },
+    fitPosition: 'start',
+    fitContent: FIT_ICON, fitAriaLabel: t('Fit to view'), fitTitle: t('Fit to view'),
     outContent: ZOOM_OUT_ICON,
     inContent: ZOOM_IN_ICON,
     outAriaLabel: t('Zoom out'), outTitle: t('Zoom out'),
     inAriaLabel: t('Zoom in'), inTitle: t('Zoom in'),
     pctAriaLabel: t('Reset zoom'), pctTitle: t('Reset zoom'),
+    extras: isLottie ? [] : [interpBtn],
   }) : null;
   stage.addEventListener('wheel', (e) => {
     if (cropModeActive) return;   // inline crop owns the stage
@@ -484,7 +516,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
   }, { passive: false });
   let dragging = false, lastX = 0, lastY = 0;
   stage.addEventListener('pointerdown', (e) => {
-    if (cropModeActive || s <= MIN) return;
+    if (cropModeActive || s <= FIT) return;   // pan only when zoomed IN past fit
     dragging = true; lastX = e.clientX; lastY = e.clientY;
     stage.classList.add('is-panning');
     try { stage.setPointerCapture(e.pointerId); } catch { /* not supported */ }
@@ -506,14 +538,14 @@ function attachZoom(dlg: HTMLDialogElement): void {
   stage.addEventListener('dblclick', (e) => {
     if (cropModeActive) return;
     const [ox, oy] = offsetFrom(e);
-    zoomTo(s > MIN ? MIN : 2.5, ox, oy);
+    zoomTo(s > FIT ? FIT : 2.5, ox, oy);   // dbl-click toggles fit ⇄ 250%
   });
   // Re-fit once the intrinsic aspect ratio is known. `decode()` resolves after the bytes are
   // decoded (unlike `complete`, which can be true with naturalWidth still 0); fall back to the
   // load event for older engines. Reset to 100% and drop the inline size first so the stage
   // deflates to its true dimensions before we re-measure.
   const refit = (): void => {
-    s = MIN; tx = 0; ty = 0;
+    s = FIT; tx = 0; ty = 0;
     media.style.width = ''; media.style.height = '';
     baseLocked = false;
     apply();
@@ -529,6 +561,10 @@ function attachZoom(dlg: HTMLDialogElement): void {
       });
       mo.observe(media, { childList: true, subtree: true });
     }
+  } else if (isVideo) {
+    const v = media as HTMLVideoElement;
+    if (v.videoWidth) refit();
+    else v.addEventListener('loadedmetadata', refit, { once: true });
   } else if (img.naturalWidth === 0) {
     if (typeof img.decode === 'function') img.decode().then(refit).catch(() => {});
     img.addEventListener('load', refit, { once: true });
@@ -1655,11 +1691,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // is a player, not an image, so it opts out too; a placeholder/dataless-lottie stub has nothing
     // to zoom. attachZoom handles the <svg> player.
     const zoomable = !ref.meta?._placeholder
-      && ref.type !== 'video'
       && ref.type !== 'audio'
       && !(ref.type === 'lottie' && !isMotionLottie);
-    // Crop only makes sense on a static raster/vector - never a live motion preview.
-    const croppable = zoomable && !isMotionLottie;
+    // Crop only makes sense on a static raster/vector - never a live motion preview or a video.
+    const croppable = zoomable && !isMotionLottie && ref.type !== 'video';
     // On-device AI edits for a raster, brought over from the asset picker: Upscale
     // (host.upscale, v1.101) and Remove background (host.matte, v1.103) - same gates the
     // picker uses. Both route through their dialogs, which PRESERVE the source's

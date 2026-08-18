@@ -232,7 +232,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'pro/grid.ts': 5,
   'pro/run-overlay.ts': 1,
   'theme.ts': 3,
-  'views/catalog.ts': 21,   // 22 → 21: AUDIO_GLYPH retired for lib/audio-thumb.ts (2026-07-28)
+  'views/catalog.ts': 23,   // +2 2026-08-18: INTERP_ICON + FIT_ICON zoom-pill glyphs (inline, like ZOOM_IN/OUT_ICON)
   'views/dashboard.ts': 5,
   'views/doc-editor.ts': 23,
   'views/free-canvas.ts': 1,
@@ -951,8 +951,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 11,  // +1 2026-08-17: asset-metadata tech panel (data-tech fill) — label + value both escape()d
+  'views/catalog.ts': 12,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
+  'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
   // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks -
   // the head, the sign-in button, the clear button, and the active-session status - 

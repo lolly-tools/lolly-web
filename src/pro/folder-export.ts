@@ -10,8 +10,8 @@
  *
  * Row assembly is the pure logic in ./folder-rows.js (also used by pro/index.js to
  * flatten a folder into the grid). This module adds the planning + run shell, so it
- * is the part lazy-loaded by the shared overlay at export time, behind the
- * pro-batch flag.
+ * is the part lazy-loaded by the shared overlay at export time (Batch export, now
+ * available to everyone - the pro-batch flag was retired).
  */
 import { escape } from '../utils.ts';
 import { planBatch, runBatch, notesFromFindings } from './batch.ts';

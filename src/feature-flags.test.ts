@@ -89,7 +89,7 @@ test('dormant: a user with NO stored choice reads ON, sync and profile-aware ali
   assert.equal(isFlagOnSync(PRIVATE_COLLAB_FLAG), true, 'sync mirror read, no entry ⇒ built-in default');
 
   // flagEnabled (unlike isFlagOn) is NOT default-aware - it is the historic ON-
-  // unless-turned-off API used only by CATEGORY_FLAGS/PRO_FLAG, and it's not the
+  // unless-turned-off API used only by CATEGORY_FLAGS, and it's not the
   // read PRIVATE_COLLAB_FLAG's consumers use, so it's deliberately not asserted
   // here; isFlagOn is the default-aware read a flag like this one is read through.
   const noChoice = { featureFlags: {} } as unknown as Parameters<typeof isFlagOn>[0];

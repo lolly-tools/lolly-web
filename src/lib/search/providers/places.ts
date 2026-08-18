@@ -16,7 +16,6 @@
 
 import { t } from '../../../i18n.ts';
 import { icon } from '../../icons.ts';
-import { flagEnabledSync, PRO_FLAG } from '../../../feature-flags.ts';
 import { fold, scoreHaystack } from '../match.ts';
 import type { SearchField } from '../match.ts';
 import type { SearchHit, SearchProvider } from '../registry.ts';
@@ -53,7 +52,7 @@ export function createPlacesProvider(): SearchProvider {
   return {
     id: 'places',
     async search(tokens, limit): Promise<SearchHit[]> {
-      const entries = flagEnabledSync(PRO_FLAG.id) ? [...PLACES, PRO_PLACE] : PLACES;
+      const entries = [...PLACES, PRO_PLACE];   // Batch/Pro available to everyone now (flag retired)
       const scored: Array<{ place: PlaceEntry; score: number }> = [];
       for (const place of entries) {
         // t(label) re-folds per call: the active language can change

@@ -4,8 +4,8 @@
  *
  * One overlay serves three callers (gallery, /pro, picker). It shows folders
  * (groups) over loose root items, lets the user create/rename/delete folders and
- * move sessions/images between them, and - when the pro-batch flag is on - render a
- * whole folder to one nested zip.
+ * move sessions/images between them, and render a whole folder to one nested zip
+ * (Batch, available to everyone now).
  *
  * Isolation: this module imports only the host bridge, the folder store, and the
  * pro-free tile builders. The single touch into the removable /pro folder is a
