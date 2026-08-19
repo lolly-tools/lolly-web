@@ -170,8 +170,16 @@ export async function openPrivateCollab(
   // suite free of WebRTC, a camera and a QR encoder.
   let wiring: typeof import('./join-route.ts') | null = null;
   let track: typeof import('./rtc-connection.ts') | null = null;
+  let qr: typeof import('./qr-skin.ts') | null = null;
   if (!deps.openCeremony || !deps.effects) {
-    [wiring, track] = await Promise.all([import('./join-route.ts'), import('./rtc-connection.ts')]);
+    [wiring, track, qr] = await Promise.all([
+      import('./join-route.ts'),
+      import('./rtc-connection.ts'),
+      // qr-skin is already inside join-route's chunk (it imports it statically), so this
+      // costs no extra request - it just hands us the same `createQrElementRenderer` the
+      // accept side uses, so the inviter's invite screen shows a scannable code too.
+      import('./qr-skin.ts'),
+    ]);
   }
 
   const open = deps.openCeremony ?? wiring?.openCollabCeremony;
@@ -188,7 +196,11 @@ export async function openPrivateCollab(
   if (!open || !effects) return null;
 
   const scan = deps.scan === null ? undefined : deps.scan;
-  const renderQr = deps.renderQr === null ? undefined : deps.renderQr;
+  // Default to drawing the invite as a QR, the same default the accept side
+  // (`join-route.ts`) applies - so a second device can scan the invite instead of
+  // copy-pasting the code. `null` opts out (this file's own suite has no QR encoder); a
+  // caller-supplied renderer wins over the default.
+  const renderQr = deps.renderQr === null ? undefined : deps.renderQr ?? qr?.createQrElementRenderer();
 
   let channel: CeremonyChannelLike | null = null;
   let stopListening: (() => void) | null = null;

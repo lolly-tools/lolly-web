@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 // valid.ts reads `window.__toolIndex` - same type-only augmentation trick as
 // valid-appended.test.ts (nothing executes from sync.ts at runtime).
 import type {} from '../catalog/sync.ts';
-import { scriptHtml } from './valid.ts';
+import { scriptHtml, previewKind } from './valid.ts';
 
 const report = (over: Record<string, unknown>): any => ({
   found: true, state: 'valid', trusted: true, madeWithLolly: true, likelyMadeWithLolly: false,
@@ -67,4 +67,22 @@ test('no recorded script, non-string or empty script → no panel', () => {
   assert.equal(scriptHtml(report({ history: [ttsStep(undefined)] })), '');
   assert.equal(scriptHtml(report({ history: [ttsStep({ script: 42 })] })), '');
   assert.equal(scriptHtml(report({ history: [ttsStep({ script: '   ' })] })), '');
+});
+
+
+// ── text/markdown uploads → AI-provenance path (plans/125) ───────────────────
+
+test('a .txt / .md upload is a text preview even with no sniffed C2PA format', () => {
+  // verifyC2pa returns format:null for a plain text/markdown file (no carrier), so
+  // the AI-provenance analysis must key off the extension, not just the sniff.
+  assert.equal(previewKind(null, 'notes.md'), 'text');
+  assert.equal(previewKind(null, 'poem.txt'), 'text');
+  assert.equal(previewKind(null, 'README.markdown'), 'text');
+  // The sniffed C2PA text carriers still resolve to text.
+  assert.equal(previewKind('text', 'x'), 'text');
+  assert.equal(previewKind('code', 'x'), 'text');
+  // A real non-text format wins over a misleading extension (a PNG named .md).
+  assert.equal(previewKind('png', 'trick.md'), 'image');
+  // A binary/unknown with no text extension stays 'none'.
+  assert.equal(previewKind(null, 'thing.bin'), 'none');
 });

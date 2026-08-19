@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Bunlardan birini diğer cihaza gönder. İkinizin de güvendiği herhangi bir kanal işe yarar.",
   "Invite link": "Davet bağlantısı",
   "Invite code": "Davet kodu",
-  "Invite code as a QR code": "QR kod olarak davet kodu",
   "Anyone with this invite can join and edit until you close the session.": "Bu davete sahip olan herkes, oturumu kapatana kadar katılıp düzenleyebilir.",
   "Next: paste the reply": "Sonraki: yanıtı yapıştır",
   "Step 2 of 3: Wait for the reply": "Adım 2/3: Yanıt bekleniyor",
@@ -61,7 +60,6 @@
   "Reply code": "Yanıt kodu",
   "Copy reply link": "Yanıt bağlantısını kopyala",
   "Copy reply code": "Yanıt kodunu kopyala",
-  "Reply code as a QR code": "QR kod olarak yanıt kodu",
   "Waiting for the other device to connect.": "Diğer cihazın bağlanması bekleniyor.",
   "Connected": "Bağlandı",
   "You are working with {peer}.": "{peer} ile çalışıyorsun.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Aktarım kaydedilemedi.",
   "Couldn't read the transfer back.": "Aktarım geri okunamadı.",
   "Part of the transfer is missing.": "Aktarımın bir kısmı eksik.",
-  "The transfer was cancelled.": "Aktarım iptal edildi."
+  "The transfer was cancelled.": "Aktarım iptal edildi.",
+  "Tap to enlarge for scanning": "Taramak için büyütmek üzere dokunun",
+  "Enlarge {label} for scanning": "Taramak için {label} büyüt",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Taramak için buraya başka bir cihaz tutun. Kapatmak için herhangi bir yere dokunun veya Esc'ye basın.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Bu bağlantı taranamayacak kadar uzun. Bunun yerine kopyalayın veya Kod sekmesini kullanın."
 }

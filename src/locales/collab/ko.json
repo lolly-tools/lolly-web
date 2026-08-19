@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "이 중 하나를 상대 기기로 보내세요. 서로 믿을 수 있는 방법이면 무엇이든 괜찮아요.",
   "Invite link": "초대 링크",
   "Invite code": "초대 코드",
-  "Invite code as a QR code": "QR 코드로 된 초대 코드",
   "Anyone with this invite can join and edit until you close the session.": "이 초대장이 있으면 누구나 세션을 닫기 전까지 참여해서 편집할 수 있어요.",
   "Next: paste the reply": "다음: 응답 붙여넣기",
   "Step 2 of 3: Wait for the reply": "2/3단계: 응답 기다리기",
@@ -61,7 +60,6 @@
   "Reply code": "응답 코드",
   "Copy reply link": "응답 링크 복사",
   "Copy reply code": "응답 코드 복사",
-  "Reply code as a QR code": "QR 코드로 된 응답 코드",
   "Waiting for the other device to connect.": "상대 기기가 연결되기를 기다리고 있어요.",
   "Connected": "연결됨",
   "You are working with {peer}.": "{peer}님과 함께 작업하고 있어요.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "전송을 저장하지 못했습니다.",
   "Couldn't read the transfer back.": "전송을 다시 읽지 못했습니다.",
   "Part of the transfer is missing.": "전송의 일부가 없습니다.",
-  "The transfer was cancelled.": "전송이 취소되었습니다."
+  "The transfer was cancelled.": "전송이 취소되었습니다.",
+  "Tap to enlarge for scanning": "스캔하기 쉽도록 탭하여 확대",
+  "Enlarge {label} for scanning": "스캔을 위해 {label} 확대",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "다른 기기를 여기로 향하게 하여 스캔하세요. 아무 곳이나 탭하거나 Esc 키를 눌러 닫습니다.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "이 링크는 너무 길어 스캔할 수 없습니다. 대신 복사하거나 코드 탭을 사용하세요."
 }

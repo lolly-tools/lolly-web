@@ -107,6 +107,12 @@ const SHOW_MODAL = /\.showModal\(/;
 // Allowlist reasons (counts are exact - a second hit in an allowed file still fails):
 const DIALOG_CREATE_ALLOWED: Record<string, number> = {
   'components/modal.ts': 1,  // the primitive itself - the one place allowed to mint a <dialog>
+  // The collab QR-zoom: a NESTED, full-screen, tap-anywhere-to-dismiss overlay opened ON
+  // TOP of the ceremony modal. mountModal is a centred content-box modal whose `cancel`
+  // fires on the top dialog only, so a nested mountModal would route Escape to the wrong
+  // element; the zoom also fills the viewport with its own dim ground (no ::backdrop box to
+  // hit-test) and re-renders the QR at full size. Documented at openQrZoom.
+  'components/collab-ceremony.ts': 1,
 };
 const SHOW_MODAL_ALLOWED: Record<string, number> = {
   'components/modal.ts': 1,  // the primitive itself
@@ -118,6 +124,9 @@ const SHOW_MODAL_ALLOWED: Record<string, number> = {
   // (from the built /info page) on a chip click, with the setAttribute('open') fallback.
   // Native <form method="dialog"> owns Escape/✕/focus; no lifecycle is re-implemented.
   'lib/docs-formats.ts': 1,
+  // The collab QR-zoom opens the nested full-screen dialog it mints (see DIALOG_CREATE_ALLOWED):
+  // mountModal cannot own a nested dialog's Escape, so this one lifecycle is deliberate + local.
+  'components/collab-ceremony.ts': 1,
 };
 
 test('R1 (rec 4): the <dialog> lifecycle is minted only by components/modal.ts (mountModal)', () => {
@@ -951,7 +960,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 12,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation
+  'views/catalog.ts': 16,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box for analyse-text + read-text — catTextSignalsHtml() escape()s every interpolated value, and the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/125 Humanize): the [data-tsig] box for humanize — catHumanizeHtml() escape()s every value (change labels, the highlighted <pre> via escape()d segments); +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
   'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
@@ -1101,7 +1110,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 9 as of 2026-08-09 (plan 97 M6, the website source): +1 for renderSiteResult,
   // the website stage's own result card. This is the most hostile input the view
   // takes - every string in it came off a third-party page - so what reaches the
-  // sink is worth naming: the HOST (escape()d), the site's own NAME and the
+  // sink is listed here: the HOST (escape()d), the site's own NAME and the
   // Google FAMILIES it asks for, both through t(), which escapes its params
   // (i18n.ts); the counts are numbers through t(); everything else is a t()
   // literal. Nothing else from the page reaches markup at all - the colours go
@@ -1144,7 +1153,13 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // own runtime.applyFrameForExport() output - logic-less-Handlebars rendered markup
   // (auto-escaped by the template layer), not raw user/peer/tool input. Same trusted
   // rendered-markup class as the other sinks here.
-  'views/tool-actions.ts': 9,
+  // 9 → 11 on 2026-08-18: the cloud send-target card (lib/send-target.ts seam) -
+  // renderSendTargets() rebuilds the per-format card list, and the delegated click
+  // handler writes the provider's outcome link into the status line. Every
+  // interpolated value in both sinks is escape()d (kind/label/hint/actionLabel from
+  // the registered SendTarget, and the outcome url/label); icon() is the shared
+  // trusted glyph generator.
+  'views/tool-actions.ts': 11,
   'views/tool-inputs.ts': 9,
   // 16 → 17 on 2026-08-09: the canvas "Play" button gained the same two-span label the
   // "Go live" button beside it already had (`<span class="canvas-live-dot">` +
@@ -1166,7 +1181,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // listWrap.innerHTML = bodyHtml and the multi-file card rebuild. Same discipline:
   // summaryInner escape()s the filename (${escape(fileName)}), bodyHtml reuses
   // renderReportBody, and the static parts are t() strings.
-  'views/valid.ts': 23,
+  'views/valid.ts': 25,  // +1 2026-08-18 (plans/125): readImageText's [data-ocr-result].innerHTML = textSignalsHtml(...) — that helper escape()s every interpolated value (band/kind titles, the highlighted extract via escape()d segments, guess, summary), no user text reaches markup; +1 2026-08-19 (plans/126): readDocumentText's same [data-ocr-result] sink for the PDF text-layer read — textSignalsHtml again, plus a page-cap note whose only interpolations are escape()d t() output and two numbers
   // 3 as of 2026-08-06 (the model warning became an inline banner). Reviewed: the
   // panel build escapeHtml()s every interpolated value - the model <option> id/name
   // pairs, both aria-labels - the options sink escapeHtml()s id + label, and the new
@@ -1355,4 +1370,31 @@ test('R13: no source file carries a literal NUL — one makes the whole file "bi
   const bad = ALL.filter((f) => !NUL_ALLOWED.has(f.rel) && f.text.includes(NUL))
     .map((f) => `${f.rel}:${lineOf(f.text, f.text.indexOf(NUL))}`);
   assert.deepEqual(bad, [], 'write \\u0000 instead of the byte, so the file stays greppable');
+});
+
+// ── R14: the meta-only annotation write stays meta-only ──────────────────────
+// _uploadUserAsset is the INGEST write: it runs the version-pin preserver
+// (which silently freezes a duplicate of any pinned asset) and meters the blob
+// against quota. Both are right for new bytes and wrong for an annotation (the
+// AI-signals note, declare-AI-origins), which adds none - routing one through
+// the ingest path minted frozen copies and could spuriously trip STORAGE_FULL
+// near quota. bridge/assets.ts._updateUserAssetMeta is the annotation write, a
+// plain read-modify-put at the storage layer. This rule holds it in both
+// directions: the primitive must not grow the ingest effects back, and the
+// catalog's two annotation sites must not fall back to re-uploading the record.
+
+test('R14: _updateUserAssetMeta runs neither pin-preserver nor quota check, and the annotation sites use it', () => {
+  const assets = TS.find(f => f.rel === 'bridge/assets.ts')?.text ?? '';
+  const start = assets.indexOf('async _updateUserAssetMeta(');
+  assert.ok(start > -1, 'bridge/assets.ts must define _updateUserAssetMeta (the meta-only annotation write)');
+  // The body only: from the declaration to the next method's doc comment, so
+  // neither this method's own doc nor its neighbours' can leak into the scan.
+  const end = assets.indexOf('/**', start);
+  assert.ok(end > start, 'scan slice: another documented method should follow _updateUserAssetMeta');
+  const body = assets.slice(start, end);
+  assert.doesNotMatch(body, /preservePinned|assertQuotaRoom/,
+    '_updateUserAssetMeta must not run the pin-preserver or the quota check: a meta rewrite adds no bytes and must never freeze a pinned duplicate');
+  const catalog = TS.find(f => f.rel === 'views/catalog.ts')?.text ?? '';
+  assert.ok(hitLines(catalog, /host\.assets\._updateUserAssetMeta\(/).length >= 2,
+    'views/catalog.ts: persistAiSignals and declare-ai-origins both annotate via _updateUserAssetMeta, never a whole-record re-upload');
 });

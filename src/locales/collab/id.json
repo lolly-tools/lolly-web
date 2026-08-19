@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Kirim salah satu dari ini ke perangkat lain. Saluran apa pun yang Anda berdua percaya bisa digunakan.",
   "Invite link": "Tautan undangan",
   "Invite code": "Kode undangan",
-  "Invite code as a QR code": "Kode undangan sebagai kode QR",
   "Anyone with this invite can join and edit until you close the session.": "Siapa pun yang memiliki undangan ini dapat bergabung dan mengedit sampai Anda menutup sesi.",
   "Next: paste the reply": "Selanjutnya: tempel balasan",
   "Step 2 of 3: Wait for the reply": "Langkah 2 dari 3: Tunggu balasan",
@@ -61,7 +60,6 @@
   "Reply code": "Kode balasan",
   "Copy reply link": "Salin tautan balasan",
   "Copy reply code": "Salin kode balasan",
-  "Reply code as a QR code": "Kode balasan sebagai kode QR",
   "Waiting for the other device to connect.": "Menunggu perangkat lain tersambung.",
   "Connected": "Tersambung",
   "You are working with {peer}.": "Anda sedang bekerja dengan {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Tidak dapat menyimpan transfer.",
   "Couldn't read the transfer back.": "Tidak dapat membaca kembali transfer.",
   "Part of the transfer is missing.": "Sebagian transfer hilang.",
-  "The transfer was cancelled.": "Transfer dibatalkan."
+  "The transfer was cancelled.": "Transfer dibatalkan.",
+  "Tap to enlarge for scanning": "Ketuk untuk memperbesar agar bisa dipindai",
+  "Enlarge {label} for scanning": "Perbesar {label} untuk dipindai",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Arahkan perangkat lain ke sini untuk memindainya. Ketuk di mana saja atau tekan Esc untuk menutup.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Tautan ini terlalu panjang untuk dipindai. Salin saja, atau gunakan tab Kode."
 }

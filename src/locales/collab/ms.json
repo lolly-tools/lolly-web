@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Hantar salah satu daripada ini ke peranti lain. Mana-mana saluran yang dipercayai oleh anda berdua boleh digunakan.",
   "Invite link": "Pautan jemputan",
   "Invite code": "Kod jemputan",
-  "Invite code as a QR code": "Kod jemputan sebagai kod QR",
   "Anyone with this invite can join and edit until you close the session.": "Sesiapa yang mempunyai jemputan ini boleh menyertai dan mengedit sehingga anda menutup sesi ini.",
   "Next: paste the reply": "Seterusnya: tampal balasan",
   "Step 2 of 3: Wait for the reply": "Langkah 2 daripada 3: Tunggu balasan",
@@ -61,7 +60,6 @@
   "Reply code": "Kod balasan",
   "Copy reply link": "Salin pautan balasan",
   "Copy reply code": "Salin kod balasan",
-  "Reply code as a QR code": "Kod balasan sebagai kod QR",
   "Waiting for the other device to connect.": "Menunggu peranti lain menyambung.",
   "Connected": "Disambungkan",
   "You are working with {peer}.": "Anda sedang bekerja dengan {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Tidak dapat menyimpan pemindahan.",
   "Couldn't read the transfer back.": "Tidak dapat membaca semula pemindahan.",
   "Part of the transfer is missing.": "Sebahagian pemindahan hilang.",
-  "The transfer was cancelled.": "Pemindahan telah dibatalkan."
+  "The transfer was cancelled.": "Pemindahan telah dibatalkan.",
+  "Tap to enlarge for scanning": "Ketik untuk membesarkan bagi imbasan",
+  "Enlarge {label} for scanning": "Besarkan {label} untuk diimbas",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Halakan peranti lain ke sini untuk mengimbasnya. Ketik di mana-mana atau tekan Esc untuk menutup.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Pautan ini terlalu panjang untuk diimbas. Salin sahaja, atau guna tab Kod."
 }

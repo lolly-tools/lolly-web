@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "इनमें से कोई एक दूसरे डिवाइस पर भेजें। कोई भी माध्यम चलेगा जिस पर आप दोनों भरोसा करते हैं।",
   "Invite link": "इनवाइट लिंक",
   "Invite code": "इनवाइट कोड",
-  "Invite code as a QR code": "QR कोड के रूप में इनवाइट कोड",
   "Anyone with this invite can join and edit until you close the session.": "यह इनवाइट रखने वाला कोई भी व्यक्ति सेशन बंद होने तक जुड़ सकता है और एडिट कर सकता है।",
   "Next: paste the reply": "आगे: रिप्लाई पेस्ट करें",
   "Step 2 of 3: Wait for the reply": "स्टेप 2 / 3: रिप्लाई का इंतज़ार करें",
@@ -61,7 +60,6 @@
   "Reply code": "रिप्लाई कोड",
   "Copy reply link": "उत्तर लिंक कॉपी करें",
   "Copy reply code": "उत्तर कोड कॉपी करें",
-  "Reply code as a QR code": "QR कोड के रूप में रिप्लाई कोड",
   "Waiting for the other device to connect.": "दूसरे डिवाइस के कनेक्ट होने का इंतज़ार हो रहा है।",
   "Connected": "कनेक्ट हो गया",
   "You are working with {peer}.": "आप {peer} के साथ काम कर रहे हैं।",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "स्थानांतरण सहेजा नहीं जा सका।",
   "Couldn't read the transfer back.": "स्थानांतरण वापस पढ़ा नहीं जा सका।",
   "Part of the transfer is missing.": "स्थानांतरण का एक हिस्सा गायब है।",
-  "The transfer was cancelled.": "स्थानांतरण रद्द कर दिया गया।"
+  "The transfer was cancelled.": "स्थानांतरण रद्द कर दिया गया।",
+  "Tap to enlarge for scanning": "स्कैन करने के लिए बड़ा करने हेतु टैप करें",
+  "Enlarge {label} for scanning": "स्कैन करने के लिए {label} बड़ा करें",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "इसे स्कैन करने के लिए यहाँ दूसरा डिवाइस लगाएँ। बंद करने के लिए कहीं भी टैप करें या Esc दबाएँ।",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "यह लिंक स्कैन करने के लिए बहुत लंबा है। इसके बजाय इसे कॉपी करें, या कोड टैब का उपयोग करें।"
 }

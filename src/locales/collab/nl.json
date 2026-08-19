@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Stuur een van deze naar het andere apparaat. Elk kanaal dat jullie beiden vertrouwen werkt.",
   "Invite link": "Uitnodigingslink",
   "Invite code": "Uitnodigingscode",
-  "Invite code as a QR code": "Uitnodigingscode als QR-code",
   "Anyone with this invite can join and edit until you close the session.": "Iedereen met deze uitnodiging kan meedoen en bewerken totdat je de sessie sluit.",
   "Next: paste the reply": "Volgende: plak het antwoord",
   "Step 2 of 3: Wait for the reply": "Stap 2 van 3: Wacht op het antwoord",
@@ -61,7 +60,6 @@
   "Reply code": "Antwoordcode",
   "Copy reply link": "Antwoordlink kopiëren",
   "Copy reply code": "Antwoordcode kopiëren",
-  "Reply code as a QR code": "Antwoordcode als QR-code",
   "Waiting for the other device to connect.": "Wachten tot het andere apparaat verbinding maakt.",
   "Connected": "Verbonden",
   "You are working with {peer}.": "Je werkt samen met {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Kon de overdracht niet opslaan.",
   "Couldn't read the transfer back.": "Kon de overdracht niet teruglezen.",
   "Part of the transfer is missing.": "Een deel van de overdracht ontbreekt.",
-  "The transfer was cancelled.": "De overdracht is geannuleerd."
+  "The transfer was cancelled.": "De overdracht is geannuleerd.",
+  "Tap to enlarge for scanning": "Tik om te vergroten voor scannen",
+  "Enlarge {label} for scanning": "{label} vergroten om te scannen",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Richt een ander apparaat hierop om het te scannen. Tik ergens of druk op Esc om te sluiten.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Deze link is te lang om te scannen. Kopieer hem, of gebruik het tabblad Code."
 }

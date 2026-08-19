@@ -30,6 +30,7 @@ import { mountBodyPopover } from '../components/body-popover.ts';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { playScrubTick } from '../lib/sfx.ts';
+import { sendTargetsFor } from '../lib/send-target.ts';
 import { loopRank } from '../lib/neurospicy.ts';
 import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
@@ -924,6 +925,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ? `<div class="export-settings">${optionChips}${htmlChip}${emfChip}${videoChip}</div>`
     : '';
 
+  // Cloud send destinations - the PROVIDER-AGNOSTIC send-target seam
+  // (lib/send-target.ts): built-ins register at boot and each is dormant
+  // without its own config (e.g. gdrive needs a Google OAuth client id), and a
+  // deployment's control plane can add or replace kinds. The container renders
+  // per-format via renderSendTargets below; when no target serves any of this
+  // tool's formats there is no container at all. Why this exists at all (the
+  // gdrive case): Drive re-types plain web uploads server-side from its
+  // extension table (measured 2026-08-18), so an authenticated upload is the
+  // one path that lands an EMF openable in - or converted straight into -
+  // Google Drawings, the paste-into-Slides journey.
+  const sendRow = formats.some(f => sendTargetsFor(f).length) ? '<div data-send-targets></div>' : '';
+
   // Tier 4 - actions. Copy · Save · Share share one equal-width row; Download is
   // the primary CTA, alone on its own full-width line at the very bottom.
   const CLIPBOARD_SVG = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
@@ -981,7 +994,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${sendRow}${preflightRow}${costRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -1375,6 +1388,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       if (!isVideoFmt(fmt)) stopAudioPreview();   // the audio card is hidden - don't keep a preview playing under it
       el.querySelectorAll<HTMLElement>('[data-html-only]').forEach(c => { c.style.display = fmt === 'html' ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-emf-only]').forEach(c => { c.style.display = fmt === 'emf' ? 'flex' : 'none'; });
+      renderSendTargets(fmt);
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach(c => { c.style.display = isPrintFmt(fmt) ? 'flex' : 'none'; });
       syncBarsDefault(fmt);
@@ -2909,6 +2923,63 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener('click', async function (this: HTMLButtonElement) {
     if (await performSave(this)) setTimeout(() => { navigateTo(returnTo); }, 800);
+  });
+
+  // Cloud send destinations (the send-target seam). The card list is rebuilt
+  // per format; ONE delegated click handler on the container survives the
+  // re-renders. A send renders the same bytes the Download button would for
+  // the cheap cases - dims plus the Outline-fonts chip when the format is EMF
+  // - and hands them to the provider; the status line becomes the provider's
+  // viewable link on success.
+  function renderSendTargets(fmt: string): void {
+    const box = el!.querySelector<HTMLElement>('[data-send-targets]');
+    if (!box) return;
+    box.innerHTML = sendTargetsFor(fmt).map(tg => `
+      <div class="section-card export-send"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>
+        <span class="c2pa-head">${icon('upload', { className: 'c2pa-icon' })}<span>${escape(tg.label)}</span></span>
+        <button type="button" data-send-kind="${escape(tg.kind)}">${escape(tg.actionLabel?.(fmt) ?? t('Send to {name}', { name: tg.label }))}</button>
+        <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>
+      </div>`).join('');
+  }
+  renderSendTargets(initialFmt ?? formats[0] ?? '');
+  el.querySelector<HTMLElement>('[data-send-targets]')?.addEventListener('click', async (ev) => {
+    const btn = (ev.target as HTMLElement).closest?.('[data-send-kind]') as HTMLButtonElement | null;
+    if (!btn || btn.hasAttribute('disabled')) return;
+    const kind = btn.dataset.sendKind!;
+    const fmt = formatEl?.value || initialFmt || formats[0] || '';
+    const target = sendTargetsFor(fmt).find(tg => tg.kind === kind);
+    if (!target) return;
+    const status = el!.querySelector<HTMLElement>(`[data-send-status="${CSS.escape(kind)}"]`);
+    const prev = btn.textContent;
+    btn.toggleAttribute('disabled', true);
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      btn.textContent = t('Rendering…');
+      const opts = {
+        ...exportDims(),
+        ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
+      };
+      const blob = await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, opts), { shutter: true });
+      btn.textContent = t('Sending…');
+      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name;
+      const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type });
+      if (status) {
+        status.innerHTML = out.url
+          ? `<a href="${escape(out.url)}" target="_blank" rel="noopener">${escape(out.label)}</a>`
+          : escape(out.label);
+      }
+      bumpMetric('filesRendered');
+      announce(`Sent to ${target.label}`);
+    } catch (err) {
+      console.error(`Send to ${kind} failed:`, err);
+      const msg = String((err as Error)?.message || '');
+      if (status) status.textContent = msg && msg.length <= 120 ? msg : t('Send failed — try again');
+      announce('Send failed', { assertive: true });
+    } finally {
+      btn.removeAttribute('aria-busy');
+      btn.textContent = prev;
+      btn.toggleAttribute('disabled', false);
+    }
   });
 
   // "Make variants" / multi-edit - the icon button NEXT TO THE TOOL NAME (markup

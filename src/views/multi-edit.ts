@@ -314,15 +314,30 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       styleEl.textContent = scopeCss(m.tool.styles, `#me-c${i}`);
       m.canvasEl.before(styleEl);
     }
-    const w = m.tool.manifest.render?.width ?? 800;
+    const manifestW = m.tool.manifest.render?.width ?? 800;
+    const manifestH = m.tool.manifest.render?.height ?? 600;
     // Scale the native-size canvas to the cell (transform, so tool layout math
     // sees its true pixel size - same trick as the single-tool stage fit).
     const scaleHost = viewEl.querySelector<HTMLElement>(`[data-me-scale="${i}"]`)!;
     const stage = scaleHost.parentElement!;
-    const ro = new ResizeObserver(() => {
-      const s = stage.clientWidth / w;
-      scaleHost.style.transform = `scale(${s})`;
-    });
+    // Fit the WHOLE tool into its cell rather than cropping a tall one. cellHtml sizes
+    // the cell from the MANIFEST dimensions, but a render tool draws its SVG at its
+    // ACTUAL size (the width/height inputs can differ from the manifest default - e.g.
+    // a portrait chart), which then overflowed the fixed box and got clipped. So the
+    // cell adopts the tool's real aspect (read off the hydrated SVG's viewBox, present
+    // before the tool's own script even runs), giving every design its full frame - a
+    // bento of true-aspect cells. Canvas tools with no viewBox keep the manifest box.
+    const fit = (): void => {
+      const vb = scaleHost.querySelector('svg')?.viewBox?.baseVal;
+      const cw = vb && vb.width > 0 ? vb.width : manifestW;
+      const ch = vb && vb.height > 0 ? vb.height : manifestH;
+      if (scaleHost.style.width !== `${cw}px`) scaleHost.style.width = `${cw}px`;
+      if (scaleHost.style.height !== `${ch}px`) scaleHost.style.height = `${ch}px`;
+      const ar = `${cw} / ${ch}`;
+      if (stage.style.aspectRatio !== ar) stage.style.aspectRatio = ar;
+      scaleHost.style.transform = `scale(${stage.clientWidth / cw})`;
+    };
+    const ro = new ResizeObserver(fit);
     ro.observe(stage);
     cleanups.push(() => ro.disconnect());
 
@@ -343,6 +358,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         scopeTemplateStyles(m.canvasEl, `#me-c${i}`);
         runTemplateScripts(m.canvasEl);
         void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
+        fit();   // re-fit to the freshly-rendered aspect (width/height may have changed)
         m.lastPainted = hydrated;
         thumbEl?.remove();
         thumbEl = null;

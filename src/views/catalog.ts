@@ -55,6 +55,8 @@ import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { autoplayLottieThumbs, mountLottieMarker, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
 import { extractAssetMetadata } from '../lib/asset-metadata.ts';
+import { analyzeVerifyText, buildHighlightSegments, heatBucket } from './valid-text.ts';
+import type { TextSignalPanel, TextSignalMark } from './valid-text.ts';
 import { confirmDialog, choiceDialog, promptDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { armViewEnter } from '../view-enter.ts';
 import {
@@ -78,7 +80,10 @@ import type { UpscaleHost } from './upscale-dialog.ts';
 import type { MatteHost } from './matte-dialog.ts';
 import type { ExtractAudioHost } from '../lib/extract-audio.ts';
 import type { VideoJobHost } from '../lib/video-jobs.ts';
-import { mountAudioThumbs, replaceUserUpload, UPLOAD_ACCEPT } from './picker.ts';
+import { mountAudioThumbs, replaceUserUpload, storeUserUpload, UPLOAD_ACCEPT } from './picker.ts';
+import { mountTextThumbs } from '../lib/text-thumbs.ts';
+import DOMPurify from 'dompurify';
+import { looksLikeMarkdown, mdToHtml } from '../lib/markdown.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
 import { createVizCycle } from '../lib/viz-cycle.ts';
@@ -104,8 +109,9 @@ import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
   prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, GENERATED_SOURCE_TYPE, COMPOSITE_SOURCE_TYPE, C2PA_FORMATS,
-  extractC2paStore, attachC2paStore, verifyC2pa,
+  extractC2paStore, attachC2paStore, verifyC2pa, humanizeText, LEXICON_VERSION,
 } from '@lolly/engine';
+import type { HumanizeResult } from '@lolly/engine';
 import { setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
@@ -142,6 +148,7 @@ const CAT_ICONS = {
   vector:   catIco('<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>'),
   motion:   catIco('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
   audio:    catIco('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  text:     catIco('<path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/>'),
   collapse: catIco('<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>'),
   expand:   catIco('<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>'),
   eye:      catIco('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
@@ -166,6 +173,7 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
   { key: 'vector', label: 'Vector', icon: CAT_ICONS.vector, sfx: 'scribble' },
   { key: 'motion', label: 'Motion', icon: CAT_ICONS.motion, sfx: 'reel' },
   { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio, sfx: 'waveform' },
+  { key: 'text', label: 'Text', icon: CAT_ICONS.text },
 ];
 
 /** Stand-in for the search index when there is no query to match against. */
@@ -189,6 +197,19 @@ interface UserAssetRecordLike {
   aiGenerated?: 'full' | 'partial';
 }
 
+/** The persisted per-asset AI-likelihood note (plans/125), kept on a USER upload's
+ *  `meta.aiSignals` after an in-modal Analyse text / Read text run. `v` keys the
+ *  verdict to the tell lexicon that produced it: a LEXICON_VERSION bump silently
+ *  retires every stale note rather than letting an old verdict outlive its rules. */
+interface AiSignalsNote {
+  v: number;
+  band: TextSignalPanel['band'];
+  score: number;
+  source: 'digital' | 'ocr';
+  family?: string;
+  confidence?: 'low' | 'high';
+}
+
 // The web shell's concrete host exposes more than the tool-facing HostV1 contract; we
 // reach for the user-asset helpers + profile.set(). main.ts passes the concrete WebHost
 // (assignable to HostV1), so the parameter stays HostV1 and this narrows locally.
@@ -203,6 +224,9 @@ interface CatalogHost extends HostV1 {
     // AssetRefs: a rewrite has to carry forward everything the ref does not surface.
     _exportUserAssets(): Promise<readonly UserAssetRecordLike[]>;
     _uploadUserAsset(record: UserAssetRecordLike): Promise<void>;
+    // The meta-only annotation write (AI-signals note, declare-AI-origins): no
+    // quota metering, no pin-preserve - the stored bytes are untouched.
+    _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch?: { aiGenerated?: 'full' | 'partial' }): Promise<void>;
     _iconThemes?(): Promise<IconTheme[]>;
     _photoTreatments?(): Promise<PhotoTreatment[]>;
   };
@@ -763,6 +787,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let featuredHandle: FeaturedRowHandle | null = null;   // the mounted favourites strip, if any
   let lottieThumbs: { destroy(): void } | null = null;   // on-screen-gated lottie grid autoplayer
   let audioThumbs: { destroy(): void } | null = null;    // on-screen-gated waveform upgrader
+  let textThumbs: { destroy(): void } | null = null;     // on-screen-gated text-excerpt upgrader
   let viewOptsOpen = false;
   let closeViewOpts: () => void = () => {};              // set in wire(); called on teardown
   try {
@@ -857,7 +882,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // stays out. Each audio tile renders a player in the details modal.
     allAssets = [...catalog, ...userVisual]
       .filter(a => VISUAL_TYPES.has(a.type)
-        || (a.type === 'audio' && (a.source === 'user' || (Array.isArray(a.meta?.tags) && (a.meta.tags as string[]).includes('neurospicy')))));
+        || (a.type === 'audio' && (a.source === 'user' || (Array.isArray(a.meta?.tags) && (a.meta.tags as string[]).includes('neurospicy'))))
+        // A user's OWN text/code/markdown and data uploads are first-class here
+        // (¶/▦ stub tiles; preview + Copy/Analyse in the details modal). Catalog
+        // LIBRARY text/data entries stay out - those are engine data (tokens,
+        // palettes) covered by their own surfaces, and without this split every
+        // brand-pack data file would flood the grid.
+        || ((a.type === 'text' || a.type === 'data') && a.source === 'user'));
     assetById = new Map(allAssets.map(a => [a.id, a]));
     searchHaystack = null; // asset set changed - drop the stale search index
 
@@ -1015,10 +1046,173 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         + audioThumbPlaceholder({ label: String(ref.meta?.name ?? ref.id) })
         + `</${tag}>`;
     }
+    // A text asset (.txt/.md, plans/125): the bytes ARE the text, so an <img src=text>
+    // is a broken image. The modal (full) shows a real reading preview filled after mount
+    // from the asset url (the fetch is async; this markup is built sync). A grid tile shows
+    // a calm document stub. A tabular data asset gets its own stub glyph.
+    if (ref.type === 'text' || ref.type === 'data') {
+      if (full && ref.type === 'text') {
+        // The reading surface: raw monospace <pre> (textContent-filled) plus a
+        // rendered-markdown sibling the toggle swaps in, and a small tools pill
+        // (font zoom for both modes; the render toggle unhides for md-shaped
+        // text once the fetch lands). Rendered HTML is DOMPurify-sanitised.
+        return `<${tag} class="cat-thumb cat-thumb-text"><pre class="cat-text-preview" data-text-src="${escape(ref.url)}">${escape(t('Loading…'))}</pre>`
+          + `<div class="cat-md-rendered" data-md-rendered hidden></div>`
+          + `<span class="cat-text-tools">`
+          + `<button type="button" data-act="text-zoom-out" title="${escape(t('Smaller text'))}" aria-label="${escape(t('Smaller text'))}">${icon('zoomOut', { size: 14 })}</button>`
+          + `<button type="button" data-act="text-zoom-in" title="${escape(t('Larger text'))}" aria-label="${escape(t('Larger text'))}">${icon('zoomIn', { size: 14 })}</button>`
+          + `<button type="button" data-act="text-render" hidden aria-pressed="false" title="${escape(t('Rendered or monospace'))}" aria-label="${escape(t('Rendered or monospace'))}">${icon('document', { size: 14 })}</button>`
+          + `</span></${tag}>`;
+      }
+      // A text tile starts as the calm ¶ glyph and is upgraded post-mount by
+      // lib/text-thumbs.ts (mountTextThumbGrid): a brand-inked excerpt sized by
+      // document length, focused on the hottest AI-signal region with its heat
+      // marks, and a faint corner score donut - the audio-waveform treatment,
+      // for text. Data assets keep the ▦ stub (their bytes are not prose).
+      if (ref.type === 'text') {
+        return `<${tag} class="cat-thumb cat-thumb-stub cat-thumb-ttxt" data-text-thumb="${escape(ref.id)}" aria-hidden="true">¶</${tag}>`;
+      }
+      return `<${tag} class="cat-thumb cat-thumb-stub" aria-hidden="true">▦</${tag}>`;
+    }
     // Grid tiles show the small `thumb` derivative (query() puts its url on meta.thumbUrl);
     // the details/zoom modal passes full=true to keep the original for close inspection.
     const src = !full && typeof ref.meta?.thumbUrl === 'string' && ref.meta.thumbUrl ? ref.meta.thumbUrl : ref.url;
     return `<img class="cat-thumb" src="${escape(src)}" alt="" loading="lazy" decoding="async">`;
+  }
+
+  // The catalog's compact render of a text AI-likelihood report (plans/125), the
+  // counterpart to the verify view's panel. A SIGNAL, never a verdict: hedged heading,
+  // "not proof" summary. Reads fine unstyled (headings + a list), so it needs no new CSS.
+  function catTextSignalsHtml(panel: TextSignalPanel): string {
+    const heading: Record<TextSignalPanel['band'], string> = {
+      none: t('No signals that this text was AI-generated'),
+      weak: t('A few weak signals that this text may be AI-generated'),
+      notable: t('Signals that this text may be AI-generated'),
+      strong: t('Strong signals that this text may be AI-generated'),
+    };
+    const title: Record<string, string> = {
+      'model-fingerprint': t('Model fingerprint'),
+      'invisible-char': t('Invisible characters'),
+      'tag-chars': t('Hidden tag characters'),
+      'variation-selectors': t('Unusual variation selectors'),
+      'bidi-override': t('Bidirectional override characters'),
+      'mixed-script': t('Mixed-script words'),
+      'anomalous-space': t('Unusual spacing'),
+      'ai-vocabulary': t('AI-favoured vocabulary'),
+      'ai-phrasing': t('AI stock phrasing'),
+      'ai-structure': t('AI sentence structure'),
+      'claude-tell': t('Claude-associated phrasing'),
+      'smart-punctuation': t('Curly quotes / smart punctuation'),
+      'em-dash-density': t('Heavy em-dash use'),
+      'list-heavy': t('List-heavy structure'),
+      'uniform-burstiness': t('Unusually uniform sentences'),
+      'chatbot-leftover': t('Chatbot boilerplate'),
+      'template-placeholder': t('Unfilled template placeholders'),
+      'uniform-paragraphs': t('Unusually uniform paragraphs'),
+      'ai-span': t('Concentrated AI-like section'),
+      'family-tell': t('Model-associated phrasing'),
+      'spelling-variant-mix': t('Mixed US/British spelling'),
+    };
+    const rows = panel.rows.map((r) => `<li><strong>${escape(title[r.kind] ?? r.kind)}</strong>${r.detail ? ` — ${escape(r.detail)}` : ''}</li>`).join('');
+    // The heat-bar minimap, start of the text to its end - the same rolling windows
+    // the verify view paints. `cell.heat` is a plain 0-1 number the engine already
+    // rounded, and it is the ONLY thing interpolated into the style attribute, as a
+    // custom property the stylesheet turns into a colour.
+    const heatbar = panel.heatmap && panel.heatmap.cells.length >= 4
+      ? `<div class="cat-tsig-heatbar" role="img" aria-label="${escape(t('Where AI-writing signals concentrate in this text'))}">${panel.heatmap.cells.map((c) => `<i style="--h:${c.heat}"></i>`).join('')}</div>`
+      : '';
+    const guess = panel.guessFamily
+      ? (panel.guessConfidence === 'high'
+        ? `<p class="cat-tsig-guess">${tRaw('Identified as <strong>{family}</strong> from a leaked model fingerprint.', { family: escape(panel.guessFamily) })}</p>`
+        : `<p class="cat-tsig-guess">${tRaw('Best guess (low confidence): consistent with <strong>{family}</strong> output.', { family: escape(panel.guessFamily) })}</p>`)
+      : '';
+    // The runners-up behind a LOW-confidence guess keep the winner honest ("leans X
+    // over Y", not "is X"). A leaked fingerprint needs no runners-up.
+    // Absence of a leaked marker is not a failed check: chat apps strip their own
+    // scaffolding on copy, so most AI text carries none. Said out loud (mirrors valid.ts).
+    const noMarker = panel.band !== 'none' && !panel.pixelSourced && !panel.rows.some((r) => r.kind === 'model-fingerprint')
+      ? `<p class="cat-tsig-cands">${escape(t('No leaked model markers were found in this text. Chat apps usually strip them from copied answers, so their absence proves nothing either way.'))}</p>`
+      : '';
+    const cands = panel.guessConfidence === 'low' && (panel.guessCandidates?.length ?? 0) >= 2
+      ? `<p class="cat-tsig-cands">${escape(t('Style comparison across families:'))} ${escape(panel.guessCandidates!.map((c) => `${c.family} ${c.strength}`).join(' · '))}</p>`
+      : '';
+    // The score donut: a centred hero gauge with the rating INSIDE the ring.
+    // Colour follows the BAND (a state, not a series); the number wears text
+    // tokens, so colour is never the only carrier. Numeric-only SVG.
+    const gn = Math.max(0, Math.min(100, Math.round(panel.score)));
+    const gc = 2 * Math.PI * 26;
+    const gOn = (gn / 100) * gc;
+    const gauge = `<div class="cat-tsig-gauge-wrap"><svg class="cat-tsig-gauge" viewBox="0 0 64 64" role="img" aria-label="${escape(tRaw('Signal score {n} of 100', { n: gn }))}" data-band="${escape(panel.band)}">`
+      + '<circle class="cat-tsig-gauge-track" cx="32" cy="32" r="26"/>'
+      + `<circle class="cat-tsig-gauge-fill" cx="32" cy="32" r="26" stroke-dasharray="${gOn.toFixed(2)} ${gc.toFixed(2)}"/>`
+      + `<text class="cat-tsig-gauge-num" x="32" y="34">${gn}</text>`
+      + '<text class="cat-tsig-gauge-den" x="32" y="45">/100</text>'
+      + '</svg></div>';
+    return `<div class="cat-tsig" data-band="${escape(panel.band)}" role="note">
+      <p class="cat-tsig-head">${icon('aiSpark', { size: 14 })} <strong>${escape(heading[panel.band])}</strong></p>
+      ${gauge}
+      ${heatbar}
+      ${rows ? `<ul class="cat-tsig-list">${rows}</ul>` : ''}
+      ${guess}
+      ${cands}
+      ${noMarker}
+      <p class="cat-tsig-note">${escape(panel.summary)}</p>
+    </div>`;
+  }
+
+  /** Extracted text with its flagged spans wrapped in confidence-graded <mark>s.
+   *  The tier class keeps the coarse amber/red base; the heat bucket (t1 coolest,
+   *  t5 hottest) refines it to the same 5-step temperature the verify view grades. */
+  function catHighlightHtml(text: string, marks: TextSignalMark[]): string {
+    // Tooltip names the grade so the reader knows what is ignorable - the
+    // copy maps buckets exactly as valid.ts's heatGradeWord does.
+    const grade = (b: number): string => b >= 4 ? t('a strong tell') : b === 3 ? t('a moderate signal') : t('a weak hint, safe to ignore');
+    return buildHighlightSegments(text, marks).map((s) => {
+      if (!s.tier) return escape(s.text);
+      const b = heatBucket(s.heat ?? 0);
+      return `<mark class="cat-hl cat-hl--${escape(s.tier)} cat-hl--t${b}" title="${escape(grade(b))}">${escape(s.text)}</mark>`;
+    }).join('');
+  }
+
+  /** The Humanize result: what the deterministic clean-up changed, the cleaned text with
+   *  its remaining (semantic) tells highlighted for the user to reword, and the honest
+   *  AI-origins opt-in - a nudge to declare, never an auto-stamp (no model ran).
+   *  `canDeclare` = the asset is a user upload: the declare action writes onto the
+   *  record's meta, and built-in catalog content is an immutable checksum-validated
+   *  contract, so the button must never render for it (it would be a dead control). */
+  function catHumanizeHtml(result: HumanizeResult, cleanedPanel: TextSignalPanel, canDeclare: boolean): string {
+    const changeList = result.changes.length
+      ? `<ul class="cat-tsig-list">${result.changes.map((c) => `<li><strong>${escape(c.label)}</strong> ×${c.count}</li>`).join('')}</ul>`
+      : `<p class="cat-tsig-note">${t('Nothing mechanical to clean up. This text is already tidy.')}</p>`;
+    const remaining = cleanedPanel.rows.some((r) => r.tier === 'heuristic');
+    // Offer the honest declaration only when signals remain - so it reads as encouragement
+    // to do the right thing, not a prompt on obviously-human text - and only where the
+    // declaration can actually land (a user upload, per `canDeclare` above).
+    const declare = canDeclare && cleanedPanel.band !== 'none'
+      ? `<p class="cat-tsig-note">${t('If this text did come from AI, you can flag its AI origins on the asset so that travels honestly wherever it is used.')} <button type="button" class="btn cat-act-declare-ai" data-act="declare-ai-origins">${t('Flag AI origins')}</button></p>`
+      : '';
+    return `<div class="cat-tsig" role="note">
+      <p class="cat-tsig-head">${icon('aiSpark', { size: 14 })} <strong>${t('Humanized on-device (no rewrite)')}</strong></p>
+      ${changeList}
+      <pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(cleanedPanel.text ?? '', cleanedPanel.marks)}</pre>
+      ${remaining ? `<p class="cat-tsig-note">${t('The highlighted phrases are writing-style tells only a person should reword. No model rewrites them here.')}</p>` : ''}
+      <div class="cat-humanize-actions"><button type="button" class="btn cat-act-copy-clean" data-act="copy-clean">${icon('duplicate', { size: 14 })}<span>${t('Copy cleaned text')}</span></button><button type="button" class="btn cat-act-save-clean" data-act="save-clean">${icon('filePlus', { size: 14 })}<span>${t('Add to catalog')}</span></button></div>
+      ${declare}
+    </div>`;
+  }
+
+  /** Decode a raster asset URL to the RGBA frame host.ocr.run expects. */
+  async function rasterToOcrFrame(url: string): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
+    const bmp = await createImageBitmap(await (await fetch(url)).blob());
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width; canvas.height = bmp.height;
+    const cx = canvas.getContext('2d');
+    if (!cx) throw new Error('no 2d context');
+    cx.drawImage(bmp, 0, 0);
+    const img = cx.getImageData(0, 0, bmp.width, bmp.height);
+    const frame = { width: bmp.width, height: bmp.height, data: img.data };
+    bmp.close?.();
+    return frame;
   }
 
   // A row of two-colour theme swatches (the icon "colours" picker) - shared by the download
@@ -1046,6 +1240,71 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       + `</div>`;
   };
 
+  /** The persisted AI-likelihood pill (plans/125). Rendered ONLY while the stored
+   *  note matches the CURRENT tell lexicon (a lexicon bump retires stale verdicts
+   *  rather than letting them outlive the rules that produced them), and only at
+   *  the two bands worth a glance. A signal, never proof - the title says so. */
+  function aiSignalsChip(ref: AssetRef): string {
+    const sig = ref.meta?.aiSignals as AiSignalsNote | undefined;
+    if (!sig || sig.v !== LEXICON_VERSION) return '';
+    if (sig.band !== 'notable' && sig.band !== 'strong') return '';
+    return `<span class="cat-ai-chip" data-band="${escape(sig.band)}" title="${escape(t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.'))}">${escape(t('AI?'))}</span>`;
+  }
+
+  /** Drop the chip into the open modal's title row + this asset's grid tile in
+   *  place - the same in-place discipline as reflectFavInGrid (no full re-render).
+   *  DOM API only, so no new raw-HTML sink. Idempotent: an existing chip is
+   *  updated, never doubled. */
+  function reflectAiChipInPlace(ref: AssetRef): void {
+    const sig = ref.meta?.aiSignals as AiSignalsNote | undefined;
+    if (!sig || sig.v !== LEXICON_VERSION || (sig.band !== 'notable' && sig.band !== 'strong')) return;
+    const spots = [
+      detailsDialog?.querySelector<HTMLElement>('.cat-details-name') ?? null,
+      viewEl.querySelector<HTMLElement>(`.cat-tile[data-id="${CSS.escape(ref.id)}"] .cat-tile-sub`),
+    ];
+    for (const spot of spots) {
+      if (!spot) continue;
+      const chip = spot.querySelector<HTMLElement>('.cat-ai-chip') ?? spot.appendChild(document.createElement('span'));
+      chip.className = 'cat-ai-chip';
+      chip.dataset.band = sig.band;
+      chip.title = t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.');
+      chip.textContent = t('AI?');
+    }
+  }
+
+  /**
+   * Write an analysis verdict onto a USER upload's meta so the confidence travels
+   * with the asset. Built-in catalog content is an immutable checksum-validated
+   * contract and is NEVER mutated - this returns without writing for it.
+   *
+   * The same read-then-`_updateUserAssetMeta` merge the declare-ai-origins action
+   * uses: a meta-only write at the storage layer, so every other field (blob,
+   * credential, version) rides forward untouched, cached object URLs survive, and
+   * neither the quota check nor the version-pin preserver runs - annotating an
+   * asset adds no bytes and must never freeze a pinned duplicate. Best-effort on
+   * purpose: the panel already rendered, so a failed write must never surface as
+   * a failed analysis.
+   */
+  async function persistAiSignals(ref: AssetRef, panel: TextSignalPanel, source: 'digital' | 'ocr'): Promise<void> {
+    if (ref.source !== 'user') return;
+    const aiSignals: AiSignalsNote = {
+      v: LEXICON_VERSION, band: panel.band, score: panel.score, source,
+      ...(panel.guessFamily ? {
+        family: panel.guessFamily,
+        ...(panel.guessConfidence ? { confidence: panel.guessConfidence } : {}),
+      } : {}),
+    };
+    try {
+      const recs = await host.assets._exportUserAssets();
+      const rec = recs.find((r) => r.id === ref.id);
+      if (!rec) return;
+      await host.assets._updateUserAssetMeta(ref.id, { ...rec.meta, aiSignals });
+      // Reflect on the in-memory ref too, so the chip shows without a reload.
+      ref.meta = { ...(ref.meta ?? {}), aiSignals };
+      reflectAiChipInPlace(ref);
+    } catch { /* best-effort persistence - the on-screen analysis already told the user */ }
+  }
+
   function assetTile(ref: AssetRef): string {
     const base = assetBaseId(ref.id);
     const fav = favSet.has(base);
@@ -1070,7 +1329,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
             <span class="cat-tile-name" title="${escape(name)}">${escape(name)}</span>
-            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}</span>
+            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}</span>
           </span>
         </button>
         <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" aria-label="${escape(fav ? tRaw('Remove {name} from favourites', { name }) : tRaw('Add {name} to favourites', { name }))}">${STAR_ICON}</button>
@@ -1121,12 +1380,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // render()/renderBody()). data-empty grows the zone into the roomier column
     // layout when it IS the section (no uploads yet).
     const dropzone = `<div data-dropzone-mount${items.length ? '' : ' data-empty'}></div>`;
-    // "Script audio" beside the drop area: type a script, generate speech on-device
-    // via the optional host.speech bridge (v1.96), and the saved clip lands right
-    // here in "Your uploads". Feature-detected - absent bridge, absent button.
-    const scriptAudio = host.speech?.isAvailable()
-      ? `<div class="cat-uploads-tts"><button type="button" class="btn" data-script-audio>${icon('mic', { size: 14 })} ${t('Script audio')}</button></div>`
-      : '';
+    // The authoring row beside the drop area. "Script audio" (type a script,
+    // generate speech on-device via the optional host.speech bridge, v1.96) is
+    // feature-detected - absent bridge, absent button. "Paste text" (type or
+    // paste text/Markdown, stored as a first-class text asset through the same
+    // ingest path a dropped .md takes) needs no bridge, so it always renders.
+    const scriptAudio = `<div class="cat-uploads-tts">${host.speech?.isAvailable()
+      ? `<button type="button" class="btn" data-script-audio>${icon('mic', { size: 14 })} ${t('Script audio')}</button>` : ''
+    }<button type="button" class="btn" data-paste-text>${icon('filePlus', { size: 14 })} ${t('Paste text')}</button></div>`;
     return `<section class="cat-group cat-group--uploads${isCollapsed ? ' is-collapsed' : ''}" data-group="${key}">
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
@@ -1468,6 +1729,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     reapplyTreatment();
     mountLottieThumbs();
     mountAudioThumbGrid();
+    mountTextThumbGrid();
     mountDropzone();
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
   }
@@ -1492,6 +1754,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const body = viewEl.querySelector<HTMLElement>('.catalog-body');
     audioThumbs = body
       ? mountAudioThumbs(body, host, (id) => assetById.get(id), () => mounted)
+      : null;
+  }
+
+  // The text sibling: upgrade ¶ stubs to brand-inked, signal-focused excerpts
+  // (lib/text-thumbs.ts). Same lifecycle as the waveform upgrader, called from
+  // the same places; models cache module-side so re-renders repaint instantly.
+  function mountTextThumbGrid(): void {
+    textThumbs?.destroy();
+    const body = viewEl.querySelector<HTMLElement>('.catalog-body');
+    textThumbs = body
+      ? mountTextThumbs(body, host, (id) => assetById.get(id), () => mounted)
       : null;
   }
 
@@ -1526,6 +1799,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     reapplyTreatment();
     mountLottieThumbs();
     mountAudioThumbGrid();
+    mountTextThumbGrid();
     mountDropzone();
   }
 
@@ -1680,6 +1954,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ? initialTreatment
       : null;
     let dBaseSvg: string | null = null;
+    // A text asset's decoded content, cached once for both the reading preview and the
+    // "Analyse text" action so neither re-fetches (plans/125).
+    let dTextContent: string | null = null;
+    // The last humanized (cleaned) text, for the Copy-cleaned button (plans/125).
+    let dCleanedText: string | null = null;
+    let dTextZoom = 1;    // font scale for the text reading surface (both modes)
+    // A text asset (.txt/.md): the bytes are the text. Offers Copy text + Analyse text.
+    const isTextAsset = ref.type === 'text';
     // A Lottie plays in the details view as a live SVG player (mounted below), not a still - with a
     // play/pause overlay. Both library (json on meta.animationUrl) and user (url IS the json) lotties.
     const lottieJson = ref.type === 'lottie'
@@ -1692,6 +1974,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // to zoom. attachZoom handles the <svg> player.
     const zoomable = !ref.meta?._placeholder
       && ref.type !== 'audio'
+      && ref.type !== 'text' && ref.type !== 'data'
       && !(ref.type === 'lottie' && !isMotionLottie);
     // Crop only makes sense on a static raster/vector - never a live motion preview or a video.
     const croppable = zoomable && !isMotionLottie && ref.type !== 'video';
@@ -1704,6 +1987,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
+    // Read text OUT of an image (host.ocr, plans/125). Gated on a STAGED model, so it
+    // is invisible until one is vendored - honest progressive enhancement. Raster only.
+    const canOcr = ref.type === 'raster' && !ref.meta?._placeholder
+      && host.ocr?.isAvailable() === true && (host.ocr?.models().length ?? 0) > 0;
     // "Extract audio" (WP-C): decode a video's sound track on-device and save it as
     // an audio user asset. Video only - it is nonsensical anywhere else - and only
     // where the browser can decode audio at all. A catalog-side extraction is its own
@@ -1746,7 +2033,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           : thumbHtml(ref, false, true)}
       </div>
       <div class="cat-details-body">
-        <h2 class="cat-details-name">${escape(name)}</h2>
+        <h2 class="cat-details-name">${escape(name)}${aiSignalsChip(ref)}</h2>
         ${ref.type === 'audio' ? `<div class="cat-details-art" data-audio-art aria-hidden="true">${audioCardArt(ref)}</div>` : ''}
         <dl class="cat-details-meta">
           <div><dt>${t('Source')}</dt><dd>${isUser ? t('Your upload') : t('SUSE catalog')}</dd></div>
@@ -1757,6 +2044,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${tags.length ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<span class="cat-tag">${escape(String(tag))}</span>`).join('')}</dd></div>` : ''}
         </dl>
         <div class="cat-details-tech" data-tech hidden></div>
+        ${isTextAsset || canOcr ? `<div class="cat-details-tsig" data-tsig hidden></div>` : ''}
         ${showVerify ? `<div class="cat-details-cred">
           <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">${t('This file’s Content Credential records a Lolly export, intact.')}</span></div>
           <div class="cat-cred-panels" hidden></div>
@@ -1767,9 +2055,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         <div class="cat-details-actions">
           <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>
           <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>
+          ${isTextAsset ? `<button type="button" class="btn cat-act-copy-text" data-act="copy-text">${icon('duplicate', { size: 14 })}<span>${t('Copy text')}</span></button>
+          <button type="button" class="btn cat-act-analyse-text" data-act="analyse-text">${icon('aiSpark', { size: 14 })}<span>${t('Analyse text')}</span></button>
+          <button type="button" class="btn cat-act-humanize" data-act="humanize">${icon('aiSpark', { size: 14 })}<span>${t('Humanize')}</span></button>` : ''}
           ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
           ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
+          ${canOcr ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : ''}
           ${canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : ''}
           ${canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
           ${canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
@@ -1785,6 +2077,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
                 ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>${t('Unhide')}</span></button>`
                 : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`)}
         </div>
+        ${isTextAsset ? `<div class="cat-text-dl" role="group" aria-label="${escape(t('Download as'))}">
+          <span class="cat-dl-label">${t('Download as')}</span>
+          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="raw">${escape((ref.format || 'txt').toUpperCase())}</button>
+          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="html">HTML</button>
+          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="rtf">RTF</button>
+          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="docx">DOCX</button>
+          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="odt">ODT</button>
+        </div>` : ''}
       </div>`;
     // Exits inline trim mode, or null when no card is up. Assigned by enterInlineTrim
     // below; declared here so the modal's onClose can answer an open card (its teardown
@@ -1884,6 +2184,72 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ensureTreatmentDefs();
       const img = dlg.querySelector<HTMLImageElement>('.cat-thumb');
       if (img) img.style.filter = `url(#${TREATMENT_FILTER_PREFIX}${dTreatment})`;
+    }
+    // A text asset: fill the reading preview from the asset url after mount (the markup
+    // was built sync, with a "Loading…" stub). `textContent` escapes, so the file's own
+    // bytes can never inject markup. The decoded text is cached for "Analyse text".
+    // Swap the text reading surface between raw monospace and rendered markdown.
+    // The rendered fill happens once, lazily, and through DOMPurify.sanitize -
+    // the one raw-HTML sink this feature adds (counted in primitive-guards R10).
+    const setTextRenderMode = (on: boolean): void => {
+      const pre = dlg.querySelector<HTMLElement>('.cat-text-preview');
+      const box = dlg.querySelector<HTMLElement>('[data-md-rendered]');
+      const btn = dlg.querySelector<HTMLElement>('[data-act="text-render"]');
+      if (!pre || !box) return;
+      if (on && dTextContent != null && !box.dataset.filled) {
+        const capped = dTextContent.length > 262144 ? dTextContent.slice(0, 262144) : dTextContent;
+        box.innerHTML = DOMPurify.sanitize(mdToHtml(capped));
+        box.dataset.filled = '1';
+      }
+      pre.hidden = on;
+      box.hidden = !on;
+      btn?.classList.toggle('is-active', on);
+      btn?.setAttribute('aria-pressed', String(on));
+    };
+    // Paint the heat marks INTO the main reading preview, so the analysis shows
+    // in place, not only in the panel below. DOM-built (no markup sink); marks
+    // are byte-accurate against the RAW text, so a rendered-markdown view drops
+    // back to monospace first. The preview shows the first 8 KB - marks beyond
+    // the shown slice still appear in the panel's own extract.
+    const paintPreviewMarks = (text: string, marks: TextSignalMark[]): void => {
+      setTextRenderMode(false);
+      const pre = dlg.querySelector<HTMLElement>('.cat-text-preview');
+      if (!pre) return;
+      const shown = text.length > 8192 ? text.slice(0, 8192) : text;
+      const grade = (b: number): string => b >= 4 ? t('a strong tell') : b === 3 ? t('a moderate signal') : t('a weak hint, safe to ignore');
+      const frag = document.createDocumentFragment();
+      for (const s of buildHighlightSegments(shown, marks.filter((m) => m.index < shown.length))) {
+        if (!s.tier) { frag.appendChild(document.createTextNode(s.text)); continue; }
+        const b = heatBucket(s.heat ?? 0);
+        const mark = document.createElement('mark');
+        mark.className = `cat-hl cat-hl--${s.tier} cat-hl--t${b}`;
+        mark.title = grade(b);
+        mark.textContent = s.text;
+        frag.appendChild(mark);
+      }
+      if (shown.length < text.length) frag.appendChild(document.createTextNode(`\n\n${t('…preview truncated.')}`));
+      pre.replaceChildren(frag);
+    };
+    if (isTextAsset) {
+      void (async () => {
+        const pre = dlg.querySelector<HTMLElement>('.cat-text-preview[data-text-src]');
+        try {
+          const text = await (await fetch(ref.url)).text();
+          dTextContent = text;
+          if (pre) {
+            const shown = text.length > 8192 ? text.slice(0, 8192) : text;
+            pre.textContent = shown + (text.length > shown.length ? `\n\n${t('…preview truncated.')}` : '');
+          }
+          // Markdown-shaped text gets the render toggle; a real .md defaults to
+          // the rendered view (the raw bytes stay one tap away).
+          const mdCapable = ref.format === 'md' || ref.format === 'markdown' || looksLikeMarkdown(text);
+          const renderBtn = dlg.querySelector<HTMLElement>('[data-act="text-render"]');
+          if (mdCapable && renderBtn) renderBtn.hidden = false;
+          if (ref.format === 'md' || ref.format === 'markdown') setTextRenderMode(true);
+        } catch {
+          if (pre) pre.textContent = t('This text could not be read.');
+        }
+      })();
     }
 
     // Inline crop mode: the Crop action overlays the shared crop box on THIS open preview
@@ -2175,6 +2541,196 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // Restore to the fixed label (never the current text) so a rapid re-click can't
         // capture 'Copied!' and leave the button stuck.
         setTimeout(() => { if (s) s.textContent = t('Copy link'); btn?.classList.remove('is-copied'); }, 1200);
+        return;
+      }
+      // Text-asset actions (plans/125): both stay IN this modal (like share/crop), so they
+      // are handled before the closeDetails() below. The bytes ARE the text - no OCR.
+      if (act === 'text-zoom-in' || act === 'text-zoom-out') {
+        dTextZoom = Math.max(0.55, Math.min(2.4, dTextZoom * (act === 'text-zoom-in' ? 1.2 : 1 / 1.2)));
+        dlg.querySelector<HTMLElement>('.cat-thumb-text')?.style.setProperty('--cat-text-zoom', dTextZoom.toFixed(3));
+        return;
+      }
+      if (act === 'text-render') {
+        const box = dlg.querySelector<HTMLElement>('[data-md-rendered]');
+        setTextRenderMode(!(box && !box.hidden));
+        return;
+      }
+      if (act === 'dl-text') {
+        // Formatted downloads for a text asset: raw bytes, or the shared markdown
+        // block model emitted as standalone HTML / RTF / DOCX / ODT
+        // (lib/text-doc-export.ts - lazy, the converters are download-only weight).
+        const btn = target.closest<HTMLButtonElement>('[data-act="dl-text"]');
+        const fmt = btn?.dataset.fmt;
+        if (!btn || !fmt || btn.disabled) return;
+        btn.disabled = true;
+        try {
+          const text = dTextContent ?? await (await fetch(ref.url)).text();
+          dTextContent = text;
+          const rawName = typeof ref.meta?.name === 'string' && ref.meta.name ? ref.meta.name : (ref.id.split('/').pop() ?? 'text');
+          const base = rawName.replace(/\.[a-z0-9]+$/i, '') || 'text';
+          if (fmt === 'raw') {
+            const ext = ref.format && /^[a-z0-9]{1,10}$/i.test(ref.format) ? ref.format : 'txt';
+            const mime = ext === 'md' || ext === 'markdown' ? 'text/markdown' : 'text/plain';
+            await host.export.download(new Blob([text], { type: mime }), `${base}.${ext}`);
+          } else {
+            const mod = await import('../lib/text-doc-export.ts');
+            // The HTML page PREFERENCES the active brand's faces (no embedding):
+            // readers with the fonts get the brand look, everyone else falls to
+            // the system stack the emitter always appends.
+            const rootStyle = getComputedStyle(document.documentElement);
+            const fontStack = rootStyle.getPropertyValue('--font-brand').trim();
+            const monoStack = rootStyle.getPropertyValue('--font-mono').trim();
+            if (fmt === 'html') await host.export.download(new Blob([mod.mdToStandaloneHtml(text, base, { fontStack, monoStack })], { type: 'text/html' }), `${base}.html`);
+            else if (fmt === 'rtf') await host.export.download(new Blob([mod.mdToRtf(text)], { type: 'application/rtf' }), `${base}.rtf`);
+            else if (fmt === 'docx') await host.export.download(await mod.mdToDocxBlob(text, base), `${base}.docx`);
+            else if (fmt === 'odt') await host.export.download(await mod.mdToOdtBlob(text, base), `${base}.odt`);
+          }
+        } catch {
+          announce(t('That download could not be built.'));
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+      if (act === 'copy-text') {
+        const btn = target.closest<HTMLElement>('.cat-act-copy-text');
+        try {
+          const text = dTextContent ?? await (await fetch(ref.url)).text();
+          dTextContent = text;
+          await navigator.clipboard.writeText(text);
+          const s = btn?.querySelector('span');
+          if (s) s.textContent = t('Copied!'); btn?.classList.add('is-copied');
+          setTimeout(() => { if (s) s.textContent = t('Copy text'); btn?.classList.remove('is-copied'); }, 1200);
+        } catch { announce(t('That text could not be copied.')); }
+        return;
+      }
+      if (act === 'analyse-text') {
+        const box = dlg.querySelector<HTMLElement>('[data-tsig]');
+        const btn = target.closest<HTMLElement>('.cat-act-analyse-text');
+        try {
+          const text = dTextContent ?? await (await fetch(ref.url)).text();
+          dTextContent = text;
+          // Cap the analysed slice at ~256 KB: artifacts + heuristics need no more, and a
+          // large file must not become a large string here. 'digital' - the bytes are text.
+          const panel = analyzeVerifyText(text.length > 262144 ? text.slice(0, 262144) : text, 'digital');
+          if (box) { box.innerHTML = catTextSignalsHtml(panel); box.hidden = false; }
+          paintPreviewMarks(text, panel.marks);
+          // A user upload keeps the verdict on its meta so the confidence travels
+          // with the asset (and the AI? chip can render without re-analysing).
+          await persistAiSignals(ref, panel, 'digital');
+        } catch {
+          if (box) { box.textContent = t('This text could not be analysed.'); box.hidden = false; }
+        }
+        btn?.setAttribute('aria-expanded', 'true');
+        return;
+      }
+      if (act === 'read-text') {
+        // Image → OCR → clipboard + a Tier-2 text-signals read (source:'ocr', so no
+        // byte-level artifacts - the panel says so). Stays in the modal.
+        const box = dlg.querySelector<HTMLElement>('[data-tsig]');
+        const btn = target.closest<HTMLButtonElement>('.cat-act-read-text');
+        if (btn?.disabled) return; // an OCR run is already in flight - never start a second
+        const span = btn?.querySelector('span');
+        const orig = span?.textContent ?? t('Read text');
+        // Disabled for the whole run (like the retry button's guard): a double-click
+        // must not spin up two concurrent OCR passes over the same image.
+        if (btn) btn.disabled = true;
+        if (span) span.textContent = t('Reading…');
+        try {
+          const frame = await rasterToOcrFrame(ref.url);
+          const result = await host.ocr!.run(frame);
+          const text = result.text.trim();
+          if (text) {
+            const panel = analyzeVerifyText(text, 'ocr');
+            if (box) { box.innerHTML = `<pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(text, panel.marks)}</pre>${catTextSignalsHtml(panel)}`; box.hidden = false; }
+            // Announce what actually happened: the clipboard write can be refused
+            // (permissions, unfocused document), and "copied" would then be a lie.
+            let copied = true;
+            try { await navigator.clipboard.writeText(text); } catch { copied = false; }
+            announce(copied ? t('Text copied') : t('Text read. Copying to the clipboard was blocked.'));
+            // Same persistence as Analyse text, marked 'ocr': the verdict came off
+            // pixels, so only style signals ran - the note says which read it was.
+            await persistAiSignals(ref, panel, 'ocr');
+          } else if (box) { box.textContent = t('No readable text was found.'); box.hidden = false; }
+        } catch {
+          if (box) { box.textContent = t('The text could not be read.'); box.hidden = false; }
+        } finally {
+          if (btn) btn.disabled = false;
+          if (span) span.textContent = orig;
+        }
+        return;
+      }
+      if (act === 'humanize') {
+        // Deterministic on-device clean-up (no model), then highlight the remaining
+        // semantic tells for the user to reword. Stays in the modal.
+        const box = dlg.querySelector<HTMLElement>('[data-tsig]');
+        try {
+          const text = dTextContent ?? await (await fetch(ref.url)).text();
+          dTextContent = text;
+          const capped = text.length > 262144 ? text.slice(0, 262144) : text;
+          const result = humanizeText(capped);
+          dCleanedText = result.text;
+          // Analyse the CLEANED text so only the style tells the clean-up cannot fix
+          // remain highlighted (the byte-level ones are gone).
+          const panel = analyzeVerifyText(result.text, 'digital');
+          if (box) { box.innerHTML = catHumanizeHtml(result, panel, isUser); box.hidden = false; }
+        } catch {
+          if (box) { box.textContent = t('This text could not be humanized.'); box.hidden = false; }
+        }
+        return;
+      }
+      if (act === 'copy-clean') {
+        const btn = target.closest<HTMLElement>('.cat-act-copy-clean');
+        if (dCleanedText != null) {
+          try {
+            await navigator.clipboard.writeText(dCleanedText);
+            const s = btn?.querySelector('span');
+            if (s) s.textContent = t('Copied!'); btn?.classList.add('is-copied');
+            setTimeout(() => { if (s) s.textContent = t('Copy cleaned text'); btn?.classList.remove('is-copied'); }, 1200);
+          } catch { announce(t('That text could not be copied.')); }
+        }
+        return;
+      }
+      if (act === 'save-clean') {
+        // Save the cleaned text as a NEW user text asset through the ordinary
+        // ingest path, which re-runs the AI-signal analysis on the cleaned bytes -
+        // so the saved copy carries its own (usually calmer) aiSignals note. Works
+        // on library text too: the new asset is the user's own copy. Deterministic
+        // clean-up, so no genAI stamp (the humanize provenance rule).
+        const btn = target.closest<HTMLButtonElement>('.cat-act-save-clean');
+        if (dCleanedText != null && btn && !btn.disabled) {
+          btn.disabled = true;
+          try {
+            const rawName = typeof ref.meta?.name === 'string' && ref.meta.name ? ref.meta.name : (ref.id.split('/').pop() ?? 'text');
+            const base = rawName.replace(/\.[a-z0-9]+$/i, '');
+            const ext = ref.format && /^[a-z0-9]{1,10}$/i.test(ref.format) ? ref.format : 'txt';
+            const mime = ext === 'md' || ext === 'markdown' ? 'text/markdown' : 'text/plain';
+            await storeUserUpload(host as unknown as PickerHost, new File([dCleanedText], `${base}-cleaned.${ext}`, { type: mime }));
+            announce(t('Cleaned text saved to your uploads.'));
+            if (mounted) { await reload(); if (mounted) rerender(); }
+          } catch {
+            announce(t('The cleaned text could not be saved.'));
+            btn.disabled = false;
+          }
+        }
+        return;
+      }
+      if (act === 'declare-ai-origins') {
+        // No model ran, so nothing is auto-stamped. This is the user CHOOSING to flag AI
+        // origins honestly. Maps to aiGenerated:'partial', which the download/export path
+        // already carries as a C2PA ingredient, so it follows the asset where used. A safe
+        // read-then-merge via _updateUserAssetMeta keeps every other field intact - a
+        // meta-level annotation, so no quota metering and no pin-preserve run.
+        const btn = target.closest<HTMLElement>('.cat-act-declare-ai');
+        try {
+          const recs = await host.assets._exportUserAssets();
+          const rec = recs.find((r) => r.id === ref.id);
+          if (rec) {
+            await host.assets._updateUserAssetMeta(ref.id, { ...rec.meta, aiOriginsDeclared: true }, { aiGenerated: 'partial' });
+            if (btn) { btn.textContent = t('AI origins flagged'); btn.setAttribute('disabled', ''); }
+            announce(t('Flagged as having AI origins. It travels with the asset.'));
+          }
+        } catch { announce(t('Could not flag AI origins.')); }
         return;
       }
       // Crop stays IN this detail modal - an inline mode over the current preview, not a
@@ -4043,6 +4599,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
+      // "Paste text" (uploads section): the lazy paste dialog; the saved text
+      // asset lands in "Your uploads", so reload + repaint like a dropzone ingest.
+      const pasteTextBtn = target.closest<HTMLElement>('[data-paste-text]');
+      if (pasteTextBtn) {
+        const { openPasteTextDialog } = await import('./paste-text.ts');
+        const ref = await openPasteTextDialog(host as unknown as PickerHost);
+        if (ref && mounted) { await reload(); if (mounted) rerender(); }
+        return;
+      }
+
       const star = target.closest<HTMLElement>('[data-star]');
       if (star) { await toggleFavourite(star.dataset.star!); return; }
 
@@ -4255,6 +4821,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // analysis paints into a grid that is no longer on screen.
     audioThumbs?.destroy();
     audioThumbs = null;
+    textThumbs?.destroy();
+    textThumbs = null;
     closeViewOpts();
     closeDetails();
     closeDownloadDialog();

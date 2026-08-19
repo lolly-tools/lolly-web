@@ -1336,3 +1336,83 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   white-space: pre-wrap; overflow-wrap: anywhere; color: hsl(var(--foreground));
 }
 .valid-preview.is-text figcaption { padding: 0 0.85rem 0.6rem; font-size: calc(0.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+
+/* Text AI-likelihood: the extracted text shown for inspection with its genAI
+   tells highlighted, graded by confidence — a soft amber for a stylistic
+   (heuristic) tell, a firmer red for a byte-level (artifact) tell. */
+.valid-tsig-extract {
+  margin: 0.5rem 0; max-height: 30vh; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(0.78rem * var(--a11y-fs)); line-height: 1.5;
+  background: hsl(var(--muted) / 0.3); padding: 0.6rem 0.7rem;
+  border-radius: calc(var(--radius) * 0.6); color: hsl(var(--foreground));
+}
+mark.valid-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
+mark.valid-hl--heuristic { background: hsl(42 92% 55% / 0.38); }
+mark.valid-hl--artifact { background: hsl(0 82% 60% / 0.42); }
+/* The graded 5-step temperature scale (heatBucket: t1 coolest, t5 hottest) —
+   declared AFTER the tier rules so the finer grade wins by source order. */
+mark.valid-hl--t1 { background: hsl(45 92% 55% / 0.28); }
+mark.valid-hl--t2 { background: hsl(40 92% 55% / 0.34); }
+mark.valid-hl--t3 { background: hsl(30 90% 55% / 0.38); }
+mark.valid-hl--t4 { background: hsl(15 86% 55% / 0.42); }
+mark.valid-hl--t5 { background: hsl(0 82% 55% / 0.48); }
+/* The heat-bar minimap: one flex cell per rolling window, its --h (0-1) driving
+   both hue (amber → red) and opacity, so a cold cell fades to near-nothing. */
+.valid-tsig-heatbar { display: flex; gap: 1px; height: 8px; margin: 0.45rem 0 0.15rem; border-radius: 4px; overflow: hidden; }
+.valid-tsig-heatbar i { flex: 1 1 0; background: hsl(calc(45 - var(--h, 0) * 45) 90% 52% / max(0.10, calc(var(--h, 0) * 0.85))); }
+.valid-tsig-heatbar-cap { display: block; font-size: calc(0.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-bottom: 0.2rem; }
+.valid-tsig-band {
+  font-size: calc(0.72rem * var(--a11y-fs)); padding: 0.05rem 0.45rem;
+  border-radius: 999px; background: hsl(var(--muted) / 0.6); vertical-align: middle;
+}
+.valid-tsig[data-tsig-band="strong"] .valid-tsig-band { background: hsl(0 70% 55% / 0.3); }
+.valid-tsig-guess { margin: 0.4rem 0 0; font-size: calc(0.82rem * var(--a11y-fs)); opacity: 0.92; }
+.valid-tsig-cands { margin: 0.25rem 0 0; font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-tsig-legend { display: block; font-size: calc(0.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin: 0.15rem 0 0.2rem; }
+
+/* The score donut: a centred hero gauge with the rating inside the ring. Colour
+   follows the band; the number wears text tokens, never the series colour. */
+.valid-tsig-gauge-wrap { display: flex; justify-content: center; margin: 0.55rem 0 0.3rem; }
+.valid-tsig-gauge { width: calc(64px * var(--a11y-fs)); height: calc(64px * var(--a11y-fs)); }
+.valid-tsig-gauge circle { fill: none; stroke-width: 6; }
+.valid-tsig-gauge-num { font-size: 17px; font-weight: 700; text-anchor: middle; fill: hsl(var(--foreground)); }
+.valid-tsig-gauge-den { font-size: 8.5px; text-anchor: middle; fill: hsl(var(--muted-foreground)); }
+.valid-tsig-gauge-track { stroke: hsl(var(--muted-foreground) / 0.25); }
+.valid-tsig-gauge-fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.valid-tsig-gauge[data-band="none"] .valid-tsig-gauge-fill { stroke: hsl(var(--muted-foreground) / 0.6); }
+.valid-tsig-gauge[data-band="weak"] .valid-tsig-gauge-fill { stroke: hsl(45 90% 42%); }
+.valid-tsig-gauge[data-band="notable"] .valid-tsig-gauge-fill { stroke: hsl(30 90% 45%); }
+.valid-tsig-gauge[data-band="strong"] .valid-tsig-gauge-fill { stroke: hsl(0 82% 50%); }
+:root[data-theme="dark"] .valid-tsig-gauge[data-band="weak"] .valid-tsig-gauge-fill,
+:root:not([data-theme="light"]) .valid-tsig-gauge[data-band="weak"] .valid-tsig-gauge-fill { stroke: hsl(45 90% 55%); }
+:root[data-theme="dark"] .valid-tsig-gauge[data-band="notable"] .valid-tsig-gauge-fill,
+:root:not([data-theme="light"]) .valid-tsig-gauge[data-band="notable"] .valid-tsig-gauge-fill { stroke: hsl(30 90% 55%); }
+:root[data-theme="dark"] .valid-tsig-gauge[data-band="strong"] .valid-tsig-gauge-fill,
+:root:not([data-theme="light"]) .valid-tsig-gauge[data-band="strong"] .valid-tsig-gauge-fill { stroke: hsl(0 82% 60%); }
+.valid-tsig-ocr { margin-top: 0.6rem; }
+/* The read button's icon: svgIcon() emits no width/height attributes, so an
+   unsized rule here would let the sparkle blow up to the SVG default size. */
+.valid-ocr-read { display: inline-flex; align-items: center; gap: 0.45em; }
+.valid-ocr-read svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); flex: none; }
+.valid-ocr-result { margin-top: 0.5rem; }
+
+/* On-image OCR overlay: box every read line, colour the flagged ones by the same
+   confidence grade as the text highlights. Stroke stays crisp at any display size. */
+.valid-ocr-overlay { z-index: 2; }
+.valid-ocr-box { fill: transparent; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.valid-ocr-box--plain { stroke: hsl(var(--muted-foreground) / 0.35); }
+.valid-ocr-box--heuristic { stroke: hsl(42 92% 48%); fill: hsl(42 92% 55% / 0.16); }
+.valid-ocr-box--artifact { stroke: hsl(0 82% 52%); fill: hsl(0 82% 60% / 0.20); }
+/* Temperature strokes for flagged lines — the same t1–t5 scale as the extract
+   highlights, declared after the tier rules so the grade wins by order. */
+.valid-ocr-box--t1 { stroke: hsl(45 92% 48%); fill: hsl(45 92% 55% / 0.12); }
+.valid-ocr-box--t2 { stroke: hsl(40 92% 48%); fill: hsl(40 92% 55% / 0.14); }
+.valid-ocr-box--t3 { stroke: hsl(30 92% 48%); fill: hsl(30 92% 55% / 0.16); }
+.valid-ocr-box--t4 { stroke: hsl(15 92% 48%); fill: hsl(15 92% 55% / 0.18); }
+.valid-ocr-box--t5 { stroke: hsl(0 92% 48%); fill: hsl(0 92% 55% / 0.22); }
+
+/* A model-fingerprint identification reads firmer than a hedged style guess. */
+.valid-tsig-guess--high { font-weight: 600; color: hsl(0 70% 45%); }
+:root[data-theme="dark"] .valid-tsig-guess--high, :root:not([data-theme="light"]) .valid-tsig-guess--high { color: hsl(0 75% 68%); }

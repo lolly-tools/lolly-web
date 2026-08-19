@@ -57,6 +57,7 @@ import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './com
 import { installGlobalReveal } from './lib/reveal.ts';
 import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
 import { initOrg } from './org/index.ts';
+import { registerBuiltinSendTargets } from './lib/send-targets-builtin.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { mountJobToast } from './lib/job-toast.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
@@ -997,6 +998,9 @@ async function boot(): Promise<void> {
   // one tolerant, time-boxed probe, remembered so later boots skip even that. A
   // `gated` deployment with no signed-in member renders its own sign-in gate in
   // place of the app and returns `gate: true`; stop boot before any view mounts.
+  // Built-in cloud send targets, BEFORE initOrg so an instance can re-register
+  // or withdraw a kind (lib/send-target.ts - each is dormant without its config).
+  registerBuiltinSendTargets();
   const org = await initOrg();
   if (org?.gate) return;
 

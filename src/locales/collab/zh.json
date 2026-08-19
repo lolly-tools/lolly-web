@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "将其中一项发给对方设备，用任何你们都信任的方式发送即可。",
   "Invite link": "邀请链接",
   "Invite code": "邀请代码",
-  "Invite code as a QR code": "邀请代码（二维码形式）",
   "Anyone with this invite can join and edit until you close the session.": "持有此邀请的任何人都可以加入并编辑，直到你关闭会话。",
   "Next: paste the reply": "下一步：粘贴回复",
   "Step 2 of 3: Wait for the reply": "第 2/3 步：等待回复",
@@ -61,7 +60,6 @@
   "Reply code": "回复代码",
   "Copy reply link": "复制回复链接",
   "Copy reply code": "复制回复码",
-  "Reply code as a QR code": "回复代码（二维码形式）",
   "Waiting for the other device to connect.": "正在等待对方设备连接。",
   "Connected": "已连接",
   "You are working with {peer}.": "你正在与 {peer} 协作。",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "无法保存传输。",
   "Couldn't read the transfer back.": "无法读回传输。",
   "Part of the transfer is missing.": "部分传输缺失。",
-  "The transfer was cancelled.": "传输已取消。"
+  "The transfer was cancelled.": "传输已取消。",
+  "Tap to enlarge for scanning": "点击放大以便扫描",
+  "Enlarge {label} for scanning": "放大{label}以便扫描",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "将另一台设备对准这里进行扫描。点击任意处或按 Esc 关闭。",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "此链接太长，无法扫描。请改为复制，或使用“代码”标签页。"
 }

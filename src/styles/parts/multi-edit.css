@@ -167,6 +167,10 @@
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   background: hsl(var(--card));
   overflow: hidden;
+  /* Each cell is as tall as its own tool (its stage adopts the tool's real aspect in
+     multi-edit.ts's fit()) — don't stretch a short cell to a tall neighbour's row
+     height, so the grid reads as a bento of true-aspect previews, top-aligned. */
+  align-self: start;
 }
 .me-cell:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .me-cell.is-active { border-color: hsl(var(--primary) / .7); box-shadow: 0 0 0 1px hsl(var(--primary) / .7); }

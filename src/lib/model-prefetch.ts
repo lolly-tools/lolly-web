@@ -30,6 +30,9 @@ import {
 import {
   MATTE_MODEL_STORE, MATTE_MODEL_DIR, MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_FILES, matteModelsFor,
 } from './matte-models.ts';
+import {
+  OCR_MODEL_STORE, OCR_MODEL_DIR, OCR_MODEL_CACHE_VERSION, OCR_MODEL_FILES, ocrModelsFor,
+} from './ocr-models.ts';
 import { isTauriShell } from './instance-choice.ts';
 
 const upscaleFetch = createModelFetcher({
@@ -39,6 +42,10 @@ const upscaleFetch = createModelFetcher({
 const matteFetch = createModelFetcher({
   store: MATTE_MODEL_STORE, dir: MATTE_MODEL_DIR, version: MATTE_MODEL_CACHE_VERSION,
   dbg: createDebugLogger({ tag: 'matte-prefetch', storageKey: 'lolly:matte:debug', globalFlag: '__MATTE_DEBUG__' }),
+});
+const ocrFetch = createModelFetcher({
+  store: OCR_MODEL_STORE, dir: OCR_MODEL_DIR, version: OCR_MODEL_CACHE_VERSION,
+  dbg: createDebugLogger({ tag: 'ocr-prefetch', storageKey: 'lolly:ocr:debug', globalFlag: '__OCR_DEBUG__' }),
 });
 
 export interface PrefetchResult { ok: boolean; bytes: number; files: number }
@@ -60,6 +67,15 @@ export function upscaleOfflineFiles(): string[] {
  *  section never offers it - pre-downloading bytes you can't run would be dishonest. */
 export function matteOfflineFiles(): string[] {
   return matteModelsFor(isTauriShell()).map(m => MATTE_MODEL_FILES[m.id]);
+}
+
+/** The OCR files the offline part vendors: every staged model's THREE files - a
+ *  detector, a recogniser and its character dictionary (all needed to run). */
+export function ocrOfflineFiles(): string[] {
+  return ocrModelsFor(isTauriShell()).flatMap(m => {
+    const f = OCR_MODEL_FILES[m.id];
+    return f ? [f.det, f.rec, f.dict] : [];
+  });
 }
 
 /**
@@ -116,6 +132,12 @@ export function prefetchMatteModels(opts: { signal?: AbortSignal; onProgress?: O
   return prefetchList(matteFetch, matteOfflineFiles(), required, opts);
 }
 
+/** Pre-download every staged OCR model (det + rec + dict) into `ocr-models` IDB. */
+export function prefetchOcrModels(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PrefetchResult> {
+  const required = new Set(ocrOfflineFiles());
+  return prefetchList(ocrFetch, ocrOfflineFiles(), required, opts);
+}
+
 // ─── Measurement (for the /profile storage-reconciliation meter) ──────────────
 //
 // Measures what is ACTUALLY on device in a model store - filled by this prefetch OR
@@ -145,4 +167,16 @@ export function upscaleCacheBytes(): Promise<{ bytes: number; files: number }> {
 export function matteCacheBytes(): Promise<{ bytes: number; files: number }> {
   const sizeByFile = new Map(matteModelsFor(isTauriShell()).map(m => [MATTE_MODEL_FILES[m.id], m.approxBytes]));
   return modelStoreBytes(MATTE_MODEL_STORE, sizeByFile);
+}
+
+/** Bytes of the offered OCR models cached in `ocr-models` IDB. approxBytes covers a
+ *  model's three files together, so it is attributed to the detector and the other
+ *  two count 0 - the sum equals the roster size exactly when a whole model is present. */
+export function ocrCacheBytes(): Promise<{ bytes: number; files: number }> {
+  const sizeByFile = new Map<string, number>();
+  for (const m of ocrModelsFor(isTauriShell())) {
+    const f = OCR_MODEL_FILES[m.id];
+    if (f) { sizeByFile.set(f.det, m.approxBytes); sizeByFile.set(f.rec, 0); sizeByFile.set(f.dict, 0); }
+  }
+  return modelStoreBytes(OCR_MODEL_STORE, sizeByFile);
 }

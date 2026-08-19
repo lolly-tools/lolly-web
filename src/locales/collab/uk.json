@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Надішліть одне з цього на інший пристрій. Підійде будь-який канал, якому ви обидва довіряєте.",
   "Invite link": "Посилання-запрошення",
   "Invite code": "Код запрошення",
-  "Invite code as a QR code": "Код запрошення як QR-код",
   "Anyone with this invite can join and edit until you close the session.": "Будь-хто з цим запрошенням може приєднатися й редагувати, доки ви не закриєте сеанс.",
   "Next: paste the reply": "Далі: вставте відповідь",
   "Step 2 of 3: Wait for the reply": "Крок 2 із 3: Дочекайтеся відповіді",
@@ -61,7 +60,6 @@
   "Reply code": "Код відповіді",
   "Copy reply link": "Копіювати посилання відповіді",
   "Copy reply code": "Копіювати код відповіді",
-  "Reply code as a QR code": "Код відповіді як QR-код",
   "Waiting for the other device to connect.": "Очікування підключення іншого пристрою.",
   "Connected": "Підключено",
   "You are working with {peer}.": "Ви працюєте з {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Не вдалося зберегти передавання.",
   "Couldn't read the transfer back.": "Не вдалося зчитати передавання назад.",
   "Part of the transfer is missing.": "Частина передавання відсутня.",
-  "The transfer was cancelled.": "Передавання скасовано."
+  "The transfer was cancelled.": "Передавання скасовано.",
+  "Tap to enlarge for scanning": "Торкніться, щоб збільшити для сканування",
+  "Enlarge {label} for scanning": "Збільшити {label} для сканування",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Наведіть сюди інший пристрій, щоб відсканувати. Торкніться будь-де або натисніть Esc, щоб закрити.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Це посилання задовге для сканування. Скопіюйте його або скористайтеся вкладкою Код."
 }

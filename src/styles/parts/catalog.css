@@ -514,6 +514,70 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* The resting waveform and the live meter share one box — the meter is transparent until
    it paints, so the artwork shows through until playback starts and replaces it. */
 .cat-details-preview .cat-thumb-audio { position: relative; }
+
+/* A text asset (.txt/.md) reads as text, not a picture: a scrollable monospace panel
+   fills the preview instead of a broken image, and the checkerboard would only imply a
+   transparency it does not have. */
+/* The grid track must be told to respect the stage's max-height bound
+   (minmax(0, 1fr)) - an auto track grows to the text's full height, the parent
+   clips it, and the pre's own overflow:auto never engages: the "text preview
+   does not scroll vertically" defect. */
+.cat-details-preview:has(.cat-thumb-text) {
+  background: hsl(var(--muted) / .35); place-items: stretch; padding: 0;
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+}
+.cat-details-preview .cat-thumb-text { width: 100%; height: 100%; display: block; position: relative; min-height: 0; }
+.cat-text-preview {
+  margin: 0; width: 100%; height: 100%; box-sizing: border-box;
+  padding: 1rem 1.1rem; overflow-y: auto; overflow-x: hidden; text-align: left;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(.82rem * var(--cat-text-zoom, 1)); line-height: 1.5;
+}
+
+/* The reading tools pill (font zoom + the monospace/rendered toggle). */
+.cat-text-tools {
+  position: absolute; top: .5rem; right: .75rem; z-index: 3;
+  display: flex; gap: 2px; padding: 2px; border-radius: 999px;
+  background: hsl(var(--background) / .88); box-shadow: 0 1px 4px #0003;
+}
+.cat-text-tools button {
+  border: 0; background: transparent; width: 26px; height: 26px; border-radius: 999px;
+  display: grid; place-items: center; cursor: pointer; color: hsl(var(--foreground));
+}
+.cat-text-tools button:hover { background: hsl(var(--accent)); }
+.cat-text-tools button.is-active { background: hsl(var(--accent)); }
+
+/* The rendered-markdown reading surface (DOMPurify-sanitised lib/markdown output). */
+.cat-md-rendered {
+  height: 100%; box-sizing: border-box; overflow-y: auto; overflow-x: hidden;
+  padding: 1rem 1.2rem; text-align: left;
+  font-size: calc(.9rem * var(--cat-text-zoom, 1)); line-height: 1.55;
+}
+.cat-md-rendered h1, .cat-md-rendered h2, .cat-md-rendered h3, .cat-md-rendered h4 { margin: .9em 0 .35em; line-height: 1.25; }
+.cat-md-rendered h1 { font-size: 1.45em; }
+.cat-md-rendered h2 { font-size: 1.25em; }
+.cat-md-rendered h3 { font-size: 1.1em; }
+.cat-md-rendered p, .cat-md-rendered ul, .cat-md-rendered ol, .cat-md-rendered blockquote { margin: .45em 0; }
+.cat-md-rendered ul, .cat-md-rendered ol { padding-left: 1.4em; }
+.cat-md-rendered code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; background: hsl(var(--muted) / .6); border-radius: 3px; padding: 0 .25em; }
+.cat-md-rendered pre { background: hsl(var(--muted) / .5); border-radius: calc(var(--radius) * .5); padding: .6em .75em; overflow-x: auto; }
+.cat-md-rendered pre code { background: none; padding: 0; }
+.cat-md-rendered blockquote { border-left: 3px solid hsl(var(--muted-foreground) / .4); padding-left: .8em; color: hsl(var(--foreground) / .85); }
+.cat-md-rendered table { border-collapse: collapse; margin: .5em 0; }
+.cat-md-rendered th, .cat-md-rendered td { border: 1px solid hsl(var(--muted-foreground) / .3); padding: .25em .55em; }
+.cat-md-rendered img { max-width: 100%; }
+
+/* The formatted-download row under the actions grid. */
+.cat-text-dl { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .5rem; }
+.cat-text-dl .cat-dl-label { font-size: .74rem; color: hsl(var(--muted-foreground)); margin-right: .15rem; }
+/* The text AI-likelihood panel: a calm note in the metadata column, never a verdict. */
+.cat-tsig { margin-top: .75rem; padding: .7rem .85rem; border-radius: calc(var(--radius) * .7); background: hsl(var(--muted) / .4); font-size: .82rem; line-height: 1.45; }
+.cat-tsig-head { margin: 0 0 .35rem; display: flex; align-items: center; gap: .4rem; }
+.cat-tsig-list { margin: .3rem 0; padding-left: 1.1rem; }
+.cat-tsig-list li { margin: .2rem 0; }
+.cat-tsig-guess, .cat-tsig-note { margin: .4rem 0 0; opacity: .82; }
+.cat-tsig[data-band="strong"] { background: hsl(var(--muted) / .7); }
 /* A GLYPH is a stand-in, so it stays small and quiet rather than filling the stage the
    way a real waveform legitimately does. */
 /* `position: relative` (not absolute) ON PURPOSE: the meter participates in the stage's
@@ -962,3 +1026,92 @@ button.cat-download { font: inherit; cursor: pointer; }
   .cat-fav-strip { margin: calc(-4.2rem - env(safe-area-inset-top, 0px)) -12px 1.2rem; }
   .cat-viewopts { position: fixed; top: auto; bottom: 12px; left: 12px; right: 12px; }
 }
+
+/* Confidence-graded highlights on OCR'd text (plans/125): amber for a stylistic
+   tell, red for a byte-level one — the same grade the verify view uses. */
+mark.cat-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
+mark.cat-hl--heuristic { background: hsl(42 92% 55% / 0.38); }
+mark.cat-hl--artifact { background: hsl(0 82% 60% / 0.42); }
+
+/* Heat-graded highlight temperatures (t1 coolest, t5 hottest) - the finer grade the
+   engine's per-finding heat drives. AFTER the tier rules above on purpose: equal
+   specificity, so source order lets the temperature win over the coarse tier base. */
+mark.cat-hl--t1 { background: hsl(45 92% 55% / 0.28); }
+mark.cat-hl--t2 { background: hsl(40 92% 55% / 0.34); }
+mark.cat-hl--t3 { background: hsl(30 92% 55% / 0.38); }
+mark.cat-hl--t4 { background: hsl(15 92% 55% / 0.42); }
+mark.cat-hl--t5 { background: hsl(0 92% 55% / 0.48); }
+
+/* The heat-bar minimap: one cell per rolling window, start of the text to its end.
+   Each cell's --h (0-1) turns into hue 45 down to 0 and a matching alpha, so a cool
+   window stays a faint amber and a hot one reads as a solid red. */
+.cat-tsig-heatbar { display: flex; gap: 1px; height: 8px; margin: 0.45rem 0 0.2rem; border-radius: 4px; overflow: hidden; }
+.cat-tsig-heatbar i { flex: 1 1 0; background: hsl(calc(45 - var(--h, 0) * 45) 90% 52% / max(0.10, calc(var(--h, 0) * 0.85))); }
+
+/* The runners-up line behind a low-confidence style guess - muted, like the guess. */
+.cat-tsig-cands { margin: 0.4rem 0 0; opacity: 0.82; }
+
+/* The score donut: a centred hero gauge with the rating inside the ring. Colour
+   follows the band; the number wears text tokens. Mirrors valid.css. */
+.cat-tsig-gauge-wrap { display: flex; justify-content: center; margin: 0.55rem 0 0.3rem; }
+.cat-tsig-gauge { width: calc(64px * var(--a11y-fs)); height: calc(64px * var(--a11y-fs)); }
+.cat-tsig-gauge circle { fill: none; stroke-width: 6; }
+.cat-tsig-gauge-num { font-size: 17px; font-weight: 700; text-anchor: middle; fill: hsl(var(--foreground)); }
+.cat-tsig-gauge-den { font-size: 8.5px; text-anchor: middle; fill: hsl(var(--muted-foreground)); }
+.cat-tsig-gauge-track { stroke: hsl(var(--muted-foreground) / 0.25); }
+.cat-tsig-gauge-fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.cat-tsig-gauge[data-band="none"] .cat-tsig-gauge-fill { stroke: hsl(var(--muted-foreground) / 0.6); }
+.cat-tsig-gauge[data-band="weak"] .cat-tsig-gauge-fill { stroke: hsl(45 90% 42%); }
+.cat-tsig-gauge[data-band="notable"] .cat-tsig-gauge-fill { stroke: hsl(30 90% 45%); }
+.cat-tsig-gauge[data-band="strong"] .cat-tsig-gauge-fill { stroke: hsl(0 82% 50%); }
+:root[data-theme="dark"] .cat-tsig-gauge[data-band="weak"] .cat-tsig-gauge-fill,
+:root:not([data-theme="light"]) .cat-tsig-gauge[data-band="weak"] .cat-tsig-gauge-fill { stroke: hsl(45 90% 55%); }
+:root[data-theme="dark"] .cat-tsig-gauge[data-band="notable"] .cat-tsig-gauge-fill,
+:root:not([data-theme="light"]) .cat-tsig-gauge[data-band="notable"] .cat-tsig-gauge-fill { stroke: hsl(30 90% 55%); }
+:root[data-theme="dark"] .cat-tsig-gauge[data-band="strong"] .cat-tsig-gauge-fill,
+:root:not([data-theme="light"]) .cat-tsig-gauge[data-band="strong"] .cat-tsig-gauge-fill { stroke: hsl(0 82% 60%); }
+
+/* Generated TEXT thumbnails (lib/text-thumbs.ts) - the ¶ stub upgraded to a
+   brand-inked excerpt. The ink drives the edge bar + wash, never the body type
+   (the pool's contrast floor is tuned for big shapes, not 7px text); size class
+   follows document length so length itself reads as a shape across the grid. */
+.cat-ttxt {
+  display: block; position: relative; overflow: hidden; text-align: left;
+  padding: 0.45rem 0.55rem; text-transform: none; letter-spacing: normal;
+  color: hsl(var(--foreground) / 0.85);
+  /* The brand ink carries identity through the wash alone - no edge bar (the
+     house rule: no one-sided borders on a rounded card). */
+  background: color-mix(in oklab, var(--ttxt-ink, transparent) 13%, hsl(var(--muted) / 0.35));
+}
+.cat-ttxt-body { overflow: hidden; max-height: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cat-ttxt--xl { display: flex; align-items: center; }
+.cat-ttxt--xl .cat-ttxt-body { font-size: 14px; font-weight: 650; line-height: 1.3; }
+.cat-ttxt--lg .cat-ttxt-body { font-size: 11px; font-weight: 550; line-height: 1.35; }
+.cat-ttxt--md .cat-ttxt-body { font-size: 8.5px; line-height: 1.4; }
+.cat-ttxt--sm .cat-ttxt-body { font-size: 6.5px; line-height: 1.45; }
+.cat-ttxt .cat-ttxt-hl { padding: 0 0.08em; border-radius: 2px; color: inherit; }
+/* The faint corner donut: the panel gauge's score arc, echoed as wayfinding -
+   which tiles carry AI-likely content reads across a grid without opening any. */
+.cat-ttxt-ring {
+  position: absolute; right: -14%; bottom: -18%; width: 62%; height: 62%;
+  opacity: 0.18; pointer-events: none;
+}
+.cat-ttxt-ring circle { fill: none; stroke-width: 7; }
+.cat-ttxt-ring-track { stroke: hsl(var(--muted-foreground) / 0.35); }
+.cat-ttxt-ring-fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.cat-ttxt-ring[data-band="weak"] .cat-ttxt-ring-fill { stroke: hsl(45 90% 48%); }
+.cat-ttxt-ring[data-band="notable"] .cat-ttxt-ring-fill { stroke: hsl(30 90% 50%); }
+.cat-ttxt-ring[data-band="strong"] .cat-ttxt-ring-fill { stroke: hsl(0 82% 55%); }
+
+/* The persisted AI-likelihood pill on grid tiles and the details title: amber at
+   'notable', red at 'strong'. Text colour tracks the background for contrast. */
+.cat-ai-chip {
+  display: inline-block; margin-left: 0.4em; padding: 0 0.35em;
+  border-radius: 999px; font-size: calc(0.62rem * var(--a11y-fs));
+  font-weight: 700; line-height: 1.6; vertical-align: middle;
+}
+.cat-ai-chip[data-band="notable"] { background: hsl(42 92% 55% / 0.85); color: hsl(0 0% 12%); }
+.cat-ai-chip[data-band="strong"] { background: hsl(0 82% 55% / 0.85); color: hsl(0 0% 98%); }
+
+/* Humanize result actions (plans/125): the copy-cleaned button row. */
+.cat-humanize-actions { margin-top: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }

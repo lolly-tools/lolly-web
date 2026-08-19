@@ -246,7 +246,7 @@ function paintLayer(
  * steps 3 and 9 order each layer "in z-index order (most negative first) then
  * tree order". `Array#sort` has been required-stable since ES2019, and every
  * engine this ships on predates that requirement's adoption by years - but the
- * dependency is real and worth naming.
+ * dependency is real and named here.
  *
  * Returns a NEW array; the caller's tree-order array is left alone.
  */

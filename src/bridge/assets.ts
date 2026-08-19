@@ -696,6 +696,29 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     /**
+     * Internal: replace one user asset's `meta` wholesale (callers merge:
+     * `{ ...rec.meta, ... }`), optionally stamping the record-level
+     * `aiGenerated` flag alongside it - the user's own declare-AI-origins
+     * choice, an annotation like the meta it travels with. A read-modify-write
+     * like _renameUserAsset, and deliberately NOT routed through
+     * _uploadUserAsset for the same reasons doubled: assertQuotaRoom would be
+     * re-run against bytes this write doesn't add (a meta note is not new
+     * storage worth metering, and near quota it could spuriously trip
+     * STORAGE_FULL), and preservePinned would freeze a duplicate of a
+     * version-pinned asset whose stored blob this write never touches. The id,
+     * blob, credential and `version` all stay put, so cached object URLs
+     * survive and _listUserAssets order is preserved. No-op if the asset is
+     * gone.
+     */
+    async _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch: { aiGenerated?: 'full' | 'partial' } = {}): Promise<void> {
+      const rec = await db.get('user-assets', id);
+      if (!rec) return;
+      rec.meta = meta;
+      if (patch.aiGenerated) rec.aiGenerated = patch.aiGenerated;
+      await db.put('user-assets', rec);
+    },
+
+    /**
      * Internal: replace one user asset's stored bytes with a
      * provenance-stamped copy of THEMSELVES: the lazy heal for TTS clips
      * saved before Lolly embedded Content Credentials into audio files

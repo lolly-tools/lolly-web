@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "いずれかの方法で相手の端末に送ってください。お互いが信頼できる手段であれば何でも構いません。",
   "Invite link": "招待リンク",
   "Invite code": "招待コード",
-  "Invite code as a QR code": "招待コード（QRコード）",
   "Anyone with this invite can join and edit until you close the session.": "この招待を持つ人は、セッションを終了するまで参加して編集できます。",
   "Next: paste the reply": "次へ：返信を貼り付け",
   "Step 2 of 3: Wait for the reply": "ステップ2/3：返信を待機",
@@ -61,7 +60,6 @@
   "Reply code": "返信コード",
   "Copy reply link": "返信リンクをコピー",
   "Copy reply code": "返信コードをコピー",
-  "Reply code as a QR code": "返信コード（QRコード）",
   "Waiting for the other device to connect.": "相手の端末の接続を待っています。",
   "Connected": "接続しました",
   "You are working with {peer}.": "{peer}さんと共同作業中です。",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "転送を保存できませんでした。",
   "Couldn't read the transfer back.": "転送を読み戻せませんでした。",
   "Part of the transfer is missing.": "転送の一部が欠けています。",
-  "The transfer was cancelled.": "転送がキャンセルされました。"
+  "The transfer was cancelled.": "転送がキャンセルされました。",
+  "Tap to enlarge for scanning": "タップして拡大し、スキャンしやすくします",
+  "Enlarge {label} for scanning": "スキャン用に{label}を拡大",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "別のデバイスをここに向けてスキャンします。どこかをタップするか Esc キーを押して閉じます。",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "このリンクは長すぎてスキャンできません。代わりにコピーするか、コードタブを使ってください。"
 }

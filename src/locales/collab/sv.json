@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Skicka en av dessa till den andra enheten. Vilken kanal ni båda litar på fungerar.",
   "Invite link": "Inbjudningslänk",
   "Invite code": "Inbjudningskod",
-  "Invite code as a QR code": "Inbjudningskod som QR-kod",
   "Anyone with this invite can join and edit until you close the session.": "Alla med den här inbjudan kan gå med och redigera tills du stänger sessionen.",
   "Next: paste the reply": "Nästa: klistra in svaret",
   "Step 2 of 3: Wait for the reply": "Steg 2 av 3: Vänta på svaret",
@@ -61,7 +60,6 @@
   "Reply code": "Svarskod",
   "Copy reply link": "Kopiera svarslänk",
   "Copy reply code": "Kopiera svarskod",
-  "Reply code as a QR code": "Svarskod som QR-kod",
   "Waiting for the other device to connect.": "Väntar på att den andra enheten ska ansluta.",
   "Connected": "Ansluten",
   "You are working with {peer}.": "Du arbetar med {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Det gick inte att spara överföringen.",
   "Couldn't read the transfer back.": "Det gick inte att läsa tillbaka överföringen.",
   "Part of the transfer is missing.": "En del av överföringen saknas.",
-  "The transfer was cancelled.": "Överföringen avbröts."
+  "The transfer was cancelled.": "Överföringen avbröts.",
+  "Tap to enlarge for scanning": "Tryck för att förstora för skanning",
+  "Enlarge {label} for scanning": "Förstora {label} för skanning",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Rikta en annan enhet hit för att skanna den. Tryck var som helst eller tryck Esc för att stänga.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Den här länken är för lång för att skanna. Kopiera den i stället, eller använd fliken Kod."
 }

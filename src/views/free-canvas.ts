@@ -1546,7 +1546,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // is the ONE place that answer changes on an already-mounted panel - so this is
       // where the overlay is re-asked, rather than where it happens to be re-asked.
       //
-      // It DOES already arrive without this line, and the route is worth naming because
+      // It DOES already arrive without this line, and the route matters because
       // it is not one anybody wrote down: `setOpen` calls `reserve()`, which writes (or
       // clears) `--stage-reserve-bottom` on the stage's inline style, which trips the
       // stage MutationObserver, which schedules a sync, which repaints the chrome. Real,

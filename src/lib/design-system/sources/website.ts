@@ -194,7 +194,7 @@ export type SiteUrlCheck =
   | { ok: true; url: string; siteHost: string }
   | { ok: false; reason: SiteUrlRefusal };
 
-/** Schemes worth naming in the refusal rather than letting the parse fail. */
+/** Schemes named in the refusal rather than letting the parse fail. */
 const BAD_SCHEME_RE = /^(?:javascript|data|blob|file|about|mailto|tel|ftp|ws|wss|view-source|chrome|chrome-extension|moz-extension):/i;
 /** An explicit `scheme://` prefix. Bare `localhost:3000` is NOT one of these,
  *  which is why the test is for `://` rather than for a colon. */
@@ -592,7 +592,7 @@ const totalWeight = (census: DesignCensus): number =>
  * The screenshot census rescaled so it and the stylesheet census carry the same
  * total weight.
  *
- * `census.ts` states the rule this bends and it is worth naming: weights are
+ * `census.ts` states the rule this bends, and here it is: weights are
  * occurrence counts and are never normalised, because rescaling one source's
  * counts against another's is a claim about relative importance that no source
  * makes. That rule holds between sources that count the same KIND of thing. Here

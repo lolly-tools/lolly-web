@@ -55,9 +55,9 @@ import type { Check, SignerIdentity, Signer, Claim, VerifyReport, Watermark, Sco
 // without a browser (valid-text.test.ts).
 import {
   TEXT_FORMAT_LABEL, formatLabel, pastedFileName, textSnippet, classifyUrl, classifyPastedUrl,
-  verifyTextNotices, suppressModifiedBadge, aiDisclosureRows,
+  verifyTextNotices, suppressModifiedBadge, aiDisclosureRows, analyzeVerifyText, buildHighlightSegments, heatBucket,
 } from './valid-text.ts';
-import type { VerifyNotice, NoticeContext } from './valid-text.ts';
+import type { VerifyNotice, NoticeContext, TextSignalPanel, TextSignalMark } from './valid-text.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -562,6 +562,222 @@ function aiDisclosureHtml(report: VerifyReport, identity: SignerIdentity | undef
     : t('A declaration recorded in the credential, self-asserted by whoever signed it. It says what the signer says was used — it is not a detection, and its absence from a file proves nothing either way.')}</span>
       </div>
       <span class="valid-aidecl-tag" aria-hidden="true">${t('AI')}</span>
+    </div>`;
+}
+
+// ── Text AI-likelihood signals (plans/125) ───────────────────────────────────
+// The DETECTION counterpart to aiDisclosureHtml's DECLARATION: it reads the text
+// itself for signals it was AI-generated. A SIGNAL, never a verdict - so the band
+// heading is hedged, the summary carries "This is not proof", and the strongest
+// band is a soft 'warn', never a red failure. Reuses the GEN-AI pill panel family
+// (valid-aidecl-*) it sits beside, so it needs no new stylesheet. Rendered only
+// for a TEXT payload; a declaration in the credential (above) always outranks it.
+const TSIG_KIND_TITLE: Record<string, string> = {
+  'model-fingerprint': 'Model fingerprint',
+  'invisible-char': 'Invisible characters',
+  'tag-chars': 'Hidden tag characters',
+  'variation-selectors': 'Unusual variation selectors',
+  'bidi-override': 'Bidirectional override characters',
+  'mixed-script': 'Mixed-script words',
+  'anomalous-space': 'Unusual spacing',
+  'ai-vocabulary': 'AI-favoured vocabulary',
+  'ai-phrasing': 'AI stock phrasing',
+  'ai-structure': 'AI sentence structure',
+  'claude-tell': 'Claude-associated phrasing',
+  'smart-punctuation': 'Curly quotes / smart punctuation',
+  'em-dash-density': 'Heavy em-dash use',
+  'list-heavy': 'List-heavy structure',
+  'uniform-burstiness': 'Unusually uniform sentences',
+  'chatbot-leftover': 'Chatbot boilerplate',
+  'template-placeholder': 'Unfilled template placeholders',
+  'uniform-paragraphs': 'Unusually uniform paragraphs',
+  'ai-span': 'Concentrated AI-like section',
+  'family-tell': 'Model-associated phrasing',
+  'spelling-variant-mix': 'Mixed US/British spelling',
+};
+
+/** The hero donut gauge for the 0-100 signal score - the "how full is the dial"
+ *  read, centred in the panel with the rating INSIDE the ring. Colour follows
+ *  the BAND (a state, not a series); the number wears text tokens, so colour is
+ *  never the only carrier. Numeric-only interpolation, so no sink risk. */
+function tsigGaugeSvg(score: number, band: TextSignalPanel['band']): string {
+  const n = Math.max(0, Math.min(100, Math.round(score)));
+  const c = 2 * Math.PI * 26;
+  const on = (n / 100) * c;
+  return `<div class="valid-tsig-gauge-wrap"><svg class="valid-tsig-gauge" viewBox="0 0 64 64" role="img" aria-label="${escape(tRaw('Signal score {n} of 100', { n }))}" data-band="${escape(band)}">`
+    + '<circle class="valid-tsig-gauge-track" cx="32" cy="32" r="26"/>'
+    + `<circle class="valid-tsig-gauge-fill" cx="32" cy="32" r="26" stroke-dasharray="${on.toFixed(2)} ${c.toFixed(2)}"/>`
+    + `<text class="valid-tsig-gauge-num" x="32" y="34">${n}</text>`
+    + '<text class="valid-tsig-gauge-den" x="32" y="45">/100</text>'
+    + '</svg></div>';
+}
+
+/** The word for a temperature bucket, for the mark tooltips: names the grade so
+ *  a reader knows what they are free to ignore. Enablement, never control - the
+ *  hottest mark is still just information. */
+function heatGradeWord(bucket: 1 | 2 | 3 | 4 | 5): string {
+  if (bucket >= 4) return t('a strong tell');
+  if (bucket === 3) return t('a moderate signal');
+  return t('a weak hint, safe to ignore');
+}
+
+/** The extracted text with its flagged spans wrapped in <mark>, coloured by its
+ *  confidence temperature (cool amber = a soft style hint, hot red = a hard
+ *  byte-level artifact) so the reader sees at a glance what is ignorable.
+ *  `textContent`-safe: every run is escape()d. */
+function highlightExtractHtml(text: string, marks: TextSignalMark[]): string {
+  const runs = buildHighlightSegments(text, marks).map((s) => {
+    if (!s.tier) return escape(s.text);
+    const title = TSIG_KIND_TITLE[s.kind ?? ''] ?? (s.kind ?? '');
+    const bucket = heatBucket(s.heat ?? 0);
+    return `<mark class="valid-hl valid-hl--${escape(s.tier)} valid-hl--t${bucket}" title="${escape(`${t(title)} · ${heatGradeWord(bucket)}`)}">${escape(s.text)}</mark>`;
+  }).join('');
+  const legend = marks.length > 0
+    ? `<span class="valid-tsig-legend">${escape(t('Cooler marks are weak hints you can freely ignore. Hotter marks are harder evidence. Everything here is a signal, not a verdict.'))}</span>`
+    : '';
+  return `<pre class="valid-tsig-extract" aria-label="${escape(t('Extracted text'))}">${runs}</pre>${legend}`;
+}
+
+// One OCR line: its text and its box in SOURCE-image pixel coordinates.
+type OcrLineBox = { text: string; box: { x: number; y: number; w: number; h: number } };
+
+/** Per-line strongest signal tier: a line is flagged when a mark's span overlaps
+ *  its character range in the joined OCR text (`artifact` outranks `heuristic`).
+ *  Each flagged line also carries the HOTTEST overlapping mark's heat, so the
+ *  overlay can grade its box on the same temperature scale as the extract. */
+function lineSignalTiers(lines: OcrLineBox[], marks: TextSignalMark[]): Array<{ tier: 'artifact' | 'heuristic'; heat: number } | null> {
+  const tiers: Array<{ tier: 'artifact' | 'heuristic'; heat: number } | null> = [];
+  let offset = 0;
+  for (const ln of lines) {
+    const start = offset;
+    const end = offset + ln.text.length;
+    offset = end + 1; // the '\n' the lines were joined with
+    let tier: 'artifact' | 'heuristic' | null = null;
+    let heat = 0;
+    for (const m of marks) {
+      if (m.index < end && m.index + m.length > start) {
+        if (m.tier === 'artifact') tier = 'artifact';
+        else if (tier !== 'artifact') tier = 'heuristic';
+        if (m.heat > heat) heat = m.heat;
+      }
+    }
+    tiers.push(tier ? { tier, heat } : null);
+  }
+  return tiers;
+}
+
+/** An SVG overlay (natural-size viewBox) boxing every OCR line - flagged lines
+ *  coloured by tier, the rest faint - so the user sees WHERE on the image the
+ *  signals sit. Built with DOM nodes (only numeric attributes, no markup sink). */
+function buildOverlaySvg(lines: OcrLineBox[], marks: TextSignalMark[], w: number, h: number): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('class', 'valid-ocr-overlay');
+  svg.setAttribute('aria-hidden', 'true');
+  const tiers = lineSignalTiers(lines, marks);
+  lines.forEach((ln, i) => {
+    const r = document.createElementNS(NS, 'rect');
+    r.setAttribute('x', String(ln.box.x));
+    r.setAttribute('y', String(ln.box.y));
+    r.setAttribute('width', String(ln.box.w));
+    r.setAttribute('height', String(ln.box.h));
+    r.setAttribute('rx', '2');
+    const sig = tiers[i] ?? null;
+    r.setAttribute('class', sig
+      ? `valid-ocr-box valid-ocr-box--${sig.tier} valid-ocr-box--t${heatBucket(sig.heat)}`
+      : 'valid-ocr-box valid-ocr-box--plain');
+    svg.appendChild(r);
+  });
+  return svg;
+}
+
+function textSignalsHtml(panel: TextSignalPanel | undefined): string {
+  if (!panel) return '';
+  // Static t() so the extractor sees every key; selected by band/kind at render.
+  const heading: Record<TextSignalPanel['band'], string> = {
+    none: t('No signals that this text was AI-generated'),
+    weak: t('A few weak signals that this text may be AI-generated'),
+    notable: t('Signals that this text may be AI-generated'),
+    strong: t('Strong signals that this text may be AI-generated'),
+  };
+  const bandLabel: Record<TextSignalPanel['band'], string> = {
+    none: t('None'), weak: t('Weak'), notable: t('Notable'), strong: t('Strong'),
+  };
+  const title: Record<string, string> = {
+    'model-fingerprint': t('Model fingerprint'),
+    'invisible-char': t('Invisible characters'),
+    'tag-chars': t('Hidden tag characters'),
+    'variation-selectors': t('Unusual variation selectors'),
+    'bidi-override': t('Bidirectional override characters'),
+    'mixed-script': t('Mixed-script words'),
+    'anomalous-space': t('Unusual spacing'),
+    'ai-vocabulary': t('AI-favoured vocabulary'),
+    'ai-phrasing': t('AI stock phrasing'),
+    'ai-structure': t('AI sentence structure'),
+    'claude-tell': t('Claude-associated phrasing'),
+    'smart-punctuation': t('Curly quotes / smart punctuation'),
+    'em-dash-density': t('Heavy em-dash use'),
+    'list-heavy': t('List-heavy structure'),
+    'uniform-burstiness': t('Unusually uniform sentences'),
+    'chatbot-leftover': t('Chatbot boilerplate'),
+    'template-placeholder': t('Unfilled template placeholders'),
+    'uniform-paragraphs': t('Unusually uniform paragraphs'),
+    'ai-span': t('Concentrated AI-like section'),
+    'family-tell': t('Model-associated phrasing'),
+    'spelling-variant-mix': t('Mixed US/British spelling'),
+  };
+  const rows = panel.rows.map((r) => `
+        <li class="valid-aidecl-row">
+          <span class="valid-aidecl-model">${escape(title[r.kind] ?? r.kind)}</span>
+          ${r.detail ? `<span class="valid-aidecl-fact">${escape(r.detail)}</span>` : ''}
+        </li>`).join('');
+  // The extracted text itself, highlighted - present whenever analyzeVerifyText ran
+  // (the paste path, the text-file path, and the image→OCR path all attach it).
+  const extract = panel.text != null ? highlightExtractHtml(panel.text, panel.marks) : '';
+  // The heat-bar minimap: one cell per rolling window, start of the text to its
+  // end. `cell.heat` is a plain 0-1 number the engine already rounded - the ONLY
+  // thing interpolated into the style attribute, as a custom property the
+  // stylesheet turns into a colour.
+  const heatbar = panel.heatmap && panel.heatmap.cells.length >= 4
+    ? `<div class="valid-tsig-heatbar" role="img" aria-label="${escape(t('Where AI-writing signals concentrate in this text'))}">${panel.heatmap.cells.map((c) => `<i style="--h:${c.heat}"></i>`).join('')}</div><span class="valid-tsig-heatbar-cap">${t('Signal heat across the text, start to end')}</span>`
+    : '';
+  // The best-guess source. A leaked FINGERPRINT names the model with confidence; a
+  // STYLE guess (Claude or generic) is hedged and low-confidence, "consistent with".
+  const guess = panel.guessFamily
+    ? (panel.guessConfidence === 'high'
+      ? `<p class="valid-tsig-guess valid-tsig-guess--high">${tRaw('Identified as <strong>{family}</strong> from a leaked model fingerprint.', { family: escape(panel.guessFamily) })}</p>`
+      : `<p class="valid-tsig-guess">${tRaw('Best guess (low confidence): consistent with <strong>{family}</strong> output.', { family: escape(panel.guessFamily) })}</p>`)
+    : '';
+  // The runners-up behind a LOW-confidence guess: showing every family that
+  // scored keeps the winner honest ("leans X over Y", not "is X"). A leaked
+  // fingerprint needs no runners-up, so a high-confidence guess shows none.
+  const cands = panel.guessConfidence === 'low' && (panel.guessCandidates?.length ?? 0) >= 2
+    ? `<p class="valid-tsig-cands">${escape(t('Style comparison across families:'))} ${escape(panel.guessCandidates!.map((c) => `${c.family} ${c.strength}`).join(' · '))}</p>`
+    : '';
+  // Absence of a leaked marker must not read as a failed check: chat apps strip
+  // their own scaffolding on copy, so most AI text carries none. Said out loud
+  // whenever signals were found but nothing named a model - enablement, not
+  // silence the reader has to interpret.
+  const noMarker = panel.band !== 'none' && !panel.pixelSourced && !panel.rows.some((r) => r.kind === 'model-fingerprint')
+    ? `<p class="valid-tsig-cands">${escape(t('No leaked model markers were found in this text. Chat apps usually strip them from copied answers, so their absence proves nothing either way.'))}</p>`
+    : '';
+  return `
+    <div class="valid-aidecl valid-tsig" role="note" data-tsig-band="${escape(panel.band)}">
+      <span class="valid-aidecl-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
+      <div class="valid-aidecl-text">
+        <strong>${escape(heading[panel.band])} <span class="valid-tsig-band" data-band="${escape(panel.band)}">${escape(bandLabel[panel.band])}</span></strong>
+        ${tsigGaugeSvg(panel.score, panel.band)}
+        ${heatbar}
+        ${extract}
+        ${rows ? `<ul class="valid-aidecl-list">${rows}</ul>` : ''}
+        ${guess}
+        ${cands}
+        ${noMarker}
+        <span class="valid-aidecl-note">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
+      </div>
+      <span class="valid-aidecl-tag" aria-hidden="true">${t('AI?')}</span>
     </div>`;
 }
 
@@ -1082,12 +1298,19 @@ const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp', 'avif
 // the file extension): 'code'/'text' mean "a C2PA carrier was found in this
 // text", which no extension can tell us.
 const PREVIEW_TEXT = new Set(['html', 'code', 'text']);
-function previewKind(format: string | null, name: string): PreviewKind {
+// Plain-text file EXTENSIONS (plans/125). A .txt/.md carries no C2PA credential,
+// so verifyC2pa returns format:null and the sniff-based PREVIEW_TEXT never fires -
+// yet these files ARE the payload a user wants to inspect and check for AI
+// provenance. When the format sniff is empty, a known text extension makes it a
+// text preview so its bytes show AND the text-signal (AI-likelihood) analysis runs.
+const TEXT_EXT = new Set(['md', 'markdown', 'txt', 'text']);
+export function previewKind(format: string | null, name: string): PreviewKind {
   const f = (format || name.split('.').pop() || '').toLowerCase();
   if (PREVIEW_IMG.has(f)) return 'image';
   if (PREVIEW_VID.has(f)) return 'video';
   if (f === 'pdf') return 'pdf';
-  if (PREVIEW_TEXT.has(f)) return 'text';
+  // The sniffed C2PA text carriers, OR a plain-text extension when nothing was sniffed.
+  if (PREVIEW_TEXT.has(f) || (!format && TEXT_EXT.has(f))) return 'text';
   return 'none';
 }
 function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
@@ -1117,7 +1340,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
 // and whether it arrived through the clipboard - none of which this renderer
 // should know about. Empty for every ordinary binary drop, which is why the
 // whole feature is invisible on those paths.
-function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult, notes: VerifyNotice[] = []): string {
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult, notes: VerifyNotice[] = [], textSignals?: TextSignalPanel, ocrReady = false): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -1280,6 +1503,11 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${deepScanBlock(fileIndex, report.format, fileName)}
       ${aiFlagHtml(aiOrigin, makerHint)}
       ${aiDisclosureHtml(report, identity)}
+      ${textSignalsHtml(textSignals)}
+      ${(ocrReady && preview?.kind === 'image') || report.format === 'pdf' ? `<div class="valid-tsig-ocr">
+        <button type="button" class="btn valid-ocr-read" data-ocr-read data-read-kind="${report.format === 'pdf' ? 'pdf' : 'image'}" data-file-index="${fileIndex}">${svgIcon('aiSpark')}<span>${report.format === 'pdf' ? t('Read the text in this document') : t('Read the text in this image')}</span></button>
+        <div class="valid-ocr-result" data-ocr-result hidden></div>
+      </div>` : ''}
       ${notesHtml(notes, fileIndex)}
       ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
@@ -1469,6 +1697,9 @@ function claimPanelHtml(fileIndex: number, format: string | null | undefined, fi
 
 export async function mountValid(viewEl: HTMLElement, host: HostV1, params = ''): Promise<void> {
   document.title = 'Verify — Lolly';
+  // Whether an image can be read for text on this device (a staged OCR model exists).
+  // Gates the "Read the text in this image" affordance in an image report.
+  const ocrReady = host.ocr?.isAvailable() === true && (host.ocr?.models().length ?? 0) > 0;
 
   viewEl.innerHTML = `
     ${backPillHtml()}
@@ -1524,7 +1755,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // credential this page fetched, at the user's explicit request, from a
   // same-origin address the document itself named (engine 1.116.0). Every other
   // caller passes nothing and gets byte-identical behaviour.
-  async function verifyFile(file: File, opts: { externalManifest?: Uint8Array } = {}): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch; seal?: SealVerifyResult; snippet?: { body: string; more: boolean } }> {
+  async function verifyFile(file: File, opts: { externalManifest?: Uint8Array } = {}): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch; seal?: SealVerifyResult; snippet?: { body: string; more: boolean }; textSignals?: TextSignalPanel }> {
     try {
       if (file.size > MAX_VERIFY_BYTES) {
         return { error: t('File is too large to verify here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }) };
@@ -1564,16 +1795,22 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       // three formats the sniffer identified AS text - an extension never
       // decides this, and a binary file is never decoded as if it were text.
       let snippet: { body: string; more: boolean } | undefined;
+      let textSignals: TextSignalPanel | undefined;
       if (previewKind(report.format, file.name) === 'text') {
         // Two caps, and the panel must not confuse them: only the first 64 KB is
         // decoded at all (a 200 MB text file must not become a 200 MB string for
         // a preview), and only the first ~2 KB of THAT is shown. So the caption
         // counts what is on screen rather than claiming a total it cannot know.
         const head = bytes.subarray(0, 64 * 1024);
-        const cut = textSnippet(new TextDecoder('utf-8', { fatal: false }).decode(head));
+        const decoded = new TextDecoder('utf-8', { fatal: false }).decode(head);
+        const cut = textSnippet(decoded);
         snippet = { body: cut.body, more: cut.omitted > 0 || bytes.length > head.length };
+        // Read the (same, already-decoded) text for AI-generation signals. The bytes
+        // ARE the text, so the byte-level artifact tier applies - source 'digital'.
+        // An image would need OCR (host.ocr, not yet wired) and pass source 'ocr'.
+        textSignals = analyzeVerifyText(decoded, 'digital');
       }
-      return { report, meta, watermark, mine, seal, snippet };
+      return { report, meta, watermark, mine, seal, snippet, textSignals };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
     }
@@ -2188,10 +2425,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
-      const { report, error, meta, watermark, mine, seal, snippet } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal, snippet, textSignals } = await verifyFile(file);
       activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta, makePreview(file, report, snippet), 0, watermark, mine, seal, notesFor(report, 0))
+        ? renderReportBody(file.name, report, meta, makePreview(file, report, snippet), 0, watermark, mine, seal, notesFor(report, 0), textSignals, ocrReady)
         : `<p class="valid-busy">${t('Could not check this file: {message}', { message: error! })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
@@ -2250,7 +2487,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     let allValid = true, anyAi = false, anyLolly = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error, meta, watermark, mine, seal, snippet } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal, snippet, textSignals } = await verifyFile(file);
       activeDigests[i] = report?.environment?.inputs;
       if (report) {
         // A no-credential file with a positive signal (made here / imprint) gets
@@ -2258,7 +2495,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         const cardTone = noCredentialSignal(report, watermark, mine) ? 'good' : stateTone(report);
         card.className = `valid-item is-${cardTone}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal, mine)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report, snippet), i, watermark, mine, seal, notesFor(report, i))}</div>`;
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report, snippet), i, watermark, mine, seal, notesFor(report, i), textSignals, ocrReady)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);
@@ -2474,7 +2711,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     failedHtml: string,
   ): void {
     const bodyHtml = res.report
-      ? banner + renderReportBody(file.name, res.report, res.meta, makePreview(file, res.report, res.snippet), i, res.watermark, res.mine, res.seal, notesFor(res.report, i))
+      ? banner + renderReportBody(file.name, res.report, res.meta, makePreview(file, res.report, res.snippet), i, res.watermark, res.mine, res.seal, notesFor(res.report, i), res.textSignals, ocrReady)
       : failedHtml;
     if (activeFiles.length === 1) {
       const listWrap = reportEl.querySelector<HTMLElement>('.valid-reports-list');
@@ -2589,7 +2826,125 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
+  // The OCR overlay carries its own un-pin (ResizeObserver disconnect + load-listener
+  // removal) so replacing it also retires the machinery that kept it aligned.
+  type OcrOverlayEl = SVGSVGElement & { _ocrUnpin?: () => void };
+
+  // PDF → the text LAYER, digitally - no OCR and no pixels. A born-digital PDF
+  // carries its glyphs, so the byte-level artifact tier still applies (source
+  // 'digital'), which an image read can never offer. Same lazy pdf-import seam
+  // the hidden-text (failed-redaction) check uses.
+  async function readDocumentText(btn: HTMLButtonElement): Promise<void> {
+    const resultEl = btn.parentElement?.querySelector<HTMLElement>('[data-ocr-result]');
+    const file = activeFiles[Number(btn.dataset.fileIndex ?? '0')];
+    if (!resultEl || !file) return;
+    const span = btn.querySelector('span');
+    const orig = span?.textContent ?? '';
+    btn.disabled = true;
+    if (span) span.textContent = t('Reading…');
+    try {
+      const [{ openPdfFile }, { joinPageText }] = await Promise.all([
+        import('./pdf-import.ts'),
+        import('@lolly/engine'),
+      ]);
+      const handle = await openPdfFile(file);
+      const toText = handle.pageToText;
+      if (!toText) throw new Error('no text pass');
+      const cap = Math.min(handle.pageCount, 30);
+      const pages = Array.from({ length: cap }, (_, i) => toText(i));
+      if (pages.every((p) => p.scanned)) {
+        resultEl.textContent = t('The pages of this document are pictures of text, so there is no text layer to read.');
+        resultEl.hidden = false;
+        return;
+      }
+      const text = joinPageText(pages);
+      if (!text.trim()) { resultEl.textContent = t('No readable text was found in this document.'); resultEl.hidden = false; return; }
+      const capNote = cap < handle.pageCount
+        ? `<p class="valid-tsig-cands">${escape(tRaw('The first {n} of {total} pages were read.', { n: cap, total: handle.pageCount }))}</p>`
+        : '';
+      resultEl.innerHTML = textSignalsHtml(analyzeVerifyText(text, 'digital')) + capNote;
+      resultEl.hidden = false;
+      btn.hidden = true; // one read is enough - the result now shows the analysis
+    } catch {
+      resultEl.textContent = t('The text in this document could not be read.');
+      resultEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+      if (span) span.textContent = orig;
+    }
+  }
+
+  // Image → OCR → the same text-signals read the text path does, but source:'ocr'
+  // (so only writing-style tells apply; the panel says the byte-level layer is gone).
+  async function readImageText(btn: HTMLButtonElement): Promise<void> {
+    if (btn.dataset.readKind === 'pdf') return readDocumentText(btn);
+    const scope = btn.closest('.valid-item-body') ?? reportEl;
+    const img = scope.querySelector<HTMLImageElement>('.valid-preview img');
+    const resultEl = btn.parentElement?.querySelector<HTMLElement>('[data-ocr-result]');
+    const src = img?.currentSrc || img?.src;
+    if (!src || !resultEl || !host.ocr) return;
+    const span = btn.querySelector('span');
+    const orig = span?.textContent ?? '';
+    btn.disabled = true;
+    if (span) span.textContent = t('Reading…');
+    try {
+      const bmp = await createImageBitmap(await (await fetch(src)).blob());
+      const nW = bmp.width, nH = bmp.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = nW; canvas.height = nH;
+      const cx = canvas.getContext('2d');
+      if (!cx) throw new Error('no 2d context');
+      cx.drawImage(bmp, 0, 0);
+      const frame = { width: nW, height: nH, data: cx.getImageData(0, 0, nW, nH).data };
+      bmp.close?.();
+      const result = await host.ocr.run(frame);
+      if (!result.text.trim()) { resultEl.textContent = t('No readable text was found in this image.'); resultEl.hidden = false; return; }
+      const panel = analyzeVerifyText(result.text, 'ocr');
+      resultEl.innerHTML = textSignalsHtml(panel);
+      resultEl.hidden = false;
+      btn.hidden = true; // one read is enough - the result now shows the extracted text
+      // Overlay the flagged line boxes ON the image - what comms professionals want:
+      // exactly which words on the page tripped a signal. Pinned to the <img>'s box so
+      // natural-coord rects (preserveAspectRatio="none") map to the displayed pixels.
+      if (img?.parentElement) {
+        img.parentElement.style.position = 'relative';
+        // Retire any previous overlay WITH its observer - a dangling one would keep
+        // re-pinning an element that is no longer in the document.
+        const prev = img.parentElement.querySelector<OcrOverlayEl>('.valid-ocr-overlay');
+        prev?._ocrUnpin?.();
+        prev?.remove();
+        const svg = buildOverlaySvg(result.lines, panel.marks, nW, nH) as OcrOverlayEl;
+        svg.style.position = 'absolute';
+        svg.style.pointerEvents = 'none';
+        // Pin the overlay to the <img>'s CURRENT box - and keep it pinned: a one-time
+        // pixel snapshot drifts on any window resize or reflow, so the same pin re-runs
+        // from a ResizeObserver on the image (and on a late 'load', should the image
+        // swap sources under the overlay).
+        const pin = (): void => {
+          svg.style.left = `${img.offsetLeft}px`;
+          svg.style.top = `${img.offsetTop}px`;
+          svg.style.width = `${img.offsetWidth}px`;
+          svg.style.height = `${img.offsetHeight}px`;
+        };
+        pin();
+        const ro = new ResizeObserver(pin);
+        ro.observe(img);
+        img.addEventListener('load', pin);
+        svg._ocrUnpin = () => { ro.disconnect(); img.removeEventListener('load', pin); };
+        img.parentElement.appendChild(svg);
+      }
+    } catch {
+      resultEl.textContent = t('The text in this image could not be read.');
+      resultEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+      if (span) span.textContent = orig;
+    }
+  }
+
   reportEl.addEventListener('click', (e) => {
+    const ocr = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-ocr-read]');
+    if (ocr) void readImageText(ocr);
     const claim = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-claim-sign]');
     if (claim) { void claimSign(claim); }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-clean-copy]');

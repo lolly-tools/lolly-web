@@ -152,6 +152,18 @@ export const STRINGS = {
   scan: 'Scan a code',
   scanNothing: 'Nothing was scanned. Paste the text instead.',
   scanFailed: 'The camera could not be used. Paste the text instead.',
+  // The QR skin (both roles). The invite/reply sit in two tabs (labelled by the existing
+  // link/code labels below), each with its own QR: the LINK (a plain phone camera opens it)
+  // and the CODE (base32, always small enough to scan, read by Lolly's own scanner - the
+  // airgap path, section 6.1 skin 2). Tapping a QR blows it up to near-fullscreen so a second
+  // device can scan it from across a desk. `{label}` in `qrEnlarge` is filled by the tab's
+  // own label, so the accessible name comes out already translated.
+  qrEnlargeHint: 'Tap to enlarge for scanning',
+  qrEnlarge: 'Enlarge {label} for scanning',
+  qrZoomDismiss: 'Point another device here to scan it. Tap anywhere or press Escape to close.',
+  // Shown in the Link tab when the invite is long enough that its URL will not fit a QR a
+  // camera can still read (a busy network makes a big invite); the Code tab always fits.
+  qrLinkTooBig: 'This link is too long to scan. Copy it instead, or use the Code tab.',
 
   // Naming (both roles).
   nameLabel: 'Your name in this collab',
@@ -170,7 +182,6 @@ export const STRINGS = {
   inviteBody: 'Send one of these to the other device. Any channel you both trust will do.',
   inviteLinkLabel: 'Invite link',
   inviteCodeLabel: 'Invite code',
-  inviteQrLabel: 'Invite code as a QR code',
   inviteTrust: 'Anyone with this invite can join and edit until you close the session.',
   toWaiting: 'Next: paste the reply',
 
@@ -225,7 +236,6 @@ export const STRINGS = {
   // it still has to travel. A button that names what it copies is half of saying so.
   copyReplyLink: 'Copy reply link',
   copyReplyCode: 'Copy reply code',
-  answerQrLabel: 'Reply code as a QR code',
   answerWait: 'Waiting for the other device to connect.',
 
   // Connected, and the two notes that can ride along.
@@ -736,6 +746,21 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   let lastStepKey = '';
   let lastPhase: CeremonyState['phase'] | '' = '';
 
+  /**
+   * Which of the two QR tabs (invite/reply LINK vs CODE) is showing. Kept here so the
+   * choice survives a re-render (an ICE event repaints the invite screen while the human is
+   * still on it). Default LINK: a plain camera opens it, which is what most people reach for.
+   */
+  let qrTab: 'link' | 'code' = 'link';
+  /**
+   * The QR the visible tab shows, so the tap-to-enlarge handler knows what to draw big. Set
+   * by `qrTabbedSlots` for the active tab while a screen is built, cleared each render, so it
+   * always matches whatever `[data-act="zoom-qr"]` is on screen. Plus the near-fullscreen
+   * `<dialog>` it opens, so closing the ceremony (or opening a second zoom) takes it down.
+   */
+  let qrZoom: { label: string; value: string } | null = null;
+  let qrZoomDialog: HTMLDialogElement | null = null;
+
   /** The screen currently being built, so `heading` can stamp its step number. */
   let painting: Screen = 'name';
 
@@ -765,6 +790,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     onClose: () => {
       if (closed) return;
       closed = true;
+      closeQrZoom();
       stopTick();
       // Escape, the backdrop, Cancel and the handle's own close() all land here, so
       // the machine's cancel event has exactly one path in - and the machine is
@@ -881,6 +907,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     connectedFired = false;
     answerFired = false;
     nearbyNote = '';
+    qrTab = 'link';
     // A new ceremony's ten minutes are its own, even if the replacement invite happens
     // to look like the one it replaced.
     countdownKey = '';
@@ -1241,30 +1268,206 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     return button('cancel', tRaw(STRINGS.cancel));
   }
 
-  /** A label + value pair the human copies: the link, and the QR skin's code. */
-  function tokenSlot(label: string, value: string, act: string, copyLabel: string): HTMLElement {
-    return node('div', { style: SLOT }, [
-      node('span', { text: label, style: LABEL }),
-      node('code', { text: value, style: TOKEN, attrs: { 'data-dynamic': '1', 'data-token': act } }),
-      button(act, copiedAct === act ? tRaw(STRINGS.copied) : copyLabel),
+  /**
+   * A rendered QR wrapped in a tap-to-enlarge button. The inner SVG is decorative (the
+   * button carries the accessible name and the action); the visible hint tells a sighted
+   * user it is tappable. Enlarging ({@link openQrZoom}) is the whole point of skin 2
+   * (section 6.1) - a second device scans it from a distance.
+   */
+  function qrButton(label: string, qrEl: HTMLElement): HTMLButtonElement {
+    const box = node('div', {
+      class: 'collab-cer-qr',
+      style: 'margin:0 auto;max-width:200px;line-height:0',
+      attrs: { 'data-dynamic': '1' },
+    }, [qrEl]);
+    return node(
+      'button',
+      {
+        class: 'collab-cer-qr-btn',
+        style:
+          'display:block;width:100%;margin:0;padding:8px;border:0;border-radius:10px;'
+          + 'background:none;cursor:zoom-in;font:inherit;color:inherit',
+        attrs: { type: 'button', 'data-act': 'zoom-qr', 'aria-label': tRaw(STRINGS.qrEnlarge, { label }) },
+      },
+      [
+        box,
+        node('span', {
+          class: 'modal-msg',
+          text: tRaw(STRINGS.qrEnlargeHint),
+          style: 'display:block;margin:6px 0 0;text-align:center;font-size:12px',
+        }),
+      ],
+    );
+  }
+
+  /**
+   * A QR of `value`, or nothing at all when the host cannot draw one (section 11.27).
+   *
+   * Fills async only when it has to: the real renderer (`createQrElementRenderer`) returns
+   * the element synchronously, so the common path appends during construction with no
+   * flicker on a re-render; a promise-returning renderer is awaited and guarded on the
+   * slot still being on screen. A value too large to scan comes back null (`qr-skin.ts`
+   * refuses past version 10), and `emptyNote` - passed for the LINK tab, whose URL is the
+   * one that can overflow - is shown in its place; the CODE tab passes none because base32
+   * always fits.
+   */
+  function qrSlot(label: string, value: string, emptyNote?: string): HTMLElement | null {
+    if (!opts.renderQr) return null;
+    const slot = node('div', { class: 'collab-cer-qr-slot', style: 'margin:0 0 8px' });
+    const note = (): HTMLElement =>
+      node('p', { class: 'modal-msg', text: emptyNote ?? '', style: 'margin:0;text-align:center;font-size:12px' });
+    const result = opts.renderQr(value);
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      void Promise.resolve(result).then(
+        (el) => {
+          if (!slot.isConnected) return;
+          if (el) slot.replaceChildren(qrButton(label, el));
+          else if (emptyNote) slot.replaceChildren(note());
+        },
+        () => { if (slot.isConnected && emptyNote) slot.replaceChildren(note()); },
+      );
+    } else if (result) {
+      slot.appendChild(qrButton(label, result as HTMLElement));
+    } else if (emptyNote) {
+      slot.appendChild(note());
+    }
+    return slot;
+  }
+
+  /**
+   * The invite (or reply) in two tabs, each a QR plus its copyable text: the LINK - a plain
+   * phone camera opens it and lands on the join page - and the CODE, the base32 skin that
+   * always fits a scannable QR and is read by Lolly's own scanner (the airgap path).
+   *
+   * BOTH panels are in the DOM at once, the inactive one `hidden`, so every copy target and
+   * the paste fallback are always present (and `url-mode`'s own tests, which read both
+   * tokens at once, keep working). The active tab's QR is the enlarge target ({@link qrZoom}),
+   * set synchronously here off `qrTab` rather than in the async `qrSlot`.
+   */
+  function qrTabbedSlots(
+    linkLabel: string, linkValue: string, linkCopyAct: string, linkCopyLabel: string,
+    codeLabel: string, codeValue: string, codeCopyAct: string, codeCopyLabel: string,
+  ): HTMLElement {
+    qrZoom = qrTab === 'link' ? { label: linkLabel, value: linkValue } : { label: codeLabel, value: codeValue };
+
+    const tab = (key: 'link' | 'code', text: string): HTMLButtonElement => {
+      const on = qrTab === key;
+      return node('button', {
+        class: 'collab-cer-qr-tab',
+        text,
+        style:
+          `flex:1;padding:8px 10px;border:0;border-bottom:2px solid ${on ? 'hsl(var(--primary, 222 47% 40%))' : 'transparent'};`
+          + `background:none;cursor:pointer;font:inherit;font-weight:${on ? '650' : '400'};`
+          + `color:${on ? 'inherit' : 'hsl(var(--muted-foreground, 0 0% 45%))'}`,
+        attrs: {
+          type: 'button',
+          role: 'tab',
+          'data-act': key === 'link' ? 'qr-tab-link' : 'qr-tab-code',
+          'aria-selected': on ? 'true' : 'false',
+        },
+      });
+    };
+
+    const panel = (
+      key: 'link' | 'code', qrLabel: string, value: string, copyAct: string, copyLabel: string, emptyNote?: string,
+    ): HTMLElement =>
+      node(
+        'div',
+        {
+          style: 'padding-top:10px',
+          attrs: { role: 'tabpanel', 'aria-label': qrLabel, ...(qrTab === key ? {} : { hidden: 'hidden' }) },
+        },
+        [
+          qrSlot(qrLabel, value, emptyNote),
+          node('div', { style: SLOT }, [
+            node('code', { text: value, style: TOKEN, attrs: { 'data-dynamic': '1', 'data-token': copyAct } }),
+            button(copyAct, copiedAct === copyAct ? tRaw(STRINGS.copied) : copyLabel),
+          ]),
+        ],
+      );
+
+    return node('div', { style: 'margin:0 0 10px' }, [
+      node('div', {
+        style: 'display:flex;gap:4px;margin:0 0 2px;border-bottom:1px solid hsl(var(--border, 0 0% 90%))',
+        attrs: { role: 'tablist' },
+      }, [tab('link', linkLabel), tab('code', codeLabel)]),
+      panel('link', linkLabel, linkValue, linkCopyAct, linkCopyLabel, tRaw(STRINGS.qrLinkTooBig)),
+      panel('code', codeLabel, codeValue, codeCopyAct, codeCopyLabel),
     ]);
   }
 
-  /** The QR skin, or nothing at all when the host cannot draw one (section 11.27). */
-  function qrSlot(label: string, value: string): HTMLElement | null {
-    if (!opts.renderQr) return null;
-    const box = node('div', {
-      class: 'collab-cer-qr',
-      style: 'margin:0 0 10px',
-      attrs: { 'data-dynamic': '1', role: 'img', 'aria-label': label },
+  /** Take down the enlarge overlay, if one is up. Idempotent - the close handler and the
+   *  ceremony's own teardown both call it. */
+  function closeQrZoom(): void {
+    const dlg = qrZoomDialog;
+    qrZoomDialog = null;
+    if (!dlg) return;
+    try {
+      if (dlg.open) dlg.close();
+    } catch {
+      /* a dialog already removed is the goal either way */
+    }
+    dlg.remove();
+  }
+
+  /**
+   * Blow the QR up to near-fullscreen for scanning (section 6.1 skin 2).
+   *
+   * A modal `<dialog>` stacked ABOVE the ceremony's own: the ceremony goes inert beneath
+   * it, Escape closes this topmost one through the native `cancel` event (never the
+   * ceremony - `mountModal` listens on its own element, and `cancel` fires on the top
+   * dialog only), and a tap anywhere dismisses. The code is re-rendered at full size rather
+   * than moved, so the small one on the step stays put underneath; the SVG is vector, so it
+   * is crisp at any size. It carries its own dim ground rather than styling `::backdrop`, so
+   * no stylesheet rule is needed.
+   */
+  function openQrZoom(label: string, value: string): void {
+    if (!opts.renderQr || typeof document === 'undefined') return;
+    closeQrZoom();
+    const dlg = document.createElement('dialog');
+    dlg.className = 'collab-qr-zoom';
+    dlg.setAttribute('aria-label', label);
+    dlg.setAttribute(
+      'style',
+      'inset:0;width:100vw;height:100dvh;max-width:100vw;max-height:100dvh;margin:0;padding:0;'
+        + 'border:0;background:hsl(0 0% 4% / .92)',
+    );
+    // A white card so the required quiet zone stays light against the dim ground.
+    const frame = node('div', {
+      style: 'background:#fff;padding:16px;border-radius:16px;box-shadow:0 10px 50px hsl(0 0% 0% / .5);line-height:0',
     });
+    dlg.appendChild(
+      node(
+        'div',
+        {
+          style:
+            'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;'
+            + 'width:100%;height:100%;box-sizing:border-box;padding:20px',
+        },
+        [
+          frame,
+          node('p', {
+            text: tRaw(STRINGS.qrZoomDismiss),
+            style: 'margin:0;max-width:36rem;text-align:center;color:#fff;font-size:14px',
+          }),
+        ],
+      ),
+    );
     void Promise.resolve(opts.renderQr(value)).then(
       (el) => {
-        if (el && box.isConnected) box.appendChild(el);
+        if (!el || !frame.isConnected) return;
+        // The renderer sizes its wrapper to ~260px; a scan wants it as large as the shorter
+        // viewport axis. The SVG inside is width:100% of this, so this is the only override.
+        el.setAttribute('style', 'display:block;width:min(86vw, 76dvh);max-width:none;margin:0');
+        frame.appendChild(el);
       },
-      () => { /* the QR is a convenience; the code above it is the real payload */ },
+      () => { /* nothing to enlarge; tap-to-close still clears the dim panel */ },
     );
-    return box;
+    dlg.addEventListener('cancel', (event) => { event.preventDefault(); closeQrZoom(); });
+    dlg.addEventListener('click', () => closeQrZoom());
+    document.body.appendChild(dlg);
+    qrZoomDialog = dlg;
+    dlg.showModal();
   }
 
   /**
@@ -1419,9 +1622,10 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     return [
       heading(tRaw(STRINGS.inviteHeading)),
       body(tRaw(STRINGS.inviteBody)),
-      tokenSlot(tRaw(STRINGS.inviteLinkLabel), `${base}${JOIN_ROUTE}?${INVITE_PARAM}=${skins.link}`, 'copy-invite-link', tRaw(STRINGS.copyLink)),
-      tokenSlot(tRaw(STRINGS.inviteCodeLabel), skins.qr, 'copy-invite-code', tRaw(STRINGS.copyCode)),
-      qrSlot(tRaw(STRINGS.inviteQrLabel), skins.qr),
+      qrTabbedSlots(
+        tRaw(STRINGS.inviteLinkLabel), `${base}${JOIN_ROUTE}?${INVITE_PARAM}=${skins.link}`, 'copy-invite-link', tRaw(STRINGS.copyLink),
+        tRaw(STRINGS.inviteCodeLabel), skins.qr, 'copy-invite-code', tRaw(STRINGS.copyCode),
+      ),
       warn(tRaw(STRINGS.inviteTrust)),
       buildNearby(),
       noticeLine(),
@@ -1484,9 +1688,10 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     return [
       heading(tRaw(STRINGS.answerHeading)),
       body(tRaw(STRINGS.answerBody)),
-      tokenSlot(tRaw(STRINGS.answerLinkLabel), `${base}${REPLY_ROUTE}?${ANSWER_PARAM}=${skins.link}`, 'copy-answer-link', tRaw(STRINGS.copyReplyLink)),
-      tokenSlot(tRaw(STRINGS.answerCodeLabel), skins.qr, 'copy-answer-code', tRaw(STRINGS.copyReplyCode)),
-      qrSlot(tRaw(STRINGS.answerQrLabel), skins.qr),
+      qrTabbedSlots(
+        tRaw(STRINGS.answerLinkLabel), `${base}${REPLY_ROUTE}?${ANSWER_PARAM}=${skins.link}`, 'copy-answer-link', tRaw(STRINGS.copyReplyLink),
+        tRaw(STRINGS.answerCodeLabel), skins.qr, 'copy-answer-code', tRaw(STRINGS.copyReplyCode),
+      ),
       status(tRaw(STRINGS.answerWait)),
       skewNote(),
       observerNote(),
@@ -1659,6 +1864,9 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
 
     const screen = screenOf();
     painting = screen;
+    // Rebuilt below; `qrTabbedSlots` re-sets it for the active tab if this screen has QRs, so
+    // the zoom handler never points at a QR that is no longer on screen.
+    qrZoom = null;
     // The countdown element belongs to whichever render made it; drop the stale one
     // before rebuilding so a tick can never paint into a detached node.
     if (screen !== 'waiting') stopTick();
@@ -1785,6 +1993,17 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
         return;
       case 'scan':
         runScan(role === 'inviter' ? 'answer' : 'invite');
+        return;
+      case 'zoom-qr':
+        if (qrZoom) openQrZoom(qrZoom.label, qrZoom.value);
+        return;
+      case 'qr-tab-link':
+        qrTab = 'link';
+        render();
+        return;
+      case 'qr-tab-code':
+        qrTab = 'code';
+        render();
         return;
       case 'join': {
         nameValue = fieldValue(`#${NAME_FIELD}`);

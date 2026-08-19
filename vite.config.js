@@ -170,7 +170,12 @@ export function groupPrecacheFiles(all) {
   // the offline-download manager can state the part's true size up front. Like the
   // upscale/speech/verify models, /models/matte/ is SW-bypassed (single IDB copy).
   const matte = all.filter(f => f.url.startsWith('/models/matte/'));
-  return { app, ort, ortHf, models, speech, upscale, matte };
+  // The OCR models (host.ocr, plans/125) — a detector + recogniser + char dict,
+  // downloaded via lib/ocr.ts's own IDB path (the shared ORT model fetcher), listed
+  // here so the offline-download manager can state the part's size up front. Like
+  // the other model parts, /models/ocr/ is SW-bypassed (single IDB copy).
+  const ocr = all.filter(f => f.url.startsWith('/models/ocr/'));
+  return { app, ort, ortHf, models, speech, upscale, matte, ocr };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.

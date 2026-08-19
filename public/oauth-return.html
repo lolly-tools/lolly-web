@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Connecting…</title>
+<body style="font: 14px system-ui, sans-serif; color: #444; display: grid; place-items: center; min-height: 90vh; margin: 0">
+<p id="msg">Finishing sign-in…</p>
+<script>
+  // The OAuth popup lands here with the token in the URL fragment - for ANY
+  // send-target provider (lib/send-target.ts): the message carries only the
+  // fragment, and each provider validates origin AND its own request state
+  // before touching it (see lib/google-drive.ts). Hand it to the window that
+  // opened us (same origin only) and close. The fragment never hits any
+  // server: it exists only in this page's location.
+  (function () {
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ source: 'lolly-oauth', hash: location.hash }, location.origin);
+        document.getElementById('msg').textContent = 'You can close this window.';
+        setTimeout(function () { window.close(); }, 250);
+        return;
+      }
+    } catch (e) { /* fall through to the visible message */ }
+    document.getElementById('msg').textContent = 'This page only works as part of signing in from the app.';
+  })();
+</script>
+</body>
+</html>

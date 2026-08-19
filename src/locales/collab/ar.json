@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "أرسل واحدا من هذين إلى الجهاز الآخر. تكفي أي وسيلة تثقان بها كلاكما.",
   "Invite link": "رابط الدعوة",
   "Invite code": "رمز الدعوة",
-  "Invite code as a QR code": "رمز الدعوة كرمز QR",
   "Anyone with this invite can join and edit until you close the session.": "يمكن لأي شخص يملك هذه الدعوة الانضمام والتعديل حتى تغلق الجلسة.",
   "Next: paste the reply": "التالي: الصق الرد",
   "Step 2 of 3: Wait for the reply": "الخطوة 2 من 3: انتظار الرد",
@@ -61,7 +60,6 @@
   "Reply code": "رمز الرد",
   "Copy reply link": "نسخ رابط الرد",
   "Copy reply code": "نسخ رمز الرد",
-  "Reply code as a QR code": "رمز الرد كرمز QR",
   "Waiting for the other device to connect.": "في انتظار اتصال الجهاز الآخر.",
   "Connected": "متصل",
   "You are working with {peer}.": "أنت تعمل مع {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "تعذّر حفظ النقل.",
   "Couldn't read the transfer back.": "تعذّرت إعادة قراءة النقل.",
   "Part of the transfer is missing.": "جزء من النقل مفقود.",
-  "The transfer was cancelled.": "أُلغي النقل."
+  "The transfer was cancelled.": "أُلغي النقل.",
+  "Tap to enlarge for scanning": "انقر للتكبير من أجل المسح الضوئي",
+  "Enlarge {label} for scanning": "تكبير {label} للمسح الضوئي",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "وجّه جهازاً آخر إلى هنا لمسحه ضوئياً. انقر في أي مكان أو اضغط Esc للإغلاق.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "هذا الرابط أطول من أن يُمسح ضوئياً. انسخه بدلاً من ذلك، أو استخدم علامة تبويب الرمز."
 }

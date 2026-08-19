@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Gửi một trong hai cách này cho thiết bị kia. Dùng kênh nào cả hai đều tin tưởng là được.",
   "Invite link": "Liên kết lời mời",
   "Invite code": "Mã lời mời",
-  "Invite code as a QR code": "Mã lời mời dạng mã QR",
   "Anyone with this invite can join and edit until you close the session.": "Bất kỳ ai có lời mời này đều có thể tham gia và chỉnh sửa cho đến khi bạn đóng phiên.",
   "Next: paste the reply": "Tiếp theo: dán phản hồi",
   "Step 2 of 3: Wait for the reply": "Bước 2/3: Chờ phản hồi",
@@ -61,7 +60,6 @@
   "Reply code": "Mã phản hồi",
   "Copy reply link": "Sao chép liên kết trả lời",
   "Copy reply code": "Sao chép mã trả lời",
-  "Reply code as a QR code": "Mã phản hồi dạng mã QR",
   "Waiting for the other device to connect.": "Đang chờ thiết bị kia kết nối.",
   "Connected": "Đã kết nối",
   "You are working with {peer}.": "Bạn đang làm việc cùng {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Không thể lưu quá trình truyền.",
   "Couldn't read the transfer back.": "Không thể đọc lại quá trình truyền.",
   "Part of the transfer is missing.": "Thiếu một phần của quá trình truyền.",
-  "The transfer was cancelled.": "Quá trình truyền đã bị hủy."
+  "The transfer was cancelled.": "Quá trình truyền đã bị hủy.",
+  "Tap to enlarge for scanning": "Chạm để phóng to cho dễ quét",
+  "Enlarge {label} for scanning": "Phóng to {label} để quét",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Hướng một thiết bị khác vào đây để quét. Chạm vào bất kỳ đâu hoặc nhấn Esc để đóng.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Liên kết này quá dài để quét. Hãy sao chép, hoặc dùng thẻ Mã."
 }

@@ -9,8 +9,8 @@
  * time, never at module init, so resolution order is safe. (To remove the cycle
  * later, lift those shared helpers into a common render-util module.)
  */
-import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToCustGeomPaths } from "@lolly/engine";
-import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxPath } from "../../../../engine/src/pptx.ts";
+import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToNativePptx } from "@lolly/engine";
+import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull } from "./export-css.ts";
 import { asStr, deckBox, deckFill, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
@@ -225,13 +225,59 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
   // NATIVE-vector fast path: lower a FLAT stroke/fill SVG (the user's own line-art)
   // into real, editable PowerPoint custGeom shapes at `box`, killing the round-trip
   // (EMF → Google Drawings → Slides → PPTX) users otherwise do to keep art vector.
-  // Returns true when it emitted native shapes; false → the caller keeps its existing
-  // raster (svgBlip pic) path, so a gradient/filter/opacity/blend SVG never regresses.
+  // Since engine 1.128 plain <text> runs come along as native text boxes - live,
+  // editable, correctly-named text in PowerPoint AND Google Slides (which matches
+  // the run's font name against the Google Fonts catalogue, so a brand face that
+  // lives there - SUSE does - renders as the real font instead of a serif
+  // substitute). Returns true when it emitted native shapes; false → the caller
+  // keeps its existing raster (svgBlip pic) path, so a gradient/filter/opacity/
+  // blend SVG - or text the lowering can't carry faithfully - never regresses.
   function tryNativeSvg(svgText: string, box: { x: number; y: number; cx: number; cy: number }): boolean {
-    const native: PptxPath[] | null = svgToCustGeomPaths(svgText, box.cx, box.cy);
-    if (!native || !native.length) return false;
-    for (const s of native) { if (full()) break; shapes.push({ ...s, x: box.x, y: box.y }); }
+    const native = svgToNativePptx(svgText, box.cx, box.cy);
+    if (!native || (!native.paths.length && !native.texts.length)) return false;
+    for (const s of native.paths) { if (full()) break; shapes.push({ ...s, x: box.x, y: box.y }); }
+    // Text boxes carry their own geometry inside the element box; offset to it.
+    for (const t of native.texts) { if (full()) break; shapes.push({ ...t, x: box.x + t.x, y: box.y + t.y }); }
     return true;
+  }
+
+  // The custGeom/text lowering (and the svgBlip .svg part below) read a SERIALISED
+  // clone, where the live document's CSS cascade no longer applies - a chart whose
+  // labels are styled from the tool's stylesheet would lower with default fonts
+  // (and the svgBlip would render serif, which is exactly what Google Slides was
+  // showing). Bake COMPUTED presentation state onto the clone as attributes, only
+  // where no attribute already says otherwise: font/paint for <text>, paint for
+  // every drawable - the latter is what makes stripping <style> below safe (a
+  // class-painted shape keeps its resolved colours instead of defaulting black).
+  function bakeTextStyles(liveEl: Element, clone: Element): void {
+    const SEL = 'text, path, rect, circle, ellipse, line, polygon, polyline';
+    const live = liveEl.querySelectorAll(SEL);
+    const cloned = clone.querySelectorAll(SEL);
+    if (!live.length || live.length !== cloned.length) return;
+    live.forEach((lt, i) => {
+      const ct = cloned[i]!;
+      let cs: CSSStyleDeclaration;
+      try { cs = getComputedStyle(lt); } catch { return; }
+      const set = (attr: string, v: string | undefined): void => {
+        if (v && !ct.getAttribute(attr)) ct.setAttribute(attr, v);
+      };
+      set('fill', cs.fill);
+      set('stroke', cs.stroke);
+      if (cs.stroke && cs.stroke !== 'none') set('stroke-width', cs.strokeWidth);
+      if (cs.opacity && parseFloat(cs.opacity) < 1) set('opacity', cs.opacity);
+      if (cs.fillOpacity && parseFloat(cs.fillOpacity) < 1) set('fill-opacity', cs.fillOpacity);
+      if (cs.strokeOpacity && parseFloat(cs.strokeOpacity) < 1) set('stroke-opacity', cs.strokeOpacity);
+      if (lt.tagName.toLowerCase() !== 'text') return;
+      set('font-family', cs.fontFamily);
+      set('font-size', cs.fontSize);
+      set('font-weight', cs.fontWeight);
+      set('font-style', cs.fontStyle);
+      set('text-anchor', cs.textAnchor);
+      // Only bake tracking when it is real - its presence makes the lowering bail.
+      if (cs.letterSpacing && cs.letterSpacing !== 'normal' && parseFloat(cs.letterSpacing) !== 0) {
+        set('letter-spacing', cs.letterSpacing);
+      }
+    });
   }
 
   async function rasterPic(el: HTMLElement, r: DOMRect, name?: string, hiRes = false): Promise<void> {
@@ -253,8 +299,18 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     const clone = el.cloneNode(true) as Element;
     stripCommentNodes(clone);
     if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    // NATIVE first: a flat SVG becomes editable custGeom shapes (no blob-url inline
-    // needed - the lowering bails on <image>/anything raster). Rich SVG → raster below.
+    // Computed text styling must survive serialisation for BOTH paths below (see
+    // bakeTextStyles): the native lowering reads attributes, and the svgBlip part
+    // renders without the tool's stylesheet.
+    bakeTextStyles(el, clone);
+    // With the computed styling baked as attributes, embedded <style> blocks are
+    // spent (the community brand-font pattern puts one in <defs>, and its mere
+    // presence is a hard bail in the lowering - it can't know the rules are
+    // benign). <script> never belongs in an export either way.
+    clone.querySelectorAll('style, script').forEach(n => n.remove());
+    // NATIVE first: a flat SVG becomes editable custGeom shapes + text boxes (no
+    // blob-url inline needed - the lowering bails on <image>/anything raster).
+    // Rich SVG → raster below.
     if (tryNativeSvg(new XMLSerializer().serializeToString(clone), boxOf(r))) return;
     await inlineBlobUrlsInEl(clone);
     const svgBytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone));

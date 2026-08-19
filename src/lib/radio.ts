@@ -33,6 +33,7 @@ export const SOMAFM_HOME = 'https://somafm.com';
 
 /** Curated Neurospicy-lane channels - mostly ambient/downtempo, plus a few lounge/beats picks. */
 export const RADIO_STATIONS: RadioStation[] = [
+  { id: 'radio/somafm/dubstep',      name: 'Dub Step Beyond',    pls: 'https://api.somafm.com/dubstep130.pls',      desc: 'dubstep, dub & deep bass' },
   { id: 'radio/somafm/groovesalad',  name: 'Groove Salad',       pls: 'https://api.somafm.com/groovesalad130.pls',  desc: 'ambient / downtempo' },
   { id: 'radio/somafm/dronezone',    name: 'Drone Zone',         pls: 'https://api.somafm.com/dronezone130.pls',    desc: 'atmospheric ambient' },
   { id: 'radio/somafm/spacestation', name: 'Space Station Soma', pls: 'https://api.somafm.com/spacestation130.pls', desc: 'spaced-out ambient' },

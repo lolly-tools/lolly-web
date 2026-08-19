@@ -56,6 +56,7 @@ import { openDB } from '../bridge/db.ts';
 import { currentLang } from '../i18n.ts';
 import { UPSCALE_MODEL_STORE, UPSCALE_MODEL_CACHE_VERSION } from './upscale-models.ts';
 import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts';
+import { OCR_MODEL_STORE, OCR_MODEL_CACHE_VERSION } from './ocr-models.ts';
 
 /** The page-owned, unversioned Cache Storage buckets sw.js serves offline
  *  fallbacks from. Mirrored by sw.js (APP_CACHE / ORT_CACHE / INFO_CACHE
@@ -99,7 +100,7 @@ export interface PrecacheManifest {
    *  are optional: manifests built before those parts existed don't carry the group. */
   groups: {
     app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[];
-    ortHf?: ManifestFile[]; speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[];
+    ortHf?: ManifestFile[]; speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[]; ocr?: ManifestFile[];
   };
 }
 
@@ -111,7 +112,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -572,6 +573,18 @@ export async function downloadMatte(opts: { signal?: AbortSignal; onProgress?: O
   return rec;
 }
 
+/** Download the OCR part - every staged model's det + rec + dict into the
+ *  `ocr-models` IDB store the runner reads. */
+export async function downloadOcr(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
+  const { prefetchOcrModels } = await import('./model-prefetch.ts');
+  const res = await prefetchOcrModels(opts);
+  opts.signal?.throwIfAborted();
+  if (!res.ok) throw new Error('offline download: an OCR model download was incomplete');
+  const rec: PartRecord = { at: new Date().toISOString(), version: String(OCR_MODEL_CACHE_VERSION), bytes: res.bytes, files: res.files };
+  await recordPart('ocr', rec);
+  return rec;
+}
+
 /** Record a completed catalog download's scope + measured size. The BYTES went
  *  through catalog/sync.ts's prefetch (threaded in by the view); this record is
  *  what keeps them protected + refreshed at every boot (sync.ts reads it back
@@ -604,14 +617,15 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'verify') await caches.delete(ORT_CACHE);
   }
   if (id === 'speech') await clearSpeechCaches();
-  if (id === 'verify' || id === 'upscale' || id === 'matte') {
+  if (id === 'verify' || id === 'upscale' || id === 'matte' || id === 'ocr') {
     try {
       const db = await openDB();
       if (id === 'verify') {
         await db.clear('trustmark-models').catch(() => {});
         await db.clear('contentseal-models').catch(() => {});
       } else {
-        await db.clear(id === 'upscale' ? UPSCALE_MODEL_STORE : MATTE_MODEL_STORE).catch(() => {});
+        const store = id === 'upscale' ? UPSCALE_MODEL_STORE : id === 'matte' ? MATTE_MODEL_STORE : OCR_MODEL_STORE;
+        await db.clear(store).catch(() => {});
       }
     } catch { /* stores absent — nothing to clear */ }
   }

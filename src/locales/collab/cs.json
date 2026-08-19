@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Odešlete jednu z těchto možností na druhé zařízení. Stačí jakýkoli kanál, kterému oba důvěřujete.",
   "Invite link": "Odkaz na pozvánku",
   "Invite code": "Kód pozvánky",
-  "Invite code as a QR code": "Kód pozvánky jako QR kód",
   "Anyone with this invite can join and edit until you close the session.": "Kdokoli s touto pozvánkou se může připojit a upravovat, dokud relaci nezavřete.",
   "Next: paste the reply": "Další: vložte odpověď",
   "Step 2 of 3: Wait for the reply": "Krok 2 ze 3: Čekejte na odpověď",
@@ -61,7 +60,6 @@
   "Reply code": "Kód odpovědi",
   "Copy reply link": "Kopírovat odkaz odpovědi",
   "Copy reply code": "Kopírovat kód odpovědi",
-  "Reply code as a QR code": "Kód odpovědi jako QR kód",
   "Waiting for the other device to connect.": "Čeká se, až se druhé zařízení připojí.",
   "Connected": "Připojeno",
   "You are working with {peer}.": "Pracujete s {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Přenos se nepodařilo uložit.",
   "Couldn't read the transfer back.": "Přenos se nepodařilo znovu načíst.",
   "Part of the transfer is missing.": "Část přenosu chybí.",
-  "The transfer was cancelled.": "Přenos byl zrušen."
+  "The transfer was cancelled.": "Přenos byl zrušen.",
+  "Tap to enlarge for scanning": "Klepnutím zvětšíte pro skenování",
+  "Enlarge {label} for scanning": "Zvětšit {label} pro skenování",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Namiřte sem jiné zařízení a naskenujte to. Zavřete klepnutím kamkoli nebo klávesou Esc.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Tento odkaz je příliš dlouhý na naskenování. Zkopírujte jej, nebo použijte kartu Kód."
 }

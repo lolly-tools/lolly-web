@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Senden Sie eines davon an das andere Gerät. Jeder Kanal, dem Sie beide vertrauen, funktioniert.",
   "Invite link": "Einladungslink",
   "Invite code": "Einladungscode",
-  "Invite code as a QR code": "Einladungscode als QR-Code",
   "Anyone with this invite can join and edit until you close the session.": "Jeder mit dieser Einladung kann beitreten und bearbeiten, bis Sie die Sitzung schließen.",
   "Next: paste the reply": "Weiter: Antwort einfügen",
   "Step 2 of 3: Wait for the reply": "Schritt 2 von 3: Auf die Antwort warten",
@@ -61,7 +60,6 @@
   "Reply code": "Antwortcode",
   "Copy reply link": "Antwortlink kopieren",
   "Copy reply code": "Antwortcode kopieren",
-  "Reply code as a QR code": "Antwortcode als QR-Code",
   "Waiting for the other device to connect.": "Warten, bis sich das andere Gerät verbindet.",
   "Connected": "Verbunden",
   "You are working with {peer}.": "Sie arbeiten mit {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Die Übertragung konnte nicht gespeichert werden.",
   "Couldn't read the transfer back.": "Die Übertragung konnte nicht zurückgelesen werden.",
   "Part of the transfer is missing.": "Ein Teil der Übertragung fehlt.",
-  "The transfer was cancelled.": "Die Übertragung wurde abgebrochen."
+  "The transfer was cancelled.": "Die Übertragung wurde abgebrochen.",
+  "Tap to enlarge for scanning": "Zum Vergrößern antippen, um zu scannen",
+  "Enlarge {label} for scanning": "{label} zum Scannen vergrößern",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Richten Sie ein anderes Gerät hierauf, um es zu scannen. Tippen Sie irgendwohin oder drücken Sie Esc zum Schließen.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Dieser Link ist zu lang zum Scannen. Kopieren Sie ihn stattdessen oder verwenden Sie den Tab Code."
 }

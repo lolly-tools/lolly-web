@@ -31,7 +31,7 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
 import DOMPurify from 'dompurify';
-import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng } from '@lolly/engine';
+import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 // Format + embeddability rules - pure and unit-tested in ./picker-formats.test.ts.
 import {
@@ -53,6 +53,7 @@ import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { onIdle } from '../lib/clip-thumbs.ts';
 import { audioThumbShape, audioThumbSvg, audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { audioThumbPool, type ThumbTheme } from '../lib/audio-thumb-colour.ts';
+import { mountTextThumbs } from '../lib/text-thumbs.ts';
 import { loadAudioCovers, resolveAudioLook, type AudioCover } from '../lib/audio-covers.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { cachedPeaks, derivePeaks, memoPeaks, deletePeaks, MAX_CONCURRENT_DERIVES, peaksFingerprint } from '../lib/audio-peaks.ts';
@@ -86,7 +87,7 @@ import type { VideoJobHost } from '../lib/video-jobs.ts';
  *  itself: callers route them to pdf-import.ts's ingestPdfAsSvgAssets /
  *  pptx-import.ts's ingestPptxAsSvgAssets (page(s)/slide(s) → stored SVG) via
  *  isPdfUpload / isPptxUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/*,.txt,.md,.markdown,.text,.js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.h,.hpp,.cc,.cpp,.cs,.swift,.kt,.kts,.php,.pl,.lua,.sql,.scala,.sh,.bash,.zsh,.fish,.yaml,.yml,.toml,.ini,.cfg,.conf,.css,.scss,.less,.html,.htm,.xml,.vue,.svelte,.astro';
 
 /** A PDF - or an Illustrator .ai, which saved PDF-compatible IS a PDF - that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
@@ -582,6 +583,7 @@ async function render(
   // On-screen-gated waveform upgrader over the whole picker body (see refreshAudioThumbs);
   // torn down with the dialog so an in-flight decode can't paint into a dead grid.
   let audioThumbs: { destroy(): void } | null = null;
+  let textThumbs: { destroy(): void } | null = null;
   // Answers an open trim-to-content card on the user's behalf (keeping the original
   // margins) if the dialog goes away while it is still asking - see offerTrim below.
   let pendingTrim: (() => void) | null = null;
@@ -591,6 +593,7 @@ async function render(
     trap?.release();
     lottieThumbs?.destroy();
     audioThumbs?.destroy();
+    textThumbs?.destroy();
     // Before the wipe: the card's teardown revokes its preview URLs, and the upload
     // it is blocking still has to reach storeUserUpload with an answer.
     pendingTrim?.();
@@ -626,6 +629,17 @@ async function render(
   const refreshAudioThumbs = (): void => {
     audioThumbs?.destroy();
     audioThumbs = mountAudioThumbs(
+      body,
+      host,
+      (id) => candidateById.get(id) ?? userAssets.find(a => a.id === id),
+      () => body.isConnected,
+    );
+  };
+  // The text sibling: upgrade ¶ stubs to fitted, brand-inked excerpts
+  // (lib/text-thumbs.ts) on the same grids, same lifecycle.
+  const refreshTextThumbs = (): void => {
+    textThumbs?.destroy();
+    textThumbs = mountTextThumbs(
       body,
       host,
       (id) => candidateById.get(id) ?? userAssets.find(a => a.id === id),
@@ -1102,6 +1116,7 @@ async function render(
     );
     refreshLottieThumbs();
     refreshAudioThumbs();
+    refreshTextThumbs();
   }
 
   function updateUploadAffordance(): void {
@@ -1424,6 +1439,7 @@ async function render(
     retreatPhotoCards();
     refreshLottieThumbs();
     refreshAudioThumbs();
+    refreshTextThumbs();
   }
 
   // ── Icon theme strip ────────────────────────────────────────────────────────
@@ -1593,6 +1609,7 @@ async function render(
     retreatPhotoCards();
     refreshLottieThumbs();
     refreshAudioThumbs();
+    refreshTextThumbs();
   }
 
   // ── Saved creations (previous single-tool sessions) ────────────────────────
@@ -1721,6 +1738,7 @@ async function render(
       ? parts.join('')
       : `<p class="asset-picker-empty">${q ? t('Nothing here matches.') : (cur ? t('This folder is empty.') : t('No folders yet.'))}</p>`);
     refreshAudioThumbs();
+    refreshTextThumbs();
   }
 
   // ── Tools (configure first, then insert) ───────────────────────────────────
@@ -2641,7 +2659,9 @@ function userCard(ref: AssetRef): string {
       : ref.type === 'audio'
         ? audioThumb(ref, 'asset-picker-thumb')
         : ref.type === 'text' || ref.type === 'data'
-          ? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">${ref.type === 'text' ? '¶' : '▦'}</span>`
+          ? (ref.type === 'text'
+            ? `<span class="asset-picker-thumb asset-picker-thumb-stub" data-text-thumb="${escapeHtml(ref.id)}" aria-hidden="true">¶</span>`
+            : `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">▦</span>`)
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   return `
     <div class="asset-picker-card asset-picker-card-user">
@@ -2920,6 +2940,16 @@ const MAX_ANIMATED_RASTER_BYTES = 20 * 1024 * 1024; // 20 MB
 // the user to compress rather than the store throwing QuotaExceededError mid-write.
 const MAX_AUDIO_BYTES = 30 * 1024 * 1024;         // 30 MB
 const MAX_DATA_BYTES = 16 * 1024 * 1024;          // 16 MB - a spreadsheet/CSV data asset
+// The most CHARACTERS the ingest-time AI-writing analysis reads. The full file is
+// still stored verbatim; the cap only bounds the analysed slice, so a huge log or
+// bundle can't stall the upload behind a synchronous scan.
+const MAX_AI_SIGNAL_CHARS = 256 * 1024;
+// Extensions the TEXT path claims (the classifier below + its format stamp). Source
+// code and markup ride the same verbatim type:'text' path as .txt/.md - see the
+// isText comment in storeUserUpload. .json (Lottie), .csv/.tsv (data) and .svg/.svgz
+// (vector) are claimed earlier in the chain and stay off this list; '.ts' is here but
+// yields to a real MPEG transport stream (the byte probe in storeUserUpload).
+const TEXT_EXT_RE = /\.(txt|md|markdown|text|js|jsx|mjs|cjs|ts|tsx|py|rb|go|rs|java|c|h|hpp|cc|cpp|cs|swift|kt|kts|php|pl|lua|sql|r|scala|sh|bash|zsh|fish|yaml|yml|toml|ini|cfg|conf|css|scss|less|html|htm|xml|vue|svelte|astro)$/i;
 // Credential preservation reads the ORIGINAL bytes whole (the only branch that
 // does - rasters otherwise stream through createImageBitmap without a JS-heap
 // copy). Skip the scan for outsized originals rather than buffer them: a real
@@ -3123,6 +3153,22 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       }
     }
   }
+  // '.ts' is two formats: TypeScript source and an MPEG transport stream - and
+  // Chromium's mime map stamps a dragged .ts as video/mp2t, which would ride a
+  // SOURCE FILE onto the video path on MIME alone (isVideo's extension list has no
+  // 'ts'; only the MIME test can claim one). The bytes settle it: a real transport
+  // stream repeats its 0x47 sync byte at every 188-byte packet boundary (probed at
+  // offsets 0 and 188), which source code never does. A video-stamped .ts without
+  // the sync pattern - and without mp4/webm container magic, so a renamed real clip
+  // keeps video's claim - is released to the text path below. A real stream keeps
+  // today's routing (video when the MIME says so, the raster fall-through when
+  // blank) and is never stored as text.
+  let tsStream = false;
+  if (/\.ts$/i.test(file.name)) {
+    const probe = new Uint8Array(await file.slice(0, 189).arrayBuffer());
+    tsStream = probe[0] === 0x47 && probe[188] === 0x47;
+    if (isVideo && !tsStream && !sniffVideoContainer(probe)) isVideo = false;
+  }
   const isMidi = !isLottie && !isVector && !isVideo
     && (/\.midi?$/i.test(file.name) || /^audio\/(x-)?midi?$/i.test(file.type)
         || (head4[0] === 0x4d && head4[1] === 0x54 && head4[2] === 0x68 && head4[3] === 0x64)); // 'MThd'
@@ -3150,15 +3196,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   const isData = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio
     && /\.(xlsx|csv|tsv)$/i.test(file.name);
 
-  // A plain-TEXT document (.txt/.md) - stored VERBATIM as a type:'text' asset so a
-  // poem, note or prose file lives in the catalogue with its REAL extension, can be
-  // read/analysed (the verify view's text-signal analysis, OCR is not needed - the
-  // bytes ARE the text) or dropped into a text input. Without this it fell through to
-  // the raster branch and became a dimensionless "BIN" image (extFromMime returns
-  // 'bin' for text/plain and empty MIMEs). .json stays on the Lottie path; .csv/.tsv
-  // stay data. Detected after every media + data test so a real one always wins.
-  const isText = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio && !isData
-    && (/\.(txt|md|markdown|text)$/i.test(file.name) || /^text\/(plain|markdown)$/i.test(file.type));
+  // A TEXT file - plain text, markdown, source CODE and markup (TEXT_EXT_RE, plus any
+  // text/* MIME and the common code MIMEs) - stored VERBATIM as a type:'text' asset so
+  // a poem, note, script or stylesheet lives in the catalogue with its REAL extension,
+  // can be read/analysed (text-signal analysis runs at ingest below and again in the
+  // verify view; OCR is not needed - the bytes ARE the text) or dropped into a text
+  // input. Without this it fell through to the raster branch and became a dimensionless
+  // "BIN" image (extFromMime returns 'bin' for text/plain and empty MIMEs). .json stays
+  // on the Lottie path; .csv/.tsv stay data; .svg/.svgz stay vector - the !is* chain
+  // ahead of this line is what keeps those claims. Detected after every media + data
+  // test so a real one always wins; !tsStream keeps an MPEG transport stream off the
+  // text path (see the '.ts' probe above).
+  const isText = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio && !isData && !tsStream
+    && (TEXT_EXT_RE.test(file.name) || /^text\//i.test(file.type)
+        || /^application\/(javascript|typescript|x-sh|xml|x-yaml|toml)$/i.test(file.type));
 
   // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video - 
   // both from the HEADER BYTES, since an animated raster shares its MIME with the
@@ -3198,6 +3249,10 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // badge never has to re-probe a stored blob. `fps` accompanies a lottie's duration
   // (its own frame rate, not a video/audio concept). Absent (not 0) on failure.
   let durationMs: number | undefined, fps: number | undefined;
+  // A text asset's AI-writing note (meta.aiSignals - the conventional shape in
+  // host-v1.ts), computed in the isText branch while the bytes are in hand so the
+  // asset carries it from birth. Absent on any other type, and on analyser failure.
+  let aiSignals: Record<string, unknown> | undefined;
 
   if (isLottie) {
     const text = isDotLottie ? await dotLottieToJson(file) : await file.text();
@@ -3295,12 +3350,34 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     assertVerbatimSize(file, MAX_DATA_BYTES, t('data file'));
     format = /\.xlsx$/i.test(file.name) ? 'xlsx' : /\.tsv$/i.test(file.name) ? 'tsv' : 'csv';
   } else if (isText) {
-    // Verbatim: a text document is kept byte-for-byte. Format is the REAL extension so
-    // the badge reads TXT/MD and renameExt keeps the right suffix - never the 'bin'
-    // the raster fall-through used to stamp. No dimensions (text has none).
+    // Verbatim: text, markdown, code and markup are kept byte-for-byte. Format is the
+    // REAL extension so the badge reads TXT/MD/PY/CSS and renameExt keeps the right
+    // suffix - never the 'bin' the raster fall-through used to stamp. No dimensions
+    // (text has none).
     assertVerbatimSize(file, MAX_DATA_BYTES, t('text file'));
-    const ext = file.name.toLowerCase().match(/\.(txt|md|markdown|text)$/)?.[1];
+    const ext = file.name.toLowerCase().match(TEXT_EXT_RE)?.[1];
     format = ext === 'markdown' ? 'md' : ext === 'text' ? 'txt' : (ext ?? 'txt');
+    // AI-writing signals, analysed NOW while the bytes are in hand so the confidence
+    // note is persisted on the asset from birth - keyed to LEXICON_VERSION, so a note
+    // from a stale lexicon is recomputed downstream, never trusted. The analysed slice
+    // is capped (the stored bytes are not); the analyser detects prose/markdown/code
+    // itself. Best-effort by contract: an analyser error must NEVER block an upload -
+    // it is logged and the asset stores without the note.
+    try {
+      const body = new TextDecoder('utf-8', { fatal: false })
+        .decode(await file.arrayBuffer())
+        .slice(0, MAX_AI_SIGNAL_CHARS);
+      const r = analyzeTextSignals(body, { source: 'digital' });
+      aiSignals = {
+        v: LEXICON_VERSION,
+        band: r.band,
+        score: r.score,
+        source: 'digital',
+        ...(r.styleGuess ? { family: r.styleGuess.family, confidence: r.styleGuess.confidence } : {}),
+      };
+    } catch (e) {
+      host.log('warn', 'Text-signal analysis failed at ingest', { error: String(e) });
+    }
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' - it
@@ -3477,6 +3554,9 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       // Bits per channel of the stored bytes, when the container states it.
       // Absent = unknown, never assumed 8.
       ...(storedDepth != null ? { depth: storedDepth } : {}),
+      // A text asset's AI-writing note, analysed at ingest (see the isText branch).
+      // A signal for the user's own confidence in an ingredient, never a verdict.
+      ...(aiSignals ? { aiSignals } : {}),
     },
   };
 

@@ -25,6 +25,10 @@
  *     words rather than followed quietly.
  */
 import type { VerifyReport, TextBinding } from './valid-verdict.ts';
+import { analyzeTextSignals } from '@lolly/engine';
+import type {
+  TextSignalReport, TextSignalBand, TextSignalSource, TextSignalDocKind, TextHeatmap,
+} from '@lolly/engine';
 
 // ── Honest format labels ─────────────────────────────────────────────────────
 // `report.format` is a sniff result, not a language claim: 'code' means "at
@@ -498,7 +502,7 @@ export interface AiDisclosureRow {
   domains?: string;
 }
 
-/** Every disclosure the claim made, in claim order. Empty when there is none - 
+/** Every disclosure the claim made, in claim order. Empty when there is none -
  *  and absence is NOT a statement that no model was involved. */
 export function aiDisclosureRows(report: VerifyReport): AiDisclosureRow[] {
   const list = report.aiDisclosures?.length ? report.aiDisclosures
@@ -509,4 +513,155 @@ export function aiDisclosureRows(report: VerifyReport): AiDisclosureRow[] {
     ...(d.oversight ? { oversight: d.oversight } : {}),
     ...(d.scientificDomain?.length ? { domains: d.scientificDomain.join(' · ') } : {}),
   }));
+}
+
+// ── Text AI-likelihood signals (plans/125) ───────────────────────────────────
+//
+// The DUAL of `aiDisclosureRows` above: that reads what a credential DECLARES (an
+// authoritative, signed statement); this READS THE TEXT ITSELF for signals that it
+// was AI-generated. The two are meant to sit together - a declaration is stronger
+// than a detection, and this panel is careful never to overstep it. A SIGNAL, never
+// a verdict: the engine's `analyzeTextSignals` returns a coarse band plus findings,
+// and this builds the view model. The view owns t()/escape and the copy for each
+// `kind`, exactly like the notice mapping above. See [[perceptibility-is-not-a-safeguard]].
+
+/** One finding, flattened for the view. `detail` is the engine's factual sentence
+ *  (with counts) shown verbatim; `kind` is what the view maps to a localised title. */
+export interface TextSignalRow {
+  kind: string;
+  tier: 'artifact' | 'heuristic';
+  detail?: string;
+}
+
+/** A span to highlight in the analyzed text: WHERE (index/length into the same
+ *  string the report was built from), its `tier` (the honest "confidence" of
+ *  the signal - `artifact` is a byte-level tell, `heuristic` a softer style
+ *  tell), and its `heat` (0-1 confidence temperature for the graded highlight). */
+export interface TextSignalMark {
+  index: number;
+  length: number;
+  tier: 'artifact' | 'heuristic';
+  kind: string;
+  heat: number;
+}
+
+/** One run of text for the highlighter: plain when `tier` is absent, else marked. */
+export interface HighlightSegment {
+  text: string;
+  tier?: 'artifact' | 'heuristic';
+  kind?: string;
+  heat?: number;
+}
+
+/** Heat (0-1) → the 5-step temperature bucket the stylesheets grade (t1 = the
+ *  coolest style hint, t5 = a hard artifact). Shared by the verify view and the
+ *  catalog so the two highlighters never disagree on a colour. */
+export function heatBucket(heat: number): 1 | 2 | 3 | 4 | 5 {
+  if (heat >= 0.8) return 5;
+  if (heat >= 0.6) return 4;
+  if (heat >= 0.45) return 3;
+  if (heat >= 0.3) return 2;
+  return 1;
+}
+
+/** The verify-view model for a text AI-likelihood check. */
+export interface TextSignalPanel {
+  band: TextSignalBand;
+  /** The granular 0-100 AI-likelihood score (the fine companion to `band`). */
+  score: number;
+  /** 'warn' only at the strongest band; everything softer is informational. */
+  tone: 'info' | 'warn';
+  /** The engine's plain, non-accusatory summary (already carries the OCR note). */
+  summary: string;
+  /** True when the text was read from an image: only style signals were checked. */
+  pixelSourced: boolean;
+  rows: TextSignalRow[];
+  /** The style/fingerprint guess rationale, when one was offered. */
+  guess?: string;
+  /** The best-guess source (e.g. 'generic-LLM' | 'Claude' | 'ChatGPT (OpenAI)'). */
+  guessFamily?: string;
+  /** 'high' ONLY when a leaked model fingerprint named the source; else 'low'. */
+  guessConfidence?: 'low' | 'high';
+  /** Every family that scored, strongest first - "leans X over Y". */
+  guessCandidates?: Array<{ family: string; strength: number }>;
+  /** What the engine analysed the text AS ('code' = comments-only style tells). */
+  docKind: TextSignalDocKind;
+  /** The rolling-window heat map, when the text was long enough to window. */
+  heatmap?: TextHeatmap;
+  /** Merged, non-overlapping spans for highlighting the analyzed text. */
+  marks: TextSignalMark[];
+  /** The analyzed text itself, so the view can show it for inspection with the
+   *  `marks` highlighted. Set by `analyzeVerifyText`; absent on a bare `textSignalPanel`. */
+  text?: string;
+}
+
+/** Flatten a report's finding spans into merged, non-overlapping marks. Overlaps
+ *  keep the higher-confidence tier (`artifact` beats `heuristic`) and the HOTTEST
+ *  heat - a span flagged twice shows at its strongest grade. The wide `ai-span`
+ *  region is deliberately excluded: it is a REGION note the heat map already
+ *  paints, and merging it here would swallow every precise mark inside it. */
+function mergeMarks(report: TextSignalReport): TextSignalMark[] {
+  const raw: TextSignalMark[] = [];
+  for (const f of report.findings) {
+    if (f.kind === 'ai-span') continue;
+    for (const s of f.spans ?? []) raw.push({ index: s.index, length: s.length, tier: f.tier, kind: f.kind, heat: f.heat });
+  }
+  raw.sort((a, b) => a.index - b.index || (a.tier === 'artifact' ? 0 : 1) - (b.tier === 'artifact' ? 0 : 1));
+  const out: TextSignalMark[] = [];
+  for (const m of raw) {
+    const last = out[out.length - 1];
+    if (last && m.index < last.index + last.length) {
+      last.length = Math.max(last.index + last.length, m.index + m.length) - last.index;
+      if (m.tier === 'artifact' && last.tier !== 'artifact') { last.tier = 'artifact'; last.kind = m.kind; }
+      if (m.heat > last.heat) last.heat = m.heat;
+    } else {
+      out.push({ ...m });
+    }
+  }
+  return out;
+}
+
+/** Split `text` into plain + marked segments for the highlighter. Pure; the view
+ *  wraps marked segments in its own `<mark>` markup and escapes the text. */
+export function buildHighlightSegments(text: string, marks: TextSignalMark[]): HighlightSegment[] {
+  const segs: HighlightSegment[] = [];
+  let pos = 0;
+  for (const m of marks) {
+    const start = Math.max(pos, m.index);
+    const end = Math.min(text.length, m.index + m.length);
+    if (end <= start) continue;
+    if (start > pos) segs.push({ text: text.slice(pos, start) });
+    segs.push({ text: text.slice(start, end), tier: m.tier, kind: m.kind, heat: m.heat });
+    pos = end;
+  }
+  if (pos < text.length) segs.push({ text: text.slice(pos) });
+  return segs;
+}
+
+/** Report → view model. Pure; the view maps `band`/`kind` to localised copy. */
+export function textSignalPanel(report: TextSignalReport): TextSignalPanel {
+  return {
+    band: report.band,
+    score: report.score,
+    tone: report.band === 'strong' ? 'warn' : 'info',
+    summary: report.summary,
+    pixelSourced: report.pixelSourced,
+    docKind: report.docKind,
+    rows: report.findings.map((f) => ({ kind: f.kind, tier: f.tier, ...(f.detail ? { detail: f.detail } : {}) })),
+    ...(report.styleGuess ? {
+      guess: report.styleGuess.rationale,
+      guessFamily: report.styleGuess.family,
+      guessConfidence: report.styleGuess.confidence,
+      ...(report.styleGuess.candidates?.length ? { guessCandidates: report.styleGuess.candidates } : {}),
+    } : {}),
+    ...(report.heatmap ? { heatmap: report.heatmap } : {}),
+    marks: mergeMarks(report),
+  };
+}
+
+/** Analyse a text payload for the verify view. `source` picks the tiers:
+ *  'digital' (the bytes ARE the text) runs everything; 'ocr' (read from an image)
+ *  runs writing-style signals only and flags `pixelSourced`. */
+export function analyzeVerifyText(text: string, source: TextSignalSource): TextSignalPanel {
+  return { ...textSignalPanel(analyzeTextSignals(text, { source })), text };
 }

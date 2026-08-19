@@ -44,6 +44,7 @@ import { KOKORO_MODEL_BYTES } from '../../../../engine/src/speech-model-bytes.ts
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
 import { matteModelsFor, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';
+import { ocrModelsFor, OCR_MODEL_BYTES } from '../lib/ocr-models.ts';
 import { isTauriShell } from '../lib/instance-choice.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
@@ -502,6 +503,28 @@ export async function createBridge(): Promise<WebHost> {
     cached: async (id) => (await loadMatte()).cached(id),
     canRun: async (src, o) => (await loadMatte()).canRun(src, o),
     run: async (f, o) => (await loadMatte()).run(f, o),
+  };
+
+  // On-device text recognition / OCR (plans/125). Same lazy-facade shape as matte:
+  // bridge/ocr.ts owns a Worker whose chunk drags onnxruntime-web + the detect→
+  // recognise runner, off the boot budget. Sync methods answered here; models()
+  // offers only STAGED (licence-verified, spec-confirmed) weights, so today it is
+  // EMPTY until a model is vendored - isAvailable() still reports the capability so
+  // a surface can feature-detect it. WASM-only: backend() never reports webgpu.
+  let ocrApi: { backend(): 'wasm' | null } | null = null;
+  const loadOcr = memo(async () => {
+    const api = (await import('./ocr.ts')).createOcrAPI();
+    ocrApi = api;
+    return api;
+  });
+  host.ocr = {
+    isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
+    backend: () => ocrApi?.backend() ?? null,
+    models: () => ocrModelsFor(isTauriShell()),
+    modelBytes: (id) => OCR_MODEL_BYTES[id] ?? 0,
+    cached: async (id) => (await loadOcr()).cached(id),
+    canRun: async (src, o) => (await loadOcr()).canRun(src, o),
+    run: async (f, o) => (await loadOcr()).run(f, o),
   };
 
   // Content Credentials signing (v1.85; widened v1.104). A lazy facade for the

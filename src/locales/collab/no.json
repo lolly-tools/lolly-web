@@ -21,7 +21,6 @@
   "Send one of these to the other device. Any channel you both trust will do.": "Send én av disse til den andre enheten. Enhver kanal dere begge stoler på, fungerer.",
   "Invite link": "Invitasjonslenke",
   "Invite code": "Invitasjonskode",
-  "Invite code as a QR code": "Invitasjonskode som QR-kode",
   "Anyone with this invite can join and edit until you close the session.": "Alle som har denne invitasjonen, kan bli med og redigere til du lukker økten.",
   "Next: paste the reply": "Neste: lim inn svaret",
   "Step 2 of 3: Wait for the reply": "Steg 2 av 3: Vent på svaret",
@@ -61,7 +60,6 @@
   "Reply code": "Svarkode",
   "Copy reply link": "Kopier svarlenke",
   "Copy reply code": "Kopier svarkode",
-  "Reply code as a QR code": "Svarkode som QR-kode",
   "Waiting for the other device to connect.": "Venter på at den andre enheten kobler til.",
   "Connected": "Tilkoblet",
   "You are working with {peer}.": "Du arbeider med {peer}.",
@@ -222,5 +220,9 @@
   "Couldn't save the transfer.": "Kunne ikke lagre overføringen.",
   "Couldn't read the transfer back.": "Kunne ikke lese overføringen tilbake.",
   "Part of the transfer is missing.": "En del av overføringen mangler.",
-  "The transfer was cancelled.": "Overføringen ble avbrutt."
+  "The transfer was cancelled.": "Overføringen ble avbrutt.",
+  "Tap to enlarge for scanning": "Trykk for å forstørre for skanning",
+  "Enlarge {label} for scanning": "Forstørr {label} for skanning",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Rett en annen enhet hit for å skanne den. Trykk hvor som helst eller trykk Esc for å lukke.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Denne lenken er for lang til å skanne. Kopier den i stedet, eller bruk Kode-fanen."
 }

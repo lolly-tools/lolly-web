@@ -34,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -194,6 +194,15 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // and NOT part of the portable backup.
         const beamStore = db.createObjectStore('beam-staging', { keyPath: ['beamId', 'itemIndex', 'seq'] });
         beamStore.createIndex('at', 'at');
+      }
+      if (oldVersion < 14) {
+        // On-device OCR model weights (host.ocr, plans/125) - a detector, a recogniser
+        // and the recogniser's char dictionary, keyed by filename - the SAME
+        // fetch-once/IndexedDB-forever cache the shared ORT fetcher writes
+        // (createModelFetcher store:'ocr-models'). Pure and re-downloadable exactly
+        // like 'matte-models'/'upscale-models', so likewise NOT in REQUIRED_STORES
+        // (its absence must never escalate into a data-wipe) and out of the backup.
+        db.createObjectStore('ocr-models');
       }
     },
     blocking() {

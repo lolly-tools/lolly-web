@@ -74,6 +74,17 @@ const CATEGORY_LABEL: Record<string, string> = {
 const ENABLED_KEY = 'lolly:vizEnabled';
 const SCHEME_KEY = 'lolly:vizScheme';
 
+/**
+ * The preset the dock opens on (Andy's pick): flexi's bouncing-balls mindblob, a
+ * bright tier-1 artist preset. It's a STOCK preset, staged from a build-time
+ * dependency (see lib/viz-stock.ts), so a clone without the pack has no artist
+ * presets - `openingPresetId` falls back to a brand-native default there, and
+ * under reduced motion. The auto-cycle still draws at random from the whole
+ * library; this only pins the FIRST frame, so leaving Bars always lands on the
+ * same good look rather than a random draw that could be near-black.
+ */
+const START_PRESET_ID = 'flexi-bouncing-balls-double-mindblob-neon-mix';
+
 /** A short mood/genre chip from a track's tags (mirrors music-player.ts's trackMood,
  *  inlined so this adapter stays decoupled from the old component). */
 function trackMood(tags: string[]): string {
@@ -331,7 +342,16 @@ class NeuroDockViz implements DockViz {
         }
       } catch { /* no schemes → the renderer keeps its default palette */ }
     }
-    if (!this.presetId) this.presetId = defaultVizPresetId(prefersReducedMotion());
+    if (!this.presetId) this.presetId = this.openingPresetId();
+  }
+
+  /** The preset the dock opens on: the pinned artist preset when the pack is staged
+   *  and motion is allowed, else a brand-native default. `this.stock` is already
+   *  loaded above, so the pin resolves in one pass (no settle-later needed). */
+  private openingPresetId(): string {
+    if (prefersReducedMotion()) return defaultVizPresetId(true);
+    if (this.isStock(START_PRESET_ID)) return START_PRESET_ID;
+    return defaultVizPresetId(false);
   }
 
   /** Fetch an artist preset, brand-blend it, and hand it to the renderer (mirrors the

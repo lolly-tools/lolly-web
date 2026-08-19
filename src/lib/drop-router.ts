@@ -70,6 +70,10 @@ const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico
 // name gate for the chooser; the authoritative byte check (never shred an office
 // file) lives in archive-ingest.readArchiveMembers, run when the user commits.
 const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
+// A plain-text document (prose, markdown, code, config) - kept in step with picker.ts's
+// TEXT_EXT_RE. These ingest to the library as type:'text' assets; without this a page-wide
+// drop offered no "Add to your library" route (only media did), so a .txt looked unsupported.
+const TEXT_DROP_RE = /\.(txt|md|markdown|text|js|jsx|mjs|cjs|ts|tsx|py|rb|go|rs|java|c|h|hpp|cc|cpp|cs|swift|kt|kts|php|pl|lua|sql|r|scala|sh|bash|zsh|fish|yaml|yml|toml|ini|cfg|conf|css|scss|less|html|htm|xml|vue|svelte|astro)$/i;
 const PURE_DESIGN_EXT_RE = /\.(fig|penpot|idml|indd)$/i;
 const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
 // Design-system shapes (plan 97 section 8). A Penpot project always carries a token
@@ -157,6 +161,9 @@ export interface Sniff {
   layers: boolean;
   /** A plain archive (.zip/.tar/.tar.gz) we can explode into member assets. */
   archive: boolean;
+  /** A plain-text document (prose/markdown/code) that ingests to the library as a
+   *  type:'text' asset - so a page-wide drop offers "Add to your library". */
+  textDoc: boolean;
   /** Design-system material (plan 97 section 8): a DTCG/Tokens-Studio token document,
    *  a Penpot project, or a zip whose parts say design-system pack. Additive - 
    *  it never suppresses a route another flag already earned. */
@@ -293,9 +300,14 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
       : zipMagic || /\.zip$/i.test(file.name)
         ? zipListsDesignSystemParts(text)
         : await looksLikeTokensFile(file, text));
+  // A plain-text document (prose/markdown/code) that no richer route claimed - it
+  // ingests to the library as a type:'text' asset, so the "Add to your library" route
+  // must be offered for it too, not only for media.
+  const textDoc = !design && !pdf && !pptx && !layers && !archive && !lolly && !designSystem
+    && (TEXT_DROP_RE.test(file.name) || /^text\//i.test(file.type));
   // A PSD/XCF often carries an image/* MIME - the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly };
+  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc };
 }
 
 const toolExists = (id: string): boolean =>
@@ -394,13 +406,14 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.pptx) {
     choices.push({ id: 'library', label: t('Add slides to your library'), primary: true });
   }
-  if ((single && s.media && !s.pdf && !s.pptx) || (!single && allIngestable)) {
+  if ((single && (s.media || s.textDoc) && !s.pdf && !s.pptx) || (!single && allIngestable)) {
     choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
   }
-  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media;
-  // Provenance applies to media, to anything carrying C2PA-looking bytes, to
-  // unknown formats - and as the last resort when no other route landed.
-  if (s.media || s.c2pa || unknown || choices.length === 0) {
+  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media && !s.textDoc;
+  // Provenance applies to media, to anything carrying C2PA-looking bytes, to a text
+  // document (the verify view reads its AI-writing signals), to unknown formats - and
+  // as the last resort when no other route landed.
+  if (s.media || s.c2pa || unknown || s.textDoc || choices.length === 0) {
     choices.push({ id: 'verify', label: t('Check Content Credentials') });
   }
   return choices;
@@ -529,7 +542,8 @@ export async function openDropChooser(
   // skips the chooser entirely and lands the user in the tool at the imported session.
   if (s.lolly) { await importLollyDrop(first, host); return; }
   const allIngestable = files.every(
-    (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f),
+    (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f)
+      || TEXT_DROP_RE.test(f.name) || /^text\//i.test(f.type),
   );
 
   const ctx: ChooserContext = { single, count: files.length, allIngestable, has: toolExists };

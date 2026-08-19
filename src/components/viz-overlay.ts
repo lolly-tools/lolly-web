@@ -376,7 +376,7 @@ function ensureStyles(doc: Document): void {
  * there IS a preset before the artist index loads) and once after
  * `initStock`, over the whole library.
  */
-const START_PRESET_ID = 'aderrasi-veil-of-steel-steel-storm-mash0000-bob-ross-finally-loses-it';
+const START_PRESET_ID = 'flexi-bouncing-balls-double-mindblob-neon-mix';
 
 function startPresetId(): string {
   if (neuroDemoActive()) return DEMO_VIZ_PRESET_ID;   // a capture must open on the same preset every run

@@ -482,6 +482,78 @@ test('inviter: no renderQr means no QR slot, never a broken one (section 11.27)'
   h.close();
 });
 
+test('inviter: the invite is two QR tabs (link and code) and the link falls back to a note when its URL is too long to scan', async () => {
+  const asked: string[] = [];
+  const h = open({
+    role: 'inviter', toolId: 'qr-code',
+    // Model the real encoder: a URL (byte mode) can overflow the scannable ceiling and
+    // comes back null; a bare base32 code always fits.
+    renderQr: (text) => { asked.push(text); return text.includes('://') ? null : dom.window.document.createElement('svg'); },
+  });
+  clickAct(h.el, 'create-invite');
+  await settle();
+
+  // Two tabs, link selected first, and BOTH copy targets present at once (hidden panel and
+  // all) so the paste fallback never depends on which tab is showing.
+  const sel = (act: string) => h.el.querySelector<HTMLElement>(`[data-act="${act}"]`)?.getAttribute('aria-selected');
+  assert.ok(h.el.querySelector('[data-act="qr-tab-link"]') && h.el.querySelector('[data-act="qr-tab-code"]'), 'both tabs present');
+  assert.equal(sel('qr-tab-link'), 'true', 'link is the default tab');
+  assert.equal(sel('qr-tab-code'), 'false');
+  assert.ok(h.el.querySelector('[data-token="copy-invite-link"]'), 'the link token is present');
+  assert.ok(h.el.querySelector('[data-token="copy-invite-code"]'), 'the code token is present');
+
+  // The link tab tried to encode the actual invite URL, and being too long, showed the note.
+  assert.ok(asked.some((t) => t.startsWith(`https://lolly.tools/app${JOIN_ROUTE}?`)), 'the link tab QR is the invite URL');
+  assert.ok(allText(h.el).includes(STRINGS.qrLinkTooBig), 'a URL too long to scan shows a note, not an empty box');
+
+  // Switching to the code tab flips the selection; base32 always fits, so it draws a QR.
+  clickAct(h.el, 'qr-tab-code');
+  await settle();
+  assert.equal(sel('qr-tab-code'), 'true', 'the code tab is now selected');
+  assert.equal(sel('qr-tab-link'), 'false');
+  h.close();
+});
+
+test('inviter: tapping the QR enlarges it to a scannable overlay; a tap or Escape dismisses it', async () => {
+  const h = open({ role: 'inviter', toolId: 'qr-code', renderQr: () => dom.window.document.createElement('svg') });
+  clickAct(h.el, 'create-invite');
+  await settle();
+
+  // The QR is now a button, with the tap-to-enlarge affordance beside it.
+  assert.ok(h.el.querySelector('[data-act="zoom-qr"]'), 'the QR is a tappable button');
+  assert.ok(allText(h.el).includes(STRINGS.qrEnlargeHint), 'and it says so');
+
+  const zoom = (): HTMLDialogElement | null =>
+    dom.window.document.querySelector<HTMLDialogElement>('dialog.collab-qr-zoom');
+
+  clickAct(h.el, 'zoom-qr');
+  await settle();
+  assert.ok(zoom(), 'an enlarge overlay opened');
+  assert.ok(zoom()!.hasAttribute('open'), 'and it is showing');
+  assert.ok(zoom()!.querySelector('svg'), 'the code is drawn into it at size');
+  assert.ok(allText(zoom()!).includes(STRINGS.qrZoomDismiss), 'with the dismiss hint');
+
+  // A tap anywhere on the overlay closes it, leaving the ceremony untouched behind it.
+  zoom()!.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  assert.equal(zoom(), null, 'the overlay is gone');
+  assert.equal(headingText(h.el), STRINGS.inviteHeading, 'and the invite screen is still there');
+
+  // Escape (the native cancel event) closes the topmost overlay too, not the ceremony.
+  clickAct(h.el, 'zoom-qr');
+  await settle();
+  assert.ok(zoom(), 'the overlay re-opened');
+  zoom()!.dispatchEvent(new dom.window.Event('cancel'));
+  assert.equal(zoom(), null, 'Escape closed the overlay');
+  assert.equal(headingText(h.el), STRINGS.inviteHeading, 'the ceremony is still open');
+
+  // Closing the whole ceremony takes any open overlay down with it.
+  clickAct(h.el, 'zoom-qr');
+  await settle();
+  assert.ok(zoom(), 'overlay up again');
+  h.close();
+  assert.equal(zoom(), null, 'closing the ceremony also closes the overlay');
+});
+
 test('inviter: no scan capability means no scan button', async () => {
   const withScan = open({ role: 'inviter', scan: async () => null });
   clickAct(withScan.el, 'create-invite');

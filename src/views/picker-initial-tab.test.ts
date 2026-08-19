@@ -247,3 +247,82 @@ test('an untyped pick tiles only the user assets that HAVE a picture', async () 
     'and nothing offers to delete a profile from here');
   await p.close();
 });
+
+
+// ── the upload classifier: code files are text assets ─────────────────────────
+// APPENDED (2026-08-18): storeUserUpload's classifier claims and its ingest-time
+// AI-signal note. These ride this suite for its jsdom + real-picker-module setup;
+// the picker module above is already imported, so the dynamic import below is a
+// cache hit, not a re-evaluation.
+
+const { storeUserUpload } = await import('./picker.ts');
+const { LEXICON_VERSION } = await import('@lolly/engine');
+
+interface StoredRecord { id: string; type: string; format: string; meta?: Record<string, unknown> }
+
+/** A host whose _uploadUserAsset CAPTURES the record, so a test reads what was stored. */
+function makeUploadHost(): { stored: StoredRecord[]; host: unknown } {
+  const stored: StoredRecord[] = [];
+  return {
+    stored,
+    host: {
+      capabilities: [],
+      log() {},
+      profile: { get: async () => ({}), set: async () => {} },
+      state: { list: async () => [], load: async () => null, save: async () => {}, delete: async () => {} },
+      assets: {
+        query: async () => [],
+        get: async (id: string) => ({ id, source: 'user', type: stored[0]?.type ?? 'text', format: stored[0]?.format ?? 'txt', url: 'blob:stub' }),
+        isAvailable: async () => true,
+        _listUserAssets: async () => [],
+        _userAssetsCount: async () => stored.length,
+        _deleteUserAsset: async () => {},
+        _uploadUserAsset: async (r: StoredRecord) => { stored.push(r); },
+      },
+    },
+  };
+}
+
+test('a source-code upload stores as a text asset carrying its aiSignals note from birth', async () => {
+  const { stored, host } = makeUploadHost();
+  const file = new File(['def main():\n    print("hello")\n'], 'script.py', { type: 'text/x-python' });
+  await storeUserUpload(host as never, file);
+  assert.equal(stored.length, 1, 'one record stored');
+  const rec = stored[0]!;
+  assert.equal(rec.type, 'text', 'code is a first-class text asset, not a bin raster');
+  assert.equal(rec.format, 'py', 'format is the REAL extension');
+  const sig = rec.meta?.aiSignals as Record<string, unknown> | undefined;
+  assert.ok(sig, 'the AI-writing note is persisted on meta at ingest');
+  assert.equal(sig.v, LEXICON_VERSION, 'keyed to the lexicon that produced it');
+  assert.equal(sig.source, 'digital');
+  assert.ok(['none', 'weak', 'notable', 'strong'].includes(sig.band as string), `band is a real band: ${String(sig.band)}`);
+  assert.equal(typeof sig.score, 'number');
+});
+
+test('a TypeScript file stamped video/mp2t (Chromium mime map) is released to the text path', async () => {
+  const { stored, host } = makeUploadHost();
+  // Chromium's secondary mime mappings hand a dragged .ts over as video/mp2t. The
+  // bytes are source code - no 0x47 sync at the 188-byte packet boundary, no mp4/webm
+  // container magic - so the probe demotes video's MIME-only claim.
+  const file = new File(['export const x: number = 1;\n'], 'component.ts', { type: 'video/mp2t' });
+  await storeUserUpload(host as never, file);
+  const rec = stored[0]!;
+  assert.equal(rec.type, 'text', 'a mislabelled source file is text, not video');
+  assert.equal(rec.format, 'ts');
+  assert.ok(rec.meta?.aiSignals, 'the note rides the widened path too');
+});
+
+test('a real MPEG transport stream named .ts is never stored as text', async () => {
+  const { stored, host } = makeUploadHost();
+  // Sync byte 0x47 at offsets 0 and 188 - the transport-stream packet signature the
+  // probe keys on. Blank MIME, so video never claims it either; it keeps today's
+  // raster fall-through (and its aiSignals-free record) rather than becoming "text".
+  const bytes = new Uint8Array(200);
+  bytes[0] = 0x47;
+  bytes[188] = 0x47;
+  const file = new File([bytes], 'capture.ts', { type: '' });
+  await storeUserUpload(host as never, file);
+  const rec = stored[0]!;
+  assert.notEqual(rec.type, 'text', 'stream bytes must not be classified as text');
+  assert.equal(rec.meta?.aiSignals, undefined, 'no AI-writing note on a non-text asset');
+});

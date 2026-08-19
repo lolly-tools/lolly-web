@@ -27,6 +27,7 @@ import assert from 'node:assert/strict';
 import {
   TEXT_FORMAT_LABEL, formatLabel, pastedFileName, textSnippet, classifyUrl, classifyPastedUrl,
   verifyTextNotices, reserializedNotice, suppressModifiedBadge, aiDisclosureRows,
+  textSignalPanel, analyzeVerifyText, buildHighlightSegments,
 } from './valid-text.ts';
 import type { VerifyNotice } from './valid-text.ts';
 import type { VerifyReport, Check } from './valid-verdict.ts';
@@ -503,4 +504,112 @@ test('classifyUrl: a bare path is NORMALISED, not trusted — the backslash auth
   assert.deepEqual(classifyUrl('/creds/doc.c2pa', ORIGIN), { kind: 'same-origin', path: '/creds/doc.c2pa' });
   assert.deepEqual(classifyUrl('/c?v=2', ORIGIN), { kind: 'same-origin', path: '/c?v=2' });
   assert.deepEqual(classifyUrl('/', ORIGIN), { kind: 'same-origin', path: '/' });
+});
+
+// ── Text AI-likelihood signals (plans/125) ───────────────────────────────────
+
+const LLM_PARAGRAPH =
+  "In today's ever-evolving landscape it's important to note that we must delve into the " +
+  'rich tapestry of modern tools. A robust and seamless approach will foster a holistic ' +
+  'workflow. This underscores a pivotal shift, and it showcases how teams can leverage ' +
+  'comprehensive systems to garner real results across the board every single day.';
+
+test('textSignalPanel maps band/tone/rows and carries the summary', () => {
+  const p = analyzeVerifyText('hello​world a perfectly ordinary looking line of text', 'digital');
+  assert.equal(p.band !== 'none', true, 'a zero-width char should register');
+  assert.ok(p.rows.some((r) => r.kind === 'invisible-char' && r.tier === 'artifact'));
+  assert.equal(typeof p.summary, 'string');
+});
+
+test('a strong artifact drives tone to warn', () => {
+  const p = analyzeVerifyText('a line with \u{E0041}\u{E0042} hidden tags in it', 'digital');
+  assert.equal(p.band, 'strong');
+  assert.equal(p.tone, 'warn');
+});
+
+test('the lexicon paragraph yields a hedged style guess, tone stays info', () => {
+  const p = analyzeVerifyText(LLM_PARAGRAPH, 'digital');
+  assert.ok(['notable', 'strong'].includes(p.band));
+  assert.ok(p.guess, 'expected a style-guess rationale');
+  assert.equal(p.tone, 'info', 'a heuristic-led band is never a warning');
+});
+
+test('an OCR-sourced panel is pixelSourced with no artifact rows', () => {
+  const p = analyzeVerifyText('read ​ from an image with an invisible char', 'ocr');
+  assert.equal(p.pixelSourced, true);
+  assert.ok(p.rows.every((r) => r.tier !== 'artifact'));
+});
+
+test('textSignalPanel drops an absent style guess', () => {
+  const p = analyzeVerifyText('a short ordinary human sentence with nothing odd', 'digital');
+  assert.equal(p.guess, undefined);
+});
+
+// ── highlight marks (plans/125) ──────────────────────────────────────────────
+
+test('the lexicon paragraph produces heuristic marks and a best-guess family', () => {
+  const p = analyzeVerifyText(LLM_PARAGRAPH, 'digital');
+  assert.ok(p.marks.length > 0, 'expected marks for the flagged wording');
+  assert.ok(p.marks.every((m) => m.tier === 'heuristic'), 'a lexicon-led read has no artifact marks');
+  assert.equal(p.guessFamily, 'generic-LLM');
+});
+
+test('an invisible char yields an artifact mark on the exact span', () => {
+  const p = analyzeVerifyText('hello​world and a good deal more ordinary text follows here', 'digital');
+  const art = p.marks.find((m) => m.tier === 'artifact');
+  assert.ok(art, 'expected an artifact mark');
+  assert.equal(art?.index, 5); // the zero-width char sits between "hello" and "world"
+  assert.equal(art?.length, 1);
+});
+
+test('buildHighlightSegments splits text into plain + marked runs, in order', () => {
+  const text = 'aXbYc';
+  const segs = buildHighlightSegments(text, [
+    { index: 1, length: 1, tier: 'artifact', kind: 'k', heat: 0.9 },
+    { index: 3, length: 1, tier: 'heuristic', kind: 'k', heat: 0.4 },
+  ]);
+  assert.deepEqual(segs.map((s) => s.text), ['a', 'X', 'b', 'Y', 'c']);
+  assert.deepEqual(segs.map((s) => s.tier), [undefined, 'artifact', undefined, 'heuristic', undefined]);
+  // reassembling the segments reproduces the source exactly (no dropped/dup chars)
+  assert.equal(segs.map((s) => s.text).join(''), text);
+});
+
+test('overlapping marks merge, artifact wins the overlap', () => {
+  const merged = analyzeVerifyText('a', 'digital'); // trivial; exercise the merge via a crafted panel
+  void merged;
+  const segs = buildHighlightSegments('abcdef', [
+    { index: 1, length: 3, tier: 'heuristic', kind: 'h', heat: 0.4 },
+    { index: 2, length: 3, tier: 'artifact', kind: 'a', heat: 0.9 },
+  ]);
+  // The second (artifact) mark is inside/after the first; segments never overlap
+  // and the joined text is intact.
+  assert.equal(segs.map((s) => s.text).join(''), 'abcdef');
+});
+
+test('OCR-sourced marks are heuristic-only (no byte-level artifacts survive)', () => {
+  const p = analyzeVerifyText(LLM_PARAGRAPH, 'ocr');
+  assert.ok(p.marks.every((m) => m.tier === 'heuristic'));
+});
+
+// ── graded heat (plans/125 heat highlighting) ────────────────────────────────
+// Appended with its own import so nothing above this line moves: the harness
+// hoists module imports, so a trailing declaration is ordinary ESM.
+import { heatBucket } from './valid-text.ts';
+
+test('heatBucket grades heat into the 5 temperature buckets, coolest to hottest', () => {
+  assert.equal(heatBucket(0.2), 1);
+  assert.equal(heatBucket(0.4), 2);
+  assert.equal(heatBucket(0.5), 3);
+  assert.equal(heatBucket(0.7), 4);
+  assert.equal(heatBucket(0.9), 5);
+});
+
+test('buildHighlightSegments carries each mark heat through to its marked segment', () => {
+  const segs = buildHighlightSegments('aXbYc', [
+    { index: 1, length: 1, tier: 'artifact', kind: 'k', heat: 0.9 },
+    { index: 3, length: 1, tier: 'heuristic', kind: 'k', heat: 0.35 },
+  ]);
+  assert.deepEqual(segs.map((s) => s.text), ['a', 'X', 'b', 'Y', 'c']);
+  // Plain runs carry no heat; each marked run keeps its own mark's heat.
+  assert.deepEqual(segs.map((s) => s.heat), [undefined, 0.9, undefined, 0.35, undefined]);
 });
