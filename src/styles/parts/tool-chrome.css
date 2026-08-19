@@ -310,22 +310,37 @@
 }
 .url-budget[data-band="warn"] .url-budget-fill { background: hsl(var(--budget-warn)); }
 .url-budget[data-band="over"] .url-budget-fill { background: hsl(var(--budget-over)); }
-/* Interim while a large link is being packed — a calm muted pulse (opacity only). */
-.url-budget[data-state="compressing"] .url-budget-fill {
-  background: currentColor;
-  height: 45%;
-  opacity: 0.4;
-  animation: url-budget-pulse 1s ease-in-out infinite;
-}
-@keyframes url-budget-pulse { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.5; } }
-/* Reduced motion (OS query OR the app pref): no fill glide, no pulse — jump to value. */
+/* Reduced motion (OS query OR the app pref): no fill glide — jump straight to the value. */
 @media (prefers-reduced-motion: reduce) {
   .url-budget { transition: box-shadow 0.15s ease; }
   .url-budget-fill { transition: none; }
-  .url-budget[data-state="compressing"] .url-budget-fill { animation: none; }
 }
 html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
-html[data-a11y-motion="reduce"] .url-budget[data-state="compressing"] .url-budget-fill { animation: none; }
+
+/* Reassurance toast (url-budget-gauge.ts) — a calm speech-bubble beside the meter the first
+   time a link fills the bar: "keep going, share the .lolly". NOT a warning, so it uses the
+   neutral popover tokens (never the red/amber band colours). Chrome-only (position:absolute in
+   #tool-stage, JS-positioned beside the gauge); pointer-events:none so it never intercepts the
+   gauge's drag/click; it fades itself out after a few seconds. */
+.url-budget-toast {
+  position: absolute;
+  z-index: 7; /* just above the gauge (z-index:6) */
+  max-width: 210px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.4;
+  pointer-events: none; /* never blocks the gauge underneath */
+  animation: url-budget-toast-in 0.2s ease both;
+}
+.url-budget-toast[hidden] { display: none; }
+@keyframes url-budget-toast-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .url-budget-toast { animation: none; } }
+html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 
 /* ─── Actions bar ───────────────────────────────────────────────────────── */
 /* The export panel is a strict priority stack: filename·format → dimensions →

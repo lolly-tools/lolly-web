@@ -18,7 +18,7 @@ import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
+import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, encodeTableCompact, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
 import { createInteractiveToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import type { HdrSettings, DepthSetting } from '@lolly/engine';
 // The one declaration of the export bar's audio selection shape (mix-in bed
@@ -229,6 +229,12 @@ export interface ExportDefaults {
    *  default) is left undefined here - only a real request is carried. A REQUEST,
    *  not a promise: depth follows provenance at the consumer. */
   depth?: DepthSetting;
+  /** The deck state address from ?s= (plan 112): a 1-based slide position, a frame id,
+   *  or either with an `.N` build suffix. A STILL export of a framed document renders
+   *  only that slide (`?s=2&format=png` is a per-slide image link); the engine's
+   *  frame-address.ts resolves it, so the CLI's `--s=` selects the same page. Undefined
+   *  ⇒ the whole per-slide fan-out, unchanged. */
+  slide?: string;
 }
 
 /** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
@@ -1247,7 +1253,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
       ` : (chromeless || bareExport ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
       <div class="tool-stage" id="tool-stage">
-        ${!exportUiEmpty ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div>` : ''}
+        ${!exportUiEmpty ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div><div class="url-budget-toast" data-gauge-toast role="status" aria-live="polite" hidden></div>` : ''}
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
         ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -2172,6 +2178,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Requested export bit depth from ?depth= - 'auto' (the default) carries
     // nothing, so only an explicit 8/16/float request travels.
     depth:    urlDepth !== 'auto' ? urlDepth : undefined,
+    // The deck state address from ?s= (plan 112). Read from the BOOT url, like every
+    // other export default: presentation mode writes `s=` live while presenting and
+    // clears it on exit, so the live query is the wrong thing to photograph. A still
+    // export of a framed doc then renders just that slide (tool-actions' fan-out).
+    slide:    presentAddress || undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState - no history entry.
@@ -2240,6 +2251,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     for (const entry of runtime.getModel()) {
       const { id, type, value } = entry;
       if (!dirtyParams.has(id)) continue;
+      // The address bar writes each input under its short urlKey alias when it declares one
+      // (e.g. design `boxes`→`bx`), same as the share link (encodeModelParam) - so a
+      // copy-pasted bar is as small as a copied Share link. Dirty tracking stays keyed by the
+      // canonical id; only the written param NAME shortens. parseUrlState reads both forms.
+      const key = entry.urlKey ?? id;
       // A picked file is binary, in-memory, device-local content - it has no
       // shareable URL form. Never write it (would otherwise serialise to junk).
       if (type === 'file') continue;
@@ -2253,23 +2269,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const ref = value as AssetRef | null;
         if (ref && isBakedRef(ref) && typeof ref.meta?.bakedFrom !== 'string') continue;
         const assetId = ref ? assetIdForUrl(ref) : undefined;
-        if (assetId && !assetId.startsWith('user/')) params.set(id, assetId);
+        if (assetId && !assetId.startsWith('user/')) params.set(key, assetId);
         continue;
       }
       if (type === 'blocks') {
         if (Array.isArray(value) && value.length > 0) {
-          // Compact form first (the share dialog's encoder, in its address-bar
-          // variant that keeps device-local user/ ids) - a 20-layer import is
-          // ~10× smaller than the JSON form and stays under the 8000 cap
-          // instead of silently dropping every row. JSON stays the fallback
-          // for separator-bearing values and field-less blocks; blocksForUrl
-          // collapses baked sub-field refs to their provenance URL first (the
-          // data: bytes would blow the cap). The JSON form copies every key, so
-          // the hidden row id comes off first - it is this device's bookkeeping,
-          // not a value, and 38 characters a row out of the same 8000 budget.
+          // Compact form first (the share dialog's encoder, in its address-bar variant that
+          // keeps device-local user/ ids) - a 20-layer import is ~10× smaller than the JSON
+          // form, and it now carries separator-bearing values too (URLSearchParams.set applies
+          // the outer url-encode layer that keeps in-value %2C/%7E escapes intact - see
+          // blocks-url.ts), so JSON is the fallback only for field-less blocks; blocksForUrl
+          // collapses baked sub-field refs to their provenance URL first (the data: bytes would
+          // blow the bar). The JSON form copies every key, so the hidden row id comes off first -
+          // it is this device's bookkeeping, not a value. No length guard: a blocks value IS the
+          // content (a design's boxes), so - like a table - it rides the bar and the auto-pack
+          // tail below compresses it, rather than being silently dropped from a shared link.
           const compact = encodeBlocksCompact(value, entry.fields ?? [], { keepUserIds: true });
           const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
-          if (encoded.length <= 8000) params.set(id, encoded);
+          params.set(key, encoded);
         }
         continue;
       }
@@ -2278,9 +2295,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (value && typeof value === 'object') {
           const vv = asRow(value);
           for (const f of entry.fields ?? []) {
-            if (vv[f.id] !== undefined && vv[f.id] !== null) params.set(`${id}.${f.id}`, String(vv[f.id]));
+            if (vv[f.id] !== undefined && vv[f.id] !== null) params.set(`${key}.${f.id}`, String(vv[f.id]));
           }
         }
+        continue;
+      }
+      if (type === 'table') {
+        // A table IS the tool's content - it belongs in the URL, not as the
+        // "[object Object]" the scalar path below would stamp. It round-trips
+        // through the engine's compact form (encode here / decodeTableCompact on
+        // load), and rides under the input's short urlKey (e.g. battlecards `t`),
+        // which parseUrlState reads alongside the id. Deliberately bypasses the
+        // 150-char scalar cap below: a table is meant to FILL the link, and once
+        // the query passes AUTO_PACK_MIN the auto-pack tail of this function
+        // compresses the bar to the `z=` form. An empty grid writes nothing, so a
+        // blank tool keeps a bare URL. URLSearchParams applies its own encode layer.
+        const tbl = normalizeTableValue(value);
+        if (tbl && (tbl.columns.length || tbl.rows.length)) params.set(key, encodeTableCompact(tbl));
         continue;
       }
       if (value == null || value === '') continue;
@@ -2289,8 +2320,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // (mirrors the engine's coerceToString) - never String()'d into the URL as
       // "[object Object]", which would then ride into a lolly-URL embed of this tool.
       const str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
-      if (str.length > 150) continue;
-      params.set(id, str);
+      // A `longtext` is CONTENT (d3 data, design customCss, code) and rides uncapped like a
+      // table - it must NOT be dropped from the bar, or a shared d3 link would open blank. The
+      // 150-char cap stays only for short single-line scalars (a stray-long label is bloat).
+      if (type !== 'longtext' && str.length > 150) continue;
+      params.set(key, str);
     }
 
     if (dirtyParams.has('w')) {
@@ -2433,7 +2467,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   if (urlGaugeEl) {
     urlGauge = createUrlGauge(
       urlGaugeEl,
-      { used: (pct) => `${t('URL budget')}: ${pct}%`, compressing: t('Compressing link…') },
+      {
+        used: (pct) => `${t('URL budget')}: ${pct}%`,
+        // Shown from the meter the first time a link fills the bar - reassurance, not a warning.
+        reassure: t("It's okay — keep going. You can always share the whole thing as a .lolly file."),
+      },
       prefersReducedMotion,
       () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState)),
     );

@@ -38,6 +38,17 @@ const MIME = {
 // dev — and so the schema $id URLs (https://lolly.tools/schemas/*.schema.json)
 // resolve to the real files in both dev and the production build.
 function serveRepoStatic() {
+  // This middleware short-circuits BEFORE Vite's own header middleware, so the
+  // dev server's cross-origin-isolation headers (server.headers below) never
+  // reach these responses unless set here too. Load-bearing for /ort-hf/: the
+  // threaded ONNX runtime spawns its pthread pool from those .mjs files, and an
+  // isolated owner SILENTLY refuses a worker script served without COEP - the
+  // pool never forms and wasm init hangs forever (found the hard way, plans/127).
+  // /info needs them likewise or the docs-in-app iframe stops embedding.
+  const isolationHeaders = (res) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+  };
   return {
     name: 'serve-repo-static',
     configureServer(server) {
@@ -61,6 +72,7 @@ function serveRepoStatic() {
             const data = readFileSync(filePath);
             res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'application/octet-stream');
             res.setHeader('Content-Length', data.byteLength);
+            isolationHeaders(res);
             res.end(data);
             return;
           }
@@ -74,6 +86,7 @@ function serveRepoStatic() {
             const data = readFileSync(filePath);
             res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'text/html; charset=utf-8');
             res.setHeader('Content-Length', data.byteLength);
+            isolationHeaders(res);
             res.end(data);
             return;
           }
@@ -85,6 +98,7 @@ function serveRepoStatic() {
         const data = readFileSync(filePath);
         res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'application/octet-stream');
         res.setHeader('Content-Length', data.byteLength);
+        isolationHeaders(res);
         res.end(data);
       });
     },
@@ -175,7 +189,20 @@ export function groupPrecacheFiles(all) {
   // here so the offline-download manager can state the part's size up front. Like
   // the other model parts, /models/ocr/ is SW-bypassed (single IDB copy).
   const ocr = all.filter(f => f.url.startsWith('/models/ocr/'));
-  return { app, ort, ortHf, models, speech, upscale, matte, ocr };
+  // The reword model (plans/127, SmolLM2-360M-Instruct) — loaded by the reword
+  // worker through transformers.js, which caches under path keys in its own
+  // 'transformers-cache' bucket, exactly like the speech models. The 'reword'
+  // offline part downloads this group into that bucket (offline-manager.ts), so
+  // a pre-download means zero bytes move on first use. Empty on builds where
+  // the model is not staged, and the profile row hides itself then.
+  const reword = all.filter(f => f.url.startsWith('/models/reword/'));
+  // The Ask embedding model (plans/103 M1, all-MiniLM-L6-v2 q8) — loaded by the
+  // ask embed worker through transformers.js into the same 'transformers-cache'
+  // bucket as speech/reword. The 'ask' offline part downloads this group there,
+  // so a pre-download means zero bytes move on first use. Empty on builds where
+  // the model is not staged, and the profile row hides itself then.
+  const embed = all.filter(f => f.url.startsWith('/models/embed/'));
+  return { app, ort, ortHf, models, speech, upscale, matte, ocr, reword, embed };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.
@@ -323,6 +350,18 @@ export default defineConfig({
   },
   server: {
     fs: { allow: [repoRoot] },
+    // Cross-origin isolation, matching vercel.json's production headers
+    // (plans/127): COOP+COEP make crossOriginIsolated true, which is what lets
+    // onnxruntime-wasm run MULTI-threaded (the reword/speech workers) instead
+    // of silently single-threaded. `credentialless` (not require-corp) so
+    // no-cors media like the SomaFM streams keeps loading; Safari ignores it
+    // and simply stays non-isolated (WebGPU is the primary path there). The
+    // OAuth popup flows survive isolation via BroadcastChannel - see
+    // oauth-return.html and bridge/identity.ts.
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
     // dev-only: the standalone CA service — node services/ca/server.mjs
     // (string shorthand preserves the /api/ca path prefix, which the handler routes on).
     proxy: { '/api/ca': 'http://localhost:8787' },

@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
@@ -2759,11 +2759,31 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const hasFrames = !!framesCanvas?.frameField;
       const pageEls = (manifest.render.pages || hasFrames) && canvasEl
         ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')] : [];
+      // The `?s=` STILL-EXPORT FILTER (plan 112 section 10): `?s=2&format=png` renders just
+      // that one slide, which is what makes a Design deck's slides individually linkable
+      // (and buys per-slide embeds/OG later). The address is resolved by the ENGINE
+      // (frame-address.ts) against the ids these pages carry, so the CLI's own `s=` picks
+      // the same page from the same string - one meaning, two transports, no shell logic to
+      // drift. Absent ⇒ 'none' ⇒ the fan-out below is byte-identical to before this existed.
+      // An address that names nothing is NOT collapsed to "the first page": the whole deck
+      // exports and the mismatch is announced, so nobody mistakes slide 1 for slide 9.
+      // `frameFilterApplies` is a no-op guard HERE (the fan-out branch below already
+      // excludes every format it names) - it is called anyway so web and CLI ask the
+      // engine the same question rather than each carrying their own format list.
+      const framePick = frameFilterApplies(fmt)
+        ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
+        : ({ kind: 'none' } as const);
+      const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
       if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx') {
+        if (framePick.kind === 'unmatched') {
+          const why = tRaw('No slide matches ?s={s}. Exporting every slide.', { s: framePick.address.raw });
+          console.warn(`[export] ${why}`);
+          announce(why, { assertive: true });
+        }
         // Export EACH page frame as its own still image, at that frame's own layout size
         // (offsetWidth/Height - transform-independent, and the true possibly-resized page
         // size, not the tool's static render dims). One page → a single file; several → a zip.
-        if (pageEls.length > 1) btn.textContent = `Exporting ${pageEls.length} pages…`;
+        if (framePages.length > 1) btn.textContent = `Exporting ${framePages.length} pages…`;
         const pageOpts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = { ...opts };
         delete pageOpts.bundleFormats;
         // Per-artboard stills fan out one image per frame; a cuts=N contact sheet only
@@ -2783,8 +2803,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         try {
           files = await exportUnscaled(async () => {
             const out: Array<{ name: string; blob: Blob }> = [];
-            for (let i = 0; i < pageEls.length; i++) {
-              const el = pageEls[i]!;
+            for (let i = 0; i < framePages.length; i++) {
+              const el = framePages[i]!;
               const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
               out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
             }

@@ -101,6 +101,12 @@ export interface PrecacheManifest {
   groups: {
     app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[];
     ortHf?: ManifestFile[]; speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[]; ocr?: ManifestFile[];
+    /** The reword model (plans/127) - transformers-cache path keys, like speech.
+     *  Empty on builds where the model is not staged. */
+    reword?: ManifestFile[];
+    /** The Ask embedding model (plans/103 M1) - transformers-cache path keys,
+     *  like speech and reword. Empty on builds where the model is not staged. */
+    embed?: ManifestFile[];
   };
 }
 
@@ -112,7 +118,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr' | 'reword' | 'ask';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -502,39 +508,183 @@ export async function downloadSpeech(
   return rec;
 }
 
-/** Delete BOTH speech buckets - removePart's cache half, exported for tests.
- *  The runtime re-downloads (behind its own consent line) on next use. */
-export async function clearSpeechCaches(): Promise<void> {
+/** Delete a bucket's entries under the given path prefixes only - the shared-
+ *  bucket rule: 'transformers-cache' now holds the speech models, the reword
+ *  model (plans/127) AND the Ask embed model (plans/103 M1), so no part may
+ *  delete the whole bucket. */
+async function clearCacheDirs(cacheName: string, prefixes: string[]): Promise<void> {
+  try {
+    const cache = await caches.open(cacheName);
+    for (const req of await cache.keys()) {
+      const path = new URL(req.url).pathname;
+      if (prefixes.some(p => path.startsWith(p))) await cache.delete(req);
+    }
+  } catch { /* bucket sealed — nothing to clear */ }
+}
+
+/** Delete the speech caches - removePart's cache half, exported for tests.
+ *  The runtime re-downloads (behind its own consent line) on next use.
+ *  transformers-cache is cleared by DIRECTORY (it is shared with the reword
+ *  model since plans/127); `keepOrtHf` keeps the shared /ort-hf/ runtime
+ *  bucket when another downloaded part still needs it. */
+export async function clearSpeechCaches(opts: { keepOrtHf?: boolean } = {}): Promise<void> {
   if (!('caches' in globalThis)) return;
-  await caches.delete(TRANSFORMERS_CACHE);
+  await clearCacheDirs(TRANSFORMERS_CACHE, ['/models/kokoro/', '/models/whisper/']);
   await caches.delete(SPEECH_CACHE);
   // The speech-owned runtime bucket. NOT ORT_CACHE's legacy /ort-hf/ copy - that
   // belongs to the verify part; the SW falls back to it if the user has it.
-  await caches.delete(ORT_HF_CACHE);
+  if (!opts.keepOrtHf) await caches.delete(ORT_HF_CACHE);
 }
 
-/** Measure the speech buckets for the profile storage meter. Sizes come from
- *  the stamped manifest size (part downloads), else Content-Length (the
- *  worker's own put keeps wire headers), else the body itself - the buckets
- *  also fill through the Script-audio dialog's consent download, which this
- *  must count without a part record existing. */
-export async function speechCacheBytes(): Promise<{ bytes: number; files: number }> {
-  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+/** Delete the reword model's slice of the shared transformers bucket. The
+ *  /ort-hf/ runtime goes too unless the speech part still holds it. */
+export async function clearRewordCaches(opts: { keepOrtHf?: boolean } = {}): Promise<void> {
+  if (!('caches' in globalThis)) return;
+  await clearCacheDirs(TRANSFORMERS_CACHE, ['/models/reword/']);
+  if (!opts.keepOrtHf) await caches.delete(ORT_HF_CACHE);
+}
+
+/** Sum one bucket's entries, optionally scoped to path prefixes. Sizes come
+ *  from the stamped manifest size (part downloads), else Content-Length (a
+ *  worker's own put keeps wire headers), else the body itself. */
+async function cacheDirBytes(cacheName: string, prefixes?: string[]): Promise<{ bytes: number; files: number }> {
   let bytes = 0;
   let files = 0;
-  for (const name of [TRANSFORMERS_CACHE, SPEECH_CACHE, ORT_HF_CACHE]) {
-    try {
-      const cache = await caches.open(name);
-      for (const req of await cache.keys()) {
-        const resp = await cache.match(req);
-        if (!resp) continue;
-        files++;
-        const stamped = resp.headers.get(SIZE_HEADER) ?? resp.headers.get('content-length');
-        bytes += stamped ? Number(stamped) : (await resp.blob()).size;
-      }
-    } catch { /* bucket sealed (incognito iframe) — count nothing */ }
-  }
+  try {
+    const cache = await caches.open(cacheName);
+    for (const req of await cache.keys()) {
+      if (prefixes && !prefixes.some(p => new URL(req.url).pathname.startsWith(p))) continue;
+      const resp = await cache.match(req);
+      if (!resp) continue;
+      files++;
+      const stamped = resp.headers.get(SIZE_HEADER) ?? resp.headers.get('content-length');
+      bytes += stamped ? Number(stamped) : (await resp.blob()).size;
+    }
+  } catch { /* bucket sealed (incognito iframe) — count nothing */ }
   return { bytes, files };
+}
+
+/** Measure the speech caches for the profile storage meter - the buckets also
+ *  fill through the Script-audio dialog's consent download, which this must
+ *  count without a part record existing. transformers-cache is counted by
+ *  DIRECTORY (shared with reword); the /ort-hf/ runtime stays counted here. */
+export async function speechCacheBytes(): Promise<{ bytes: number; files: number }> {
+  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+  const parts = await Promise.all([
+    cacheDirBytes(TRANSFORMERS_CACHE, ['/models/kokoro/', '/models/whisper/']),
+    cacheDirBytes(SPEECH_CACHE),
+    cacheDirBytes(ORT_HF_CACHE),
+  ]);
+  return { bytes: parts.reduce((n, p) => n + p.bytes, 0), files: parts.reduce((n, p) => n + p.files, 0) };
+}
+
+/** Measure the reword model's slice for the storage meter (the shared /ort-hf/
+ *  runtime is counted under speech, not twice). Fills through the panel's own
+ *  consent download too, so no part record is required. */
+export async function rewordCacheBytes(): Promise<{ bytes: number; files: number }> {
+  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+  return cacheDirBytes(TRANSFORMERS_CACHE, ['/models/reword/']);
+}
+
+/** Delete the Ask embed model's slice of the shared transformers bucket. The
+ *  /ort-hf/ runtime goes too unless another downloaded part still holds it. */
+export async function clearAskCaches(opts: { keepOrtHf?: boolean } = {}): Promise<void> {
+  if (!('caches' in globalThis)) return;
+  await clearCacheDirs(TRANSFORMERS_CACHE, ['/models/embed/']);
+  if (!opts.keepOrtHf) await caches.delete(ORT_HF_CACHE);
+}
+
+/** Measure the Ask embed model's slice for the storage meter (the shared
+ *  /ort-hf/ runtime is counted under speech, not twice). Fills through the Ask
+ *  view's own consent download too, so no part record is required. */
+export async function askCacheBytes(): Promise<{ bytes: number; files: number }> {
+  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+  return cacheDirBytes(TRANSFORMERS_CACHE, ['/models/embed/']);
+}
+
+/** The cache work of the reword part (plans/127), IDB-free (tested directly):
+ *  the model files into transformers.js's own bucket under the path keys its
+ *  hub probes (lib/reworder.ts's status() matches the same shape), plus the
+ *  shared /ort-hf/ runtime, so a pre-download means zero bytes move on first
+ *  use - the speech part's exact contract. */
+export async function downloadRewordFiles(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<{ bytes: number; files: number }> {
+  const { signal, onProgress } = opts;
+  const model = manifest.groups.reword ?? [];
+  const ortHf = manifest.groups.ortHf ?? [];
+  const total = [...model, ...ortHf].reduce((n, f) => n + f.size, 0);
+  const count = model.length + ortHf.length;
+  const zero: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
+  let modelP = zero, ortHfP = zero;
+  const report = (): void => onProgress?.({
+    loaded: modelP.loaded + ortHfP.loaded,
+    total,
+    done: modelP.done + ortHfP.done,
+    count,
+  });
+  const a = await downloadList(TRANSFORMERS_CACHE, model, { signal, onProgress: p => { modelP = p; report(); } });
+  const b = await downloadList(ORT_HF_CACHE, ortHf, { signal, onProgress: p => { ortHfP = p; report(); } });
+  await pruneSpeechBucket(TRANSFORMERS_CACHE, model);
+  return { bytes: a.bytes + b.bytes, files: a.files + b.files };
+}
+
+/** Download the reword part - the on-device rewriter model (plans/127), into
+ *  the exact cache the reword worker reads. Guarded on the group: a build
+ *  without the staged model records nothing. */
+export async function downloadReword(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<PartRecord> {
+  if (!manifest.groups.reword?.length) throw new Error('offline download: this build carries no reword model');
+  const res = await downloadRewordFiles(manifest, opts);
+  const rec: PartRecord = { at: new Date().toISOString(), version: manifest.version, ...res };
+  await recordPart('reword', rec);
+  return rec;
+}
+
+/** The cache work of the ask part (plans/103 M1), IDB-free (tested directly):
+ *  the embed model files into transformers.js's own bucket under the path keys
+ *  its hub probes, plus the shared /ort-hf/ runtime (idempotent with speech and
+ *  reword - the part SIZE shown in Profile counts the embed group only, since
+ *  the runtime stays speech-owned), so a pre-download means zero bytes move on
+ *  first use - the speech part's exact contract. */
+export async function downloadAskFiles(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<{ bytes: number; files: number }> {
+  const { signal, onProgress } = opts;
+  const model = manifest.groups.embed ?? [];
+  const ortHf = manifest.groups.ortHf ?? [];
+  const total = [...model, ...ortHf].reduce((n, f) => n + f.size, 0);
+  const count = model.length + ortHf.length;
+  const zero: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
+  let modelP = zero, ortHfP = zero;
+  const report = (): void => onProgress?.({
+    loaded: modelP.loaded + ortHfP.loaded,
+    total,
+    done: modelP.done + ortHfP.done,
+    count,
+  });
+  const a = await downloadList(TRANSFORMERS_CACHE, model, { signal, onProgress: p => { modelP = p; report(); } });
+  const b = await downloadList(ORT_HF_CACHE, ortHf, { signal, onProgress: p => { ortHfP = p; report(); } });
+  await pruneSpeechBucket(TRANSFORMERS_CACHE, model);
+  return { bytes: a.bytes + b.bytes, files: a.files + b.files };
+}
+
+/** Download the ask part - the Ask embedding model (plans/103 M1), into the
+ *  exact cache the embed worker reads. Guarded on the group: a build without
+ *  the staged model records nothing. */
+export async function downloadAsk(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<PartRecord> {
+  if (!manifest.groups.embed?.length) throw new Error('offline download: this build carries no embed model');
+  const res = await downloadAskFiles(manifest, opts);
+  const rec: PartRecord = { at: new Date().toISOString(), version: manifest.version, ...res };
+  await recordPart('ask', rec);
+  return rec;
 }
 
 // ── On-device image-AI models (host.upscale / host.matte) ────────────────────
@@ -616,7 +766,16 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'docs') await caches.delete(INFO_CACHE);
     if (id === 'verify') await caches.delete(ORT_CACHE);
   }
-  if (id === 'speech') await clearSpeechCaches();
+  // speech, reword and ask share the transformers bucket AND the /ort-hf/
+  // runtime: each clears only its own model directory, and the runtime bucket
+  // survives while ANY other of the three still holds a download that needs it.
+  if (id === 'speech' || id === 'reword' || id === 'ask') {
+    const parts = await readParts();
+    const others = (['speech', 'reword', 'ask'] as const).some(p => p !== id && !!parts[p]);
+    if (id === 'speech') await clearSpeechCaches({ keepOrtHf: others });
+    if (id === 'reword') await clearRewordCaches({ keepOrtHf: others });
+    if (id === 'ask') await clearAskCaches({ keepOrtHf: others });
+  }
   if (id === 'verify' || id === 'upscale' || id === 'matte' || id === 'ocr') {
     try {
       const db = await openDB();
@@ -641,7 +800,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
  */
 export async function resyncOfflineParts(): Promise<void> {
   const parts = await readParts();
-  if (parts.app || parts.verify || parts.speech) {
+  if (parts.app || parts.verify || parts.speech || parts.reword || parts.ask) {
     const manifest = await fetchPrecacheManifest();
     if (manifest) {
       if (parts.app && parts.app.version !== manifest.version) {
@@ -654,6 +813,12 @@ export async function resyncOfflineParts(): Promise<void> {
       // must not "re-sync" the record down to an empty download.
       if (parts.speech && parts.speech.version !== manifest.version && manifest.groups.speech?.length) {
         await downloadSpeech(manifest).catch(() => {});
+      }
+      if (parts.reword && parts.reword.version !== manifest.version && manifest.groups.reword?.length) {
+        await downloadReword(manifest).catch(() => {});
+      }
+      if (parts.ask && parts.ask.version !== manifest.version && manifest.groups.embed?.length) {
+        await downloadAsk(manifest).catch(() => {});
       }
     }
   }

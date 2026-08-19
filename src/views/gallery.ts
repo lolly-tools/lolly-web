@@ -21,8 +21,8 @@ import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
 import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/match.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { hiddenCategories, isFlagOnSync, PRIVATE_COLLAB_FLAG, perfUiOn } from '../feature-flags.ts';
-import { getCollabOpener, openCollabLaunch } from '../lib/collab-launch.ts';
+import { hiddenCategories, perfUiOn } from '../feature-flags.ts';
+import { canStartCollab, startCollab } from '../lib/collab-availability.ts';
 import { syncCatalog, prefetchAssetsById, defaultHiddenToolIds } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { getInjectedTools } from '../lib/injected-tools.ts';
@@ -2020,12 +2020,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const n = countByTool(ref);
     // "Start a collab" - a private (P2P) collab pairs two devices on this tool from its
     // current state; from a tile that state is the tool's defaults (a blank-slate co-edit),
-    // and the pairing's remount-on-connect brings the tool up on both ends. Gated exactly
-    // like the in-tool Share dialog's Private-collab row (lib/collab-share-private.ts): the
-    // `private-collab` flag (default on, may be user-/org-off) AND a registered opener,
-    // re-checked on every menu open. No per-tool capability - private collab works for any
-    // tool that can mount, so an unavailable tool (missing a host capability) is excluded.
-    const collabStart = !unavailable && isFlagOnSync(PRIVATE_COLLAB_FLAG) && !!getCollabOpener('private');
+    // and the pairing's remount-on-connect brings the tool up on both ends. The gate is
+    // the shared availability seam (lib/collab-availability.ts, plans/108 Phase 1), asked
+    // fresh on every menu open, so this row and the in-tool Share dialog's Private-collab
+    // row read one rule: the `private-collab` flag (default on, may be user-/org-off) AND
+    // a registered opener. No per-tool capability - private collab works for any tool that
+    // can mount, which is what `mountable` tells the seam about an unavailable tool.
+    const collabStart = canStartCollab({ kind: 'tool', toolId: ref, mountable: !unavailable }, 'private');
     return [
       unavailable ? '' : menuItemHtml('open', OPEN_ICON, t('Open')),
       menuItemHtml('fav', STAR_ICON, fav ? t('Remove from favourites') : t('Add to favourites')),
@@ -2075,12 +2076,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (act === 'pin') { await pinOne(ref); return; }
     if (act === 'history') { const tool = toolById.get(ref); if (tool) openHistoryFor(tool); return; }
     if (act === 'collab') {
-      // A tile has no mounted runtime, so there is no live state to seed - pass empty
-      // baseParts (the collab starts at the tool's defaults, a blank-slate co-edit). The
-      // opener re-checks the flag itself and the ceremony overlay takes over; on connect
-      // its own remount ('lolly:remount') brings the tool up on the inviter's side. Uses
-      // the tolerant openCollabLaunch seam, which swallows a throwing/absent opener.
-      if (openCollabLaunch('private', { toolId: ref, baseParts: [] })) announce(t('Starting a collab'));
+      // A tile has no mounted runtime, so there is no live state to seed - a `'tool'`
+      // target carries none, and the collab starts at the tool's defaults (a blank-slate
+      // co-edit). The opener re-checks the flag itself and the ceremony overlay takes
+      // over; on connect its own remount ('lolly:remount') brings the tool up on the
+      // inviter's side. startCollab re-asks the seam and inherits openCollabLaunch's
+      // tolerance, so a throwing or absent opener reads as a plain false here.
+      if (startCollab({ kind: 'tool', toolId: ref, mountable: !unavailableIds.has(ref) }, 'private')) announce(t('Starting a collab'));
       return;
     }
     if (act === 'copylink') { await copyLink(ref); return; }

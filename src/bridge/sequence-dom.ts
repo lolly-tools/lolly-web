@@ -421,6 +421,58 @@ function measure(el: HTMLElement): { w: number; h: number } {
   return { w: Number.isFinite(w) ? w : 0, h: Number.isFinite(h) ? h : 0 };
 }
 
+// ── the live pose, readable from outside (plans/104 section 6.5) ─────────────
+//
+// An EDITOR drawing chrome over a posed stage - the selection outline, the resize
+// handles - has to place it where the box actually is, and section 6.5's rule is that it
+// gets there through "the same fold the applier used", never through a second
+// evaluation of the same track. Re-deriving is what the whole `foldKfPose` seam exists
+// to prevent, and an editor has no honest way to do it anyway: it holds the model, not
+// the parsed layers, and the pose it would have to reproduce includes the transition
+// state and the camera as well as the keyframes.
+//
+// So the applier publishes what it just wrote, keyed by element. A WeakMap because the
+// key is a DOM node that a repaint destroys; the entry is dropped the moment the pose
+// comes off (see `put` and the apply loop's else branch), so "no entry" and "not posed"
+// are the same answer and a stale pose can never outlive the write that made it.
+const LIVE_POSE = new WeakMap<Element, SequencePose>();
+
+/**
+ * The pose the applier currently has one element in - {@link KfFold}'s displacement
+ * half, relative to the box's AUTHORED rect.
+ *
+ * Everything here is what `composeTransform` put in the inline transform, in the units
+ * it put it there: `dx`/`dy` are the leading `translate` (stage-native px, applied
+ * OUTSIDE the box's own rotation), `sc` the trailing `scale`, `rot` the extra
+ * `rotate` composed after the authored one. `w`/`h` are the layout size at this
+ * instant, which is the box's own unless the track keyed one (`sized`).
+ */
+export interface SequencePose {
+  dx: number;
+  dy: number;
+  sc: number;
+  rot: number;
+  w: number;
+  h: number;
+  /** True when `w`/`h` are a KEYED size, i.e. the applier wrote the layout box too. */
+  sized: boolean;
+  /**
+   * True when the pose rides a TILTED camera's homography (P2), so `dx`/`dy`/`sc`
+   * describe the projected CENTRE and its magnification but NOT the quad the element
+   * paints. A caller drawing geometry from this gets the projected-AABB approximation
+   * section 6.5 allows for tilt, not the trapezoid.
+   */
+  tilted: boolean;
+}
+
+/**
+ * The pose {@link SequencePose} describes for `el`, or null when the applier has it at
+ * rest (or has never touched it). The read costs one WeakMap lookup and no layout.
+ */
+export function sequencePoseOf(el: Element | null | undefined): SequencePose | null {
+  return (el && LIVE_POSE.get(el)) || null;
+}
+
 export function createAuthoredStore(): AuthoredStore {
   const map = new Map<HTMLElement, Authored>();
   const put = (el: HTMLElement, rec: Authored): void => {
@@ -460,6 +512,11 @@ export function createAuthoredStore(): AuthoredStore {
     rec.lastZIndex = null;
     rec.lastWidth = null;
     rec.lastHeight = null;
+    // The published pose comes off with the styles that expressed it - here rather
+    // than at each of `restore`/`restoreAll`'s call sites, so a writer that stands
+    // down for an export (see `withAuthoredDom`) cannot leave an editor drawing chrome
+    // at a pose the DOM no longer holds.
+    LIVE_POSE.delete(el);
   };
   return {
     get(el) {
@@ -1019,6 +1076,13 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         rec.transform, { dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot }, fold.m3,
       );
       const opacity = composeOpacity(rec.opacity, fold.alpha);
+      // Published for the editor chrome (see `sequencePoseOf`) BEFORE the write is
+      // skipped as unchanged: the pose is a property of this frame, not of the diff,
+      // so a steady playhead still answers where the box is.
+      LIVE_POSE.set(el, {
+        dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot,
+        w: fold.w, h: fold.h, sized: fold.sized, tilted: fold.m3 !== null,
+      });
       if (transform !== rec.lastTransform) {
         if (transform) el.style.transform = transform; else el.style.removeProperty('transform');
         rec.lastTransform = transform;
@@ -1053,6 +1117,10 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       // participant in the paint order at its authored depth (z = 0, the array's own
       // initial value). Only then does the restore below apply.
       if (zs && ranked && active && projectable && !rec.plane) ranked[i] = 1;
+      // Unconditional, unlike the restore below: this box is at rest THIS frame
+      // whether or not we were the ones who last moved it, and an editor asking for
+      // its pose must be told "none" rather than handed another session's.
+      LIVE_POSE.delete(el);
       if (rec.lastTransform !== null || rec.lastOpacity !== null || rec.lastFilter !== null
         || rec.lastWidth !== null || rec.lastHeight !== null) {
         // Left the window (or went off screen): hand the authored styles straight

@@ -482,7 +482,7 @@ function formatOptionValues(opts: {
   const canvas = doc.createElement('div');
   doc.body.append(panel, canvas);
   const manifest = {
-    id: 'bitmap-studio', name: 'Bitmap Studio', version: '1.0.0', inputs: [],
+    id: 'darkroom', name: 'Darkroom', version: '1.0.0', inputs: [],
     ...(opts.hooks ? { hooks: opts.hooks } : {}),
     render: { width: 1080, height: 1080, formats: opts.formats },
   };
@@ -616,10 +616,19 @@ function mountPaged(opts: {
   pages: number;
   render?: Record<string, unknown>;
   inputs?: unknown[];
+  /** Frame ids to stamp as `data-frame-id`, page by page - what `?s=<id>` addresses.
+   *  Omitted ⇒ unstamped pages, exactly as a plain render.pages carousel emits them. */
+  ids?: Array<string | null>;
+  /** Export defaults, i.e. the link: `{ slide }` is the `?s=` state address. */
+  exportDefaults?: Record<string, unknown>;
 }): {
   panel: HTMLElement;
   canvas: HTMLElement;
   pageExports: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  /** The `data-frame-id` of each per-page export target, in the order they ran. */
+  pageIds: () => Array<string | null>;
+  /** Filenames handed to host.export.download. */
+  downloads: () => string[];
   download: () => void;
   setFormat: (f: string) => void;
 } {
@@ -631,9 +640,13 @@ function mountPaged(opts: {
   for (let i = 0; i < opts.pages; i++) {
     const p = doc.createElement('div');
     p.setAttribute('data-pdf-page', '');
+    const id = opts.ids?.[i];
+    if (id != null) p.setAttribute('data-frame-id', id);
     canvas.appendChild(p);
   }
   const pageExports: Array<{ format: string; opts: Record<string, unknown> }> = [];
+  const pageIds: Array<string | null> = [];
+  const downloads: string[] = [];
   const manifest = {
     id: 'design', name: 'Design', version: '1.0.0', inputs: opts.inputs ?? [],
     render: { width: 1080, height: 1080, formats: ['png', 'svg', 'pdf'], ...(opts.render ?? {}) },
@@ -646,14 +659,18 @@ function mountPaged(opts: {
       // which (for render.paged) also targets the first [data-pdf-page] but sets thumbnail:true.
       if ((node as HTMLElement)?.matches?.('[data-pdf-page]') && o.thumbnail !== true) {
         pageExports.push({ format, opts: { ...o } });
+        pageIds.push((node as HTMLElement).getAttribute('data-frame-id'));
       }
       return new dom.window.Blob(['x'], { type: 'image/png' });
     },
   };
-  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  const host = {
+    assets: { query: async () => [] }, state: { save: async () => {} },
+    export: { download: async (_b: Blob, name: string) => { downloads.push(name); } },
+  };
   renderActions(
     panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+    () => {}, (async (fn: () => unknown) => fn()) as never, (opts.exportDefaults ?? {}) as never,
   );
   const setFormat = (f: string) => {
     const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement | null;
@@ -662,6 +679,7 @@ function mountPaged(opts: {
   setFormat('png');
   return {
     panel, canvas, setFormat, pageExports: () => pageExports,
+    pageIds: () => pageIds, downloads: () => downloads,
     download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
   };
@@ -887,4 +905,74 @@ test('render.printMarks: false still hides the card entirely', () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' }, printMarks: false });
   assert.equal(h.card(), null);
   assert.equal(h.enable(), null);
+});
+
+// ── 10. the `?s=` still-export filter (plan 112 section 10) ───────────────────
+// A framed document exports one still PER PAGE. `?s=` narrows that fan-out to the one
+// addressed slide - which is what makes `?s=2&format=png` a per-slide image link (and buys
+// per-slide embeds/OG later). WHAT an address means is the engine's (frame-address.ts, so
+// the CLI's `--s=` picks the same page from the same string); what is guarded here is the
+// wiring: the pick reaches the fan-out, one page downloads as one clean file rather than a
+// zip, and - the part that matters most - an address naming nothing never quietly becomes
+// slide 1. A wrong slide under the right filename is the failure mode this must not have.
+
+const SLIDE_IDS = ['intro', 'pricing', 'thanks'];
+
+test('?s= absent: every page still fans out, exactly as before the filter existed', async () => {
+  const h = mountPaged({ pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS });
+  h.download();
+  await settle();
+  assert.deepEqual(h.pageIds(), SLIDE_IDS);
+});
+
+test('?s=2 exports ONLY that slide, as a single clean file (not a zip of one)', async () => {
+  const h = mountPaged({
+    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    exportDefaults: { format: 'png', filename: 'deck', slide: '2' },
+  });
+  h.download();
+  await settle();
+  assert.deepEqual(h.pageIds(), ['pricing'], 'a positional address counts pages from 1');
+  assert.deepEqual(h.downloads(), ['deck.png'], 'one page → one file under the plain name');
+});
+
+test('?s=<frame id> addresses a slide wherever it sits (reorder-proof)', async () => {
+  const h = mountPaged({
+    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    exportDefaults: { format: 'png', slide: 'thanks' },
+  });
+  h.download();
+  await settle();
+  assert.deepEqual(h.pageIds(), ['thanks']);
+});
+
+test('?s=2.3 — the build suffix still exports that whole slide (builds are presenter-only)', async () => {
+  const h = mountPaged({
+    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    exportDefaults: { format: 'png', slide: '2.3' },
+  });
+  h.download();
+  await settle();
+  assert.deepEqual(h.pageIds(), ['pricing']);
+});
+
+test('an ?s= that names nothing exports the WHOLE deck — never a silent slide 1', async () => {
+  for (const bad of ['9', '0', 'nope']) {
+    const h = mountPaged({
+      pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+      exportDefaults: { format: 'png', slide: bad },
+    });
+    h.download();
+    await settle();
+    assert.deepEqual(h.pageIds(), SLIDE_IDS, `?s=${bad} names no slide — the deck exports whole`);
+  }
+});
+
+test('?s= on an unstamped paged tool still works positionally', async () => {
+  // A carousel (render.pages) emits [data-pdf-page] without frame ids: a number is the
+  // only address it can answer, and it must still answer it.
+  const h = mountPaged({ pages: 3, render: { pages: { count: 'n' } }, exportDefaults: { format: 'png', slide: '3' } });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 1, 'the third page, and only it');
 });

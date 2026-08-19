@@ -37,6 +37,10 @@ type AskHost = HostV1;
 /** A question long enough to be worth answering (mirrors MIN_QUERY_LENGTH). */
 const MIN_LEN = 2;
 
+/** Session memory for the M1 consent chip - a dismissal holds until reload,
+ *  like the transcript itself. */
+let embedConsentDismissed = false;
+
 /** The answer HTML for one turn - reused for the live "thinking" placeholder. */
 function answerCardHtml(answer: AskAnswer): string {
   const parts: string[] = [];
@@ -155,6 +159,60 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   const inputEl = viewEl.querySelector<HTMLInputElement>('[data-input]')!;
   const formEl = viewEl.querySelector<HTMLFormElement>('[data-composer]')!;
 
+  // `#/ask?bench` arms the retrieval timing logs (plans/103 section 5) for this
+  // mount only; the cleanup below disarms it.
+  const benchOn = new URLSearchParams(params).has('bench');
+  if (benchOn) (globalThis as Record<string, unknown>).__lollyAskBench = true;
+
+  // ── M1 consent chip - "better matching" is a ~23 MB opt-in, never implicit ──
+  // Offered under the transcript once at least one answer exists, when the
+  // build stages the embed model and it is not on-device yet. All three facts
+  // are probed lazily so Tier 0 pays nothing.
+  const consentEl = document.createElement('div');
+  consentEl.className = 'ask-consent';
+  consentEl.hidden = true;
+  transcriptEl.insertAdjacentElement('afterend', consentEl);
+  let consentBusy = false;
+  const offerConsent = async (): Promise<void> => {
+    if (embedConsentDismissed || consentBusy || !askSession().length) return;
+    try {
+      const { cachedEmbedModel, EMBED_MODEL_BYTES } = await import('../lib/ask/embed.ts');
+      const { fetchPrecacheManifest, downloadAsk } = await import('../lib/offline-manager.ts');
+      const precache = await fetchPrecacheManifest();
+      if (!viewEl.isConnected || !precache?.groups.embed?.length || (await cachedEmbedModel())) return;
+      if (consentEl.dataset.wired) { consentEl.hidden = false; return; }
+      consentEl.dataset.wired = '1';
+      const mb = Math.round(EMBED_MODEL_BYTES / 1024 / 1024);
+      consentEl.innerHTML = `
+        <span class="ask-consent-text">${tRaw('Better matching: a small on-device model ({n} MB) helps pair questions with the right section. It stays on this device.', { n: mb })}</span>
+        <button type="button" class="btn ask-consent-get" data-consent-get>${t('Download')}</button>
+        <button type="button" class="btn-link ask-consent-no" data-consent-no>${t('Not now')}</button>`;
+      consentEl.hidden = false;
+      consentEl.querySelector('[data-consent-no]')?.addEventListener('click', () => {
+        embedConsentDismissed = true;
+        consentEl.hidden = true;
+      });
+      consentEl.querySelector('[data-consent-get]')?.addEventListener('click', () => {
+        if (consentBusy) return;
+        consentBusy = true;
+        const text = consentEl.querySelector<HTMLElement>('.ask-consent-text')!;
+        for (const b of consentEl.querySelectorAll('button')) (b as HTMLButtonElement).hidden = true;
+        downloadAsk(precache, {
+          onProgress: (p) => {
+            const pct = p.total ? Math.round((p.loaded / p.total) * 100) : 0;
+            text.textContent = tRaw('Downloading the matching model, {n}%', { n: pct });
+          },
+        }).then(() => {
+          text.textContent = t('Ready. Your next question uses it.');
+          setTimeout(() => { consentEl.hidden = true; }, 4000);
+        }).catch(() => {
+          text.textContent = t('The download did not finish. Answers keep working without it.');
+          setTimeout(() => { consentEl.hidden = true; }, 4000);
+        }).finally(() => { consentBusy = false; });
+      });
+    } catch { /* the chip is an enhancement - its absence is never an error */ }
+  };
+
   // Cap long sections and reveal the "Show more" control only where it overflows.
   const wireExpanders = (): void => {
     for (const body of transcriptEl.querySelectorAll<HTMLElement>('.ask-answer-body')) {
@@ -190,9 +248,10 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
       pushTurn({ role: 'answer', answer });
     } finally {
       busy = false;
-      if (viewEl.isConnected) render();
+      if (viewEl.isConnected) { render(); void offerConsent(); }
     }
   };
+  if (askSession().length) void offerConsent();
 
   formEl.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -223,5 +282,6 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     busy = false;
+    if (benchOn) delete (globalThis as Record<string, unknown>).__lollyAskBench;
   };
 }

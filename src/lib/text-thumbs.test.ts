@@ -4,7 +4,10 @@
 // palette) is DOM/network and belongs to a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { textThumbSize, textThumbExcerpt, textThumbModel, type ThumbMark } from './text-thumbs.ts';
+import {
+  textThumbSize, textThumbExcerpt, textThumbModel, textThumbWashBg, textThumbFg,
+  type ThumbMark,
+} from './text-thumbs.ts';
 
 test('textThumbSize: document length picks the type scale, quote to wall', () => {
   assert.equal(textThumbSize(40), 'xl');
@@ -46,6 +49,41 @@ test('excerpt runs reassemble to a contiguous slice of the source', () => {
   const runs = textThumbExcerpt(text, marks).filter((r) => r.text !== '… ' && r.text !== ' …');
   const joined = runs.map((r) => r.text).join('');
   assert.ok(text.includes(joined), 'no dropped or duplicated characters inside the window');
+});
+
+// A stand-in APCA: signed lightness difference scaled to Lc-ish magnitudes. The
+// real polarity/curve maths lives in the host; the picker only reads |value|.
+const lum = (hex: string): number => {
+  const c = (i: number) => Number.parseInt(hex.slice(i, i + 2), 16);
+  return (0.2126 * c(1) + 0.7152 * c(3) + 0.0722 * c(5)) / 255;
+};
+const fakeHost = { color: { apca: (text: string, bg: string) => (lum(bg) - lum(text)) * 110 } };
+
+test('textThumbWashBg: no ink is the bare surface; an ink tints it faintly', () => {
+  assert.equal(textThumbWashBg(null, 'dark'), '#12141a');
+  const washed = textThumbWashBg('#efeae2', 'dark');
+  assert.notEqual(washed, '#12141a');
+  assert.ok(lum(washed) < 0.3, 'a 13% tint stays near the dark surface');
+});
+
+test('textThumbFg: picks a palette colour that reads on the wash, refusing melters', () => {
+  const darkGreen = '#0c322c';
+  const offWhite = '#efeae2';
+  const fg = textThumbFg('asset/a', [darkGreen, offWhite], null, fakeHost, 'dark');
+  assert.equal(fg, offWhite, 'the near-surface dark green is refused on a dark tile');
+});
+
+test('textThumbFg: prefers a swatch other than the wash ink when one qualifies', () => {
+  const pool = ['#efeae2', '#cfe8d8'];
+  const fg = textThumbFg('asset/b', pool, '#efeae2', fakeHost, 'dark');
+  assert.equal(fg, '#cfe8d8');
+});
+
+test('textThumbFg: a one-colour brand may reuse the wash ink; no host means no pick', () => {
+  const only = '#efeae2';
+  assert.equal(textThumbFg('asset/c', [only], only, fakeHost, 'dark'), only);
+  assert.equal(textThumbFg('asset/c', [only], only, undefined, 'dark'), null);
+  assert.equal(textThumbFg('asset/c', [], null, fakeHost, 'dark'), null);
 });
 
 test('textThumbModel: AI-flavoured text yields bucketed runs and a score; plain text stays calm', () => {

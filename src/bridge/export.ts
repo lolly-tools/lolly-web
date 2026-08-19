@@ -5612,7 +5612,7 @@ export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: str
 
 /**
  * The containers a live capture can be signed into. Every one of these is in the
- * engine's `C2PA_FORMATS` (asserted by tests/capture-clip-provenance.test.ts), so a
+ * engine's `C2PA_FORMATS` (asserted by bridge/capture-clip-c2pa.test.ts), so a
  * capture path never has to guess whether the credential will land: png for a
  * screenshot, mp4/webm for footage, and the four audio containers a voice/screen take
  * can arrive in - m4a (ISO BMFF, the `audio/mp4` AAC MediaRecorder writes), webm

@@ -300,4 +300,21 @@ html[data-a11y-motion="reduce"] .ask-send .ask-send-mark .lolly-mark__spin-3 { a
   .ask-view .ask-layout { padding-inline: 0.9rem; }
   .ask-q, .ask-answer { max-width: 100%; }
 }
+
+/* ─── M1 consent chip — the "better matching" on-device model offer ─────────
+   One quiet line between the transcript and the composer. Buttons reuse the
+   shared .btn / .btn-link recipes; only layout is declared here. */
+.ask-consent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, color-mix(in oklab, var(--fg, #0f172a) 5%, transparent));
+  font-size: calc(13px * var(--a11y-fs));
+}
+.ask-consent[hidden] { display: none; }
+.ask-consent-text { flex: 1 1 24ch; min-width: 0; }
 }

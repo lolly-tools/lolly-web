@@ -356,7 +356,7 @@ export async function createBridge(): Promise<WebHost> {
   };
 
   // Lazy raster facade (v1.105): decode/measure/encode for tool hooks doing
-  // their OWN canvas pixel work (the filter-* family, bitmap-studio, the logo
+  // their OWN canvas pixel work (the filter-* family, darkroom, the logo
   // composers, redact) - the bridge home for the canRaster()/loadImage() probes
   // those hooks used to open-code against the DOM. Wraps the same codec glue as
   // host.images, so it's lazy for the same reason. `canRaster()` is contractually
@@ -433,7 +433,7 @@ export async function createBridge(): Promise<WebHost> {
 
   // Layered-bitmap write-back (v1.102) - host.layers.writePsd, the engine's own
   // PSD writer behind a lazy import (psd-write.ts is off the boot chunk; only
-  // the layer-stack tool's "Download layered PSD" action ever calls it). Blend
+  // the darkroom tool's "Download layered PSD" action ever calls it). Blend
   // strings from the open contract are narrowed here: an unknown value writes
   // as 'normal' rather than refusing the file.
   host.layers = {

@@ -23,7 +23,8 @@
  * collectExportParams() and passed in as already-formed `key=value` strings.
  */
 
-import { assetIdForUrl, blocksForUrl, isPackAvailable, isTokenValue } from '@lolly/engine';
+import { assetIdForUrl, blocksForUrl, encodeTableCompact, isPackAvailable, isTokenValue, normalizeTableValue } from '@lolly/engine';
+import type { TableValue } from '@lolly/engine';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 import type { InputModelItem } from '../../../../engine/src/inputs.ts';
 import { encodeBlocksCompact } from './blocks-url.ts';
@@ -31,16 +32,32 @@ import { stripHiddenRowIds } from './row-id.ts';
 import { asRow } from '../views/tool-types.ts';
 
 // ── Canonical thresholds (this module OWNS them; tool.ts + share-dialog.ts import) ──
-/** A single scalar value longer than this can't ride in the URL and is dropped. */
+/** A SHORT single-line scalar (`text`/`url`/…) longer than this is dropped - at that length it's
+ *  an accident or bloat, not the point of the field. Does NOT apply to the CONTENT types, which
+ *  ride uncapped and escalate to a `.lolly` by length instead of silently dropping: `table`,
+ *  `blocks`, and `longtext` (a d3 data table, design's customCss, a code tool's source). */
 export const SCALAR_CAP = 150;
-/** A blocks value whose encoded form exceeds this is dropped. */
+/** A reference size for a blocks value (a design's boxes, a deck's slides). NO LONGER a
+ *  drop threshold - like a table, a blocks value now rides uncapped and escalates to a
+ *  `.lolly` via the length band rather than silently truncating the content. Retained for
+ *  the address-bar heuristic in tool.ts and as a documented "this is getting big" marker. */
 export const BLOCKS_CAP = 8000;
-/** At/above this readable length the link auto-packs (`z=`) - the pack heuristic. */
+/** At/above this readable length the link auto-packs (`z=`) - the pack heuristic.
+ *  Well below the browser warn: packing the address bar is always a win for copy-paste,
+ *  regardless of how much headroom the gauge shows. */
 export const AUTO_PACK_MIN = 1800;
-/** At/above this readable length the Share dialog warns "very long". */
-export const SHARE_WARN_LEN = 2000;
-/** The engine's hard reopen ceiling - MIRROR of engine/src/tool-url.ts:61 (MAX_URL,
- *  not exported). A link past this won't reopen even compressed. */
+/** At/above this the browser gauge reads amber and the Share dialog calls the link "long".
+ *  Modern browsers accept FAR more than a bar this size in the address bar and on reopen -
+ *  this is the point past which a copy-pasted link starts to feel unwieldy, not a hard limit. */
+export const SHARE_WARN_LEN = 16_000;
+/** The browser gauge's red line. A tool-PAGE reopen has no hard cap at all; past this even a
+ *  packed link is impractical to pass around, so the Share dialog escalates to the `.lolly`
+ *  file (which always opens complete). Distinct from URL_HARD_CAP below (the embed-only cap). */
+export const BROWSER_HARD_CAP = 64_000;
+/** The engine's embed-URL ceiling - MIRROR of engine/src/tool-url.ts:61 (MAX_URL, not
+ *  exported). It gates ONLY a Lolly tool-URL pasted as an image INSIDE another tool (and the
+ *  canonical embed id minted from it), NOT a normal page load - so it is deliberately NOT the
+ *  browser gauge's ceiling. Kept exported as the honest bound for the compose/embed path. */
 export const URL_HARD_CAP = 4096;
 
 // ── The fidelity report (moved here from share-dialog.ts - it is a projection of
@@ -50,7 +67,8 @@ export interface ShareFidelity {
   faithful: boolean;
   /** input ids whose scalar value exceeded SCALAR_CAP. */
   droppedScalars: { id: string; label: string }[];
-  /** blocks inputs whose encoded form exceeded BLOCKS_CAP. */
+  /** blocks inputs that couldn't ride the link. Now always empty (blocks ride uncapped and
+   *  escalate to a `.lolly` via length, like tables) - kept for shape/consumer stability. */
   droppedBlocks: { id: string; label: string }[];
   /** user/* (device-local) or otherwise-unshareable asset refs a link can't carry. */
   excludedAssets: { id: string; label: string }[];
@@ -63,7 +81,7 @@ export type UrlCostStatus =
   | 'baseline' // equals an active template baseline (distinct from tool default, for P3)
   | 'dropped-len' // scalar over SCALAR_CAP - silently lost today, recorded here
   | 'dropped-asset' // user/* or unshareable asset - silently lost today
-  | 'dropped-blocks'; // blocks over BLOCKS_CAP - silently lost today
+  | 'dropped-blocks'; // retained for shape stability; no longer emitted (blocks ride uncapped)
 
 /** One row emitted by the per-param decision primitive (byte-exact to buildShareParams). */
 export interface EncodedModelParam {
@@ -105,7 +123,7 @@ export interface UrlCostTarget {
 }
 
 /** The named presets (browser is the default). QR/SMS are far tighter. */
-export const BROWSER_TARGET: UrlCostTarget = { name: 'browser', warn: SHARE_WARN_LEN, hard: URL_HARD_CAP };
+export const BROWSER_TARGET: UrlCostTarget = { name: 'browser', warn: SHARE_WARN_LEN, hard: BROWSER_HARD_CAP };
 export const QR_TARGET: UrlCostTarget = { name: 'qr', warn: 260, hard: 300 };
 export const SMS_TARGET: UrlCostTarget = { name: 'sms', warn: 140, hard: 160 };
 export const TARGETS: Record<string, UrlCostTarget> = { browser: BROWSER_TARGET, qr: QR_TARGET, sms: SMS_TARGET };
@@ -131,6 +149,15 @@ export interface UrlCostModel {
   totalCount: number; // content inputs total
 }
 
+/** Structural table equality on the NORMALIZED grid - the default-skip test for a table
+ *  input, where `String(value)===String(def)` collapses to "[object Object]" for both.
+ *  normalizeTableValue emits a canonical shape, so a stringify compare is exact + cheap. */
+function tablesEqual(a: TableValue, b: TableValue): boolean {
+  return a.columns.length === b.columns.length
+    && a.rows.length === b.rows.length
+    && JSON.stringify(a) === JSON.stringify(b);
+}
+
 // ── The per-param decision primitive - reproduces buildShareParams' input loop
 //    EXACTLY (order and bytes). buildShareParams and costUrlState both call this,
 //    so the copied link and the gauge never disagree. ──
@@ -152,12 +179,32 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
     ...o,
   });
 
-  // file / table: a user's file bytes or a table object are never URL-expressible.
-  // buildShareParams had no branch, so they fell through to the scalar path and stamped
-  // garbage `key=%5Bobject%20Object%5D` into the link - a latent bug we fix by skipping
-  // them (pinned in url-budget.test.ts). syncUrl skips 'file' too; it does NOT yet skip
-  // 'table', so a table input's ADDRESS BAR still shows that garbage - a follow-up.
-  if (type === 'file' || type === 'table') return [];
+  // file: a user's file bytes are never URL-expressible (they live only in this device's
+  // memory). buildShareParams had no branch, so a file fell through to the scalar path
+  // and stamped garbage `key=%5Bobject%20Object%5D` into the link - skipped here and in
+  // syncUrl (pinned in url-budget.test.ts).
+  if (type === 'file') return [];
+
+  if (type === 'table') {
+    // A table IS the tool's content: it rides in the link via the engine's compact form
+    // (round-trips through parseUrlState). This is the fix for the `%5Bobject+Object%5D`
+    // the scalar path used to stamp for the address bar / share link alike. Unlike a
+    // scalar or a blocks value it has NO drop cap - a table is meant to fill the URL and
+    // escalate to a `.lolly` past the budget, never be silently truncated - so the only
+    // non-kept status is "equals the default". That default-skip is STRUCTURAL: a table
+    // value is an object, so buildShareParams' `String(value)===String(def)` scalar test
+    // read "[object Object]"==="[object Object]" and would have skipped EVERY table, so
+    // the comparison must be on the normalized grid. An unedited demo default therefore
+    // costs 0 bytes and the gauge fills only from real edits. Value is double-encoded
+    // (the compact form is pre-escaped per cell; the outer encode survives the single
+    // decode the load boundary performs - the engine's documented table-param contract).
+    const tbl = normalizeTableValue(value);
+    if (!tbl || (!tbl.columns.length && !tbl.rows.length)) return [row({ status: 'default' })];
+    const def = normalizeTableValue(input.default);
+    if (def && tablesEqual(tbl, def)) return [row({ status: 'default' })];
+    const emit = `${encodeURIComponent(key)}=${encodeURIComponent(encodeTableCompact(tbl))}`;
+    return [row({ status: 'kept', emit })];
+  }
 
   if (type === 'asset') {
     // A baked ref shares as its provenance URL, never its data: bytes or dead
@@ -174,13 +221,18 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
   if (type === 'blocks') {
     if (!Array.isArray(value) || value.length === 0) return [row({ status: 'default' })];
     // Share policy: encodeBlocksCompact WITHOUT keepUserIds (never export user/ ids
-    // off-device); JSON fallback when there are no fields. The cap is on the
-    // pre-URL-encoded length; the emitted value is raw compact or an
-    // encodeURIComponent'd JSON blob, and the KEY is pushed raw (matches tool.ts:4130).
+    // off-device); JSON fallback only when there are no declared fields.
     const compact = encodeBlocksCompact(value, input.fields ?? []);
     const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
-    if (encoded.length > BLOCKS_CAP) return [row({ status: 'dropped-blocks' })];
-    const emit = `${key}=${compact != null ? encoded : encodeURIComponent(encoded)}`;
+    // NO drop cap: a blocks value IS the tool's content (a whole design's boxes, a deck's
+    // slides), so - exactly like a table - it rides uncapped and a huge one escalates to the
+    // .lolly file via the length band, rather than being SILENTLY dropped from the link (the
+    // "the link has no content" bug). BLOCKS_CAP is kept as the pre-pack size past which the
+    // Share dialog nudges toward the .lolly, but it never truncates the design.
+    // Both forms are encodeURIComponent'd: the compact form's in-value ','/'~' escapes
+    // (%2C/%7E) must survive the load boundary's single percent-decode or a comma in a label
+    // would split a row - the same "one more layer" the table form uses (see blocks-url.ts).
+    const emit = `${key}=${encodeURIComponent(encoded)}`;
     return [row({ status: 'kept', emit })];
   }
 
@@ -217,7 +269,12 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
   // recipient's tokens; never leaks "[object Object]"). Cap is on the pre-hex-strip
   // string, matching tool.ts:4163-4168.
   let str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
-  if (str.length > SCALAR_CAP) return [row({ status: 'dropped-len' })];
+  // A `longtext` is CONTENT (a d3 data table, design's customCss, a code tool's source), not a
+  // stray-long label - so like a table/blocks it rides UNCAPPED and a huge one escalates to the
+  // .lolly by length, never silently dropping the chart/design from the link. The SCALAR_CAP drop
+  // stays for short single-line types (`text`/`url`/…), where >150 chars is an accident or bloat
+  // (e.g. color-palette's lcTargets) rather than the point of the field.
+  if (type !== 'longtext' && str.length > SCALAR_CAP) return [row({ status: 'dropped-len' })];
   if (type === 'color' && str.startsWith('#')) str = str.slice(1);
   return [row({ status: 'kept', emit: `${encodeURIComponent(key)}=${encodeURIComponent(str)}` })];
 }

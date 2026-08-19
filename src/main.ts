@@ -1141,9 +1141,25 @@ function peekUrlLang(): string | null {
  *  404-ing on the retired id. `layout-studio` → `design` (the Design tool), and
  *  `sequence-studio` → `design` too: the sequence editor merged into design's timeline
  *  (2026-08-14) but the standalone tool's links were never redirected, which broke the
- *  permanent-id contract for every old sequence share link and docs recipe. */
-const RENAMED_TOOL_IDS: Record<string, string> = { 'layout-studio': 'design', 'sequence-studio': 'design' };
+ *  permanent-id contract for every old sequence share link and docs recipe.
+ *  `carousel-maker` → `design` (plan-107 cull, 2026-08-19): the carousel workload is a
+ *  Design template, and a `?slot=` resume reshapes through migrateCarouselToFrames.
+ *  `bitmap-studio` → `darkroom` and `layer-stack` → `darkroom` (plan-106 convergence,
+ *  2026-08-19): the merged tool keeps BOTH tools' input ids, so saved sessions and
+ *  share links resume with no model shim. */
+const RENAMED_TOOL_IDS: Record<string, string> = {
+  'layout-studio': 'design', 'sequence-studio': 'design', 'carousel-maker': 'design',
+  'bitmap-studio': 'darkroom', 'layer-stack': 'darkroom',
+};
 const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
+
+/** Retired ids whose workload lives on as a Design template: a BARE old link (no query at
+ *  all) lands on that template instead of the blank chooser. Any query is passed through
+ *  untouched, because a `?slot=` resume must reach the migration shims with the saved model
+ *  winning, and a packed-values share link must keep its own params over template values. */
+const RETIRED_TOOL_TEMPLATES: Record<string, string> = { 'carousel-maker': 'carousel', 'sequence-studio': 'video' };
+const retiredToolParams = (id: string, params: string): string =>
+  params === '' && RETIRED_TOOL_TEMPLATES[id] ? `template=${RETIRED_TOOL_TEMPLATES[id]}` : params;
 
 function parseRoute(): Route {
   const hash = window.location.hash.slice(1);
@@ -1152,7 +1168,7 @@ function parseRoute(): Route {
     const [path, query] = hash.split('?');
     const parts = (path ?? '').split('/').filter(Boolean);
     if (parts[0] === 'tool' && parts[1]) {
-      return { name: 'tool', toolId: canonToolId(parts[1]), params: query || '' };
+      return { name: 'tool', toolId: canonToolId(parts[1]), params: retiredToolParams(parts[1], query || '') };
     }
     if (parts[0] === 'profile') return { name: 'profile', params: query || '' };
     if (parts[0] === 'd' || parts[0] === 'dashboard') return { name: 'dashboard', params: query || '' };
@@ -1213,7 +1229,7 @@ function parseRoute(): Route {
   // bounces a human into #/tool/<id>, which mounts and then syncUrl rewrites the bar
   // back to /t/<id>; this branch is what re-mounts on client-side popstate to it.
   if (pathParts.length === 2 && pathParts[0] === 't') {
-    return { name: 'tool', toolId: canonToolId(pathParts[1]!), params: window.location.search.slice(1) };
+    return { name: 'tool', toolId: canonToolId(pathParts[1]!), params: retiredToolParams(pathParts[1]!, window.location.search.slice(1)) };
   }
   // /p (Projects root) and /p/<folderId> deep links → redirect into the canonical
   // hash form so all in-app projects navigation stays hash-based (folders are private

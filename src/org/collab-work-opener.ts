@@ -83,6 +83,7 @@
  */
 
 import { registerCollabOpener, type CollabLaunchContext } from '../lib/collab-launch.ts';
+import { registerWorkCollabPolicy } from '../lib/collab-availability.ts';
 // Value imports, and cheap ones: `lib/collab-mount.ts` imports nothing but types, and
 // `org/collab-config.ts` is two accessors over org-config state this module's own chunk
 // already carries.
@@ -595,21 +596,32 @@ export function buildCollabInviteAction(
 // ── Registration ──────────────────────────────────────────────────────────────
 
 /**
- * Register the `'work'` opener (last-wins); returns its unregister fn.
+ * Register the `'work'` opener (last-wins), plus the `collab.edit` policy the neutral
+ * availability seam asks for the work track; returns the unregister fn for both.
  *
  * Called by `org/index.ts`'s member branch on an instance that grants `collab.join`,
  * beside the provider-factory registration it depends on. The capability re-check
  * lives INSIDE the opener (see the header), so this registration says only "this
  * instance offers work collabs", never "this member may start one".
  *
+ * The policy is the same statement in the other direction. `lib/collab-availability.ts`
+ * (plans/108 Phase 1) decides where a surface may offer a work collab, and one of its
+ * three conditions is `collab.edit` - a control-plane grant only `org/` may read. So it
+ * is handed over as a live callback rather than imported, which keeps the seam neutral
+ * and keeps the answer fresh: policy that changes mid-session takes effect without a
+ * reload, exactly like the opener's own press-time checks. It travels with the opener
+ * because a work collab needs both facts or neither.
+ *
  * `CollabOpener` is fire-and-forget, so the outcome is announced rather than returned:
  * the share row's own `announce('Starting a collab')` is a promise this keeps or
  * corrects a moment later.
  */
 export function registerWorkCollabOpener(deps: WorkCollabDeps = {}): () => void {
-  return registerCollabOpener('work', (ctx) => {
+  const offPolicy = registerWorkCollabPolicy(canEditCollab);
+  const offOpener = registerCollabOpener('work', (ctx) => {
     void openWorkCollab(ctx, deps)
       .then((outcome) => { announce(outcome.ok ? tRaw(STRINGS.joined) : outcome.message, { assertive: !outcome.ok }); })
       .catch(() => { announce(tRaw(STRINGS.unreachable), { assertive: true }); });
   });
+  return () => { offOpener(); offPolicy(); };
 }

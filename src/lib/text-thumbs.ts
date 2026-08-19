@@ -16,9 +16,10 @@
  *    AI-likely area IS the focal point people are scanning for.
  *  - A deterministic brand-palette ink per asset (the audio thumbs' own
  *    audioThumbInk hash, so the same asset keeps the same colour forever -
- *    wayfinding, not decoration). The ink drives a faint background wash;
- *    body text stays in foreground ink, because the pool's contrast floor is
- *    tuned for big shapes, not 7px type.
+ *    wayfinding, not decoration). The ink drives a faint background wash, and a
+ *    SECOND palette pick paints the excerpt itself - chosen per tile against
+ *    that tile's actual wash at a modest thumbnail bar (textThumbFg below), with
+ *    the theme foreground as the honest fallback when no swatch qualifies.
  *  - A faint score DONUT in the corner (the same 0-100 arc as the panel gauge)
  *    when the text carries signals, so "which assets have AI-likely content"
  *    reads across a whole grid without opening anything.
@@ -26,8 +27,8 @@
  * DOM built with createElement/textContent only - no raw-HTML sink.
  */
 
-import { analyzeTextSignals } from '@lolly/engine';
-import { audioThumbPool, audioThumbInk, type ThumbTheme } from './audio-thumb-colour.ts';
+import { analyzeTextSignals, makeColorApi } from '@lolly/engine';
+import { audioThumbPool, audioThumbInk, THUMB_SURFACE, type ThumbTheme } from './audio-thumb-colour.ts';
 import { livePalette } from './live-palette.ts';
 
 /** One run of the excerpt: plain text, or a heat-marked span (bucket 1-5). */
@@ -147,6 +148,60 @@ export function textThumbModel(slice: string, totalChars: number): TextThumbMode
   };
 }
 
+// ── The excerpt's own brand ink ──────────────────────────────────────────────
+
+/** Minimum APCA contrast for the excerpt ink against the tile's own wash.
+ *  Deliberately modest - Lc 40 sits between the audio thumbs' shape floor (25)
+ *  and a body-copy bar (60): a thumbnail excerpt is texture to recognise, not
+ *  copy to read, so mid-tones stay usable and only a colour that MELTS into the
+ *  wash is refused. */
+const FG_MIN_LC = 40;
+
+/** The host slice the foreground pick reads - same feature-detection stance as
+ *  audioThumbPool: no apca, no pick, and the theme foreground stands. */
+export interface TextThumbColourHost {
+  color?: { apca?(text: string, bg: string): number };
+}
+
+/** Approximate the tile's painted wash: the ink at 13% over the theme surface.
+ *  The CSS mixes in oklab over a translucent muted token; a plain sRGB mix is
+ *  close enough for a contrast GUARD on so faint a tint. */
+export function textThumbWashBg(ink: string | null, theme: ThumbTheme): string {
+  const surface = THUMB_SURFACE[theme];
+  if (!ink || !/^#[0-9a-f]{6}$/i.test(ink)) return surface;
+  const ch = (hex: string, i: number) => Number.parseInt(hex.slice(i, i + 2), 16);
+  const mix = (i: number) => Math.round(ch(ink, i) * 0.13 + ch(surface, i) * 0.87)
+    .toString(16).padStart(2, '0');
+  return `#${mix(1)}${mix(3)}${mix(5)}`;
+}
+
+/**
+ * The excerpt's ink: a brand-palette colour that reads against THIS tile's wash.
+ * Candidates are the pool entries clearing FG_MIN_LC on the washed surface; a
+ * colour other than the wash ink is preferred (same-swatch text dissolves into
+ * its own tint), but a one-colour brand may reuse it. The pick among qualifiers
+ * is the audioThumbInk hash under a salted id, so it is stable per asset and
+ * decorrelated from the wash. Null - no apca, empty pool, nothing legible -
+ * means the theme foreground stands; never fabricate a hue.
+ */
+export function textThumbFg(
+  id: string,
+  pool: readonly string[],
+  wash: string | null,
+  host: TextThumbColourHost | undefined,
+  theme: ThumbTheme,
+): string | null {
+  const apca = host?.color?.apca;
+  if (typeof apca !== 'function' || !pool.length) return null;
+  const bg = textThumbWashBg(wash, theme);
+  const legible = pool.filter((c) => {
+    try { return Math.abs(apca(c, bg)) >= FG_MIN_LC; } catch { return false; }
+  });
+  const away = legible.filter((c) => c !== wash);
+  const candidates = away.length ? away : legible;
+  return audioThumbInk(`fg:${id}`, candidates)?.hex ?? null;
+}
+
 // ── The mount (the audio-thumbs contract, minus the decode) ──────────────────
 
 type Lookup = (id: string) => { id: string; url: string; version?: string; type: string } | undefined;
@@ -211,13 +266,28 @@ export function mountTextThumbs(
   let workers = 0;
   let pool: string[] = [];
   const painted = new Set<WeakRef<HTMLElement>>();
+  const theme = measuredTheme(root);
+  // host.color is installed lazily at TOOL mount (bridge installToolApis), so a
+  // cold load straight into a grid view has none. The engine's colour maths is
+  // already in this module's import graph, so build a local stand-in rather
+  // than leaving the pool uncurated and every excerpt in theme foreground.
+  let colourHost = host as TextThumbColourHost | undefined;
+  if (typeof colourHost?.color?.apca !== 'function') {
+    try { colourHost = { color: makeColorApi() }; } catch { /* guards degrade */ }
+  }
+
+  const inkEl = (el: HTMLElement, id: string): void => {
+    const ink = audioThumbInk(id, pool);
+    if (ink) el.style.setProperty('--ttxt-ink', ink.hex);
+    const fg = textThumbFg(id, pool, ink?.hex ?? null, colourHost, theme);
+    if (fg) el.style.setProperty('--ttxt-fg', fg);
+  };
 
   const paint = (el: HTMLElement, id: string, model: TextThumbModel): void => {
     if (!live || !isCurrent() || !el.isConnected) return;
     el.replaceChildren();
     el.classList.add('cat-ttxt', `cat-ttxt--${model.size}`);
-    const ink = audioThumbInk(id, pool);
-    if (ink) el.style.setProperty('--ttxt-ink', ink.hex);
+    inkEl(el, id);
     if (model.score >= 20) el.appendChild(ringSvg(model.score, model.band));
     const body = document.createElement('div');
     body.className = 'cat-ttxt-body';
@@ -232,23 +302,33 @@ export function mountTextThumbs(
       }
     }
     el.appendChild(body);
-    // FIT the type to the box: binary-search the largest font-size whose excerpt
-    // still fits (the ring is absolute, so el.scrollHeight measures the text
-    // alone). The length bucket stays as the weight/line-height look; the size
-    // itself is measured, so a short quote fills its tile and a long excerpt
-    // shrinks instead of clipping mid-line. ~6 layout passes per visible tile.
+    // FILL the box with type: binary-search the SMALLEST font-size whose excerpt
+    // reaches the bottom of the tile. Under-filling reads as a broken tile, so
+    // the rule is fill-or-overflow - a document may run past the bottom edge
+    // (the body's overflow:hidden crops it, like a window onto the page) but
+    // never stop short of it. Measured on the body alone: the corner ring is an
+    // absolute sibling, so el.scroll* would count it and never converge. The
+    // length bucket stays as the weight/line-height look; the size itself is
+    // measured. ~6 layout passes per visible tile.
     if (el.clientHeight > 0) {
-      const fits = (): boolean =>
-        el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+      const cs = getComputedStyle(el);
+      const avail =
+        el.clientHeight - (Number.parseFloat(cs.paddingTop) || 0) - (Number.parseFloat(cs.paddingBottom) || 0);
+      const fills = (): boolean => body.scrollHeight >= avail - 1;
       let lo = 5;
-      let hi = 26;
-      while (hi - lo > 0.5) {
-        const mid = (lo + hi) / 2;
-        body.style.fontSize = `${mid}px`;
-        if (fits()) lo = mid;
-        else hi = mid;
+      let hi = 30;
+      body.style.fontSize = `${hi}px`;
+      if (fills()) {
+        while (hi - lo > 0.5) {
+          const mid = (lo + hi) / 2;
+          body.style.fontSize = `${mid}px`;
+          if (fills()) hi = mid;
+          else lo = mid;
+        }
+        body.style.fontSize = `${hi}px`;
       }
-      body.style.fontSize = `${lo}px`;
+      // A very short quote can't fill even at the cap: leave it at the cap and
+      // let the xl class's vertical centring carry the tile instead.
     }
     painted.add(new WeakRef(el));
   };
@@ -258,15 +338,13 @@ export function mountTextThumbs(
       const el = ref.deref();
       if (!el?.isConnected) { painted.delete(ref); continue; }
       const id = el.dataset.textThumb ?? '';
-      const ink = id ? audioThumbInk(id, pool) : null;
-      if (ink) el.style.setProperty('--ttxt-ink', ink.hex);
+      if (id) inkEl(el, id);
     }
   };
 
   void (async () => {
-    const theme = measuredTheme(root);
-    const h = host as Parameters<typeof livePalette>[0] & Parameters<typeof audioThumbPool>[1];
-    try { pool = audioThumbPool(await livePalette(h), h, theme); } catch { pool = []; }
+    const h = host as Parameters<typeof livePalette>[0];
+    try { pool = audioThumbPool(await livePalette(h), colourHost, theme); } catch { pool = []; }
     // Tiles painted before the palette resolved carry no ink - colour them in
     // rather than leaving the grid half grey (the audio thumbs' own rule).
     repaintPainted();

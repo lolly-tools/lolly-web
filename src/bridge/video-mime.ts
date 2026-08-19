@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * MediaRecorder mimetype candidates for the video export path (export.js).
+ * MediaRecorder mimetype candidates for the capture + video export paths
+ * (export.ts's renders, bridge/recorder.ts's device takes).
  *
  * Kept DOM-free (no MediaRecorder probing here) so the ordering logic is
  * unit-testable in node - same split as views/export-size.js. export.js owns
@@ -36,6 +37,24 @@ export function videoMimeCandidates(preferred: string, { audio = false }: { audi
     ? [WEBM_AUDIO_CODECS, MP4_AUDIO_CODECS]
     : [WEBM_CODECS, MP4_CODECS];
   return preferred === 'mp4' ? [...second, ...first] : [...first, ...second];
+}
+
+// ── Audio-only capture (bridge/recorder.ts) ───────────────────────────────────
+// A voice take's container is what its Content Credential is placed in, so this
+// list is not free-floating: every string here must map through
+// export.ts's captureContainer() to a CaptureFormat the engine can embed into,
+// or the take ships unsigned. bridge/capture-clip-c2pa.test.ts asserts exactly
+// that over these arrays, so adding a candidate that has no placer fails there
+// rather than silently on a user's machine. (Firefox's own audio/ogg default is
+// not listed - it is never requested, it is what the recorder reports back.)
+export const AUDIO_WEBM_CODECS = ['audio/webm;codecs=opus', 'audio/webm'];
+export const AUDIO_MP4_CODECS  = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4'];
+
+/** Ordered audio-only mimetype candidates, preferring the requested container. */
+export function audioMimeCandidates(preferred?: string): string[] {
+  return preferred === 'mp4'
+    ? [...AUDIO_MP4_CODECS, ...AUDIO_WEBM_CODECS]
+    : [...AUDIO_WEBM_CODECS, ...AUDIO_MP4_CODECS];
 }
 
 // ── Encode bitrate ────────────────────────────────────────────────────────────

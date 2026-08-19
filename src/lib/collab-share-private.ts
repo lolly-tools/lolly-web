@@ -15,7 +15,11 @@
  * The registry starts empty (lib/share-sections.ts), so this import is what turns
  * the row on at all - nothing else in the boot path depends on its load order.
  *
- * Two independent gates, both required, checked fresh on every dialog open:
+ * Two independent gates, both required, checked fresh on every dialog open. Since
+ * plans/108 Phase 1 the pair is asked ONCE, through `lib/collab-availability.ts`
+ * (`canStartCollab(target, 'private')`), so this row and every other surface that
+ * offers a collab read the same rule instead of each restating it; what the two gates
+ * are has not changed:
  *   - `isFlagOnSync(PRIVATE_COLLAB_FLAG)` - the `private-collab` flag
  *     (feature-flags.ts), ON by default since 2026-08-10, so this row is part of the
  *     ordinary Share dialog rather than a beta anyone had to find first. It is still
@@ -36,10 +40,17 @@
 
 import { registerShareSection } from './share-sections.ts';
 import type { ShareSectionContext } from './share-sections.ts';
-import { isFlagOnSync, PRIVATE_COLLAB_FLAG } from '../feature-flags.ts';
-import { getCollabOpener, openCollabLaunch } from './collab-launch.ts';
+import { canStartCollab, startCollab } from './collab-availability.ts';
+import type { CollabTarget } from './collab-availability.ts';
 import { t } from '../i18n.ts';
 import { announce } from '../a11y.ts';
+
+/** The dialog's live mount, as the availability seam names it: a session of a tool,
+ *  seeded from the state the dialog serialised. No control-plane `sessionId` - that is
+ *  the Work-collab row's business (`org/collab-share.ts`), and this row is Track A. */
+function targetOf(ctx: ShareSectionContext): CollabTarget {
+  return { kind: 'session', toolId: ctx.toolId, baseParts: ctx.baseParts, currentFormat: ctx.currentFormat };
+}
 
 /**
  * Build the "Private collab" section, or null when the flag is off or no
@@ -47,8 +58,10 @@ import { announce } from '../a11y.ts';
  * directly rather than through the share-sections registry.
  */
 export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLElement | null {
-  if (!isFlagOnSync(PRIVATE_COLLAB_FLAG)) return null;
-  if (!getCollabOpener('private')) return null;
+  // Both gates, in one ask: lib/collab-availability.ts holds the private track's rule
+  // for every surface that offers a collab (plans/108 Phase 1), so this row and the
+  // gallery tile menu can no longer drift apart.
+  if (!canStartCollab(targetOf(ctx), 'private')) return null;
 
   const section = document.createElement('section');
   section.className = 'share-private-collab';
@@ -88,7 +101,7 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
   section.append(heading, row, btn, join);
 
   btn.addEventListener('click', () => {
-    const opened = openCollabLaunch('private', { toolId: ctx.toolId, baseParts: ctx.baseParts, currentFormat: ctx.currentFormat });
+    const opened = startCollab(targetOf(ctx), 'private');
     if (opened) {
       // Dismiss like the join button does: the ceremony dialog takes over, and a
       // share modal left open under it keeps the whole tool inert after adoption

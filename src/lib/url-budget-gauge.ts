@@ -1,46 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The ambient URL-budget gauge (plan 115 P1). A small SVG ring in the tool chrome that
- * shows how much of a shareable link the current edit costs - green → amber → red vs the
- * active target - updating live as you edit. It READS the P0 cost model (costUrlState),
- * never the raw address bar, so its number is the link you'd actually copy.
+ * The ambient URL-budget gauge (plan 115 P1). A small draggable bar in the tool chrome that
+ * fills as you add content, so a team can SEE how heavy a shareable link is getting. It READS
+ * the P0 cost model (costUrlState), never the raw address bar.
  *
- * Two jobs:
- *  - render a UrlCostModel to the ring synchronously every edit (cheap, never blocks);
- *  - for a BROWSER-target link that will auto-pack (readableLen >= AUTO_PACK_MIN), refine
- *    the verdict with a debounced, seq-guarded real packQuery - because a 2500-char link
- *    that deflates to 700 is fine, and showing red for it would be dishonest. QR/SMS never
- *    consult packing (a `z=` blob defeats a scannable/textable link), so they always show
- *    their readable band.
+ * It is a CONTENT-VOLUME meter (see gaugeVisual): the fill HEIGHT is a LOG curve of the content
+ * length so the bar visibly responds to every edit (a linear byte/limit fraction sat near-empty
+ * for any normal amount of content and read as "no feedback"), and it reaches the top only at a
+ * genuinely large amount. The COLOUR stays calm - links pack and there is always the .lolly - so
+ * it goes red only when content literally can't ride in a link (a device-local image) or is huge
+ * past even packing. When it fills, a reassurance toast says "keep going, share the .lolly". The
+ * render is pure + synchronous; the true copy-link size + the "shortest link" packing are the
+ * Share dialog's job, not the ambient gauge's.
  *
  * Chrome-only: the caller mounts this in tool chrome, NEVER inside .tool-canvas /
  * #tool-content / the export stage. The gauge writes nothing that reaches a render.
  */
-import { PACK_PARAM, packQuery } from '@lolly/engine';
 import type { UrlCostModel } from './url-budget.ts';
-
-/** How long after the last edit to spend a real pack on the refine. Fine enough to feel
- *  live, coarse enough not to re-pack every settled frame during a slider drag. */
-const PACK_REFINE_DEBOUNCE_MS = 200;
 
 export type GaugeBand = 'ok' | 'warn' | 'over';
 
-/** Pure: the band/fraction/overBy for an effective (possibly packed) length against a
- *  target. Shared by the sync render and the packed refine so they can't disagree. */
-export function bandForLength(
+/** Log-curve knee: smaller = more low-end sensitivity. Chosen so a few hundred chars of content
+ *  already reads as a clear fraction (a linear byte/limit fill sat near-empty for any normal
+ *  edit - which read as "no feedback"). */
+const FILL_K = 300;
+
+/**
+ * The gauge is a CONTENT-VOLUME meter, not a raw byte ruler. Pure so the render and the tests
+ * can't disagree.
+ *  - fillFraction (the bar HEIGHT): a LOG curve of the content length, very sensitive at the low
+ *    end so the bar visibly moves the moment you add a row, reaching the top only at a genuinely
+ *    large amount of content (target.warn). This is what gives the "it responds as I type" feel.
+ *  - band (the COLOUR): stays calm because the link packs and there is always the .lolly - it
+ *    only goes red when content literally can't ride in a link (a device-local image → fidelity
+ *    loss, matching "red when there's content that can't be embedded") or is huge even past
+ *    packing (≥ target.hard). Amber only marks "you've reached the top", paired with the toast.
+ */
+export function gaugeVisual(
+  queryLen: number,
+  faithful: boolean,
   target: { warn: number; hard: number },
-  effectiveLen: number,
-): { band: GaugeBand; usedFraction: number; overBy: number } {
-  return {
-    band: effectiveLen >= target.hard ? 'over' : effectiveLen >= target.warn ? 'warn' : 'ok',
-    usedFraction: target.warn > 0 ? effectiveLen / target.warn : 0,
-    overBy: effectiveLen - target.warn,
-  };
+): { fillFraction: number; band: GaugeBand; full: boolean } {
+  const q = Math.max(0, queryLen);
+  const fillFraction = target.warn > 0
+    ? Math.min(1, Math.log1p(q / FILL_K) / Math.log1p(target.warn / FILL_K))
+    : 0;
+  const full = q >= target.warn;
+  const band: GaugeBand = (!faithful || q >= target.hard) ? 'over' : full ? 'warn' : 'ok';
+  return { fillFraction, band, full };
 }
 
-/** The share query the gauge packs - the kept rows' emits joined by '&'. This reproduces
- *  costUrlState's own readable query (the buildShareParams serialization), NOT the address
- *  bar's (a deliberately different byte stream), so the packed number stays honest. */
+/** The share query the kept rows form (emits joined by '&'). Retained as a pure helper; the
+ *  Share dialog now owns the actual packed-length verdict, so the gauge no longer packs. */
 export function shareQueryOf(model: UrlCostModel): string {
   return model.params
     .filter((p) => p.status === 'kept')
@@ -51,9 +62,13 @@ export function shareQueryOf(model: UrlCostModel): string {
 export interface GaugeLabels {
   /** e.g. (42, 'warn') => "URL budget: 42% used". Localised by the caller. */
   used: (pct: number, band: GaugeBand) => string;
-  /** shown on the interim state while a large link is being compressed. */
-  compressing: string;
+  /** Reassurance shown from the meter the first time a link FILLS the bar - "it's okay,
+   *  keep going, you can share the .lolly file". A calm nudge, never a blocking warning. */
+  reassure: string;
 }
+
+/** How long the reassurance toast stays up before it fades on its own (ms). */
+const TOAST_MS = 6000;
 
 export interface UrlGauge {
   /** Render a fresh cost model. `base` is the full-URL base (origin + '/t/<id>?') so the
@@ -83,8 +98,39 @@ export function createUrlGauge(
   onActivate?: () => void,
 ): UrlGauge {
   const pctEl = el.querySelector<HTMLElement>('[data-gauge-pct]');
-  let seq = 0;
-  let packTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // The reassurance toast (a sibling of the gauge in #tool-stage). Shown once each time a
+  // link FIRST fills the bar, then it fades on its own - never a blocker, just "keep going".
+  const toastEl = el.parentElement?.querySelector<HTMLElement>('[data-gauge-toast]') ?? null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let wasFull = false; // last-seen "bar is at the top" state, so the toast only fires on entry
+  let primed = false;  // the first paint (mount / a loaded link) records state WITHOUT toasting -
+                       // reassurance is for when the user's own editing fills the bar, not on load
+  const hideToast = (): void => {
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    if (toastEl) toastEl.hidden = true;
+  };
+  const showToast = (): void => {
+    if (!toastEl) return;
+    toastEl.textContent = labels.reassure;
+    // Park it beside the gauge (which the user may have dragged anywhere): to the right by
+    // default, flipped left when the gauge sits in the right half of its stage. Both are
+    // stage-relative, matching the gauge's own position:absolute coords.
+    const p = el.offsetParent as HTMLElement | null;
+    const stageW = p ? p.clientWidth : window.innerWidth;
+    toastEl.hidden = false; // unhide first so offsetWidth is real for the flip decision
+    const toRight = el.offsetLeft + el.offsetWidth / 2 < stageW / 2;
+    toastEl.style.top = `${el.offsetTop}px`;
+    if (toRight) {
+      toastEl.style.left = `${el.offsetLeft + el.offsetWidth + 10}px`;
+      toastEl.style.right = 'auto';
+    } else {
+      toastEl.style.left = 'auto';
+      toastEl.style.right = `${Math.max(4, stageW - el.offsetLeft + 10)}px`;
+    }
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, TOAST_MS);
+  };
 
   // Position is stage-relative (the gauge is position:absolute inside #tool-stage), so
   // drags + persistence use offsetLeft/offsetTop and clamp to the offset parent's box.
@@ -137,6 +183,7 @@ export function createUrlGauge(
   };
   const onDown = (e: PointerEvent): void => {
     if (e.button !== 0) return;
+    hideToast(); // a drag would leave the toast stranded where the gauge used to be
     dragging = true;
     moved = false;
     startX = e.clientX;
@@ -152,59 +199,37 @@ export function createUrlGauge(
   el.addEventListener('pointerdown', onDown);
   el.addEventListener('keydown', onKey);
 
-  const paint = (band: GaugeBand, usedFraction: number): void => {
-    el.dataset.band = band;
-    delete el.dataset.state;
-    el.style.setProperty('--gauge-frac', String(Math.min(Math.max(usedFraction, 0), 1)));
-    const pct = Math.round(usedFraction * 100);
+  const paint = (visual: { fillFraction: number; band: GaugeBand; full: boolean }): void => {
+    el.dataset.band = visual.band;
+    el.style.setProperty('--gauge-frac', String(visual.fillFraction));
+    const pct = Math.round(visual.fillFraction * 100);
     if (pctEl) pctEl.textContent = `${pct}%`;
-    el.setAttribute('aria-label', labels.used(pct, band));
-    el.title = labels.used(pct, band);
+    el.setAttribute('aria-label', labels.used(pct, visual.band));
+    el.title = labels.used(pct, visual.band);
     el.hidden = false;
-  };
-
-  const paintFor = (target: { warn: number; hard: number }, effectiveLen: number): void => {
-    const { band, usedFraction } = bandForLength(target, effectiveLen);
-    paint(band, usedFraction);
-  };
-
-  const setCompressing = (): void => {
-    // Don't flash the readable band first - a >=1800-char readable is already ~90% of the
-    // 2000 warn, so it would snap amber→green when the pack lands. Show a neutral interim.
-    el.dataset.state = 'compressing';
-    el.setAttribute('aria-label', labels.compressing);
-    el.hidden = false;
-  };
-
-  const update = (model: UrlCostModel, base: string): void => {
-    const mySeq = ++seq; // invalidates any pack already in flight from a prior update
-    if (packTimer) { clearTimeout(packTimer); packTimer = null; }
-
-    // QR/SMS, tiny browser links, or no CompressionStream: honest readable band, no async.
-    if (model.target.name !== 'browser' || !model.packable) {
-      paintFor(model.target, model.readableLen);
-      return;
+    // Pop the calm "keep going, there's always the .lolly" reassurance ONCE each time the bar
+    // FIRST fills (reaches the top). Re-arms only after it drops back below full, so a settled
+    // edit session isn't nagged every keystroke; skipped on the first paint so opening an
+    // already-big shared link doesn't toast unprompted.
+    if (primed) {
+      if (visual.full && !wasFull) showToast();
+      else if (!visual.full) hideToast();
     }
+    wasFull = visual.full;
+    primed = true;
+  };
 
-    setCompressing();
-    const shareQuery = shareQueryOf(model);
-    packTimer = setTimeout(() => {
-      packTimer = null;
-      packQuery(shareQuery)
-        .then((token) => {
-          if (mySeq !== seq) return; // a newer update() already took over the ring
-          if (token == null) { paintFor(model.target, model.readableLen); return; } // codec vanished
-          // Absolute full-URL length of the packed link, to band against the same ceiling.
-          const packedFull = base.length + PACK_PARAM.length + 1 + token.length;
-          // "Packing didn't help" (mirror syncUrl): fall back to the readable band.
-          paintFor(model.target, packedFull < model.readableLen ? packedFull : model.readableLen);
-        })
-        .catch(() => { if (mySeq === seq) paintFor(model.target, model.readableLen); });
-    }, PACK_REFINE_DEBOUNCE_MS);
+  const update = (model: UrlCostModel, _base?: string): void => {
+    // Content-only length: drop the fixed origin+/t/id? base so the bar reads 0 for a blank tool
+    // and doesn't drift with the domain. The visual is a PURE, SYNC function of it - it moves on
+    // every edit (the old packed-length refine sat near-empty for normal content = "no feedback").
+    // Packing / the true copy-link size are the Share dialog's job now, not the ambient gauge's.
+    const queryLen = Math.max(0, model.readableLen - model.baseLen);
+    paint(gaugeVisual(queryLen, model.fidelity.faithful, model.target));
   };
 
   const dispose = (): void => {
-    if (packTimer) { clearTimeout(packTimer); packTimer = null; }
+    hideToast();
     el.removeEventListener('pointerdown', onDown);
     el.removeEventListener('keydown', onKey);
     window.removeEventListener('pointermove', onMove);

@@ -88,29 +88,42 @@ function popupToken(provider: string): Promise<string> {
 
     const cleanup = () => {
       clearTimeout(timer);
-      clearInterval(closePoll);
+      if (closePoll != null) clearInterval(closePoll);
       window.removeEventListener('message', onMessage);
+      bc?.close();
     };
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error('Enrollment timed out — the sign-in window never responded.'));
     }, ENROLL_TIMEOUT_MS);
     // The callback page posts the token and then closes itself, so a closed
-    // popup with no message means the user dismissed the window.
-    const closePoll = setInterval(() => {
+    // popup with no message means the user dismissed the window. Under
+    // cross-origin isolation a SEVERED opener handle also reads closed, so
+    // there the poll must stand down and the timeout is the cancel signal.
+    const closePoll = globalThis.crossOriginIsolated ? null : setInterval(() => {
       if (popup.closed) {
         cleanup();
         reject(new Error('Sign-in window was closed before enrollment completed.'));
       }
     }, POPUP_POLL_MS);
 
-    function onMessage(event: MessageEvent) {
-      if (event.origin !== location.origin) return;
-      const m = event.data;
+    const accept = (m: { source?: string; type?: string; token?: string } | null) => {
       if (!m || m.source !== 'lolly-ca' || m.type !== 'enroll-token' || !m.token) return;
       cleanup();
       resolve(m.token);
+    };
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== location.origin) return;
+      accept(event.data);
     }
+    // The isolation-proof channel: with COOP severing the opener on the
+    // provider's pages, the callback page broadcasts instead (same-origin,
+    // same isolation partition - services/ca lib/pages.mjs posts to both).
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('lolly-ca');
+      bc.onmessage = (e) => accept(e.data as { source?: string; type?: string; token?: string } | null);
+    } catch { /* no BroadcastChannel - the opener path covers it */ }
     window.addEventListener('message', onMessage);
   });
 }

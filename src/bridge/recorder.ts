@@ -23,7 +23,7 @@ import type {
 // Import the tiny mime-candidate list directly (NOT videoMimeType from export.ts) - 
 // recorder.ts is wired into the bridge at boot, and pulling in export.ts (the whole
 // rasteriser) would drag it into the preload bundle. video-mime.ts is dependency-free.
-import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
+import { videoMimeCandidates, audioMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 // Tiny dependency-free shell side channel - safe to import on the boot path.
 import { publishRecordPreview } from '../lib/record-preview.ts';
 import { recorderAvailable } from './capture-support.ts';
@@ -211,12 +211,12 @@ function analyseStream(stream: MediaStream, emit: (l: AudioLevel) => void): () =
 }
 
 // Audio-only recorder mime, honouring the preferred container (mp4 → aac, else
-// opus/webm), filtered to what THIS browser can actually record.
+// opus/webm), filtered to what THIS browser can actually record. The candidate
+// strings live in video-mime.ts beside the video ones - DOM-free, so the guard
+// that every one of them maps to a signable container can run under node
+// (bridge/capture-clip-c2pa.test.ts).
 function audioMimeType(preferred?: 'webm' | 'mp4'): string {
-  const webm = ['audio/webm;codecs=opus', 'audio/webm'];
-  const mp4  = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4'];
-  const order = preferred === 'mp4' ? [...mp4, ...webm] : [...webm, ...mp4];
-  return order.find(t => MediaRecorder.isTypeSupported?.(t)) ?? '';
+  return audioMimeCandidates(preferred).find(t => MediaRecorder.isTypeSupported?.(t)) ?? '';
 }
 
 function createMeter(): MeterAPI {

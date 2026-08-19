@@ -110,8 +110,10 @@ import {
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
   prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, GENERATED_SOURCE_TYPE, COMPOSITE_SOURCE_TYPE, C2PA_FORMATS,
   extractC2paStore, attachC2paStore, verifyC2pa, humanizeText, LEXICON_VERSION,
+  analyzeTextSignals, suggestRewrites, applySuggestion, rewordableSpans, rewordCandidates,
 } from '@lolly/engine';
-import type { HumanizeResult } from '@lolly/engine';
+import type { HumanizeResult, RewordSuggestion, RewordSpan, RewordCandidate } from '@lolly/engine';
+import type { RewordStatus } from '../lib/reworder.ts';
 import { setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
@@ -1174,29 +1176,73 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }).join('');
   }
 
+  /** The reword machinery's render state (plans/127), owned by the details modal
+   *  and rebuilt from the CURRENT cleaned text after every accepted edit. */
+  interface RewordUiState {
+    /** Deterministic suggestions for the current cleaned text (Tier 1). */
+    suggestions: RewordSuggestion[];
+    /** Sentences worth offering the model (Tier 2), in document order. */
+    spans: RewordSpan[];
+    /** Gated model alternatives per span index. Absent = not asked yet;
+     *  empty array = asked and nothing survived the gate. */
+    alts: ReadonlyMap<number, RewordCandidate[]>;
+    /** True once any model candidate was accepted - the save then stamps genAI. */
+    modelTouched: boolean;
+    /** Model tier standing ('unstaged' hides the section entirely). */
+    status: RewordStatus;
+    /** One-time model download size, for the consent line. */
+    modelBytes: number;
+    /** The cleaned text the indices refer to. */
+    cleaned: string;
+  }
+
   /** The Humanize result: what the deterministic clean-up changed, the cleaned text with
-   *  its remaining (semantic) tells highlighted for the user to reword, and the honest
-   *  AI-origins opt-in - a nudge to declare, never an auto-stamp (no model ran).
+   *  its remaining (semantic) tells highlighted, deterministic plain-wording suggestions
+   *  (accepted per row, still no genAI stamp), the on-device model's reword offers when
+   *  staged (accepting one flags the saved copy as AI-assisted - plans/127), and the
+   *  honest AI-origins opt-in - a nudge to declare, never an auto-stamp.
    *  `canDeclare` = the asset is a user upload: the declare action writes onto the
    *  record's meta, and built-in catalog content is an immutable checksum-validated
    *  contract, so the button must never render for it (it would be a dead control). */
-  function catHumanizeHtml(result: HumanizeResult, cleanedPanel: TextSignalPanel, canDeclare: boolean): string {
-    const changeList = result.changes.length
-      ? `<ul class="cat-tsig-list">${result.changes.map((c) => `<li><strong>${escape(c.label)}</strong> ×${c.count}</li>`).join('')}</ul>`
-      : `<p class="cat-tsig-note">${t('Nothing mechanical to clean up. This text is already tidy.')}</p>`;
-    const remaining = cleanedPanel.rows.some((r) => r.tier === 'heuristic');
+  function catTextWorkHtml(panel: TextSignalPanel, result: HumanizeResult | null, canDeclare: boolean, rw: RewordUiState, edited: boolean, truncated: boolean): string {
+    // What Fix characters changed - only once it has run.
+    const fixed = result
+      ? `<p class="cat-tsig-head">${icon('wrench', { size: 14 })} <strong>${t('Characters fixed on-device')}</strong></p>
+        ${result.changes.length
+          ? `<ul class="cat-tsig-list">${result.changes.map((c) => `<li><strong>${escape(c.label)}</strong> ×${c.count}</li>`).join('')}</ul>`
+          : `<p class="cat-tsig-note">${t('Nothing to fix. The characters in this text are already tidy.')}</p>`}`
+      : '';
+    // The edits live INLINE now: the sidebar narrates what is marked in the
+    // preview and offers the bulk apply; each decision happens at the text.
+    const n = rw.suggestions.length;
+    const m = rw.status !== 'unstaged' ? rw.spans.length : 0;
+    const guidance = n + m
+      ? `<div class="cat-reword-sec">
+          <p class="cat-tsig-head"><strong>${t('Suggested edits')}</strong></p>
+          <p class="cat-tsig-note">${n ? tRaw('{n} wording swaps are underlined in the preview.', { n }) : ''}
+            ${m ? tRaw('{n} sentences have a dotted underline: the on-device model can offer a plainer version. Accepting one flags the saved copy as AI-assisted.', { n: m }) : ''}
+            ${t('Click a highlight to decide each one.')}</p>
+          ${rw.status === 'need-download' && m ? `<p class="cat-tsig-note">${escape(tRaw('First use downloads the rewriter once (~{mb} MB); it works offline after that.', { mb: Math.round(rw.modelBytes / (1024 * 1024)) }))}</p>` : ''}
+          ${n > 1 ? `<button type="button" class="btn cat-reword-apply-all" data-act="reword-suggest-all">${escape(tRaw('Apply all {n} swaps', { n }))}</button>` : ''}
+          ${truncated ? `<p class="cat-tsig-note">${t('The preview shows the first part of a long document; Apply all still covers the whole text.')}</p>` : ''}
+        </div>`
+      : `<p class="cat-tsig-note">${t('No wording edits to offer for this text.')}</p>`;
+    // Save/copy only once the working copy differs from the file - before that
+    // they would duplicate Copy text and save an identical asset.
+    const saveLabel = rw.modelTouched ? t('Add to catalog (flagged as AI-assisted)') : t('Add to catalog');
+    const actions = edited
+      ? `<div class="cat-humanize-actions"><button type="button" class="btn cat-act-copy-clean" data-act="copy-clean">${icon('duplicate', { size: 14 })}<span>${t('Copy edited text')}</span></button><button type="button" class="btn cat-act-save-clean" data-act="save-clean">${icon('filePlus', { size: 14 })}<span>${saveLabel}</span></button></div>`
+      : '';
     // Offer the honest declaration only when signals remain - so it reads as encouragement
     // to do the right thing, not a prompt on obviously-human text - and only where the
     // declaration can actually land (a user upload, per `canDeclare` above).
-    const declare = canDeclare && cleanedPanel.band !== 'none'
+    const declare = canDeclare && panel.band !== 'none'
       ? `<p class="cat-tsig-note">${t('If this text did come from AI, you can flag its AI origins on the asset so that travels honestly wherever it is used.')} <button type="button" class="btn cat-act-declare-ai" data-act="declare-ai-origins">${t('Flag AI origins')}</button></p>`
       : '';
-    return `<div class="cat-tsig" role="note">
-      <p class="cat-tsig-head">${icon('aiSpark', { size: 14 })} <strong>${t('Humanized on-device (no rewrite)')}</strong></p>
-      ${changeList}
-      <pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(cleanedPanel.text ?? '', cleanedPanel.marks)}</pre>
-      ${remaining ? `<p class="cat-tsig-note">${t('The highlighted phrases are writing-style tells only a person should reword. No model rewrites them here.')}</p>` : ''}
-      <div class="cat-humanize-actions"><button type="button" class="btn cat-act-copy-clean" data-act="copy-clean">${icon('duplicate', { size: 14 })}<span>${t('Copy cleaned text')}</span></button><button type="button" class="btn cat-act-save-clean" data-act="save-clean">${icon('filePlus', { size: 14 })}<span>${t('Add to catalog')}</span></button></div>
+    return `${catTextSignalsHtml(panel)}<div class="cat-tsig" role="note">
+      ${fixed}
+      ${guidance}
+      ${actions}
       ${declare}
     </div>`;
   }
@@ -1959,6 +2005,127 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     let dTextContent: string | null = null;
     // The last humanized (cleaned) text, for the Copy-cleaned button (plans/125).
     let dCleanedText: string | null = null;
+    // What the MAIN reading preview currently shows: null = the asset's own
+    // bytes; set to the working copy once edits exist, so the render-mode fill
+    // and the unsaved pill both track the same fact.
+    let dPreviewText: string | null = null;
+    // The working copy's BASELINE (the analysed slice of the original) - the
+    // unsaved pill and the save actions key off `dCleanedText !== dWorkBase`,
+    // never off mere analysis having run.
+    let dWorkBase: string | null = null;
+    // The last analysis of the working copy - the preview painter reads its
+    // marks; recomputed by renderTextPanel after every accepted edit.
+    let dAnalysis: TextSignalPanel | null = null;
+    // The reword panel's working state (plans/127). The mechanical change list
+    // survives re-renders; suggestions/spans are recomputed from the CURRENT
+    // cleaned text after every accepted edit (indices shift); model alternatives
+    // are cleared whenever the text changes; dModelTouched flips once any model
+    // candidate is accepted, and the save path then stamps aiGenerated.
+    let dHumanizeResult: HumanizeResult | null = null;
+    let dSuggestions: RewordSuggestion[] = [];
+    let dRewordSpans: RewordSpan[] = [];
+    const dRewordAlts = new Map<number, RewordCandidate[]>();
+    let dModelTouched = false;
+    let dRewordStatus: RewordStatus = 'unstaged';
+    let dRewordBytes = 0;
+
+    // ── The floating edit card - one decision at a time, made AT the text ────
+    // Clicking an underlined swap or sentence in the preview opens one small
+    // card beside it: what changes, and the buttons to decide. Esc or an
+    // outside click closes it; accepting an edit re-derives everything.
+    let dCard: HTMLElement | null = null;
+    const closeEditCard = (): void => { dCard?.remove(); dCard = null; };
+    const openEditCard = (anchor: HTMLElement, html: string): HTMLElement => {
+      closeEditCard();
+      const holder = dlg.querySelector<HTMLElement>('.cat-details-preview') ?? dlg;
+      const card = document.createElement('div');
+      card.className = 'cat-edit-card';
+      card.innerHTML = html;
+      holder.appendChild(card);
+      const hr = holder.getBoundingClientRect();
+      const ar = anchor.getBoundingClientRect();
+      card.style.left = `${Math.round(Math.max(8, Math.min(ar.left - hr.left, hr.width - 356)))}px`;
+      card.style.top = `${Math.round(Math.max(8, Math.min(ar.bottom - hr.top + 6, hr.height - 48)))}px`;
+      dCard = card;
+      return card;
+    };
+    /** One wording swap: before → after, apply or keep. */
+    const sugCardHtml = (s: RewordSuggestion, i: number): string => {
+      const work = dCleanedText ?? '';
+      const shown = s.kind === 'delete' && s.replacement.length === 1
+        ? work.slice(s.index, s.index + s.length - 1)
+        : work.slice(s.index, s.index + s.length);
+      const after = s.kind === 'delete'
+        ? `<em>${t('remove')}</em>`
+        : `<span class="cat-reword-after">${escape(s.replacement)}</span>`;
+      return `<p class="cat-card-line"><s class="cat-reword-before">${escape(shown.trim())}</s> → ${after}</p>
+        <p class="cat-tsig-note">${escape(s.label)} · ${t('a word-for-word edit, no model involved')}</p>
+        <div class="cat-card-actions">
+          <button type="button" class="btn cat-reword-apply" data-act="reword-suggest" data-idx="${i}">${t('Apply')}</button>
+          <button type="button" class="btn-link" data-act="edit-card-close">${t('Keep as is')}</button>
+        </div>`;
+    };
+    /** One flagged sentence: the model offer, its progress, its alternatives. */
+    const rwCardHtml = (i: number): string => {
+      const s = dRewordSpans[i];
+      if (!s) return '';
+      const sentence = (dCleanedText ?? '').slice(s.index, s.index + s.length);
+      const alts = dRewordAlts.get(i);
+      const altBlock = alts === undefined ? '' : (alts.length
+        ? `<ul class="cat-reword-alts">${alts.map((a, j) =>
+          `<li><span class="cat-reword-alt">${escape(a.text)}</span> <button type="button" class="btn cat-reword-use" data-act="reword-use" data-idx="${i}" data-alt="${j}">${t('Use this')}</button></li>`).join('')}</ul>`
+        : `<p class="cat-tsig-note">${t('No better wording survived the checks for this sentence. The original stays.')}</p>`);
+      const consent = alts === undefined && dRewordStatus === 'need-download'
+        ? `<p class="cat-tsig-note">${escape(tRaw('First use downloads the rewriter once (~{mb} MB); it works offline after that.', { mb: Math.round(dRewordBytes / (1024 * 1024)) }))}</p>`
+        : '';
+      return `<blockquote class="cat-reword-quote">${escape(sentence)}</blockquote>
+        ${alts === undefined ? `<p class="cat-tsig-note">${t('A small local model can propose a shorter, plainer version. Only versions that keep every fact are offered; accepting one flags the saved copy as AI-assisted.')}</p>` : ''}
+        ${consent}
+        <div class="cat-card-progress" data-card-progress hidden>
+          <span class="job-bar"><span class="job-bar-fill" data-card-fill></span></span>
+          <span class="cat-card-progress-label" data-card-label aria-live="polite"></span>
+        </div>
+        ${altBlock}
+        <div class="cat-card-actions">
+          <button type="button" class="btn cat-reword-go" data-act="reword-span" data-idx="${i}">${alts === undefined ? t('Suggest rewrites') : t('Try again')}</button>
+          <button type="button" class="btn-link" data-act="edit-card-close">${t('Close')}</button>
+        </div>`;
+    };
+
+    /** Rebuild the sidebar narration AND the preview from the current working
+     *  copy: the signals summary, the fix-characters report, how many inline
+     *  edits are marked, and the save actions once the copy differs. The
+     *  suggestion/reword DECISIONS happen in the preview itself (the floating
+     *  edit card) - this is the one place everything re-derives after each. */
+    const renderTextPanel = (): void => {
+      const box = dlg.querySelector<HTMLElement>('[data-tsig]');
+      if (!box || dCleanedText == null) return;
+      closeEditCard();
+      const panel = analyzeVerifyText(dCleanedText, 'digital');
+      dAnalysis = panel;
+      dSuggestions = suggestRewrites(dCleanedText);
+      dRewordSpans = rewordableSpans(dCleanedText, analyzeTextSignals(dCleanedText, { source: 'digital' }).findings);
+      const edited = dWorkBase != null && dCleanedText !== dWorkBase;
+      box.innerHTML = catTextWorkHtml(panel, dHumanizeResult, isUser, {
+        suggestions: dSuggestions,
+        spans: dRewordSpans,
+        alts: dRewordAlts,
+        modelTouched: dModelTouched,
+        status: dRewordStatus,
+        modelBytes: dRewordBytes,
+        cleaned: dCleanedText,
+      }, edited, dCleanedText.length > 8192);
+      box.hidden = false;
+      // The preview becomes the working copy: marks + inline edit affordances
+      // in place, zoom tools live. The markdown-rendered cache is invalidated
+      // so a render-mode toggle re-fills from the edited text.
+      dPreviewText = dCleanedText;
+      const md = dlg.querySelector<HTMLElement>('[data-md-rendered]');
+      if (md) { delete md.dataset.filled; md.replaceChildren(); }
+      paintWorkPreview();
+      const pill = dlg.querySelector<HTMLElement>('[data-unsaved]');
+      if (pill) pill.hidden = !edited;
+    };
     let dTextZoom = 1;    // font scale for the text reading surface (both modes)
     // A text asset (.txt/.md): the bytes are the text. Offers Copy text + Analyse text.
     const isTextAsset = ref.type === 'text';
@@ -2022,6 +2189,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const content = `
       <button type="button" class="cat-details-close" data-act="close" aria-label="${escape(t('Close'))}">×</button>
       <div class="cat-details-preview${zoomable ? ' is-zoomable' : ''}">
+        <span class="cat-unsaved-pill" data-unsaved hidden>${t('Edits not saved')}</span>
         ${nav.prev ? `<button type="button" class="cat-details-nav cat-details-prev" data-nav="prev" aria-label="${escape(t('Previous asset'))}">${CHEVRON_LEFT}</button>` : ''}
         ${nav.next ? `<button type="button" class="cat-details-nav cat-details-next" data-nav="next" aria-label="${escape(t('Next asset'))}">${CHEVRON_RIGHT}</button>` : ''}
         ${zoomable
@@ -2055,9 +2223,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         <div class="cat-details-actions">
           <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>
           <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>
-          ${isTextAsset ? `<button type="button" class="btn cat-act-copy-text" data-act="copy-text">${icon('duplicate', { size: 14 })}<span>${t('Copy text')}</span></button>
-          <button type="button" class="btn cat-act-analyse-text" data-act="analyse-text">${icon('aiSpark', { size: 14 })}<span>${t('Analyse text')}</span></button>
-          <button type="button" class="btn cat-act-humanize" data-act="humanize">${icon('aiSpark', { size: 14 })}<span>${t('Humanize')}</span></button>` : ''}
+          ${isTextAsset ? `<button type="button" class="btn cat-act-analyse-text" data-act="analyse-text">${icon('aiSpark', { size: 14 })}<span>${t('Analyse text')}</span></button>
+          <button type="button" class="btn cat-act-humanize" data-act="humanize">${icon('wrench', { size: 14 })}<span>${t('Fix characters')}</span></button>
+          <button type="button" class="btn cat-act-copy-text" data-act="copy-text">${icon('duplicate', { size: 14 })}<span>${t('Copy text')}</span></button>` : ''}
           ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
           ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
@@ -2196,8 +2364,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const box = dlg.querySelector<HTMLElement>('[data-md-rendered]');
       const btn = dlg.querySelector<HTMLElement>('[data-act="text-render"]');
       if (!pre || !box) return;
-      if (on && dTextContent != null && !box.dataset.filled) {
-        const capped = dTextContent.length > 262144 ? dTextContent.slice(0, 262144) : dTextContent;
+      // The fill source tracks what the preview is showing: the working copy
+      // once edits exist (dPreviewText), else the asset's own bytes.
+      const fillSrc = dPreviewText ?? dTextContent;
+      if (on && fillSrc != null && !box.dataset.filled) {
+        const capped = fillSrc.length > 262144 ? fillSrc.slice(0, 262144) : fillSrc;
         box.innerHTML = DOMPurify.sanitize(mdToHtml(capped));
         box.dataset.filled = '1';
       }
@@ -2206,26 +2377,109 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       btn?.classList.toggle('is-active', on);
       btn?.setAttribute('aria-pressed', String(on));
     };
-    // Paint the heat marks INTO the main reading preview, so the analysis shows
-    // in place, not only in the panel below. DOM-built (no markup sink); marks
-    // are byte-accurate against the RAW text, so a rendered-markdown view drops
-    // back to monospace first. The preview shows the first 8 KB - marks beyond
-    // the shown slice still appear in the panel's own extract.
-    const paintPreviewMarks = (text: string, marks: TextSignalMark[]): void => {
+    // ── The working-copy painter (plans/125/127 UX pass) ─────────────────────
+    // Everything the analysis surfaced becomes VISIBLE and decidable in the
+    // reading preview: heat marks as before; invisible/format characters as
+    // small named chips (the byte-level tells are otherwise literally
+    // unseeable); wording swaps and model-rewordable sentences as clickable
+    // underlines that open the floating edit card. DOM-built (no markup sink);
+    // byte-accurate against the raw text, so the rendered-markdown view drops
+    // back to monospace first. The preview shows the first 8 KB - Apply all in
+    // the sidebar still covers the whole text.
+    const INVISIBLE_NAME: Record<string, string> = {
+      '\u00A0': 'NBSP', '\u00AD': 'SHY', '\u034F': 'CGJ', '\u180E': 'MVS',
+      '\u200B': 'ZWSP', '\u200C': 'ZWNJ', '\u200D': 'ZWJ', '\u200E': 'LRM', '\u200F': 'RLM',
+      '\u202A': 'LRE', '\u202B': 'RLE', '\u202C': 'PDF', '\u202D': 'LRO', '\u202E': 'RLO',
+      '\u2028': 'LS', '\u2029': 'PS', '\u2060': 'WJ', '\u2066': 'LRI', '\u2067': 'RLI',
+      '\u2068': 'FSI', '\u2069': 'PDI', '\u3000': 'IDSP', '\uFEFF': 'BOM',
+    };
+    const invisName = (ch: string): string | null => {
+      const named = INVISIBLE_NAME[ch];
+      if (named) return named;
+      const cp = ch.codePointAt(0) ?? 0;
+      if (cp >= 0x2000 && cp <= 0x200A) return 'SP'; // width-variant spaces
+      if (cp >= 0xE000 && cp <= 0xF8FF) return 'PUA'; // private-use (leaked model delimiters live here)
+      return null;
+    };
+    /** Text → nodes, surfacing invisible characters as titled chips. */
+    const appendVisible = (parent: Node, text: string): void => {
+      let plain = '';
+      const flush = (): void => { if (plain) { parent.appendChild(document.createTextNode(plain)); plain = ''; } };
+      for (const ch of text) {
+        const name = invisName(ch);
+        if (!name) { plain += ch; continue; }
+        flush();
+        const cp = (ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
+        const chip = document.createElement('span');
+        chip.className = 'cat-invis';
+        chip.title = `${name} · U+${cp}`;
+        chip.textContent = name;
+        parent.appendChild(chip);
+      }
+      flush();
+    };
+    const paintWorkPreview = (): void => {
       setTextRenderMode(false);
       const pre = dlg.querySelector<HTMLElement>('.cat-text-preview');
-      if (!pre) return;
+      if (!pre || dCleanedText == null || !dAnalysis) return;
+      const text = dCleanedText;
       const shown = text.length > 8192 ? text.slice(0, 8192) : text;
       const grade = (b: number): string => b >= 4 ? t('a strong tell') : b === 3 ? t('a moderate signal') : t('a weak hint, safe to ignore');
+      // Flat segmentation: every range boundary (marks, swaps, sentences) cuts,
+      // so a piece belongs to at most one CLICKABLE range and one mark.
+      const clampPos = (v: number): number => Math.max(0, Math.min(shown.length, v));
+      const cuts = new Set<number>([0, shown.length]);
+      const marks = dAnalysis.marks.filter((m) => m.index < shown.length);
+      for (const m of marks) { cuts.add(clampPos(m.index)); cuts.add(clampPos(m.index + m.length)); }
+      for (const s of dSuggestions) if (s.index < shown.length) { cuts.add(clampPos(s.index)); cuts.add(clampPos(s.index + s.length)); }
+      const rwVisible = dRewordStatus !== 'unstaged';
+      if (rwVisible) for (const s of dRewordSpans) if (s.index < shown.length) { cuts.add(clampPos(s.index)); cuts.add(clampPos(s.index + s.length)); }
+      const points = [...cuts].sort((x, y) => x - y);
+      const rangeAt = (pos: number, ranges: readonly { index: number; length: number }[]): number => {
+        for (let k = 0; k < ranges.length; k++) { const r = ranges[k]!; if (pos >= r.index && pos < r.index + r.length) return k; }
+        return -1;
+      };
       const frag = document.createDocumentFragment();
-      for (const s of buildHighlightSegments(shown, marks.filter((m) => m.index < shown.length))) {
-        if (!s.tier) { frag.appendChild(document.createTextNode(s.text)); continue; }
-        const b = heatBucket(s.heat ?? 0);
-        const mark = document.createElement('mark');
-        mark.className = `cat-hl cat-hl--${s.tier} cat-hl--t${b}`;
-        mark.title = grade(b);
-        mark.textContent = s.text;
-        frag.appendChild(mark);
+      for (let p = 0; p + 1 < points.length; p++) {
+        const a = points[p]!;
+        const b = points[p + 1]!;
+        if (b <= a) continue;
+        const piece = shown.slice(a, b);
+        const sug = rangeAt(a, dSuggestions);
+        const rw = rwVisible ? rangeAt(a, dRewordSpans) : -1;
+        const mk = marks.find((m) => a >= m.index && a < m.index + m.length);
+        let el: HTMLElement | null = null;
+        if (sug >= 0) {
+          const s = dSuggestions[sug]!;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cat-sug';
+          btn.dataset.sug = String(sug);
+          btn.title = s.kind === 'delete'
+            ? tRaw('{label}: tap to review removing this', { label: s.label })
+            : tRaw('{label}: tap to review "{to}"', { label: s.label, to: s.replacement });
+          el = btn;
+        } else if (rw >= 0) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cat-rw';
+          btn.dataset.rw = String(rw);
+          btn.title = t('The on-device model can suggest a plainer version of this sentence');
+          el = btn;
+        } else if (mk?.tier) {
+          const markEl = document.createElement('mark');
+          const bkt = heatBucket(mk.heat ?? 0);
+          markEl.className = `cat-hl cat-hl--${mk.tier} cat-hl--t${bkt}`;
+          markEl.title = grade(bkt);
+          el = markEl;
+        }
+        if (el) {
+          if ((sug >= 0 || rw >= 0) && mk?.tier) el.classList.add('cat-hl', `cat-hl--t${heatBucket(mk.heat ?? 0)}`);
+          appendVisible(el, piece);
+          frag.appendChild(el);
+        } else {
+          appendVisible(frag, piece);
+        }
       }
       if (shown.length < text.length) frag.appendChild(document.createTextNode(`\n\n${t('…preview truncated.')}`));
       pre.replaceChildren(frag);
@@ -2459,8 +2713,28 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       announce(message);
     }
 
+    // Escape closes the edit CARD, not the modal, while a card is open - the
+    // same native-<dialog> close-watcher cancel the crop/trim cards use.
+    dlg.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !dCard) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeEditCard();
+    }, { capture: true });
     dlg.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
+      // The floating edit card: any click outside it closes it first, and a
+      // click on an underlined swap/sentence in the preview opens its card.
+      if (dCard && !dCard.contains(target)) closeEditCard();
+      const sugAnchor = target.closest<HTMLElement>('[data-sug]');
+      if (sugAnchor) {
+        const i = Number(sugAnchor.dataset.sug);
+        const s = dSuggestions[i];
+        if (s) openEditCard(sugAnchor, sugCardHtml(s, i));
+        return;
+      }
+      const rwAnchor = target.closest<HTMLElement>('[data-rw]');
+      if (rwAnchor) { openEditCard(rwAnchor, rwCardHtml(Number(rwAnchor.dataset.rw))); return; }
       // Prev/next lightbox paging - reopen the modal on the neighbouring asset, carrying the
       // current colour choice so paging keeps the look.
       const navBtn = target.closest<HTMLElement>('[data-nav]');
@@ -2606,22 +2880,30 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
       if (act === 'analyse-text') {
         const box = dlg.querySelector<HTMLElement>('[data-tsig]');
-        const btn = target.closest<HTMLElement>('.cat-act-analyse-text');
         try {
           const text = dTextContent ?? await (await fetch(ref.url)).text();
           dTextContent = text;
-          // Cap the analysed slice at ~256 KB: artifacts + heuristics need no more, and a
-          // large file must not become a large string here. 'digital' - the bytes are text.
-          const panel = analyzeVerifyText(text.length > 262144 ? text.slice(0, 262144) : text, 'digital');
-          if (box) { box.innerHTML = catTextSignalsHtml(panel); box.hidden = false; }
-          paintPreviewMarks(text, panel.marks);
-          // A user upload keeps the verdict on its meta so the confidence travels
-          // with the asset (and the AI? chip can render without re-analysing).
-          await persistAiSignals(ref, panel, 'digital');
+          // Cap the working slice at ~256 KB: artifacts + heuristics need no
+          // more, and a large file must not become a large string here.
+          const capped = text.length > 262144 ? text.slice(0, 262144) : text;
+          // Analysis arms the whole flow: the working copy starts as the
+          // original, and every suggestion/rewrite affordance renders INLINE in
+          // the preview from here on. Re-analysing never resets pending edits.
+          if (dCleanedText == null) { dCleanedText = capped; dWorkBase = capped; }
+          try {
+            const rwm = await import('../lib/reworder.ts');
+            dRewordStatus = await rwm.rewordStatus();
+            dRewordBytes = rwm.rewordModelBytes();
+          } catch { dRewordStatus = 'unstaged'; }
+          renderTextPanel();
+          // A user upload keeps the verdict on its meta so the confidence
+          // travels with the asset (and the AI? chip can render without
+          // re-analysing) - but only the UNEDITED document's verdict may land.
+          if (dAnalysis && dCleanedText === dWorkBase) await persistAiSignals(ref, dAnalysis, 'digital');
         } catch {
           if (box) { box.textContent = t('This text could not be analysed.'); box.hidden = false; }
         }
-        btn?.setAttribute('aria-expanded', 'true');
+        target.closest<HTMLElement>('.cat-act-analyse-text')?.setAttribute('aria-expanded', 'true');
         return;
       }
       if (act === 'read-text') {
@@ -2661,21 +2943,108 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
       if (act === 'humanize') {
-        // Deterministic on-device clean-up (no model), then highlight the remaining
-        // semantic tells for the user to reword. Stays in the modal.
+        // Fix characters: the deterministic on-device clean-up (no model) of
+        // byte-level artifacts - leaked delimiters, invisible characters,
+        // homoglyphs. Applies to the CURRENT working copy, so it composes with
+        // edits already accepted; the report lists exactly what changed.
         const box = dlg.querySelector<HTMLElement>('[data-tsig]');
         try {
           const text = dTextContent ?? await (await fetch(ref.url)).text();
           dTextContent = text;
           const capped = text.length > 262144 ? text.slice(0, 262144) : text;
-          const result = humanizeText(capped);
+          if (dWorkBase == null) dWorkBase = capped;
+          const result = humanizeText(dCleanedText ?? capped);
           dCleanedText = result.text;
-          // Analyse the CLEANED text so only the style tells the clean-up cannot fix
-          // remain highlighted (the byte-level ones are gone).
-          const panel = analyzeVerifyText(result.text, 'digital');
-          if (box) { box.innerHTML = catHumanizeHtml(result, panel, isUser); box.hidden = false; }
+          dHumanizeResult = result;
+          dRewordAlts.clear();
+          // The model tier's standing decides whether its affordances render and
+          // whether the consent line names a download. Lazy import: the facade
+          // (and everything behind it) stays off this view's chunk until the
+          // panel is actually opened.
+          try {
+            const rw = await import('../lib/reworder.ts');
+            dRewordStatus = await rw.rewordStatus();
+            dRewordBytes = rw.rewordModelBytes();
+          } catch { dRewordStatus = 'unstaged'; }
+          // The panel analyses the FIXED text so only the style tells the
+          // clean-up cannot fix remain highlighted (the byte-level ones are gone).
+          renderTextPanel();
         } catch {
-          if (box) { box.textContent = t('This text could not be humanized.'); box.hidden = false; }
+          if (box) { box.textContent = t('The characters in this text could not be fixed.'); box.hidden = false; }
+        }
+        return;
+      }
+      if (act === 'edit-card-close') { closeEditCard(); return; }
+      if (act === 'reword-suggest' || act === 'reword-suggest-all') {
+        // Tier 1: deterministic edits - the copy stays human-authored, no stamp.
+        if (dCleanedText == null) return;
+        if (act === 'reword-suggest') {
+          const s = dSuggestions[Number(target.closest<HTMLElement>('[data-idx]')?.dataset.idx)];
+          if (s) dCleanedText = applySuggestion(dCleanedText, s);
+        } else {
+          // Back to front so earlier indices stay valid (non-overlapping, sorted).
+          for (let i = dSuggestions.length - 1; i >= 0; i--) dCleanedText = applySuggestion(dCleanedText, dSuggestions[i]!);
+        }
+        dRewordAlts.clear();
+        renderTextPanel();
+        return;
+      }
+      if (act === 'reword-span') {
+        // Tier 2: sample raw candidates off-thread, then the ENGINE gate decides
+        // what may be offered (rewordCandidates: normalise → clean → gate → rank).
+        // Runs from the floating edit card: the button gives way to the shared
+        // candy-stripe bar (the long-job language, inline - the user stays here).
+        const btn = target.closest<HTMLButtonElement>('.cat-reword-go');
+        const i = Number(btn?.dataset.idx);
+        const span = dRewordSpans[i];
+        if (dCleanedText == null || !btn || !span || btn.disabled) return;
+        btn.disabled = true;
+        btn.hidden = true;
+        const prog = dCard?.querySelector<HTMLElement>('[data-card-progress]');
+        const fill = dCard?.querySelector<HTMLElement>('[data-card-fill]');
+        const label = dCard?.querySelector<HTMLElement>('[data-card-label]');
+        if (prog) prog.hidden = false;
+        try {
+          const { rewordSentence } = await import('../lib/reworder.ts');
+          const sentence = dCleanedText.slice(span.index, span.index + span.length);
+          const req = rewordSentence(sentence, {
+            onProgress: (p) => {
+              if (fill) fill.style.width = `${Math.round(p.fraction * 100)}%`;
+              if (label) {
+                label.textContent = p.phase === 'download'
+                  ? tRaw('Downloading the rewriter… {pct}%', { pct: Math.round(p.fraction * 100) })
+                  : tRaw('Writing… {pct}%', { pct: Math.round(p.fraction * 100) });
+              }
+            },
+          });
+          const raws = await req.done;
+          dRewordAlts.set(i, rewordCandidates(sentence, raws));
+          dRewordStatus = 'ready';
+          // Text unchanged, so no re-derive: refresh the card in place with the
+          // alternatives (or the honest nothing-survived line).
+          const anchor = dlg.querySelector<HTMLElement>(`[data-rw="${i}"]`);
+          if (anchor) openEditCard(anchor, rwCardHtml(i));
+          else { closeEditCard(); renderTextPanel(); }
+        } catch {
+          if (prog) prog.hidden = true;
+          btn.disabled = false;
+          btn.hidden = false;
+          if (label) label.textContent = '';
+          announce(t('The rewriter could not run.'));
+        }
+        return;
+      }
+      if (act === 'reword-use') {
+        // Accepting a MODEL candidate: from here on the copy is AI-assisted and
+        // the save stamps it (the humanize provenance rule).
+        const el = target.closest<HTMLElement>('[data-act="reword-use"]');
+        const span = dRewordSpans[Number(el?.dataset.idx)];
+        const alt = dRewordAlts.get(Number(el?.dataset.idx))?.[Number(el?.dataset.alt)];
+        if (dCleanedText != null && span && alt) {
+          dCleanedText = dCleanedText.slice(0, span.index) + alt.text + dCleanedText.slice(span.index + span.length);
+          dModelTouched = true;
+          dRewordAlts.clear();
+          renderTextPanel();
         }
         return;
       }
@@ -2705,8 +3074,27 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             const base = rawName.replace(/\.[a-z0-9]+$/i, '');
             const ext = ref.format && /^[a-z0-9]{1,10}$/i.test(ref.format) ? ref.format : 'txt';
             const mime = ext === 'md' || ext === 'markdown' ? 'text/markdown' : 'text/plain';
-            await storeUserUpload(host as unknown as PickerHost, new File([dCleanedText], `${base}-cleaned.${ext}`, { type: mime }));
-            announce(t('Cleaned text saved to your uploads.'));
+            const suffix = dModelTouched ? 'reworded' : 'cleaned';
+            const saved = await storeUserUpload(host as unknown as PickerHost, new File([dCleanedText], `${base}-${suffix}.${ext}`, { type: mime }));
+            if (dModelTouched) {
+              // A model wrote some of these sentences (plans/127): stamp the AI
+              // origins the way the declare action does - aiGenerated:'partial'
+              // rides the download/export path as a C2PA ingredient, and the
+              // meta records the flag plus where the copy came from. The
+              // deterministic-only save keeps today's no-stamp behaviour (the
+              // humanize provenance rule).
+              await host.assets._updateUserAssetMeta(
+                saved.id,
+                { ...(saved.meta ?? {}), aiOriginsDeclared: true, rewordedFrom: ref.id },
+                { aiGenerated: 'partial' },
+              );
+              announce(t('Reworded text saved to your uploads and flagged as AI-assisted.'));
+            } else {
+              announce(t('Cleaned text saved to your uploads.'));
+            }
+            // The working copy is now a real asset - the pill's claim is over.
+            const pill = dlg.querySelector<HTMLElement>('[data-unsaved]');
+            if (pill) pill.hidden = true;
             if (mounted) { await reload(); if (mounted) rerender(); }
           } catch {
             announce(t('The cleaned text could not be saved.'));

@@ -25,6 +25,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { stampCaptureClip, captureContainer, CAPTURE_FORMATS, type CaptureFormat } from './export.ts';
+import { audioMimeCandidates, AUDIO_WEBM_CODECS, AUDIO_MP4_CODECS } from './video-mime.ts';
 import { C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE } from '../../../../engine/src/c2pa.ts';
 import { verifyC2pa, extractC2paStore, prepareC2paIngredientFromStore } from '../../../../engine/src/c2pa-verify.ts';
 
@@ -113,6 +114,23 @@ const tinyOgg = (): Uint8Array => concat([
 // MP3 - a bare frame sync; the placer wraps a fresh ID3v2.4 GEOB around it.
 const tinyMp3 = (): Uint8Array => concat([Uint8Array.of(0xff, 0xfb, 0x90, 0x00), bytesOf('fake-mp3-audio-frames')]);
 
+// WAV - a real 16-bit PCM mono clip (the RIFF placer adds a top-level 'C2PA'
+// chunk, and the reader refuses a hollow RIFF/WAVE with no data chunk).
+function tinyWav(frames = 32, sampleRate = 24000): Uint8Array {
+  const dataLen = frames * 2;
+  const u8 = new Uint8Array(44 + dataLen);
+  const dv = new DataView(u8.buffer);
+  const put = (at: number, s: string): void => { for (let i = 0; i < s.length; i++) u8[at + i] = s.charCodeAt(i); };
+  put(0, 'RIFF'); dv.setUint32(4, 36 + dataLen, true); put(8, 'WAVE');
+  put(12, 'fmt '); dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true);
+  dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  put(36, 'data'); dv.setUint32(40, dataLen, true);
+  for (let i = 0; i < frames; i++) dv.setInt16(44 + i * 2, ((i % 16) - 8) * 1024, true);
+  return u8;
+}
+
 // MP4 - the video take, for the "audio matches video" comparison.
 const tinyMp4 = (): Uint8Array => concat([
   mp4box('ftyp', bytesOf('isom'), u32be(0x200), bytesOf('isommp42')),
@@ -144,6 +162,21 @@ test('every CaptureFormat is a container the engine can actually embed into', ()
   // never fall out of the signing branch again for want of a union member.
   for (const fmt of ['m4a', 'webm', 'ogg', 'mp3', 'wav'] as CaptureFormat[]) {
     assert.ok((CAPTURE_FORMATS as readonly string[]).includes(fmt), `${fmt} is a capture container`);
+  }
+});
+
+test('every mime the recorder bridge ASKS for is one a take can be signed in', () => {
+  // The list in video-mime.ts is the one bridge/recorder.ts probes with, so this is
+  // the drift guard rather than a restatement: a candidate added there with no
+  // engine placer behind it fails HERE, not on a user's machine with a take that
+  // quietly saved unsigned. Both preference orders, since Safari flips them.
+  const asked = new Set([...audioMimeCandidates('webm'), ...audioMimeCandidates('mp4')]);
+  assert.deepEqual([...asked].sort(), [...AUDIO_WEBM_CODECS, ...AUDIO_MP4_CODECS].sort(),
+    'both orders cover the same candidate set');
+  for (const mime of asked) {
+    const container = captureContainer(mime);
+    assert.ok(container, `${mime} is a container the recorder may produce, so it needs a placer`);
+    assert.ok((CAPTURE_FORMATS as readonly string[]).includes(container!), `${mime} → ${container} must be a CaptureFormat`);
   }
 });
 
@@ -179,6 +212,7 @@ const AUDIO_TAKES: Array<[CaptureFormat, Uint8Array, string]> = [
   ['m4a', tinyM4a(), 'mp4'],
   ['webm', tinyWebm(), 'webm'],
   ['mp3', tinyMp3(), 'mp3'],
+  ['wav', tinyWav(), 'wav'],
 ];
 
 for (const [fmt, fixture, sniffed] of AUDIO_TAKES) {

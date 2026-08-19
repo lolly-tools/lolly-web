@@ -344,7 +344,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   const { single, allIngestable, has } = ctx;
   const choices: DialogChoice[] = [];
   const packZip = single && s.archive && s.designSystem;
-  if (single && s.layers && has('layer-stack')) {
+  if (single && s.layers && has('darkroom')) {
     choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
   }
   if (single && s.layers && has('design')) {
@@ -571,9 +571,9 @@ export async function openDropChooser(
           warn: (m: string) => announce(m, { assertive: true }),
         });
         if (!seed) break; // user cancelled the flat/grouped dialog
-        setPendingToolSeed('layer-stack', seed);
+        setPendingToolSeed('darkroom', seed);
         playSfx('drop');
-        routeToConsumer('#/tool/layer-stack', onToolRoute('layer-stack'));
+        routeToConsumer('#/tool/darkroom', onToolRoute('darkroom'));
       } catch (err) {
         announce(tRaw('Import failed: {message}', { message: (err as Error).message }), { assertive: true });
       }

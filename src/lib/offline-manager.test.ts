@@ -68,7 +68,9 @@ let fetches: string[] = [];
 
 const {
   downloadList, docsFileList, speechFileLists, downloadSpeechFiles,
-  clearSpeechCaches, speechCacheBytes, TRANSFORMERS_CACHE, SPEECH_CACHE,
+  clearSpeechCaches, speechCacheBytes, TRANSFORMERS_CACHE, SPEECH_CACHE, ORT_HF_CACHE,
+  downloadRewordFiles, downloadReword, clearRewordCaches, rewordCacheBytes,
+  downloadAskFiles, downloadAsk, clearAskCaches, askCacheBytes,
 } = await import('./offline-manager.ts');
 
 beforeEach(() => {
@@ -276,18 +278,154 @@ describe('offline-manager: speech part', () => {
     assert.ok(tf.entries.has('/models/whisper/model.onnx'), 'unlisted model dirs are out of prune scope');
   });
 
-  test('remove clears both buckets', async () => {
+  test('remove clears the speech entries but never the reword model sharing the bucket', async () => {
     serveAll();
     await downloadSpeechFiles(manifest);
-    assert.ok(cacheStore.has(TRANSFORMERS_CACHE) && cacheStore.has(SPEECH_CACHE));
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    // The reword model shares transformers-cache (plans/127): removing Speech
+    // must evict its own directories only, not a 370 MB neighbour.
+    tf.entries.set('/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx', { body: 'x', headers: new Map() });
     await clearSpeechCaches();
-    assert.ok(!cacheStore.has(TRANSFORMERS_CACHE), 'the transformers.js bucket is gone');
+    assert.ok(![...tf.entries.keys()].some(k => k.startsWith('/models/kokoro/')), 'kokoro entries are gone');
+    assert.ok(tf.entries.has('/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx'), 'the reword model survives');
     assert.ok(!cacheStore.has(SPEECH_CACHE), 'the voice bucket is gone');
+    assert.ok(!cacheStore.has(ORT_HF_CACHE), 'the runtime bucket goes by default');
   });
 
-  test('speechCacheBytes measures both buckets for the storage meter', async () => {
+  test('remove keeps the shared /ort-hf/ runtime when asked (the other part still needs it)', async () => {
     serveAll();
     await downloadSpeechFiles(manifest);
-    assert.deepEqual(await speechCacheBytes(), { bytes: 1235, files: 6 });
+    cacheStore.set(ORT_HF_CACHE, new FakeCache());
+    await clearSpeechCaches({ keepOrtHf: true });
+    assert.ok(cacheStore.has(ORT_HF_CACHE), 'the runtime bucket survives for the reword part');
+  });
+
+  test('speechCacheBytes measures both buckets for the storage meter, reword excluded', async () => {
+    serveAll();
+    await downloadSpeechFiles(manifest);
+    cacheStore.get(TRANSFORMERS_CACHE)!.entries.set(
+      '/models/reword/smollm2-360m-instruct/tokenizer.json',
+      { body: 'x', headers: new Map([['content-length', '777']]) },
+    );
+    assert.deepEqual(await speechCacheBytes(), { bytes: 1235, files: 6 },
+      'the reword slice of the shared bucket never fattens the speech meter');
+  });
+});
+
+describe('offline-manager: reword part (plans/127)', () => {
+  const manifest = {
+    version: 'v1',
+    groups: {
+      app: [], ort: [], models: [],
+      ortHf: [{ url: '/ort-hf/1.0/ort-wasm-simd.wasm', size: 50 }],
+      reword: [
+        { url: '/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx', size: 2000 },
+        { url: '/models/reword/smollm2-360m-instruct/tokenizer.json', size: 30 },
+        { url: '/models/reword/smollm2-360m-instruct/config.json', size: 10 },
+      ],
+    },
+  };
+  const serveAll = () => {
+    for (const f of [...manifest.groups.reword, ...manifest.groups.ortHf]) server.set(f.url, f.size);
+  };
+
+  test('downloads land under the path keys the reword worker reads, runtime included', async () => {
+    serveAll();
+    const seen: Array<{ loaded: number; total: number | null }> = [];
+    const res = await downloadRewordFiles(manifest, { onProgress: p => seen.push({ loaded: p.loaded, total: p.total }) });
+    assert.deepEqual(res, { bytes: 2090, files: 4 });
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    // The model file must sit under the SAME key lib/reworder.ts's status()
+    // probes and transformers.js's hub reads - a mismatch downloads ~370 MB
+    // the worker then re-downloads.
+    assert.ok(tf.entries.has('/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx'));
+    assert.ok(cacheStore.get(ORT_HF_CACHE)!.entries.has('/ort-hf/1.0/ort-wasm-simd.wasm'),
+      'pre-downloading Reword is offline-complete, runtime included');
+    assert.equal(seen.at(-1)!.loaded, 2090, 'one progress bar spans both buckets');
+  });
+
+  test('rewordCacheBytes measures only the reword slice', async () => {
+    serveAll();
+    await downloadRewordFiles(manifest);
+    assert.deepEqual(await rewordCacheBytes(), { bytes: 2040, files: 3 },
+      'the /ort-hf/ runtime is counted under speech, never twice');
+  });
+
+  test('remove clears the reword slice only; kokoro survives in the shared bucket', async () => {
+    serveAll();
+    await downloadRewordFiles(manifest);
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    tf.entries.set('/models/kokoro/config.json', { body: 'x', headers: new Map() });
+    await clearRewordCaches({ keepOrtHf: true });
+    assert.ok(![...tf.entries.keys()].some(k => k.startsWith('/models/reword/')), 'reword entries are gone');
+    assert.ok(tf.entries.has('/models/kokoro/config.json'), 'the speech model survives');
+    assert.ok(cacheStore.has(ORT_HF_CACHE), 'the runtime bucket survives for the speech part');
+  });
+
+  test('a build without the staged model refuses to record an empty download', async () => {
+    await assert.rejects(
+      () => downloadReword({ version: 'v1', groups: { app: [], ort: [], models: [] } }),
+      /no reword model/,
+    );
+  });
+});
+
+describe('offline-manager: ask part (plans/103 M1)', () => {
+  const manifest = {
+    version: 'v1',
+    groups: {
+      app: [], ort: [], models: [],
+      ortHf: [{ url: '/ort-hf/1.0/ort-wasm-simd.wasm', size: 50 }],
+      embed: [
+        { url: '/models/embed/onnx/model_quantized.onnx', size: 900 },
+        { url: '/models/embed/tokenizer.json', size: 20 },
+        { url: '/models/embed/config.json', size: 5 },
+      ],
+    },
+  };
+  const serveAll = () => {
+    for (const f of [...manifest.groups.embed, ...manifest.groups.ortHf]) server.set(f.url, f.size);
+  };
+
+  test('downloads land under the path keys the embed worker reads, runtime included', async () => {
+    serveAll();
+    const seen: Array<{ loaded: number; total: number | null }> = [];
+    const res = await downloadAskFiles(manifest, { onProgress: p => seen.push({ loaded: p.loaded, total: p.total }) });
+    assert.deepEqual(res, { bytes: 975, files: 4 });
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    // The model file must sit under the SAME key embed.ts's cachedEmbedModel()
+    // probes and transformers.js's hub reads - a mismatch downloads ~23 MB the
+    // worker then re-downloads.
+    assert.ok(tf.entries.has('/models/embed/onnx/model_quantized.onnx'));
+    assert.ok(cacheStore.get(ORT_HF_CACHE)!.entries.has('/ort-hf/1.0/ort-wasm-simd.wasm'),
+      'pre-downloading the Ask model is offline-complete, runtime included');
+    assert.equal(seen.at(-1)!.loaded, 975, 'one progress bar spans both buckets');
+  });
+
+  test('askCacheBytes measures only the embed slice', async () => {
+    serveAll();
+    await downloadAskFiles(manifest);
+    assert.deepEqual(await askCacheBytes(), { bytes: 925, files: 3 },
+      'the /ort-hf/ runtime is counted under speech, never twice');
+  });
+
+  test('remove clears the embed slice only; kokoro and reword survive in the shared bucket', async () => {
+    serveAll();
+    await downloadAskFiles(manifest);
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    tf.entries.set('/models/kokoro/config.json', { body: 'x', headers: new Map() });
+    tf.entries.set('/models/reword/smollm2-360m-instruct/config.json', { body: 'x', headers: new Map() });
+    await clearAskCaches({ keepOrtHf: true });
+    assert.ok(![...tf.entries.keys()].some(k => k.startsWith('/models/embed/')), 'embed entries are gone');
+    assert.ok(tf.entries.has('/models/kokoro/config.json'), 'the speech model survives');
+    assert.ok(tf.entries.has('/models/reword/smollm2-360m-instruct/config.json'), 'the reword model survives');
+    assert.ok(cacheStore.has(ORT_HF_CACHE), 'the runtime bucket survives for the other parts');
+  });
+
+  test('a build without the staged model refuses to record an empty download', async () => {
+    await assert.rejects(
+      () => downloadAsk({ version: 'v1', groups: { app: [], ort: [], models: [] } }),
+      /no embed model/,
+    );
   });
 });

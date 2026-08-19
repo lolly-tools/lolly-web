@@ -128,9 +128,7 @@ function requestToken(): Promise<string> {
   if (!popup) return Promise.reject(new Error('Sign-in popup was blocked - allow popups for this site'));
   return new Promise<string>((resolve, reject) => {
     const done = (fn: () => void) => { cleanup(); fn(); };
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== location.origin) return;
-      const data = e.data as { source?: string; hash?: string } | null;
+    const accept = (data: { source?: string; hash?: string } | null) => {
       if (!data || data.source !== 'lolly-oauth') return;
       try {
         const { token, expiresInS } = parseOAuthReturn(data.hash || '', state);
@@ -139,14 +137,31 @@ function requestToken(): Promise<string> {
         done(() => resolve(token));
       } catch (err) { done(() => reject(err)); }
     };
-    // A closed popup never posts; poll so the caller isn't left hanging.
-    const closedPoll = setInterval(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== location.origin) return;
+      accept(e.data as { source?: string; hash?: string } | null);
+    };
+    // Under cross-origin isolation (COOP: same-origin) the popup's opener
+    // handle is severed on the provider's pages, so the return page reaches us
+    // over BroadcastChannel instead (same-origin, same isolation partition -
+    // see oauth-return.html). Both channels stay live: whichever delivers
+    // first wins, so non-isolated browsers are unchanged.
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('lolly-oauth');
+      bc.onmessage = (e) => accept(e.data as { source?: string; hash?: string } | null);
+    } catch { /* no BroadcastChannel - the opener path covers it */ }
+    // A closed popup never posts; poll so the caller isn't left hanging. A
+    // SEVERED handle also reads closed under isolation, so there the timeout
+    // is the only honest cancel signal and the poll must stay out of it.
+    const closedPoll = globalThis.crossOriginIsolated ? null : setInterval(() => {
       if (popup.closed) done(() => reject(new Error('Google sign-in was cancelled')));
     }, 500);
     const timeout = setTimeout(() => done(() => reject(new Error('Google sign-in timed out'))), 180_000);
     const cleanup = () => {
       window.removeEventListener('message', onMessage);
-      clearInterval(closedPoll);
+      bc?.close();
+      if (closedPoll != null) clearInterval(closedPoll);
       clearTimeout(timeout);
       try { if (!popup.closed) popup.close(); } catch { /* cross-origin at half-close */ }
     };

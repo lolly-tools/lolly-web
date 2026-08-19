@@ -658,7 +658,8 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // glyphs from lib/icons.ts - no interpolated value) and the play/pause icon
   // swap (an icon() constant). No user or dynamic data reaches either sink.
   'views/anim-transport.ts': 2,
-  'views/ask.ts': 2,
+  'views/ask.ts': 3, // +1 M1 consent chip (plans/103): t()/tRaw() copy + a computed integer, no user input
+
   // The #/convert view's 3 innerHTML writes interpolate only t() strings, escape()d
   // file names (utils.ts escape), and static in-code format labels/ids - no user
   // markup reaches a sink unescaped.
@@ -960,7 +961,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 16,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box for analyse-text + read-text — catTextSignalsHtml() escape()s every interpolated value, and the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/125 Humanize): the [data-tsig] box for humanize — catHumanizeHtml() escape()s every value (change labels, the highlighted <pre> via escape()d segments); +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses
+  'views/catalog.ts': 16,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
   'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
@@ -1037,7 +1038,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 47 → 50, 2026-08-14 (plan 112 M4/M5): the Custom CSS, Frame state, and Speaker notes
   //   panels each render one `p.innerHTML` of escape()d values + t() strings + static icon()
   //   markup - the same provably-safe shape the other panel sinks in this file carry.
-  'views/free-canvas.ts': 50,
+  // 50 → 51, 2026-08-19 (plan 112 M4, per-box `cls`): the CSS class panel is a FOURTH render
+  //   of that same shape - one `p.innerHTML` whose only document-sourced value is the box's
+  //   current class string, escapeHtml()d, beside two t() strings and a static placeholder.
+  'views/free-canvas.ts': 51,
   // present-mode.ts (plan 112): the presenter's three chrome sinks - the pause button and
   //   the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a static
   //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a

@@ -88,3 +88,51 @@ test('a throwing provider contributes nothing, never rejects the whole retrieval
   const groups = await retrieveProviderHits(tokenize('theme'));
   assert.deepEqual(groups.map((g) => g.group), ['settings']);
 });
+
+// ── M1 hybrid (plans/103 section 5) ──────────────────────────────────────────
+
+test('a raw query without an on-device model degrades to the exact lexical ranking', async () => {
+  // This harness has no Worker, so embedAvailable() is false and the semantic
+  // side must be a byte-identical no-op - Tier 0 unchanged.
+  indexBody = RECORDS;
+  _resetDocsIndexCache();
+  const lexical = await retrieveDocsSections(tokenize('colour'), 5);
+  _resetDocsIndexCache();
+  const hybrid = await retrieveDocsSections(tokenize('colour'), 5, 'how do I use colour?');
+  assert.deepEqual(hybrid, lexical);
+});
+
+test('blendHybrid: union of both sides, 0.5/0.5 blend, absence scores 0', async () => {
+  const { blendHybrid } = await import('./retrieve.ts');
+  const rec = (p: string) => ({ p, t: p, h: '', a: p, x: '' });
+  const entries = [0, 1, 2, 3].map((i) => ({ rec: rec(`p${i}`) }));
+  // Lexical found records 0 (score 10) and 1 (score 5); cosine found 1 and 2.
+  const scored = [
+    { rec: entries[0]!.rec, score: 10, matched: 2, i: 0 },
+    { rec: entries[1]!.rec, score: 5, matched: 1, i: 1 },
+  ];
+  const sem = new Map([[1, 0.9], [2, 0.8]]);
+  const out = blendHybrid(scored, sem, entries, 5);
+  // rec1: 0.5*(5/10) + 0.5*(1.9/2) = 0.725 - both sides agree, it wins.
+  // rec2: 0.5*0 + 0.5*(1.8/2) = 0.45 (semantic only).
+  // rec0: 0.5*1 + 0.5*0 = 0.5 (lexical only - absent cosine is 0, not -1).
+  assert.deepEqual(out.map((h) => h.rec.p), ['p1', 'p0', 'p2']);
+  assert.ok(Math.abs(out[0]!.score - 0.725) < 1e-9);
+  assert.ok(Math.abs(out[1]!.score - 0.5) < 1e-9);
+  assert.ok(Math.abs(out[2]!.score - 0.45) < 1e-9);
+  // The limit still caps the union.
+  assert.equal(blendHybrid(scored, sem, entries, 2).length, 2);
+});
+
+test('blendHybrid: lexical coverage breaks blended-score ties', async () => {
+  const { blendHybrid } = await import('./retrieve.ts');
+  const rec = (p: string) => ({ p, t: p, h: '', a: p, x: '' });
+  const entries = [0, 1].map((i) => ({ rec: rec(`p${i}`) }));
+  const scored = [
+    { rec: entries[0]!.rec, score: 10, matched: 1, i: 0 },
+    { rec: entries[1]!.rec, score: 10, matched: 2, i: 1 },
+  ];
+  const out = blendHybrid(scored, new Map(), entries, 5);
+  assert.deepEqual(out.map((h) => h.rec.p), ['p1', 'p0'],
+    'equal blended scores fall back to how much of the question each hit covered');
+});

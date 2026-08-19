@@ -39,8 +39,9 @@
 //   2. RETENTION - `paintChrome` suppresses the outline, all 8 resize handles,
 //      the rotate handle and the contextual bar when the selection is not live,
 //      so no pointer path can start a gesture on something nobody can see. The
-//      chrome is positioned from the MODEL, not the DOM, so without this it
-//      would paint full editing controls over nothing.
+//      chrome is positioned from the MODEL - mapped through the pose the playhead
+//      has the box in, and an off-screen box has none - so without this it would
+//      paint full editing controls at the authored rect, over nothing.
 //   3. KEYBOARD - `onKey` refuses every mutating key on an off-playhead
 //      selection, because a nudge or a Delete needs no visible controls at all.
 // Plus the reconciliation: an off-playhead selection raises the `.fc-offplayhead`
@@ -69,8 +70,11 @@ import {
   // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
   // tag scanner has no business in the chunk of every editor that never lifts.
   isSvgImageRef, liftRows, applyLift, liftCanCrop, liftCropScale, LIFT_STRENGTH,
+  // plans/104 section 6.5 - the chrome's half of "the canvas edits what the canvas shows":
+  // a box the playhead has posed gets its outline and handles placed at the POSE.
+  posedRect,
 } from './free-canvas-math.ts';
-import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
+import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box, SeqPose } from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
 // linear hitTest/marqueeHit on small ones (plans/98 section 6.1; proven in canvas-scene.test.ts).
 import { pickTopmost, pickMarquee } from './canvas-scene.ts';
@@ -1524,6 +1528,58 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return false;
   }
 
+  /**
+   * The applier's own pose reader (`sequencePoseOf`), captured when the timeline chunk
+   * lands - null until then, and forever on an untimed tool.
+   *
+   * Fetched rather than imported for the SEQ_OFF_CLASS reason above: a static import of
+   * bridge/sequence-dom.ts would pull sequence-plan + transitions + the engine's
+   * keyframe module into the chunk of every editor that never opens a timeline. It
+   * rides `ensureTimeline`'s own import, so it costs no second request - the panel
+   * statically pulls the same module through views/sequence-clock.ts - and it can only
+   * answer non-null once a clock exists to have posed anything.
+   */
+  let seqPoseOf: ((el: Element | null | undefined) => SeqPose | null) | null = null;
+  /**
+   * The pose the playhead currently has box `id` in, or null.
+   *
+   * DOM truth on `seqHiddenId`'s exact terms: the numbers are the fold the applier
+   * WROTE, not a second evaluation of the same track here, so the chrome cannot
+   * disagree with the picture on the canvas (plans/104 section 6.5).
+   */
+  function seqPoseId(id: string): SeqPose | null {
+    if (!seqPoseOf) return null;
+    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+    return el ? seqPoseOf(el) : null;
+  }
+  /**
+   * ⚑ plans/104 section 9.15, the other half: the chrome now reads its position off the pose
+   * the applier wrote, so every write of one has to be followed by a re-place or the
+   * outline freezes at whatever pose the last repaint happened to catch.
+   *
+   * `tl-time` cannot carry that - the panel gates that event on the ACTIVE SET, so a
+   * scrub inside a single clip emits nothing at all - and the applier is three modules
+   * away, so the signal is taken off the DOM it has just written. Armed with the
+   * timeline chunk, because until a clock exists nothing can pose anything.
+   *
+   * Self-gating on three counts, which is what keeps a per-frame DOM signal affordable:
+   * a stage nothing poses issues no inline-style writes and this never fires; with
+   * nothing SELECTED there is no chrome to move, so the whole sync is skipped (a
+   * timeline played with an empty selection costs exactly what it did before); and
+   * `scheduleSync` coalesces the rest to one rAF and declines outright while a gesture
+   * is live, so a playing timeline costs one chrome re-place per FRAME, not one per box.
+   *
+   * No feedback loop by construction - every node paintChrome writes to lives in
+   * `overlay`/`stageEl`, outside `canvasEl`, and the one thing it does write on a
+   * `.lolly-box` (syncBoxA11y's aria attributes) is not `style`.
+   */
+  let poseMo: MutationObserver | null = null;
+  function watchPoses(): void {
+    if (poseMo || disposed) return;
+    poseMo = new MutationObserver(() => { if (selection.size) scheduleSync(); });
+    poseMo.observe(canvasEl, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
+
   // True when the block already carries authored timing - the auto-open cue. This is a
   // field-presence check, not editing arithmetic, so it stays here rather than pulling
   // timeline-math in eagerly (that module is part of the lazy chunk).
@@ -1563,8 +1619,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     try {
       // Lazy for the picker.ts reason: timeline-panel.ts imports its own CSS chunk and
       // the sequence clock, so a static import would ship both to every editor tool.
-      const { initTimelinePanel } = await import('./timeline-panel.ts');
+      // The applier's pose reader rides along in the same round trip - the panel's own
+      // graph already contains that module, so this resolves off the module cache.
+      const [{ initTimelinePanel }, seqDom] = await Promise.all([
+        import('./timeline-panel.ts'),
+        import('../bridge/sequence-dom.ts'),
+      ]);
       if (disposed) return;   // torn down while the chunk was in flight
+      seqPoseOf = seqDom.sequencePoseOf;
+      watchPoses();           // …and start following what it reports
       timelinePanel = initTimelinePanel({
         stageEl, canvasEl, runtime,
         host: host as { log?(level: string, msg: string): void },
@@ -3065,6 +3128,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         items.push({
           label: t('Speaker notes…'), icon: icon(SVG.notes),
           run: () => openSpeakerNotesPanel(viewEl, si[0]!),
+        });
+      }
+      // Per-box CSS class names (plan 112 M4) - the companion to doc-level Custom CSS,
+      // for ANY single box, frame included: a rule can then say `.callout { … }` instead
+      // of addressing a machine-minted id. Not a present-only field (the class rides the
+      // canvas and every export), so it sits at the end of the section rather than inside
+      // either branch.
+      if (one) {
+        items.push({
+          label: t('CSS class…'), icon: icon(SVG.code),
+          run: () => openBoxClassPanel(viewEl, si[0]!),
         });
       }
     }
@@ -5082,6 +5156,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
       if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, state: input.value } : b)));
+    });
+    input?.focus();
+  }
+
+  // Per-box CSS class names (plan 112 M4): the author's handle for Custom CSS. Commits on
+  // change (blur) like the frame-state panel - the hook re-renders the box with the new
+  // class list, and the doc-level Custom CSS rules then apply live.
+  function openBoxClassPanel(anchor: HTMLElement, boxIdx: number): void {
+    closeMorePanel();
+    const cur = String(getBoxes()[boxIdx]?.['cls'] ?? '');
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-fstate-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${t('CSS class')}</div>` +
+      `<div class="fc-css-hint">${t('Space-separated class names for this box (a–z, 0–9, -, _). Target them in Custom CSS, e.g. .callout { outline: 2px solid red }, on the canvas, in exports and while presenting. Names beginning lolly- pr- seq- fc- belong to the app and are dropped.')}</div>` +
+      `<input type="text" class="fc-fstate-input field-input" value="${escapeHtml(cur)}" placeholder="callout hero" spellcheck="false" autocomplete="off" autocapitalize="off">`;
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(p);
+    morePanel = p;
+    positionPanelBelow(p, anchor);
+    const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
+    input?.addEventListener('change', () => {
+      const boxes = getBoxes();
+      if (boxIdx < boxes.length) commit(boxes.map((b, i) => (i === boxIdx ? { ...b, cls: input.value } : b)));
     });
     input?.focus();
   }
@@ -9614,12 +9712,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     //     the path is allowed to move.
     if (!liveRects || movedStage) { paintOnion(); paintMotion(); }
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
-    // The chrome below is positioned from the MODEL, not from the DOM: a selected box
-    // the sequence is hiding would otherwise get a full outline, 8 resize handles, a
-    // rotate handle and a contextual bar painted over empty canvas - the "edit a layer
-    // you cannot see" failure, and the ONLY drag entry point that never goes through
-    // the hit-test (a handle is its own pointerdown target). So the whole apparatus
-    // comes down and the reconciliation banner goes up instead.
+    // The chrome below is positioned from the MODEL, mapped through the playhead's own
+    // pose (`chromeRect`) - and a HIDDEN box has no pose, because the applier hands its
+    // styles back when it leaves the window. So a selected box the sequence is hiding
+    // would get a full outline, 8 resize handles, a rotate handle and a contextual bar
+    // painted at its authored rect over empty canvas - the "edit a layer you cannot
+    // see" failure, and the ONLY drag entry point that never goes through the hit-test
+    // (a handle is its own pointerdown target). So the whole apparatus comes down and
+    // the reconciliation banner goes up instead.
     if (timeCfg && selection.size && !selectionLive(boxes)) {
       const offIdx = selIndices(boxes);
       if (offIdx.length) {
@@ -9767,13 +9867,47 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     chromeNodes = { outlines, groupOutline, handles, stem, rot };
   }
 
+  /**
+   * The rect the chrome for box `i` is drawn on: the live DOM rect mid-gesture (else
+   * the model's), mapped through whatever pose the playhead has that box in.
+   *
+   * ⚑ plans/104 section 9.15. The chrome used to be placed from the model ALONE, which is
+   * right for an untimed board and wrong the moment a keyframe or a camera moves the
+   * box: the outline and all eight handles drew at the authored rect while the artwork
+   * sat somewhere else entirely, so the user was offered editing controls over a patch
+   * of empty canvas. Section 6.5's rule is that chrome goes through the same fold the
+   * render did, and `seqPoseId` is that fold - read back from the applier, never
+   * re-evaluated here.
+   *
+   * The MODEL is still what a gesture writes (an off-diamond edit moves the base; see
+   * section 8's latch), so this deliberately changes where the controls are drawn and
+   * nothing about what they do.
+   *
+   * A box with a LIVE rect is the exception, and not an arbitrary one: `applyLiveRect`
+   * writes `transform: rotate(...)` straight onto the element, which CLOBBERS the
+   * applier's composed pose for the duration of the drag. So mid-gesture the box really
+   * is unposed on screen, and posing its chrome would be the original bug with the
+   * signs reversed. The live rect is used verbatim, exactly as it always was.
+   */
+  function chromeRect(boxes: Box[], i: number, liveRects: Map<number, Rect> | null): Rect {
+    const live = liveRects?.get(i);
+    if (live) return live;
+    const r = boxRect(boxes[i], cfg);
+    if (!seqPoseOf) return r;
+    const pose = seqPoseId(idOf(boxes[i], i));
+    return pose ? posedRect(r, pose) : r;
+  }
+
   // Reposition the (already-built) chrome nodes for the current selection. Pure style
   // writes - pixel-identical to the old build path, just no node churn.
   function positionChrome(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
     const nodes = chromeNodes;
     if (!nodes) return;
+    // Resolved ONCE per sync: a posed rect costs a `querySelector` per box, and the
+    // group branch below would otherwise ask for every one of them a second time.
+    const rects = idx.map((i) => chromeRect(boxes, i, liveRects));
     for (let k = 0; k < idx.length; k++) {
-      const r = (liveRects && liveRects.get(idx[k]!)) || boxRect(boxes[idx[k]!], cfg);
+      const r = rects[k]!;
       const tl = nativeToStage(r.x, r.y, m);
       const o = nodes.outlines[k]!;
       o.style.left = tl.x + 'px';
@@ -9783,9 +9917,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       o.style.transform = r.rot ? `rotate(${r.rot}deg)` : '';
     }
     if (idx.length === 1) {
-      positionHandles((liveRects && liveRects.get(idx[0]!)) || boxRect(boxes[idx[0]!], cfg), m);
+      positionHandles(rects[0]!, m);
     } else if (idx.length > 1) {
-      positionGroupHandles(groupAABBNative(idx, boxes, liveRects), m);
+      positionGroupHandles(aabbOfRects(rects), m);
     }
   }
 
@@ -9822,12 +9956,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (nodes.rot) { nodes.rot.style.left = rp.x + 'px'; nodes.rot.style.top = rp.y + 'px'; }
   }
 
-  // Axis-aligned native AABB of a multi-selection (rotation-aware), from live DOM
-  // rects during a gesture else from the model.
-  function groupAABBNative(idx: number[], boxes: Box[], liveRects: Map<number, Rect> | null): Bounds {
+  // Axis-aligned native AABB over already-resolved rects (rotation-aware).
+  function aabbOfRects(rects: Rect[]): Bounds {
     let a: Bounds | null = null;
-    for (const i of idx) {
-      const r = (liveRects && liveRects.get(i)) || boxRect(boxes[i], cfg);
+    for (const r of rects) {
       for (const p of boxCorners(rectAsBox(r), cfg)) {
         a = a
           ? { minX: Math.min(a.minX, p.x), minY: Math.min(a.minY, p.y), maxX: Math.max(a.maxX, p.x), maxY: Math.max(a.maxY, p.y) }
@@ -9835,6 +9967,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
     }
     return a || { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+
+  // The same AABB over the AUTHORED geometry - live DOM rects during a gesture, else
+  // the model. This is what a group GESTURE anchors on (its scale/rotate write the
+  // model), which is why it is deliberately not the posed one `positionChrome` draws.
+  function groupAABBNative(idx: number[], boxes: Box[], liveRects: Map<number, Rect> | null): Bounds {
+    return aabbOfRects(idx.map((i) => (liveRects && liveRects.get(i)) || boxRect(boxes[i], cfg)));
   }
 
   // Group/multi-selection chrome: an axis-aligned box with 4 corner handles
@@ -10445,6 +10584,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chromeRoot()?.classList.remove('is-chrome-hidden'); // never leave the next mount chromeless
       ro.disconnect();
       mo.disconnect();
+      poseMo?.disconnect();
       dirtyObserver?.disconnect();
       unsub?.();
       canvasEl.classList.remove('fc-open-canvas');

@@ -18,7 +18,7 @@ import { mountModal } from './modal.ts';
 import { shareSectionBuilders } from '../lib/share-sections.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import type { LollySummary } from '../lib/lolly-pack.ts';
-import { AUTO_PACK_MIN, SHARE_WARN_LEN, type ShareFidelity } from '../lib/url-budget.ts';
+import { AUTO_PACK_MIN, SHARE_WARN_LEN, BROWSER_HARD_CAP, type ShareFidelity } from '../lib/url-budget.ts';
 
 /** The `.lolly` download vehicle (plans/114 Wave 2). Supplied by the tool view, which
  *  has the host + session the link builder never sees. `build(includeLicensed)` returns
@@ -37,12 +37,13 @@ export interface ShareDialogLolly {
   toolOffer?: () => Promise<{ trust: 'signed-catalog' | 'custom'; suggested: boolean }>;
 }
 
-// AUTO_PACK_MIN (auto-adopt the packed form) and SHARE_WARN_LEN (warn "very long")
-// are imported from lib/url-budget.ts - the cost model owns those thresholds so the
-// gauge, the dialog and syncUrl can never disagree on where the ceiling is. Past
-// SHARE_WARN_LEN even the shortest packed link has outgrown a reliably-pasteable URL
-// (chats/emails/social truncate past ~2000, and the engine hard-rejects past 4096,
-// tool-url MAX_URL, so it wouldn't reopen) - so we warn and nudge to trim.
+// AUTO_PACK_MIN (auto-adopt the packed form), SHARE_WARN_LEN (call the link "long") and
+// BROWSER_HARD_CAP (escalate to the .lolly) are imported from lib/url-budget.ts - the cost
+// model owns those thresholds so the gauge, the dialog and syncUrl can never disagree on
+// where the ceiling is. Modern browsers accept far more than the old ~2000 guess in both
+// the address bar and on reopen, so SHARE_WARN_LEN is a comfort nudge (turn on "Shortest
+// link"); only past BROWSER_HARD_CAP is even a packed link impractical to pass around, and
+// there the verdict points at the .lolly file, which always opens complete.
 
 // Bitmap formats copy to the clipboard as a PNG; text/html copy as text/rich text.
 // Vector (svg/pdf) and video formats have no useful clipboard form, so the
@@ -314,26 +315,40 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   // never the current toggle. A control-plane deployment (or private collab) registers
   // an extra section, so we can point at "your network" only when one will mount.
   const canShareOtherwise = shareSectionBuilders().length > 0;
+  // The .lolly card (when present) gets an accent halo + a "Recommended" cue whenever the
+  // verdict routes the user to it - a dropped-content link OR one so long it's impractical
+  // to pass around. Toggled off again for a clean/merely-long link so it stays meaningful.
+  const fileCard = dialog.querySelector<HTMLElement>('[data-share-file]');
+  const highlightLolly = (on: boolean) => { if (fileCard) fileCard.classList.toggle('is-recommended', on && !!lolly); };
   const renderVerdict = (bestLen: number) => {
     const lost = fidelity && !fidelity.faithful ? fidelity : null;
-    if (lost) {
+    // Past the browser hard cap even the packed link is impractical - the same red
+    // verdict as dropped content, and the same remedy (the .lolly). `bestLen` is already
+    // the shortest achievable length, so this judges the packed form, not the toggle.
+    const tooLong = bestLen >= BROWSER_HARD_CAP;
+    if (lost || tooLong) {
       warnEl.hidden = false;
       warnEl.classList.add('is-error');
       warnEl.classList.remove('is-warn');
+      highlightLolly(true);
       // Prefer the file (it carries everything faithfully); fall back to a network
       // share, then to "trim it" when neither vehicle is available here.
       const remedy = lolly ? 'Download it as a file below to send everything.'
         : canShareOtherwise ? 'To send everything, share it on your network below.'
         : 'To send everything, reduce these elements.';
-      warnEl.textContent = `⚠️ A link can't include ${describeLoss(lost)}, so it won't be there when someone opens this. ${remedy}`;
+      warnEl.textContent = lost
+        ? `⚠️ A link can't include ${describeLoss(lost)}, so it won't be there when someone opens this. ${remedy}`
+        : `⚠️ This link is very large (${bestLen.toLocaleString()} characters) - too long to reliably share. You can keep working, but ${lolly ? 'download the .lolly file below to share it' : canShareOtherwise ? 'share it on your network below' : 'reduce some elements'} - it carries everything and always opens complete.`;
     } else if (bestLen >= SHARE_WARN_LEN) {
       warnEl.hidden = false;
       warnEl.classList.add('is-warn');
       warnEl.classList.remove('is-error');
-      warnEl.textContent = `⚠️ This link is very long (${bestLen.toLocaleString()} characters). It may get cut off when pasted into chats, emails or social posts, or fail to open. Turn on 'Shortest link' below, or remove some elements.`;
+      highlightLolly(false);
+      warnEl.textContent = `This link is long (${bestLen.toLocaleString()} characters). Turn on 'Shortest link' below${lolly ? ", or share the .lolly file for guaranteed fidelity" : ''}.`;
     } else {
       warnEl.hidden = true;
       warnEl.classList.remove('is-error', 'is-warn');
+      highlightLolly(false);
     }
   };
   const readableLen = shareUrlFromParts(baseParts, toolId).length;

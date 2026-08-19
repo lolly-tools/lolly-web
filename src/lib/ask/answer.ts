@@ -69,7 +69,7 @@ export async function answerQuestion(raw: string): Promise<AskAnswer> {
   const tokens = tokenize(raw);
   const intent = classifyIntent(raw);
   const [docHits, toolHits] = await Promise.all([
-    retrieveDocsSections(tokens, RELATED_MAX + 1),
+    retrieveDocsSections(tokens, RELATED_MAX + 1, raw),
     retrieveProviderHits(tokens),
   ]);
 

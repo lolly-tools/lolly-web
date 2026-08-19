@@ -445,6 +445,107 @@ button.cat-download { font: inherit; cursor: pointer; }
   border-radius: calc(var(--radius) * 1.4) calc(var(--radius) * 1.4) 0 0;
   overflow: hidden;
 }
+/* "Edits not saved" over the preview while it shows a working copy (the humanize/
+   reword flow). Same solid-pill treatment as the zoom HUD: readable over ANY art. */
+.cat-unsaved-pill {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 10px;
+  z-index: 4;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: hsl(0 0% 0% / .72);
+  color: #fff;
+  font-size: calc(12px * var(--a11y-fs));
+  font-weight: 600;
+  pointer-events: none;
+}
+.cat-unsaved-pill::before {
+  content: '';
+  width: 7px; height: 7px; border-radius: 50%;
+  background: hsl(38 92% 58%);
+}
+.cat-unsaved-pill[hidden] { display: none; }
+
+/* ── Inline text edits (the plans/125/127 UX pass) ──────────────────────────
+   The preview is the decision surface: swaps and rewordable sentences are
+   clickable underlines, invisible characters become named chips, and one
+   floating card at a time carries the decision. */
+/* A clickable range inside the <pre>: a REAL button, reset to read as text. */
+.cat-sug, .cat-rw {
+  display: inline;
+  padding: 0; border: 0; margin: 0;
+  background: transparent;
+  font: inherit; color: inherit; letter-spacing: inherit;
+  white-space: inherit; text-align: inherit;
+  cursor: pointer;
+}
+.cat-sug {
+  text-decoration: underline;
+  text-decoration-color: hsl(38 92% 48%);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  background: hsl(38 92% 58% / .14);
+  border-radius: 3px;
+}
+.cat-sug:hover, .cat-sug:focus-visible { background: hsl(38 92% 58% / .28); }
+.cat-rw {
+  text-decoration: underline dotted;
+  text-decoration-color: hsl(var(--primary) / .75);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.cat-rw:hover, .cat-rw:focus-visible { background: hsl(var(--primary) / .1); border-radius: 3px; }
+/* An invisible/format character, made visible: a tiny named chip. */
+.cat-invis {
+  display: inline-block;
+  padding: 0 3px;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: hsl(275 65% 55% / .18);
+  color: hsl(275 45% 45%);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: 0.08em;
+  user-select: none;
+  cursor: help;
+}
+/* The floating edit card - one decision, beside the text it changes. */
+.cat-edit-card {
+  position: absolute;
+  z-index: 6;
+  width: min(348px, calc(100% - 16px));
+  padding: 12px 14px;
+  border-radius: calc(var(--radius) * 1.2);
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 0.6rem 2rem #0006;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: calc(13px * var(--a11y-fs));
+  line-height: 1.45;
+  white-space: normal;
+  text-align: start;
+  /* The candy hues the shared .job-bar fill reads (job-toast.css). */
+  --candy-a: var(--brand-primary, hsl(var(--primary)));
+  --candy-b: var(--brand-secondary, hsl(var(--accent)));
+}
+.cat-edit-card .cat-card-line { margin: 0 0 6px; }
+.cat-edit-card .cat-reword-quote {
+  margin: 0 0 8px; padding: 6px 10px;
+  border-radius: 8px;
+  background: hsl(var(--muted) / .5);
+  font-size: 0.92em;
+  max-height: 7.5em; overflow: hidden;
+}
+.cat-edit-card .cat-card-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 8px;
+}
+.cat-card-progress { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.cat-card-progress[hidden] { display: none; }
+.cat-card-progress .job-bar { flex: 1 1 auto; }
+.cat-card-progress-label { font-size: 0.85em; color: hsl(var(--muted-foreground, var(--foreground))); white-space: nowrap; }
 /* The bar: one row, bottom-anchored, over the media rather than pushing it around — so
    the stage is the same size whatever chrome a type needs, and a control never changes
    the preview's height. Mirrors .viz-bar. */
@@ -1072,13 +1173,14 @@ mark.cat-hl--t5 { background: hsl(0 92% 55% / 0.48); }
 :root:not([data-theme="light"]) .cat-tsig-gauge[data-band="strong"] .cat-tsig-gauge-fill { stroke: hsl(0 82% 60%); }
 
 /* Generated TEXT thumbnails (lib/text-thumbs.ts) - the ¶ stub upgraded to a
-   brand-inked excerpt. The ink drives the edge bar + wash, never the body type
-   (the pool's contrast floor is tuned for big shapes, not 7px text); size class
-   follows document length so length itself reads as a shape across the grid. */
+   brand-inked excerpt. One palette pick drives the wash, a second inks the
+   excerpt itself (--ttxt-fg, chosen per tile against its own wash at a modest
+   thumbnail bar; theme foreground when nothing qualifies); size class follows
+   document length so length itself reads as a shape across the grid. */
 .cat-ttxt {
   display: block; position: relative; overflow: hidden; text-align: left;
   padding: 0.45rem 0.55rem; text-transform: none; letter-spacing: normal;
-  color: hsl(var(--foreground) / 0.85);
+  color: var(--ttxt-fg, hsl(var(--foreground) / 0.85));
   /* The brand ink carries identity through the wash alone - no edge bar (the
      house rule: no one-sided borders on a rounded card). */
   background: color-mix(in oklab, var(--ttxt-ink, transparent) 13%, hsl(var(--muted) / 0.35));
@@ -1090,11 +1192,13 @@ mark.cat-hl--t5 { background: hsl(0 92% 55% / 0.48); }
 .cat-ttxt--md .cat-ttxt-body { font-size: 8.5px; line-height: 1.4; }
 .cat-ttxt--sm .cat-ttxt-body { font-size: 6.5px; line-height: 1.45; }
 .cat-ttxt .cat-ttxt-hl { padding: 0 0.08em; border-radius: 2px; color: inherit; }
-/* The faint corner donut: the panel gauge's score arc, echoed as wayfinding -
-   which tiles carry AI-likely content reads across a grid without opening any. */
+/* The corner donut: the panel gauge's score arc, echoed as wayfinding -
+   which tiles carry AI-likely content reads across a grid without opening any.
+   Sits WHOLLY inside the tile (the text may crop at the edges; the gauge is a
+   reading and must never be), sized and faded to read without shouting. */
 .cat-ttxt-ring {
-  position: absolute; right: -14%; bottom: -18%; width: 62%; height: 62%;
-  opacity: 0.18; pointer-events: none;
+  position: absolute; right: 6%; bottom: 7%; width: 42%; height: 42%;
+  opacity: 0.4; pointer-events: none;
 }
 .cat-ttxt-ring circle { fill: none; stroke-width: 7; }
 .cat-ttxt-ring-track { stroke: hsl(var(--muted-foreground) / 0.35); }
@@ -1115,3 +1219,24 @@ mark.cat-hl--t5 { background: hsl(0 92% 55% / 0.48); }
 
 /* Humanize result actions (plans/125): the copy-cleaned button row. */
 .cat-humanize-actions { margin-top: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Reword sections (plans/127): deterministic plain-wording suggestions and the
+   on-device model's per-sentence offers. Quiet rows inside the tsig panel -
+   the strikethrough original, the plain replacement, one small action each. */
+.cat-reword-sec { margin-top: 0.9rem; padding-top: 0.6rem; border-top: 1px solid hsl(var(--border) / 0.6); }
+.cat-reword-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.cat-reword-row { display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap; font-size: calc(0.82rem * var(--a11y-fs)); }
+.cat-reword-before { opacity: 0.62; text-decoration-color: hsl(var(--muted-foreground) / 0.7); }
+.cat-reword-after { font-weight: 650; }
+.cat-reword-row em { opacity: 0.7; }
+.cat-reword-apply, .cat-reword-use { font-size: calc(0.72rem * var(--a11y-fs)); padding: 0.1rem 0.55rem; }
+.cat-reword-apply-all { margin-top: 0.5rem; font-size: calc(0.76rem * var(--a11y-fs)); }
+.cat-reword-span { display: flex; flex-direction: column; gap: 0.35rem; }
+.cat-reword-quote {
+  margin: 0; padding: 0.35rem 0.6rem; border-radius: 6px;
+  background: hsl(var(--muted) / 0.35); font-size: calc(0.82rem * var(--a11y-fs));
+}
+.cat-reword-alts { list-style: none; margin: 0; padding: 0 0 0 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.cat-reword-alts li { display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap; }
+.cat-reword-alt { font-size: calc(0.82rem * var(--a11y-fs)); font-weight: 550; }
+.cat-reword-go { align-self: flex-start; font-size: calc(0.76rem * var(--a11y-fs)); }

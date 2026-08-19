@@ -392,6 +392,8 @@ describe('precache.json grouping (vite.config.js)', () => {
     '/models/whisper/onnx/encoder_model_quantized.onnx',
     '/models/upscale/realesr-general-x4v3.onnx',
     '/models/matte/birefnet-lite.onnx',
+    '/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx',
+    '/models/embed/onnx/model_quantized.onnx',
   ];
 
   test('groups route each path to the bucket the SW actually serves it from', async () => {
@@ -420,6 +422,10 @@ describe('precache.json grouping (vite.config.js)', () => {
       'the upscale group is the AI-upscaler models only (host.upscale) — SW-bypassed like the others');
     assert.deepEqual(names(groups.matte), ['/models/matte/birefnet-lite.onnx'],
       'the matte group is the background-removal models only (host.matte) — SW-bypassed like the others');
+    assert.deepEqual(names(groups.reword), ['/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx'],
+      'the reword group is the SmolLM2 model set only (plans/127) — it rides transformers-cache like speech, never the app bucket');
+    assert.deepEqual(names(groups.embed), ['/models/embed/onnx/model_quantized.onnx'],
+      'the embed group is the Ask matching model only (plans/103 M1) — it rides transformers-cache like speech and reword');
   });
 
   test('release-versioned binaries are exempt from content hashing', async () => {

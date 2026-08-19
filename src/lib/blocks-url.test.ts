@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The compact blocks wire format (lib/blocks-url.ts) against the ENGINE's own
- * decoder (parseUrlState), plus the layer-stack tool's wire-contract pins:
+ * decoder (parseUrlState), plus the darkroom tool's layers wire-contract pins:
  * field order is the format, so the fields list is append-only forever, and a
  * 20-layer document must stay far under the 8000-char address-bar cap (the
  * whole reason the tool's rows are 8 lean fields - the governing constraint
@@ -25,7 +25,7 @@ const enc = (
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(readFileSync(
-  join(here, '..', '..', '..', '..', 'community', 'layer-stack', 'tool.json'), 'utf8',
+  join(here, '..', '..', '..', '..', 'community', 'darkroom', 'tool.json'), 'utf8',
 )) as { inputs: Array<InputSpec & { fields?: BlockFieldSpec[] }> };
 const layersInput = manifest.inputs.find((i) => i.id === 'layers')!;
 const FIELDS = layersInput.fields!;
@@ -43,9 +43,9 @@ const row = (i: number, over: Record<string, unknown> = {}): Record<string, unkn
   ...over,
 });
 
-test('layer-stack wire contract: field order is pinned (append-only forever)', () => {
+test('darkroom layers wire contract: field order is pinned (append-only forever)', () => {
   // The compact form is POSITIONAL: changing this order (or removing a field)
-  // silently corrupts every shared/bookmarked layer-stack URL in existence.
+  // silently corrupts every shared/bookmarked layered URL in existence.
   // New fields go at the END. If this test fails, you have broken the wire
   // format - revert; do not update the expectation.
   assert.deepEqual(FIELDS.map((f) => f.id), ['img', 'x', 'y', 'o', 'v', 'b', 'n', 'g']);
@@ -78,11 +78,34 @@ test('user/ ids: kept in the address-bar variant, empty in the share variant', (
   assert.ok(share.startsWith(','), 'the image field is simply empty');
 });
 
-test('a raw comma or tilde in any value bails to null (JSON fallback), so import must scrub', () => {
-  assert.equal(enc([row(1, { n: 'Shadow, base' })], FIELDS), null);
-  assert.equal(enc([row(1, { g: 'a~b' })], FIELDS), null);
-  // The import-side scrub (psd-import's `scrub`) maps both to spaces - encodable.
-  assert.ok(enc([row(1, { n: 'Shadow  base' })], FIELDS));
+test('a comma or tilde in a value is carried, not bailed - round-trips through the double-encode', () => {
+  // The compact form used to return null (→ JSON fallback) for any separator-bearing
+  // value; it now encodes them (%2C/%7E) and rides through the caller's outer url-encode
+  // layer. Verify BOTH separators survive the real load boundary intact.
+  const rows = [row(1, { n: 'Shadow, base', g: 'a~b' })];
+  const compact = enc(rows, FIELDS, { keepUserIds: true });
+  assert.ok(compact, 'separator-bearing rows now encode (no bail to JSON)');
+  const state = parseUrlState(`layers=${encodeURIComponent(compact!)}`, manifest);
+  const back = state.values.layers as Array<Record<string, unknown>>;
+  assert.equal(back[0]!.n, 'Shadow, base', 'the in-value comma did not split the row');
+  assert.equal(back[0]!.g, 'a~b', 'the in-value tilde survived');
+});
+
+test('colours: real hex drops/restores #, but a CSS var()/keyword colour is left verbatim', () => {
+  // The #-strip is a hex-only 1-char saving; applying it to a non-hex colour used to
+  // corrupt it to `#var(…)` / `#transparent` (masked before, because such values always
+  // carried a comma and bailed to JSON). Pin the round-trip now the compact form is used.
+  const F: BlockFieldSpec[] = [{ id: 'c', type: 'color' } as BlockFieldSpec];
+  const M = { inputs: [{ id: 'sw', type: 'blocks', fields: F } as InputSpec & { fields: BlockFieldSpec[] }] };
+  const rt = (v: string): unknown => {
+    const compact = enc([{ c: v }], F)!;
+    const st = parseUrlState(`sw=${encodeURIComponent(compact)}`, M);
+    return (st.values.sw as Array<Record<string, unknown>>)[0]!.c;
+  };
+  assert.equal(rt('#1e293b'), '#1e293b', 'hex round-trips (stripped then restored)');
+  assert.equal(rt('#ffffff88'), '#ffffff88', '8-digit hex too');
+  assert.equal(rt('var(--brand-primary, #1e293b)'), 'var(--brand-primary, #1e293b)', 'CSS var left verbatim');
+  assert.equal(rt('transparent'), 'transparent', 'keyword left verbatim (not #transparent)');
 });
 
 test('20 imported layers stay far under the 8000-char bar cap', () => {
@@ -97,11 +120,11 @@ test('20 imported layers stay far under the 8000-char bar cap', () => {
   assert.ok(compact.length < 1500, `expected < 1500 chars for 20 layers, got ${compact.length}`);
 });
 
-test('empty defaults cost nothing: an all-default tail row is just separators', () => {
+test('empty tail fields cost nothing: trailing empties are trimmed off the row', () => {
   const compact = enc(
     [{ img: null, x: 0, y: 0, o: 100, v: true, b: '', n: '', g: '' }],
     FIELDS,
   )!;
-  // ",0,0,100,true,,," - no field name overhead, no quoting.
-  assert.ok(compact.length <= 16, `minimal row should be tiny, got "${compact}"`);
+  // Trailing b/n/g are empty → dropped entirely: ",0,0,100,true" (decode re-pads them).
+  assert.equal(compact, ',0,0,100,true');
 });

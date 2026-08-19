@@ -365,6 +365,10 @@
 .profile-view .store-chip-sw[data-cat="upscale"] { background: hsl(var(--store-7, 35 80% 58%)); }
 .profile-view .store-bar .seg[data-cat="matte"],
 .profile-view .store-chip-sw[data-cat="matte"] { background: hsl(var(--store-8, 212 62% 60%)); }
+.profile-view .store-bar .seg[data-cat="ocr"],
+.profile-view .store-chip-sw[data-cat="ocr"] { background: hsl(var(--store-9, 330 60% 64%)); }
+.profile-view .store-bar .seg[data-cat="reword"],
+.profile-view .store-chip-sw[data-cat="reword"] { background: hsl(var(--store-10, 75 50% 52%)); }
 
 /* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here —
    a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)

@@ -174,6 +174,68 @@ export function rectCentre(r: Rect): Point {
   return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
 }
 
+/**
+ * The displacement half of the sequence applier's fold, as `bridge/sequence-dom.ts`
+ * publishes it (`SequencePose`). Restated structurally rather than imported so this
+ * module keeps its one property: pure geometry, no bridge, no DOM.
+ */
+export interface SeqPose {
+  /** The leading `translate`, native px - applied OUTSIDE the box's own rotation. */
+  dx: number;
+  dy: number;
+  /** The trailing `scale`, about the box's centre. */
+  sc: number;
+  /** Extra rotation, degrees, composed AFTER the authored one. */
+  rot: number;
+  /** The layout size at this instant - the box's own unless `sized`. */
+  w: number;
+  h: number;
+  /** True when `w`/`h` are a KEYED size, i.e. the applier wrote the layout box too. */
+  sized: boolean;
+}
+
+/**
+ * A box's rect AS THE PLAYHEAD SHOWS IT: its authored rect mapped through the pose the
+ * applier has it in (plans/104 section 6.5 - editor chrome projects through the same fold
+ * the render used, never through a second evaluation of the same track).
+ *
+ * The map is exactly what `composeTransform` writes and CSS then applies about the
+ * box's centre - `translate(dx,dy) <authored> rotate(rot) scale(sc)` - read back as
+ * geometry. Because `sc` is uniform, scaling about the centre and rotating about the
+ * centre commute, so the posed shape is still a rectangle: same centre plus `dx,dy`,
+ * sides `sc` times longer, turned by the authored angle plus `rot`.
+ *
+ * A KEYED size is a layout write, and a box grows from its TOP-LEFT (`left`/`top` are
+ * what is authored, `width`/`height` are what the applier writes), so the centre the
+ * transform pivots on moves by half the growth - the same half-growth `foldKfPose`
+ * anchors its projection on, which is why `dx`/`dy` are measured from the grown centre
+ * and not the authored one.
+ *
+ * A null/absent pose - the byte-identity floor, and by far the common case - hands back
+ * the SAME rect object, so an untimed board's chrome is placed by the identical
+ * expressions it always was. So does an exactly neutral pose: a box at rest inside a
+ * projecting stage must not be nudged by a round trip through IEEE.
+ *
+ * NOT the whole picture under a TILTED camera (P2): the element then paints a
+ * trapezoid, and `dx`/`dy`/`sc` describe only its projected centre and magnification.
+ * That is section 6.5's stated "projected-AABB chrome" approximation, not the quad.
+ */
+export function posedRect(r: Rect, pose: SeqPose | null | undefined): Rect {
+  if (!pose) return r;
+  const sc = Number.isFinite(pose.sc) ? pose.sc : 1;
+  const dx = Number.isFinite(pose.dx) ? pose.dx : 0;
+  const dy = Number.isFinite(pose.dy) ? pose.dy : 0;
+  const rot = Number.isFinite(pose.rot) ? pose.rot : 0;
+  const w0 = pose.sized && Number.isFinite(pose.w) ? Math.max(0, pose.w) : r.w;
+  const h0 = pose.sized && Number.isFinite(pose.h) ? Math.max(0, pose.h) : r.h;
+  if (dx === 0 && dy === 0 && sc === 1 && rot === 0 && w0 === r.w && h0 === r.h) return r;
+  const cx = r.x + w0 / 2 + dx;
+  const cy = r.y + h0 / 2 + dy;
+  const w = Math.max(0, w0 * sc);
+  const h = Math.max(0, h0 * sc);
+  return { x: cx - w / 2, y: cy - h / 2, w, h, rot: r.rot + rot };
+}
+
 /** The four rotated corners of a box, in world (native) pixels, TL,TR,BR,BL order. */
 export function boxCorners(box: Box | undefined, cfg: BoxFieldConfig): Point[] {
   const r = boxRect(box, cfg);

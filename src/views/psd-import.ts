@@ -7,7 +7,7 @@
  *      PNG-encoded (engine packPng, deterministic, no canvas) and stored as
  *      its OWN library asset via storeUserUpload (the chunk-don't-monolith
  *      rule: peak memory is one layer, the renderer lazy-loads each image,
- *      and the layer-stack tool's block rows carry only refs + geometry so
+ *      and the darkroom tool's layer block rows carry only refs + geometry so
  *      URLs stay small). Returns the initial-values seed the drop router
  *      stashes for views/tool.ts.
  *   2. parseLayeredAsDesign - the Design branch design-import.ts
@@ -147,7 +147,7 @@ function groupPathOf(l: RasterLayer, doc: LayeredRasterDoc): string {
 
 /**
  * The "Open as layers" journey. Parses, asks flat-vs-grouped when the file has
- * groups, stores one PNG asset per layer, and returns the layer-stack seed - 
+ * groups, stores one PNG asset per layer, and returns the darkroom layers seed - 
  * or null when the user cancelled the dialog.
  */
 export async function importLayeredFileAsSeed(
