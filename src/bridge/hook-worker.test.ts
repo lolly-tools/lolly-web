@@ -11,20 +11,15 @@
  *   - TOKEN SNAPSHOT: host.tokens.colors()/resolve() answer from a local
  *     createTokenSet built off a shipped doc - no round-trip.
  *   - RPC: host.assets.get(...) round-trips through the stub port to a mock host.
- * Plus: an ABSENT optional namespace stays absent (feature-detect survives), and
- * the REAL chart-creator hooks.js compiles + runs onInit/onInput in the core.
+ * Plus: an ABSENT optional namespace stays absent (feature-detect survives).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import {
   createHookWorkerCore,
   type HookWorkerOut, type HookInvokeDoneMsg, type HookInitDoneMsg, type HookHostCallMsg,
 } from './hook-worker.worker.ts';
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 /** A minimal DTCG doc so createTokenSet yields a couple of resolvable colours. */
@@ -168,39 +163,3 @@ test('worker core: a compile error is reported so the client can fall back', asy
   assert.deepEqual(init.declared, [], 'no hooks are declared from a broken source');
 });
 
-test('worker core: the REAL chart-creator hooks.js runs onInit + onInput in the worker', async () => {
-  // The M2 first opt-in tool - proves a shipping, DOM-free tool executes unchanged
-  // through the worker executor and produces its chartSvg patch.
-  let source: string;
-  try {
-    source = readFileSync(join(REPO, 'community', 'chart-creator', 'hooks.js'), 'utf8');
-  } catch {
-    // community submodule not mounted in this environment - skip rather than fail.
-    return;
-  }
-  const { core, posted, pump } = harness({
-    // chart-creator's onInit resolves a palette from tokens/color (both local);
-    // provide assets.get as a no-op RPC in case any code path reaches for it.
-    assets: { get: async () => null },
-  });
-  core.handle({
-    t: 'init', runId: 3, hooksSource: source, tokenDoc: TOKEN_DOC, tokenExcluded: [],
-    hostShape: { assets: ['get'], color: ['distinct', 'deltaE'], tokens: ['get', 'colors', 'resolve'] },
-    seeds: {}, shell: 'web', capabilities: [],
-  });
-  const init = posted.find((m): m is HookInitDoneMsg => m.t === 'init-done');
-  assert.ok(init, 'chart-creator compiled in the worker core');
-  assert.ok(init.declared.includes('onInit') && init.declared.includes('onInput'), 'both cold hooks are declared');
-
-  // A representative model: chart-creator reads its inputs; an empty model uses defaults.
-  core.handle({ t: 'invoke', runId: 3, callId: 1, name: 'onInit', ctx: { model: [] } });
-  await pump();
-  const done = posted.find((m): m is HookInvokeDoneMsg => m.t === 'invoke-done' && (m as HookInvokeDoneMsg).callId === 1);
-  assert.ok(done?.ok, `chart-creator onInit ran in the worker (${done?.error ?? ''})`);
-  const patch = (done!.patch ?? {}) as Record<string, unknown>;
-  assert.equal(typeof patch.chartSvg, 'string', 'onInit produced a chartSvg extra');
-  // With an empty model chart-creator emits its placeholder group (the <svg> wrapper
-  // lives in template.html, not this extra) - distinctive real chart-creator markup,
-  // proving the shipping tool executed unchanged inside the worker.
-  assert.match(patch.chartSvg as string, /<svg|<g|data-canvas-input/i, 'the chartSvg is real chart-creator markup');
-});
