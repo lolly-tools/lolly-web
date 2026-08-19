@@ -107,6 +107,7 @@
 .script-audio-generate,                           /* script-audio.css — TTS Generate/Save pair */
 .script-audio-save,                               /* script-audio.css */
 .upscale-run,                                     /* upscale.css — on-device AI upscale Run */
+.rt-actions .rt-run,                              /* retouch.css — content-aware fill/save primary */
 .be-cta {                                         /* brand-studio.css */
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));

@@ -2207,6 +2207,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <button type="button" id="odl-cancel" class="btn" hidden>${t('Cancel')}</button>
         <span class="odl-sweep-size" id="odl-sweep-size"></span>
       </div>
+      <label class="odl-sweep-models" id="odl-models-row" hidden><input type="checkbox" id="odl-incl-models"><span>${t('Include all the AI models')} <span class="odl-part-heavy">${t('large download')}</span></span><span class="odl-sweep-models-size" id="odl-models-size"></span></label>
       <div class="odl-progress" id="odl-progress" hidden>
         <div class="odl-progress-track" role="progressbar" aria-label="${escape(t('Offline download progress'))}" aria-valuemin="0" aria-valuemax="100"><div class="odl-progress-fill"></div></div>
         <span class="odl-progress-text" aria-live="polite"></span>
@@ -2449,16 +2450,32 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       }
     };
 
+    // The heavyweight on-device AI models. Kept OUT of the plain "Download everything"
+    // sweep (hiding a multi-GB download inside one button misleads) - but the opt-in
+    // checkbox below folds them in, with their combined size stated up front so it stays
+    // honest. availableModelParts() filters to what THIS server actually offers.
+    const MODEL_PARTS = ['speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'verify'] as const;
+    const inclModels = (): boolean => !!body.querySelector<HTMLInputElement>('#odl-incl-models')?.checked;
+    const availableModelParts = (): OfflinePartId[] => MODEL_PARTS.filter(id => partAvailable[id]);
+    const modelsRow = body.querySelector<HTMLElement>('#odl-models-row');
+    const modelsSizeEl = body.querySelector<HTMLElement>('#odl-models-size');
     const syncSweepSize = (): void => {
-      // "Everything" = app + catalogue scope + docs + every tool, but NOT the
-      // heavyweight verify and speech rows - those stay stated-size individual
-      // opt-ins (hiding a 220 MB download inside one button would mislead the user, and
-      // the voice models promise the same consent line everywhere). planned()
-      // prices only REMAINING work, so downloaded-and-current parts cost 0.
-      const remaining = (['app', 'catalog', 'docs'] as const)
-        .filter(id => partAvailable[id])
-        .reduce((n, id) => n + planned(id), 0);
+      // "Everything" = app + catalogue scope + docs + every tool; the models fold in only when
+      // the "Include all the AI models" box is ticked. planned() prices only REMAINING work,
+      // so downloaded-and-current parts cost 0.
+      const base = ['app', 'catalog', 'docs'] as const;
+      const ids: readonly OfflinePartId[] = inclModels() ? [...base, ...availableModelParts()] : base;
+      const remaining = ids.filter(id => partAvailable[id]).reduce((n, id) => n + planned(id), 0);
       sweepSizeEl.textContent = remaining ? t('about {size}', { size: fmtBytes(remaining) }) : '';
+      // The opt-in row: shown only when this server offers models, labelled with their combined
+      // remaining size so ticking it is never a surprise.
+      const modelIds = availableModelParts();
+      if (modelsRow) modelsRow.hidden = modelIds.length === 0;
+      if (modelsSizeEl) {
+        const modelsRemaining = modelIds.reduce((n, id) => n + planned(id), 0);
+        modelsSizeEl.textContent = modelsRemaining ? t('about {size}', { size: fmtBytes(modelsRemaining) })
+          : modelIds.length ? t('all saved') : '';
+      }
       for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'verify', 'catalog'] as const) syncPartRow(id);
     };
 
@@ -2610,15 +2627,24 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       syncSweepSize();
     });
 
+    // Re-price the sweep when the models opt-in flips (also toggles the button label so the
+    // action reads honestly - "everything" only means the models when the box is ticked).
+    body.querySelector<HTMLInputElement>('#odl-incl-models')?.addEventListener('change', () => {
+      everythingBtn.textContent = inclModels() ? t('Download everything, models included') : t('Download everything');
+      syncSweepSize();
+    });
+
     everythingBtn.addEventListener('click', async () => {
       if (running) return;
       // Held disabled across BOTH phases - parts and the tools sweep - so a
       // second click can't slip in during the sweep and re-announce success.
       everythingBtn.disabled = true;
       try {
-        // A declined headroom warning or a mid-run Cancel resolves false: the
-        // tools sweep must NOT start after the user said stop.
-        if (!await runParts(['app', 'catalog', 'docs'])) return;
+        // The models fold into the sweep only when the opt-in box is ticked (their size is
+        // stated on that row). A declined headroom warning or a mid-run Cancel resolves false:
+        // the tools sweep must NOT start after the user said stop.
+        const sweepIds: OfflinePartId[] = ['app', 'catalog', 'docs', ...(inclModels() ? availableModelParts() : [])];
+        if (!await runParts(sweepIds)) return;
         const failed = await sweepTools({ fanfare: false });
         announce(failed
           ? t('{n} downloads failed — check your connection', { n: failed })

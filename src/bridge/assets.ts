@@ -1064,6 +1064,17 @@ function pickFormat(meta: AssetMetaRecord, requested?: string): AssetFormat {
   return meta.formats[0]!;
 }
 
+/** Formats the video sniffer used to misfile as movies (they share MP4's
+ *  ftyp container). The sniff is fixed at ingest (engine media-sniff.ts), but
+ *  records stored before the fix carry type:'video' forever - heal them at
+ *  the ONE place a stored record becomes an AssetRef, so old AVIF/HEIC
+ *  uploads get their raster affordances back without a re-upload. */
+const LEGACY_IMAGE_AS_VIDEO = new Set(['avif', 'heic', 'heif']);
+const healLegacyType = (record: AssetRefSource): AssetRef['type'] =>
+  record.type === 'video' && LEGACY_IMAGE_AS_VIDEO.has((record.format ?? '').toLowerCase())
+    ? 'raster'
+    : record.type;
+
 function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRef {
   // record.cacheKey overrides the default key - themed icon refs key on the
   // base blob + pairing colours (see get()) so identical bakes share one URL.
@@ -1078,11 +1089,12 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
   // Note the pairing here, the one place a user clip's URL is minted.
   // Registration only; the ref below still carries the ORIGINAL url, so
   // export is untouched.
-  if (source === 'user' && record.type === 'video' && url) noteScrubSource(url, record.id);
+  const type = healLegacyType(record);
+  if (source === 'user' && type === 'video' && url) noteScrubSource(url, record.id);
   return {
     source,
     id: record.id,
-    type: record.type,
+    type,
     format: record.format,
     url: url ?? '',
     version: record.version,

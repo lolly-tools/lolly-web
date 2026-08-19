@@ -1081,21 +1081,43 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-preview.is-cropping .cat-stage-bar,
 /* The prev/next arrows sit absolutely on the preview's edges — hide them while
    cropping so they can't cover the box's e/w handles or silently page away. */
-.cat-details-preview.is-cropping .cat-details-nav { display: none; }
-.cat-details.is-cropping .cat-details-actions { display: none; }
+.cat-details-preview.is-cropping .cat-details-nav,
+/* Retouch is the same inline-mode shape: the brush work owns the preview. */
+.cat-details-preview.is-retouching .cat-zoom-stage,
+.cat-details-preview.is-retouching .cat-stage-bar,
+.cat-details-preview.is-retouching .cat-thumb,
+.cat-details-preview.is-retouching .cat-details-nav { display: none; }
+.cat-details.is-cropping .cat-details-actions,
+.cat-details.is-retouching .cat-details-actions { display: none; }
 /* The work centres in the preview (its grid place-items:center); the viewport carries its
    own rounded corners, so the wrapper's dialog margin is dropped. */
-.cat-crop-work.cat-crop-inline { margin: 0; }
+.cat-crop-work.cat-crop-inline {
+  margin: 0;
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  z-index: 3;
+}
+/* The shared inline-mode toolbar (crop today, the retouch bar is its twin in
+   retouch.css): a solid surface on TOP of the preview, controls + Cancel/primary,
+   inline padding-end clearing the modal's absolutely-positioned close button. */
+.cat-mode-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 8px 12px; padding-inline-end: 52px;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  border-bottom: 1px solid hsl(var(--border));
+}
+.cat-mode-bar-actions { display: inline-flex; gap: 8px; margin-inline-start: auto; }
+.cat-crop-inline .cat-crop-body {
+  flex: 1 1 auto; min-height: 0; position: relative;
+  display: grid; place-items: center; overflow: hidden;
+}
 /* Float the crop HUD over the (dark) viewport, not below it in the preview flow — its white
    controls need the dark backing to stay legible, and there's no card behind it here. */
 .cat-crop-inline .cat-zoom-hud {
   position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
   z-index: 3; padding: 2px 6px; border-radius: 999px; background: hsl(0 0% 0% / .55);
 }
-/* The crop action row that stands in for .cat-details-actions in the body. */
-.cat-crop-actions { display: flex; flex-direction: column; gap: 12px; }
-.cat-crop-actions .cat-dl-section { margin-bottom: 0; }
-.cat-crop-actions .cat-dl-actions { margin-top: 0; }
+
 
 /* ── Inline trim mode (details modal) ── "Trim margins" mounts the shared trim-to-content
    card (lib/design-system/trim-offer.ts, styled in parts/dropzone.css) under the action

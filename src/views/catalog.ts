@@ -1875,6 +1875,21 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function closeDetails(): void {
     detailsModal?.close(); // cleanup (meter/lottie/wav dispose + nulling the refs) runs in its onClose
   }
+
+  /** Keep the address bar as shareable as the Share button: the open asset
+   *  rides `?asset=` (the share link's exact shape) so copy/pasting the URL
+   *  bar reopens the same view. replaceState, deliberately: paging must not
+   *  stack history entries, and the hash router only reacts to hashchange,
+   *  which replaceState never fires. Other catalog params are preserved. */
+  function syncAssetUrl(id: string | null): void {
+    const [path = '', query = ''] = location.hash.split('?');
+    if (path !== '#/c' && path !== '#/catalog') return; // only rewrite the catalog's own URL
+    const params = new URLSearchParams(query);
+    if (id) params.set('asset', id);
+    else params.delete('asset');
+    const q = params.toString();
+    history.replaceState(history.state, '', `${location.pathname}${path}${q ? `?${q}` : ''}`);
+  }
   // Open the Verify checker (#/verify) on this asset and auto-run the on-device C2PA
   // check - the authoritative source for the AI provenance the badge summarises. The
   // stored copy is the source of truth: if it still carries a Content Credential (catalog
@@ -2152,6 +2167,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // and Gen-AI flag through the edit - recorded as a cut-out/upscale ingredient, never
     // laundered away - which is the whole reason to offer these on a credentialed asset.
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
+    // Retouch (plan 124 WP-E): brush-mask content-aware fill. Pure engine math,
+    // no model and no capability gate - honest on any device that decodes the
+    // image. Static rasters only, like matte.
+    const canRetouch = zoomable && ref.type === 'raster' && !ref.meta?.animated && !ref.meta?._placeholder;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
     // Read text OUT of an image (host.ocr, plans/125). Gated on a STAGED model, so it
@@ -2229,6 +2248,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
           ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
+          ${canRetouch ? `<button type="button" class="btn cat-act-retouch" data-act="retouch">${icon('stamp', { size: 14 })}<span>${t('Retouch…')}</span></button>` : ''}
           ${canOcr ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : ''}
           ${canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : ''}
           ${canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
@@ -2276,6 +2296,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (wav) URL.revokeObjectURL(wav);
         cropModeActive = false;   // clear the attachZoom pause if the modal closed mid-crop (backdrop/paging)
         inlineTrim?.();           // …and answer an open trim card, so its preview URLs are revoked
+        inlineRetouch?.exit();    // …and stand a brush session down (aborts any in-flight fill)
+        syncAssetUrl(null);       // the bar goes back to the plain catalog URL
         detailsDialog = null;
         detailsModal = null;
       },
@@ -2283,6 +2305,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dlg = modal.el;
     detailsDialog = dlg;
     detailsModal = modal;
+    // The address bar mirrors the Share button (`#/c?asset=<id>`) while an
+    // asset is open, so copy/pasting the URL shares this exact view. Paging
+    // re-syncs it per asset (Andy, 2026-08-19).
+    syncAssetUrl(ref.id);
     if (!wasOpen) playSfx('whisper'); // airy elevation as the asset details rise in (silent on ←/→ paging)
 
     // Technical metadata (resolution, DPI, EXIF, audio/video props, page count, viewBox…):
@@ -2513,6 +2539,38 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // reopening or reloading it. `inlineCrop` holds the exit fn while cropping (null otherwise),
     // which the keydown/close handlers read to know a crop is in progress.
     let inlineCrop: (() => void) | null = null;
+    // Inline Retouch (plan 124 WP-E): the preview becomes the brush stage with
+    // a toolbar on top - the crop pattern exactly. The handle's busy() gates
+    // Escape so a committing save can never be torn down mid-write.
+    let inlineRetouch: import('./retouch-inline.ts').RetouchInlineHandle | null = null;
+    let retouchEntering = false;
+    async function enterInlineRetouch(): Promise<void> {
+      if (inlineRetouch || retouchEntering || inlineCrop) return;
+      const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
+      if (!preview) return;
+      retouchEntering = true;
+      const { mountInlineRetouch } = await import('./retouch-inline.ts');
+      retouchEntering = false;
+      if (detailsDialog !== dlg || inlineRetouch) return; // paged/closed during the import
+      cropModeActive = true; // pause attachZoom's wheel/drag while the brush owns the stage
+      preview.classList.add('is-retouching');
+      dlg.classList.add('is-retouching');
+      inlineRetouch = mountInlineRetouch(
+        host as unknown as import('./retouch-inline.ts').RetouchHost,
+        { source: ref, sourceName: name },
+        {
+          stage: preview,
+          onDone: (made) => {
+            inlineRetouch = null;
+            cropModeActive = false;
+            preview.classList.remove('is-retouching');
+            dlg.classList.remove('is-retouching');
+            // A save lands like matte's did: refresh the grid and open the copy.
+            if (made) void (async () => { await reload(); rerender(); openDetails(made); })();
+          },
+        },
+      );
+    }
     // Synchronous in-flight guard: `inlineCrop` isn't assigned until AFTER the async
     // prepCropSource below, so a fast double-click could pass an `if (inlineCrop)`
     // check twice and build two overlays. This flag is set/cleared around the only
@@ -2527,8 +2585,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (detailsDialog !== dlg) return;   // modal paged/closed during the fetch - abandon
       if (!src) { closeDetails(); await directDownload(ref); return; }   // not fetchable/SVG → just save it
       const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
-      const actions = dlg.querySelector<HTMLElement>('.cat-details-actions');
-      if (!preview || !actions) return;
+      if (!preview) return;
       const { vector, svgText, origSvg, theme, treatment, rasterSrc, aspect } = src;
       const fmts: [string, string][] = vector ? [['svg', 'SVG'], ['png', 'PNG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']];
 
@@ -2539,31 +2596,30 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Same crop-box markup the dialog builds; textContent-free, so no untrusted interpolation.
       const handles = ['n', 'e', 's', 'w'].map(h => `<span class="cat-crop-e" data-h="${h}"></span>`).join('')
         + ['nw', 'ne', 'sw', 'se'].map(h => `<span class="cat-crop-h" data-h="${h}"></span>`).join('');
+      // The mode's controls live in a toolbar ON TOP of the preview (the
+      // retouch treatment, Andy 2026-08-19) - the whole decision happens at
+      // the image, nothing lands down the scrolling body.
       const work = document.createElement('div');
       work.className = 'cat-crop-work cat-crop-inline';
       work.innerHTML = `
-        <div class="cat-crop-viewport">
-          <div class="cat-crop-stage">
-            <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
-            <div class="cat-crop-box">${handles}</div>
-          </div>
-        </div>
-        <div class="cat-zoom-hud"></div>`;
-      preview.appendChild(work);
-
-      const cropActions = document.createElement('div');
-      cropActions.className = 'cat-crop-actions';
-      cropActions.innerHTML = `
-        <div class="cat-dl-section">
-          <span class="cat-dl-label">${escape(t('Format'))}</span>
+        <div class="cat-mode-bar">
           <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">${fmts.map(([v, l], i) =>
             `<label class="field-toggle"><input type="radio" class="field-radio" name="cat-crop-fmt" value="${escape(v)}"${i === 0 ? ' checked' : ''}> ${escape(l)}</label>`).join('')}</div>
+          <span class="cat-mode-bar-actions">
+            <button type="button" class="btn cat-crop-cancel">${escape(t('Cancel'))}</button>
+            <button type="button" class="btn cat-crop-go modal-primary">${escape(t('Download crop'))}</button>
+          </span>
         </div>
-        <div class="cat-dl-actions">
-          <button type="button" class="btn cat-crop-cancel">${escape(t('Cancel'))}</button>
-          <button type="button" class="btn cat-crop-go modal-primary">${escape(t('Download crop'))}</button>
+        <div class="cat-crop-body">
+          <div class="cat-crop-viewport">
+            <div class="cat-crop-stage">
+              <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
+              <div class="cat-crop-box">${handles}</div>
+            </div>
+          </div>
+          <div class="cat-zoom-hud"></div>
         </div>`;
-      actions.after(cropActions);
+      preview.appendChild(work);
 
       const viewport = work.querySelector<HTMLElement>('.cat-crop-viewport')!;
       const stage = work.querySelector<HTMLElement>('.cat-crop-stage')!;
@@ -2571,20 +2627,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const boxEl = work.querySelector<HTMLElement>('.cat-crop-box')!;
       const hudEl = work.querySelector<HTMLElement>('.cat-zoom-hud');
       const crop = wireCropBox({ viewport, stage, imgEl, boxEl, hudEl, vector, aspect });
-      const fmt = (): string => cropActions.querySelector<HTMLInputElement>('input[name="cat-crop-fmt"]:checked')?.value ?? (vector ? 'svg' : 'png');
+      const fmt = (): string => work.querySelector<HTMLInputElement>('input[name="cat-crop-fmt"]:checked')?.value ?? (vector ? 'svg' : 'png');
 
       const exit = (): void => {
         if (inlineCrop !== exit) return;   // idempotent
         inlineCrop = null;
         cropModeActive = false;
         work.remove();
-        cropActions.remove();
         preview.classList.remove('is-cropping');
         dlg.classList.remove('is-cropping');
       };
       inlineCrop = exit;
 
-      cropActions.addEventListener('click', async (e) => {
+      work.addEventListener('click', async (e) => {
         const tgt = e.target as HTMLElement;
         if (tgt.closest('.cat-crop-cancel')) { exit(); return; }
         if (tgt.closest('.cat-crop-go')) {
@@ -3126,6 +3181,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (act === 'crop') { await enterInlineCrop(); return; }
       // Trim is the same shape: the offer card mounts in this body, under the actions.
       if (act === 'trim') { await enterInlineTrim(); return; }
+      // Retouch too: the brush stage takes over THIS preview (plan 124 WP-E).
+      if (act === 'retouch') {
+        try { await enterInlineRetouch(); }
+        catch (err) { host.log('error', 'Retouch failed', { id: ref.id, error: String(err) }); }
+        return;
+      }
       // The remaining actions leave this asset's detail context, so close first.
       closeDetails();
       if (act === 'download') {
@@ -3196,6 +3257,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Escape keydown wasn't cancelled), and paging is disabled so it can't tear down the crop.
       if (inlineCrop) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inlineCrop(); }
+        return;
+      }
+      // Same convention for Retouch: Escape backs out of the MODE - unless a
+      // save is committing, which must never be torn down mid-write.
+      if (inlineRetouch) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!inlineRetouch.busy()) inlineRetouch.exit(); }
         return;
       }
       // With a trim card up, paging is off for the same reason: it would tear the card
@@ -4445,9 +4512,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       boxEl.style.width = `${bw}px`; boxEl.style.height = `${bh}px`;
     };
     const sizeStage = (): void => {
-      // Fit the asset's aspect into a max workspace so the image fills the stage exactly.
-      const maxW = Math.min(680, window.innerWidth * 0.82);
-      const maxH = Math.min(460, window.innerHeight * 0.5);
+      // Fit the asset's aspect into the workspace the MODE provides (the
+      // .cat-crop-body pane), so the image keeps the size and place the
+      // preview showed it at - entering crop must not shrink or shift the
+      // picture (Andy, 2026-08-19). The old fixed dialog caps survive only
+      // as the fallback for an unmeasurable container.
+      const box = viewport.parentElement?.getBoundingClientRect();
+      const maxW = box && box.width > 80 ? box.width - 24 : Math.min(680, window.innerWidth * 0.82);
+      const maxH = box && box.height > 80 ? box.height - 24 : Math.min(460, window.innerHeight * 0.5);
       let w = maxW, h = maxW / aspect;
       if (h > maxH) { h = maxH; w = maxH * aspect; }
       fitW = Math.round(w); fitH = Math.round(h);

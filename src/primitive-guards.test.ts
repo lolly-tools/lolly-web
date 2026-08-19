@@ -961,7 +961,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 16,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
+  'views/catalog.ts': 15,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
   'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
@@ -1197,6 +1197,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // literal or escapeHtml()'d (the aria-labels, the model <option> id/name pairs);
   // all later writes are textContent / setAttribute, never HTML.
   'views/matte-dialog.ts': 1,
+  // 1 as of 2026-08-19 (plan 124 WP-E, the inline Retouch mode). The one innerHTML
+  // sink is the toolbar/stage scaffold (Cancel + the primary live inside it): every
+  // interpolated value is a t() literal or escapeHtml()'d; all later writes are
+  // textContent / setAttribute / canvas paints, never HTML.
+  'views/retouch-inline.ts': 1,
   // 1 as of 2026-08-09 (plan 100 section 11.27, the private-collab QR skin). The one sink
   // is `qrElementRenderer`'s `box.innerHTML = svg.value`, and the markup is this
   // module's OWN output: `renderQrSvg` builds it from the matrix it just computed,

@@ -112,6 +112,24 @@
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
+/* Opt-in to fold every AI model into the "Download everything" sweep. Its stated size keeps
+   the multi-GB cost honest (the reason models are otherwise separate opt-ins). */
+.odl-sweep-models {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: calc(13px * var(--a11y-fs));
+  cursor: pointer;
+}
+.odl-sweep-models[hidden] { display: none; }
+.odl-sweep-models input { flex: 0 0 auto; }
+.odl-sweep-models-size {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: auto;
+}
 .odl-progress {
   display: flex;
   flex-direction: column;
