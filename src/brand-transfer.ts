@@ -609,17 +609,21 @@ export async function importBrandPack(
   // fonts are data, tools are code). Signature policy lives in pack-store.
   if (readJson(files, 'instance.json')) {
     const { importInstancePackParts } = await import('./lib/pack-store.ts');
-    const result = await importInstancePackParts(files);
+    // The pack's instance base is applied BETWEEN the signature verdict and
+    // tool ingestion (the beforeIngest hook): installed-tools keys its cache
+    // through instancePath, so the tools must install under the base they
+    // will load under - and a pack the signature policy refuses must never
+    // have moved the base.
+    const result = await importInstancePackParts(files, undefined, async ({ instance }) => {
+      if (!instance) return;
+      const { setInstanceBase } = await import('./lib/instance.ts');
+      await setInstanceBase(instance).catch(e =>
+        host.log?.('warn', "Couldn't set the pack's instance base", { error: String(e) }));
+    });
     summary.packTools = result.tools;
     summary.packAssets = result.assets;
     summary.packName = result.name;
     summary.packSignature = result.signature;
-    if (result.instance) {
-      // The pack says where community content lives while it is loaded.
-      const { setInstanceBase } = await import('./lib/instance.ts');
-      await setInstanceBase(result.instance).catch(e =>
-        host.log?.('warn', "Couldn't set the pack's instance base", { error: String(e) }));
-    }
   }
 
   summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;

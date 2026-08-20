@@ -13,6 +13,20 @@
   text-align: center;
 }
 
+.loading {
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The boot screen's animated mark — icon.svg INLINED in index.html (an SVG
+   loaded via <img> never runs its CSS animations in Chromium). Inline, its
+   spin is ordinary page CSS, so base.css's two reduce-motion blocks (OS media
+   query and data-a11y-motion) freeze it with no extra rules here. */
+.loading-icon {
+  width: 76px;
+  height: 76px;
+}
+
 /* ── Note / callout primitive (component audit rec 13) — the shared "bordered
    muted-background paragraph" shape that .plat-note (platform.css) and
    .valid-note (valid.css) restate with their own spacing; this pass owns both
@@ -74,6 +88,7 @@
   border: 1px solid hsl(var(--destructive) / 0.4);
   background: hsl(var(--destructive) / 0.06);
   font-size: calc(13px * var(--a11y-fs));
+  text-align:center;
 }
 
 .error-list {

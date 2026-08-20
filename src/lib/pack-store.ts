@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Instance-pack store (plans/131 WP-D) - the THIRD content source.
+ * Instance-pack store (plans/131 WP-D) - brand content as a loadable file.
  *
- * The shell serves tools + catalog from bundled same-origin content, or from a
- * remote instance base (lib/instance.ts). A loaded `.lolly` instance pack adds
- * this one: pack bytes ingested into IndexedDB ('pack-files', keyed by their
- * canonical root-relative path - '/tools/<id>/tool.json',
- * '/catalog/assets/suse/...') and served by the overlay lib/instance.ts runs
- * inside instanceFetch, BEFORE any transport. Sync, pins, checksum
- * verification and the tool loader all fetch through that seam, so none of
- * them know packs exist - a pack answers like a very fast instance.
+ * A `.lolly` instance pack replaces this shell's brand wholesale: tokens,
+ * fonts and logos land through brand-transfer's existing parts, and this
+ * module ingests the rest -
  *
- * The two catalog indexes are the exception: the pack MERGES its entries over
- * whatever the underlying source returns (pack wins on id collision, mirroring
- * profiles.json's later-roots-win), so the gallery lists pack tools beside the
- * community set. When the underlying fetch fails entirely (offline, no
- * instance chosen) the pack's own entries still answer - pack mode is the best
- * offline mode there is.
+ *   TOOLS ride the existing sideload system (lib/installed-tools.ts, plan 114
+ *   Wave 7): one installTool() per pack tool. That path already solves
+ *   everything a pack tool needs - the loader serves it from INSTALLED_CACHE
+ *   with NO signed-catalog envelope check (the pack's own signature vouched
+ *   for the bytes at import; the remote catalog has no authority over it),
+ *   sw.js serves its `assets/` subresources, and main.ts's boot merge lists
+ *   it in the gallery. Nothing here duplicates that.
+ *
+ *   CATALOG ASSETS (icons, backgrounds, fonts at /catalog/fonts/ paths, the
+ *   brand's asset-index entries) go into IndexedDB ('pack-files', keyed by
+ *   canonical root-relative path) and are served by the overlay
+ *   lib/instance.ts runs inside instanceFetch, before any transport. The
+ *   asset INDEX comes back MERGED - pack entries over the underlying
+ *   source's, pack winning on id. The TOOLS index is deliberately NOT
+ *   touched by the overlay: pack tools reach the gallery through the
+ *   installed-tools merge, so a key-pinned build still verifies the remote
+ *   tool index against its signed envelope byte-for-byte.
  *
  * Trust: a pack carries tools, and tools carry hooks.js - loading one is
  * installing code. importInstancePackParts verifies the pack signature
@@ -29,10 +35,12 @@
  *
  * Boot cost: initPackStore loads the meta record and the path SET only (no
  * bytes); with no pack loaded it is one IDB get. The signature-verification
- * engine import is dynamic - never on the boot path.
+ * engine import and the installed-tools import are dynamic - never on the
+ * boot path.
  */
 
 import { openDB } from '../bridge/db.ts';
+import type { ToolManifest } from '../../../../engine/src/loader.ts';
 
 /** The idb surface this module actually uses - narrow so the unit tests can
  *  hand in a Map-backed fake (node has no IndexedDB; the pattern user-fonts
@@ -71,9 +79,8 @@ export function _setPinnedKeyForTests(key: string): void {
 const STORE = 'pack-files';
 /** Meta record's key in the 'profile' KV store (same home as the instance base). */
 const META_KEY = 'instance-pack-meta';
-/** Synthetic paths for the pack's own index parts - '//' so they can never
+/** Synthetic path for the pack's asset-index part - '//' so it can never
  *  collide with a real root-relative request path. */
-const TOOLS_PART = '//pack/tools.json';
 const CATALOG_PART = '//pack/catalog.json';
 
 export interface InstancePackMeta {
@@ -86,12 +93,17 @@ export interface InstancePackMeta {
   engineVersion?: string;
   toolCount?: number;
   assetCount?: number;
+  /** Tool ids this pack installed via installed-tools - what a replace or a
+   *  clear must uninstall again. */
+  toolIds: string[];
   loadedAt: string;
   signature: 'verified' | 'unverified' | 'unsigned';
 }
 
 export interface PackImportResult {
   tools: number;
+  /** Pack tools refused by the sideload system (module hooks etc.), by id. */
+  toolsSkipped: string[];
   assets: number;
   files: number;
   name: string;
@@ -99,6 +111,16 @@ export interface PackImportResult {
   /** The instance base the pack asks for; the CALLER applies it (keeps this
    *  module import-cycle-free with lib/instance.ts, which imports us). */
   instance: string | null;
+}
+
+/** The installed-tools surface this module drives - injectable so the unit
+ *  tests need neither Cache Storage nor the real module. */
+export interface PackToolInstaller {
+  installTool(input: {
+    manifest: ToolManifest; files: Record<string, Uint8Array>;
+    trust: 'signed-catalog' | 'custom'; version?: string; engineVersion?: string;
+  }): Promise<unknown>;
+  uninstallTool(id: string): Promise<void>;
 }
 
 let meta: InstancePackMeta | null = null;
@@ -159,14 +181,6 @@ export async function packFetch(path: string): Promise<Response | null> {
   }
 }
 
-/** The pack's tool-index entries (as generated by the brand's build:catalog). */
-export async function packToolEntries(): Promise<Array<{ id: string }>> {
-  const resp = await packFetch(TOOLS_PART);
-  if (!resp) return [];
-  try { return ((await resp.json()) as { tools?: Array<{ id: string }> }).tools ?? []; }
-  catch { return []; }
-}
-
 /** The pack's asset-index entries (checksums intact from the brand catalog). */
 export async function packAssetEntries(): Promise<Array<{ id: string }>> {
   const resp = await packFetch(CATALOG_PART);
@@ -175,7 +189,14 @@ export async function packAssetEntries(): Promise<Array<{ id: string }>> {
   catch { return []; }
 }
 
-export async function clearInstancePack(): Promise<void> {
+const installer = async (): Promise<PackToolInstaller> =>
+  (await import('./installed-tools.ts')) as unknown as PackToolInstaller;
+
+export async function clearInstancePack(tools?: PackToolInstaller): Promise<void> {
+  const it = tools ?? await installer();
+  for (const id of meta?.toolIds ?? []) {
+    await it.uninstallTool(id).catch(() => { /* already gone */ });
+  }
   const db = await getDb();
   await db.clear(STORE);
   await db.delete('profile', META_KEY);
@@ -189,32 +210,79 @@ const decoder = new TextDecoder();
  * Ingest the instance-pack parts of an unzipped `.lolly` bundle. Called by
  * brand-transfer's importBrandPack AFTER the brand parts (tokens/fonts/logos)
  * have landed and AFTER the zip integrity map verified. Replaces any
- * previously loaded pack whole - two half-packs is a broken instance.
+ * previously loaded pack whole - its catalog store is rewritten and every
+ * tool the previous pack installed but this one doesn't carry is
+ * uninstalled; two half-packs is a broken instance.
  */
 export async function importInstancePackParts(
   files: Record<string, Uint8Array>,
+  tools?: PackToolInstaller,
+  /** Runs after the signature verdict, before any ingestion. The caller sets
+   *  the pack's instance base HERE, not afterwards: installed-tools keys its
+   *  cache through instancePath, so tools must install under the base they
+   *  will be loaded under - and a refused pack must never move the base. */
+  beforeIngest?: (meta: { instance: string | null }) => void | Promise<void>,
 ): Promise<PackImportResult> {
-  const packMeta = readPart(files, 'instance.json') as Omit<InstancePackMeta, 'loadedAt' | 'signature'> | null;
+  const packMeta = readPart(files, 'instance.json') as Omit<InstancePackMeta, 'loadedAt' | 'signature' | 'toolIds'> | null;
   if (!packMeta || packMeta.kind !== 'instance-pack') {
     throw new Error('Not an instance pack (no instance.json part).');
   }
 
   const signature = await verifyPackSignature(files);
+  const packInstance = typeof packMeta.instance === 'string' ? packMeta.instance : null;
+  await beforeIngest?.({ instance: packInstance });
+  const it = tools ?? await installer();
 
-  const toolsPart = readPart(files, 'tools.json') as { tools?: Array<{ id: string }> } | null;
+  const toolsPart = readPart(files, 'tools.json') as
+    { tools?: Array<{ id: string }>; files?: Record<string, string[]> } | null;
   const catalogPart = readPart(files, 'catalog.json') as { assets?: Array<{ id: string }> } | null;
-  const tools = toolsPart?.tools ?? [];
   const assets = catalogPart?.assets ?? [];
 
+  // Tools → the sideload system. `trust: 'custom'` is the honest class - a
+  // brand-pack tool is exactly its "private-brand" case; the pack's signature
+  // state travels on OUR meta, not the trust field. A tool the sideloader
+  // refuses (module hooks) is skipped and reported, never fatal - the brand
+  // and the other tools still land.
+  const previousToolIds = meta?.toolIds ?? [];
+  const installedIds: string[] = [];
+  const skipped: string[] = [];
+  for (const [id, relFiles] of Object.entries(toolsPart?.files ?? {})) {
+    const manifestBytes = files[`tools/${id}/tool.json`];
+    if (!manifestBytes) { skipped.push(id); continue; }
+    let manifest: ToolManifest;
+    try { manifest = JSON.parse(decoder.decode(manifestBytes)) as ToolManifest; }
+    catch { skipped.push(id); continue; }
+    const toolFiles: Record<string, Uint8Array> = {};
+    for (const rel of relFiles) {
+      const bytes = files[`tools/${id}/${rel}`];
+      if (bytes) toolFiles[rel] = bytes;
+    }
+    try {
+      await it.installTool({
+        manifest,
+        files: toolFiles,
+        trust: 'custom',
+        ...(packMeta.version ? { version: packMeta.version } : {}),
+        ...(packMeta.engineVersion ? { engineVersion: packMeta.engineVersion } : {}),
+      });
+      installedIds.push(id);
+    } catch {
+      skipped.push(id);
+    }
+  }
+  // A tool the previous pack installed that this pack no longer carries.
+  for (const id of previousToolIds) {
+    if (!installedIds.includes(id)) await it.uninstallTool(id).catch(() => { /* already gone */ });
+  }
+
+  // Catalog assets → the pack-files store, served by the instanceFetch overlay.
   const db = await getDb();
   const tx = db.transaction([STORE], 'readwrite');
   await tx.objectStore(STORE).clear();
   let count = 0;
   for (const [path, bytes] of Object.entries(files)) {
     let key: string | null = null;
-    if (path.startsWith('tools/')) key = `/${path}`;
-    else if (path.startsWith('catalog/')) key = `/${path}`;
-    else if (path === 'tools.json') key = TOOLS_PART;
+    if (path.startsWith('catalog/')) key = `/${path}`;
     else if (path === 'catalog.json') key = CATALOG_PART;
     if (!key) continue;
     tx.objectStore(STORE).put(bytes, key);
@@ -225,6 +293,7 @@ export async function importInstancePackParts(
   const stored: InstancePackMeta = {
     ...packMeta,
     kind: 'instance-pack',
+    toolIds: installedIds,
     loadedAt: new Date().toISOString(),
     signature,
   };
@@ -233,12 +302,13 @@ export async function importInstancePackParts(
   paths = new Set((await db.getAllKeys(STORE)) as string[]);
 
   return {
-    tools: tools.length,
+    tools: installedIds.length,
+    toolsSkipped: skipped,
     assets: assets.length,
     files: count,
     name: stored.name,
     signature,
-    instance: typeof packMeta.instance === 'string' ? packMeta.instance : null,
+    instance: packInstance,
   };
 }
 

@@ -119,13 +119,25 @@
   gap: 8px;
   width: fit-content;
   max-width: 100%;
-  margin: 0 0 14px;
+  /* Centred over the grid — the app's floating pills (top nav, bulk bar, drop
+     hint) all centre, and a top-left pill fought the centred topbar. */
+  margin: 0 auto 14px;
   padding: 7px 8px 7px 14px;
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
   font-size: calc(12.5px * var(--a11y-fs));
+}
+/* On the fresh-install gallery the strip LEADS the page (no featured strip above
+   it), so it must clear the fixed topbar itself — it takes over .tool-masonry's
+   chrome clearance (6rem desktop / 4.2rem + safe-area on phones, gallery.css) and
+   the grid keeps only the strip's own 14px gap below. Scoped so a strip sitting
+   mid-page (a favourite promoted a featured row above it) keeps the plain margin. */
+.gallery:not(.has-featured) .brand-tips { margin-top: 6.4rem; }
+.gallery:not(.has-featured) .brand-tips + .tool-masonry { padding-top: 0; }
+@media (max-width: 640px) {
+  .gallery:not(.has-featured) .brand-tips { margin-top: calc(4.4rem + env(safe-area-inset-top, 0px)); }
 }
 .brand-tips-text { margin: 0; line-height: 1.4; }
 .brand-tips-dot { opacity: 0.55; }

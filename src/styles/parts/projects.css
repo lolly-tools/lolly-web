@@ -55,7 +55,7 @@
 .view-toggle-ic svg { display: block; width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .view-toggle-opt:hover { color: hsl(var(--foreground)); }
 .view-toggle-opt.is-active {
-  background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
+  background: hsl(var(--accent)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
 }
 /* Jelly effects mode (lib/jelly.ts): ONE persistent <jelly-segmented> pill,
    mounted at body level by syncJellyNavToggle (view-toggle.ts) so it lives

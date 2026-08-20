@@ -64,9 +64,7 @@
 // scripts/check-bundle-budget.ts.
 import { ENGINE_VERSION } from '../../../../engine/src/version.ts';
 import { openDB } from '../bridge/db.ts';
-import {
-  initPackStore, packActive, packAssetEntries, packFetch, packToolEntries,
-} from './pack-store.ts';
+import { initPackStore, packActive, packAssetEntries, packFetch } from './pack-store.ts';
 
 /** Key of the persisted base inside the 'profile' KV store. */
 const INSTANCE_KEY = 'instance-base';
@@ -161,20 +159,22 @@ export function instancePath(p: string): string {
  * fetch() for instance-base traffic: tauri-plugin-http for cross-origin URLs
  * under Tauri (CORS-free, scope-checked in Rust), window.fetch otherwise.
  *
- * A loaded instance pack (lib/pack-store.ts) overlays this: pack files answer
- * by canonical path BEFORE any transport, and the two catalog indexes come
- * back MERGED - pack entries over the underlying source's, pack winning on id
- * collision (profiles.json's later-roots-win, at runtime). With the underlying
- * source unreachable the pack's own entries still answer, which is what makes
- * pack mode the strongest offline mode: its bytes never left the device.
+ * A loaded instance pack (lib/pack-store.ts) overlays this - CATALOG paths
+ * only: pack asset/font files answer by canonical path BEFORE any transport,
+ * and the ASSET index comes back MERGED (pack entries over the underlying
+ * source's, pack winning on id - profiles.json's later-roots-win, at
+ * runtime). With the underlying source unreachable the pack's own entries
+ * still answer. Pack TOOLS are deliberately not served here: they ride the
+ * installed-tools sideload path (INSTALLED_CACHE + the sw.js fallback + the
+ * boot-time index merge), which keeps the remote TOOL index pristine for the
+ * pinned-key signed-envelope check in catalog/integrity.ts.
  */
 export function instanceFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
   if (packActive()) {
     const path = pathOf(url);
-    if (path === '/catalog/tools/index.json') return packMergedIndex(url, init, 'tools');
-    if (path === '/catalog/assets/index.json') return packMergedIndex(url, init, 'assets');
-    if (path.startsWith('/tools/') || path.startsWith('/catalog/')) {
+    if (path === '/catalog/assets/index.json') return packMergedAssetIndex(url, init);
+    if (path.startsWith('/catalog/')) {
       return packFetch(path).then(r => r ?? transportFetch(url, init));
     }
   }
@@ -203,23 +203,23 @@ function pathOf(url: string): string {
 }
 
 /**
- * One catalog index, merged: the underlying source's entries (bundled seed or
+ * The asset index, merged: the underlying source's entries (bundled seed or
  * remote instance) with the pack's laid over them. An unreachable underlying
- * index degrades to pack-only entries rather than failing the sync.
+ * index degrades to pack-only entries rather than failing the sync. (The
+ * asset index carries no signed envelope - only the TOOL index does, and
+ * that one passes through unmerged.)
  */
-async function packMergedIndex(
-  url: string, init: RequestInit | undefined, kind: 'tools' | 'assets',
-): Promise<Response> {
+async function packMergedAssetIndex(url: string, init: RequestInit | undefined): Promise<Response> {
   let baseIndex: Record<string, unknown> | null = null;
   try {
     const resp = await transportFetch(url, init);
     if (resp.ok) baseIndex = await resp.json() as Record<string, unknown>;
   } catch { /* offline / no instance yet - the pack still answers */ }
-  const packEntries = kind === 'tools' ? await packToolEntries() : await packAssetEntries();
-  if (!baseIndex) baseIndex = { version: '1', [kind]: [] };
+  const packEntries = await packAssetEntries();
+  if (!baseIndex) baseIndex = { version: '1', assets: [] };
   const packIds = new Set(packEntries.map(e => e.id));
-  const underlying = Array.isArray(baseIndex[kind]) ? baseIndex[kind] as Array<{ id: string }> : [];
-  baseIndex[kind] = [...underlying.filter(e => !packIds.has(e.id)), ...packEntries];
+  const underlying = Array.isArray(baseIndex.assets) ? baseIndex.assets as Array<{ id: string }> : [];
+  baseIndex.assets = [...underlying.filter(e => !packIds.has(e.id)), ...packEntries];
   return new Response(JSON.stringify(baseIndex), {
     status: 200,
     headers: { 'content-type': 'application/json' },

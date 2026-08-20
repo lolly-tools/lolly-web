@@ -10,8 +10,11 @@
  * Feature flags hide whole categories; the remaining categories surface as
  * single-select filter pills, so any mix of flags just reflows the grid.
  *
- * Two per-card actions open modals: (i) tool info (formats + details) and
- * (h) history - the full list of that tool's saved sessions (resume / delete).
+ * Cards carry no per-card action buttons: every tile action (favourite, keep
+ * offline, About, saved sessions, hide, copy link) lives in the right-click /
+ * long-press context menu and in the selection toolbar (select a tile via its
+ * bottom-left dot). The About dialog and the history dialog are those actions'
+ * modals.
  */
 
 import { escape } from '../utils.ts';
@@ -94,6 +97,10 @@ interface GalleryTool {
   new?: boolean;
   /** URL-mode query an injected url-source tool opens with (#/tool/<id>?<openQuery>). */
   openQuery?: string;
+  /** "New from template" starting points - METADATA ONLY (the index never carries
+   *  the heavy values seed; see scripts/build-catalog-index.ts). Listed in the
+   *  info dialog; each deep-links to #/tool/<id>?template=<tid>. */
+  templates?: Array<{ id: string; name: string; category?: string; description?: string; thumb?: string }>;
 }
 
 // Sort options for the gallery masonry. 'category' groups tools by
@@ -213,13 +220,12 @@ function dimText(tool: GalleryTool | undefined): string {
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
 import { captureNeutralPinned, settleForCapture } from '../lib/capture-neutral.ts';
 
-// Lucide "info" and "history" - per-card action icons (own stroke-width, so the
-// thin .tool-card-icon rule doesn't apply to them). Path data lives in lib/icons.ts;
-// 'info' is deduped against profile.ts's identical INFO_ICON (component-audit rec 5).
+// Lucide "info" and "history" - context-menu / bulk-bar action icons. Path data
+// lives in lib/icons.ts; 'info' is deduped against profile.ts's identical
+// INFO_ICON (component-audit rec 5).
 const INFO_ICON = icon('info');
 const HISTORY_ICON = icon('history');
-// Context-menu row glyphs (the bulk bar reuses OPEN/LINK/EYE too; DOWNLOAD_ICON
-// for the offline rows already exists below, beside pinButtonHtml).
+// Context-menu row glyphs (the bulk bar reuses OPEN/LINK/EYE too).
 const OPEN_ICON = icon('externalLink');
 const LINK_ICON = icon('link');
 const EYE_ICON = icon('eye');
@@ -228,24 +234,10 @@ const EYE_ICON = icon('eye');
 // live co-editing rather than a plain share.
 const USERS_ICON = icon('users');
 
-// Lucide "star" - the per-card favourite toggle. Filled via CSS when active (.is-fav).
+// Lucide "star" - the favourite toggle (bulk bar + context menu).
 const STAR_ICON = icon('star');
-// The per-card "available offline" toggle is a three-layer button (see pinButtonHtml):
-// a download glyph at rest, a spinning progress ring while the pin's fetches are in
-// flight (.is-busy), and an accent-filled circled tick once pinned (.is-pinned) - 
-// the tick doubles as the "works offline" indicator the tooltip describes.
+// Lucide "download" - the "available offline" action (bulk bar + context menu).
 const DOWNLOAD_ICON = icon('download');
-const PIN_RING_ICON = icon('ring');
-const PIN_DONE_ICON = icon('circleCheck');
-
-/** The "keep available offline" download→progress→tick button, shared by both card layouts. */
-function pinButtonHtml(tool: GalleryTool, isPinned: boolean): string {
-  return `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? tRaw('Remove {name} from offline', { name: tool.name }) : tRaw('Keep {name} available offline', { name: tool.name }))}">
-    <span class="pin-layer pin-dl" aria-hidden="true">${DOWNLOAD_ICON}</span>
-    <span class="pin-layer pin-ring" aria-hidden="true">${PIN_RING_ICON}</span>
-    <span class="pin-layer pin-done" aria-hidden="true">${PIN_DONE_ICON}</span>
-  </button>`;
-}
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
@@ -299,14 +291,14 @@ function iconBackdrop(icon: string | undefined): string {
  * whichever looks the current theme filters in). Capped at EXAMPLE_MAX. Empty for a
  * tool with no examples, no raster format, or one the shell can't run.
  */
-function galleryExampleLooks(tool: GalleryTool, darkTheme: boolean): Array<{ v: FeaturedVariant; i: number }> {
+function galleryExampleLooks(tool: GalleryTool, darkTheme: boolean, max = EXAMPLE_MAX): Array<{ v: FeaturedVariant; i: number }> {
   if (!displayFormatOf(tool.formats)) return [];
   return resolveExamples(tool)
     .map((v, i) => ({ v, i }))
     // Same theme filter as the featured row: a reverse/white look on a light tile (or a
     // dark look on a dark tile) would be near-invisible on the checkerboard backdrop.
     .filter(({ v }) => !v.theme || (v.theme === 'dark') === darkTheme)
-    .slice(0, EXAMPLE_MAX);
+    .slice(0, max);
 }
 
 // Entrance reveal. Cold load wants "wow, instant" with a quick build-up; an
@@ -515,8 +507,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // on every toggle. Read here (before the featured row) because a favourite is also
   // promoted INTO the featured hero strip - see featuredEntriesNow().
   const favourites = loadFavourites(profile);
-  const isFav = (id: string): boolean => favourites.has(id);
-  const isPinned = (id: string): boolean => pinnedTools.has(id);
 
   // The user's hidden tools (+ `view:<id>` utility cards) - "Hide tool" removes the
   // tile from the browse grid, search results and the featured strip, behind the
@@ -554,6 +544,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       { id: 'sessions', icon: HISTORY_ICON, label: () => t('View sessions'), title: () => t('Open Projects filtered to the selected tools’ saved sessions'), disabled: () => sessionToolIds().length === 0 },
       { id: 'fav', icon: STAR_ICON, label: () => allSelectedFav() ? t('Unfavourite') : t('Favourite') },
       { id: 'hide', icon: EYE_ICON, label: () => allSelectedHidden() ? t('Unhide') : t('Hide') },
+      // Single-selection extras: the same About + Copy link the context menu carries,
+      // here so touch users reach them from the selection toolbar too.
+      { id: 'info', icon: INFO_ICON, label: () => t('About'), hidden: () => selected.size !== 1 },
       { id: 'copylink', icon: LINK_ICON, label: () => t('Copy link'), hidden: () => selected.size !== 1 },
     ],
   };
@@ -989,9 +982,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   masonry?.addEventListener('click', (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const target = e.target as HTMLElement;
-    // Controls with their own behaviour (fav/info/history/resume, carousel nav/dots) already
-    // stopPropagation or preventDefault; skip anything inside them defensively.
-    if (target.closest('.gcar-nav, .gcar-dot, [data-fav], [data-pin], [data-info], [data-history], [data-resume], [data-select]')) return;
+    // Controls with their own behaviour (resume, the selection dot, carousel nav/dots)
+    // already stopPropagation or preventDefault; skip anything inside them defensively.
+    if (target.closest('.gcar-nav, .gcar-dot, [data-resume], [data-select]')) return;
     const tile = target.closest<HTMLElement>('.gtile');
     const gcar = tile?.querySelector<HTMLElement>('.gcar');
     if (!tile || !gcar) return;
@@ -1439,9 +1432,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // View-backed tiles lead the utility grid; they carry no data-tool-id, so the
     // sort pass below (which re-appends tool tiles in order) leaves them in place
     // at the front rather than shuffling them among the tools.
-    const viewCards = opts.only === 'utility' ? utilityViews(speechOk).map(v => viewCardMarkup(v, favourites.has(viewFavKey(v.id)))).join('') : '';
+    const viewCards = opts.only === 'utility' ? utilityViews(speechOk).map(v => viewCardMarkup(v)).join('') : '';
     masonry.innerHTML = viewCards + allTools
-      .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
+      .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
     masonry.append(noResults);
     masonry.append(hiddenBox);
@@ -1556,110 +1549,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         window.location.hash = `#/tool/${el.dataset.resume}?slot=${encodeURIComponent(el.dataset.slot!)}`;
       });
     });
-    // Star / unstar (favourites). Toggles in place; updates the pill count live, and
-    // re-renders only when we're inside the Favourites view (the card must leave).
-    container.querySelectorAll<HTMLElement>('[data-fav]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        const id = el.dataset.fav!;
-        const on = !favourites.has(id);
-        if (on) favourites.add(id); else favourites.delete(id);
-        void saveFavourites(host, profile, favourites);
-        el.classList.toggle('is-fav', on);
-        el.setAttribute('aria-pressed', String(on));
-        const nm = toolById.get(id)?.name ?? t('tool');
-        el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
-        el.title = on ? t('In favourites') : t('Add to favourites');
-        // Every star toggle changes the hero strip's membership now that it is
-        // favourites-only (no manifest-featured auto-seed), so always remount.
-        refreshFeatured();
-        if (activeCat === FAV_CAT) applyView(); // in the Favourites view the card must now hide/show in place
-        else renderPills();                    // otherwise just refresh the pill count
-      });
-    });
-    // Star / unstar a utility VIEW card - same favourites list as the tools,
-    // under the collision-proof view: key, with the same promotion into the
-    // featured hero strip (as an icon-hero tile - a view has no render path).
-    container.querySelectorAll<HTMLElement>('[data-fav-view]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        const id = el.dataset.favView!;
-        const key = viewFavKey(id);
-        const on = !favourites.has(key);
-        if (on) favourites.add(key); else favourites.delete(key);
-        void saveFavourites(host, profile, favourites);
-        el.classList.toggle('is-fav', on);
-        el.setAttribute('aria-pressed', String(on));
-        const nm = utilityViews(speechOk).find(v => v.id === id)?.name ?? t('tool');
-        el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
-        el.title = on ? t('In favourites') : t('Add to favourites');
-        refreshFeatured();                      // the view joins/leaves the hero strip
-        if (activeCat === FAV_CAT) applyView(); // the card must hide/show in place
-        else renderPills();                     // otherwise just refresh the pill count
-      });
-    });
-    container.querySelectorAll<HTMLElement>('[data-info-view]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        const v = utilityViews(speechOk).find(x => x.id === el.dataset.infoView);
-        if (v) showViewInfoDialog(v);
-      });
-    });
-    // Pin / unpin ("available offline"). Pinning fetches the tool's files + its
-    // manifest-declared catalog assets into the offline caches (lib/offline-pins.ts);
-    // the button's filled state doubles as the pinned indicator. Busy-guarded so a
-    // double-tap can't race an in-flight pin against an unpin.
-    container.querySelectorAll<HTMLElement>('[data-pin]').forEach(el => {
-      el.addEventListener('click', async (e) => {
-        e.stopPropagation(); e.preventDefault();
-        if (el.classList.contains('is-busy')) return;
-        const id = el.dataset.pin!;
-        const nm = toolById.get(id)?.name ?? id;
-        const on = !pinnedTools.has(id);
-        el.classList.add('is-busy');
-        try {
-          if (on) {
-            // Same erased cast as the syncCatalog call above - the concrete web host
-            // satisfies sync's structural SyncHost slice at runtime.
-            const manifest = await pinTool(id, ids => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids));
-            pinnedTools.add(id);
-            warmEditorChunk(manifest.render?.layout);
-          } else {
-            await unpinTool(id);
-            pinnedTools.delete(id);
-          }
-          el.classList.toggle('is-pinned', on);
-          el.setAttribute('aria-pressed', String(on));
-          el.title = on ? t('Available offline') : t('Keep available offline');
-          el.setAttribute('aria-label', on ? tRaw('Remove {name} from offline', { name: nm }) : tRaw('Keep {name} available offline', { name: nm }));
-          announce(on ? tRaw('{name} is available offline', { name: nm }) : tRaw('{name} removed from offline', { name: nm }));
-          if (on) {
-            // Download complete: the circled tick pops + draws in (one-shot class so a
-            // later re-render doesn't replay it) with a small victory chime.
-            el.classList.add('is-celebrating');
-            const done = (): void => el.classList.remove('is-celebrating');
-            el.addEventListener('animationend', done, { once: true });
-            setTimeout(done, 900); // fallback: reduced-motion fires no animationend
-            playSfx('victory');
-          }
-        } catch (err) {
-          host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
-          announce(tRaw('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
-        } finally {
-          el.classList.remove('is-busy');
-        }
-      });
-    });
-    // Info + history modals.
-    container.querySelectorAll<HTMLElement>('[data-info]').forEach(el => {
-      el.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showInfoDialog(toolById.get(el.dataset.info!)); });
-    });
-    container.querySelectorAll<HTMLElement>('[data-history]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        openHistoryFor(toolById.get(el.dataset.history!)!);
-      });
-    });
+    // Favourite / offline / About / history moved off the card: they live in the
+    // context menu (right-click / long-press) and the selection toolbar, so the
+    // card itself stays a clean open-or-resume surface.
   }
 
   if (pillbar) {
@@ -1808,7 +1700,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   }
   historyFab?.addEventListener('click', openHistoryOverlay);
 
-  // A tool's saved-sessions dialog (the card (h) button and the ?history deep-link
+  // A tool's saved-sessions dialog (the context menu's sessions row and the ?history deep-link
   // both land here). Deletes update the in-memory lists + FAB count immediately;
   // the heavy masonry re-render is deferred to onClose, which also restores focus
   // to the card's (stable) info button so keyboard focus isn't dropped to <body>.
@@ -1826,7 +1718,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       },
       onClose: () => {
         render();
-        masonry!.querySelector<HTMLElement>(`[data-info="${CSS.escape(tool.id)}"]`)?.focus();
+        // Focus lands on the card's name link (the stable per-card control now that
+        // the icon row is gone), so keyboard focus isn't dropped to <body>.
+        tileById.get(tool.id)?.querySelector<HTMLElement>('.gtile-name')?.focus();
       },
     });
   }
@@ -1838,38 +1732,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     return isViewRef(ref) ? (viewByRef(ref)?.name ?? ref) : (toolById.get(ref)?.name ?? ref);
   }
 
-  /** Repaint one tile's star in place (mirrors the single [data-fav] handler). */
-  function paintFavButton(ref: string): void {
-    const on = favourites.has(ref);
-    const el = isViewRef(ref)
-      ? masonry?.querySelector<HTMLElement>(`[data-fav-view="${CSS.escape(ref.slice('view:'.length))}"]`)
-      : masonry?.querySelector<HTMLElement>(`[data-fav="${CSS.escape(ref)}"]`);
-    if (!el) return;
-    const nm = refName(ref);
-    el.classList.toggle('is-fav', on);
-    el.setAttribute('aria-pressed', String(on));
-    el.title = on ? t('In favourites') : t('Add to favourites');
-    el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
-  }
-
-  /** Repaint one tile's offline-pin toggle in place (mirrors the single handler). */
-  function paintPinButton(id: string, on: boolean): void {
-    const el = masonry?.querySelector<HTMLElement>(`[data-pin="${CSS.escape(id)}"]`);
-    if (!el) return;
-    const nm = toolById.get(id)?.name ?? id;
-    el.classList.toggle('is-pinned', on);
-    el.setAttribute('aria-pressed', String(on));
-    el.title = on ? t('Available offline') : t('Keep available offline');
-    el.setAttribute('aria-label', on ? tRaw('Remove {name} from offline', { name: nm }) : tRaw('Keep {name} available offline', { name: nm }));
-  }
-
   /** Star or unstar the whole selection (smart toggle: all starred → unstar all). */
   function favouriteSelection(): void {
     if (!selected.size) return;
     const on = !allSelectedFav();
     for (const ref of selected) { if (on) favourites.add(ref); else favourites.delete(ref); }
     void saveFavourites(host, profile, favourites);
-    for (const ref of selected) paintFavButton(ref);
     refreshFeatured();
     applyView();
     announce(on ? t('{n} added to favourites', { n: selected.size }) : t('{n} removed from favourites', { n: selected.size }));
@@ -1914,7 +1782,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         await unpinTool(id);
         pinnedTools.delete(id);
       }
-      paintPinButton(id, on);
       announce(on ? tRaw('{name} is available offline', { name: nm }) : tRaw('{name} removed from offline', { name: nm }));
     } catch (err) {
       host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
@@ -1940,7 +1807,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           pinnedTools.add(id);
           warmEditorChunk(manifest.render?.layout);
         }
-        paintPinButton(id, !unpin);
       } catch (err) {
         failed++;
         host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
@@ -1993,6 +1859,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (action === 'hide') { await hideSelection(); return; }
     if (action === 'pin') { await pinSelection(); return; }
     if (action === 'sessions') { viewSessionsForSelection(); return; }
+    if (action === 'info') {
+      const ref = [...selected][0];
+      if (!ref) return;
+      if (isViewRef(ref)) { const v = viewByRef(ref); if (v) showViewInfoDialog(v); }
+      else showInfoDialog(toolById.get(ref), host, darkTheme);
+      return;
+    }
     if (action === 'copylink') {
       await copyLink([...selected][0] ?? null, viewEl.querySelector<HTMLElement>('.gallery-bulkbar [data-bulk="copylink"]'));
     }
@@ -2067,7 +1940,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       const on = !favourites.has(ref);
       if (on) favourites.add(ref); else favourites.delete(ref);
       void saveFavourites(host, profile, favourites);
-      paintFavButton(ref);
       // The hero strip is favourites-only now, so any star toggle changes its membership.
       refreshFeatured();
       if (activeCat === FAV_CAT) applyView(); else renderPills();
@@ -2088,7 +1960,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (act === 'copylink') { await copyLink(ref); return; }
     if (act === 'info') {
       if (isViewRef(ref)) { const v = viewByRef(ref); if (v) showViewInfoDialog(v); }
-      else showInfoDialog(toolById.get(ref));
+      else showInfoDialog(toolById.get(ref), host, darkTheme);
       return;
     }
     if (act === 'hide') { await hideOne(ref); }
@@ -2107,7 +1979,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const deepLinkTool = toolById.get(deepLink.get('tool') ?? deepLink.get('history') ?? '');
   if (deepLinkTool) {
     if (deepLink.has('history')) openHistoryFor(deepLinkTool);
-    else showInfoDialog(deepLinkTool);
+    else showInfoDialog(deepLinkTool, host, darkTheme);
   }
 
   // ── First-run welcome + tips strip (unbranded installs only) ────────────────
@@ -2203,7 +2075,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
  *
  * They get a real tile, the same shape as a tool's, because to a user they are
  * the same kind of thing: something you open from this grid - including a
- * favourite star and a details dialog. A view's favourite lives in the SAME
+ * favourite action and a details dialog (via the context menu and the
+ * selection toolbar, like every tile). A view's favourite lives in the SAME
  * profile favourites list as a tool's, under a `view:`-prefixed key
  * (viewFavKey) so it can never collide with a tool id (ids are permanent
  * contracts, so the namespace must be carved out, not hoped about). What a view
@@ -2276,7 +2149,7 @@ const viewFavKey = (id: string): string => `view:${id}`;
 const selectDot = (ref: string, name: string): string =>
   `<button type="button" class="tile-check" data-select="${escape(ref)}" aria-pressed="false" aria-label="${escape(tRaw('Select {name}', { name }))}">${CHECK_ICON}</button>`;
 
-function viewCardMarkup(v: UtilityView, isFav: boolean): string {
+function viewCardMarkup(v: UtilityView): string {
   return `
     <article class="gtile gtile--utility gtile--view" data-view-card="${escape(v.id)}" data-select-ref="${escape(viewFavKey(v.id))}">
       ${selectDot(viewFavKey(v.id), v.name)}
@@ -2289,10 +2162,6 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
             <p class="gtile-desc">${escape(v.description)}</p>
           </span>
         </div>
-      </div>
-      <div class="gtile-actions">
-        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav-view="${escape(v.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: v.name }) : tRaw('Add {name} to favourites', { name: v.name }))}">${STAR_ICON}</button>
-        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(tRaw('About {name}', { name: v.name }))}">${INFO_ICON}</button>
       </div>
     </article>`;
 }
@@ -2331,12 +2200,9 @@ function showViewInfoDialog(v: UtilityView): void {
 function cardMarkup(
   tool: GalleryTool,
   latest: SavedEntry | undefined,
-  sessionCount: number,
   shellCaps: readonly string[] | undefined,
   personalizedThumb: string | undefined,
   isNew = false,
-  isFav = false,
-  isPinned = false,
   sessionThumbs: string[] = [],
   darkTheme = false,
   utilityLayout = false,
@@ -2358,15 +2224,12 @@ function cardMarkup(
   // Utilities view (#/u): the icon alone is a clear enough affordance, so drop the
   // preview hero entirely and stack a larger icon ABOVE the title + description. The
   // card is a fixed landscape box (CSS clamps it between 4:3 and 16:9) so every tile
-  // is the same height regardless of description length. Actions row is kept as-is.
+  // is the same height regardless of description length.
   if (utilityLayout) {
     const uHasSession = !!latest && !unavailable;
     const uName = unavailable
       ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
       : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${uHasSession ? ` aria-label="${escape(tRaw('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
-    const uHistoryBtn = (!unavailable && sessionCount > 0)
-      ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? tRaw('1 saved session for {name}', { name: tool.name }) : tRaw('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
-      : '';
     return `
       <article class="gtile gtile--utility${unavailable ? ' gtile--unavailable' : ''}" data-tool-id="${escape(tool.id)}" data-select-ref="${escape(tool.id)}">
         ${selectDot(tool.id, tool.name)}
@@ -2380,12 +2243,6 @@ function cardMarkup(
             </span>
             ${statusBadge}
           </div>
-        </div>
-        <div class="gtile-actions">
-          <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: tool.name }) : tRaw('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
-          ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
-          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(tRaw('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
-          ${uHistoryBtn}
         </div>
       </article>
     `;
@@ -2540,7 +2397,7 @@ function cardMarkup(
     ? t('Last opened · {time}', { time: relativeTime(latest!.updatedAt) })
     : '';
 
-  // Export formats no longer clutter the card - they live in the info (i) dialog now,
+  // Export formats no longer clutter the card - they live in the About dialog now,
   // grouped by vector / raster with the default highlighted (see showInfoDialog).
 
   // The title is the "start a new session" link. A stretched ::after (see CSS)
@@ -2551,10 +2408,6 @@ function cardMarkup(
   const name = unavailable
     ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
     : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${hasSession ? ` aria-label="${escape(tRaw('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
-
-  const historyBtn = (!unavailable && sessionCount > 0)
-    ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? tRaw('1 saved session for {name}', { name: tool.name }) : tRaw('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
-    : '';
 
   return `
     <article class="gtile${unavailable ? ' gtile--unavailable' : ''}${hasImageHero ? ' gtile--has-preview' : ''}" data-tool-id="${escape(tool.id)}" data-select-ref="${escape(tool.id)}">
@@ -2577,19 +2430,13 @@ function cardMarkup(
             : statusBadge}
         </div>
       </div>
-      <div class="gtile-actions">
-        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: tool.name }) : tRaw('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
-        ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
-        <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(tRaw('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
-        ${historyBtn}
-      </div>
     </article>
   `;
 }
 
 // ── Info modal ──────────────────────────────────────────────────────────────
 
-function showInfoDialog(tool: GalleryTool | undefined): void {
+function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTheme: boolean): void {
   if (!tool) return;
   const caps = Array.isArray(tool.capabilities) ? tool.capabilities : [];
   // Formats + privacy come straight from the catalog index entry - no fetch.
@@ -2622,6 +2469,55 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   // card.html iframe), sized by the tool's declared aspect when it has one.
   const previewAspect = typeof tool.width === 'number' && typeof tool.height === 'number'
     ? ` style="aspect-ratio:${tool.width}/${tool.height}"` : '';
+
+  // Templates and presets share ONE tile shape (.meta-look: media slot + name +
+  // optional description) so the two starting-point kinds read as the same idea,
+  // and both echo the in-tool Start chooser's tile.
+  // "New from template" starting points - metadata carried on the index entry, so
+  // this list costs no fetch. Each tile deep-links to the tool's `?template=<tid>`
+  // launcher, the same path the in-tool chooser resolves. A template with no
+  // authored thumb leads with a category glyph (same mapping as the chooser's
+  // glyphFor - kept local so the chooser chunk stays off the gallery boot path).
+  const tplGlyph = (tp: { name: string; category?: string }): string => {
+    const hay = `${tp.category ?? ''} ${tp.name}`.toLowerCase();
+    const key = /carousel|slides?|deck|grid|gallery/.test(hay) ? 'grid'
+      : /poster|flyer|cover|image|photo|banner/.test(hay) ? 'image'
+      : /story|social|post/.test(hay) ? 'photos'
+      : /card|badge|label/.test(hay) ? 'shapes' : 'layers';
+    return icon(key as Parameters<typeof icon>[0], { size: 26 });
+  };
+  const templates = tool.templates ?? [];
+  const tplHtml = templates.length ? `
+      <section class="meta-sec" aria-label="${escape(t('Templates'))}">
+        <h3 class="meta-sec-title">${t('Templates')}</h3>
+        <ul class="meta-look-list">
+          ${templates.map(tp => `<li><a class="meta-look" href="#/tool/${escape(tool.id)}?template=${escape(encodeURIComponent(tp.id))}">
+            <span class="meta-look-thumb">${tp.thumb ? `<img class="meta-look-img" src="${escape(tp.thumb)}" alt="" loading="lazy" decoding="async">` : `<span class="meta-look-glyph" aria-hidden="true">${tplGlyph(tp)}</span>`}</span>
+            <span class="meta-look-name">${escape(tp.name)}</span>
+            ${tp.description ? `<span class="meta-look-desc">${escape(tp.description)}</span>` : ''}
+          </a></li>`).join('')}
+        </ul>
+      </section>` : '';
+
+  // Preset looks (manifest examples) - the same looks the card's preview strip
+  // shows, uncapped here. Thumbs live-render lazily through the shared
+  // featured:<id>:<i> cache (hydrateInfoPresets), so anything the grid already
+  // rendered resolves instantly; a click opens the tool seeded with that look.
+  const looks = galleryExampleLooks(tool, darkTheme, Infinity);
+  const exHtml = looks.length ? `
+      <section class="meta-sec" aria-label="${escape(t('Presets'))}">
+        <h3 class="meta-sec-title">${t('Presets')}</h3>
+        <ul class="meta-look-list">
+          ${looks.map(({ v, i }, k) => `<li><a class="meta-look" href="#/tool/${escape(tool.id)}" data-ex="${i}">
+            <span class="meta-look-thumb"><img class="meta-look-img" alt="" decoding="async"></span>
+            <span class="meta-look-name">${escape(v.label || tRaw('Preset {n}', { n: k + 1 }))}</span>
+          </a></li>`).join('')}
+        </ul>
+      </section>` : '';
+
+  // Templates or presets fill a second column on desktop; without them the dialog
+  // keeps its single-column spec-sheet shape (the CSS keys off the wide class).
+  const wide = !!(tplHtml || exHtml);
   const content = `
     <div class="meta-dialog-body">
       <header class="meta-dialog-head">
@@ -2631,30 +2527,68 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
           <p class="meta-dialog-sub">${escape(t(catLabel(tool.category)))} · ${escape(t(statusLabel(tool.status) || ''))}</p>
         </div>
       </header>
-      ${tool.preview ? `<div class="meta-dialog-preview"${previewAspect}>${previewMedia(tool.preview, 'meta-dialog-preview-img')}</div>` : ''}
-      <p class="meta-dialog-desc">${escape(tool.description ?? '')}</p>
-      <dl class="meta-dialog-facts">
-        <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>${t('Exports')}</dt><dd>${exportsDd}</dd></div>
-        ${dims ? `<div><dt>${t('Size')}</dt><dd>${escape(dims)}</dd></div>` : ''}
-        ${caps.length ? `<div><dt>${t('Uses')}</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
-        ${tool.privacy === 'on-device' ? `<div><dt>${t('Privacy')}</dt><dd>${t('Runs entirely on your device')}</dd></div>` : ''}
-        ${tool.version ? `<div><dt>${t('Version')}</dt><dd>${escape(tool.version)}</dd></div>` : ''}
-      </dl>
-      <section class="meta-defaults" aria-label="${escape(t('Default settings'))}" hidden>
-        <h3 class="meta-defaults-title">${t('Defaults')}</h3>
-        <dl class="meta-defaults-list"></dl>
-      </section>
+      <div class="meta-dialog-cols">
+        <div class="meta-dialog-main">
+          ${tool.preview ? `<div class="meta-dialog-preview"${previewAspect}>${previewMedia(tool.preview, 'meta-dialog-preview-img')}</div>` : ''}
+          <p class="meta-dialog-desc">${escape(tool.description ?? '')}</p>
+          <dl class="meta-dialog-facts">
+            <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>${t('Exports')}</dt><dd>${exportsDd}</dd></div>
+            ${dims ? `<div><dt>${t('Size')}</dt><dd>${escape(dims)}</dd></div>` : ''}
+            ${caps.length ? `<div><dt>${t('Uses')}</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
+            ${tool.privacy === 'on-device' ? `<div><dt>${t('Privacy')}</dt><dd>${t('Runs entirely on your device')}</dd></div>` : ''}
+            ${tool.version ? `<div><dt>${t('Version')}</dt><dd>${escape(tool.version)}</dd></div>` : ''}
+          </dl>
+        </div>
+        <div class="meta-dialog-side">
+          ${tplHtml}
+          ${exHtml}
+          <section class="meta-defaults" aria-label="${escape(t('Default settings'))}" hidden>
+            <h3 class="meta-sec-title">${t('Defaults')}</h3>
+            <dl class="meta-defaults-list"></dl>
+          </section>
+        </div>
+      </div>
       <div class="meta-dialog-actions">
         <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">${tool.category === 'utility' ? t('Open utility') : t('Open tool')}</a>
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;
   playSfx('whisper'); // airy elevation as the tool details rise in
-  const modal = mountModal(content, { className: 'tool-meta-dialog' });
+  const modal = mountModal(content, { className: `tool-meta-dialog${wide ? ' tool-meta-dialog--wide' : ''}` });
   modal.el.setAttribute('aria-labelledby', 'tool-info-title');
   modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
   modal.el.querySelector('.meta-dialog-open')?.addEventListener('click', () => modal.close());
+  // A template link navigates via its href; just take the dialog down with it.
+  modal.el.querySelectorAll('.meta-look:not([data-ex])').forEach(a => a.addEventListener('click', () => modal.close()));
+  // A preset opens the tool seeded with that exact look (same path as clicking the
+  // card's example slide). Modified / middle clicks keep the plain href fallback.
+  modal.el.querySelectorAll<HTMLElement>('.meta-look[data-ex]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const hit = looks.find(l => l.i === Number(a.dataset.ex));
+      void toolSeedHref(tool.id, hit?.v.values).then(href => { modal.close(); window.location.hash = href; });
+    });
+  });
   void fillDefaultsList(modal.el, tool.id);
+  void hydrateInfoPresets(modal.el, host, tool, looks);
+}
+
+/** Live-render the preset thumbs, serially, through the same featured:<id>:<i>
+ *  cache the card strips and the hero row use - a look the grid already rendered
+ *  resolves from cache instantly. Stops when the dialog closes; a failed render
+ *  just leaves that tile's flat placeholder. */
+async function hydrateInfoPresets(dialog: HTMLElement, host: GalleryHost, tool: GalleryTool, looks: Array<{ v: FeaturedVariant; i: number }>): Promise<void> {
+  for (const { v, i } of looks) {
+    if (!dialog.isConnected) return;
+    const img = dialog.querySelector<HTMLImageElement>(`.meta-look[data-ex="${i}"] .meta-look-img`);
+    if (!img || img.getAttribute('src')) continue;
+    try {
+      const thumb = await renderFeaturedVariant(host, tool.id, tool.formats, i, v.values as Record<string, unknown>);
+      if (!dialog.isConnected || !thumb) continue;
+      img.src = thumb;   // the [src] CSS reveals it once set
+    } catch { /* leave the placeholder */ }
+  }
 }
 
 // ── Info dialog: the defaults spec list ──────────────────────────────────────

@@ -4872,9 +4872,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     await reload();
     if (summary.packTools > 0) {
       // An instance pack (plans/131) landed tools + catalog entries beside the
-      // brand: resync now so the gallery lists them without a reload/boot.
+      // brand: resync now so the gallery lists them without a reload/boot, then
+      // re-merge the installed (sideloaded) tools over the fresh index - the
+      // same order main.ts's boot path runs.
       void import('../catalog/sync.ts')
         .then(({ syncCatalog }) => syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]))
+        .then(() => import('./installed-tools.ts'))
+        .then(({ mergeInstalledToolsIntoIndex }) => mergeInstalledToolsIntoIndex())
         .catch(() => { /* next boot's sync picks it up */ });
       announce(tRaw('Brand loaded — {name}: {n} tools installed', {
         name: summary.packName ?? t('instance pack'), n: summary.packTools,

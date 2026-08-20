@@ -237,34 +237,22 @@
 /* Details modal: a touch larger, sits on the "AI content" meta row. */
 .cat-details-meta .genai-pill { font-size: calc(.62rem * var(--a11y-fs)); }
 
-/* Star — a floating chip over the figure, revealed/emphasised on hover/focus. */
-.cat-star {
-  position: absolute; top: 6px; left: 6px; z-index: 2;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; padding: 0;
-  border: none; border-radius: 999px; cursor: pointer;
-  color: #fff; background: #0006;
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-  opacity: 0; transition: opacity .12s, background .12s, color .12s, transform .12s;
-}
-.cat-tile:hover .cat-star,
-.cat-tile:focus-within .cat-star { opacity: 1; }
-.cat-star:hover { background: #000a; }
-.cat-star svg { fill: none; }
-/* A favourited star is always visible + filled gold. */
-.cat-tile.is-fav .cat-star { opacity: 1; background: hsl(var(--primary)); }
-.cat-tile.is-fav .cat-star svg { fill: currentColor; }
-.cat-star:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+/* (The per-tile favourite star chip is gone — favourite lives in the context menu
+   and the selection toolbar, matching the gallery cards.) */
 
-/* Selection checkbox — a floating chip, top-RIGHT (the favourite star owns top-left), only
-   on the user's own upload tiles. Hidden until hover on fine pointers; always shown once
-   anything in the grid is selected (so the rest are obviously togglable) and on coarse
+/* Selection dot — bottom-LEFT like the gallery cards' .tile-check, but anchored to
+   the FIGURE's lower-left corner rather than the tile's: the caption row (source
+   pill + format) owns the tile's bottom-left here. The figure is a fixed 4/3 of
+   the tile width, so its bottom edge is 75cqw from the top — the tile is the size
+   container. Hidden until hover on fine pointers; always shown once anything in
+   the grid is selected (so the rest are obviously togglable) and on coarse
    pointers. */
+.catalog .cat-tile { container-type: inline-size; }
 .cat-check {
-  position: absolute; top: 6px; right: 6px; z-index: 3;
+  position: absolute; top: calc(75cqw - 32px); left: 6px; z-index: 3;
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; padding: 0;
-  border: 2px solid #fff; border-radius: 8px; cursor: pointer;
+  border: 2px solid #fff; border-radius: 999px; cursor: pointer;
   color: transparent; background: #0006;
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   opacity: 0; transition: opacity .12s, background .12s, color .12s;
@@ -316,6 +304,9 @@
   position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom));
   transform: translateX(-50%); z-index: 9000;
   display: flex; align-items: center; gap: 14px;
+  /* max-content: at left:50% shrink-to-fit sizes against only the right half of
+     the viewport (~50vw cap, early wrap) - see .gallery-bulkbar. */
+  width: max-content; max-width: calc(100vw - 24px);
   padding: 8px 8px 8px 16px; border-radius: 999px;
   background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;

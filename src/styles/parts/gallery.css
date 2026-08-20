@@ -808,25 +808,6 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--pre
   position: static;        /* flow inside the bar instead of floating over the image */
   opacity: 1;              /* normally revealed on hover — always show it here */
 }
-/* The (i)/(h) actions normally float over the preview's top-right; with the image
-   gone they'd be invisible (faint, no contrast) and collide with the Continue bar.
-   Drop them into normal flow at the card's bottom-right, fully opaque. Keep them
-   positioned (relative + z-index) so they stay above the stretched .gtile-name
-   click target and remain clickable.
-   Utility tiles are EXEMPT: they never had a preview, and their fixed 4/3 box
-   (aspect-ratio + overflow:hidden) means an in-flow actions row is pushed past
-   the bottom edge and clipped — which silently removed favourite/pin/info from
-   the Utilities view whenever previews were hidden. They keep the absolute
-   top-right cluster they show with previews on. */
-html[data-a11y-previews="hidden"] .tool-masonry .gtile:not(.gtile--utility) .gtile-actions {
-  position: relative;
-  top: auto;
-  right: auto;
-  z-index: 2;
-  justify-content: flex-end;
-  padding: 0 12px 10px;
-}
-html[data-a11y-previews="hidden"] .tool-masonry .gtile .gtile-iconbtn { color: hsl(var(--muted-foreground)); }
 /* Icon-led / resume / "desktop only" tiles are previews too — collapse them so
    every hidden-preview card is just its icon + text body (the icon lives in the
    caption row; the name link still opens the tool). */
@@ -893,11 +874,14 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
 .tool-masonry .gtile.is-filtered { display: none; }
 
 /* ── Multi-select ──
-   Every tile carries the shared top-left .tile-check dot (folder-tiles.ts /
-   folders.css own its geometry + pressed state); this block adds the gallery's
-   reveal states — folders.css only reveals it inside .folder-tile. The dot sits
-   OUTSIDE .gtile-actions on purpose: that cluster paints with
-   mix-blend-mode:difference over previews, which would invert the dot. */
+   Every tile carries the shared .tile-check dot (folder-tiles.ts / folders.css
+   own its box + pressed state); this block adds the gallery's reveal states —
+   folders.css only reveals it inside .folder-tile. In the gallery the dot sits
+   BOTTOM-LEFT (folders.css pins it top-left): the top-left corner belongs to the
+   preview's timestamp stamp (.gtile-stamp), and the card's bottom-left — under
+   the caption icon column — is reliably empty. Above the stretched .gtile-name
+   click target (z-index 2 vs 1), so it stays tappable. */
+.gtile .tile-check { top: auto; bottom: 10px; left: 10px; }
 .gtile:hover .tile-check,
 .gtile.is-selected .tile-check,
 .gallery.has-selection .tile-check { opacity: 1; }
@@ -1496,22 +1480,15 @@ a.gtile-name:focus-visible::after {
   border-color: hsl(var(--primary) / 0.4);
 }
 
-/* Per-card (i) info / (h) history buttons — floated over the top-right of the
-   preview, reading just after the timestamp stamp (which sits top-left). */
-.gtile-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 2;
-  display: flex;
-  mix-blend-mode:difference;
-  gap: 6px;
-}
+/* Round icon button — no longer rendered on gallery cards (tile actions live in
+   the context menu + selection toolbar now), but still the close button of the
+   folder overlay's dialogs (folder-overlay.ts), so the base class stays here in
+   the always-loaded sheet. */
 .gtile-iconbtn {
-  /* Star / info / ⋯ over a tile preview: aria-labelled, no visible text, so the
-     glyph and its tap target take the multiplier. (The svg below is 1em against
-     the button's inherited, UNSCALED font-size, so it needs the factor spelled
-     out — it does not come along for free.) */
+  /* Aria-labelled, no visible text, so the glyph and its tap target take the
+     multiplier. (The svg below is 1em against the button's inherited, UNSCALED
+     font-size, so it needs the factor spelled out — it does not come along for
+     free.) */
   width: calc(26px * var(--a11y-fs));
   height: calc(26px * var(--a11y-fs));
   padding: 0;
@@ -1563,122 +1540,8 @@ a.gtile-name:focus-visible::after {
 .gtile--utility:hover .tool-card-icon svg { opacity: 1; }
 .gtile--utility .gtile-meta { align-items: center; }
 .gtile--utility .gtile-name { white-space: normal; }
-/* No preview to float over, so the action cluster reads on the plain card
-   surface — drop the difference blend the over-preview buttons use. */
-.gtile--utility .gtile-actions { mix-blend-mode: normal; }
-
-/* Favourite (star) toggle — filled + accented when starred, so it reads as "on"
-   without needing hover. */
-.gtile-fav.is-fav { color: hsl(var(--primary)); }
-.gtile-fav.is-fav svg { fill: hsl(var(--primary)); }
-.gtile-fav.is-fav:hover { color: hsl(var(--primary)); }
-/* "Available offline" — a three-layer download button. At rest a download glyph;
-   while the pin's fetches are in flight (.is-busy) the glyph shrinks under a
-   spinning progress arc; once pinned (.is-pinned) an accent-filled circled tick
-   takes over — the "works offline" mark the tooltip describes. On the completing
-   click only, the JS adds .is-celebrating so the tick pops + draws in (the class
-   is one-shot, so re-renders show the settled tick without replaying it). All
-   animation dies under both reduced-motion paths via base.css's global kills;
-   every state still reads statically. */
-.gtile-pin { position: relative; }
-.gtile-pin .pin-layer {
-  position: absolute;
-  inset: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity .18s, transform .18s;
-}
-.gtile-pin .pin-ring,
-.gtile-pin .pin-done { opacity: 0; transform: scale(.6); }
-.gtile-pin.is-busy { pointer-events: none; }
-.gtile-pin.is-busy .pin-dl { opacity: .35; transform: scale(.7); }
-.gtile-pin.is-busy .pin-ring { opacity: 1; transform: none; }
-.gtile-pin.is-busy .pin-ring svg {
-  /* r=9 circle, circumference ≈ 56.5 — a ~70% arc that spins while fetching */
-  stroke-dasharray: 40 16.55;
-  transform-origin: 50% 50%;
-  animation: pin-spin .9s linear infinite;
-}
-@keyframes pin-spin { to { transform: rotate(360deg); } }
-.gtile-pin.is-pinned:not(.is-busy) .pin-dl { opacity: 0; transform: scale(.6); }
-.gtile-pin.is-busy .pin-done { opacity: 0; }
-.gtile-pin.is-pinned:not(.is-busy) .pin-done { opacity: 1; transform: none; }
-.gtile-pin.is-pinned { color: hsl(var(--primary)); }
-.gtile-pin.is-pinned:hover { color: hsl(var(--primary)); }
-/* Bold accent tick-in-a-circle: the circle fills with the accent, the tick
-   strokes in the surface colour on top of it. */
-.gtile-pin .pin-done svg circle { fill: hsl(var(--primary)); stroke: hsl(var(--primary)); }
-.gtile-pin .pin-done svg path { stroke: hsl(var(--primary-foreground)); fill: none; }
-/* Completion flourish: circle pops in, tick draws itself. */
-.gtile-pin.is-celebrating .pin-done svg circle { animation: pin-pop .45s cubic-bezier(.34,1.56,.64,1); transform-origin: 50% 50%; }
-.gtile-pin.is-celebrating .pin-done svg path {
-  stroke-dasharray: 12;
-  animation: pin-tick .3s ease-out .18s backwards;
-}
-@keyframes pin-pop { from { transform: scale(.3); } }
-@keyframes pin-tick { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
-
-/* Over a preview image the muted theme-token glyphs above vanish on dark/busy
-   artwork. When a preview sits behind them (:has(.gtile-hero) — not the empty
-   tiles, and not hide-previews mode where the actions drop to the card body),
-   paint them solid white and give each glyph a dark halo: layered drop-shadows
-   act like an outline, so the white body carries the icon on dark previews and
-   the halo outlines it on light ones — legible on ANY background, no mid-tone
-   blind spot. The favourite star's "on" state is handled just below (it rides
-   the same halo).
-
-   Keyed off a `.gtile--has-preview` class the markup sets when the tile leads with a
-   hero/carousel image — NOT a live `:has(.gtile-hero, .gcar)` selector, which re-matched
-   the whole grid on every filter/sort mutation. The JS keeps the class in sync (e.g. it
-   drops it when a demo preview 404s and morphs to a text tile). Pixel-identical. */
-.tool-masonry .gtile.gtile--has-preview .gtile-iconbtn {
-  color: #fff;
-
-}
-.tool-masonry .gtile.gtile--has-preview .gtile-iconbtn:hover {
-  color: #fff;
-  border-color: transparent;
-  background: rgba(0, 0, 0, .34);   /* a soft scrim disc for press feedback, à la .gtile-stamp */
-}
-/* Previews hidden (the a11y pref): the hero is display:none, so the white-on-
-   artwork treatment above would paint invisible white glyphs on the plain card.
-   These used to be `:not(.hide-previews)` guards on the rules above, but a
-   :not() on a11y state is banned (the pref must be dormant by default), so the
-   hidden-previews side restores the token colours instead — each selector
-   repeats the .gtile--has-preview chain so it out-specifies its white twin. */
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-iconbtn {
-  color: hsl(var(--muted-foreground));
-}
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-iconbtn:hover {
-  color: hsl(var(--primary));
-  border-color: hsl(var(--primary) / 0.5);
-  background: hsl(var(--primary) / 0.08);
-}
-/* Favourited over a preview: a SOLID white star (filled, vs the hollow outline
-   when off) + the halo. The brand --primary is Pine (a dark green) even in light
-   theme, so a primary-filled star would vanish on dark previews — white keeps the
-   "on" state unmistakable on any artwork. (Empty tiles / hide-previews mode keep
-   the brand-green fill from the base rule, where the surface is a known token.) */
-.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
-.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover { color: #fff; }
-.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: #fff; }
-/* Pinned over a preview: white-filled circle + dark tick, same "solid white
-   on-state" idea as the star — the accent fill of the base rule would vanish on
-   dark artwork. */
-.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
-.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: #fff; }
-.tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg circle { fill: #fff; stroke: #fff; }
-.tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg path { stroke: #16241d; }
-/* Previews hidden: restore the brand-green on-state (same reasoning as the
-   iconbtn restore above — the artwork the white was for is gone). */
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover,
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: hsl(var(--primary)); }
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: hsl(var(--primary)); }
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg circle { fill: hsl(var(--primary)); stroke: hsl(var(--primary)); }
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg path { stroke: hsl(var(--primary-foreground)); }
+/* (The per-card favourite / offline / info / history icon cluster is gone: tile
+   actions live in the context menu and the selection toolbar now.) */
 
 .gtile--unavailable { opacity: 0.6; }
 
@@ -1692,11 +1555,33 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   padding: 0;
-  max-width: 440px;
+  max-width: 560px;
   width: 92vw;
-  max-height: 85vh;
+  max-height: 90vh;
   overflow: auto;
   box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
+}
+/* A tool with templates / presets gets the wide spec sheet: the facts stay in the
+   left column, templates + presets + defaults fill the right. Below 720px the
+   columns stack back into the single flow. */
+.tool-meta-dialog--wide { max-width: min(920px, 94vw); }
+.meta-dialog-cols,
+.meta-dialog-main,
+.meta-dialog-side { display: contents; }
+@media (min-width: 720px) {
+  .tool-meta-dialog--wide .meta-dialog-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 24px;
+    align-items: start;
+  }
+  .tool-meta-dialog--wide .meta-dialog-main,
+  .tool-meta-dialog--wide .meta-dialog-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
 }
 /* (`.tool-meta-dialog::backdrop` aliases the shared dimmed-blur backdrop in
    parts/dialogs.css.) */
@@ -1738,9 +1623,8 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
   pointer-events: none;   /* preview, not a surface — clicks stay in the dialog */
 }
 
-/* Info dialog: the defaults spec sheet — small, dense, professional. */
-.meta-defaults { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
-.meta-defaults-title {
+/* Info dialog: shared section heading (Templates / Presets / Defaults). */
+.meta-sec-title {
   margin: 0 0 6px;
   font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
@@ -1748,6 +1632,63 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
+
+/* Info dialog: templates + presets share ONE tile shape (.meta-look — media slot
+   over name, optional description), echoing the in-tool Start chooser's tile, so
+   the two starting-point kinds read as the same idea. Templates lead with an
+   authored thumb or a category glyph; presets live-render through the shared
+   featured:<id>:<i> cache and reveal once [src] lands. */
+.meta-sec { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
+.meta-look-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+.meta-look {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 7px;
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: calc(var(--radius) * 0.75);
+  text-decoration: none;
+  color: inherit;
+}
+.meta-look:hover { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--primary) / 0.05); }
+.meta-look-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  border-radius: calc(var(--radius) * 0.5);
+  overflow: hidden;
+  background: var(--preview-checker), var(--preview-surface);
+}
+.meta-look-img { width: 100%; height: 100%; object-fit: contain; display: block; opacity: 0; }
+.meta-look-img[src] { opacity: 1; transition: opacity .25s ease; }
+.meta-look-glyph { display: flex; color: hsl(var(--muted-foreground) / 0.6); }
+.meta-look-name { font-size: calc(12px * var(--a11y-fs)); font-weight: 600; line-height: 1.25; }
+.meta-look-desc {
+  font-size: calc(11px * var(--a11y-fs));
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* Hide colourful previews (a11y pref): the dialog's art collapses like the grid's —
+   the hero preview and the template/preset thumbs go; the labelled text tiles stay. */
+html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-dialog-preview,
+html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: none; }
+
+/* Info dialog: the defaults spec sheet — small, dense, professional. */
+.meta-defaults { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
 .meta-defaults-list {
   margin: 0;
   display: grid;
@@ -1868,7 +1809,11 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
 .gallery-bulkbar {
   position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%); z-index: 9000;
-  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 24px);
+  display: flex; align-items: center; gap: 14px;
+  /* max-content, not shrink-to-fit: a fixed element at left:50% sizes against only
+     the RIGHT half of the viewport, so shrink-to-fit capped the bar at ~50vw and
+     wrapped its actions early. Size to the content; wrap only at the real edge. */
+  width: max-content; max-width: calc(100vw - 24px);
   padding: 8px 8px 8px 16px; border-radius: 999px;
   background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;

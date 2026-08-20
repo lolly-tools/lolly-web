@@ -1366,7 +1366,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // EVERY tile carries a selection checkbox (2026-08-09 - people expect a grid to
     // marquee): catalog assets select for bulk favourite/hide; the destructive bulk
     // actions gate on an all-uploads selection instead (catalog assets are a permanent
-    // contract). The whole tile body (bar the star + checkbox) opens the details modal.
+    // contract). The whole tile body (bar the checkbox) opens the details modal.
+    // Favourite moved off the tile (context menu + selection toolbar), matching the
+    // gallery cards.
     const sel = selected.has(ref.id);
     return `
       <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}">
@@ -1378,7 +1380,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}</span>
           </span>
         </button>
-        <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" aria-label="${escape(fav ? tRaw('Remove {name} from favourites', { name }) : tRaw('Add {name} to favourites', { name }))}">${STAR_ICON}</button>
       </div>`;
   }
 
@@ -1650,21 +1651,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
   }
 
-  // Flip every grid tile sharing this base id to the given favourite state, in place - 
-  // the tile class, star pressed-state and its labels - matching what assetTile() would
-  // render. Favourited assets keep their category-bucket tile (the strip is a shortcut,
-  // not a bucket move), so this + refreshFavStrip() fully cover a fav toggle.
+  // Flip every grid tile sharing this base id to the given favourite state, in place,
+  // matching what assetTile() would render. Favourited assets keep their category-bucket
+  // tile (the strip is a shortcut, not a bucket move), so this + refreshFavStrip() fully
+  // cover a fav toggle.
   function reflectFavInGrid(base: string, on: boolean): void {
     for (const tile of viewEl.querySelectorAll<HTMLElement>('.cat-tile')) {
       const id = tile.dataset.id ?? '';
       if (assetBaseId(id) !== base) continue;
       tile.classList.toggle('is-fav', on);
-      const star = tile.querySelector<HTMLElement>('.cat-star');
-      if (!star) continue;
-      const name = String(assetById.get(id)?.meta?.name ?? id);
-      star.setAttribute('aria-pressed', String(on));
-      star.setAttribute('title', on ? t('Remove from favourites') : t('Add to favourites'));
-      star.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name }) : tRaw('Add {name} to favourites', { name }));
     }
   }
 
@@ -5299,9 +5294,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (ref && mounted) { await reload(); if (mounted) rerender(); }
         return;
       }
-
-      const star = target.closest<HTMLElement>('[data-star]');
-      if (star) { await toggleFavourite(star.dataset.star!); return; }
 
       // Category "Colour" treatment swatch - wash this group's raster photos in place
       // (checked before the icon branch: treatment buttons also carry .cat-dl-theme).
