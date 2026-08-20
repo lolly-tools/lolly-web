@@ -50,8 +50,8 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
       <p class="modal-msg">Renders into a zip. Optionally set a password to lock the whole download (blank = no lock). Any PDFs inside are also individually AES-256-locked, so they stay locked after the zip is extracted.</p>
       <input type="password" class="field-input export-lock-pw" autocomplete="off" spellcheck="false" placeholder="Password (optional)" aria-label="${escape(t('Zip password (optional)'))}">
       <select class="field-select export-lock-tier" aria-label="Zip lock strength">
-        <option value="strong">Strong · AES-256 — needs 7-Zip / WinZip / macOS (not Windows Explorer) ⓘ</option>
-        <option value="standard">Standard · opens anywhere incl. Windows Explorer — weaker</option>
+        <option value="strong">Strong · AES-256 - needs 7-Zip / WinZip / macOS (not Windows Explorer) ⓘ</option>
+        <option value="standard">Standard · opens anywhere incl. Windows Explorer - weaker</option>
       </select>
       <div class="modal-actions">
         <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>

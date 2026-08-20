@@ -102,6 +102,6 @@ test('drift guard: every markdown page fully aligns; the pinned exceptions do no
     }
   }
 
-  assert.deepEqual(brokeClean, [], 'these markdown pages no longer align — see chunks.ts / docs/build.ts');
-  assert.deepEqual(staleException, [], 'these pages now align — drop them from NON_MARKDOWN_PAGES');
+  assert.deepEqual(brokeClean, [], 'these markdown pages no longer align - see chunks.ts / docs/build.ts');
+  assert.deepEqual(staleException, [], 'these pages now align - drop them from NON_MARKDOWN_PAGES');
 });

@@ -224,13 +224,13 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
   // otherwise fire a dozen doomed requests before failing). navigator.onLine is
   // only trustworthy in the negative: false ⇒ certainly offline.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    throw new Error('Couldn’t reach Google Fonts — you appear to be offline.');
+    throw new Error('Couldn’t reach Google Fonts - you appear to be offline.');
   }
   const css = await resolveFamilySpec(name);
   // Everything failed: online-but-nothing-resolved is almost always a wrong name
   // (a mis-fit spec and an unknown family are indistinguishable here - both are
   // CORS-blocked 400s); a rare true outage lands here too, so name both.
-  if (!css) throw new Error(`Couldn’t find a Google Font called “${name}” — check the spelling (or your connection).`);
+  if (!css) throw new Error(`Couldn’t find a Google Font called “${name}” - check the spelling (or your connection).`);
 
   const faces = keepFaces(parseGoogleFontCss(css));
   if (!faces.length) throw new Error(`"${name}" has no downloadable latin faces.`);
@@ -238,7 +238,7 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
   const downloaded: DownloadedFontFace[] = [];
   for (const face of faces) {
     const resp = await fetch(face.url).catch(() => null);
-    if (!resp?.ok) throw new Error(`Downloading "${name}" failed partway — try again.`);
+    if (!resp?.ok) throw new Error(`Downloading "${name}" failed partway - try again.`);
     downloaded.push({ ...face, bytes: new Uint8Array(await resp.arrayBuffer()) });
   }
   return downloaded;

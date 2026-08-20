@@ -29,7 +29,7 @@ function assertShape(c: LogoClassification | null): asserts c is LogoClassificat
   assert.ok(c.reasons.length >= 3, 'one reason per judgment at least');
   for (const r of c.reasons) {
     assert.ok(r.length > 0 && r.length <= 60, `reason not chip-sized: ${r}`);
-    assert.ok(!r.includes('—'), `em-dash in reason: ${r}`);
+    assert.ok(!r.includes('-'), `em-dash in reason: ${r}`);
     assert.ok(!/'s\b/.test(r), `possessive in reason: ${r}`);
   }
 }

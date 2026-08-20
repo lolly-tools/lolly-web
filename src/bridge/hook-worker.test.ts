@@ -148,7 +148,7 @@ test('worker core: dispose drops the run so a singleton worker does not leak per
   core.handle({ t: 'init', runId: 6, hooksSource: 'function onInit(){ return {}; }', tokenDoc: null, tokenExcluded: [], hostShape: {}, seeds: {}, shell: 'web', capabilities: [] });
   assert.equal(core._runs.size, 1, 'a mount registers one run');
   core.handle({ t: 'dispose', runId: 6 });
-  assert.equal(core._runs.size, 0, 'dispose removes the run — no per-mount accumulation');
+  assert.equal(core._runs.size, 0, 'dispose removes the run - no per-mount accumulation');
   // A late host-reply / invoke for the disposed run must not resurrect or throw.
   core.handle({ t: 'invoke', runId: 6, callId: 9, name: 'onInit', ctx: {} });
   assert.equal(core._runs.size, 0, 'a post-dispose invoke does not recreate the run');

@@ -64,7 +64,7 @@ export function createExtensionCaptureAPI(): CaptureAPI {
         // Capture is slow (a real navigation + settle), so allow a generous window.
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error('Capture timed out — the Lolly extension did not respond.'));
+          reject(new Error('Capture timed out - the Lolly extension did not respond.'));
         }, 90000);
 
         function onMessage(event: MessageEvent): void {
@@ -221,7 +221,7 @@ export function createExtensionSiteTransport(): SiteTransport {
         };
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error('Reading the site timed out — the Lolly extension did not respond.'));
+          reject(new Error('Reading the site timed out - the Lolly extension did not respond.'));
         }, options.timeoutMs ?? 90000);
 
         function onMessage(event: MessageEvent): void {

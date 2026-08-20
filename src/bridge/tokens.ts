@@ -313,7 +313,7 @@ async function headName(host: InstallTokensHost, label?: string): Promise<string
   try {
     const prev = (await host.assets._getUserRecord?.(USER_TOKENS_ID))?.meta?.name;
     if (typeof prev === 'string' && prev) return prev;
-  } catch { /* unreadable store — fall through to the default */ }
+  } catch { /* unreadable store - fall through to the default */ }
   return 'Brand tokens';
 }
 
@@ -423,7 +423,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     try {
       const meta = await host.assets._findMetaByType('tokens', { catalogOnly });
       if (meta) return meta;
-    } catch { /* IDB unavailable / not synced yet — fall through to the index */ }
+    } catch { /* IDB unavailable / not synced yet - fall through to the index */ }
     try {
       // The catalog index carries only shipped assets, so it is catalog-only by
       // construction - the right cold-load source for both callers.
@@ -461,7 +461,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     try {
       const blob = await host.assets._getBlob(asset.id);
       if (blob) return JSON.parse(await blob.text());
-    } catch { /* not cached yet — fall through to a direct fetch */ }
+    } catch { /* not cached yet - fall through to a direct fetch */ }
     // 2) Direct fetch of the asset's file - first load, before the blob is cached.
     try {
       const url = asset.formats[0]?.url;
@@ -516,7 +516,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     const fallback = (why: string): unknown => {
       if (!warned.has(slug)) {
         warned.add(slug);
-        host.log?.('warn', `tokens: design version “${slug}” ${why} — rendering the current design system instead`);
+        host.log?.('warn', `tokens: design version “${slug}” ${why} - rendering the current design system instead`);
       }
       return headDoc;
     };
@@ -526,7 +526,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     if (!asset) return fallback('has no design system to belong to');
     let doc: unknown = null;
     try { doc = await readJsonBlob(await host.assets._getBlob(versionAssetId(asset.id, slug))); }
-    catch { /* IDB unavailable — treated as unreadable below */ }
+    catch { /* IDB unavailable - treated as unreadable below */ }
     if (!doc) return fallback('could not be read');
     return applyPinnedAssets(doc, entry.assets ?? []);
   }

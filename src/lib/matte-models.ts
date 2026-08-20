@@ -73,7 +73,7 @@ export const MATTE_MODELS: MatteModelInfo[] = [
     license: 'Apache-2.0',
     attribution: 'U²-Net © 2020 Xuebin Qin et al. (Apache-2.0)',
     version: 'u2netp',
-    note: 'Tiny and instant — soft edges. Good for a quick preview.',
+    note: 'Tiny and instant - soft edges. Good for a quick preview.',
   },
   {
     id: 'birefnet-lite',
@@ -83,7 +83,7 @@ export const MATTE_MODELS: MatteModelInfo[] = [
     license: 'MIT',
     attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
     version: 'lite',
-    note: 'Best all-round — a transformer that copes with dark and low-contrast backgrounds. The default.',
+    note: 'Best all-round - a transformer that copes with dark and low-contrast backgrounds. The default.',
   },
   {
     id: 'birefnet',
@@ -93,7 +93,7 @@ export const MATTE_MODELS: MatteModelInfo[] = [
     license: 'MIT',
     attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
     version: 'full',
-    note: 'The full model — cleanest edges on hair, fur and fine detail. A large (~490 MB) one-time download and slower to run; best on a powerful machine.',
+    note: 'The full model - cleanest edges on hair, fur and fine detail. A large (~490 MB) one-time download and slower to run; best on a powerful machine.',
   },
   {
     id: 'modnet',
@@ -103,7 +103,7 @@ export const MATTE_MODELS: MatteModelInfo[] = [
     license: 'Apache-2.0',
     attribution: 'MODNet © 2020 Zhanghan Ke et al. (Apache-2.0)',
     version: 'modnet',
-    note: 'Tuned for people — soft hair and edges. Small and fast; weaker on non-portrait subjects.',
+    note: 'Tuned for people - soft hair and edges. Small and fast; weaker on non-portrait subjects.',
   },
 ];
 

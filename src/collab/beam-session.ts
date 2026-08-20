@@ -234,7 +234,7 @@ export class BeamIngestFailure extends Error {
   readonly rolledBack: { readonly removed: number; readonly failed: number };
 
   constructor(cause: unknown, rolledBack: { removed: number; failed: number }) {
-    super(`beam-session: ingest failed — ${errText(cause)}`, { cause });
+    super(`beam-session: ingest failed - ${errText(cause)}`, { cause });
     this.name = 'BeamIngestFailure';
     this.code = cause instanceof BeamPackError ? cause.code : 'unknown';
     this.rolledBack = rolledBack;
@@ -259,7 +259,7 @@ export type BeamSendRefusal =
   | 'lane-closed'
   /** `sendCurrentSession` with no `BeamPackHost` to read the session from. */
   | 'no-host'
-  /** `buildBeamOffer` refused — see `code`. */
+  /** `buildBeamOffer` refused - see `code`. */
   | 'build-failed'
   | 'closed';
 

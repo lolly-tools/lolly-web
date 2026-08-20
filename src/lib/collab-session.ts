@@ -697,7 +697,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
         ...(from !== undefined ? { from } : {}),
       });
     } catch {
-      // A consumer's failure is its own — and least of all here, where swallowing it
+      // A consumer's failure is its own - and least of all here, where swallowing it
       // is what keeps a hostile peer from turning a buggy handler into a crash.
     }
   }
@@ -879,7 +879,7 @@ export function createCollabSession(opts: CollabSessionOptions): CollabSession {
       try {
         fn(snap);
       } catch {
-        /* a consumer's failure is its own — the roster is already committed */
+        /* a consumer's failure is its own - the roster is already committed */
       }
     }
   }

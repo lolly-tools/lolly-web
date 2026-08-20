@@ -70,7 +70,7 @@ export async function parseIdmlZip(
   };
 
   const designmap = xml('designmap.xml');
-  if (!designmap) throw new Error('This .idml is missing its designmap.xml — re-export it from InDesign.');
+  if (!designmap) throw new Error('This .idml is missing its designmap.xml - re-export it from InDesign.');
 
   const pkgSrcs = (localName: string): string[] => elems(designmap)
     .filter((el) => el.localName === localName && el.getAttribute('src'))

@@ -215,7 +215,7 @@ test('a fetched profile is stored, mounted and charted in one press', { skip: !e
     assert.equal(asked, fetchSourceFor(fetchable)!.url, 'fetched the probed URL, nothing else');
     assert.equal(rows.length, 1, 'stored as a user asset');
     assert.equal(rows[0]!.type, 'profile');
-    assert.equal(o.activated.length, 1, 'and charted — pressing a condition IS the request to compare');
+    assert.equal(o.activated.length, 1, 'and charted - pressing a condition IS the request to compare');
     assert.equal(panel(), null);
   } finally {
     globalThis.fetch = real;
@@ -229,7 +229,7 @@ test('the intent buttons say the whole word, and an absent table stays focusable
   const btns = Array.from(document.querySelectorAll<HTMLButtonElement>('.labp-intents [data-lab-intent]'));
   assert.deepEqual(btns.map(b => (b.textContent ?? '').trim()), ['Perceptual', 'Relative', 'Saturation', 'Absolute']);
   for (const b of btns) {
-    assert.equal(b.hasAttribute('title'), false, 'no title= — invisible to keyboard and touch');
+    assert.equal(b.hasAttribute('title'), false, 'no title= - invisible to keyboard and touch');
   }
   const sat = btns.find(b => b.dataset.labIntent === 'saturation')!;
   assert.equal(sat.getAttribute('aria-disabled'), 'true', 'stated, not hidden');
@@ -262,7 +262,7 @@ const classedRow = (digest: string, description: string, deviceClass: string, co
   },
 });
 
-test('the panel is about profiles, not print — and says so once', async () => {
+test('the panel is about profiles, not print - and says so once', async () => {
   const { host } = fakeHost();
   open(host);
   await settle();
@@ -320,7 +320,7 @@ test('the paper-white aside only appears where there is a press profile to expla
   open(host);
   await settle();
   assert.equal(document.querySelector<HTMLElement>('[data-labp-paper]')!.hidden, true,
-    'absolute keeps the paper white — of a press profile, and there is none');
+    'absolute keeps the paper white - of a press profile, and there is none');
 });
 
 test('a display preset is a button that says what pressing it does, and fetches the ICC’s own file', async () => {

@@ -258,7 +258,7 @@ test('the ref walk splits a session into what must travel and what must not', ()
   assert.deepEqual(refs.library, [LOGO], 'catalog refs are listed separately, never mixed in');
 });
 
-test('a baked ref is not in the closure — its bytes already ride in the session', () => {
+test('a baked ref is not in the closure - its bytes already ride in the session', () => {
   const refs = collectSessionAssetRefs({
     baked: { source: 'user', id: 'user/upload/x.png', url: 'data:image/png;base64,AAAA', meta: { baked: true } },
   });
@@ -411,7 +411,7 @@ test('hashBlobs uses the worker when it answers, and always terminates it', asyn
   const sentinel = ['sha256-' + 'A'.repeat(43) + '=', 'sha256-' + 'B'.repeat(43) + '='];
   const { worker, terminated } = fakeWorker(() => ({ id: 1, checksums: sentinel }));
   const out = await hashBlobs(blobs, { workerFactory: () => worker });
-  assert.deepEqual(out, sentinel, 'the worker’s answer is used as-is — it is not recomputed here');
+  assert.deepEqual(out, sentinel, 'the worker’s answer is used as-is - it is not recomputed here');
   assert.ok(terminated(), 'a build spins a worker up and lets it go again');
 });
 
@@ -423,7 +423,7 @@ test('a Worker constructor that throws falls back to hashing in place', async ()
     workerFactory: () => { constructed++; throw new Error('Worker is not defined'); },
   });
   assert.equal(constructed, 1);
-  assert.deepEqual(out, [expected], 'the fallback produces the identical digest — same sriSha256 either way');
+  assert.deepEqual(out, [expected], 'the fallback produces the identical digest - same sriSha256 either way');
 });
 
 test('a worker that dies, or answers wrong, degrades to the fallback rather than the beam', async () => {
@@ -527,12 +527,12 @@ test('assets land re-keyed and the session that follows opens pointing at them',
 
   const saved = to.sessions.get(session.slot)!.data;
   assert.equal((saved.photo as { id: string }).id, photoResult.id);
-  assert.equal((saved.photo as { url: string }).url, '', 'a sender’s blob: URL is meaningless here — the id re-resolves');
+  assert.equal((saved.photo as { url: string }).url, '', 'a sender’s blob: URL is meaningless here - the id re-resolves');
   const blocks = saved.blocks as { image: { id: string } }[];
   assert.equal(blocks[0]!.image.id, mapResult.id);
   assert.equal(blocks[1]!.image.id, `${photoResult.id}?treatment=warm`, 'a modifier suffix rides along the re-key');
   assert.equal((saved.sticker as { id: string }).id, GONE, 'an unresolvable ref is left alone to render its broken-ref affordance');
-  assert.equal((saved.logo as { id: string }).id, LOGO, 'a catalog ref is never rewritten — the receiver resolves it locally');
+  assert.equal((saved.logo as { id: string }).id, LOGO, 'a catalog ref is never rewritten - the receiver resolves it locally');
   assert.equal((saved.baked as { url: string }).url, 'data:image/png;base64,AAAA', 'a baked ref is untouched');
   assert.equal(to.sessions.get(session.slot)!.thumb, 'data:image/png;base64,QQ==');
 });
@@ -647,7 +647,7 @@ test('markup is sanitised before it is stored, and refused when it cannot be', a
   assert.ok(text.includes('<rect'), 'the drawable markup did');
   assert.equal(stored.blob!.type, 'image/svg+xml');
   assert.equal(stored.checksum, await sriSha256(new Uint8Array(await stored.blob!.arrayBuffer())),
-    'the stored digest is over the stored bytes — the one place a beam is deliberately not byte-exact');
+    'the stored digest is over the stored bytes - the one place a beam is deliberately not byte-exact');
 });
 
 test('provenance is read out of the received bytes, never off the manifest', async () => {
@@ -676,7 +676,7 @@ test('provenance is read out of the received bytes, never off the manifest', asy
   assert.deepEqual([...withCred.credential!], [...store], 'the store that is really in the file is the store that is kept');
   assert.equal(withCred.credentialFormat, 'png', 'and its format is the sniffed container, not the claimed one');
   assert.equal(withCred.aiGenerated, undefined,
-    'the AI flag is never carried — the assets bridge derives it from this store with the real verifier');
+    'the AI flag is never carried - the assets bridge derives it from this store with the real verifier');
 
   const plainBytes = pngOf(300, 12);
   const plain = await ingestBeamItem(
@@ -695,7 +695,7 @@ test('meta cannot smuggle Lolly’s own keys, or an outbound URL, onto a local r
     kind: 'asset', itemId: '1/x', sourceId: 'user/upload/x.png', label: 'x.png',
     bytes: payload.length, checksum: 'x', type: 'raster', format: 'png', mime: 'image/png',
     meta: {
-      name: 'ignored — the row is named from the label',
+      name: 'ignored - the row is named from the label',
       thumbUrl: 'https://attacker.example/px.gif?u=1',   // views/catalog.ts paints this into <img src>
       posterUrl: '//attacker.example/p.gif',
       beamFrom: 'Someone Trustworthy',                    // this ingest's own attribution
@@ -864,7 +864,7 @@ test('bytes that do not match the checksum they were offered under never reach s
   assert.equal(to.sessions.size, 0);
 });
 
-test('identical bytes already here are reused — no second row, and the refs follow', async () => {
+test('identical bytes already here are reused - no second row, and the refs follow', async () => {
   const from = senderHost();
   const to = makeHost();
   // The receiver already owns the same map image, under an id of its own.
@@ -885,7 +885,7 @@ test('identical bytes already here are reused — no second row, and the refs fo
   assert.equal((saved.blocks as { image: { id: string } }[])[0]!.image.id, already.id);
 });
 
-test('a received session is always a new slot — nothing on this device is overwritten', async () => {
+test('a received session is always a new slot - nothing on this device is overwritten', async () => {
   const from = senderHost();
   const to = makeHost();
   const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
@@ -956,7 +956,7 @@ test('a hostile manifest cannot smuggle prototype keys onto a row', async () => 
   assert.deepEqual([...new Uint8Array(await stored.blob!.arrayBuffer())], [...payload], 'the file itself is untouched');
 });
 
-test('rewriteSessionAssetRefs is pure — the input is never mutated', () => {
+test('rewriteSessionAssetRefs is pure - the input is never mutated', () => {
   const data = fixtureSession();
   const before = JSON.stringify(data);
   const out = rewriteSessionAssetRefs(data, new Map([[PHOTO, 'user/beam/9-new.png']]));
@@ -980,7 +980,7 @@ test('a pack survives the real protocol and lands in the receiver’s library', 
       list.push(bytes);
       staged.set(itemIndex, list);
     },
-    finalize() { /* sealing only — ingestion happens after `complete` (section 11.18) */ },
+    finalize() { /* sealing only - ingestion happens after `complete` (section 11.18) */ },
     discard() { staged.clear(); },
   };
 

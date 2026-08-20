@@ -162,8 +162,8 @@ test('a RUNNING transform transition walks once, not once per attempt',
 
     // The failure mode, killed: bounded groups and a shallow tree. (Measured before
     // the fix on the same fixture: the walk did not finish at all.)
-    assert.ok(s.groups < 40, `groups=${s.groups} — the re-entry is back`);
-    assert.ok(s.depth < 8, `depth=${s.depth} — nested wrapper chain is back`);
+    assert.ok(s.groups < 40, `groups=${s.groups} - the re-entry is back`);
+    assert.ok(s.depth < 8, `depth=${s.depth} - nested wrapper chain is back`);
     // And the shot is CORRECT, not merely bounded: the element is still emitted as a
     // real vector rotation of its untransformed subtree, exactly once.
     assert.equal(s.rotates, 1, s.svg.slice(0, 400));
@@ -173,7 +173,7 @@ test('a RUNNING transform transition walks once, not once per attempt',
   });
 
 // ── failure 2, case A′: a transform transition that is merely DECLARED ──────────
-test('an element that only DECLARES a transform transition explodes too — and must not',
+test('an element that only DECLARES a transform transition explodes too - and must not',
   { skip: SKIP }, async () => {
     // The gallery's actual shape, and the counter-intuitive half of the bug: nothing
     // is animating here. The walker's own `transform: none` write is the style change

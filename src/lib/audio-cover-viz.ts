@@ -81,7 +81,7 @@ export async function renderVizFrame(
   // VIZ_PRESETS[0] silently - so a stock id passed here would bake a cover of an entirely
   // different preset, and nothing would say so.
   const handle = await mountViz(canvas, undefined, presetId, undefined, buildVizPalette(pool), {
-    driven: true,          // no rAF loop — we advance it ourselves
+    driven: true,          // no rAF loop - we advance it ourselves
     deterministic: true,   // seed Math.random so two bakes of one preset agree
     capture: true,         // preserveDrawingBuffer, or toBlob reads an empty buffer
     audio: {

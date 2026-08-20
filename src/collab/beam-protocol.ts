@@ -466,7 +466,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  */
 export async function sriSha256(bytes: Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('beam: no Web Crypto — cannot verify a transfer');
+  if (!subtle) throw new Error('beam: no Web Crypto - cannot verify a transfer');
   const copy = new Uint8Array(bytes.length);
   copy.set(bytes);
   const digest = await subtle.digest('SHA-256', copy.buffer);
@@ -592,7 +592,7 @@ export type BeamSendPhase =
   | 'offered'
   /** Consented; `nextChunk()` will produce frames. */
   | 'sending'
-  /** Consented but held — `nextChunk()` produces nothing until `resume()`. */
+  /** Consented but held - `nextChunk()` produces nothing until `resume()`. */
   | 'paused'
   | 'complete'
   | 'declined'
@@ -617,7 +617,7 @@ export type BeamPullResult =
   | 'sent'
   /** A pull is already in flight; this call did nothing. */
   | 'busy'
-  /** Nothing to send right now — not yet accepted, or paused. */
+  /** Nothing to send right now - not yet accepted, or paused. */
   | 'waiting'
   /** Everything is sent and `complete` has been emitted. */
   | 'complete'
@@ -1000,7 +1000,7 @@ export type BeamRecvPhase =
   | 'waiting'
   /** An offer is on the table, awaiting the human. Bytes are still refused. */
   | 'offered'
-  /** Consented — and only now may a chunk be staged. */
+  /** Consented - and only now may a chunk be staged. */
   | 'receiving'
   | 'complete'
   | 'declined'

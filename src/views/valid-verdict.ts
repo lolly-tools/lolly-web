@@ -121,12 +121,12 @@ export const STATE_COPY = {
   valid: {
     cls: 'is-valid',
     title: 'Credential intact',
-    sub: 'The file is exactly what its embedded credential signed. Signed with an on-device key — integrity, not identity.',
+    sub: 'The file is exactly what its embedded credential signed. Signed with an on-device key - integrity, not identity.',
   },
   invalid: {
     cls: 'is-invalid',
     title: 'Credential broken',
-    sub: 'The file carries Content Credentials, but they no longer match its bytes — it was modified after signing, or the credential is damaged.',
+    sub: 'The file carries Content Credentials, but they no longer match its bytes - it was modified after signing, or the credential is damaged.',
   },
   none: {
     cls: 'is-none',
@@ -139,13 +139,13 @@ export const STATE_COPY = {
   trusted: {
     cls: 'is-valid is-trusted',
     title: 'Verified',
-    sub: 'The file is exactly what its embedded credential signed, and the signing certificate chains to the pinned Lolly CA root — integrity plus a CA-verified identity. What it records about how it was made is still the signer’s own claim.',
+    sub: 'The file is exactly what its embedded credential signed, and the signing certificate chains to the pinned Lolly CA root - integrity plus a CA-verified identity. What it records about how it was made is still the signer’s own claim.',
   },
   // state 'valid' + the claim records Lolly → the answer users came for.
   lolly: {
     cls: 'is-valid is-lolly',
     title: 'Made with Lolly',
-    sub: 'The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim; an on-device key, not a CA identity.)',
+    sub: 'The credential is intact and records a Lolly export - the file has not changed since it was made. (Integrity plus the maker’s claim; an on-device key, not a CA identity.)',
   },
   // state 'valid' + trusted + a c2pa.published (not created) action: an existing
   // asset Lolly distributes but did not author. Honest journey - verified
@@ -153,14 +153,14 @@ export const STATE_COPY = {
   delivered: {
     cls: 'is-valid is-delivered',
     title: 'Delivered by Lolly',
-    sub: 'This is the genuine official version, delivered by Lolly. The credential chains to the pinned Lolly CA root, so the file is intact and its origin is CA-verified. Lolly delivered this asset — it did not create it; who made it is recorded below as the signer’s own claim.',
+    sub: 'This is the genuine official version, delivered by Lolly. The credential chains to the pinned Lolly CA root, so the file is intact and its origin is CA-verified. Lolly delivered this asset - it did not create it; who made it is recorded below as the signer’s own claim.',
   },
   // Every check passed EXCEPT the cert validity window: the bytes still match
   // what was signed - saying "modified after signing" here would be false.
   expired: {
     cls: 'is-none is-expired',
     title: 'Credential expired',
-    sub: 'The file still matches exactly what its credential signed — nothing was modified — but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
+    sub: 'The file still matches exactly what its credential signed - nothing was modified - but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
   },
   // state 'invalid' with ONE failure: manifest.inaccessible. C2PA 2.4 section A.7.1.2 /
   // section A.9.3 let a text asset REFERENCE its credential instead of carrying it, and
@@ -174,7 +174,7 @@ export const STATE_COPY = {
   external: {
     cls: 'is-none is-external',
     title: 'Credential stored elsewhere',
-    sub: 'This file does not carry its Content Credential — it points at one kept somewhere else. Nothing is fetched on your behalf here, so these bytes have not been checked against it. The address is shown below.',
+    sub: 'This file does not carry its Content Credential - it points at one kept somewhere else. Nothing is fetched on your behalf here, so these bytes have not been checked against it. The address is shown below.',
   },
   // state 'invalid' whose ONLY failures are carrier problems (see CARRIER_CODES):
   // the credential could not be read out of the file at all, so NO hash was ever
@@ -189,7 +189,7 @@ export const STATE_COPY = {
   carrier: {
     cls: 'is-none is-carrier',
     title: 'Credential could not be checked',
-    sub: 'This file declares a Content Credential that could not be read out of it, so nothing was hashed and nothing was compared. That is a problem with how the credential was written into the file, or with the copy that arrived here — nothing on this page says the content was changed. What went wrong is explained below.',
+    sub: 'This file declares a Content Credential that could not be read out of it, so nothing was hashed and nothing was compared. That is a problem with how the credential was written into the file, or with the copy that arrived here - nothing on this page says the content was changed. What went wrong is explained below.',
   },
   // state 'invalid' whose ONLY failure is assertion.dataHash.additionalExclusions
   // Present: the credential's declared exclusion reaches OUTSIDE its own manifest
@@ -201,7 +201,7 @@ export const STATE_COPY = {
   uncovered: {
     cls: 'is-none is-uncovered',
     title: 'Not all of this file is covered by its credential',
-    sub: 'The bytes this credential does cover match exactly what was signed. But its declared exclusion reaches beyond its own manifest block, so part of what you can see here was never covered by the signature — that part is not vouched for, and could have been changed without the credential noticing.',
+    sub: 'The bytes this credential does cover match exactly what was signed. But its declared exclusion reaches beyond its own manifest block, so part of what you can see here was never covered by the signature - that part is not vouched for, and could have been changed without the credential noticing.',
   },
   // The text readers cap at 16 MiB (engine MAX_TEXT_BYTES) while this page accepts
   // far larger files, so a big HTML document carrying a real credential lands
@@ -212,7 +212,7 @@ export const STATE_COPY = {
   notInspected: {
     cls: 'is-none is-notinspected',
     title: 'Not inspected as text',
-    sub: 'This file is past the size limit for on-device text inspection, so its text was never searched for a C2PA manifest — nothing is claimed about it either way. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
+    sub: 'This file is past the size limit for on-device text inspection, so its text was never searched for a C2PA manifest - nothing is claimed about it either way. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
   },
   // state 'invalid', but ONLY the hard binding (the file's own bytes) failed - 
   // the claim signature and every hashed-URI-bound assertion (the actions and
@@ -222,7 +222,7 @@ export const STATE_COPY = {
   likelyLolly: {
     cls: 'is-none is-likelylolly',
     title: 'Likely made with Lolly',
-    sub: 'The credential’s own content checks out — its signature is valid and everything it references matches — and it records a Lolly export, but the file’s bytes no longer match the hard binding, so this exact copy can’t be vouched for. It was probably re-saved, re-encoded, or re-uploaded through something that left the manifest alone.',
+    sub: 'The credential’s own content checks out - its signature is valid and everything it references matches - and it records a Lolly export, but the file’s bytes no longer match the hard binding, so this exact copy can’t be vouched for. It was probably re-saved, re-encoded, or re-uploaded through something that left the manifest alone.',
   },
 };
 
@@ -426,13 +426,13 @@ export function resolveState(report: VerifyReport): ResolvedState {
   // sentence has to name which credential, because a reader who assumes it came
   // with the file would be assuming the wrong thing.
   const sub = report.state === 'valid' && report.textBinding?.externalManifestUsed
-    ? t('This file is exactly what the credential it points at signed. That credential is not inside the file — it was fetched from the address the file names, at your request, and checked against these bytes.')
+    ? t('This file is exactly what the credential it points at signed. That credential is not inside the file - it was fetched from the address the file names, at your request, and checked against these bytes.')
     : state === STATE_COPY.lolly && report.trusted
-    ? t('The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)')
+    ? t('The credential is intact and records a Lolly export - the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)')
     : state === STATE_COPY.expired && identity
-      ? t('The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
+      ? t('The file still matches exactly what its credential signed - nothing was modified - but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
       : state === STATE_COPY.trusted && thirdPartyRoot
-        ? tRaw('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> — a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
+        ? tRaw('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> - a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
             issuer: escape(identity!.issuer!),
             signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: signerOrg }) : '',
           })
@@ -442,15 +442,15 @@ export function resolveState(report: VerifyReport): ResolvedState {
         // deliberately absent"). Promising an address that is never rendered
         // sends the reader looking for something that is not on the page.
         : state === STATE_COPY.external && !report.textBinding?.manifestUrl
-          ? t('This file does not carry its Content Credential — it points at one kept somewhere else, but not in a form this page can follow, so no address is shown and these bytes have not been checked against it.')
+          ? t('This file does not carry its Content Credential - it points at one kept somewhere else, but not in a form this page can follow, so no address is shown and these bytes have not been checked against it.')
         // An invalid state that no hash mismatch caused: the default sub's
         // "they no longer match its bytes - it was modified after signing" is
         // false either way, and which honest sentence applies depends on
         // whether a hash comparison ran at all.
           : state === STATE_COPY.invalid && !hashFailed(report)
             ? (hasHashVerdict(report)
-              ? t('The file carries Content Credentials, and its bytes still match the hash that was signed — what failed is inside the credential itself. The checks below say which part.')
-              : t('The file carries Content Credentials, but the credential itself did not check out, so these bytes were never compared against it. Nothing here establishes that the content was changed — the checks below say what failed.'))
+              ? t('The file carries Content Credentials, and its bytes still match the hash that was signed - what failed is inside the credential itself. The checks below say which part.')
+              : t('The file carries Content Credentials, but the credential itself did not check out, so these bytes were never compared against it. Nothing here establishes that the content was changed - the checks below say what failed.'))
             : t(state.sub);
   return { state, sub, identity };
 }

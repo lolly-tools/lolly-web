@@ -30,7 +30,7 @@ const model = (queryLen: number, faithful = true): UrlCostModel => ({
   target: { name: 'browser', warn: 16000, hard: 64000 },
 } as unknown as UrlCostModel);
 
-test('gaugeVisual: the fill HEIGHT is log-curved — small content already reads as a clear fraction', () => {
+test('gaugeVisual: the fill HEIGHT is log-curved - small content already reads as a clear fraction', () => {
   // The whole point of the rework: a few hundred chars must NOT sit near-empty (the "no feedback"
   // bug of a linear len/limit fill). Monotonic, and reaching the top only at warn.
   const f = (q: number): number => gaugeVisual(q, true, BROWSER).fillFraction;
@@ -42,7 +42,7 @@ test('gaugeVisual: the fill HEIGHT is log-curved — small content already reads
   assert.equal(f(200000), 1, 'clamps at the top past warn');
 });
 
-test('gaugeVisual: colour stays calm — amber only at the top, red only for unshareable / huge', () => {
+test('gaugeVisual: colour stays calm - amber only at the top, red only for unshareable / huge', () => {
   assert.equal(gaugeVisual(500, true, BROWSER).band, 'ok', 'normal content is green');
   assert.equal(gaugeVisual(8000, true, BROWSER).band, 'ok', 'still green well up the bar');
   assert.equal(gaugeVisual(16000, true, BROWSER).band, 'warn', 'amber once full (at warn)');
@@ -52,7 +52,7 @@ test('gaugeVisual: colour stays calm — amber only at the top, red only for uns
   assert.equal(gaugeVisual(300, false, BROWSER).band, 'over', 'unfaithful (device-local image) → red even when tiny');
 });
 
-test('shareQueryOf: only KEPT rows, joined by & — matches the readable share query', () => {
+test('shareQueryOf: only KEPT rows, joined by & - matches the readable share query', () => {
   const model = {
     params: [
       { status: 'kept', emit: 'a=hello' },
@@ -73,7 +73,7 @@ test('shareQueryOf: an all-default model yields an empty query', () => {
 test('toast: fires once when the bar first FILLS, skipped on mount, re-arms after dropping below', () => {
   const g = document.querySelector('#g') as HTMLElement;
   const toast = document.querySelector('[data-gauge-toast]') as HTMLElement;
-  const gauge = createUrlGauge(g, { used: () => 'x', reassure: 'keep going — .lolly' }, () => false);
+  const gauge = createUrlGauge(g, { used: () => 'x', reassure: 'keep going - .lolly' }, () => false);
 
   // First paint (mount) with an already-FULL link: primed is false → NO toast (no pop on load).
   gauge.update(model(20000), 'base');
@@ -84,7 +84,7 @@ test('toast: fires once when the bar first FILLS, skipped on mount, re-arms afte
 
   gauge.update(model(20000), 'base'); // an EDIT crosses into full → toast
   assert.equal(toast.hidden, false, 'toast appears when an edit fills the bar');
-  assert.equal(toast.textContent, 'keep going — .lolly');
+  assert.equal(toast.textContent, 'keep going - .lolly');
 
   toast.hidden = true; // staying full must NOT re-fire
   gauge.update(model(20000), 'base');

@@ -66,19 +66,19 @@ export function coachAudio(level: AudioLevel, opts: { target?: CoachTarget; phas
   let tone: Coaching['tone'] = 'ok';
   let warning = '';
   // Clipping / too-loud are urgent in either phase.
-  if (clipping) { tone = 'hot'; warning = 'Too hot — you’re clipping. Ease off the mic.'; }
-  else if (tooLoud) { tone = 'hot'; warning = 'A little loud — pull back from the mic.'; }
+  if (clipping) { tone = 'hot'; warning = 'Too hot - you’re clipping. Ease off the mic.'; }
+  else if (tooLoud) { tone = 'hot'; warning = 'A little loud - pull back from the mic.'; }
   else if (phase === 'check' && !speaking) {
     // Sound check with no speech: judge the room, not the (expected) silence.
-    if (humming) { tone = 'low'; warning = 'Electrical hum — try another cable or power socket.'; }
-    else if (droning) { tone = 'low'; warning = 'Steady background noise — a fan, AC or hiss. Turn off what you can.'; }
-    else if (hissy) { tone = 'low'; warning = 'Background hiss — turn off nearby fans/AC if you can.'; }
-    else if (noisy) { tone = 'low'; warning = 'Noisy room — a quieter spot will sound cleaner.'; }
+    if (humming) { tone = 'low'; warning = 'Electrical hum - try another cable or power socket.'; }
+    else if (droning) { tone = 'low'; warning = 'Steady background noise - a fan, AC or hiss. Turn off what you can.'; }
+    else if (hissy) { tone = 'low'; warning = 'Background hiss - turn off nearby fans/AC if you can.'; }
+    else if (noisy) { tone = 'low'; warning = 'Noisy room - a quieter spot will sound cleaner.'; }
   } else {
     // Speaking (or recording): coach the LEVEL only. Room noise is a pre-record
     // (sound-check) concern - and the recording session suppresses it, so the raw
     // meter's hum/hiss here wouldn't match the saved file. Don't flag it mid-take.
-    if (tooQuiet) { tone = 'low'; warning = 'Too quiet — move closer or speak up.'; }
+    if (tooQuiet) { tone = 'low'; warning = 'Too quiet - move closer or speak up.'; }
   }
 
   // Which recording-tip cue (if any) this level argues for - the stage's tips panel

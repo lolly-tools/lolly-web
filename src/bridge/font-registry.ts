@@ -259,7 +259,7 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
       });
       byFamily.set(key, list);
     }
-  } catch { /* IDB unavailable — platform faces still resolve */ }
+  } catch { /* IDB unavailable - platform faces still resolve */ }
 
   // Discover arbitrary @font-face families in the live document (brand fonts, system
   // webfonts, embedded data: faces) so they vectorise too - not just SUSE/user/Outfit.

@@ -196,7 +196,7 @@ test('hydrateJobLayer round-trips every field the planner reads', () => {
   assert.ok(h.el && typeof h.el === 'object', 'the element stand-in is an object, so a defensive read cannot throw');
 });
 
-test('a keyframed layer survives structuredClone — the wire is plain data, not a closure', () => {
+test('a keyframed layer survives structuredClone - the wire is plain data, not a closure', () => {
   // plans/104 section 5.1. The evaluator caches a compiled bezier per ease token and a
   // channel index per track; if either ever leaked into the CACHED FORM the track
   // carries, `postMessage` would throw DataCloneError and worker offload would die
@@ -229,7 +229,7 @@ test('a camera layer contributes zero draws (plans/104 section 5.4)', async () =
   const ctx = stubCtx();
   const cam = layer({ kind: 'camera', z: 200, kf: kfTrackOf('t0_x-100*t1000_x100') });
   const plan = sequenceDrawPlan([hydrateJobLayer(cam)], 500, 1000, { stageW: 1920, stageH: 1080 });
-  assert.equal(plan.length, 1, 'it is still a timeline citizen — the camera IS the pose');
+  assert.equal(plan.length, 1, 'it is still a timeline citizen - the camera IS the pose');
   assert.equal(plan[0]!.dx, 0, 'and it is never posed itself');
   // A real plate would still be a no-op here (`under` is null), so the guard is
   // asserted against a layer that HAS one - the only way to tell the two apart.
@@ -360,7 +360,7 @@ test('itemFx IS the gate: OWNERSHIP first, then blur × S', () => {
   const shadowed = itemFx(planOne(layer({ shadowFilter: 'drop-shadow(0px 4px 10px #000)', z: 60 })), 2);
   assert.equal(shadowed?.sigma, 0);
   assert.deepEqual(shadowed?.shadows.map((s) => [s.dx, s.dy, s.blur]), [[0, 8, 20]],
-    'and the authored shadow is scaled with it — the plate used to scale it for free');
+    'and the authored shadow is scaled with it - the plate used to scale it for free');
 });
 
 test('BYTE-IDENTITY FLOOR: a pre-104 shadow/blur document never enters the restructure', async () => {
@@ -385,7 +385,7 @@ test('BYTE-IDENTITY FLOOR: a clean layer takes today\'s exact path, and asks for
     const ctx = opCtx();
     await drawItem(ctx, planOne(layer()), RES(), 1);
     assert.deepEqual(ctx.names(), ['save', 'translate', 'drawImage', 'restore'],
-      'no clip (no radius), no scratch, no composite — the pre-104 call list');
+      'no clip (no radius), no scratch, no composite - the pre-104 call list');
     assert.deepEqual(ctx.ops[1]?.args, [50, 50], 'translate to the box centre');
     assert.deepEqual(ctx.ops[2]?.args, [-50, -50, 100, 100], 'and the plate at the box rect');
     assert.equal(made.length, 0, 'a clean layer never allocates anything');
@@ -462,7 +462,7 @@ test('clipPath + shadow: the clip shapes the content AND cuts the shadow (CSS or
     const stage = made[0];
     assert.ok(stage, 'a scratch was taken');
     assert.ok(!stage.ops.some((o) => o.op === 'clip'),
-      'and the scratch is not clipped again — the plate already carries the shape');
+      'and the scratch is not clipped again - the plate already carries the shape');
     const pad = spillPad(0, parseDropShadows(shadow));
     assert.ok(pad > 0);
     assert.equal(stage.width, 100 + pad * 2);
@@ -500,7 +500,7 @@ test('a SHADOWED layer with no blur takes the same restructure', async () => {
 const scratchWork = (made: ReturnType<typeof scratchCanvas>[]): number =>
   made.reduce((n, c) => n + c.ops.length, 0);
 
-test('fx cache: without an allowance nothing is retained — the pre-P3.1 path, unchanged', async () => {
+test('fx cache: without an allowance nothing is retained - the pre-P3.1 path, unchanged', async () => {
   const { made, done } = useScratches();
   try {
     const item = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
@@ -544,7 +544,7 @@ test('fx cache: the second frame re-composites the SAME canvas with the SAME dra
   } finally { done(); }
 });
 
-test('fx cache: the key is the EFFECT — a changed sigma misses, and gives its bytes back', async () => {
+test('fx cache: the key is the EFFECT - a changed sigma misses, and gives its bytes back', async () => {
   const { made, done } = useScratches();
   try {
     const budget = createFxPlateBudget(64 << 20);
@@ -598,7 +598,7 @@ test('fx cache: over the allowance a layer simply pays the filter again, and say
     const first = scratchWork(made);
     await drawItem(opCtx(), item, res, 1);
     assert.equal((res as { fx?: unknown }).fx ?? null, null, 'nothing retained');
-    assert.ok(scratchWork(made) > first, 'so the filter ran again — correct, just slower');
+    assert.ok(scratchWork(made) > first, 'so the filter ran again - correct, just slower');
     assert.equal(budget.refused, 1, 'and the refusal was COUNTED, for the one warn line');
   } finally { done(); }
 });
@@ -629,7 +629,7 @@ test('fx cache: an allowance that RUNS OUT is counted; one that is OFF is not', 
     const off = RES({ fxBudget: offBudget });
     await drawItem(opCtx(), planOne(layer({ shadowFilter: shadow, z: 60 })), off, 1);
     assert.equal((off as { fx?: unknown }).fx ?? null, null);
-    assert.equal(offBudget.refused, 0, 'an off cache refuses nothing — there is nothing to warn about');
+    assert.equal(offBudget.refused, 0, 'an off cache refuses nothing - there is nothing to warn about');
   } finally { done(); }
 });
 
@@ -719,7 +719,7 @@ test('a filtered layer blurs at the PLATE\'s resolution, not at S', async () => 
     _resetBlurPool();
     await drawItem(opCtx(), item, RES(), 1);
     assert.equal(made[0]?.width, 100 + spillPad(4, []) * 2,
-      'no plateEff, no extra pixels to keep — the byte-identity path');
+      'no plateEff, no extra pixels to keep - the byte-identity path');
 
     // ONE SIZE PER LAYER PER RENDER. The scratch follows the PLATE, not the frame:
     // sizing it to `min(item.scale, plateEff)` would be the tightest allocation and
@@ -753,7 +753,7 @@ test('a filtered layer is composited back at exactly its box rect, whatever the 
   } finally { done(); }
 });
 
-test('an empty clip draws nothing — and costs no scratch', async () => {
+test('an empty clip draws nothing - and costs no scratch', async () => {
   const { made, done } = useScratches();
   try {
     const ctx = opCtx();
@@ -893,7 +893,7 @@ test('isOffloadFailure: an uncoded throw is the offload; a coded verdict is not'
   const tagged = sequenceError('SEQ_UNSUPPORTED_MEDIA', 'no DOM for the element-seek provider');
   (tagged as unknown as Record<string, unknown>).offload = true;
   assert.equal(isOffloadFailure(tagged), true,
-    'the element-seek provider is missing only BECAUSE we are in a worker — that must retry in-thread');
+    'the element-seek provider is missing only BECAUSE we are in a worker - that must retry in-thread');
 });
 
 test('two OVERLAPPING runs cannot resolve each other\'s live rasters', async () => {
@@ -1070,7 +1070,7 @@ test('fallback: a NON-coded worker failure is retryable in-thread; a coded one i
   w2.onerror?.();
   const e2 = await p2.then(() => null, (e: unknown) => e);
   assert.ok(e2 instanceof Error && !(e2 instanceof SequenceError),
-    'an offload failure is a PLAIN Error — that is what licenses the in-thread retry');
+    'an offload failure is a PLAIN Error - that is what licenses the in-thread retry');
   assert.equal(w2.terminated, 1, 'and the broken worker is not kept around');
   _setSequenceWorkerFactory(null);
 });
@@ -1163,7 +1163,7 @@ test('contract: there is exactly ONE compositor, so the two paths cannot drift',
   assert.equal(paints.length, 2, 'sequence-render.ts composites nothing; the executor draws');
   assert.match(render, /drawImage\(bitmaps\[i\+\+\]/, 'and the first is the recorder replay');
   assert.match(render, /drawImage\(shot as unknown as CanvasImageSource, 0, 0\)/,
-    'and the second is one whole captured frame, placed at the origin — not a layer');
+    'and the second is one whole captured frame, placed at the origin - not a layer');
   assert.match(render, /await runSequenceJob\(job, canvas, ctx,/, 'the in-thread path drives the shared executor');
   assert.match(worker, /await runSequenceJob\(job, canvas, ctx,/, 'and so does the worker');
 });

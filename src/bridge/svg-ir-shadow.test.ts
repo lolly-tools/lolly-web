@@ -58,7 +58,7 @@ test('the classic chain most tools emit, Penpot included', async () => {
     <feOffset dx="2" dy="4" in="tinted" result="offset"/>
     <feGaussianBlur stdDeviation="5" in="offset" result="blur"/>
     <feBlend in="SourceGraphic" in2="blur" mode="normal"/>`));
-  assert.ok(s, 'the chain form must be recognised — it is what Penpot writes');
+  assert.ok(s, 'the chain form must be recognised - it is what Penpot writes');
   assert.deepEqual([s.dx, s.dy, s.stdDeviation], [2, 4, 5]);
   assert.deepEqual(s.rgb, [0, 0, 0]);
   assert.equal(s.alpha, 0.25);

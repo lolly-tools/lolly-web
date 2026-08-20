@@ -245,7 +245,7 @@ const COLLAPSE_CHEV = icon('chevronRight', { size: 16, strokeWidth: 2.5, classNa
 const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
 // Jump to the Verify view - styled to match the gallery's green Verify button.
 // A function (not a module const) so t() runs at render time, after the catalog loads.
-const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
+const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials - check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
 
 // The settings-view section index - one entry per card, in page order. Drives the
 // left nav rail, the scroll-spy active state, and the search filter. `id` MUST match
@@ -296,7 +296,7 @@ const infoDot = (text: string): string => {
 };
 
 export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, params: string = ''): Promise<void> {
-  document.title = 'Profile — Lolly';
+  document.title = 'Profile - Lolly';
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
@@ -627,7 +627,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       <section class="profile-card profile-card--appearance" id="appearance-section">
         <h2>${t('Appearance')}</h2>
-        <p class="profile-appearance-sub">${t('How the app dresses for you — your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
+        <p class="profile-appearance-sub">${t('How the app dresses for you - your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
         <div class="profile-theme-grid" data-theme-pick>
           ${THEMES.map(theme => `
             <button type="button" class="profile-theme${theme === activeTheme ? ' is-active' : ''}" data-theme-set="${escape(theme)}" data-theme="${escape(theme)}" aria-pressed="${theme === activeTheme ? 'true' : 'false'}">
@@ -670,7 +670,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>` : ''}
           </span>
         </div>
-        ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app — a browser blocks a page from loading tools and assets across origins.')}</p>`}
+        ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
@@ -990,7 +990,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
     if (!ok) return;
     await setInstanceBase(null);
-    await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* offline — falls back to cache */ });
+    await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* offline - falls back to cache */ });
     window.dispatchEvent(new Event('lolly:remount')); // re-navigates the current route with the fresh (bundled) catalogue
   });
 
@@ -1111,7 +1111,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setTimeout(() => { if (btn) { btn.textContent = label; btn.toggleAttribute('disabled', false); } }, 1600);
     } catch {
       if (btn) { btn.textContent = label; btn.toggleAttribute('disabled', false); }
-      announce(t("Couldn't save — try again"), { assertive: true });
+      announce(t("Couldn't save - try again"), { assertive: true });
     }
   });
 
@@ -1239,7 +1239,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
       : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
     if (m.hasEstimate && m.other > 0) s += `, and about ${fmtBytes(m.other)} of other app data and overhead`;
-    s += (m.hasEstimate && m.quota) ? ` — ${fmtPct(m.usage!, m.quota)} of your ${fmtBytes(m.quota)} device budget.` : '.';
+    s += (m.hasEstimate && m.quota) ? ` - ${fmtPct(m.usage!, m.quota)} of your ${fmtBytes(m.quota)} device budget.` : '.';
     return s;
   }
 
@@ -1303,7 +1303,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
           <p class="store-hero-num" id="store-hero-num" data-bytes="0">0 KB</p>
-          <p class="store-hero-cap">${t('On this device')} ${infoDot(t('The real total this origin uses on this device, measured by your browser. Everything below is on THIS device only — nothing is uploaded.'))}</p>
+          <p class="store-hero-cap">${t('On this device')} ${infoDot(t('The real total this origin uses on this device, measured by your browser. Everything below is on THIS device only - nothing is uploaded.'))}</p>
           <p class="store-headroom" id="store-headroom" hidden></p>
         </header>
 
@@ -1323,17 +1323,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <p class="visually-hidden" id="store-aria-sentence"></p>
 
         <ul class="store-legend" role="list">
-          <li><button type="button" class="store-chip" data-cat="sessions"><span class="store-chip-sw" data-cat="sessions"></span><span class="store-chip-name">${t('Saved sessions')}</span><span class="store-chip-val" data-size="sessions">—</span></button></li>
-          <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">${t('My images')}</span><span class="store-chip-val" data-size="images">—</span></button></li>
-          <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">—</span></button></li>
-          ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
-          ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">—</span></button></li>` : ''}
-          ${hasSpeech ? `<li><button type="button" class="store-chip" data-cat="speech"><span class="store-chip-sw" data-cat="speech"></span><span class="store-chip-name">${t('Voice models')}</span><span class="store-chip-val" data-size="speech">—</span></button></li>` : ''}
-          ${hasUpscale ? `<li><button type="button" class="store-chip" data-cat="upscale"><span class="store-chip-sw" data-cat="upscale"></span><span class="store-chip-name">${t('Upscaling models')}</span><span class="store-chip-val" data-size="upscale">—</span></button></li>` : ''}
-          ${hasMatte ? `<li><button type="button" class="store-chip" data-cat="matte"><span class="store-chip-sw" data-cat="matte"></span><span class="store-chip-name">${t('Background removal')}</span><span class="store-chip-val" data-size="matte">—</span></button></li>` : ''}
-          ${hasOcr ? `<li><button type="button" class="store-chip" data-cat="ocr"><span class="store-chip-sw" data-cat="ocr"></span><span class="store-chip-name">${t('Text recognition')}</span><span class="store-chip-val" data-size="ocr">—</span></button></li>` : ''}
-          ${hasReword ? `<li><button type="button" class="store-chip" data-cat="reword"><span class="store-chip-sw" data-cat="reword"></span><span class="store-chip-name">${t('Rewriter model')}</span><span class="store-chip-val" data-size="reword">—</span></button></li>` : ''}
-          ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">—</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
+          <li><button type="button" class="store-chip" data-cat="sessions"><span class="store-chip-sw" data-cat="sessions"></span><span class="store-chip-name">${t('Saved sessions')}</span><span class="store-chip-val" data-size="sessions">-</span></button></li>
+          <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">${t('My images')}</span><span class="store-chip-val" data-size="images">-</span></button></li>
+          <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">-</span></button></li>
+          ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">-</span></button></li>` : ''}
+          ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">-</span></button></li>` : ''}
+          ${hasSpeech ? `<li><button type="button" class="store-chip" data-cat="speech"><span class="store-chip-sw" data-cat="speech"></span><span class="store-chip-name">${t('Voice models')}</span><span class="store-chip-val" data-size="speech">-</span></button></li>` : ''}
+          ${hasUpscale ? `<li><button type="button" class="store-chip" data-cat="upscale"><span class="store-chip-sw" data-cat="upscale"></span><span class="store-chip-name">${t('Upscaling models')}</span><span class="store-chip-val" data-size="upscale">-</span></button></li>` : ''}
+          ${hasMatte ? `<li><button type="button" class="store-chip" data-cat="matte"><span class="store-chip-sw" data-cat="matte"></span><span class="store-chip-name">${t('Background removal')}</span><span class="store-chip-val" data-size="matte">-</span></button></li>` : ''}
+          ${hasOcr ? `<li><button type="button" class="store-chip" data-cat="ocr"><span class="store-chip-sw" data-cat="ocr"></span><span class="store-chip-name">${t('Text recognition')}</span><span class="store-chip-val" data-size="ocr">-</span></button></li>` : ''}
+          ${hasReword ? `<li><button type="button" class="store-chip" data-cat="reword"><span class="store-chip-sw" data-cat="reword"></span><span class="store-chip-name">${t('Rewriter model')}</span><span class="store-chip-val" data-size="reword">-</span></button></li>` : ''}
+          ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">-</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead - everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
         <p class="store-quota" id="store-quota" hidden><span class="storage-bar-wrap"><span class="storage-bar-fill" id="store-quota-fill" style="width:0%"></span></span><span class="store-quota-text" id="store-quota-text"></span></p>
@@ -1374,12 +1374,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </div>
 
           ${hasPrev ? `<div class="store-manage store-manage--row" data-cat="previews">
-            <span class="store-manage-name">${t('Tool previews')} ${infoDot(t('Snapshots Lolly draws of personalised tool cards — they redraw when needed. Safe to clear.'))} <span class="storage-count" data-size-label="previews">0 KB</span></span>
+            <span class="store-manage-name">${t('Tool previews')} ${infoDot(t('Snapshots Lolly draws of personalised tool cards - they redraw when needed. Safe to clear.'))} <span class="storage-count" data-size-label="previews">0 KB</span></span>
             <button type="button" id="clear-previews-btn" class="btn-link-danger">${t('Clear previews')}</button>
           </div>` : ''}
 
           ${hasPins ? `<div class="store-manage store-manage--row" data-cat="pins">
-            <span class="store-manage-name">${t('Available offline')} ${infoDot(t('Tools you pinned in the gallery to work offline — their files are kept on this device. Unpinning re-downloads them on demand.'))} <span class="storage-count" data-size-label="pins">0 KB</span></span>
+            <span class="store-manage-name">${t('Available offline')} ${infoDot(t('Tools you pinned in the gallery to work offline - their files are kept on this device. Unpinning re-downloads them on demand.'))} <span class="storage-count" data-size-label="pins">0 KB</span></span>
             <button type="button" id="unpin-all-btn" class="btn-link-danger">${t('Unpin all')}</button>
           </div>` : ''}
 
@@ -1411,7 +1411,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
         <div class="storage-subsection">
           <div class="storage-subsection-header">
-            <span>${t('Move to another device')} ${infoDot(t('Export everything — profile, saved sessions, uploaded images and preferences — as one file, then import it on another offline install to pick up exactly where you left off. Stays entirely on your devices.'))}</span>
+            <span>${t('Move to another device')} ${infoDot(t('Export everything - profile, saved sessions, uploaded images and preferences - as one file, then import it on another offline install to pick up exactly where you left off. Stays entirely on your devices.'))}</span>
           </div>
           <div class="storage-actions">
             ${jellyOn
@@ -1422,7 +1422,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <input type="file" id="import-data-input" accept=".zip,application/zip" hidden>
           </div>
           <button type="button" id="export-render-btn" class="btn storage-hoard-btn">📦 ${t('Export my data &amp; render everything')}</button>
-          <p class="storage-hoard-hint">${t('The backup above, plus a second zip that <strong>renders every saved session</strong> to its output file — organised into folders that mirror your Projects. A complete offline archive; can be large and slow with many sessions.')}</p>
+          <p class="storage-hoard-hint">${t('The backup above, plus a second zip that <strong>renders every saved session</strong> to its output file - organised into folders that mirror your Projects. A complete offline archive; can be large and slow with many sessions.')}</p>
         </div>
 
         <div class="storage-actions">
@@ -1516,8 +1516,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (!seg) continue;
         seg.style.flexGrow = String(Math.max(0, bytes));
         seg.hidden = !avail || bytes <= 0;
-        seg.setAttribute('aria-label', tRaw('{label}, {size} — manage', { label, size: fmtBytes(bytes) }));
-        seg.title = `${label} — ${fmtBytes(bytes)}`;
+        seg.setAttribute('aria-label', tRaw('{label}, {size} - manage', { label, size: fmtBytes(bytes) }));
+        seg.title = `${label} - ${fmtBytes(bytes)}`;
       }
       const otherSeg = bar?.querySelector<HTMLElement>('.seg--other');
       if (otherSeg) { otherSeg.style.flexGrow = String(m.other); otherSeg.hidden = !(m.hasEstimate && !m.overshoot && m.other > 0); }
@@ -1557,7 +1557,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       const note = body.querySelector<HTMLElement>('#store-footnote');
       if (note) {
-        if (!m.hasEstimate) { note.textContent = t('Device total unavailable — showing measured items only.'); note.hidden = false; }
+        if (!m.hasEstimate) { note.textContent = t('Device total unavailable - showing measured items only.'); note.hidden = false; }
         else if (m.overshoot) { note.textContent = t("Measured items meet or exceed the browser's estimate (estimates are approximate)."); note.hidden = false; }
         else note.hidden = true;
       }
@@ -1638,7 +1638,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       syncSelbar();
       focusSurvivingSession(nextFocus);
       await refreshMeter();
-      announce(t('Freed {freed} — {used} used', { freed: fmtBytes(bytes), used: fmtBytes(model.hasEstimate ? model.total : model.measured) }));
+      announce(t('Freed {freed} - {used} used', { freed: fmtBytes(bytes), used: fmtBytes(model.hasEstimate ? model.total : model.measured) }));
     }
 
     async function deleteSelectedSessions(btn: HTMLButtonElement) {
@@ -1671,8 +1671,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       focusSurvivingSession();
       await refreshMeter();
       announce(done === slots.length
-        ? (done === 1 ? t('Deleted 1 session — freed {size}', { size: fmtBytes(freed) }) : t('Deleted {n} sessions — freed {size}', { n: done, size: fmtBytes(freed) }))
-        : t('Deleted {done} of {total} — freed {size}; some could not be removed', { done, total: slots.length, size: fmtBytes(freed) }));
+        ? (done === 1 ? t('Deleted 1 session - freed {size}', { size: fmtBytes(freed) }) : t('Deleted {n} sessions - freed {size}', { n: done, size: fmtBytes(freed) }))
+        : t('Deleted {done} of {total} - freed {size}; some could not be removed', { done, total: slots.length, size: fmtBytes(freed) }));
     }
 
     function toggleSort(btn: HTMLElement) {
@@ -1858,7 +1858,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         resetScrubCache();
         // The 'profile' wipe above dropped the pin RECORDS; also drop the pinned
         // tools' Cache Storage bucket so no orphaned bytes survive the clear.
-        await unpinAll().catch(() => { /* cache API unavailable — nothing pinned */ });
+        await unpinAll().catch(() => { /* cache API unavailable - nothing pinned */ });
         host.profile.bust!();
         applyTheme('light');
         modal.close();
@@ -1904,8 +1904,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     viewEl.querySelector('#export-render-btn')?.addEventListener('click', () => {
       const word = HOARD_CONFIRM_WORDS[Math.floor(Math.random() * HOARD_CONFIRM_WORDS.length)]!;
       const content = `
-        <h3 id="hoard-dialog-title">${t('Export everything — and render it all?')}</h3>
-        <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
+        <h3 id="hoard-dialog-title">${t('Export everything - and render it all?')}</h3>
+        <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> - every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
         <label class="clear-confirm">
           <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
           <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(tRaw('Type {word} to confirm', { word }))}">
@@ -1949,7 +1949,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const n = count === 1 ? t('1 creation is a video or animation') : t('{n} of your creations are videos or animations', { n: count });
         const content = `
           <h3 id="keepactive-title">${t('Keep this tab active?')}</h3>
-          <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n })}</p>
+          <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render - switch away and they pause. Include them?', { n })}</p>
           <div class="clear-dialog-actions">
             <button class="btn btn-go" data-choice="include">${t("I'm willing to keep this tab active")}</button>
             <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
@@ -2101,11 +2101,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     interface OfflineTool { id: string; name?: string; icon?: string; listed?: boolean; capabilities?: readonly string[] }
     const tools = ((window.__toolIndex?.tools ?? []) as OfflineTool[])
       // Unlisted tools (context-invoked, e.g. asset-export) and tools this shell
-      // can't run are not offered — a download the device can't use is dead weight.
+      // can't run are not offered - a download the device can't use is dead weight.
       .filter(tl => tl.listed !== false && toolSupport(tl, host.capabilities).status !== 'unavailable')
       .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
     let pins: Record<string, PinRecord> = {};
-    try { pins = await pinRecords(); } catch { /* IDB unavailable — render all as not downloaded */ }
+    try { pins = await pinRecords(); } catch { /* IDB unavailable - render all as not downloaded */ }
 
     const rowHtml = (tl: OfflineTool): string => {
       const rec = pins[tl.id];
@@ -2158,14 +2158,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     interface PartDef { id: OfflinePartId; name: string; desc: string; heavy?: boolean }
     const partDefs: PartDef[] = [
-      { id: 'app', name: t('The app'), desc: t('Every view, editor and font — so the whole app opens and renders with no connection, not just the pages you have already visited.') },
-      { id: 'catalog', name: t('Catalogue'), desc: t('Brand assets beyond the essentials — logos, art and music your tools can pull in. Narrow it by tag if you only need some of it.') },
+      { id: 'app', name: t('The app'), desc: t('Every view, editor and font - so the whole app opens and renders with no connection, not just the pages you have already visited.') },
+      { id: 'catalog', name: t('Catalogue'), desc: t('Brand assets beyond the essentials - logos, art and music your tools can pull in. Narrow it by tag if you only need some of it.') },
       { id: 'docs', name: t('Guides & docs'), desc: t('The full documentation site in your language, screenshots included.') },
       { id: 'speech', name: t('Speech voices'), desc: t('Voice models for Script audio and narration. Downloads once (~{size}), runs on-device.', { size: fmtBytes(plannedBytes.speech) }), heavy: true },
-      { id: 'upscale', name: t('Upscaling models'), desc: t('The AI image upscalers — photo, illustration/anime and face. Pull them down now (~{size}) and Upscale runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.upscale) }), heavy: true },
+      { id: 'upscale', name: t('Upscaling models'), desc: t('The AI image upscalers - photo, illustration/anime and face. Pull them down now (~{size}) and Upscale runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.upscale) }), heavy: true },
       { id: 'matte', name: t('Background removal'), desc: t('The on-device cut-out models for Remove background. Pull them down now (~{size}) and it runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.matte) }), heavy: true },
       { id: 'ocr', name: t('Text recognition'), desc: t('The on-device OCR models for reading text out of images. Pull them down now (~{size}) and Copy text runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.ocr) }), heavy: true },
-      { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big — only worth it if you check content credentials away from a connection.'), heavy: true },
+      { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big - only worth it if you check content credentials away from a connection.'), heavy: true },
       // Only on builds carrying the staged model (plans/127) - the group is
       // empty on public/CI builds and the row would be a dead control.
       ...(precache?.groups.reword?.length ? [{
@@ -2204,7 +2204,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </li>`;
 
     body.innerHTML = `
-      <p class="storage-hint-text">${t('Heading somewhere with no connection? Download what you need and it all keeps working — the app, your tools, the catalogue and the docs. Downloads stay on this device and refresh themselves when you are back online.')}</p>
+      <p class="storage-hint-text">${t('Heading somewhere with no connection? Download what you need and it all keeps working - the app, your tools, the catalogue and the docs. Downloads stay on this device and refresh themselves when you are back online.')}</p>
       <div class="odl-sweep">
         <button type="button" id="odl-everything" class="btn">${t('Download everything')}</button>
         <button type="button" id="odl-cancel" class="btn" hidden>${t('Cancel')}</button>
@@ -2218,7 +2218,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <ul class="odl-parts">${partDefs.map(partRowHtml).join('')}</ul>
       <p class="odl-persist" id="odl-persist" hidden></p>
       <h3 class="odl-subhead">${t('Tools')}</h3>
-      <p class="storage-hint-text">${t('Download a tool to keep it working with no connection — its template, hooks and fonts are stored on this device. The tick means ready offline.')}</p>
+      <p class="storage-hint-text">${t('Download a tool to keep it working with no connection - its template, hooks and fonts are stored on this device. The tick means ready offline.')}</p>
       <div class="odl-head">
         <span class="odl-total" id="odl-total" aria-live="polite"></span>
         <button type="button" id="odl-all" class="btn">${t('Download all')}</button>
@@ -2305,7 +2305,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const ok = await download(id, btn);
         announce(ok
           ? tRaw('{name} is available offline', { name })
-          : tRaw('Couldn’t save {name} for offline — check your connection', { name }), { assertive: !ok });
+          : tRaw('Couldn’t save {name} for offline - check your connection', { name }), { assertive: !ok });
       }
       await refreshCounter(); // the Storage meter's pins slice moved
     });
@@ -2344,7 +2344,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (fanfare) {
         if (failed === 0) playSfx('victory');
         announce(failed
-          ? t('{n} downloads failed — check your connection', { n: failed })
+          ? t('{n} downloads failed - check your connection', { n: failed })
           : t('All tools are available offline'), { assertive: failed > 0 });
       }
       await refreshCounter();
@@ -2532,11 +2532,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (pct === null) {
         progTrack.removeAttribute('aria-valuenow');
         progFill.style.width = '100%';
-        progText.textContent = tRaw('{label} — {loaded} so far…', { label, loaded: num(line.loaded) });
+        progText.textContent = tRaw('{label} - {loaded} so far…', { label, loaded: num(line.loaded) });
       } else {
         progTrack.setAttribute('aria-valuenow', String(pct));
         progFill.style.width = `${pct}%`;
-        progText.textContent = tRaw('{label} — {loaded} of {total}', { label, loaded: num(line.loaded), total: num(line.total ?? 0) });
+        progText.textContent = tRaw('{label} - {loaded} of {total}', { label, loaded: num(line.loaded), total: num(line.total ?? 0) });
       }
     };
 
@@ -2624,19 +2624,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           // The run ends here, not at view teardown. end() settles the job the
           // toast is showing and releases the module-level slot; a cancelled
           // job is already terminal, so this is a no-op for it.
-          if (!outer) run.end(failed ? t('{n} downloads failed — check your connection', { n: failed }) : undefined);
+          if (!outer) run.end(failed ? t('{n} downloads failed - check your connection', { n: failed }) : undefined);
           setBusy(false);
         }
         if (cancelled) {
           // Cancelled - everything already fetched stays cached, so the next
           // run resumes from here. Say so instead of reading as an error.
-          announce(t('Download paused — already-saved files are kept'));
+          announce(t('Download paused - already-saved files are kept'));
           return false;
         }
         if (failed === 0) playSfx('victory');
         if (!outer) {
           announce(failed
-            ? t('{n} downloads failed — check your connection', { n: failed })
+            ? t('{n} downloads failed - check your connection', { n: failed })
             : want.length === 1
               ? tRaw('{name} is available offline', { name: partLabel(want[0]!) })
               : t('Offline download complete'), { assertive: failed > 0 });
@@ -2709,9 +2709,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         setBusy(true);   // the parts phase released it; the tools phase owns it now
         const failed = await sweepTools({ fanfare: false, run });
         announce(failed
-          ? t('{n} downloads failed — check your connection', { n: failed })
+          ? t('{n} downloads failed - check your connection', { n: failed })
           : run.cancelled
-            ? t('Download paused — already-saved files are kept')
+            ? t('Download paused - already-saved files are kept')
             : t('Everything you picked is saved for offline'), { assertive: failed > 0 });
       } finally {
         run.end();
@@ -2737,7 +2737,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       persistEl.querySelector('#odl-protect')?.addEventListener('click', async () => {
         const granted = await persistenceState(true);
         await syncPersistLine(granted);
-        announce(granted === 'granted' ? t('Downloads protected') : t('The browser declined — downloads stay best-effort'));
+        announce(granted === 'granted' ? t('Downloads protected') : t('The browser declined - downloads stay best-effort'));
       });
     };
     void syncPersistLine(persist);
@@ -2829,7 +2829,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ...(health?.devProvider === true ? ['dev'] : []),
     ];
     return `
-      <p class="identity-blurb">${t('Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsAppHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
+      <p class="identity-blurb">${t('Sign exports with a verified identity - a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsAppHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
       <p class="identity-blurb identity-permanence">${t('Know before you enrol: your email address is written into every file you export while enrolled. It stays in every copy you share and cannot be removed later, even after the certificate expires.')}</p>
       <label class="identity-days-row">${t('Verified for')}
         <select class="identity-days-select" aria-label="${escape(t('Certificate lifetime'))}">
@@ -2838,7 +2838,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <option value="90">${t('90 days')}</option>
           <option value="365">${t('365 days')}</option>
         </select>
-        <span class="identity-days-hint">${t('— longer keeps exports verified longer; shorter limits misuse if this device is lost. The CA has the final say.')}</span>
+        <span class="identity-days-hint">${t('- longer keeps exports verified longer; shorter limits misuse if this device is lost. The CA has the final say.')}</span>
       </label>
       <div class="identity-providers">
         ${providers.length
@@ -2951,7 +2951,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         try { await host.identity!.forget(); }
         catch (err) { act.disabled = false; showIdentityError(String((err as { message?: unknown })?.message ?? err)); return; }
         await paintIdentity();
-        announce(t('Forgotten — exports on this device sign anonymously again'));
+        announce(t('Forgotten - exports on this device sign anonymously again'));
       }
     });
 

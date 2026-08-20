@@ -56,7 +56,7 @@ export function pickMessage(messages: readonly InboxMessage[]): InboxMessage | n
 /** Fire-and-forget ack. Best-effort: a failed ack never blocks the UI removal. */
 function ack(id: string): void {
   void instanceFetch(instancePath(`/api/v1/inbox/${encodeURIComponent(id)}/ack`), { method: 'POST' })
-    .catch(() => { /* best-effort — the message is already gone from the UI */ });
+    .catch(() => { /* best-effort - the message is already gone from the UI */ });
 }
 
 /** A CTA link (if the message carries one), styled as a small shell button.

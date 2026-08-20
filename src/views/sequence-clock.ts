@@ -660,7 +660,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (!res.ok || signal.aborted) return null;
     const declared = Number(res.headers?.get?.('content-length') ?? Number.NaN);
     if (!withinDecodeBudget(Number.isFinite(declared) ? declared : null)) {
-      log('warn', `sequence audio: ${url} is larger than the decode ceiling — silent in preview`);
+      log('warn', `sequence audio: ${url} is larger than the decode ceiling - silent in preview`);
       return null;
     }
     const bytes = await readBounded(res, MAX_AUDIO_DECODE_BYTES, signal);
@@ -699,12 +699,12 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (audioFailed.has(url)) return Promise.resolve(null);
     if (buffers.size >= MAX_PREVIEW_AUDIO_SOURCES) {
       audioFailed.add(url);
-      log('warn', `sequence audio: more than ${MAX_PREVIEW_AUDIO_SOURCES} distinct tracks in one composition — the rest are silent in preview`);
+      log('warn', `sequence audio: more than ${MAX_PREVIEW_AUDIO_SOURCES} distinct tracks in one composition - the rest are silent in preview`);
       return Promise.resolve(null);
     }
     if (pcmBytes >= MAX_PREVIEW_PCM_BYTES) {
       audioFailed.add(url);
-      log('warn', 'sequence audio: decoded-audio budget reached — this track is silent in preview');
+      log('warn', 'sequence audio: decoded-audio budget reached - this track is silent in preview');
       return Promise.resolve(null);
     }
     const ac = new AbortController();
@@ -720,7 +720,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // reject into the frame loop: the picture keeps playing without the sound.
         buffers.delete(url);
         audioFailed.add(url);
-        log('warn', `sequence audio: ${url} could not be decoded (${err instanceof Error ? err.message : String(err)}) — silent in preview`);
+        log('warn', `sequence audio: ${url} could not be decoded (${err instanceof Error ? err.message : String(err)}) - silent in preview`);
         return null;
       })
       .finally(() => { audioAborts.delete(ac); });
@@ -765,7 +765,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       node.buffer = buf;
       node.connect(c.destination);
     } catch (err) {
-      log('warn', `sequence audio: could not connect a source — ${err instanceof Error ? err.message : String(err)}`);
+      log('warn', `sequence audio: could not connect a source - ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
     rec.node = node;
@@ -781,7 +781,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     } catch (err) {
       rec.node = null;
       stopAudioNode(node);
-      log('warn', `sequence audio: start refused — ${err instanceof Error ? err.message : String(err)}`);
+      log('warn', `sequence audio: start refused - ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -800,7 +800,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       audios.set(el, { key, node: null });
       if (!speedWarned) {
         speedWarned = true;
-        log('warn', `sequence audio: a clip at ${Math.round(timing.start)}ms plays at ${timing.speed}× — silent (v1 does not time-stretch audio), matching the export mix`);
+        log('warn', `sequence audio: a clip at ${Math.round(timing.start)}ms plays at ${timing.speed}× - silent (v1 does not time-stretch audio), matching the export mix`);
       }
       return;
     }
@@ -860,7 +860,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         if (!pastEnd && drift > DRIFT_TOLERANCE_S) rec.seeker.request(targetSec);
         if (!rec.playing) {
           rec.playing = true;
-          try { void video.play()?.catch(() => { /* autoplay policy — silent */ }); } catch { /* detached */ }
+          try { void video.play()?.catch(() => { /* autoplay policy - silent */ }); } catch { /* detached */ }
         }
       } else {
         if (rec.playing) { try { video.pause(); } catch { /* detached */ } rec.playing = false; }
@@ -919,7 +919,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         });
       }
     } catch (err) {
-      log('warn', `sequence-clock: frame failed — ${err instanceof Error ? err.message : String(err)}`);
+      log('warn', `sequence-clock: frame failed - ${err instanceof Error ? err.message : String(err)}`);
     }
     // Videos a repaint orphaned: PAUSE and un-mute them before dropping the record.
     // `releaseVideo` is the only path that restores `muted` and stops playback, so
@@ -1057,7 +1057,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       if (c) { try { void c.resume?.(); } catch { /* resume is best-effort */ } }
       t0 = c ? c.currentTime - tMs / 1000 : 0;
       wall0 = nowMs() - tMs;
-      if (!c) log('warn', 'sequence-clock: no AudioContext — playback falls back to frame stepping (audio boxes stay silent)');
+      if (!c) log('warn', 'sequence-clock: no AudioContext - playback falls back to frame stepping (audio boxes stay silent)');
       isPlaying = true;
       scrubbing = false;
       ctxWasRunning = c?.state === 'running';

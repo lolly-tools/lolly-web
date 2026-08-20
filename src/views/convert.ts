@@ -274,7 +274,7 @@ async function canvasToIco(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {
-  document.title = 'Convert — Lolly';
+  document.title = 'Convert - Lolly';
   viewEl.innerHTML = `
     ${backHomeHtml()}
     <div class="gallery-topright">${langFabHtml()}</div>
@@ -321,7 +321,7 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
       return;
     }
     const base = file.name.replace(/\.[^.]+$/, '') || 'converted';
-    result.innerHTML = `<p class="convert-file"><b>${escape(file.name)}</b> — ${t('convert to')}:</p>
+    result.innerHTML = `<p class="convert-file"><b>${escape(file.name)}</b> - ${t('convert to')}:</p>
       <div class="convert-targets">${targets.map((tt) => `<button type="button" class="btn convert-target" data-t="${tt.id}">${tt.label}</button>`).join('')}</div>
       <p class="convert-status" data-status></p>`;
     const status = result.querySelector<HTMLElement>('[data-status]')!;

@@ -233,7 +233,7 @@ test('picking an animated asset (video) auto-plays it through the frame loop', a
 
 test('picking an animated SVG auto-plays; a STILL SVG does not', async () => {
   const { rt, lc, starts, armed, setImage } = makeControls({
-    render: {}, // no sample — Play exists only for the pick
+    render: {}, // no sample - Play exists only for the pick
     svgByUrl: { 'blob:spin': ANIM_SVG, 'blob:still': STILL_SVG },
   });
   registerLiveControls(rt as object, lc);

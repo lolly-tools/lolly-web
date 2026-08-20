@@ -374,7 +374,7 @@ test('encodeAuthoredPath / decodeAuthoredPath: round trip, and no bare commas su
 // one side could be read on the other. These tests are that assertion, in both
 // directions, and they are the reason the seam cannot silently re-open.
 
-test('delegation: what this module encodes, the ENGINE decodes — single and multi path', () => {
+test('delegation: what this module encodes, the ENGINE decodes - single and multi path', () => {
   const one: PathPayload = { kind: 'cubic', closed: true, nodes: [
     { x: 0.25, y: 0.125, hOutX: 0.5, hOutY: -0.0625, continuity: 'smooth' },
     { x: 0.75, y: 0.875, hInX: -0.5, hInY: 0.0625 },
@@ -396,7 +396,7 @@ test('delegation: what this module encodes, the ENGINE decodes — single and mu
   }
 });
 
-test('delegation: what the ENGINE encodes, this module decodes — byte-for-byte the same value', () => {
+test('delegation: what the ENGINE encodes, this module decodes - byte-for-byte the same value', () => {
   const paths = [
     { kind: 'line' as const, closed: true, nodes: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] },
     { kind: 'line' as const, closed: true, nodes: [{ x: 0.25, y: 0.25 }, { x: 0.25, y: 0.75 }, { x: 0.75, y: 0.75 }, { x: 0.75, y: 0.25 }] },

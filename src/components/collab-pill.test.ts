@@ -138,7 +138,7 @@ test('chip names truncate; the roster and the announcements keep the whole thing
   assert.ok(chip.endsWith('…'));
 });
 
-test('the dot reads away only when everyone else IS away — being alone is not being away', () => {
+test('the dot reads away only when everyone else IS away - being alone is not being away', () => {
   assert.equal(pillDotState(sessionState()), 'live');
   assert.equal(pillDotState(sessionState({ connection: 'connecting' })), 'connecting');
   assert.equal(pillDotState(sessionState({ connection: 'reconnecting' })), 'reconnecting');
@@ -316,7 +316,7 @@ test('an action runs once at a time, and a failure is announced rather than swal
   pill.destroy();
 });
 
-test('joins and leaves are announced once each, by name — and the first render is silent', () => {
+test('joins and leaves are announced once each, by name - and the first render is silent', () => {
   const priya = participant({ clientId: 'P1', userId: 'P1', name: 'Priya' });
   const sam = participant({ clientId: 'P2', userId: 'P2', name: 'Sam' });
   const { pill, src, said } = mount(sessionState({ peers: [priya] }));
@@ -358,7 +358,7 @@ test('the roster popover lists everyone with their tags, updates live, and close
   assert.equal(
     rows[1]!.querySelector('.collab-roster-tags')?.textContent,
     'Observer',
-    'only an observer is tagged — an unknown role makes no claim',
+    'only an observer is tagged - an unknown role makes no claim',
   );
   assert.equal(rows[2]!.querySelector('.collab-roster-name')?.textContent, 'Host');
   assert.equal(rows[2]!.querySelector('.collab-roster-tags')?.textContent, 'Host');
@@ -374,7 +374,7 @@ test('the roster popover lists everyone with their tags, updates live, and close
   pill.destroy();
 });
 
-test('destroy() unsubscribes, closes the popover and removes the element — idempotently', () => {
+test('destroy() unsubscribes, closes the popover and removes the element - idempotently', () => {
   const { pill, src, host } = mount(sessionState());
   pill.el.querySelector<HTMLButtonElement>('.collab-stack')!
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -405,7 +405,7 @@ test('a new arrival gets the entrance flash only when motion is allowed', () => 
   assert.equal(
     moving.pill.el.querySelector('.collab-stack .collab-av')?.classList.contains('is-new'),
     false,
-    'never on yourself — you did not just arrive',
+    'never on yourself - you did not just arrive',
   );
   moving.pill.destroy();
 });
@@ -427,7 +427,7 @@ test('the sheet is injected exactly once, however many pills mount', () => {
   b.pill.destroy();
   assert.equal(
     document.querySelectorAll('#collab-pill-styles').length, 1,
-    'and it survives teardown — it is shared, not per-instance',
+    'and it survives teardown - it is shared, not per-instance',
   );
 });
 

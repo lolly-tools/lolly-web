@@ -2567,8 +2567,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       if (history) {
         if (items.length) items.push({ sep: true });
-        items.push({ label: t('Undo — step back'), icon: icon(SVG.undo), key: 'undo', disabled: !histUndo, keepOpen: true, run: () => history.undo() });
-        items.push({ label: t('Redo — step forward'), icon: icon(SVG.redo), key: 'redo', disabled: !histRedo, keepOpen: true, run: () => history.redo() });
+        items.push({ label: t('Undo - step back'), icon: icon(SVG.undo), key: 'undo', disabled: !histUndo, keepOpen: true, run: () => history.undo() });
+        items.push({ label: t('Redo - step forward'), icon: icon(SVG.redo), key: 'redo', disabled: !histRedo, keepOpen: true, run: () => history.redo() });
       }
       if (pages || setCanvasSize) {
         if (items.length) items.push({ sep: true });
@@ -2618,7 +2618,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // `fc-action-primary` is kept on the trigger because it is now the editor's
       // primary action affordance - mountTool focuses it on open (tool.ts) - with
       // .fc-btn-lolly restyling it back to the mark's own colour.
-      lollyBtn = toolBtn(t('Menu — export, save, undo, canvas size'), '',
+      lollyBtn = toolBtn(t('Menu - export, save, undo, canvas size'), '',
         () => { const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
         'fc-action fc-action-primary fc-btn-lolly');
       // The mark is a whole <svg> (the brand swirl, root icon.svg), not a path set, so it
@@ -2643,7 +2643,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // again - discoverable only if you already knew, which is what "trapped in the current
     // tool" meant. Its own click is not a no-op even when it is already lit: it also leaves
     // point editing and finishes a draft.
-    modeBtns.select = toolBtn(t('Pointer — select and move (V)'), SVG.pointer, () => pickPointer(), 'fc-btn-pointer');
+    modeBtns.select = toolBtn(t('Pointer - select and move (V)'), SVG.pointer, () => pickPointer(), 'fc-btn-pointer');
     const add = toolBtn(t('Add a box'), SVG.add, () => openAddMenu(add), 'fc-btn-add');
     modeBtns.create = add;
     // Pen (opt-in via canvas.pathField - a tool with nowhere to store an authored path has
@@ -2666,8 +2666,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // is the natural home for tidying the graph they make. Mirrors the pen's hold-for-spline.
       modeBtns.line = toolBtn(
         hasBindCfg
-          ? t('Line — drag to draw a line or arrow. Hold to auto-arrange the connected cards')
-          : t('Line — drag to draw a line or arrow'),
+          ? t('Line - drag to draw a line or arrow. Hold to auto-arrange the connected cards')
+          : t('Line - drag to draw a line or arrow'),
         SVG.line,
         () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line',
         hasBindCfg
@@ -2679,7 +2679,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // a start/duration has no timeline). Toggles the docked panel; the panel module
     // itself is only fetched the first time it is opened.
     if (timeCfg) {
-      timelineBtn = toolBtn(t('Timeline — arrange clips over time'), SVG.timeline,
+      timelineBtn = toolBtn(t('Timeline - arrange clips over time'), SVG.timeline,
         () => toggleTimeline(), 'fc-btn-timeline');
       timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
     }
@@ -2697,7 +2697,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // so the button only appears once there is one (syncArrangeUI, from the same
     // paint that shows the object bar). The right-click menu and the keyboard keep
     // their own gating - nothing here is the only way to reach an action.
-    arrangeBtn = toolBtn(t('Arrange — align, distribute, order, group'), SVG.align, () => openArrangeMenu());
+    arrangeBtn = toolBtn(t('Arrange - align, distribute, order, group'), SVG.align, () => openArrangeMenu());
     syncArrangeUI();
     // Snap-to-grid toggle (opt-in).
     if (cv.grid) {
@@ -3183,7 +3183,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
       });
       // NOTE: "Outline text" lives near the TOP of this menu (just under Delete), not
-      // here — see the canOutlineText block at the head of openContextMenu. It is the
+      // here - see the canOutlineText block at the head of openContextMenu. It is the
       // gateway INTO vector editing for a text box, so it must not sit below a wall of
       // path-only ops that are all disabled while text is selected.
     }
@@ -3338,11 +3338,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fillShown = gradOn ? (gradStopColor(first) ?? fillVal) : fillVal;
     return (cfg.fillField ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${colorFieldHtml('fc-fill', fillShown, { float: true })}</span>` : '')
       + (cfg.gradField && !allPaths
-        ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" data-tip="${escape(t('Gradient — drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
+        ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" data-tip="${escape(t('Gradient - drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
         : '')
       + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
       + (allPaths && cfg.strokeField ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
-      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
+      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke - width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
   }
 
   /** One `wireColorField` call per bar - it binds delegated listeners on the scope, so a
@@ -3511,14 +3511,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
         : ''}
       <button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
-      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text — size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
+      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text - size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
       <button type="button" class="fc-cbtn" data-cx="setimg" data-tip="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
-      <button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More — shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
+      <button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More - shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
       <span class="fc-sep fc-sep-v"></span>
       ${kfCtxHtml(boxes, idx)}
       <button type="button" class="fc-cbtn" data-cx="dup" data-tip="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
       <button type="button" class="fc-cbtn fc-danger" data-cx="del" data-tip="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
-      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" data-tip="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
+      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" data-tip="${escape(t('Select more - tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
       <button type="button" class="fc-readout" data-cx="dims" data-cx-readout data-tip="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
     wirePaintCtx(ctxbar);
     ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
@@ -3534,7 +3534,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (cx === 'setimg') pickImage();
       else if (cx === 'more') openMorePanel(b);
       else if (cx === 'grad') toggleGradEdit(b);
-      else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more — tap cards to add them.') : t('Multi-select off.')); }
+      else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more - tap cards to add them.') : t('Multi-select off.')); }
       else if (cx === 'dims') openDimsPanel(b);
     }));
   }
@@ -3778,7 +3778,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       h.style.top = `${p.y}px`;
       // The handle IS its colour - a swatch you can see against the paint behind it.
       h.style.setProperty('--stop', parseColor(st.color) ? st.color : 'transparent');
-      h.setAttribute('data-tip', t('Stop {n} — {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) }));
+      h.setAttribute('data-tip', t('Stop {n} - {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) }));
       h.setAttribute('aria-label', h.getAttribute('data-tip') || '');
       h.addEventListener('pointerdown', (e) => onGradStopDown(e, si));
       gradChrome.appendChild(h);
@@ -4305,7 +4305,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         : `translate(${-num(fb[xF]) * s}px, ${-num(fb[yF]) * s}px) scale(${s})`;
       for (const v of clone.querySelectorAll<HTMLVideoElement>('video')) {
         v.muted = true; v.autoplay = false; v.removeAttribute('autoplay');
-        try { v.pause(); } catch { /* not-ready — ignore */ }
+        try { v.pause(); } catch { /* not-ready - ignore */ }
       }
       media.appendChild(clone);
       return media;
@@ -5030,7 +5030,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // sub-field is a declared `asset`: the engine resolves block asset sub-fields by
       // their `.id` (runtime.ts resolveAssetRefs) and the tool hook reads `image.url`,
       // so a bare string would render nothing and would not survive a reload. The row
-      // therefore carries the whole ref, written in the same pass — one object per row,
+      // therefore carries the whole ref, written in the same pass - one object per row,
       // still one commit.
       ).map((row, i) => ({ ...row, [cfg.imageField]: refs[i] }));
 
@@ -5156,7 +5156,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.className = 'fc-panel fc-fstate-panel';
     p.innerHTML =
       `<div class="fc-panel-head">${t('Frame state')}</div>` +
-      `<div class="fc-css-hint">${t('Space-separated tokens for present mode. Stamped as data-frame-state on the frame — target them in Custom CSS, e.g. [data-frame-state~="dark"] .lolly-box { … }. Also lifted onto the presenter root while this slide is active.')}</div>` +
+      `<div class="fc-css-hint">${t('Space-separated tokens for present mode. Stamped as data-frame-state on the frame - target them in Custom CSS, e.g. [data-frame-state~="dark"] .lolly-box { … }. Also lifted onto the presenter root while this slide is active.')}</div>` +
       `<input type="text" class="fc-fstate-input field-input" value="${escapeHtml(cur)}" placeholder="dark title-slide" spellcheck="false" autocomplete="off" autocapitalize="off">`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     stageEl.appendChild(p);
@@ -5273,7 +5273,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           note.innerHTML = optedIn
             ? (author || contact
                 ? t('Baked into your PNG, PDF & SVG file metadata.')
-                : tRaw('No name on file yet —{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
+                : tRaw('No name on file yet -{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
             : tRaw('Your name &amp; contact stay off your files.{link}', { link: editLink });
         }
       };
@@ -7158,7 +7158,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     selection = new Set<string>();
     stageEl.classList.add('fc-lining');
     setHoverEdge(null);
-    announce(t('Line tool — drag on the canvas to draw a line or arrow. Esc to finish.'));
+    announce(t('Line tool - drag on the canvas to draw a line or arrow. Esc to finish.'));
     renderChrome();
   }
   function exitLine(): void {
@@ -7296,7 +7296,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     try {
       e.clipboardData!.setData('text/plain', FC_CLIP_PREFIX + JSON.stringify(picked));
       e.preventDefault();
-    } catch { /* clipboard write blocked — the in-memory copy still serves ⌘V */ }
+    } catch { /* clipboard write blocked - the in-memory copy still serves ⌘V */ }
   }
   // Duplicate a set of copied boxes at a +24,+24 offset (cascades on repeat paste),
   // clamped into the canvas, and select the fresh copies. Mirrors duplicateSelection.
@@ -7556,7 +7556,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onEditKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); cancelTextEdit(); }
     else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitTextEdit(); }
-    // Plain Enter inserts a literal \n (the render model is pre-wrap text) —
+    // Plain Enter inserts a literal \n (the render model is pre-wrap text) -
     // never the browser's <div> soup, which would desync the char model.
     else if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertText', false, '\n'); }
     else if ((e.key === 'b' || e.key === 'B') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); toggleInline('b'); }
@@ -8009,7 +8009,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const emo = document.createElement('button');
         emo.type = 'button';
         emo.className = 'fc-cbtn fc-fmt-emoji';
-        emo.setAttribute('data-tip', t('Insert 🦎💚🐧 — turns ligatures on (⌥-click for 🐧💚🦎)'));
+        emo.setAttribute('data-tip', t('Insert 🦎💚🐧 - turns ligatures on (⌥-click for 🐧💚🦎)'));
         emo.setAttribute('aria-label', t('Insert Geeko loves Tux'));
         emo.textContent = '🦎💚🐧';
         emo.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
@@ -9567,10 +9567,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Bend has many orthogonal flavours → a dropdown (kept in sync with tool.json's
     // `style` options + hooks.js waypoints()).
     const STYLE_OPTS: Array<[string, string]> = [
-      ['straight', 'Straight'], ['elbow', 'Elbow — auto'], ['elbow-v', 'Elbow — vertical'],
-      ['elbow-h', 'Elbow — horizontal'], ['elbow-src', 'Bend at start'], ['elbow-tgt', 'Bend at end'],
-      ['curved', 'Curved — auto'], ['curved-v', 'Curved — vertical'], ['curved-h', 'Curved — horizontal'],
-      ['arc', 'Arc — bow'], ['arc-wide', 'Arc — wide bow'], ['arc-flip', 'Arc — reverse bow'], ['arc-flip-wide', 'Arc — wide reverse'],
+      ['straight', 'Straight'], ['elbow', 'Elbow - auto'], ['elbow-v', 'Elbow - vertical'],
+      ['elbow-h', 'Elbow - horizontal'], ['elbow-src', 'Bend at start'], ['elbow-tgt', 'Bend at end'],
+      ['curved', 'Curved - auto'], ['curved-v', 'Curved - vertical'], ['curved-h', 'Curved - horizontal'],
+      ['arc', 'Arc - bow'], ['arc-wide', 'Arc - wide bow'], ['arc-flip', 'Arc - reverse bow'], ['arc-flip-wide', 'Arc - wide reverse'],
     ];
     // `row()` below wraps controls in a <div>, not a <label>, so this select gets no
     // implicit name from its row text - it names itself.
@@ -9579,7 +9579,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-edge-panel';
     p.innerHTML =
-      (nSel > 1 ? `<div class="fc-edge-count">${t('{n} connectors — editing all', { n: nSel })}</div>` : '') +
+      (nSel > 1 ? `<div class="fc-edge-count">${t('{n} connectors - editing all', { n: nSel })}</div>` : '') +
       (styleF ? row(t('Bend'), styleSelect) : '') +
       (arrowF ? row(t('Arrow'), segHtml(arrowF, arrowCur, [['none', t('None')], ['end', t('End')], ['both', t('Both')]])) : '') +
       (headF ? row(t('Head'), segHtml(headF, headCur, HEAD_CHOICES)) : '') +

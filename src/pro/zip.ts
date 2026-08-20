@@ -192,7 +192,7 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
 
   // One fact line under the timestamp, so a skimmer cannot miss it.
   if (unmade.length) {
-    lines.push(`${unmade.length} of ${n + unmade.length} rows produced no file — listed below.`);
+    lines.push(`${unmade.length} of ${n + unmade.length} rows produced no file - listed below.`);
   }
 
   lines.push(
@@ -226,7 +226,7 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
       '',
       '[ Links ]',
       '',
-      'Each link reopens the tool in Lolly with the exact inputs used —',
+      'Each link reopens the tool in Lolly with the exact inputs used -',
       'follow it to recreate or tweak the file at lolly.tools.',
       '',
       linkBlocks.join('\n\n'),

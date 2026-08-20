@@ -79,7 +79,7 @@ function type(el: HTMLInputElement, v: string): void {
   el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 }
 
-test('mounting on an UNAUTHORED field commits nothing — opening the editor is not authoring', () => {
+test('mounting on an UNAUTHORED field commits nothing - opening the editor is not authoring', () => {
   const r = rig(undefined);
   try {
     assert.equal(r.commits.length, 0, 'no write on mount');
@@ -89,7 +89,7 @@ test('mounting on an UNAUTHORED field commits nothing — opening the editor is 
   } finally { r.teardown(); }
 });
 
-test('an authored value seeds the editor — presets and beziers alike', () => {
+test('an authored value seeds the editor - presets and beziers alike', () => {
   const a = rig('ease-in-out');
   try { assert.deepEqual(a.ed.points(), easingPoints('ease-in-out')); } finally { a.teardown(); }
   const b = rig('cubic-bezier(0.1, 0.9, 0.2, 1.4)');
@@ -175,12 +175,12 @@ test('an arrow on a handle does not also reach the panel behind it', () => {
     dom.window.document.body.addEventListener('keydown', () => { leaked++; });
     const e = new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
     r.handle(1).dispatchEvent(e);
-    assert.equal(leaked, 0, 'the panel binds arrows to nudge the SELECTED CLIP — a curve nudge must not move one');
+    assert.equal(leaked, 0, 'the panel binds arrows to nudge the SELECTED CLIP - a curve nudge must not move one');
     assert.equal(e.defaultPrevented, true, 'and it does not scroll the page either');
   } finally { r.teardown(); }
 });
 
-test('the plot redraws what it committed — curve, handles and readout stay one value', () => {
+test('the plot redraws what it committed - curve, handles and readout stay one value', () => {
   const r = rig();
   try {
     type(r.read, 'cubic-bezier(0,0.5,1,0.5)');

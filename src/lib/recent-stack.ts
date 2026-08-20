@@ -28,7 +28,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
   root.classList.add('dash-stack');
   root.setAttribute('tabindex', '0');
   root.setAttribute('role', 'group');
-  root.setAttribute('aria-label', 'Recent creations — swipe to browse');
+  root.setAttribute('aria-label', 'Recent creations - swipe to browse');
   root.innerHTML = `
     <div class="dash-stack-deck" data-deck>
       ${items.map((it) => `

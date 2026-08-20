@@ -115,7 +115,7 @@ test('ON: a rotated box still gets exactly one stamp (the walker re-enters itsel
     assert.ok(/rotate\(/.test(on!), 'and the rotation is still emitted as a real SVG rotate');
   });
 
-test('an element with no id contributes none — ids only where the canvas minted one',
+test('an element with no id contributes none - ids only where the canvas minted one',
   { skip: SKIP }, async () => {
     const markup = `
       <div id="root" style="width:200px;height:100px;background:#fff">

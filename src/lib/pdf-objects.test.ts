@@ -102,7 +102,7 @@ test('a LINEAR Type-4 function-based shading is re-expressed as an axial gradien
   // f(u,v) = (u, u, u): drop v, then triplicate u.
   const sh = buildShading(h.ec, type1Shading(c, type4(c, '{ pop dup dup }')));
   assert.ok(sh, 'shading decoded');
-  assert.equal(sh!.type, 2, 'emitted as a real ShadingType 2 — vector, not raster');
+  assert.equal(sh!.type, 2, 'emitted as a real ShadingType 2 - vector, not raster');
   assert.equal(sh!.tileKey, undefined);
   assert.ok(sh!.stops.length >= 2);
   assert.equal(sh!.stops[0]!.color, '#000000');

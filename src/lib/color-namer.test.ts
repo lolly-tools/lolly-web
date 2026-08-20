@@ -39,7 +39,7 @@ test('mid grey is a Grey (with an optional temperature)', () => {
   assert.match(nameColor('#7d7a74'), /Grey/); // faintly warm neutral
 });
 
-test('deterministic — same hex always yields the same name', () => {
+test('deterministic - same hex always yields the same name', () => {
   for (const hex of ['#30ba78', '#4f83cc', '#000000', '#ffffff', '#ff8000', '#6a5acd']) {
     assert.equal(nameColor(hex), nameColor(hex));
     assert.equal(nameColor(hex), nameColor(hex.toUpperCase()));

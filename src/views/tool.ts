@@ -369,7 +369,7 @@ async function decryptEncryptedLink(query: string): Promise<string> {
     for (;;) {
       const pw = await promptDialog({
         title: t('Password-protected link'),
-        message: t('This Lolly link is locked. Enter its password to open it here — nothing is sent to a server.'),
+        message: t('This Lolly link is locked. Enter its password to open it here - nothing is sent to a server.'),
         confirmLabel: t('Open'),
         inputType: 'password',
         placeholder: t('Password'),
@@ -385,7 +385,7 @@ async function decryptEncryptedLink(query: string): Promise<string> {
         });
         return extras.length ? `${decoded}&${extras.join('&')}` : decoded;
       }
-      error = t('Incorrect password — try again.');         // wrong → re-prompt
+      error = t('Incorrect password - try again.');         // wrong → re-prompt
     }
   })();
   zxInFlight.set(token, run);
@@ -447,7 +447,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     const LOAD_TIMEOUT_MS = 15000;
     let loadTimer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool — network timeout')), LOAD_TIMEOUT_MS);
+      loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool - network timeout')), LOAD_TIMEOUT_MS);
     });
     try {
       tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang(), integrity: installed ? undefined : ((await getToolIntegrity()) ?? undefined) }), timeout]);
@@ -465,7 +465,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     }
     const errs = err.validationErrors?.length
       ? `<ul class="error-list">${err.validationErrors.map(ve =>
-          `<li><code>${escape(ve.path)}</code> — ${escape(ve.message)}</li>`
+          `<li><code>${escape(ve.path)}</code> - ${escape(ve.message)}</li>`
         ).join('')}</ul>`
       : '';
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -552,7 +552,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // stores the modified source and hydrates it like any other template.
   const inputIds = (tool.manifest.inputs ?? []).map(i => i.id);
   tool.template = annotateTemplate(tool.template, inputIds);
-  document.title = tRaw('{name} — Lolly', { name: tool.manifest.name });
+  document.title = tRaw('{name} - Lolly', { name: tool.manifest.name });
 
   // A password-gated link (`?zx=…`) carries the whole state ENCRYPTED. Prompt for
   // the password client-side (no server), decrypt to the readable query, and carry
@@ -1161,7 +1161,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const privacyBadge = onDevice
     ? `<div class="on-device-badge" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>${t('Runs on your device — nothing is uploaded')}</span>
+        <span>${t('Runs on your device - nothing is uploaded')}</span>
       </div>`
     : '';
 
@@ -1240,7 +1240,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             <div id="tool-inputs" class="tool-inputs"></div>
             ${hasInputs ? `
               <div class="sidebar-utils" id="sidebar-utils">
-                ${toolId === 'darkroom' && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined' && typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined' ? `<button type="button" id="grade-video-btn" class="clear-inputs-btn" title="${escape(t('Apply this look to a video from your library — runs on-device as a background job'))}">${t('Grade a video…')}</button>` : ''}
+                ${toolId === 'darkroom' && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined' && typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined' ? `<button type="button" id="grade-video-btn" class="clear-inputs-btn" title="${escape(t('Apply this look to a video from your library - runs on-device as a background job'))}">${t('Grade a video…')}</button>` : ''}
                 <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="${escape(t('Reset all inputs to defaults'))}">${t('Clear changes')}</button>
               </div>
             ` : ''}
@@ -1258,7 +1258,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
         ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span>${t('Runs on your device — nothing is uploaded')}</span>
+          <span>${t('Runs on your device - nothing is uploaded')}</span>
         </div>` : ''}
         ${hideSidebar ? `<div id="tool-content" role="img" aria-label="${escape(canvasLabel())}"></div>` : `
         <div class="tool-canvas-outer" id="tool-canvas-outer">
@@ -1356,7 +1356,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const brandVarsReady: Promise<unknown> = Promise.race([
     applyBrandVars(contentEl, host),
     new Promise<void>(resolve => setTimeout(resolve, 3000)),
-  ]).catch(() => { /* cosmetic — never block a mount or fail an export on brand vars */ });
+  ]).catch(() => { /* cosmetic - never block a mount or fail an export on brand vars */ });
   // Always present in the template (both layouts render #tool-stage), so treat it
   // as non-null - mirrors mountTool's unguarded uses (ro.observe, fitCanvas, …).
   const stageEl   = viewEl.querySelector<HTMLElement>('#tool-stage')!;
@@ -2471,7 +2471,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       {
         used: (pct) => `${t('URL budget')}: ${pct}%`,
         // Shown from the meter the first time a link fills the bar - reassurance, not a warning.
-        reassure: t("It's okay — keep going. You can always share the whole thing as a .lolly file."),
+        reassure: t("It's okay - keep going. You can always share the whole thing as a .lolly file."),
       },
       prefersReducedMotion,
       () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState)),
@@ -2505,7 +2505,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Re-bound to the live runtime each mount; last-mounted wins (a single tool at a
   // time on the tool route - /multi drives inputs its own way).
   (globalThis as { __lollySetInput?: (id: string, value: InputValue) => void }).__lollySetInput =
-    (id, value) => { try { runtime.setInput(id, value); markUserDirty(id); } catch { /* unknown id — ignore */ } };
+    (id, value) => { try { runtime.setInput(id, value); markUserDirty(id); } catch { /* unknown id - ignore */ } };
 
   // Deep-link an overlay open on load, so a share link OR a screenshot recipe can
   // reproduce a state that otherwise lives only in a click. `?share` opens the Share
@@ -2598,7 +2598,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       try {
         for (const tv of parseTemplates(templateMeta)) bases.push({ id: tv.id, name: tv.name });
         for (const ut of await tplStore.list(toolId)) bases.push({ id: ut.id, name: ut.name });
-      } catch { /* bases are best-effort — the variation card just offers fewer options */ }
+      } catch { /* bases are best-effort - the variation card just offers fewer options */ }
       const plainValues = (): Record<string, unknown> =>
         Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
       openSaveDialog({
@@ -2659,7 +2659,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const grain = Math.min(1, Math.max(0, num('grain', 0) / 100));
         const vignette = Math.min(1, Math.max(0, num('vignette', 0) / 100));
         if (!cube && grain === 0 && vignette === 0) {
-          announce(t('Adjust the look first — this would output the video unchanged.'));
+          announce(t('Adjust the look first - this would output the video unchanged.'));
           return;
         }
         const { runVideoJobAsJob, videoJobRefusal } = await import('../lib/video-jobs.ts');
@@ -2702,7 +2702,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           onComplete: () => announce(t('Graded video saved to your uploads.')),
           onError: (err) => host.log('error', 'Video grade failed', { id: picked.id, error: String(err) }),
         });
-        announce(t('Grading in the background — watch the progress toast.'));
+        announce(t('Grading in the background - watch the progress toast.'));
       } finally {
         delete gradeVideoBtn.dataset.busy;
       }
@@ -3253,7 +3253,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (b) {
         b.classList.remove('is-busy');
         b.classList.add('is-error');
-        if (!b.dataset.iconOnly) b.textContent = (err as { message?: string })?.message || t('Preview failed — tap to retry');
+        if (!b.dataset.iconOnly) b.textContent = (err as { message?: string })?.message || t('Preview failed - tap to retry');
         delete b.dataset.busy;
       }
       throw err;
@@ -3313,7 +3313,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         console.error('exportFile failed:', err);
         btn.classList.remove('is-busy');
         btn.classList.add('is-error');
-        btn.textContent = (err as { message?: string })?.message || t('Export failed — try again');
+        btn.textContent = (err as { message?: string })?.message || t('Export failed - try again');
         delete btn.dataset.busy;
       }
     });
@@ -3346,7 +3346,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const box = document.createElement('div');
     box.className = 'canvas-error';
     box.setAttribute('role', 'alert');
-    box.textContent = t("Couldn't render this preview — check your inputs.");
+    box.textContent = t("Couldn't render this preview - check your inputs.");
     stage.appendChild(box);
   }
   function clearCanvasError(): void {
@@ -4028,7 +4028,7 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
 }
 
 function mount404(viewEl: HTMLElement, toolId: string): void {
-  document.title = t('Not Found — Lolly');
+  document.title = t('Not Found - Lolly');
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
@@ -4044,14 +4044,14 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
 // Shown when a tool is opened in a shell that can't fulfil its capabilities
 // (e.g. a 'capture' tool in the web PWA). Mirrors the 404 layout.
 function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: readonly string[]): void {
-  document.title = tRaw('{name} — Desktop only', { name: manifest.name });
+  document.title = tRaw('{name} - Desktop only', { name: manifest.name });
   const why = unmet.map(capabilityLabel).join(', ');
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
         <p class="not-found-code">${t('Desktop')}</p>
         <h1 class="not-found-title">${t('{name} needs the desktop app', { name: manifest.name })}</h1>
-        <p class="not-found-desc">${t('This tool uses <strong>{why}</strong>, which the web app can’t provide — a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.', { why })}</p>
+        <p class="not-found-desc">${t('This tool uses <strong>{why}</strong>, which the web app can’t provide - a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.', { why })}</p>
         <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
@@ -4061,13 +4061,13 @@ function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: re
 // Shown on a Chromium browser for a capture tool when the extension isn't
 // installed - the tool CAN run here once the free extension is added.
 function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
-  document.title = tRaw('{name} — Add the extension', { name: manifest.name });
+  document.title = tRaw('{name} - Add the extension', { name: manifest.name });
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
         <p class="not-found-code">${t('Add&#8209;on')}</p>
         <h1 class="not-found-title">${t('Enable {name} in your browser', { name: manifest.name })}</h1>
-        <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.')}</p>
+        <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here - no desktop app needed. Install it, then reload this page.')}</p>
         ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
         <a href="${escape(docsAppHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
         <a href="/#/" class="not-found-back">${t('Back to all tools')}</a>

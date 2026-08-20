@@ -128,7 +128,7 @@ test('an unpaired profile declares Custom and writes no RegistryName', async () 
   const intent = intentOf(reopened, PDFName)!;
   assert.equal(str(intent.dict.get(PDFName.of('OutputConditionIdentifier'))), 'Custom');
   assert.equal(intent.dict.get(PDFName.of('RegistryName')), undefined,
-    'a Custom identity names no registry, so the key must be absent — not an empty string');
+    'a Custom identity names no registry, so the key must be absent - not an empty string');
   assert.equal(str(intent.dict.get(PDFName.of('Info'))), 'Fixture Coated v1',
     'the file declares the profile’s own description, which is what it can substantiate');
   assert.ok(reopened.context.lookup(intent.dict.get(PDFName.of('DestOutputProfile'))));
@@ -184,7 +184,7 @@ test('an unmanaged DeviceRGB image blocks the claim EVEN WITH a profile embedded
   const { reopened, bytes } = await roundTrip(doc, {}, 'own', { embed: embedFor() });
   const intent = intentOf(reopened, PDFName)!;
   assert.ok(reopened.context.lookup(intent.dict.get(PDFName.of('DestOutputProfile'))),
-    'the intent and its profile are still written — a RIP wants them');
+    'the intent and its profile are still written - a RIP wants them');
   assert.deepEqual(claimOf(reopened, bytes, PDFName), { info: false, xmp: false },
     'unmanaged RGB under a CMYK intent cannot claim PDF/X-4');
 });
@@ -225,7 +225,7 @@ test('AES-256 has the last word: intent written, claim withheld', async () => {
   );
   const intent = intentOf(reopened, PDFName)!;
   assert.ok(reopened.context.lookup(intent.dict.get(PDFName.of('DestOutputProfile'))),
-    'the output intent survives — the caller encrypts after this pass');
+    'the output intent survives - the caller encrypts after this pass');
   assert.deepEqual(claimOf(reopened, bytes, PDFName), { info: false, xmp: false },
     'PDF/X-4 forbids encryption');
 });
@@ -256,7 +256,7 @@ test("intentKind 'none' / null: metadata only, as before", async () => {
   }
 });
 
-test('one intent only — a second pass replaces rather than appends', async () => {
+test('one intent only - a second pass replaces rather than appends', async () => {
   const { PDFName } = await import('pdf-lib') as any;
   const doc = await blankDoc();
   await applyPdfX(doc, {}, 'fogra39', {});
@@ -308,7 +308,7 @@ test('usedFontsEmbedded: a declared-but-unused standard font is not a violation'
   const clean = await lib.PDFDocument.load(new Uint8Array(outlined.output('arraybuffer')), { updateMetadata: false });
   const declared = clean.getPage(0).node.Resources().lookup(lib.PDFName.of('Font'), lib.PDFDict);
   assert.ok(declared.keys().length >= 14, 'jsPDF really does declare the standard fonts unused');
-  assert.equal(usedFontsEmbedded(clean, lib), true, 'declared but never selected — nothing to embed');
+  assert.equal(usedFontsEmbedded(clean, lib), true, 'declared but never selected - nothing to embed');
 
   // The same document with real text in a standard face DOES select one.
   const withText = new jsPDF({ unit: 'pt', format: [200, 200] });
@@ -366,7 +366,7 @@ test('a DeviceRGB shading blocks the claim EVEN WITH a profile embedded', async 
   assert.equal(fillPdfShading(pdf, spec, () => { pdf.rect(0, 0, 200, 200); }), true);
   const doc = await lib.PDFDocument.load(new Uint8Array(pdf.output('arraybuffer')), { updateMetadata: false });
 
-  assert.equal(hasDeviceRgbImage(doc, lib.PDFName), false, 'no image XObject — the old veto is blind here');
+  assert.equal(hasDeviceRgbImage(doc, lib.PDFName), false, 'no image XObject - the old veto is blind here');
   assert.equal(groupCsOk(doc, lib.PDFName), true, 'and so is the group check');
   assert.equal(shadingCsOk(doc, lib.PDFName), false, 'the shading itself is /DeviceRGB');
 
@@ -376,7 +376,7 @@ test('a DeviceRGB shading blocks the claim EVEN WITH a profile embedded', async 
   );
   const intent = intentOf(reopened, PDFName)!;
   assert.ok(reopened.context.lookup(intent.dict.get(PDFName.of('DestOutputProfile'))),
-    'the intent and its profile are still written — a RIP wants them');
+    'the intent and its profile are still written - a RIP wants them');
   assert.deepEqual(claimOf(reopened, bytes, PDFName), { info: false, xmp: false },
     'unmanaged RGB in a shading cannot claim PDF/X-4 either');
   assert.equal(logged.length, 1, 'one line, and it is the colour-consistency one');
@@ -429,7 +429,7 @@ test('a profile description with parens, backslashes or non-ASCII still produces
     'Smile ) here',
     'ok(unbalanced',
     String.raw`C:\color\coated`,
-    'Bogen gestrichen – Papiertyp 1 ü',
+    'Bogen gestrichen - Papiertyp 1 ü',
     '日本 コート紙',
   ];
   for (const desc of descs) {

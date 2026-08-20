@@ -83,7 +83,7 @@ export function describeDecodeFailure(file: Blob & { name?: string }): string {
   if (is(/heic|heif/, 'heic', 'heif')) {
     // Reached only when the bundled HEIC decoder ALSO failed (native + libheif both
     // gave up), so the file itself is the problem - not a missing capability.
-    return 'This HEIC image couldn’t be read — the file may be damaged or use an unsupported feature.';
+    return 'This HEIC image couldn’t be read - the file may be damaged or use an unsupported feature.';
   }
   if (is(/avif/, 'avif')) return 'This browser can’t read AVIF images. Try converting it to JPEG, PNG or WebP first.';
   if (is(/tiff?/, 'tif', 'tiff')) return 'This browser can’t read TIFF images. Try converting it to JPEG, PNG or WebP first.';

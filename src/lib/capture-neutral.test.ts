@@ -99,7 +99,7 @@ test('pinned: an absent flag mirror is still neutralised', () => {
   localStorage.setItem(CAPTURE_NEUTRAL_KEY, '1');
   // The case that made this module necessary: nothing in the mirror, and
   // flagEnabledSync treats a missing key as ON.
-  assert.equal(flagEnabledSync(JELLY_FLAG.id), true, 'a missing key reads as ON — the bug');
+  assert.equal(flagEnabledSync(JELLY_FLAG.id), true, 'a missing key reads as ON - the bug');
   assert.equal(applyCaptureNeutral(), true);
   assert.equal(flagEnabledSync(JELLY_FLAG.id), false);
 });
@@ -129,7 +129,7 @@ test('pinned: only the literal "1" counts', () => {
 test('build-docs-shots seeds the pin key this module reads', () => {
   assert.ok(
     SHOTS_SCRIPT.includes(`'${CAPTURE_NEUTRAL_KEY}'`),
-    `scripts/build-docs-shots.ts must seed '${CAPTURE_NEUTRAL_KEY}' — the key was renamed on one side only`,
+    `scripts/build-docs-shots.ts must seed '${CAPTURE_NEUTRAL_KEY}' - the key was renamed on one side only`,
   );
   // It has to be set from the init script (which runs pre-boot), not merely
   // mentioned in prose. The script holds its own const - a build script cannot
@@ -184,7 +184,7 @@ test('the first-run tool guide is suppressed by the pin, not by a list of tool i
   const auto = /export function autoOpenToolGuide[\s\S]*?\n}/.exec(guide)?.[0] ?? '';
   assert.ok(auto, 'autoOpenToolGuide must exist');
   assert.ok(auto.includes('captureNeutralPinned()'),
-    'a capture must never get the first-run guide modal — it would bake a dialog over every tool shot');
+    'a capture must never get the first-run guide modal - it would bake a dialog over every tool shot');
   // Order matters only in that the pin has to be consulted before the modal opens.
   assert.ok(auto.indexOf('captureNeutralPinned()') < auto.indexOf('showToolGuide'),
     'the pin must be checked before the guide is shown');
@@ -210,7 +210,7 @@ test('main.ts pins neutral state at the one point in boot where it works', () =>
 
   const hydrate = MAIN_TS.indexOf('hydrateFeatureFlags(profile');
   assert.ok(hydrate > 0 && hydrate < pin,
-    'the pin must run AFTER hydrateFeatureFlags — that call rewrites the whole flag mirror from the profile, discarding anything set before it');
+    'the pin must run AFTER hydrateFeatureFlags - that call rewrites the whole flag mirror from the profile, discarding anything set before it');
 
   // The two reads that act on the flags. Both must come after the pin, or the
   // capture loads the jelly bundle / mounts the neuro dock anyway.
@@ -253,7 +253,7 @@ test('overrideFlagInMemory is memory-only, outranks the mirror, and leaves the p
   assert.equal(flagEnabledSync(NEUROSPICY_FLAG.id), true,
     'the in-memory override is consulted before the mirror');
   assert.equal(localStorage.getItem('lolly:featureFlags'), mirror,
-    'overrideFlagInMemory must not write localStorage — a ?neuro link affects one page load only');
+    'overrideFlagInMemory must not write localStorage - a ?neuro link affects one page load only');
 
   // applyCaptureNeutral's behaviour is unchanged by the override existing: it still
   // applies, still writes the same mirror, and still clears the a11y prefs.

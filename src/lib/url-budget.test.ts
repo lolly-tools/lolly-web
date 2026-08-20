@@ -43,7 +43,7 @@ test('scalar: kept value emits encodeURIComponent(key)=encodeURIComponent(value)
   assert.equal(r.status, 'kept');
 });
 
-test('scalar: encodeURIComponent charset — tilde/quote stay literal, not %XX', () => {
+test('scalar: encodeURIComponent charset - tilde/quote stay literal, not %XX', () => {
   const r = only(mk({ id: 'k', type: 'text', value: "a~b'c" }));
   assert.equal(r.emit, "k=a~b'c"); // '~' and "'" are unreserved under encodeURIComponent
 });
@@ -196,7 +196,7 @@ test('table: a filled grid rides in the link (compact form, double-encoded) and 
   assert.deepEqual(decodeTableCompact(decodedOnce), normalizeTableValue(value));
 });
 
-test('table: no drop cap — a huge grid stays kept (escalates to .lolly, never silently dropped)', () => {
+test('table: no drop cap - a huge grid stays kept (escalates to .lolly, never silently dropped)', () => {
   const rows = Array.from({ length: 400 }, (_, i) => [`row ${i}`, 'x'.repeat(60)]);
   const r = only(mk({ id: 'data', type: 'table', value: { columns: ['A', 'B'], rows }, urlKey: 't' }));
   assert.equal(r.status, 'kept');
@@ -285,7 +285,7 @@ test('costUrlState: export parts are costed as output-category, non-removable ro
   assert.equal(flag.emit, 'nostage'); // bare flag, no '='
 });
 
-test('costUrlState: target bands — qr warns then goes over its tight ceiling', () => {
+test('costUrlState: target bands - qr warns then goes over its tight ceiling', () => {
   const warn = costUrlState({ model: [], exportParts: [`x=${'a'.repeat(290)}`] }, { target: QR_TARGET });
   assert.equal(warn.readableLen, 292);
   assert.equal(warn.band, 'warn'); // 260 ≤ 292 < 300

@@ -82,7 +82,7 @@ test('the matching mount consumes it EXACTLY once; the remount gets null and cle
   assert.equal(activeTeamSessionOrigin('qr-code'), null, 'and the origin is not resurrected');
 });
 
-test('a mismatched mount spends the stash too — it can never reach the mount after next', () => {
+test('a mismatched mount spends the stash too - it can never reach the mount after next', () => {
   _clearTeamSessionOriginForTests();
   rememberTeamSessionOrigin({ sessionId: 'sess-1', toolId: 'qr-code' });
 
@@ -181,7 +181,7 @@ test('a team-opened session: the context carries the instance’s session id', a
 
   assert.deepEqual(pressStartCollab(), [{
     toolId: 'qr-code', baseParts: shareCtx.baseParts, currentFormat: 'png', sessionId: 'sess-42',
-  }], 'sessionId rides along — and the projectId does not (nothing keys a room on it)');
+  }], 'sessionId rides along - and the projectId does not (nothing keys a room on it)');
 });
 
 test('a plain local session: the context is byte-identical to today’s', async () => {

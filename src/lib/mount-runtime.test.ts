@@ -41,7 +41,7 @@ test('nothing in shells/web/src imports createRuntime outside the chokepoint', (
   assert.deepEqual(
     offenders,
     [],
-    'import createToolRuntime from lib/mount-runtime.ts instead — a direct createRuntime '
+    'import createToolRuntime from lib/mount-runtime.ts instead - a direct createRuntime '
       + 'leaves host.color/host.geom undefined and tools fail silently:\n  ' + offenders.join('\n  '),
   );
 });

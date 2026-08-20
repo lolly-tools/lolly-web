@@ -267,7 +267,7 @@ test('a presence payload is read as a frame, a bare Presence, or not at all', ()
   }
 });
 
-test('role comes from the ack, live — including a mid-session downgrade', () => {
+test('role comes from the ack, live - including a mid-session downgrade', () => {
   const fake = fakeProvider();
   const handle = createWorkCollabHandle(fake.provider, { clientId: 'DEVICE-SELF' });
   assert.equal(handle.role, 'writer', 'the provider default, before any ack');
@@ -302,7 +302,7 @@ test("an observer's edits never become ops: the session's wrapper engages", asyn
   v.session.close();
 });
 
-test('a peer frame crosses with its own from and seq — never re-stamped', () => {
+test('a peer frame crosses with its own from and seq - never re-stamped', () => {
   const fake = fakeProvider({ status: 'live' });
   const handle = createWorkCollabHandle(fake.provider, { clientId: 'DEVICE-SELF' });
   const seen: PresenceFrame[] = [];
@@ -342,7 +342,7 @@ test('the join-ack roster seeds the engine, and a live frame supersedes the seed
 
   let peers = w.session.state().peers;
   assert.equal(peers.length, 1, 'the room is visible from the roster alone');
-  assert.equal(peers[0]?.clientId, 'conn-priya', 'keyed by the connection id — the wire carries no device id');
+  assert.equal(peers[0]?.clientId, 'conn-priya', 'keyed by the connection id - the wire carries no device id');
   assert.equal(peers[0]?.name, 'Priya');
   assert.equal(peers[0]?.role, 'writer', 'peerRole resolved through the roster');
   assert.ok(fake.sent.length >= 1, 'and having a peer is what makes us announce ourselves at all');
@@ -356,7 +356,7 @@ test('the join-ack roster seeds the engine, and a live frame supersedes the seed
   });
 
   peers = w.session.state().peers;
-  assert.equal(peers.length, 1, 'exactly one Priya — the placeholder did not become a ghost');
+  assert.equal(peers.length, 1, 'exactly one Priya - the placeholder did not become a ghost');
   assert.equal(peers[0]?.clientId, 'DEVICE-PRIYA');
   assert.equal(peers[0]?.role, 'writer', 'still resolved, now through the device to the principal');
 
@@ -411,7 +411,7 @@ test('a subscriber that arrives after the ack still gets the room', () => {
   const handle = createWorkCollabHandle(fake.provider, { clientId: 'DEVICE-SELF' });
   const seen: PresenceFrame[] = [];
   const stop = handle.presenceIn.subscribe(f => { seen.push(f); });
-  assert.equal(seen.length, 1, 'replayed on subscribe — no state event will restate it');
+  assert.equal(seen.length, 1, 'replayed on subscribe - no state event will restate it');
   assert.equal(seen[0]?.from, 'conn-a');
   stop();
 });

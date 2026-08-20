@@ -186,7 +186,7 @@ export class BeamSinkError extends Error {
   readonly code: BeamSinkErrorCode;
 
   constructor(code: BeamSinkErrorCode, detail?: string, options?: { cause?: unknown }) {
-    super(`beam-sink: ${code}${detail ? ` — ${detail}` : ''}`, options);
+    super(`beam-sink: ${code}${detail ? ` - ${detail}` : ''}`, options);
     this.name = 'BeamSinkError';
     this.code = code;
   }

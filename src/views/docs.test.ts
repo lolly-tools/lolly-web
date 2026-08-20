@@ -69,7 +69,7 @@ const host = {
 // A full /info page: a .docs-content main with headings, a script + .listen-bar + style to
 // exercise sanitisation, and internal doc links to exercise link rewriting - plus the nav
 // landmarks (pathways / sidebar / sitemap) that live OUTSIDE .docs-content.
-const PAGE_HTML = `<!doctype html><html><head><title>Quickstart — Lolly</title></head>
+const PAGE_HTML = `<!doctype html><html><head><title>Quickstart - Lolly</title></head>
 <body>
   <nav class="nav-group">
     <a href="/info/for-creators.html">For Creators</a>

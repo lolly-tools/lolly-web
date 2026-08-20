@@ -29,7 +29,7 @@ test('renderInputs tolerates a manifest-less runtime (optional-chains runtime.ma
   // A bare `runtime.manifest.render` (dot, not `?.`) is the exact shape that crashed.
   assert.doesNotMatch(
     toolInputs, /runtime\.manifest\.render/,
-    'tool-inputs.ts reads runtime.manifest.render UNGUARDED — multi-edit passes a manifest-less fanRuntime, so this throws. Optional-chain the manifest.',
+    'tool-inputs.ts reads runtime.manifest.render UNGUARDED - multi-edit passes a manifest-less fanRuntime, so this throws. Optional-chain the manifest.',
   );
   assert.match(
     toolInputs, /runtime\.manifest\?\./,
@@ -39,9 +39,9 @@ test('renderInputs tolerates a manifest-less runtime (optional-chains runtime.ma
 
 test('multi-edit shared-card fanRuntime provides a manifest for renderInputs', () => {
   const block = multiEdit.match(/const fanRuntime = \{[\s\S]*?\}\s*as unknown as Runtime/);
-  assert.ok(block, 'fanRuntime adapter literal not found — did the shared-card runtime move or get renamed?');
+  assert.ok(block, 'fanRuntime adapter literal not found - did the shared-card runtime move or get renamed?');
   assert.match(
     block[0], /\bmanifest\s*:/,
-    'fanRuntime must expose a `manifest` — renderInputs reads runtime.manifest for the density hint; a { setInput, getModel } adapter alone crashes /multi.',
+    'fanRuntime must expose a `manifest` - renderInputs reads runtime.manifest for the density hint; a { setInput, getModel } adapter alone crashes /multi.',
   );
 });

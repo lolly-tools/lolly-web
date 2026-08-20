@@ -98,7 +98,7 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
     const rejected: string[] = [];
     const validFiles = Array.from(files).filter((f) => {
       const validation = validateFontFile(f);
-      if (!validation.valid) { rejected.push(`${f.name} — ${validation.error ?? ''}`.trim()); return false; }
+      if (!validation.valid) { rejected.push(`${f.name} - ${validation.error ?? ''}`.trim()); return false; }
       return true;
     });
 

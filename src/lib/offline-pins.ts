@@ -300,7 +300,7 @@ export async function pinnedRenderLayouts(): Promise<Set<string>> {
       if (!resp) continue;
       const manifest = JSON.parse(await resp.text()) as ToolManifest;
       if (manifest.render?.layout) out.add(manifest.render.layout);
-    } catch { /* unreadable manifest — nothing to warm */ }
+    } catch { /* unreadable manifest - nothing to warm */ }
   }
   return out;
 }

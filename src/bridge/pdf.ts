@@ -86,7 +86,7 @@ export async function analyzePdf(bytes: Uint8Array): Promise<{ findings: PdfFind
   if (xmp != null) {
     const who = xmpField(xmp, /<dc:creator>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i)
       || xmpField(xmp, /<xmp:CreatorTool>([\s\S]*?)<\/xmp:CreatorTool>/i);
-    add('XMP metadata', who ? `XMP packet — ${who}` : 'embedded XMP packet', 'warn');
+    add('XMP metadata', who ? `XMP packet - ${who}` : 'embedded XMP packet', 'warn');
   }
 
   // Structural findings - what the document CARRIES and DOES, as opposed to what
@@ -96,7 +96,7 @@ export async function analyzePdf(bytes: Uint8Array): Promise<{ findings: PdfFind
   try {
     const { scanPdfStructure } = await import('./pdf-structure.ts');
     findings.push(...scanPdfStructure(doc));
-  } catch { /* structural scan unavailable — metadata findings still stand */ }
+  } catch { /* structural scan unavailable - metadata findings still stand */ }
 
   return { findings };
 }
@@ -328,7 +328,7 @@ export function createPdfAPI(): PdfAPI {
     compress: (bytes, opts) => compressPdf(bytes, opts),
     // redact (v1.85) is NOT provided here, deliberately: its implementation
     // (pdf-redact.ts) reaches the views/pdf-import renderer and a real canvas,
-    // neither of which the node CLI — which imports this same factory — has.
+    // neither of which the node CLI - which imports this same factory - has.
     // The web bridge index wires it in from pdf-redact.ts; on the CLI the
     // method is simply absent, which is exactly what hooks feature-detect
     // (`typeof host.pdf?.redact === 'function'`).

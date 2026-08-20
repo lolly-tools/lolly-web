@@ -64,7 +64,7 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
     if (zipKind !== 'archive') {
       throw new ArchiveIngestError(
         zipKind
-          ? `That looks like a ${zipKind.toUpperCase()} file, not a plain archive — open it with its own importer.`
+          ? `That looks like a ${zipKind.toUpperCase()} file, not a plain archive - open it with its own importer.`
           : 'That ZIP could not be read (it may be encrypted or use an unsupported format).',
       );
     }
@@ -86,10 +86,10 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
     members.push(e);
     total += e.bytes.length;
     if (members.length > MAX_ARCHIVE_MEMBERS) {
-      throw new ArchiveIngestError(`That archive has more than ${MAX_ARCHIVE_MEMBERS} files — unpack it on your device first.`);
+      throw new ArchiveIngestError(`That archive has more than ${MAX_ARCHIVE_MEMBERS} files - unpack it on your device first.`);
     }
     if (total > MAX_ARCHIVE_TOTAL_BYTES) {
-      throw new ArchiveIngestError('That archive expands to more than 256 MB — unpack it on your device first.');
+      throw new ArchiveIngestError('That archive expands to more than 256 MB - unpack it on your device first.');
     }
   }
   if (members.length === 0) throw new ArchiveIngestError('That archive has no files to import.');

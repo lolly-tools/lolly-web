@@ -390,7 +390,7 @@ function gesture(
   fire('pointerup', last.x, last.y);
 }
 
-test('a touch NEAR a dot adopts it — but only for a sideways drag', () => {
+test('a touch NEAR a dot adopts it - but only for a sideways drag', () => {
   const state: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
   const { root, plot } = mount(state, [{ idx: 0, hex: '#2f7d4f', label: 'Green' }]);
   const { calls, h } = HANDLERS(state, { 0: '#2f7d4f' });
@@ -427,7 +427,7 @@ test('a vertical swipe near a dot scrolls the page instead of destroying the col
   off();
 });
 
-test('a DIRECT press on the dot may still be dragged vertically — that is the control', () => {
+test('a DIRECT press on the dot may still be dragged vertically - that is the control', () => {
   // Lightness is the vertical axis on this plane, so exempting a direct hit from the
   // axis lock is not an oversight: dragging the dot straight up is the gesture.
   const state: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
@@ -443,7 +443,7 @@ test('a DIRECT press on the dot may still be dragged vertically — that is the 
   off();
 });
 
-test('a RETARGETED touch beside the dot is still axis-locked — target is not geometry', () => {
+test('a RETARGETED touch beside the dot is still axis-locked - target is not geometry', () => {
   // THE SECOND HALF OF THE SAME REGRESSION. Chrome's touch adjustment enlarges the hit
   // region by the touch radius and delivers a finger-sized pointerdown to the 20px dot
   // from up to ~24px away, so `e.target === dot` for presses that never touched it. The
@@ -516,7 +516,7 @@ const WIDE = { l: 0.795, c: 0.176, h: 243 };
 const WIDE_HEX = oklchToHex(WIDE);
 const WIDE_BAKED = hexToOklch(WIDE_HEX)!;
 
-test('the fixture really is outside sRGB — chroma reduced, lightness and hue kept', () => {
+test('the fixture really is outside sRGB - chroma reduced, lightness and hue kept', () => {
   // Guard the guard: if the engine's mapping ever changed shape, the two tests below
   // would pass for the wrong reason (a bake that is simply equal to the authored value).
   assert.ok(WIDE_BAKED.c < WIDE.c - 0.02,
@@ -573,7 +573,7 @@ test('updateSliceDot takes the authored colour too, so a drag keeps the fixed po
 
   updateSliceDot(root, 0, WIDE_HEX, state);
   assert.notEqual(dot.style.left, rendered,
-    'and omitting it falls back to the hex — what the brand editor relies on');
+    'and omitting it falls back to the hex - what the brand editor relies on');
   assert.ok(Math.abs(parseFloat(dot.style.left) / 100 - WIDE_BAKED.c / SLICE_C_MAX) < 1e-4);
 });
 

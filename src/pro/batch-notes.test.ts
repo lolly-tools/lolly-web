@@ -71,7 +71,7 @@ test('runBatch re-emits each row’s notes on its result and its progress event'
   assert.deepEqual(errors.map(p => p.index), [0, 1]);
 });
 
-test('the payload is opaque — runBatch never inspects an element', async () => {
+test('the payload is opaque - runBatch never inspects an element', async () => {
   const marker = Symbol('finding');
   const payload = [{ id: 'print.no-bleed', [marker]: true }];
   const { results } = await runBatch<{ id: string }>([row('a', 'u1')], HOST, { notes: [payload] });

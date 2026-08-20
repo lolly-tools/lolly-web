@@ -193,7 +193,7 @@ test('an edit straight after an undo does NOT merge into the entry undo left beh
   assert.equal(h.sizes().undo, 2);
 });
 
-test('without endGesture the stale-merge bug is reproducible — the guard is doing work', () => {
+test('without endGesture the stale-merge bug is reproducible - the guard is doing work', () => {
   // Proves the test above is not vacuous: same sequence, no endGesture, and the
   // follow-up edit coalesces into the resurrected entry instead of pushing.
   const h = createHistory();

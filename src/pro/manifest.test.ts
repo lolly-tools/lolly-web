@@ -207,7 +207,7 @@ test('lolly.txt records the rows that produced no file', () => {
     },
   );
   // The fact line sits under the timestamp so a skimmer cannot miss it…
-  assert.match(txt, /2 of 3 rows produced no file — listed below\./);
+  assert.match(txt, /2 of 3 rows produced no file - listed below\./);
   // …and the block itself carries the caveat as a sibling of the list, not UI chrome.
   assert.match(txt, /\[ 2 rows produced no file \]/);
   assert.match(txt, /These rows were part of this job and are not in this zip\./);

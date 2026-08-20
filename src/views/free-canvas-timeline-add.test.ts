@@ -201,7 +201,7 @@ test('audio added from the timeline lands TIMED at the playhead with NO authored
   } finally { f.destroy(); }
 });
 
-test('a seq-row kind keeps its OWN seeded length — the timeline add never overwrites it', async () => {
+test('a seq-row kind keeps its OWN seeded length - the timeline add never overwrites it', async () => {
   const f = mount();
   try {
     await openPanel(f);
@@ -227,7 +227,7 @@ test('a seq clip added from the timeline keeps its length UNAUTHORED, so the pac
 
     const b = f.boxes()[0]! as Record<string, unknown>;
     assert.ok(b.dur === undefined || b.dur === '' || b.dur === null,
-      `the clip seed authors no dur on purpose — packSeq fills it from the media (got ${JSON.stringify(b.dur)})`);
+      `the clip seed authors no dur on purpose - packSeq fills it from the media (got ${JSON.stringify(b.dur)})`);
   } finally { f.destroy(); }
 });
 

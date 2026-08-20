@@ -106,7 +106,7 @@ test('a registry-name condition never embeds anything, even with a profile loade
   for (const value of ['fogra39', 'fogra51', 'swop', 'gracol', 'srgb', 'none', undefined]) {
     assert.equal(await resolveEmbeddedProfile(host, value, 'CMYK'), null, String(value));
   }
-  assert.deepEqual(host.blobReads, [], 'nothing was even read — the registry rows are name-only');
+  assert.deepEqual(host.blobReads, [], 'nothing was even read - the registry rows are name-only');
 });
 
 test('the identity trap: a desc that looks like a condition proves nothing', async () => {
@@ -117,7 +117,7 @@ test('the identity trap: a desc that looks like a condition proves nothing', asy
   // TR 001. A desc match would put TR 001 on TR003's numbers.
   const swopish = await add(host, pressProfileBytes({ desc: 'SWOP2006_Coated3v2.icc' }), 'SWOP2006_Coated3v2.icc');
   const r = (await resolveEmbeddedProfile(host, `own:${swopish.digest}`, 'CMYK'))!;
-  assert.ok(r, 'it is still embedded — this is not a refusal');
+  assert.ok(r, 'it is still embedded - this is not a refusal');
   assert.equal(r.identifier, 'Custom');
   assert.equal(r.registry, null);
   assert.equal(r.pairedCondition, null);
@@ -242,7 +242,7 @@ test('provenance contradicted by the profile’s own targ declares Custom', asyn
   const bad = await add(host, pressProfileBytes({ desc: 'Some Coated', charData: 'FOGRA51' }), 'fetched.icc',
     { kind: 'registry', url: 'https://registry.color.org/Coated_Fogra39L.icc', conditionId: 'fogra39', charData: 'FOGRA39' });
   const r = (await resolveEmbeddedProfile(host, `own:${bad.digest}`, 'CMYK'))!;
-  assert.ok(r, 'still embedded — a contradiction is not a refusal');
+  assert.ok(r, 'still embedded - a contradiction is not a refusal');
   assert.equal(r.identifier, 'Custom');
   assert.equal(r.registry, null);
   assert.equal(r.pairedCondition, null);
@@ -271,5 +271,5 @@ test('one asset listing per export, not one per lookup', async () => {
   host.listCalls.length = 0;
   await resolveEmbeddedProfile(host, `own:${e.digest}`, 'CMYK');
   assert.equal(host.listCalls.length, 1,
-    'provenance rides the row that was already listed — a 50-row batch must not scan the store 100 times');
+    'provenance rides the row that was already listed - a 50-row batch must not scan the store 100 times');
 });

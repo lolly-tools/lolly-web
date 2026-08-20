@@ -140,7 +140,7 @@ test('transitionAt: enter runs from the head, exit into the tail, rest is null',
   assert.ok(nearEnd!.p < 0.01);
 });
 
-test('transitionAt: overlapping windows on a short clip — the further-from-rest one wins', () => {
+test('transitionAt: overlapping windows on a short clip - the further-from-rest one wins', () => {
   // 500 ms clip with 400 ms of each transition: the two windows overlap in the middle.
   const t = readTiming(box({ start: 0, dur: 500, enter: 'rise', enterMs: 400, exit: 'fade', exitMs: 400 }));
   assert.equal(transitionAt(t, 50, 5000)!.kind, 'rise', 'head belongs to enter');
@@ -190,7 +190,7 @@ test('applyTimeToElements: adds/removes the off class across the exact boundarie
   applyTimeToElements([el], 2999, ctx);
   assert.equal(el.classList.contains(OFF_CLASS), false);
   applyTimeToElements([el], 3000, ctx);
-  assert.equal(el.classList.contains(OFF_CLASS), true, 'start+dur is off — half-open');
+  assert.equal(el.classList.contains(OFF_CLASS), true, 'start+dur is off - half-open');
 });
 
 test('applyTimeToElements: an enter window composes with the authored rotate, then restores it exactly', () => {
@@ -390,7 +390,7 @@ test('seek queue: a superseded scrub target is never nudged toward', async () =>
   seeker.request(9, { scrubbing: true });      // queued as `want`
   v.calls[0]!.d.resolve(0);                    // the first landed miles off
   await new Promise((r) => setImmediate(r));
-  assert.equal(seeker.nudges(), 0, 'a newer target is pending — no nudge toward the stale one');
+  assert.equal(seeker.nudges(), 0, 'a newer target is pending - no nudge toward the stale one');
   seeker.destroy();
 });
 
@@ -539,7 +539,7 @@ test('clock: reapply picks up boxes minted by a canvas rebuild', () => {
   canvas.remove();
 });
 
-test('clock: zero model writes — it only ever reads the DOM', () => {
+test('clock: zero model writes - it only ever reads the DOM', () => {
   const { canvas } = stage(6000, [{ start: 0, dur: 1000 }]);
   // There is nothing to spy on by construction: the factory takes no runtime and no
   // model. This test pins that contract so a future signature change trips here.
@@ -855,7 +855,7 @@ test('audio: the scheduled span is clipped to the source, the box and the sequen
   });
 });
 
-test('audio: a muted box schedules nothing at all — no fetch, no source', async () => {
+test('audio: a muted box schedules nothing at all - no fetch, no source', async () => {
   await withAudioCtx(async (a) => {
     const { canvas } = stage(6000, [{ start: 0, dur: 4000, mute: true, audio: true }]);
     const q = frameQueue();
@@ -1057,7 +1057,7 @@ test('audio: a box orphaned by a repaint is stopped, and the fresh one placed on
     art.appendChild(box({ start: 0, dur: 8000, audio: true }));
     clock.reapply();
     await settle();
-    assert.equal(first.stops, 1, 'the detached box stopped playing — no overlapping copy');
+    assert.equal(first.stops, 1, 'the detached box stopped playing - no overlapping copy');
     assert.equal(a.live().length, 1, 'exactly one track is sounding');
     clock.destroy();
     canvas.remove();
@@ -1397,13 +1397,13 @@ test('seam: withAuthoredDom stands the clock down, and hands the frame back afte
   });
   assert.equal(inside, '0.6', 'the authored opacity, for the whole scope');
   assert.notEqual(el.style.opacity, '0.6', 'and the playhead is re-asserted on the way out');
-  assert.notEqual(el.style.opacity, posed, 'at t = 400, where the clock got to — not 1000');
+  assert.notEqual(el.style.opacity, posed, 'at t = 400, where the clock got to - not 1000');
   assert.equal(clock.t(), 400, 'the time it reached while it was held');
   clock.destroy();
   canvas.remove();
 });
 
-test('seam: a destroyed clock deregisters — nothing answers authored reads for it', async () => {
+test('seam: a destroyed clock deregisters - nothing answers authored reads for it', async () => {
   const { canvas, els } = stage(4000, [{ start: 0, dur: 4000, enter: 'fade', enterMs: 2000, style: 'opacity:0.6;' }]);
   const clock = createSequenceClock({ canvasEl: canvas, ...syncRaf });
   clock.seek(1000);

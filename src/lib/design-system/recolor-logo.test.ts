@@ -320,7 +320,7 @@ test('reasons are chip-sized plain English', () => {
   ];
   for (const reason of reasons) {
     assert.ok(reason && reason.length > 0 && reason.length <= 60, `not chip-sized: ${reason}`);
-    assert.ok(!reason.includes('—'), `em-dash in reason: ${reason}`);
+    assert.ok(!reason.includes('-'), `em-dash in reason: ${reason}`);
     assert.ok(!/'s\b/.test(reason), `possessive in reason: ${reason}`);
     assert.ok(!/\bbrand\b/i.test(reason), `says brand: ${reason}`);
   }

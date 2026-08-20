@@ -90,7 +90,7 @@ test('byte-identical: an empty peer list paints nothing onto a real session tile
   assert.equal(
     tile.outerHTML,
     before,
-    'renderCollabBadge([]) must not touch the tile at all — this is the guarantee every build of ' +
+    'renderCollabBadge([]) must not touch the tile at all - this is the guarantee every build of ' +
       'this repo relies on today, since no provider is registered anywhere'
   );
 });
@@ -193,7 +193,7 @@ test('renderCollabBadge never disturbs sibling tile chrome (.tile-primary, .tile
 // a future page that has ALSO mounted one of those components (their injected
 // `<style>` persists for the SPA session, past a route change) would silently
 // re-skin this badge with a stranger's CSS.
-test('every class this module writes is collab-tile-prefixed — never a bare collab-* name another component owns', () => {
+test('every class this module writes is collab-tile-prefixed - never a bare collab-* name another component owns', () => {
   const { document } = dom();
   const tile = realTile(document);
   const peers = ['a', 'b', 'c', 'd'].map((id) => peer({ id, away: id === 'a' }));
@@ -208,7 +208,7 @@ test('every class this module writes is collab-tile-prefixed — never a bare co
     assert.match(
       c,
       /^collab-tile-/,
-      `"${c}" is not collab-tile-prefixed — it risks colliding with an ` +
+      `"${c}" is not collab-tile-prefixed - it risks colliding with an ` +
         'unlayered stylesheet injected by collab-pill.ts / collab-focus.ts / collab-overlay.ts'
     );
   }

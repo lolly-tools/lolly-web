@@ -536,7 +536,7 @@ test('substitutePdfRgb: a finish switches to its /Separation and OVERPRINTS', ()
   assert.deepEqual([...usedGs].sort(), ['GSfo', 'GSso']);
 });
 
-test('substitutePdfRgb: overprint policy — 100% K overprints, rich black + white knock out', () => {
+test('substitutePdfRgb: overprint policy - 100% K overprints, rich black + white knock out', () => {
   const map = buildCmykPaletteMap([]);
   const spotNames = assignSpotResourceNames(map);
   // Solid black (0 0 0 rg → C=M=Y=0, K=1) OVERPRINTS: GSfo fill, GSso stroke.
@@ -583,7 +583,7 @@ test('contract: every CMYK sink obtains its palette through buildCmykPaletteMap'
     }
     // No sink hand-constructs a spot hit (which is how `finish` got dropped).
     assert.ok(!/spot:\s*\{\s*name/.test(src),
-      `${label} hand-constructs a spot hit — it must come from buildCmykPaletteMap`);
+      `${label} hand-constructs a spot hit - it must come from buildCmykPaletteMap`);
   }
 
   // The CLI's eps-cmyk sink must actually pass a palette; `cmyk: true` alone was

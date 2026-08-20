@@ -41,7 +41,7 @@ import type { DesignCensus } from '../census.ts';
 
 const PAGE = `<!doctype html>
 <html><head>
-  <title>Acme Corp — Home</title>
+  <title>Acme Corp - Home</title>
   <meta property="og:site_name" content="Acme">
   <meta name="theme-color" content="#1E4FD8">
   <link rel="apple-touch-icon" href="/touch-icon.png">

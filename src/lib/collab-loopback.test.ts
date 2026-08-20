@@ -673,7 +673,7 @@ test('a remote write that LOSES the merge does not stomp the local model', async
   );
   assert.equal(
     w.b.adapter.doc.state().params.get('title'), 'B concurrent',
-    'and B\'s document kept its own newer write — the documents converge',
+    'and B\'s document kept its own newer write - the documents converge',
   );
 
   // …and now so are the models. B must NOT take the stale remote value over its own
@@ -721,7 +721,7 @@ test('a constrained value converges in the MODEL even though the doc carries the
   assertConverged(w, 'clamped');
   assert.equal(
     w.a.adapter.doc.state().params.get('count'), 99,
-    'the doc holds the literal that crossed — the doc is not the model',
+    'the doc holds the literal that crossed - the doc is not the model',
   );
   w.close();
 });
@@ -839,7 +839,7 @@ test('undo is local-user-scoped: A\'s undo re-converges the pair and never touch
   assert.deepEqual(w.a.history.sizes(), { undo: 1, redo: 0 }, 'A recorded its own edit');
   assert.deepEqual(
     w.b.history.sizes(), { undo: 1, redo: 0 },
-    'B recorded ONLY its own — A\'s remote value never entered B\'s history',
+    'B recorded ONLY its own - A\'s remote value never entered B\'s history',
   );
   assert.equal(w.b.values().title, 'A wrote this');
 
@@ -854,7 +854,7 @@ test('undo is local-user-scoped: A\'s undo re-converges the pair and never touch
   assert.deepEqual(w.a.history.sizes(), { undo: 0, redo: 1 }, 'A\'s own stack moved');
   assert.deepEqual(
     w.b.history.sizes(), { undo: 1, redo: 0 },
-    'B\'s stack is untouched — my undo never moves your history (section 10)',
+    'B\'s stack is untouched - my undo never moves your history (section 10)',
   );
 
   // And B's own undo still undoes B's edit, not A's.
@@ -886,7 +886,7 @@ test('op counts on the wire match the edits made: no echo, no hook-derived re-em
   assert.equal(w.b.values().mirror, 'mirror:one', 'the receiver DERIVED the same value locally');
 
   assert.deepEqual(kinds(w.a.adapter.sent), ['param:title'], 'one scalar edit = one op');
-  assert.deepEqual(w.b.adapter.sent, [], 'the receiver emitted NOTHING — no echo');
+  assert.deepEqual(w.b.adapter.sent, [], 'the receiver emitted NOTHING - no echo');
 
   // A blocks add: the adapter's differ mints the AddOp, the shell adds the paint
   // order the differ cannot see. Two ops, and not one more.
@@ -941,7 +941,7 @@ test('op counts on the wire match the edits made: no echo, no hook-derived re-em
   await w.settle();
   assert.deepEqual(
     kinds(w.a.adapter.sent).slice(-1), ['param:mirror'],
-    'the SAME input does cross when a user writes it — the hook is what was silent',
+    'the SAME input does cross when a user writes it - the hook is what was silent',
   );
 
   assertConverged(w, 'after the counted run');
@@ -964,7 +964,7 @@ test('solo: with no provider registered a mount touches nothing and calls no ada
   const plumbing = attachCollabPlumbing(runtime);
 
   assert.equal(plumbing, null, 'no provider, no plumbing');
-  assert.equal(runtime.setInput, before, 'and setInput was never wrapped — byte-identical single-player');
+  assert.equal(runtime.setInput, before, 'and setInput was never wrapped - byte-identical single-player');
 
   await runtime.setInput('title', 'solo');
   await runtime.setInput('items', [row('solo-row')]);

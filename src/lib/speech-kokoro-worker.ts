@@ -144,10 +144,10 @@ async function getVoiceData(voice: string): Promise<Float32Array> {
       if (resp.ok) await c.put(url, resp.clone());
     }
   } catch {
-    // Cache API unavailable (e.g. some incognito iframes) — plain fetch below.
+    // Cache API unavailable (e.g. some incognito iframes) - plain fetch below.
   }
   if (!resp) resp = await fetch(url);
-  if (!resp.ok) throw new Error(`voice fetch failed: ${resp.status} for ${url} — run scripts/fetch-kokoro-models.ts`);
+  if (!resp.ok) throw new Error(`voice fetch failed: ${resp.status} for ${url} - run scripts/fetch-kokoro-models.ts`);
   const data = new Float32Array(await resp.arrayBuffer());
   if (data.byteLength !== KOKORO_VOICE_BYTES) {
     console.warn(`[speech] voice ${voice} is ${data.byteLength} bytes, expected ${KOKORO_VOICE_BYTES}`);
@@ -158,11 +158,11 @@ async function getVoiceData(voice: string): Promise<Float32Array> {
 
 async function synthesize(id: number, text: string, voiceId: string, speed: number): Promise<SpeechResult> {
   if (!KOKORO_VOICES.some((v) => v.id === voiceId)) {
-    throw new Error(`unknown voice "${voiceId}" — one of: ${KOKORO_VOICES.map((v) => v.id).join(', ')}`);
+    throw new Error(`unknown voice "${voiceId}" - one of: ${KOKORO_VOICES.map((v) => v.id).join(', ')}`);
   }
   // Defence in depth - bridge/speech.ts already rejects before posting.
   if (text.length > MAX_INPUT_CHARS) {
-    throw new Error(`speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) — split the text and synthesize in parts`);
+    throw new Error(`speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) - split the text and synthesize in parts`);
   }
   const { model, tokenizer, Tensor, espeak } = await ensureRuntime(id);
   const voiceData = await getVoiceData(voiceId);

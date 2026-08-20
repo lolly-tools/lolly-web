@@ -128,8 +128,8 @@ describe('offline-manager: downloadList', () => {
     fetches = [];
 
     const res = await downloadList('bucket', [
-      { url: '/assets/a.js', size: 100 },       // hashed name — existence is proof
-      { url: '/data/big.bin', size: 500 },      // new file — must fetch
+      { url: '/assets/a.js', size: 100 },       // hashed name - existence is proof
+      { url: '/data/big.bin', size: 500 },      // new file - must fetch
     ]);
     assert.deepEqual(res, { bytes: 600, files: 2 });
     assert.deepEqual(fetches, ['/data/big.bin'], 'the already-downloaded file must be skipped');
@@ -145,7 +145,7 @@ describe('offline-manager: downloadList', () => {
     assert.deepEqual(fetches, ['/info/page.html'], 'a stale-size copy must re-fetch');
   });
 
-  test('throws when any file fails, after draining the rest — never silently partial', async () => {
+  test('throws when any file fails, after draining the rest - never silently partial', async () => {
     server.set('/assets/a.js', 10);
     // /assets/missing.js is not served → 404 (an HTML body, the SPA-fallback shape)
     await assert.rejects(

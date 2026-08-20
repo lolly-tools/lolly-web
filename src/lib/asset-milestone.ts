@@ -58,8 +58,8 @@ export async function maybeNudgeAssetMilestone(host: CountHost): Promise<void> {
   await noticeDialog({
     title: `${top}+ images saved to this device`,
     message: [
-      `Nice — you've now saved ${count} images to reuse across your tools.`,
-      `A heads-up on how these work: they live only on this device. They're never uploaded, and they don't travel inside share links — send someone a link and your images won't come with it.`,
+      `Nice - you've now saved ${count} images to reuse across your tools.`,
+      `A heads-up on how these work: they live only on this device. They're never uploaded, and they don't travel inside share links - send someone a link and your images won't come with it.`,
       `To hand an image to someone else, render it to a file (Export) and send that file.`,
       `Want some images to always be available to everyone? Ask your Lolly manager about adding them to the catalog.`,
     ],

@@ -194,7 +194,7 @@ async function mount(clock = fakeClock(), transport = fakeHandle()) {
 
 // ── 0. the ops wire ───────────────────────────────────────────────────────────
 
-test('inbound ops reach the session — without this wire a collab never RECEIVES an edit', async () => {
+test('inbound ops reach the session - without this wire a collab never RECEIVES an edit', async () => {
   // The one property that makes everything else worth having. `CollabSessionHandle`
   // carries no ops member on purpose; both adapters publish one and both say the MOUNT
   // owns joining it to `session.applyRemotePatch`. Until it was joined, the roster, the
@@ -272,7 +272,7 @@ test('no presence node, class or attribute ever enters the render surface', asyn
   transport.arrive(peerFrame({ focus: 'headline', cursor: { x: 0.5, y: 0.5 } }));
 
   assert.equal(canvas.innerHTML, '<h1 data-canvas-input="headline">hi</h1>',
-    'the canvas is READ, never written — an export must not move a pixel (section 4.6, section 8)');
+    'the canvas is READ, never written - an export must not move a pixel (section 4.6, section 8)');
   assert.equal(canvas.querySelector('.collab-canvas-layer'), null);
   assert.equal(canvas.querySelector('.collab-pill'), null);
   assert.equal(canvas.getAttribute('style'), null, 'not even a positioning side effect');
@@ -322,7 +322,7 @@ test('an away peer keeps their roster entry but drops their ring and cursor (sec
   const { stage, sidebar, collab, transport } = await mount();
   transport.arrive({ ...peerFrame({ focus: 'headline', cursor: { x: 0.5, y: 0.5 } }), away: true });
 
-  assert.equal(stage.querySelectorAll('.collab-av').length, 2, 'still in the roster — away is not gone');
+  assert.equal(stage.querySelectorAll('.collab-av').length, 2, 'still in the roster - away is not gone');
   assert.equal(sidebar.querySelectorAll('.is-remote-focus').length, 0, 'but a stale ring is worse than none');
   assert.equal(stage.querySelectorAll('.collab-cursor:not([hidden])').length, 0);
 
@@ -348,7 +348,7 @@ test('teardown leaves ZERO timers, zero nodes and a sidebar byte-identical to be
   const transport = fakeHandle();
   const { stage, canvas, sidebar, sidebarBefore, collab } = await mount(clock, transport);
   transport.arrive(peerFrame({ focus: 'headline', cursor: { x: 0.5, y: 0.5 } }));
-  assert.ok(clock.armed() > 0, 'a live session arms presence timers — otherwise this proves nothing');
+  assert.ok(clock.armed() > 0, 'a live session arms presence timers - otherwise this proves nothing');
 
   collab.teardown();
 
@@ -357,7 +357,7 @@ test('teardown leaves ZERO timers, zero nodes and a sidebar byte-identical to be
   assert.equal(stage.querySelector('.collab-canvas-layer'), null, 'the overlay layer is gone');
   assert.equal(stage.querySelector('.collab-cursor'), null, 'and every pooled cursor node with it');
   assert.equal(sidebar.innerHTML, sidebarBefore,
-    'the sidebar is returned exactly as it was found — no class, no chip, no leftover style=""');
+    'the sidebar is returned exactly as it was found - no class, no chip, no leftover style=""');
   assert.equal(canvas.innerHTML, '<h1 data-canvas-input="headline">hi</h1>');
   assert.equal(transport.closes(), 1, 'the transport is closed exactly once');
   assert.equal(transport.subscribed(), false, 'and its presence subscription released');
@@ -376,7 +376,7 @@ test('the leave frame goes out BEFORE the transport closes, so peers drop us at 
   assert.equal(transport.closes(), 1);
 });
 
-test('teardown is idempotent — the tool view’s abort path can call it twice', async () => {
+test('teardown is idempotent - the tool view’s abort path can call it twice', async () => {
   const clock = fakeClock();
   const transport = fakeHandle();
   const { collab } = await mount(clock, transport);
@@ -415,7 +415,7 @@ test('the pill measures the HUD it shares a lane with, rather than guessing', ()
   assert.equal(pillLaneOffset(stage, () => 0), '', 'a zero-width HUD needs no clearance');
 });
 
-test('in RTL there is nothing to clear — the HUD is physical, the pill is logical', () => {
+test('in RTL there is nothing to clear - the HUD is physical, the pill is logical', () => {
   const stage = dom.window.document.getElementById('tool-stage')!;
   stage.ownerDocument.documentElement.dir = 'rtl';
   try {
@@ -455,13 +455,13 @@ test('a picked FILE never leaves the device, however the input is shaped', () =>
   ]);
 
   assert.deepEqual(Object.keys(state).sort(), ['headline', 'logo'],
-    'plan section 3 is explicit: `file` inputs never sync, "local file — not shared". Bytes travel '
+    'plan section 3 is explicit: `file` inputs never sync, "local file - not shared". Bytes travel '
     + 'as chunked, checksummed asset ITEMS or not at all');
   // The key is DROPPED, not blanked: an absent input reads as "not set" everywhere,
   // while a null is a value the receiver's tool has to interpret.
   assert.equal('doc' in state, false);
   assert.deepEqual(state.logo, { source: 'user', id: 'user/upload/9-logo.png' },
-    'an ASSET ref still travels — that is the whole point of the pack that carries it');
+    'an ASSET ref still travels - that is the whole point of the pack that carries it');
 });
 
 test('what survives is JSON, which is what the pack actually sends', () => {
@@ -498,7 +498,7 @@ test('the export markers travel, and only they', () => {
   assert.equal(state.__export_unit, 'mm');
   assert.equal(state.__export_dpi, '300',
     'without these a beamed A3/300 DPI setup reopens on the receiver as a default-size PNG '
-    + '— views/tool.ts reads them straight back off a resumed session');
+    + '- views/tool.ts reads them straight back off a resumed session');
   assert.deepEqual(liveSessionState([], null), {}, 'and a tool with no export bar sends none');
 });
 
@@ -540,7 +540,7 @@ test('a throw DURING construction leaves no timer, no listener and no wrapped se
         raf: (fn) => { fn(); },
       }),
       /measure blew up/,
-      'the failure still reaches the caller — it is unwound, not swallowed',
+      'the failure still reaches the caller - it is unwound, not swallowed',
     );
   } finally {
     console.warn = realWarn;
@@ -554,7 +554,7 @@ test('a throw DURING construction leaves no timer, no listener and no wrapped se
   assert.equal(transport.closes(), 1, 'the transport is closed exactly once');
   assert.equal(transport.subscribed(), false, 'and its presence subscription released');
   assert.equal(runtime.setInput, originalSetInput,
-    'runtime.setInput is unwrapped — a permanently wrapped setter would emit ops for a '
+    'runtime.setInput is unwrapped - a permanently wrapped setter would emit ops for a '
     + 'session that no longer exists');
   assert.equal(l.stage.querySelector('.collab-pill'), null, 'no pill left on the stage');
   assert.equal(l.stage.querySelector('.collab-canvas-layer'), null, 'no overlay layer either');

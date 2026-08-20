@@ -101,7 +101,7 @@ test('a soft shadow reaches EMF/EPS as a ramp of distinct shapes', { skip: SKIP 
   const greys = prims.map(grey).filter((g): g is number => g !== null);
   const shades = new Set(greys.map((g) => Math.round(g * 255)));
   assert.ok(shades.size > 8,
-    `expected many distinct shades in the ramp, got ${shades.size} — the bands are probably all flattening to one colour`);
+    `expected many distinct shades in the ramp, got ${shades.size} - the bands are probably all flattening to one colour`);
   // Every ring must land between the shadow colour and the page, never outside it.
   assert.ok(greys.every((g) => g >= 0 && g <= 1));
   assert.ok(Math.min(...greys) < 0.75, 'the darkest band should be visibly darker than the page');
@@ -127,7 +127,7 @@ test('a hard-edged shadow is ONE shape, not a ramp', { skip: SKIP }, async () =>
   const soft = await irPrims(`<div style="width:160px;height:80px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.4)"></div>`);
   const hard = await irPrims(`<div style="width:160px;height:80px;background:#fff;box-shadow:0 4px 0 rgba(0,0,0,0.4)"></div>`);
   assert.ok(hard.length < soft.length / 3,
-    `hard shadow emitted ${hard.length} prims vs soft ${soft.length} — it should be a single shape`);
+    `hard shadow emitted ${hard.length} prims vs soft ${soft.length} - it should be a single shape`);
 });
 
 test('an inset shadow also survives to these formats', { skip: SKIP }, async () => {

@@ -38,14 +38,14 @@ const DOWNLOAD_TARGETS = [
 ];
 
 export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {
-  document.title = 'Spreadsheet — Lolly';
+  document.title = 'Spreadsheet - Lolly';
   viewEl.innerHTML = `
     ${backHomeHtml()}
     <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout data-view">
       <header class="plat-header">
         <h1 class="plat-title">${t('Spreadsheet')}</h1>
-        <p class="plat-sub">${t('Open, read and edit a spreadsheet on your device — no internet, no Excel needed. Nothing is uploaded.')}</p>
+        <p class="plat-sub">${t('Open, read and edit a spreadsheet on your device - no internet, no Excel needed. Nothing is uploaded.')}</p>
       </header>
       <div class="data-drop" data-drop tabindex="0" role="button" aria-label="${t('Drop a spreadsheet to open')}">
         <p>${t('Drop an .xlsx, .csv, .tsv or .json here, or choose one.')}</p>
@@ -96,7 +96,7 @@ export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params =
 
   // The honest-limits banner (Andy's ask): stated once the data is showing.
   const LIMITS_HTML = escape(t(
-    'Lolly shows the data and lets you edit it — it doesn’t pretend to be Excel. Formulas appear as their current value; styles, merged cells, charts and extra sheets won’t survive a download. Your data will.',
+    'Lolly shows the data and lets you edit it - it doesn’t pretend to be Excel. Formulas appear as their current value; styles, merged cells, charts and extra sheets won’t survive a download. Your data will.',
   ));
 
   function showGrid(value: TableValue, truncatedNote?: string): void {

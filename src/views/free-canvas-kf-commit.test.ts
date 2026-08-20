@@ -174,7 +174,7 @@ test('parked ON a diamond, a canvas drag poses THAT keyframe and never moves the
     await drag(f, [200, 150], 24, -8);
 
     const b = f.box();
-    assert.equal(f.writes() - before, 1, 'ONE model write for the whole gesture — one undo step');
+    assert.equal(f.writes() - before, 1, 'ONE model write for the whole gesture - one undo step');
     assert.equal(b.x, 100, 'the box itself did not move…');
     assert.equal(b.y, 100);
     const track = parseKf(String(b.kf));
@@ -203,7 +203,7 @@ test('parked OFF any diamond, the same drag moves the box and leaves the track a
   } finally { f.destroy(); }
 });
 
-test('one millisecond off the diamond is OFF it — the latch is what puts you on one', async () => {
+test('one millisecond off the diamond is OFF it - the latch is what puts you on one', async () => {
   const f = mount([ANIMATED()]);
   try {
     await openPanel(f);
@@ -245,7 +245,7 @@ test('a MIXED selection splits: the posed boxes are posed, the rest move, in ONE
     await drag(f, [200, 150], 20, 0);
 
     assert.equal(f.writes() - before, 1,
-      'ONE commit, so one ⌘Z takes back the pose AND the move — refusing the whole '
+      'ONE commit, so one ⌘Z takes back the pose AND the move - refusing the whole '
       + 'gesture because one box in two is not animated would make this feel like a mode');
     const boxes = f.boxes() as Array<Record<string, unknown>>;
     const a = boxes.find((x) => x.id === 'a')!;
@@ -289,9 +289,9 @@ test('the ctxbar diamond sits beside duplicate/delete and routes to the panel\'s
     const kf = order.indexOf('kf');
     assert.ok(kf >= 0, 'the diamond is on the bar');
     assert.deepEqual(order.slice(kf, kf + 3), ['kf', 'dup', 'del'],
-      'immediately before Duplicate and Delete — the actions on the selected object itself');
+      'immediately before Duplicate and Delete - the actions on the selected object itself');
     assert.equal(ctxKf(f).getAttribute('aria-label'), '+Keyframe',
-      'Andy\'s copy, exactly — never "ADD KF"');
+      'Andy\'s copy, exactly - never "ADD KF"');
     assert.equal(ctxKf(f).getAttribute('aria-disabled'), 'false');
 
     // The press opens the timeline (the playhead's position IS the arm, so the surface
@@ -300,7 +300,7 @@ test('the ctxbar diamond sits beside duplicate/delete and routes to the panel\'s
     const before = f.writes();
     ctxKf(f).click();
     await settle();
-    assert.ok(f.stageEl.querySelector('.tl-panel'), 'the timeline is up — the arm has to be visible');
+    assert.ok(f.stageEl.querySelector('.tl-panel'), 'the timeline is up - the arm has to be visible');
     // The playhead has not moved from 0, and the clip starts at 0, so this lands ON the
     // track's existing first diamond, holding the pose it already holds - which
     // `writeKfPose` reports by identity, so it is not an edit and not an undo step.
@@ -337,11 +337,11 @@ test('the ctxbar diamond auto-promotes an UNTIMED box, in ONE commit', async () 
     assert.ok(Number(b.dur) > 0, 'and given a length');
     assert.deepEqual(parseKf(String(b.kf)).map((k) => k.t), [0]);
     assert.deepEqual({ ...parseKf(String(b.kf))[0]!.v }, { x: 0, y: 0, s: 1, r: 0, o: 1 },
-      'a full pose at its neutral values — being keyed moves nothing on the canvas');
+      'a full pose at its neutral values - being keyed moves nothing on the canvas');
   } finally { f.destroy(); }
 });
 
-test('a press-and-release on the rotate handle writes no pose — zero delta is not a gesture', async () => {
+test('a press-and-release on the rotate handle writes no pose - zero delta is not a gesture', async () => {
   // `liveRect` is only ever assigned in pointermove, so a click on the handle ends with
   // `live === startRect` and a delta of exactly 0. Redirecting that into the track is not
   // a no-op: a full pose over the ACTIVE channel set adds `r` to a track that does not
@@ -390,7 +390,7 @@ test('the ctxbar diamond takes its DISABLED state from the panel\'s rule, live c
     await selectBox(f, [900, 900]);            // deselect…
     await selectBox(f, [200, 150]);            // …and back, which rebuilds the bar
     assert.ok(f.canvasEl.querySelector('.lolly-box[data-box-id="a"] .lolly-box-audio'),
-      'the marker survived the re-selection — otherwise this test proves nothing');
+      'the marker survived the re-selection - otherwise this test proves nothing');
     assert.equal(ctxKf(f).getAttribute('aria-disabled'), 'true',
       'the canvas half of the rule reaches the bar');
     assert.equal(ctxKf(f).getAttribute('aria-label'), 'Sound has no pose to keyframe',

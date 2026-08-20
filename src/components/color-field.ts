@@ -671,8 +671,8 @@ function channelRowHtml(eid: string, ch: ChannelSpec, vals: Record<string, numbe
 
 // The readout carrying this sits inside its own space's panel, so "this space" is
 // unambiguous there; the shared caution line names the space instead (pinNote).
-const PIN_TITLE = 'Outside this space — the slider is pinned, the value is unchanged';
-const pinNote = (label: string): string => `Outside ${label} — the slider is pinned, the value is unchanged`;
+const PIN_TITLE = 'Outside this space - the slider is pinned, the value is unchanged';
+const pinNote = (label: string): string => `Outside ${label} - the slider is pinned, the value is unchanged`;
 
 /**
  * One space's panel. `tabbed` adds the tabpanel ARIA that only makes sense when
@@ -1140,15 +1140,15 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   const NOTES = new WeakMap<HTMLElement, { last: string; at: number; timer?: ReturnType<typeof setTimeout> }>();
 
   const noteText = (spec: SpaceSpec, st: FieldColorState, pinned: boolean): string => {
-    if (st.kind === 'transparent') return `${spec.label} — transparent`;
+    if (st.kind === 'transparent') return `${spec.label} - transparent`;
     // The pin explains what the user can SEE, so it leads.
     if (pinned) return pinNote(spec.label);
     if (!spaceInGamut(spec, st.color)) {
       const ink = spaceInkCoverage(spec, st.color);
       const label = limitLabel(spec.limit);
-      return ink == null ? `Outside ${label}` : `Outside ${label} — ${Math.round(ink * 100)}% ink`;
+      return ink == null ? `Outside ${label}` : `Outside ${label} - ${Math.round(ink * 100)}% ink`;
     }
-    return `${spec.label} — ${spaceExactness(spec, st.color) === 'exact' ? 'exact' : 'approximated from a wider colour'}`;
+    return `${spec.label} - ${spaceExactness(spec, st.color) === 'exact' ? 'exact' : 'approximated from a wider colour'}`;
   };
 
   /**
@@ -1296,7 +1296,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     btn.dataset.nearRef = near.ref ?? '';
     const chip = safeCssColor(near.value) || '#c9ccd1';
     btn.innerHTML = `<span class="color-nearest-chip" style="background:${escape(chip)}" aria-hidden="true"></span><span>Snap to ${escape(near.label)}</span>`;
-    btn.title = `Nearest brand colour (ΔE ${near.d.toFixed(3)}) — use ${near.label}`;
+    btn.title = `Nearest brand colour (ΔE ${near.d.toFixed(3)}) - use ${near.label}`;
   }
 
   // ── THE one emit ──────────────────────────────────────────────────────────
@@ -1788,7 +1788,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         if (picked && st) {
           applyColor(field, { kind: 'color', color: { ...picked, alpha: st.kind === 'transparent' ? 1 : st.color.alpha }, ref: null });
         }
-      } catch { /* Esc / dismissed — nothing picked */ }
+      } catch { /* Esc / dismissed - nothing picked */ }
       finally { interact(false); }
     });
   });

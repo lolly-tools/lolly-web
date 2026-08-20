@@ -135,7 +135,7 @@ for (const { name, pack } of PACKS) {
   test(`${name}: the pack's own hues survive into the set`, { skip: pack ? false : `${name} is not mounted` }, () => {
     const colors = collabPalette(pack!);
     const fromPack = colors.filter(c => c.source === 'palette');
-    assert.ok(fromPack.length > 0, `${name}: nothing of the brand made it through — the derivation stopped being brand-derived`);
+    assert.ok(fromPack.length > 0, `${name}: nothing of the brand made it through - the derivation stopped being brand-derived`);
 
     // Every colour labelled `palette` really is a hue the pack owns.
     const packHues = pack!.palette
@@ -162,7 +162,7 @@ test('the shipped packs do not collapse onto one another', { skip: PACKS.every(p
   const [start, suse] = PACKS.map(p => collabPalette(p.pack!));
   assert.notDeepEqual(
     suse!.map(c => c.hex), start!.map(c => c.hex),
-    'both packs produced identical colours — the palette is not reaching the derivation',
+    'both packs produced identical colours - the palette is not reaching the derivation',
   );
 });
 
@@ -311,9 +311,9 @@ test('the two themes that cannot reach the floor are measured, not assumed', () 
     worstDark = Math.min(worstDark, measure(bandColor(h).hex, HIGH_CONTRAST_SURFACES.dark));
     worstLight = Math.min(worstLight, measure(bandColor(h).hex, HIGH_CONTRAST_SURFACES.light));
   }
-  assert.ok(worstLight >= COLLAB_APCA_FLOOR, `high-contrast light drops to ${worstLight.toFixed(1)} — it should be covered by the enforced band`);
+  assert.ok(worstLight >= COLLAB_APCA_FLOOR, `high-contrast light drops to ${worstLight.toFixed(1)} - it should be covered by the enforced band`);
   assert.ok(worstDark >= 30, `high-contrast dark drops to |Lc| ${worstDark.toFixed(1)}, under APCA's non-text mark`);
-  assert.ok(worstDark < COLLAB_APCA_FLOOR, 'high contrast now clears the enforced floor — enforce it and say so in the header');
+  assert.ok(worstDark < COLLAB_APCA_FLOOR, 'high contrast now clears the enforced floor - enforce it and say so in the header');
 
   // …and there is genuinely no band that would let us enforce it: sweep L and C over
   // the union of every enumerated surface and take the best worst case.
@@ -329,19 +329,19 @@ test('the two themes that cannot reach the floor are measured, not assumed', () 
       best = Math.max(best, worst);
     }
   }
-  assert.ok(best < COLLAB_APCA_FLOOR, `a band at |Lc| ${best.toFixed(1)} clears the floor everywhere — the module should move to it`);
+  assert.ok(best < COLLAB_APCA_FLOOR, `a band at |Lc| ${best.toFixed(1)} clears the floor everywhere - the module should move to it`);
 });
 
-test('the brand theme is honestly documented — above APCA non-text, below our floor', () => {
+test('the brand theme is honestly documented - above APCA non-text, below our floor', () => {
   // The module's header claims the third theme costs ~7 points and lands in the
   // high 30s. Pinned so the claim cannot quietly stop being true.
   let worst = Infinity;
   for (let h = 0; h < 360; h++) worst = Math.min(worst, measure(bandColor(h).hex, BRAND_THEME_SURFACES));
   assert.ok(worst >= 30, `brand theme drops to |Lc| ${worst.toFixed(1)}, under APCA's non-text mark`);
-  assert.ok(worst < COLLAB_APCA_FLOOR, 'the brand theme now clears the enforced floor — say so in the header and enforce it');
+  assert.ok(worst < COLLAB_APCA_FLOOR, 'the brand theme now clears the enforced floor - say so in the header and enforce it');
 });
 
-test('the band is a fixed L/C — a brand cannot drag the lightness around', () => {
+test('the band is a fixed L/C - a brand cannot drag the lightness around', () => {
   const colors = collabPalette({ palette: [{ value: '#000010' }, { value: '#ffeeff' }], accent: '#000010' });
   for (const c of colors) {
     const o = hexToOklch(c.hex)!;
@@ -360,7 +360,7 @@ test('count is honoured, and asking for more than the circle holds returns what 
   assert.equal(collabPalette({ accent: '#5283d5', count: 3 }).length, 3);
   assert.deepEqual(collabPalette({ accent: '#5283d5', count: 0 }), []);
   const many = collabPalette({ accent: '#5283d5', count: 24 });
-  assert.ok(many.length < 24, 'the circle cannot hold 24 hues at ΔH 50 — something skipped the separation check');
+  assert.ok(many.length < 24, 'the circle cannot hold 24 hues at ΔH 50 - something skipped the separation check');
   assertProperties(many, 'count 24');
 });
 

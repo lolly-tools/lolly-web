@@ -447,7 +447,7 @@ test('a live pair keeps its transport: the handoff transfers ownership', async (
 
   h.connected[0]?.close();
   assert.equal(t.counts.closed, 0, 'closing the dialog must not hang up on the collab it just started');
-  assert.equal(t.counts.unsubscribed, 1, 'the dialog does stop listening — the session takes over');
+  assert.equal(t.counts.unsubscribed, 1, 'the dialog does stop listening - the session takes over');
 });
 
 test('with nobody to hand it to, a connected transport is still closed with the dialog', async () => {

@@ -67,7 +67,7 @@ test('the proxy URL cache is bounded AND revokes what it evicts', () => {
   const cap = captureRevokes();
   try {
     for (let i = 0; i < PROXY_URL_LIMIT + 3; i++) setProxyUrl(`user/${i}`, `blob:proxy${i}`, true);
-    assert.equal(cap.urls.length, 3, 'every eviction revoked its object URL — a blob left pinned is megabytes');
+    assert.equal(cap.urls.length, 3, 'every eviction revoked its object URL - a blob left pinned is megabytes');
     assert.deepEqual(cap.urls, ['blob:proxy0', 'blob:proxy1', 'blob:proxy2']);
     assert.equal(proxyUrlFor('user/0'), undefined);
     assert.equal(proxyUrlFor(`user/${PROXY_URL_LIMIT + 2}`), `blob:proxy${PROXY_URL_LIMIT + 2}`);

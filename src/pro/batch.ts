@@ -293,7 +293,7 @@ export async function runBatch<F = unknown>(
   // filter, sort or splice the array between planBatch returning and runBatch receiving
   // it (see planBatch's JSDoc) - this is what catches a caller that did.
   if (notes && notes.length !== rows.length) {
-    host.log?.('warn', `runBatch: notes/rows length mismatch (${notes.length} vs ${rows.length}) — per-row diagnostics dropped rather than mis-attributed`);
+    host.log?.('warn', `runBatch: notes/rows length mismatch (${notes.length} vs ${rows.length}) - per-row diagnostics dropped rather than mis-attributed`);
     notes = undefined;
   }
   const notesFor = (i: number): RowNotes<F> | undefined => {

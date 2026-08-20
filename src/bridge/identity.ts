@@ -82,7 +82,7 @@ function popupToken(provider: string): Promise<string> {
     const url = `${CA_BASE}/auth/${provider}?origin=${encodeURIComponent(location.origin)}`;
     const popup = window.open(url, 'lolly-ca-enroll', 'width=480,height=640');
     if (!popup) {
-      reject(new Error('Sign-in popup was blocked — allow popups for this site and try again.'));
+      reject(new Error('Sign-in popup was blocked - allow popups for this site and try again.'));
       return;
     }
 
@@ -94,7 +94,7 @@ function popupToken(provider: string): Promise<string> {
     };
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('Enrollment timed out — the sign-in window never responded.'));
+      reject(new Error('Enrollment timed out - the sign-in window never responded.'));
     }, ENROLL_TIMEOUT_MS);
     // The callback page posts the token and then closes itself, so a closed
     // popup with no message means the user dismissed the window. Under
@@ -201,7 +201,7 @@ export function createIdentityAPI(db: IDBPDatabase) {
     });
     const chainPem = Array.isArray(res.chain) && res.chain.length ? res.chain : [res.cert];
     await db.put(STORE, {
-      chain: chainPem.map(pemToDer), // Uint8Array[] leaf-first — the engine signer shape
+      chain: chainPem.map(pemToDer), // Uint8Array[] leaf-first - the engine signer shape
       identity: res.identity,
       notBefore: res.notBefore,
       notAfter: res.notAfter,

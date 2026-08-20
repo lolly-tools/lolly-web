@@ -112,7 +112,7 @@ test('nested inline-blocks each paint their own box, once', { skip: SKIP }, asyn
   assert.equal(count(svg, />deep</g), 1);
 });
 
-test('an inline <img> is emitted — replaced content defaults to display:inline',
+test('an inline <img> is emitted - replaced content defaults to display:inline',
   { skip: SKIP }, async () => {
     // A 1×1 red PNG. Before the routing fix an <img> with no display override was
     // skipped by the block loop and invisible to the text walk.

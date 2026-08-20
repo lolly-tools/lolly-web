@@ -57,14 +57,14 @@ async function bytesToFieldTextInteractive(
       if (sheets.length > 1) {
         const pick = await choiceDialog({
           title: 'Which sheet?',
-          message: `“${filename}” has ${sheets.length} sheets — pick one.`,
+          message: `“${filename}” has ${sheets.length} sheets - pick one.`,
           choices: sheets.map((s) => ({ id: String(s.index), label: s.name })),
         });
         if (pick == null) return null; // cancelled
         sheet = Number(pick);
       }
     } catch {
-      /* not enumerable — fall through to the first-sheet read */
+      /* not enumerable - fall through to the first-sheet read */
     }
     return fileBytesToFieldText(bytes, filename, sheet);
   }

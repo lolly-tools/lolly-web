@@ -176,7 +176,7 @@ export async function persistTranscript(
     await assets._updateUserAssetMeta(assetId, { ...(ref.meta ?? {}), [TRANSCRIPT_META_KEY]: note });
     return true;
   } catch (e) {
-    host.log?.('warn', `transcript persistence failed — ${String(e)}`);
+    host.log?.('warn', `transcript persistence failed - ${String(e)}`);
     return false;
   }
 }
@@ -282,7 +282,7 @@ export function startTranscribeJob(
       // A cancel is not a failure: the abort surfaces here as an AbortError and
       // cancelJob() already owns the terminal state.
       if (job.cancelled || (err as Error | null)?.name === 'AbortError') return;
-      host.log?.('warn', `transcription job failed — ${String(err)}`);
+      host.log?.('warn', `transcription job failed - ${String(err)}`);
       job.fail(err);
       hooks.onError?.(err);
     } finally {

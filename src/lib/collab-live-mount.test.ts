@@ -179,7 +179,7 @@ test('the acceptor is navigated to the tool, born with the seed (section 12 Q3)'
 
   assert.equal(env.navs.length, 1);
   const [{ hash, force }] = env.navs as [Nav];
-  assert.equal(force, false, 'a cold arrival from #/join is a route CHANGE — no force needed');
+  assert.equal(force, false, 'a cold arrival from #/join is a route CHANGE - no force needed');
   assert.match(hash, /^#\/tool\/qr-code\?/);
   const params = new URLSearchParams(hash.slice(hash.indexOf('?') + 1));
   assert.equal(params.get('url'), 'https://suse.com');
@@ -201,7 +201,7 @@ test('an acceptor whose seed arrives late is waited for, not mounted empty', asy
   assert.match(env.navs[0]!.hash, /url=https%3A%2F%2Flate\.example/);
 });
 
-test('a seed that never lands is not an error — the mount opens and convergence catches up', async () => {
+test('a seed that never lands is not an error - the mount opens and convergence catches up', async () => {
   const env = environment();
   await mountLiveCollab(conn({ seedLater: Promise.resolve(undefined) }));
   assert.deepEqual(env.navs, [{ hash: '#/tool/qr-code', force: false }]);
@@ -224,7 +224,7 @@ test('the inviter is force-remounted in place, and the remount preserves the liv
 
   assert.equal(env.navs.length, 1);
   const nav = env.navs[0]!;
-  assert.equal(nav.force, true, "the house 'lolly:remount' force-nav — a param-only change never remounts");
+  assert.equal(nav.force, true, "the house 'lolly:remount' force-nav - a param-only change never remounts");
   const params = new URLSearchParams(nav.hash.slice(nav.hash.indexOf('?') + 1));
   assert.equal(params.get('size'), '512', 'a value the bar never wrote survives the remount');
   assert.equal(params.get('label'), 'unsaved edit', 'and so does an unsaved edit');
@@ -263,7 +263,7 @@ test('the session handle is handed over exactly once, and only to its own tool',
   assert.equal(acquireCollabSession('qr-code', null), c.handle, 'the mount it was armed for gets it');
   assert.equal(acquireCollabSession('qr-code', null), null,
     'a refresh, a second tab, a back-button: two runtimes on one document would echo forever');
-  assert.equal(getCollabSessionSource(), undefined, 'the registry is dormant again — nothing to leak');
+  assert.equal(getCollabSessionSource(), undefined, 'the registry is dormant again - nothing to leak');
   assert.equal(pendingLiveCollab(), null);
 });
 
@@ -274,7 +274,7 @@ test('a second ceremony replaces the first, and hangs the unmounted one up', asy
   await mountLiveCollab(first);
   await mountLiveCollab(second);
 
-  assert.equal(first.closes(), 1, 'the older pair has no route coming — leaving it open is the leak');
+  assert.equal(first.closes(), 1, 'the older pair has no route coming - leaving it open is the leak');
   assert.equal(acquireCollabSession('qr-code', null), null);
   assert.equal(acquireCollabSession('street-map', null), second.handle);
 });
@@ -291,7 +291,7 @@ test('a session that dies before its mount disarms itself rather than being adop
   assert.equal(c.session.subscribers(), 0, 'and the watch is not left behind');
 });
 
-test('adopting the handle drops the watch — the mount owns the session from then on', async () => {
+test('adopting the handle drops the watch - the mount owns the session from then on', async () => {
   environment();
   const c = conn();
   await mountLiveCollab(c);
@@ -323,7 +323,7 @@ test('a handle that is ALREADY closed at arm time leaves nothing behind (both re
 
   assert.equal(pendingLiveCollab(), null, 'no plan survives a session that is already gone');
   assert.equal(getCollabSessionSource(), undefined,
-    'and the registry goes back to DORMANT — a source left registered makes every later '
+    'and the registry goes back to DORMANT - a source left registered makes every later '
     + 'single-player mount allocate a context for an inert factory (section 11.14)');
   assert.equal(live, 0, 'the connection-state subscription is not leaked');
   assert.equal(c.closes(), 1, 'the pair is hung up, not left open for the life of the page');
@@ -351,15 +351,15 @@ test("the inviter's live model crosses the remount BY REFERENCE, not through the
   carryMountState('qr-code', 'qr-code:1712', { logo: 'user/logo-9', doc: { bytes }, note: paragraph });
 
   const carried = takeCarriedMountState('qr-code')!;
-  assert.equal(carried.values.logo, 'user/logo-9', 'an uploaded asset survives — nothing was encoded');
+  assert.equal(carried.values.logo, 'user/logo-9', 'an uploaded asset survives - nothing was encoded');
   assert.equal((carried.values.doc as { bytes: Uint8Array }).bytes, bytes, 'the SAME buffer, not a copy of a string');
   assert.equal(carried.values.note, paragraph, 'and a value the 150-char cap would have dropped');
   assert.equal(carried.slot, 'qr-code:1712',
-    'plus the slot the bar never re-adds — without it the first Save mints a duplicate session');
+    'plus the slot the bar never re-adds - without it the first Save mints a duplicate session');
   assert.equal(takeCarriedMountState('qr-code'), null, 'one-shot: the next mount is a different session');
 });
 
-test('an ACCEPTOR already in the tool carries nothing — their copy is the peer’s (section 6.2a)', async () => {
+test('an ACCEPTOR already in the tool carries nothing - their copy is the peer’s (section 6.2a)', async () => {
   environment({ onToolRoute: () => true });
   await mountLiveCollab(conn({ role: 'acceptor', ephemeral: true, toolId: 'qr-code' }));
 
@@ -391,7 +391,7 @@ test('a pair that dies mid-remount does NOT take the carried model with it', asy
 
 test("the acceptor's state bridge is memory-backed, one-shot, and never touches a slot", async () => {
   assert.equal((globalThis as { indexedDB?: unknown }).indexedDB, undefined,
-    'this suite runs where a real slot write could only throw — which is the proof');
+    'this suite runs where a real slot write could only throw - which is the proof');
   environment();
   await mountLiveCollab(conn({ toolId: 'qr-code', ephemeral: true }));
 
@@ -401,14 +401,14 @@ test("the acceptor's state bridge is memory-backed, one-shot, and never touches 
 
   await state.save('session-1', { __toolId: 'qr-code', url: 'https://suse.com' });
   const listed = await state.list();
-  assert.deepEqual(listed.map((e) => e.slot), ['session-1'], 'the save "works" — in memory');
+  assert.deepEqual(listed.map((e) => e.slot), ['session-1'], 'the save "works" - in memory');
 
   // A second acceptor runtime has its own store; nothing is shared, nothing persists.
   const other = createMemoryStateAPI();
   assert.deepEqual(await other.list(), []);
 });
 
-test('the inviter keeps the real state — it owns the saved session (section 6.2a)', async () => {
+test('the inviter keeps the real state - it owns the saved session (section 6.2a)', async () => {
   environment();
   await mountLiveCollab(conn({ role: 'inviter', ephemeral: false, toolId: 'qr-code' }));
   assert.equal(takeEphemeralState('qr-code'), null, 'no swap, so its saves land where they always did');
@@ -430,7 +430,7 @@ test('"Save a copy" lifts the ephemeral session into a real store as a fresh slo
   assert.notEqual(slot, 'live', 'a copy is a new session on this device, never the peer’s slot id');
 
   assert.equal(await saveCollabCopy(createMemoryStateAPI(), { from: createMemoryStateAPI() }), null,
-    'nothing saved yet is nothing to copy — not an empty session in Projects');
+    'nothing saved yet is nothing to copy - not an empty session in Projects');
 });
 
 // ── The stitch ────────────────────────────────────────────────────────────────

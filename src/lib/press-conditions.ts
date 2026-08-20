@@ -206,7 +206,7 @@ export const PRESS_CONDITIONS: readonly PressCondition[] = Object.entries(CMYK_C
     files: FILES[id] ?? [],
     source: SOURCES[id] ?? {
       kind: 'own' as const,
-      why: 'No free profile is published for this condition — use the one your printer or design tools installed.',
+      why: 'No free profile is published for this condition - use the one your printer or design tools installed.',
     },
   }));
 

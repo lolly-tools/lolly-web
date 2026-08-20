@@ -372,7 +372,7 @@ test('a UDP blip stays reconnecting all the way back, never flickering through l
   r.stack.pc().setIce('connected');
   assert.equal(r.transport.state().connection, 'live');
 
-  assert.deepEqual(seen, ['reconnecting', 'live'], 'one grey, one un-grey — no flicker in between');
+  assert.deepEqual(seen, ['reconnecting', 'live'], 'one grey, one un-grey - no flicker in between');
 });
 
 test('a connectionState of connecting during a blip is the same story', async () => {
@@ -445,7 +445,7 @@ test('an abort before the frame decodes still resolves null', async () => {
   assert.equal(await scanQrFromVideo(readyVideo, { scope, intervalMs: 0, signal: controller.signal }), null);
 });
 
-test('without an abort the same frame is delivered — the guard is the signal, not the await', async () => {
+test('without an abort the same frame is delivered - the guard is the signal, not the await', async () => {
   const scope = detectorScope(() => Promise.resolve([{ rawValue: 'LOLLYTOKEN' }]));
   assert.equal(await scanQrFromVideo(readyVideo, { scope, intervalMs: 0 }), 'LOLLYTOKEN');
 });

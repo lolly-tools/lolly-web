@@ -139,7 +139,7 @@ beforeEach(() => {
 
 // ── The gate ─────────────────────────────────────────────────────────────────
 
-test('a WORK collab grows no send control — the server path has no beam', async () => {
+test('a WORK collab grows no send control - the server path has no beam', async () => {
   environment();
   // Track B's connection: a session handle, a close, and no bulk lane anywhere. The
   // 'member' role is the tell (`lib/collab-mount.ts`: an org room has no ceremony).

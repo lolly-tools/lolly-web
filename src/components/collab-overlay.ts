@@ -77,7 +77,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 const STYLE_ID = 'lolly-collab-overlay-css';
 
 const CSS = `
-/* The shared presence layer — a SIBLING of the render surface, never a child
+/* The shared presence layer - a SIBLING of the render surface, never a child
    (section 4.6). z-index 15 puts it over the canvas and under the stage HUD (z 20). */
 .collab-canvas-layer {
   position: absolute;
@@ -99,7 +99,7 @@ const CSS = `
   align-items: flex-start;
   gap: calc(2px * var(--a11y-fs));
   pointer-events: none;
-  /* Position is written as translate3d by the ticker (rule 4) — promoted so a
+  /* Position is written as translate3d by the ticker (rule 4) - promoted so a
      moving cursor is a compositor job and never a reflow. NO transition: the
      interpolator IS the smoothing, and tweening on top of it would lag the
      cursor a second time. */
@@ -111,7 +111,7 @@ const CSS = `
 
 /* The arrow silhouette: one painted box in the collaborator's colour, clipped to
    a pointer. The halo is a doubled drop-shadow in the theme's card ground rather
-   than a border, so it follows the clip path instead of the box (section 4.4 — a cursor
+   than a border, so it follows the clip path instead of the box (section 4.4 - a cursor
    must stay legible over artwork that happens to share its hue). */
 .collab-cursor-arrow {
   flex: none;

@@ -100,7 +100,7 @@ export function setupScreenCaptureControl({
     announce(
       name === 'NotAllowedError' ? 'Screen sharing was cancelled.'
       : name === 'NotFoundError' ? 'No screen was available to capture.'
-      : name === 'NotReadableError' ? 'Your screen could not be read — another app may be blocking capture.'
+      : name === 'NotReadableError' ? 'Your screen could not be read - another app may be blocking capture.'
       : `Couldn’t ${what}.`, { assertive: true });
     host.log('warn', `screencap: ${what} failed`, { error: String(e) });
   };
@@ -338,7 +338,7 @@ export function setupScreenCaptureControl({
           host as unknown as Parameters<typeof storeRecordingAsset>[0], png, 'png', prev?.id, credential ?? undefined,
         );
       } catch (e) {
-        host.log('warn', 'screencap: could not persist the shot — using an in-memory image', { error: String(e) });
+        host.log('warn', 'screencap: could not persist the shot - using an in-memory image', { error: String(e) });
         ref = { source: 'user', id: 'screenshot.png', type: 'raster', format: 'png', url: URL.createObjectURL(png), meta: { bytes: png.size } };
       }
       if (prev?.url?.startsWith('blob:') && String(prev.id).startsWith('screenshot.')) URL.revokeObjectURL(prev.url);
@@ -348,7 +348,7 @@ export function setupScreenCaptureControl({
       // getDisplayMedia may hand back a DPR-scaled or tab-capped surface - report
       // what actually arrived, never a guess.
       const t = derivedTarget();
-      announce(`Screenshot captured${t ? ` at ${t.width}×${t.height}` : ''} (${fmtBytes(png.size)}) — drag on the canvas to crop, then export.`);
+      announce(`Screenshot captured${t ? ` at ${t.width}×${t.height}` : ''} (${fmtBytes(png.size)}) - drag on the canvas to crop, then export.`);
     } catch (e) {
       reportFailure(e, 'take the screenshot');
     } finally {
@@ -409,7 +409,7 @@ export function setupScreenCaptureControl({
     catch (e) { host.log('warn', 'screencap: stopRecording failed', { error: String(e) }); }
     state = 'idle'; busy = false; render();
     if (res && res.blob.size > 0) await offerClip(res.blob, res.mimeType, res.micActive);
-    else if (res) announce('That recording was too short to save — try again.', { assertive: true });
+    else if (res) announce('That recording was too short to save - try again.', { assertive: true });
   }
 
   recBtn.addEventListener('click', () => {
@@ -463,7 +463,7 @@ export function setupScreenCaptureControl({
       dlBar?.remove(); dlBar = null;
       if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
     });
-    announce(`Recording ready (${fmtBytes(clip.size)}) — save it from the bar below the canvas.`);
+    announce(`Recording ready (${fmtBytes(clip.size)}) - save it from the bar below the canvas.`);
   }
 
   (stageEl as HTMLElement & { _recordCleanup?: () => void })._recordCleanup = () => {

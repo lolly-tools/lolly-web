@@ -241,7 +241,7 @@ test('admitCandidate mints a card and hands it its own preview family', () => {
   const inAnotherStage = admitCandidate([], { kind: 'google', family: 'Inter' }, 4, 7);
   assert.ok(inAnotherStage.ok);
   assert.equal(inAnotherStage.card.previewFamily, '__ds-preview-inter-7-4',
-    'the mount serial rides through admission — document.fonts is per document');
+    'the mount serial rides through admission - document.fonts is per document');
   assert.equal(got.card.state, 'idle');
   assert.equal(got.card.needsFetch, true, 'no bytes means the face has to come off the network');
 });
@@ -284,7 +284,7 @@ test('admitCandidate refuses a candidate with nothing to show', () => {
 
 test('a scanned family with no fetchable source is admitted as an honest failure, not hidden', () => {
   const got = admitCandidate([], { kind: 'tray', family: 'Helvetica Neue LT Std 57' }, 1);
-  assert.ok(got.ok, 'the source really found it — the card is where we say we cannot show it');
+  assert.ok(got.ok, 'the source really found it - the card is where we say we cannot show it');
   assert.equal(got.card.state, 'failed');
   assert.equal(got.card.reason, 'no-source');
   const known = admitCandidate([], { kind: 'tray', family: 'inter' }, 2);
@@ -328,7 +328,7 @@ test('applyCardEvent records a failure with its reason, and lets a retry restart
   assert.equal(applyCardEvent(failed, { type: 'start' }).state, 'loading');
 });
 
-test('a decline is not a failure — it returns the card to idle, offer intact', () => {
+test('a decline is not a failure - it returns the card to idle, offer intact', () => {
   const declined = applyCardEvent(applyCardEvent(card(), { type: 'start' }), { type: 'declined' });
   assert.equal(declined.state, 'idle', 'nothing broke and nothing was fetched');
   assert.equal(declined.reason, 'declined');
@@ -336,7 +336,7 @@ test('a decline is not a failure — it returns the card to idle, offer intact',
 
 test('no-source is terminal: nothing can restart a card with no source to try', () => {
   const dead = card({ state: 'failed', reason: 'no-source' });
-  assert.equal(applyCardEvent(dead, { type: 'start' }), dead, 'the same object back — a provable no-op');
+  assert.equal(applyCardEvent(dead, { type: 'start' }), dead, 'the same object back - a provable no-op');
 });
 
 test('a stale resolution landing on a card that moved on is a no-op, not a repaint', () => {
@@ -436,7 +436,7 @@ test('pickPreviewFace prefers a variable range that covers 400, and latin over o
 
   assert.equal(pickPreviewFace([]), null);
   assert.equal(pickPreviewFace([gface({ style: 'italic' })])?.style, 'italic',
-    'an italic-only family still previews — refusing to show it would be worse');
+    'an italic-only family still previews - refusing to show it would be worse');
 });
 
 // ── Pure: the specimen's opening text ────────────────────────────────────────
@@ -667,7 +667,7 @@ test('removing the card that had focus hands focus on, never to the body', async
   ui.teardown();
 });
 
-test('a file that is not a font fails honestly — no card pretending, no registration', async () => {
+test('a file that is not a font fails honestly - no card pretending, no registration', async () => {
   const el = stage();
   const ui = mountTypeCompare(el, ctxFor());
   failing.add('__ds-preview-liar-');
@@ -773,7 +773,7 @@ test('a select hands the caller a choice and installs nothing itself', async () 
   assert.equal(chosen[0]!.family, 'Acme Sans');
   assert.equal(chosen[0]!.install, 'bytes', 'a file installs from its own bytes');
   assert.ok(chosen[0]!.bytes instanceof Uint8Array);
-  assert.deepEqual(registeredFaces(), ['__ds-preview-acme-sans-*-1'], 'selecting is not installing — the preview is all there is');
+  assert.deepEqual(registeredFaces(), ['__ds-preview-acme-sans-*-1'], 'selecting is not installing - the preview is all there is');
   ui.teardown();
 });
 

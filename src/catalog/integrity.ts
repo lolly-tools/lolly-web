@@ -92,6 +92,6 @@ export async function assertToolIndexIntegrity(indexText: string): Promise<void>
     integrity.publicKey,
   );
   if (!result.ok) {
-    throw new Error(`catalog integrity: tool index rejected — ${result.reason}`);
+    throw new Error(`catalog integrity: tool index rejected - ${result.reason}`);
   }
 }

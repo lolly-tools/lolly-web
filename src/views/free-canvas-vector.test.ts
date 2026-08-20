@@ -354,7 +354,7 @@ test('empty-result: intersecting shapes that do not overlap refuses, says so, ch
   select(f, [[10, 10], [450, 450]]);
   click(gridItem(rightClick(f, 60, 60), 'Intersect'));
   assert.equal(f.commits(), commits, 'nothing committed');
-  assert.deepEqual(f.boxes(), before, 'the operands are untouched — an empty answer is not a delete');
+  assert.deepEqual(f.boxes(), before, 'the operands are untouched - an empty answer is not a delete');
   assert.match(flashText(f), /do not overlap/i, 'and the reason is on screen');
   f.destroy();
 });
@@ -428,7 +428,7 @@ test('Offset path accepts a NEGATIVE distance (inset) and commits once', () => {
   click(rowItem(rightClick(f, 150, 150), 'Offset path…'));
   const panel = f.stageEl.querySelector<HTMLElement>('.fc-num-panel')!;
   const inp = panel.querySelector<HTMLInputElement>('input[data-num]')!;
-  assert.equal(inp.getAttribute('min'), null, 'no min attribute — negatives are half the point');
+  assert.equal(inp.getAttribute('min'), null, 'no min attribute - negatives are half the point');
   inp.value = '-25';
   const commits = f.commits();
   click(panel.querySelector('[data-num-go]')!);
@@ -493,7 +493,7 @@ test('Simplify returns one box per pen path and each keeps its own place in the 
   click(rowItem(m, 'Simplify'));
   assert.equal(f.commits() - commits, 1, 'one commit for the whole action');
   const boxes = f.boxes();
-  assert.equal(boxes.length, 3, 'one result per operand — not merged');
+  assert.equal(boxes.length, 3, 'one result per operand - not merged');
   assert.equal(boxes[1]!.id, 'mid', 'the untouched box kept its stack position');
   assert.equal(boxes[0]!.kind, 'path');
   assert.equal(boxes[2]!.kind, 'path');
@@ -548,7 +548,7 @@ test('two-finger tap only fires once per touch sequence', () => {
   f.destroy();
 });
 
-test('a two-finger PAN/PINCH is never stolen — no menu when the fingers travel', () => {
+test('a two-finger PAN/PINCH is never stolen - no menu when the fingers travel', () => {
   const f = mount(OVERLAP());
   twoFinger(f, { a: [60, 50], b: [60, 70], moveA: [200, 190], moveB: [200, 210] });   // pan
   assert.equal(menuOf(f), null, 'a pan does not open the menu');
@@ -564,7 +564,7 @@ test('a two-finger HOLD past the tap window does not open the menu', () => {
   f.destroy();
 });
 
-test('a single-finger tap still just deselects — the menu needs two', () => {
+test('a single-finger tap still just deselects - the menu needs two', () => {
   const f = mount(OVERLAP());
   f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 900, y: 900, id: 1, time: 1000 }));
   f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 900, y: 900, id: 1, time: 1040 }));

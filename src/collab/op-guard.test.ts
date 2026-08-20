@@ -680,7 +680,7 @@ test('the param lane accepts exactly the input types collab-plumbing projects', 
   // a whitelist is precisely how one quietly grows an entry the other has not.
   const src = readFileSync(join(SRC, 'lib', 'collab-plumbing.ts'), 'utf8');
   const block = /const SCALAR_INPUT_TYPES\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(src);
-  assert.ok(block, 'could not find SCALAR_INPUT_TYPES in lib/collab-plumbing.ts — update this test');
+  assert.ok(block, 'could not find SCALAR_INPUT_TYPES in lib/collab-plumbing.ts - update this test');
   const theirs = [...block[1]!.matchAll(/'([^']+)'/g)].map(m => m[1]!).sort();
 
   // Derived from BEHAVIOUR: every declared input type, asked whether a param op may

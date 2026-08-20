@@ -307,7 +307,7 @@ test('alone: focus changes cost nothing on the wire, and arm no timer', () => {
   root.remove();
 });
 
-test('with a peer here, a burst of focus changes is one throttled frame — the last one', () => {
+test('with a peer here, a burst of focus changes is one throttled frame - the last one', () => {
   const clock = fakeClock();
   const w = wire();
   const root = sidebar();
@@ -327,7 +327,7 @@ test('with a peer here, a burst of focus changes is one throttled frame — the 
 
   focusIn(root.querySelector('[data-input-id="title"]')!);
   focusIn(root.querySelector('[data-input-id="subtitle"]')!);
-  assert.equal(w.sent.length, 1, 'both landed inside the 50 ms window — nothing extra went out yet');
+  assert.equal(w.sent.length, 1, 'both landed inside the 50 ms window - nothing extra went out yet');
 
   clock.advance(PRESENCE_THROTTLE_MS);
   assert.equal(w.sent.length, 2, 'exactly one trailing flush for the burst');
@@ -443,7 +443,7 @@ test('inbound frames build the roster in first-seen order; a null state leaves a
   session.close();
 });
 
-test('an away peer stays in the roster, flagged — a hidden tab is not a dead tab', () => {
+test('an away peer stays in the roster, flagged - a hidden tab is not a dead tab', () => {
   const clock = fakeClock();
   const w = wire();
   const session = createCollabSession({
@@ -652,7 +652,7 @@ test('close() leaves nothing behind: no timers, no listeners, no wrapper, no tra
 
   session.close();
 
-  assert.equal(clock.pending(), 0, 'every timer disarmed — the whole point of the injected hook');
+  assert.equal(clock.pending(), 0, 'every timer disarmed - the whole point of the injected hook');
   assert.equal(w.closes, 1, 'the transport was closed, once');
   assert.equal(w.inboundSubs(), 0, 'and unsubscribed from');
   assert.equal(runtime.setInput, original, 'the runtime got its own setInput back');
@@ -828,7 +828,7 @@ test('drop-class malice is refused per-op, and the valid ops beside it still app
     'exactly the one legal write reached the runtime');
   assert.equal(g.w.adapter.remote.length, 1, 'and the adapter saw one batch');
   assert.equal(g.w.adapter.remote[0]!.length, 1, 'containing only the op that survived');
-  assert.deepEqual(g.abuse, [], 'a drop is not abuse — nothing to disconnect over');
+  assert.deepEqual(g.abuse, [], 'a drop is not abuse - nothing to disconnect over');
   assert.equal(log.lines.length, 1, 'the refusals are reported once for the message');
   assert.deepEqual(log.lines[0]![1], ['unknown-input: undeclared', 'wrong-lane: logo', 'value-too-large'],
     'with the typed reason for each, and the peer-derived detail the guard capped');
@@ -860,7 +860,7 @@ test('a prototype key condemns the whole message and leaves as an abuse event', 
   assert.equal(g.abuse.length, 1);
   assert.equal(g.abuse[0]!.lane, 'ops');
   assert.equal(g.abuse[0]!.reason, 'forbidden-key');
-  assert.equal(g.w.closes, 0, 'the session did NOT hang up — that is the transport\'s call');
+  assert.equal(g.w.closes, 0, 'the session did NOT hang up - that is the transport\'s call');
   assert.equal(g.session.state().connection, 'connecting', 'and it did not fake a state change');
 
   // The same verdict for the other shape: an own `__proto__` key inside a row, which
@@ -902,7 +902,7 @@ test('a presence flood raises the abuse event, and the flooding frame never land
   assert.equal(g.abuse[0]!.reason, 'rate-limited');
   assert.equal(g.abuse[0]!.from, 'P1', 'the transport is told WHICH peer to act on');
   assert.equal(g.session.presence.roster()[0]!.seq, 40,
-    'the 41st frame never reached the engine — it did not even move the bookkeeping');
+    'the 41st frame never reached the engine - it did not even move the bookkeeping');
   assert.equal(g.w.closes, 0, 'and again: reported, not hung up on');
 
   g.session.close();

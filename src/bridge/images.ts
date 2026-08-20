@@ -136,7 +136,7 @@ async function canvasToBlob(canvas: Canvas2D, type: string, quality?: number): P
 
 function normaliseFormat(format: ImageEncodeFormat): ImageEncodeFormat {
   if (!MIME_OF[format]) {
-    throw new Error(`Unsupported image format "${format}" — use webp, jpeg or png.`);
+    throw new Error(`Unsupported image format "${format}" - use webp, jpeg or png.`);
   }
   return format;
 }

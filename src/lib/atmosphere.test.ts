@@ -134,7 +134,7 @@ test('nothing sounds until a level is set, and zero stops it again', async () =>
   assert.equal(atmosphereLevel('rain'), 0.4);
   assert.equal(activeAtmosphereCount(), 1);
   const src = sounding()[0]!;
-  assert.equal(src.loop, true, 'a bed must loop — it is a bed, not a clip');
+  assert.equal(src.loop, true, 'a bed must loop - it is a bed, not a clip');
   assert.ok(src.buffer, 'a real baked buffer is attached');
 
   setAtmosphereLevel(null, 'rain', 0);
@@ -156,7 +156,7 @@ test('ambience connects to the destination, NOT through the music gain', async (
   reset();
 });
 
-test('layers stack — several beds sound at once, each with its own level', async () => {
+test('layers stack - several beds sound at once, each with its own level', async () => {
   reset();
   setAtmosphereLevel(null, 'rain', 0.3);
   setAtmosphereLevel(null, 'brown', 0.6);
@@ -179,7 +179,7 @@ test('a level change on a sounding layer moves its gain, it does not restart the
   const gain = src.connectedTo[0] as FakeGain;
   setAtmosphereLevel(null, 'wind', 0.8);
   await settle();
-  assert.equal(sounding().length, 1, 'still one source — no restart');
+  assert.equal(sounding().length, 1, 'still one source - no restart');
   assert.equal(sounding()[0], src, 'the SAME source');
   assert.equal(gain.gain.value, 0.8);
   reset();
@@ -312,6 +312,6 @@ test('stopAtmosphere silences everything but keeps the levels for next time', as
   await settle();
   stopAtmosphere();
   assert.equal(sounding().length, 0);
-  assert.equal(atmosphereLevel('rain'), 0.4, 'the set-up survives — this is a stop, not a reset');
+  assert.equal(atmosphereLevel('rain'), 0.4, 'the set-up survives - this is a stop, not a reset');
   reset();
 });

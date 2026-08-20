@@ -67,7 +67,7 @@ export const STRIP_UPLOAD_META_FLAG: FeatureFlag = {
   label: 'Strip metadata from uploads',
   pill: 'privacy',
   default: false,
-  info: 'Removes EXIF, location (GPS) and other embedded metadata from images you upload. Content Credentials (C2PA provenance) are always preserved — a signed or AI-generated image keeps its credential either way.',
+  info: 'Removes EXIF, location (GPS) and other embedded metadata from images you upload. Content Credentials (C2PA provenance) are always preserved - a signed or AI-generated image keeps its credential either way.',
 };
 
 // Opt-IN (default OFF): the export panel's "Before you export" prepress card. A
@@ -127,7 +127,7 @@ export const PERF_HUD_FLAG: FeatureFlag = {
   label: 'Performance HUD',
   pill: 'debug',
   default: false,
-  info: 'Shows a small, draggable overlay with live performance stats — frames per second, plus this device’s memory and CPU threads — for debugging and power users. It only watches; it never changes anything you make or export.',
+  info: 'Shows a small, draggable overlay with live performance stats - frames per second, plus this device’s memory and CPU threads - for debugging and power users. It only watches; it never changes anything you make or export.',
 };
 
 /** Synchronous read of the Performance HUD flag - the gate that decides whether to mount the

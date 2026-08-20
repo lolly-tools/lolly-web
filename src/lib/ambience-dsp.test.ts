@@ -52,7 +52,7 @@ test('every bed is finite, in range, and the length its loop advertises', () => 
   }
 });
 
-test('the two channels are decorrelated — a mono bed in stereo clothing is not stereo', () => {
+test('the two channels are decorrelated - a mono bed in stereo clothing is not stereo', () => {
   // Measured as the MEDIAN of per-window correlations, not one figure over the whole
   // buffer. Singular events (a train's horn, a roll of thunder) are deliberately
   // coherent in both ears - one horn is one horn, and making it independent per
@@ -112,7 +112,7 @@ test('the loop seam neither clicks nor dips', () => {
   }
 });
 
-test('the noise colours are actually coloured — white brighter than pink, pink than brown', () => {
+test('the noise colours are actually coloured - white brighter than pink, pink than brown', () => {
   const white = zeroCrossRate(bakeAmbience('white', SR)[0]!);
   const pink = zeroCrossRate(bakeAmbience('pink', SR)[0]!);
   const brown = zeroCrossRate(bakeAmbience('brown', SR)[0]!);
@@ -120,7 +120,7 @@ test('the noise colours are actually coloured — white brighter than pink, pink
   assert.ok(pink > brown, `pink ${pink} should cross more often than brown ${brown}`);
 });
 
-test('the scenes sit where their names put them — rain bright, waves deep', () => {
+test('the scenes sit where their names put them - rain bright, waves deep', () => {
   const rain = zeroCrossRate(bakeAmbience('rain', SR)[0]!);
   const waves = zeroCrossRate(bakeAmbience('waves', SR)[0]!);
   const fire = zeroCrossRate(bakeAmbience('fire', SR)[0]!);
@@ -163,7 +163,7 @@ test('event beds put their events IN FRONT of the bed, not under it', () => {
     return w.at(-1)! / w[Math.floor(w.length / 2)]!;
   };
   for (const kind of ['chimes', 'city', 'train', 'stream', 'keyboard', 'fire'] as const) {
-    assert.ok(punch(kind) > 3, `${kind}: peaks only reach ${punch(kind).toFixed(1)}× the median — its events are buried in the bed`);
+    assert.ok(punch(kind) > 3, `${kind}: peaks only reach ${punch(kind).toFixed(1)}× the median - its events are buried in the bed`);
   }
   // The counter-check: a flat bed has no foreground, and must not sprout one.
   assert.ok(punch('pink') < 2, 'pink noise should have no events at all');

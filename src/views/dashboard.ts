@@ -192,7 +192,7 @@ function brandHero(): string {
           <p class="dash-hero-status" id="dash-brand-status">${t('Loading…')}</p>
           <a class="dash-hero-cta" href="#/start" data-hero-cta hidden>${t('Adjust your brand')} <span class="dash-hero-cta-arrow" aria-hidden="true">→</span></a>
         </div>
-        <button type="button" class="dash-hero-primary" data-hero-primary data-copy="" aria-label="${escape(t('Primary colour — click to copy its value'))}">
+        <button type="button" class="dash-hero-primary" data-hero-primary data-copy="" aria-label="${escape(t('Primary colour - click to copy its value'))}">
           <span class="dash-hero-primary-label">${t('Primary')}</span>
           <code class="dash-hero-primary-code" data-hero-primary-code></code>
         </button>
@@ -216,7 +216,7 @@ function brandHero(): string {
 function tokensSection(): string {
   return `
     <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="${escape(dashFlag('dash-tokens'))}" hidden>
-      ${sectionHead(t('Brand tokens'), 'dash-tokens-h', tRaw('The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
+      ${sectionHead(t('Brand tokens'), 'dash-tokens-h', tRaw('The primitives the tokens document carries - shape, space, effects - exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
       <ul class="dash-token-grid" data-token-grid></ul>
     </section>`;
 }
@@ -316,7 +316,7 @@ function inkBar(c: PaletteEntry): string {
     trans ? '' : ` style="--ink:${escape(c.hex)}"`
   } data-copy="${escape(hex)}" data-name="${escape(c.label)}" data-hex="${escape(hex)}" data-cmyk="${escape(cmyk)}"${
     measured ? ' data-measured="1"' : ''
-  } aria-label="${escape(c.label)} — ${escape(hex)}${measured ? `, ${escape(t('exact CMYK ink'))}` : ''} (${escape(t('click to copy'))})" title="${escape(c.label)} · ${escape(hex)}"></button>`;
+  } aria-label="${escape(c.label)} - ${escape(hex)}${measured ? `, ${escape(t('exact CMYK ink'))}` : ''} (${escape(t('click to copy'))})" title="${escape(c.label)} · ${escape(hex)}"></button>`;
 }
 
 function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): string {
@@ -358,7 +358,7 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
         <h3 class="plat-ramp-title">${t('Brand colours')}</h3>
         <div class="plat-swatch-grid">${brand.map(swatch).join('')}</div>
         ${spectrum.length ? `<h3 class="plat-ramp-title">${t('Spectrum')} <span class="plat-ramp-count">${spectrum.length}</span></h3>
-        <p class="plat-ramp-note">${t('Secondary palette for infographics, charts &amp; data viz — it expands the colour wheel but does <strong>not</strong> replace brand colours.')}</p>
+        <p class="plat-ramp-note">${t('Secondary palette for infographics, charts &amp; data viz - it expands the colour wheel but does <strong>not</strong> replace brand colours.')}</p>
         <div class="plat-swatch-grid">${spectrum.map(swatch).join('')}</div>` : ''}
         ${ramps.map(([fam, cols]) => `<h3 class="plat-ramp-title">${escape(fam)} <span class="plat-ramp-count">${cols.length}</span></h3>
         <div class="plat-swatch-grid">${cols.map(swatch).join('')}</div>`).join('')}
@@ -369,7 +369,7 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
     id: 'dash-palette',
     flag: dashFlag('dash-palette'),
     title: t('Colour palette'),
-    desc: t('Shown in every colour picker. <strong>{n} of {total}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.', { n: measuredCount, total: palette.length }),
+    desc: t('Shown in every colour picker. <strong>{n} of {total}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports - the tick on a bar marks one.', { n: measuredCount, total: palette.length }),
     body: `${ribbon}${fullGrid}`,
     half: true,
   });
@@ -386,7 +386,7 @@ function wireCopyButtons(root: ParentNode): void {
         btn.classList.add('is-copied');
         setTimeout(() => btn.classList.remove('is-copied'), 900);
       } catch {
-        /* clipboard blocked — no-op */
+        /* clipboard blocked - no-op */
       }
     });
   });
@@ -433,7 +433,7 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   return `
     <div class="dash-cap-item" data-cap-hay="${escape(haystack)}"${shotAttr}>
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.features.length === 1 ? tRaw('{title} — 1 detail', { title: t(card.title) }) : tRaw('{title} — {n} details', { title: t(card.title), n: card.features.length }))}">
+              aria-label="${escape(card.features.length === 1 ? tRaw('{title} - 1 detail', { title: t(card.title) }) : tRaw('{title} - {n} details', { title: t(card.title), n: card.features.length }))}">
 
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
@@ -492,7 +492,7 @@ async function capabilitiesSection(): Promise<string> {
         <input type="search" class="dash-cap-search-input" data-cap-search
                autocomplete="off" spellcheck="false"
                aria-controls="dash-cap-results"
-               placeholder="${escape(t('Search {n} capabilities — try “cmyk”, “figma”, “offline”', { n: totalCards }))}"
+               placeholder="${escape(t('Search {n} capabilities - try “cmyk”, “figma”, “offline”', { n: totalCards }))}"
                aria-label="${escape(t('Search capabilities'))}">
         <button type="button" class="dash-cap-search-clear" data-cap-search-clear hidden
                 aria-label="${escape(t('Clear search'))}">✕</button>
@@ -530,7 +530,7 @@ async function capabilitiesSection(): Promise<string> {
   return collapse({
     id: 'dash-caps',
     title: t('What Lolly can do'),
-    desc: t('Every capability, stated as a fact you can check — formats by name, limits included. Search it, or open a section. Pick any card for its detail.'),
+    desc: t('Every capability, stated as a fact you can check - formats by name, limits included. Search it, or open a section. Pick any card for its detail.'),
     body: `${search}${groups}${empty}${modal}`,
   });
 }
@@ -575,10 +575,10 @@ function typeFacts(): string {
 function printBody(palette: readonly PaletteEntry[]): string {
   const locked = palette.filter((c) => isLockedInk(c) && !isTransparent(c.hex));
   return `
-    <p class="plat-section-desc">${t('Brand colours locked to an exact ink value (CMYK or spot) — substituted directly into CMYK PDF exports instead of a generic sRGB→CMYK conversion.')}</p>
+    <p class="plat-section-desc">${t('Brand colours locked to an exact ink value (CMYK or spot) - substituted directly into CMYK PDF exports instead of a generic sRGB→CMYK conversion.')}</p>
     ${locked.length
       ? `<div class="plat-swatch-grid">${locked.map(swatch).join('')}</div>`
-      : `<p class="cat-empty">${t("No brand colours are locked to an exact ink yet — pin one from a swatch's print lock in the Design system tab above.")}</p>`}
+      : `<p class="cat-empty">${t("No brand colours are locked to an exact ink yet - pin one from a swatch's print lock in the Design system tab above.")}</p>`}
     <p class="plat-section-desc">${t('Press conditions a CMYK PDF can declare in its <code>OutputIntent</code>. Selected per-export via the <code>colorProfile</code> option; raster &amp; on-screen output stays sRGB.')}</p>
     <table class="plat-table">
       <thead><tr><th>${t('Profile key')}</th><th>${t('Identifier')}</th><th>${t('Condition')}</th></tr></thead>
@@ -673,7 +673,7 @@ function renderStorageGlance(m: StorageGlance): string {
   const segs = [...m.slices];
   if (m.other > 0) segs.push({ label: t('Other app data'), bytes: m.other, key: 'other' });
   const denom = m.total || 1;
-  const bar = segs.map((s) => `<span class="dash-store-seg dash-store-seg--${s.key}" style="flex:${Math.max(0.5, (s.bytes / denom) * 100)}" title="${escape(s.label)} — ${escape(fmtBytes(s.bytes))}"></span>`).join('');
+  const bar = segs.map((s) => `<span class="dash-store-seg dash-store-seg--${s.key}" style="flex:${Math.max(0.5, (s.bytes / denom) * 100)}" title="${escape(s.label)} - ${escape(fmtBytes(s.bytes))}"></span>`).join('');
   const legend = segs.map((s) => `<span class="dash-store-key"><span class="dash-store-dot dash-store-seg--${s.key}"></span>${escape(s.label)}<strong>${escape(fmtBytes(s.bytes))}</strong></span>`).join('');
   // The ring headlines used-vs-budget when the browser reports a quota; otherwise a plain
   // measured line (some browsers withhold an estimate).
@@ -684,13 +684,13 @@ function renderStorageGlance(m: StorageGlance): string {
     ${hero}
     <div class="dash-store-bar" role="img" aria-label="${escape(tRaw('Storage composition: {list}', { list: segs.map((s) => `${s.label} ${fmtBytes(s.bytes)}`).join(', ') }))}">${bar || '<span class="dash-store-seg dash-store-seg--other" style="flex:1"></span>'}</div>
     <div class="dash-store-legend">${legend}</div>
-    <p class="dash-store-note">${tRaw('A read-only view — manage or clear it in your {link}. Nothing is uploaded.', { link: `<a href="#/profile?focus=storage-section">${t('Profile')}</a>` })}</p>`;
+    <p class="dash-store-note">${tRaw('A read-only view - manage or clear it in your {link}. Nothing is uploaded.', { link: `<a href="#/profile?focus=storage-section">${t('Profile')}</a>` })}</p>`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 
 export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise<void> {
-  document.title = t('Dashboard — Lolly');
+  document.title = t('Dashboard - Lolly');
 
   // Deep links: `#/d?print`, `#/d?formats`, ... force-open a reference panel
   // or a capability group and scroll to it. Read straight off the hash, no
@@ -784,7 +784,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
                 flag: dashFlag('dash-sound'),
                 title: t('Sound'),
                 cls: 'dash-card dash-sound',
-                desc: t('Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.'),
+                desc: t('Interface sounds and Neurospicy focus loops - set them here; the choice follows you across the app.'),
                 body: `<div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>`,
               })}
               ${collapse({
@@ -808,7 +808,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               ${renderPaletteWheel(wheelColors)}
             </section>
             <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="${escape(dashFlag('dash-typedemo'))}">
-              ${sectionHead(t('Type in motion'), 'dash-typedemo-h', t('The faces in force — the fonts loaded on this device, live. The axes themselves are the animation.'))}
+              ${sectionHead(t('Type in motion'), 'dash-typedemo-h', t('The faces in force - the fonts loaded on this device, live. The axes themselves are the animation.'))}
               ${renderTypeDemo()}
               ${typeFacts()}
             </section>
@@ -817,7 +817,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           ${tokensSection()}
           ${refPanel(dashFlag('dash-print'), false, 'dash-print', t('Print & CMYK'), printBody(palette))}
           <p class="plat-note dash-foot" role="note">
-            ${tRaw('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
+            ${tRaw('<strong>This page is read-only</strong> - it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences - theme and sound - live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
             ${' '}${tRaw('Building the UI? Browse the shell’s primitives & views in the {link}.', { link: `<a href="#/components">${t('Component library')}</a>` })}
           </p>
         `)}
@@ -840,15 +840,15 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               body: catalogSummaryBody(tools),
             })}
             <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="${escape(dashFlag('dash-activity'))}">
-              ${sectionHead(t('Your activity'), 'dash-activity-h', t('Local-only counters — nothing here is recorded remotely.'))}
+              ${sectionHead(t('Your activity'), 'dash-activity-h', t('Local-only counters - nothing here is recorded remotely.'))}
               <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="${escape(dashFlag('dash-recent'))}" hidden>
-              ${sectionHead(t('Recent creations'), 'dash-recent-h', t('Your latest saved sessions — swipe the stack to browse, or use Open below.'))}
+              ${sectionHead(t('Recent creations'), 'dash-recent-h', t('Your latest saved sessions - swipe the stack to browse, or use Open below.'))}
               <div class="dash-recent-mount" data-recent-stack></div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="${escape(dashFlag('dash-exports'))}" hidden>
-              ${sectionHead(t('Latest exports'), 'dash-exports-h', t('Files you downloaded — swipe through, or use Open below to reopen one exactly as it was.'))}
+              ${sectionHead(t('Latest exports'), 'dash-exports-h', t('Files you downloaded - swipe through, or use Open below to reopen one exactly as it was.'))}
               <div class="dash-recent-mount" data-exports-stack></div>
             </section>
           </div>
@@ -937,7 +937,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       rec = (await (host.assets as unknown as {
         _findMetaByType?(t: string): Promise<{ id: string; name?: string; meta?: Record<string, unknown> } | null>;
       })._findMetaByType?.('tokens')) ?? null;
-    } catch { /* discovery unavailable — show the unbranded pathway */ }
+    } catch { /* discovery unavailable - show the unbranded pathway */ }
     const locked = await tokensApi?.isLocked?.().catch(() => false) ?? false;
     if (!viewEl.contains(hero)) return;
 
@@ -949,12 +949,12 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const statusEl = hero.querySelector<HTMLElement>('#dash-brand-status');
     if (statusEl) {
       statusEl.innerHTML = locked
-        ? t('This build ships with a fixed brand — every tool, page and export already wears it.')
+        ? t('This build ships with a fixed brand - every tool, page and export already wears it.')
         : metaId === USER_TOKENS_ID
-          ? t('Your brand is installed — every tool, page and export wears it.')
+          ? t('Your brand is installed - every tool, page and export wears it.')
           : metaId
-            ? t('Running the catalogue’s built-in brand. Make it yours — pick a colour and Lolly derives the rest. It stays on this device.')
-            : t('This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.');
+            ? t('Running the catalogue’s built-in brand. Make it yours - pick a colour and Lolly derives the rest. It stays on this device.')
+            : t('This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot - <strong>make it yours</strong>.');
     }
     // The one action: adjust the brand at Start. A locked catalogue's brand
     // is part of its identity, so the CTA never shows there (the status line
@@ -974,7 +974,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         ${renderBrandSeal(sealColors(palette))}
         <div class="dash-lock-text">
           <h2 class="dash-lock-title">${escape(t('Brand locked'))}</h2>
-          <p class="dash-lock-desc">${t('<span class="dash-lock-brand">{brand}</span> ships with this build and is authoritative — its colours, type and tokens come from the catalogue and cannot be edited on this device. Every tool, page and export already wears it.', { brand: brandLabel })}</p>
+          <p class="dash-lock-desc">${t('<span class="dash-lock-brand">{brand}</span> ships with this build and is authoritative - its colours, type and tokens come from the catalogue and cannot be edited on this device. Every tool, page and export already wears it.', { brand: brandLabel })}</p>
         </div>`;
       lockEl.hidden = false;
     }
@@ -999,7 +999,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         if (img) { img.src = asset.url; img.hidden = false; }
         break;
       }
-    } catch { /* no logo installed — the name carries the hero */ }
+    } catch { /* no logo installed - the name carries the hero */ }
 
     // The primary field's quiet instrument line: hex + oklch, plus
     // click-to-copy (wireCopyButtons reads data-copy at click time).
@@ -1036,7 +1036,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           const set = createTokenSet(doc, { theme: currentTheme() === 'dark' ? 'dark' : 'light' });
           resolveTok = (ref: string) => set.resolve(ref);
         }
-      } catch { /* no readable doc — chips fall back to radius alone */ }
+      } catch { /* no readable doc - chips fall back to radius alone */ }
       const chips = [
         ...(radius ? [tokenChip({
           name: t('Corner radius'), kind: 'shape', value: radius,
@@ -1050,7 +1050,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         grid.innerHTML = chips.join('');
         sec.hidden = false;
       }
-    } catch { /* tokens unreadable — the section stays hidden */ }
+    } catch { /* tokens unreadable - the section stays hidden */ }
   })();
 
   // Fold cue: a soft hydraulic open/close whenever a primary section (device,
@@ -1135,7 +1135,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             }
             // The shot illustrates prose that is right beside it, so a described
             // alt would be read twice. Name what it is, and let the list speak.
-            mImg.alt = t('{title} — screenshot', { title });
+            mImg.alt = t('{title} - screenshot', { title });
             mShot.hidden = false;
           } else {
             mImg.onerror = null;
@@ -1264,7 +1264,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         sec.hidden = false;
       }
     })
-    .catch(() => { /* no recent sessions — the section stays hidden */ });
+    .catch(() => { /* no recent sessions - the section stays hidden */ });
 
   // Latest exports: the downloads log (export-history.ts), newest first,
   // into its own swipe stack. Distinct from Recent creations: these are
@@ -1283,7 +1283,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         wireExportShare(stackMount, entries, items.map((it) => it.href));
       }
     })
-    .catch(() => { /* no exports yet — the section stays hidden */ });
+    .catch(() => { /* no exports yet - the section stays hidden */ });
 
   collectDevice()
     .then((snap) => {
@@ -1372,7 +1372,7 @@ function wireExportShare(stackMount: HTMLElement, entries: ExportEntry[], hrefs:
       // (mirrors the Projects view's per-session share).
       if (entry.format) baseParts.push(`format=${encodeURIComponent(entry.format)}`);
       openShareDialog({ toolId: entry.toolId, baseParts, manifest, currentFormat: entry.format, title: t('Share this creation') });
-    } catch { /* share is best-effort — the reopen links still work */ }
+    } catch { /* share is best-effort - the reopen links still work */ }
     finally { btn.disabled = false; }
   });
 }

@@ -179,7 +179,7 @@ test('a chained backdrop-filter reaches the raster hatch too',
       'expected the chained panel to be rasterised');
   });
 
-test('a reconstructed panel does NOT rasterise — the caps stay honest in both directions',
+test('a reconstructed panel does NOT rasterise - the caps stay honest in both directions',
   { skip: SKIP }, async () => {
     // The mirror of the two above: when the clone really was appended, the element
     // must stay vector. Without this, "always report unsupported" would pass them.

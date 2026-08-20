@@ -78,7 +78,7 @@ export function createSoundToggle(host: SoundToggleHost): HTMLButtonElement {
     const on = !isSfxMuted();
     btn.innerHTML = on ? ICON_ON : ICON_OFF;
     btn.dataset.on = on ? 'true' : 'false';
-    const label = on ? t('Interface sounds: on — mute') : t('Interface sounds: off — unmute');
+    const label = on ? t('Interface sounds: on - mute') : t('Interface sounds: off - unmute');
     btn.setAttribute('aria-label', label);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     btn.title = label;
@@ -119,16 +119,16 @@ const SWITCH_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .sound-switch-knob, .sound-switch-track, .sound-switch-icon { transition: none; }
 }
-/* And for the app's own preference (data-a11y-motion, lib/a11y-prefs.ts) —
+/* And for the app's own preference (data-a11y-motion, lib/a11y-prefs.ts) -
    parts/base.css leaves transitions alone by design, so this has to repeat. */
 html[data-a11y-motion="reduce"] :is(.sound-switch-knob, .sound-switch-track, .sound-switch-icon) { transition: none; }
-/* Neurospicy sits directly under Sound as ONE group — no dividing rule between them; the loop
+/* Neurospicy sits directly under Sound as ONE group - no dividing rule between them; the loop
    picker + volume tuck underneath its own switch. */
 .neurospicy { display: flex; flex-direction: column; gap: 9px; margin-top: 9px; transition: opacity .18s ease; }
 /* Sound is the master switch: while it's muted, Neurospicy reads as off + dimmed and can't be
    toggled until sound is turned back on. */
 .neurospicy.is-muted { opacity: .45; pointer-events: none; }
-/* Not a primary-fill button (component audit rec 2 named it as one — stale: it
+/* Not a primary-fill button (component audit rec 2 named it as one - stale: it
    fills with --card/--foreground, a quiet secondary treatment, not --primary/
    --primary-foreground), so it's left off buttons.css's .btn--primary alias list. */
 .neuro-show-btn { align-self: flex-start; margin-left: 31px; padding: 5px 12px; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .82rem; font-weight: 600; cursor: pointer; }
@@ -171,7 +171,7 @@ function neurospicyHtml(): string {
       <div class="sound-switch" data-on="${on}">
         <span class="sound-switch-icon">${NEURO_ICON}</span>
         <span class="sound-switch-label">${t('Neurospicy')}:</span>
-        <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="${t('Neurospicy Mode — a looping focus beat')}" data-neurospicy-switch>
+        <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="${t('Neurospicy Mode - a looping focus beat')}" data-neurospicy-switch>
           <span class="sound-switch-knob"></span>
         </button>
       </div>

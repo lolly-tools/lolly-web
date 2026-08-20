@@ -182,7 +182,7 @@ test('blocked storage does not stop the attributes from applying', () => {
 
 // ── hydrateA11yPrefs (boot reconciliation) ───────────────────────────────────
 
-test('hydrate with an explicit object is authoritative — it corrects mirror drift', () => {
+test('hydrate with an explicit object is authoritative - it corrects mirror drift', () => {
   reset();
   applyA11yPrefs({ largeText: true });            // what the FOUC mirror applied
   hydrateA11yPrefs({ highContrast: true });        // what the canonical profile says
@@ -294,7 +294,7 @@ test('prefersReducedMotion ORs the app attribute with the OS query', () => {
 
 test('the matched OS query is not a snapshot: a mid-session toggle is still seen', () => {
   reset();
-  assert.equal(prefersReducedMotion(), false, 'first call — this is what matches (and caches) the query');
+  assert.equal(prefersReducedMotion(), false, 'first call - this is what matches (and caches) the query');
   // a11y-prefs.ts matches the query ONCE and keeps the MediaQueryList, because
   // three rAF loops call this per frame and the user paying for a fresh parse at
   // 60Hz would be the one with no preferences set. That is only correct while the

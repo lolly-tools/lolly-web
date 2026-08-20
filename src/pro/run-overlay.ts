@@ -238,7 +238,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   // button, a test) claims a job of its own here - and only that path refuses, because
   // an inherited job IS the run currently holding the slot.
   const inheritedJob = opts.job;
-  if (!inheritedJob && isBatchRunActive()) throw new Error('A batch run is already in progress — wait for it to finish.');
+  if (!inheritedJob && isBatchRunActive()) throw new Error('A batch run is already in progress - wait for it to finish.');
   const job = inheritedJob ?? startBatchJob(opts.jobTitle || t('Rendering batch'));
   // No mount → the shell is built detached and the global job toast is the visible
   // channel (see RunBatchProgressOpts.mount).
@@ -281,8 +281,8 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   // drop time - that is the number the grid shows and the number lolly.txt prints, so
   // it leads here too. Absent → the name alone, never a fabricated number.
   const skipItems = skipped.map(s => {
-    const n = s.srcIndex == null ? '' : `row ${s.srcIndex + 1} — `;
-    return `<li>${esc(n)}${esc(rowLabel(s.row))} — ${esc(s.reason)}</li>`;
+    const n = s.srcIndex == null ? '' : `row ${s.srcIndex + 1} - `;
+    return `<li>${esc(n)}${esc(rowLabel(s.row))} - ${esc(s.reason)}</li>`;
   }).join('');
   const skipNote = skipped.length
     ? `<li class="pro-log-skip"><details><summary>${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped (${esc(skipped[0]!.reason)}${skipped.length > 1 ? ', …' : ''})</summary><ul class="pro-log-skiplist">${skipItems}</ul></details></li>`
@@ -455,15 +455,15 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
           if (lines.length) noted.push({ name: p.name, lines });
           timings.push({ name: p.name, ms: p.ms }); // preview card + per-asset timing for the chart
         }
-        // The SOURCE row number LEADS — it is the number the grid shows and the number
+        // The SOURCE row number LEADS - it is the number the grid shows and the number
         // lolly.txt / preflight.json print for this same row, and it is the only one the
         // user can act on. The queue position is context and is labelled as such: it is
         // a position in the compacted array, not a row the user counted to. A row that
-        // produced no file gets ONE line — its first note rides on it, the rest go to
+        // produced no file gets ONE line - its first note rides on it, the rest go to
         // the zip manifest.
         else if (p.status === 'error') {
           const first = linesOf(p.notes)[0];
-          appendLog(`<li class="pro-log-err">✕ row ${srcRow(p.index)} ${esc(rowLabel(p.row))}: ${esc(p.error)}${first ? ` — ${esc(first)}` : ''} <span class="pro-log-queue">[queued ${p.index + 1}/${p.total}]</span></li>`);
+          appendLog(`<li class="pro-log-err">✕ row ${srcRow(p.index)} ${esc(rowLabel(p.row))}: ${esc(p.error)}${first ? ` - ${esc(first)}` : ''} <span class="pro-log-queue">[queued ${p.index + 1}/${p.total}]</span></li>`);
         }
         done++;
         draw(`<strong>Rendered ${done} / ${total}</strong>`);
@@ -542,7 +542,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         // fresh one), and its failures must surface here rather than as an unhandled
         // rejection with the overlay frozen on "Rendered n / n".
         if (isBatchRunActive()) {
-          appendLog(`<li class="pro-log-skip">Another export is still running — try again when it finishes.</li>`);
+          appendLog(`<li class="pro-log-skip">Another export is still running - try again when it finishes.</li>`);
           return;
         }
         btn.disabled = true;
@@ -588,7 +588,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
 
     if (files.length === 0) {
       draw(`<strong>No files produced.</strong>`);
-      announce?.('Batch finished — no files produced.');
+      announce?.('Batch finished - no files produced.');
       offerRetry();
       return settle({ files, results, cancelled: isCancelled() });
     }
@@ -606,8 +606,8 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       saveBlob(zip, `${zipBaseName}.zip`);
       delivered = true;
       zipName = `${zipBaseName}.zip`;
-      draw(`<strong>Done — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
-      announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);
+      draw(`<strong>Done - ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
+      announce?.(`Batch complete - ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);
       // The whole queue finished - celebrate: the big trumpet for a real batch, the subtle
       // "ta-da" for a lone render (matching the single-session download path).
       if (!isCancelled()) playSfx(total > 1 ? 'fanfare' : 'victory');
@@ -617,8 +617,8 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         // A lock was requested - NEVER fall back to unencrypted sequential downloads,
         // which would silently ship the non-PDF members (and the lolly.txt manifest
         // with author details) in cleartext. Fail loudly and save nothing.
-        appendLog(`<li class="pro-log-err">Couldn't build the password-protected zip (${msg}) — nothing was downloaded. Try again, or export fewer files at once.</li>`);
-        draw(`<strong>Couldn't build the password-protected zip — nothing was saved.</strong>`);
+        appendLog(`<li class="pro-log-err">Couldn't build the password-protected zip (${msg}) - nothing was downloaded. Try again, or export fewer files at once.</li>`);
+        draw(`<strong>Couldn't build the password-protected zip - nothing was saved.</strong>`);
         announce?.('Encrypted download failed; nothing was saved.');
       } else {
         appendLog(`<li class="pro-log-skip">Zip failed (${msg}); downloading files individually…</li>`);
@@ -628,8 +628,8 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
           onSaved: (n, tot) => draw(`<strong>Saving ${n} / ${tot}…</strong>`),
         });
         delivered = true;
-        draw(`<strong>Done — ${files.length} files downloaded${tail}.</strong>`);
-        announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} downloaded${tail}.`);
+        draw(`<strong>Done - ${files.length} files downloaded${tail}.</strong>`);
+        announce?.(`Batch complete - ${files.length} file${files.length === 1 ? '' : 's'} downloaded${tail}.`);
         if (!isCancelled()) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) - big trumpet for a batch, subtle "ta-da" for one
       }
     }

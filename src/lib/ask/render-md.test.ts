@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderAnswerMd } from './render-md.ts';
 
-test('escapes HTML — no raw tag, attribute or entity survives as markup', () => {
+test('escapes HTML - no raw tag, attribute or entity survives as markup', () => {
   const out = renderAnswerMd('A <script>alert(1)</script> and <img src=x onerror=alert(1)>.');
   assert.ok(!/<script/i.test(out));
   assert.ok(!/<img/i.test(out));

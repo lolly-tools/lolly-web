@@ -93,7 +93,7 @@ const FILES: SrcFile[] = walk(SRC_DIR).map((p): SrcFile => ({
 }));
 
 test('sanity: the scan actually found the tree (a broken walk must not vacuously pass)', () => {
-  assert.ok(FILES.length > 100, `only ${FILES.length} .ts files found under ${SRC_DIR} — the walk is broken`);
+  assert.ok(FILES.length > 100, `only ${FILES.length} .ts files found under ${SRC_DIR} - the walk is broken`);
 });
 
 const OPEN_CEREMONY = /\bopenCollabCeremony\b/;
@@ -115,11 +115,11 @@ test('sanity: the known shipping call sites are still in the scan', () => {
   const rels = CALL_SITES.map((f) => f.rel);
   assert.ok(
     rels.includes('collab/join-route.ts'),
-    'collab/join-route.ts no longer reaches openCollabCeremony — has the ceremony wiring moved?',
+    'collab/join-route.ts no longer reaches openCollabCeremony - has the ceremony wiring moved?',
   );
   assert.ok(
     rels.includes('collab/private-opener.ts'),
-    'collab/private-opener.ts no longer reaches openCollabCeremony — has the ceremony wiring moved?',
+    'collab/private-opener.ts no longer reaches openCollabCeremony - has the ceremony wiring moved?',
   );
 });
 
@@ -132,6 +132,6 @@ test('every production call site that opens the ceremony passes an explicit link
     'Omitting it falls back to components/collab-ceremony.ts\'s defaultLinkBase() ' +
     '(location.origin + location.pathname), which silently opens the wrong page when the caller ' +
     "runs from a tool view's /t/<id> crawler-stub pathname (see this file's header). Pass linkBase " +
-    'explicitly — e.g. `deps.linkBase ?? appLinkBase()` (collab/join-route.ts\'s own pattern).',
+    'explicitly - e.g. `deps.linkBase ?? appLinkBase()` (collab/join-route.ts\'s own pattern).',
   );
 });

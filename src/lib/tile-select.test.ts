@@ -176,7 +176,7 @@ test('Shift-range works backwards too', () => {
   assert.deepEqual(got(h), ['b', 'c', 'd']);
 });
 
-test('Shift-range ADDS — it never takes an existing selection away', () => {
+test('Shift-range ADDS - it never takes an existing selection away', () => {
   const h = harness();
   h.clickDot('d');                          // selected, and the anchor
   h.clickDot('a');                          // anchor moves to a; d stays selected

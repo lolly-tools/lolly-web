@@ -153,7 +153,7 @@ const CSS = `
   color: hsl(var(--foreground));
   font-size: calc(12px * var(--a11y-fs));
   line-height: 1;
-  /* Local, overridable state hues — see the constant's note above. */
+  /* Local, overridable state hues - see the constant's note above. */
   --collab-live: 142 71% 36%;
   --collab-wait: 38 92% 45%;
   --collab-gone: 0 72% 48%;
@@ -187,7 +187,7 @@ const CSS = `
   border: calc(2px * var(--a11y-fs)) solid hsl(var(--collab-wait));
 }
 .collab-dot[data-state="reconnecting"] { animation: collab-dot-pulse 1.4s ease-in-out infinite; }
-/* Split disc — present but not attending. */
+/* Split disc - present but not attending. */
 .collab-dot[data-state="away"] {
   background: linear-gradient(to bottom, hsl(var(--collab-wait)) 50%, transparent 50%);
   border: 1px solid hsl(var(--collab-wait));
@@ -240,7 +240,7 @@ html[data-a11y-motion="reduce"] .collab-av.is-new { animation: none; }
   font-weight: 700;
   line-height: 1;
   /* One fixed ink, because the avatar's ground is a collaborator colour projected
-     into a fixed OKLCH band (collab-colors.ts) — it does not move with the theme,
+     into a fixed OKLCH band (collab-colors.ts) - it does not move with the theme,
      so neither should the letters on it. */
   color: hsl(222 47% 8%);
   /* The 1px halo: the inner ring in the theme ground separates two overlapping

@@ -201,10 +201,10 @@ function goldenCompare(id: string, live: string): void {
   if (UPDATE_GOLDENS) { regenerated[id] = live; return; }
   const expected = committed[id];
   assert.ok(expected,
-    `No committed golden for "${id}" — regenerate with: ` +
+    `No committed golden for "${id}" - regenerate with: ` +
     `UPDATE_GOLDENS=1 node --test "shells/web/src/bridge/export-format-golden.test.ts"`);
   assert.ok(live === expected,
-    `Golden byte mismatch for "${id}" (${live.length} vs ${expected!.length} chars) — ` +
+    `Golden byte mismatch for "${id}" (${live.length} vs ${expected!.length} chars) - ` +
     `if the change is intentional, regenerate with UPDATE_GOLDENS=1 and diff-review the fixture`);
 }
 
@@ -269,7 +269,7 @@ for (const [fixture, inner] of Object.entries(FIXTURES)) {
       const [a, b] = await renderTwice(inner, format);
       // Determinism FIRST: a golden over unstable bytes is worse than no golden.
       assert.ok(a === b,
-        `two ${format} renders of ${fixture} in the same run diverged — the output is not snapshot-safe`);
+        `two ${format} renders of ${fixture} in the same run diverged - the output is not snapshot-safe`);
       assertStructure(format, a, fixture);
       goldenCompare(`${fixture}.${format}`, a);
     });
@@ -289,7 +289,7 @@ test('negative control: a perturbed fixture produces different bytes in every fo
       const [base] = await renderTwice(FIXTURES['html-card']!, format);
       const [other] = await renderTwice(perturbed, format);
       assert.ok(base !== other,
-        `${format}: perturbing the fixture did not change the bytes — the golden is vacuous`);
+        `${format}: perturbing the fixture did not change the bytes - the golden is vacuous`);
     }
   });
 
@@ -308,7 +308,7 @@ test('Chromium parses --force-color-profile (counterfactual: display-p3 flips th
     try {
       const p = await b.newPage();
       assert.equal(await p.evaluate(() => matchMedia('(color-gamut: p3)').matches), true,
-        '--force-color-profile was not honoured — has the switch been renamed?');
+        '--force-color-profile was not honoured - has the switch been renamed?');
     } finally {
       await b.close();
     }

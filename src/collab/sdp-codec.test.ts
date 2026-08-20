@@ -272,7 +272,7 @@ test('extract: priorities are dropped by default and kept on request', () => {
   assert.equal(ok(pack({ kind: 'answer', material: full })).length - ok(pack({ kind: 'answer', material: lean })).length, 8);
 });
 
-test('extract: Firefox shapes — session-level fingerprint, uppercase transport, tcptype, LF endings', () => {
+test('extract: Firefox shapes - session-level fingerprint, uppercase transport, tcptype, LF endings', () => {
   const m = ok(extract(FIREFOX_OFFER), 'firefox');
   assert.equal(m.fingerprint.algo, 'sha-256');
   assert.equal(m.iceUfrag, '2b3d9f01');
@@ -451,7 +451,7 @@ test('pack: the compact forms really are compact', () => {
   assert.equal(size('peer.local') - empty, 1 + 1 + 10 + 2);
 });
 
-test('pack: normalization — tcpActive is only ever present, and only on tcp', () => {
+test('pack: normalization - tcpActive is only ever present, and only on tcp', () => {
   const base = ok(extract(CHROME_OFFER));
   const withFlag = (c: IceCandidate): IceCandidate =>
     ok(unpack(ok(pack({ kind: 'answer', material: { ...base, candidates: [c] } })))).material.candidates[0]!;

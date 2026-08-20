@@ -24,7 +24,7 @@ const SCRIPT = `
   p.defineLayout({ name: "W", width: 13.33, height: 7.5 });
   p.layout = "W";
 
-  // Slide 1 — a plain string addText.
+  // Slide 1 - a plain string addText.
   const a = p.addSlide();
   a.background = { color: "0B1512" };
   a.addText("Hello world", {
@@ -32,7 +32,7 @@ const SCRIPT = `
     fontFace: "Calibri", fontSize: 40, bold: true, color: "FFFFFF", align: "left",
   });
 
-  // Slide 2 — a run-array addText, a roundRect shape, and an image.
+  // Slide 2 - a run-array addText, a roundRect shape, and an image.
   const b = p.addSlide();
   b.background = { color: "0B1512" };
   b.addText(

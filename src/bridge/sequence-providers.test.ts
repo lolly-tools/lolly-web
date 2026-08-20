@@ -276,13 +276,13 @@ test('every audio container the catalog ships or the uploader accepts is registe
   for (const fmt of catalogFormats) {
     const need = CONTAINER_FOR[fmt];
     assert.notEqual(need, undefined, `catalog ships audio format '${fmt}' that this test does not map to a container`);
-    if (need) assert.ok(registered.has(need), `catalog ships '${fmt}' but AUDIO_CONTAINERS omits ${need} — exports would be SILENT`);
+    if (need) assert.ok(registered.has(need), `catalog ships '${fmt}' but AUDIO_CONTAINERS omits ${need} - exports would be SILENT`);
   }
 
   // And every audio extension the picker offers the user.
   const picker = readFileSync(fileURLToPath(new URL('../views/picker.ts', import.meta.url)), 'utf8');
   const accept = /UPLOAD_ACCEPT\s*=\s*'([^']*)'/.exec(picker)?.[1] ?? '';
-  assert.ok(accept.length > 0, 'could not read UPLOAD_ACCEPT — this guard must not pass vacuously');
+  assert.ok(accept.length > 0, 'could not read UPLOAD_ACCEPT - this guard must not pass vacuously');
   for (const ext of ['mp3', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'flac']) {
     if (!accept.includes(`.${ext}`)) continue;
     const need = CONTAINER_FOR[ext];
@@ -562,7 +562,7 @@ test('frames skipped over are pulled and closed immediately, not accumulated', a
   await p.drawAt(fakeCtx, grid[6] as number, dest);   // jumped five frames
 
   const s = p.stats();
-  assert.ok(s.maxInFlight <= MAX_IN_FLIGHT, `held ${s.maxInFlight} — a skip must not batch closes`);
+  assert.ok(s.maxInFlight <= MAX_IN_FLIGHT, `held ${s.maxInFlight} - a skip must not batch closes`);
   assert.equal(s.decoded, 2, 'the skipped frames are discarded, not counted as drawn');
   assert.equal(world.samples.length, 7, 'the generator really did decode through the skip');
   assert.ok(world.samples.every((x) => x.closes === 1));
@@ -591,7 +591,7 @@ test('an unsorted prime is refused, and every frame is served by random access',
   const world = fakeMediabunny({ frames: [0, 1 / 30, 2 / 30] });
   const p = await createVideoProvider('https://example.test/clip.mp4', mbOpts(world));
   p.prime?.([2 / 30, 0, 1 / 30]);
-  assert.equal(p.stats().randomAccess, true, 'an unsorted grid defeats one-decode-per-packet — refuse it loudly');
+  assert.equal(p.stats().randomAccess, true, 'an unsorted grid defeats one-decode-per-packet - refuse it loudly');
   assert.equal(await p.drawAt(fakeCtx, 1 / 30, dest), true);
   assert.equal(p.stats().decoded, 1);
   await p.dispose();
@@ -635,7 +635,7 @@ test('a hole in the source is a miss, not an error', async () => {
 
 // ── silent truncation: the evidence this module owes the renderer ───────────
 
-test('a truncated container yields a short clean decode — stats feed reconcileDecoded', async () => {
+test('a truncated container yields a short clean decode - stats feed reconcileDecoded', async () => {
   const grid = Array.from({ length: 30 }, (_, i) => i / 30);        // 1 s at 30 fps
   const world = fakeMediabunny({ frames: grid, truncateAfter: 10, durationSec: 1 });
   const p = await createVideoProvider('https://example.test/clip.mp4', mbOpts(world));
@@ -879,7 +879,7 @@ test('a container that opens cleanly with no audio track is never speculatively 
     },
   });
   assert.equal(audio, null, 'a silent video is silent, not a module');
-  assert.equal(reads, 0, 'a file the demuxer READ is not a module — no byte fetch on the ordinary path');
+  assert.equal(reads, 0, 'a file the demuxer READ is not a module - no byte fetch on the ordinary path');
 });
 
 test('a module still plays on a platform with no WebCodecs at all', async () => {
@@ -892,7 +892,7 @@ test('a module still plays on a platform with no WebCodecs at all', async () => 
       renderModule: r.render,
     },
   });
-  assert.ok(audio, 'libopenmpt is WASM — it needs no AudioDecoder');
+  assert.ok(audio, 'libopenmpt is WASM - it needs no AudioDecoder');
   await audio.pcm(0, 0.25, 8000);
   assert.equal(r.calls.length, 1);
   await audio.dispose();
@@ -926,7 +926,7 @@ test('a render that rejects fails THAT window with a coded error and is not retr
   assert.ok(audio);
   await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
   await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
-  assert.equal(calls, 1, 'the bytes were transferred to the worker — there is nothing to retry with');
+  assert.equal(calls, 1, 'the bytes were transferred to the worker - there is nothing to retry with');
   await audio.dispose();
   await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
 });

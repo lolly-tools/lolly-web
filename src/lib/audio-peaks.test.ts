@@ -204,7 +204,7 @@ test('cachedPeaks: a stored measurement round-trips through the store', async ()
   assert.ok(Math.abs(got.peaks[0]! - 0.5) < 0.01);
 });
 
-test('cachedPeaks: the second read is memoised — a scrolling grid does not re-query', async () => {
+test('cachedPeaks: the second read is memoised - a scrolling grid does not re-query', async () => {
   const store = fakeStore();
   reset(store);
   await storePeaks('a', new Float32Array(PEAK_BUCKETS).fill(1), 1000);
@@ -339,7 +339,7 @@ test('derivePeaks: a decode failure is null, and is not retried on the next scro
   assert.equal(host.calls, 1, 'a missing codec will not appear on the next scroll');
 });
 
-test('derivePeaks: an analysis with no peaks is null — never a manufactured shape', async () => {
+test('derivePeaks: an analysis with no peaks is null - never a manufactured shape', async () => {
   reset(fakeStore());
   const host = fakeHost({ empty: true });
   assert.equal(await derivePeaks(host, refOf('a'), 'a'), null,

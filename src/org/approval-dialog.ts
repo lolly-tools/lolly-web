@@ -103,7 +103,7 @@ async function submitApproval(body: ApprovalBody): Promise<{ ok: true } | { ok: 
     try {
       const err = (await res.json()) as { error?: string; code?: string };
       code = err?.error || err?.code;
-    } catch { /* non-JSON error body — generic message */ }
+    } catch { /* non-JSON error body - generic message */ }
     return { ok: false, code };
   } catch {
     return { ok: false };

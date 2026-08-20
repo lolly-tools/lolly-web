@@ -140,7 +140,7 @@ const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: 
   },
   shareTrigger: { render: () => triggerButton(t('Share…'), () => { openShareDialog({ toolId: 'qr-code', baseParts: ['url=https%3A%2F%2Fsuse.com'], currentFormat: 'png', title: t('Share this tool') }); }) },
   helpTip: {
-    render: () => { const h = helpTip(t('Chroma is how vivid a colour is — grey at the centre, vivid at the rim.'), { href: '#/components', text: t('Learn more') }); return `<span class="help-tip-host" style="display:inline-flex;align-items:center;gap:.4rem">${t('Chroma')} ${h.button}${h.pop}</span>`; },
+    render: () => { const h = helpTip(t('Chroma is how vivid a colour is - grey at the centre, vivid at the rim.'), { href: '#/components', text: t('Learn more') }); return `<span class="help-tip-host" style="display:inline-flex;align-items:center;gap:.4rem">${t('Chroma')} ${h.button}${h.pop}</span>`; },
   },
   proControl: { render: () => `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">${controlHtml({ type: 'select', options: [{ value: 'a', label: 'Option A' }, { value: 'b', label: 'Option B' }] } as never, 'a' as never, '')}${controlHtml({ type: 'number' } as never, 42 as never, '')}</div>` },
   validSteps: { render: () => stepsHtml({ history: [
@@ -266,7 +266,7 @@ function neutralizeMarkup(html: string): string {
 }
 
 export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promise<void> {
-  document.title = 'Components — Lolly';
+  document.title = 'Components - Lolly';
   viewEl.classList.add('cl-view', 'components-view');
 
   // A flat, ordered list of every specimen with the section it belongs to - so the
@@ -280,16 +280,16 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
     <div class="gallery-topright"></div>
     <header class="cl-head">
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
-      <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>
+      <p class="cl-sub">${escape(t('Live samples of the shell’s components - common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>
       <nav class="cl-jump" aria-label="${escape(t('Jump to section'))}">${jump}</nav>
     </header>
 
     <section class="cl-recs" aria-label="${escape(t('Still open'))}">
       <h2>${escape(t('Still open'))}</h2>
-      <p class="cl-recs-lede">${escape(t('The 2026-07 component audit is executed — the primitives below are what it produced. Per-recommendation history and each deliberate exception: plans/76-component-audit.md. Not yet done:'))}</p>
+      <p class="cl-recs-lede">${escape(t('The 2026-07 component audit is executed - the primitives below are what it produced. Per-recommendation history and each deliberate exception: plans/76-component-audit.md. Not yet done:'))}</p>
       <ul class="cl-open">
-        <li>Button-name fragmentation: <code>.pro-btn</code> vs bare <code>.btn</code> vs <code>.save-btn</code>/<code>.render-pill-save</code>/<code>.pro-sess-save</code> — frozen by the buttons.css attrition policy (no new members; a family migrates to <code>.btn</code> only when its view is rewritten wholesale).</li>
-        <li>projects.ts's view-options (filter) popover is still hand-rolled — only the context menus moved to <code>mountBodyPopover</code>.</li>
+        <li>Button-name fragmentation: <code>.pro-btn</code> vs bare <code>.btn</code> vs <code>.save-btn</code>/<code>.render-pill-save</code>/<code>.pro-sess-save</code> - frozen by the buttons.css attrition policy (no new members; a family migrates to <code>.btn</code> only when its view is rewritten wholesale).</li>
+        <li>projects.ts's view-options (filter) popover is still hand-rolled - only the context menus moved to <code>mountBodyPopover</code>.</li>
       </ul>
     </section>
 

@@ -71,7 +71,7 @@ test('a print format receives the run-level settings, exactly as before', () => 
   }
 });
 
-test('a non-print format receives NOTHING — not the run-level values, not the row\'s own', () => {
+test('a non-print format receives NOTHING - not the run-level values, not the row\'s own', () => {
   const none = { profile: undefined, bleed: undefined, marks: undefined };
   for (const fmt of ['png', 'jpeg', 'svg', 'webm', 'gif']) {
     assert.deepEqual(printSettingsFor({}, RUN, fmt), none, fmt);

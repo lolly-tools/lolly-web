@@ -421,7 +421,7 @@ test('nothing renders without the can bits, and nothing renders for a non-invite
   assert.equal(buildCollabInviteAction({ kind: 'collab' }, rig().deps), null);
 });
 
-test('an instance that grants nothing renders no action — the real gate, end to end', async () => {
+test('an instance that grants nothing renders no action - the real gate, end to end', async () => {
   reset();
   router = (url) => {
     if (url.includes('/api/auth/config')) return json({ mode: 'open', provider: 'oidc', loginPath: '/login' });

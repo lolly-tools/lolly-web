@@ -63,14 +63,14 @@ test('chromePaintsOverLive: non-painting chrome over the canvas is fine (url-sho
   ]), false);
 });
 
-test('chromePaintsOverLive: ancestors are exempt — their background paints below the canvas', () => {
+test('chromePaintsOverLive: ancestors are exempt - their background paints below the canvas', () => {
   const shot = box(0, 0, 1200, 630);
   assert.equal(chromePaintsOverLive([shot], [
     el(box(0, 0, 1200, 630), true, true),   // .url-shot wrapper
   ]), false);
 });
 
-test('chromePaintsOverLive: an EARLIER sibling still counts — z-index can lift it above', () => {
+test('chromePaintsOverLive: an EARLIER sibling still counts - z-index can lift it above', () => {
   // Document order is not paint order, so the guard has to consider every
   // painting element, not just the ones following the canvas.
   const wave = box(0, 0, 500, 500);

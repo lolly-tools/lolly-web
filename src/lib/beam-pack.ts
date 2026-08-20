@@ -911,7 +911,7 @@ export async function buildBeamOffer(source: BeamPackSource): Promise<BuiltBeamO
   const sessionBytes = sessionData ? encoder.encode(JSON.stringify(sessionData)) : null;
   const payloadCount = assets.length + (sessionBytes ? 1 : 0);
   if (payloadCount + 1 > PACK_MAX_ITEMS) {
-    throw new BeamPackError('too-many-items', `${payloadCount} items — split the pack`);
+    throw new BeamPackError('too-many-items', `${payloadCount} items - split the pack`);
   }
 
   // The one genuinely expensive step, and the only one that leaves the main thread.
@@ -1019,7 +1019,7 @@ export async function buildBeamOffer(source: BeamPackSource): Promise<BuiltBeamO
   // a pack refused by a parser is a worse failure than one refused here, by name.
   const framed = JSON.stringify({ v: 1, beamId: 'X'.repeat(26), t: 'offer', kind, name, items, totalBytes });
   if (framed.length > MAX_MESSAGE_CHARS) {
-    throw new BeamPackError('too-many-items', `offer frame is ${framed.length} chars — split the pack`);
+    throw new BeamPackError('too-many-items', `offer frame is ${framed.length} chars - split the pack`);
   }
 
   let live: (Blob | Uint8Array)[] | null = payloads;

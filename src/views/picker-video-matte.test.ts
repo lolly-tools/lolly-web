@@ -121,7 +121,7 @@ test('a VIDEO card gets Remove-background; a still raster gets the STILL cut-out
 
   const vidCard = p.querySelector<HTMLElement>(`[data-asset-id="${video.id}"]`)!.closest('.asset-picker-card')!;
   assert.ok(vidCard.querySelector(`[data-vidmatte-id="${video.id}"]`), 'the video card offers Remove background (video-job dialog)');
-  assert.equal(vidCard.querySelector('[data-matte-id]'), null, 'and NOT the still cut-out — a video is not a still');
+  assert.equal(vidCard.querySelector('[data-matte-id]'), null, 'and NOT the still cut-out - a video is not a still');
 
   const stillCard = p.querySelector<HTMLElement>(`[data-asset-id="${still.id}"]`)!.closest('.asset-picker-card')!;
   assert.ok(stillCard.querySelector(`[data-matte-id="${still.id}"]`), 'the still raster keeps its own data-matte-id path');

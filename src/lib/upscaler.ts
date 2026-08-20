@@ -403,7 +403,7 @@ async function runRealEsrgan(frame: UpscaleFrame, model: UpscaleModelInfo, opts:
   });
   const session = await loadSession(UPSCALE_MODEL_FILES[model.id], dl);
   if (!session) {
-    throw new Error(`The ${model.name} model isn't available on this device yet — it needs a one-time download and none is cached.`);
+    throw new Error(`The ${model.name} model isn't available on this device yet - it needs a one-time download and none is cached.`);
   }
   // Denoise is a general-model-only blend; skip silently if its WDN partner
   // isn't cached (fetch WITHOUT progress - it's an optional add-on to the run).
@@ -488,7 +488,7 @@ async function runGfpgan(frame: UpscaleFrame, model: UpscaleModelInfo, opts: Ups
   });
   const faceSession = await loadSession(UPSCALE_MODEL_FILES[model.id], dl);
   if (!faceSession) {
-    throw new Error(`The ${model.name} model isn't available on this device yet — it needs a one-time download and none is cached.`);
+    throw new Error(`The ${model.name} model isn't available on this device yet - it needs a one-time download and none is cached.`);
   }
   const { width: w, height: h, data } = frame;
   const srcCanvas = frameToCanvas(data, w, h);
@@ -640,7 +640,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
     if (!backend) {
       return {
         ok: false, reason: 'no-backend',
-        message: "This browser can't run the upscaler — it has neither WebAssembly nor WebGPU available. Try a current Chrome, Edge, Firefox or Safari.",
+        message: "This browser can't run the upscaler - it has neither WebAssembly nor WebGPU available. Try a current Chrome, Edge, Firefox or Safari.",
       };
     }
     const model = upscaleModel(opts.model ?? UPSCALE_DEFAULT_MODEL) ?? upscaleModel(UPSCALE_DEFAULT_MODEL)!;
@@ -659,7 +659,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
     if (nativeEdge > ABS_MAX_EDGE || nativePixels > ABS_MAX_PIXELS) {
       return {
         ok: false, reason: 'too-large',
-        message: `This image is already ${maxSrcEdge} px on its longest edge — enlarging it ${model.scale}× would exceed what the app can build in one pass. Upscaling is for small, low-resolution images; this one is large enough to use as it is.`,
+        message: `This image is already ${maxSrcEdge} px on its longest edge - enlarging it ${model.scale}× would exceed what the app can build in one pass. Upscaling is for small, low-resolution images; this one is large enough to use as it is.`,
         ...(model.id === 'gfpgan-v1.4' ? { suggestedModel: 'realesr-general-x4v3' as const } : {}),
       };
     }
@@ -682,7 +682,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
         ? 'realesr-general-x4v3' : undefined;
       return {
         ok: false, reason: 'memory',
-        message: `This device probably can't enlarge this image ${model.scale}× — it's likely to run out of memory building the full-resolution result. Try ${suggestedModel ? 'the lighter fast model, or ' : ''}a smaller source image.`,
+        message: `This device probably can't enlarge this image ${model.scale}× - it's likely to run out of memory building the full-resolution result. Try ${suggestedModel ? 'the lighter fast model, or ' : ''}a smaller source image.`,
         ...(suggestedModel ? { suggestedModel } : {}),
       };
     }

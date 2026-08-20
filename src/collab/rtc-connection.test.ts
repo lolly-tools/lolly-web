@@ -116,7 +116,7 @@ test('the inviter is never ephemeral and never waits for a seed it already holds
   });
   assert.equal(conn.ephemeral, false, 'section 6.2a: the inviter owns the saved session');
   assert.deepEqual(conn.seed, { url: 'https://suse.com' });
-  assert.equal(conn.seedLater, undefined, 'nothing to wait for — and waiting would delay its own remount');
+  assert.equal(conn.seedLater, undefined, 'nothing to wait for - and waiting would delay its own remount');
   assert.equal(clock.armed(SEED_WAIT_MS), 0, 'no seed deadline armed for a value we hold');
 });
 
@@ -124,7 +124,7 @@ test('the acceptor latches the seed off the hello that lands after `connected`',
   const wire = transport();
   const clock = timers();
   const conn = rtcCollabConnection({ role: 'acceptor', ceremony: ceremony(), transport: wire, timers: clock });
-  assert.equal(conn.seed, undefined, 'it cannot be known yet — that is the whole reason for the latch');
+  assert.equal(conn.seed, undefined, 'it cannot be known yet - that is the whole reason for the latch');
 
   // A hello with no seed is the ordinary "you'll receive it on connect" case and must not
   // end the wait; the frame that carries the seed is the one worth waiting for.
@@ -157,5 +157,5 @@ test('a seed arriving after the deadline cannot resurrect a settled wait', async
 
 test('the deadline is a bound on absurdity, not a budget anyone hits honestly', () => {
   assert.ok(SEED_WAIT_MS > 0 && SEED_WAIT_MS <= 3_000,
-    'the hello is the first frame on a channel that just opened — section 7 wants join-to-interactive under 3 s');
+    'the hello is the first frame on a channel that just opened - section 7 wants join-to-interactive under 3 s');
 });

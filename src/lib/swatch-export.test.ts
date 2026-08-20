@@ -148,7 +148,7 @@ test('swatchesToAse: header + one colour-entry block per resolved swatch, byte-e
 
   blockStart = readBlock('Primary Primary 5', [51, 85, 255]);
   blockStart = readBlock('Spectrum Blue', [0, 170, 102]);
-  assert.equal(blockStart, bytes.length, 'second block is the last — consumes exactly to EOF');
+  assert.equal(blockStart, bytes.length, 'second block is the last - consumes exactly to EOF');
 });
 
 test('exportSwatches: filename slugs the palette name, and picks the right MIME per format', () => {
@@ -189,7 +189,7 @@ test('exportSwatches handles every format in the union', () => {
   }
 });
 
-test('both enumerating UIs offer every format — none is reachable in only one', () => {
+test('both enumerating UIs offer every format - none is reachable in only one', () => {
   const editor = readFileSync(join(HERE, 'brand-editor.ts'), 'utf8');
   const catalog = readFileSync(join(HERE, '../views/catalog.ts'), 'utf8');
 

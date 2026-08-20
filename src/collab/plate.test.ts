@@ -212,7 +212,7 @@ test('a block with no usable bytes extends the stream instead of biasing it', as
   assert.deepEqual(
     [...first.slice(0, -1)],
     [...second.slice(0, -1)],
-    'only the counter moves between blocks — the fingerprints are hashed identically',
+    'only the counter moves between blocks - the fingerprints are hashed identically',
   );
 });
 
@@ -292,7 +292,7 @@ test('the native domain is separated from the DTLS domain, so plates never colli
   const h = fp(13);
   const asTranscript = await derivePlateFromTranscript(h);
   const asPairDegenerate = await derivePlate(h, h); // a degenerate DTLS pairing over the same bytes
-  assert.notEqual(asTranscript, asPairDegenerate, 'domain separation failed — the two plates match');
+  assert.notEqual(asTranscript, asPairDegenerate, 'domain separation failed - the two plates match');
 });
 
 test('an empty or oversized transcript hash is refused, never an approximate plate', async () => {

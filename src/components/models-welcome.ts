@@ -51,7 +51,7 @@ function seen(): boolean {
   try { return localStorage.getItem(SEEN_KEY) === '1'; } catch { return true; }
 }
 function markSeen(): void {
-  try { localStorage.setItem(SEEN_KEY, '1'); } catch { /* storage off — just won't persist */ }
+  try { localStorage.setItem(SEEN_KEY, '1'); } catch { /* storage off - just won't persist */ }
 }
 
 /** Are the pre-downloadable image models already on this device (a prior run, or
@@ -96,7 +96,7 @@ function renderContent(sizeLabel: string): string {
     <span class="mw-icon">${icon('download', { size: 30 })}</span>
     <p class="mw-eyebrow">${t('Lolly for desktop')}</p>
     <h2 class="mw-title">${t('Unlock the on-device AI tools')}</h2>
-    <p class="mw-sub">${t('Background removal, AI upscaling and text recognition run entirely on your machine — no cloud, nothing leaves the device. Download the models once and they work offline.')}</p>
+    <p class="mw-sub">${t('Background removal, AI upscaling and text recognition run entirely on your machine - no cloud, nothing leaves the device. Download the models once and they work offline.')}</p>
     <div class="mw-actions">
       <button type="button" class="btn btn--primary mw-download" data-act="download">
         ${icon('download', { size: 18 })} ${t('Download AI models')} <span class="mw-size">· ~${escape(sizeLabel)}</span>
@@ -107,7 +107,7 @@ function renderContent(sizeLabel: string): string {
       <div class="mw-progress-label"><span class="mw-progress-part"></span><span class="mw-progress-pct"></span></div>
       <span class="job-bar"><span class="job-bar-fill" style="width:0%"></span></span>
     </div>
-    <div class="mw-done" data-done hidden>${icon('circleCheck', { size: 20 })} <span>${t('All set — the AI tools are ready.')}</span></div>
+    <div class="mw-done" data-done hidden>${icon('circleCheck', { size: 20 })} <span>${t('All set - the AI tools are ready.')}</span></div>
     <p class="mw-note">${t('You can manage these any time from your Profile, under “Available offline”. Voice and other models download automatically the first time you use them.')}</p>`;
 }
 

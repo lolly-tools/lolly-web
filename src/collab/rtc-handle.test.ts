@@ -660,7 +660,7 @@ test('an edit made mid-exchange, if the lane drops it, is not swallowed by the e
   pair.advance(1_000);
   assert.deepEqual(
     pair.b.params(), { one: 'one', two: 'two', three: 'three', four: 'four', five: 'five' },
-    'the exchange completed — but it was never snapshotted with the sixth key',
+    'the exchange completed - but it was never snapshotted with the sixth key',
   );
   assert.equal(pair.b.params().midway, undefined, "and 'midway' is correctly still missing");
 

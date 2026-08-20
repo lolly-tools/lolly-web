@@ -41,7 +41,7 @@ const catalogs = readdirSync(LOCALES_DIR)
   .map((f) => ({ lang: f.replace(/\.json$/, ''), path: join(LOCALES_DIR, f) }));
 
 test('sanity: the locale catalogs were actually found', () => {
-  assert.ok(catalogs.length >= 20, `only ${catalogs.length} catalogs — did locales/ move?`);
+  assert.ok(catalogs.length >= 20, `only ${catalogs.length} catalogs - did locales/ move?`);
 });
 
 test('every translation carries the same placeholders as its English key', () => {
@@ -62,13 +62,13 @@ test('every translation carries the same placeholders as its English key', () =>
       }
     }
   }
-  assert.ok(checked >= 100, `only ${checked} placeholder-bearing strings seen — the scan is not finding them`);
-  assert.equal(problems.length, 0, `\nPlaceholder mismatch — these will render wrong or throw:\n${problems.slice(0, 30).join('\n')}\n${problems.length > 30 ? `…and ${problems.length - 30} more\n` : ''}`);
+  assert.ok(checked >= 100, `only ${checked} placeholder-bearing strings seen - the scan is not finding them`);
+  assert.equal(problems.length, 0, `\nPlaceholder mismatch - these will render wrong or throw:\n${problems.slice(0, 30).join('\n')}\n${problems.length > 30 ? `…and ${problems.length - 30} more\n` : ''}`);
 });
 
 test('glossary neverTranslate terms survive translation', () => {
   const never: string[] = (JSON.parse(readFileSync(GLOSSARY, 'utf8')) as { neverTranslate: string[] }).neverTranslate;
-  assert.ok(never.length >= 3, 'glossary.neverTranslate looks empty — has it moved?');
+  assert.ok(never.length >= 3, 'glossary.neverTranslate looks empty - has it moved?');
 
   const problems: string[] = [];
   let checked = 0;
@@ -89,7 +89,7 @@ test('glossary neverTranslate terms survive translation', () => {
       }
     }
   }
-  assert.ok(checked >= 20, `only ${checked} neverTranslate occurrences seen — the scan is not finding them`);
+  assert.ok(checked >= 20, `only ${checked} neverTranslate occurrences seen - the scan is not finding them`);
   assert.equal(problems.length, 0, `\nA protected term was translated away:\n${problems.slice(0, 20).join('\n')}\n`);
 });
 
@@ -110,7 +110,7 @@ test('every catalog carries exactly the same key set', () => {
     keys: new Set(Object.keys(JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>)),
   }));
   const union = new Set(sets.flatMap((s) => [...s.keys]));
-  assert.ok(union.size > 1000, `only ${union.size} keys across every catalog — did the corpus shrink?`);
+  assert.ok(union.size > 1000, `only ${union.size} keys across every catalog - did the corpus shrink?`);
 
   const problems: string[] = [];
   for (const { lang, keys } of sets) {
@@ -144,7 +144,7 @@ test('every hand-listed spa key reached every catalog', () => {
   // from source that is missing from a catalog is a stale catalog, which is what the
   // union comparison above already reports.
   const extra = JSON.parse(readFileSync(EXTRA_KEYS, 'utf8')) as string[];
-  assert.ok(extra.length > 100, `only ${extra.length} hand-listed keys — extra-keys.spa.json moved or shrank`);
+  assert.ok(extra.length > 100, `only ${extra.length} hand-listed keys - extra-keys.spa.json moved or shrank`);
 
   const problems: string[] = [];
   for (const { lang, path } of catalogs) {
@@ -195,7 +195,7 @@ test('no translation is left as an untranslated English echo of a long string', 
     const cat = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
     const { graded, echoed } = echoStats(cat, SUBSTANTIAL);
     if (graded >= 50 && echoed > graded * 0.25) {
-      problems.push(`${lang}: ${echoed}/${graded} long strings are identical to English — a wave probably did not finish`);
+      problems.push(`${lang}: ${echoed}/${graded} long strings are identical to English - a wave probably did not finish`);
     }
   }
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
@@ -234,11 +234,11 @@ test('no catalog is an English echo end to end', () => {
     // without anyone having to touch the ratio below.
     assert.ok(
       graded >= Object.keys(cat).length * 0.9,
-      `${lang}: IDENTICAL_OK excuses ${Object.keys(cat).length - graded} of ${Object.keys(cat).length} strings — `
+      `${lang}: IDENTICAL_OK excuses ${Object.keys(cat).length - graded} of ${Object.keys(cat).length} strings - `
       + 'the allowlist names a handful of universals, it does not shrink the sample',
     );
     if (echoed > graded * 0.9) {
-      problems.push(`${lang}: ${echoed}/${graded} values are byte-identical to their English key — this catalog is the English fallback, not a translation`);
+      problems.push(`${lang}: ${echoed}/${graded} values are byte-identical to their English key - this catalog is the English fallback, not a translation`);
     }
   }
   assert.deepEqual(problems, [], `\n${problems.join('\n')}\n`);
@@ -255,13 +255,13 @@ test('the echo guards fail a wholly-English catalog and clear a translated one',
   // wave looks like. A comparison flipped or a threshold nudged past 1 fails here, on a
   // fixture, rather than the next time a locale quietly ships English.
   const keys = [...new Set(catalogs.flatMap(({ path }) => Object.keys(JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>)))];
-  assert.ok(keys.length >= 500, `only ${keys.length} boot keys — the fixtures below are not representative`);
+  assert.ok(keys.length >= 500, `only ${keys.length} boot keys - the fixtures below are not representative`);
 
   const untranslated = Object.fromEntries(keys.map((k) => [k, k]));
   const translated = Object.fromEntries(keys.map((k) => [k, IDENTICAL_OK.has(k) ? k : `«${k}»`]));
 
   const eSub = echoStats(untranslated, SUBSTANTIAL);
-  assert.ok(eSub.graded >= 50, `only ${eSub.graded} substantial strings — the first guard would not even run`);
+  assert.ok(eSub.graded >= 50, `only ${eSub.graded} substantial strings - the first guard would not even run`);
   assert.ok(eSub.echoed > eSub.graded * 0.25, 'the substantial-sample guard no longer fires on an all-English catalog');
 
   const eAll = echoStats(untranslated, GRADEABLE);
@@ -270,5 +270,5 @@ test('the echo guards fail a wholly-English catalog and clear a translated one',
   // The other direction, so neither guard can be "strengthened" into flagging real work.
   const tSub = echoStats(translated, SUBSTANTIAL);
   assert.ok(!(tSub.graded >= 50 && tSub.echoed > tSub.graded * 0.25), 'the substantial-sample guard flags a translated catalog');
-  assert.equal(echoStats(translated, GRADEABLE).echoed, 0, 'a translated catalog still reads as echoed — the comparison is wrong');
+  assert.equal(echoStats(translated, GRADEABLE).echoed, 0, 'a translated catalog still reads as echoed - the comparison is wrong');
 });

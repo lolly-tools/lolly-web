@@ -183,7 +183,7 @@ test('an Add calls addColors once for that candidate and marks it added', async 
   await settle();
 
   assert.equal(added.length, 1, 'one press, one call');
-  assert.deepEqual(added[0], [{ value: '#7c3aed', hex: '#7c3aed' }], 'one entry per call — one add is one token');
+  assert.deepEqual(added[0], [{ value: '#7c3aed', hex: '#7c3aed' }], 'one entry per call - one add is one token');
   assert.deepEqual(tray.calls, ['markAdded:color-#7c3aed']);
   assert.equal(ui.count(), 1, 'the added candidate is no longer pending');
   ui.teardown();
@@ -201,7 +201,7 @@ test('Add all adds n colours in n separate calls and marks each one', async () =
   el.querySelector<HTMLElement>('[data-ds-tray-all="color"]')!.click();
   await settle();
 
-  assert.equal(added.length, 3, 'three candidates, three calls — never one batched call');
+  assert.equal(added.length, 3, 'three candidates, three calls - never one batched call');
   assert.ok(added.every((call) => call.length === 1));
   assert.deepEqual(tray.calls, ['markAdded:color-#111111', 'markAdded:color-#222222', 'markAdded:color-#333333']);
   assert.equal(ui.count(), 0);
@@ -302,7 +302,7 @@ test('on a phone the sheet driver attaches, and Escape folds before it closes', 
 
     assert.equal(ui.collapse(), true, 'the first Escape folds the sheet');
     assert.equal(el.getAttribute('data-ds-tray-sheet'), 'peek');
-    assert.equal(ui.isOpen(), true, 'folding is not closing — the tray stays reachable');
+    assert.equal(ui.isOpen(), true, 'folding is not closing - the tray stays reachable');
     assert.equal(ui.collapse(), false, 'a peeking sheet hands Escape on to whatever is behind it');
 
     ui.close();
@@ -396,7 +396,7 @@ test('an empty tray never opens, however it is asked', () => {
   assert.equal(ui.count(), 0);
 
   ui.open();
-  assert.equal(ui.isOpen(), false, 'open() refuses — the guard in render() only fires on an OPEN tray');
+  assert.equal(ui.isOpen(), false, 'open() refuses - the guard in render() only fires on an OPEN tray');
   ui.toggle();
   assert.equal(ui.isOpen(), false, 'and so does the toggle');
   assert.deepEqual(opens, [], 'the view is never told to resync a panel that did not appear');

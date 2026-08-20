@@ -153,7 +153,7 @@ test('sortUnits: ascending by z, ties keep tree order (Appendix E steps 3 and 9)
   assert.deepEqual(items.map(i => i.id), ['a', 'b', 'c', 'd', 'e', 'f']);
 });
 
-test('sortUnits: the measured carousel case — declared 40,30,20 must paint 20,30,40', () => {
+test('sortUnits: the measured carousel case - declared 40,30,20 must paint 20,30,40', () => {
   // The real `a.gcar-deck` stack on the gallery fixture: three absolutely
   // positioned siblings whose DOM order is the exact REVERSE of paint order.
   const deck = [{ z: 40, id: 'front' }, { z: 30, id: 'mid' }, { z: 20, id: 'back' }];

@@ -115,7 +115,7 @@ test('dormant: a 200 HTML page (misrouted /api) is NOT mistaken for a control pl
   assert.equal(await initOrg(), null);
 });
 
-test('dormant negative is remembered — a later boot skips even the probe', async () => {
+test('dormant negative is remembered - a later boot skips even the probe', async () => {
   reset();
   await initOrg();
   assert.ok(fetchLog.length >= 1, 'first boot probes once');
@@ -274,7 +274,7 @@ test('member export capabilities + per-tool approvalChain populate the export-po
   assert.equal(policy!.approvalChainFor('poster'), 'legal-review');
   assert.equal(policy!.approvalChainFor('qr-code'), undefined, 'a tool without approvalChain is ungated');
   assert.deepEqual(policy!.formatsFor('event-badge'), ['svg', 'pdf'], 'per-tool format policy reaches the seam');
-  assert.deepEqual(policy!.formatsFor('poster'), [], 'an empty list is a real policy, passed through — the view decides');
+  assert.deepEqual(policy!.formatsFor('poster'), [], 'an empty list is a real policy, passed through - the view decides');
   assert.equal(policy!.formatsFor('qr-code'), undefined, 'a tool without a format policy is unrestricted');
   assert.equal(exportAffordance(policy), 'request-approval', 'withheld-but-requestable → the approval CTA');
   // A member registers the approval opener (so the swapped CTA can open the flow).
@@ -290,7 +290,7 @@ test('export.download absent defaults to allowed (byte-identical to today)', asy
   });
   await initOrg();
   const policy = getExportPolicy();
-  assert.equal(policy!.canDownload, true, 'unspecified download stays allowed — only explicit false withholds');
+  assert.equal(policy!.canDownload, true, 'unspecified download stays allowed - only explicit false withholds');
   assert.equal(exportAffordance(policy), 'download');
 });
 
@@ -354,7 +354,7 @@ test('resilient cache: a failed refetch within TTL falls back to the cached poli
 
   assert.equal(r!.gate, false);
   assert.equal(orgConfig()?.instance.name, 'Acme', 'served the cached org-config, not dropped policy');
-  assert.equal(getExportPolicy()!.canDownload, true, 'cached policy honoured — NOT failed closed');
+  assert.equal(getExportPolicy()!.canDownload, true, 'cached policy honoured - NOT failed closed');
   assert.equal(exportAffordance(getExportPolicy()), 'download');
   assert.equal(getInputPolicy('qr-code', 'url'), undefined, 'inputs not force-locked when a valid cache exists');
 });
@@ -383,7 +383,7 @@ test('resilient cache: no cache + unreachable org-config ⇒ fail closed (never 
   reset();
   memberPlane(() => { throw new Error('offline'); }); // org-config network error
   const r = await initOrg();
-  assert.equal(r!.gate, false, 'the app still mounts — an outage is a non-event, not a gate');
+  assert.equal(r!.gate, false, 'the app still mounts - an outage is a non-event, not a gate');
   assert.equal(orgConfig(), null);
   assert.equal(getExportPolicy()!.canDownload, false, 'export fails closed with no cache');
   assert.equal(exportAffordance(getExportPolicy()), 'request-approval');

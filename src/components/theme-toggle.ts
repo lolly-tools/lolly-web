@@ -45,7 +45,7 @@ export function createThemeToggle(
   const paint = (theme: string) => {
     btn.dataset.theme = theme;
     btn.innerHTML = icons[theme] ?? '';
-    const label = tRaw('Theme: {name} — switch theme', { name: t(labels[theme] ?? theme) });
+    const label = tRaw('Theme: {name} - switch theme', { name: t(labels[theme] ?? theme) });
     btn.setAttribute('aria-label', label);
     btn.title = label;
   };

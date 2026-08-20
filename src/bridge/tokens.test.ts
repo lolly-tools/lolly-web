@@ -88,7 +88,7 @@ test('fresh boot (IDB open, asset-meta empty → resolves NULL) still reaches th
   assert.deepEqual(fetchLog, ['/catalog/assets/index.json', '/catalog/assets/acme/tokens/brand.json']);
 });
 
-test('total failure yields an empty set that is never cached — the next call retries', async () => {
+test('total failure yields an empty set that is never cached - the next call retries', async () => {
   stubFetch({}); // index fetch 404s too
   let blob: Blob | null = null;
   const api = createTokensAPI({ assets: {
@@ -149,7 +149,7 @@ const CATALOG_TOKENS = () => ({
   blobs: { 'lolly/tokens/brand:json:1.0.0': docBlob(DOC) },
 });
 
-test('a user tokens asset wins discovery over the catalog brand — its doc is served', async () => {
+test('a user tokens asset wins discovery over the catalog brand - its doc is served', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb({
     ...CATALOG_TOKENS(),
@@ -160,7 +160,7 @@ test('a user tokens asset wins discovery over the catalog brand — its doc is s
   assert.equal(await api.resolve('{color.brand.jungle}'), '#123456'); // DOC2 (user), not the catalog DOC
 });
 
-test('installUserTokens writes + busts — the very next resolve() sees the new doc', async () => {
+test('installUserTokens writes + busts - the very next resolve() sees the new doc', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
   const tokens = createTokensAPI({ assets });
@@ -216,7 +216,7 @@ test('a version write is refused unless it is asked for in words', async () => {
   assert.equal(await assets._getBlob('user/tokens/brand/v1'), null);
 });
 
-test('a version write needs a readable head — an unverifiable write is refused, not guessed', async () => {
+test('a version write needs a readable head - an unverifiable write is refused, not guessed', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
   // A host slice with no _getBlob: immutability cannot be checked, so it fails closed.
@@ -243,7 +243,7 @@ test('a slug already in the ledger is refused (VersionExistsError) and the store
   assert.equal(await stored?.text(), JSON.stringify(DOC), 'the published bytes were not replaced');
 });
 
-test('an ORPHAN version asset is reclaimable — the LEDGER is what makes a version permanent', async () => {
+test('an ORPHAN version asset is reclaimable - the LEDGER is what makes a version permanent', async () => {
   stubFetch({});
   // A half-finished publish: the asset landed, the ledger write did not.
   const assets = createAssetsAPI(memDb({
@@ -259,7 +259,7 @@ test('an ORPHAN version asset is reclaimable — the LEDGER is what makes a vers
   assert.equal(await (await assets._getBlob('user/tokens/brand/v1'))?.text(), JSON.stringify(DOC2));
 });
 
-test('a version payload carrying a ledger is refused — the list belongs to the head', async () => {
+test('a version payload carrying a ledger is refused - the list belongs to the head', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
   const host = { assets, tokens: createTokensAPI({ assets }) };
@@ -268,7 +268,7 @@ test('a version payload carrying a ledger is refused — the list belongs to the
     /must not carry a version ledger/);
 });
 
-test('a version write leaves the head alone — no bust, no new head record', async () => {
+test('a version write leaves the head alone - no bust, no new head record', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb({
     ...CATALOG_TOKENS(),
@@ -382,7 +382,7 @@ function versionedDb(active: string | null) {
   });
 }
 
-test('an ACTIVE version is what the default reads answer for — chrome and canvas cannot disagree', async () => {
+test('an ACTIVE version is what the default reads answer for - chrome and canvas cannot disagree', async () => {
   stubFetch({});
   const api = createTokensAPI({ assets: createAssetsAPI(versionedDb('v1')) });
   assert.equal(await api.activeSlug(), 'v1');
@@ -417,7 +417,7 @@ test('?designv= beats the active version, and designv=latest previews the head',
   at('#/t/qr-code?designv=latest');
   assert.equal(await api.activeSlug(), 'latest');
   assert.equal(await api.resolve('{color.brand.jungle}'), '#123456',
-    'an author previews the edit head over an active version — the accept criterion of section 6a');
+    'an author previews the edit head over an active version - the accept criterion of section 6a');
 
   at('#/t/qr-code');
   assert.equal(await api.resolve('{color.brand.jungle}'), '#30ba78', 'and leaving the link restores the active version');
@@ -500,7 +500,7 @@ test('isLocked reflects the SHIPPED catalog flag (true for a locked brand, false
   assert.equal(await open.isLocked(), false);
 });
 
-test('a locked brand IGNORES a pre-existing user tokens asset — the catalog doc is served', async () => {
+test('a locked brand IGNORES a pre-existing user tokens asset - the catalog doc is served', async () => {
   stubFetch({});
   const assets = createAssetsAPI(memDb({
     ...LOCKED_CATALOG_TOKENS(),
@@ -563,7 +563,7 @@ test('applyBrandVars sets the seven slots under the --brand-* namespace, never t
   assert.equal(props.has('--primary'), false);
 });
 
-test('applyBrandVars treats alias residue as a missing slot — removed, never injected verbatim', async () => {
+test('applyBrandVars treats alias residue as a missing slot - removed, never injected verbatim', async () => {
   const { el, props } = stubEl({ '--brand-surface': '#eeeeee' }); // stale value from a prior brand
   await applyBrandVars(el, hostFor({ primary: '#30ba78', surface: '{color.ramp.neutral.9}' }));
   assert.equal(props.get('--brand-primary'), '#30ba78');

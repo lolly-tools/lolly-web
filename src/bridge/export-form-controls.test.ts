@@ -69,7 +69,7 @@ async function render(markup: string): Promise<string> {
 const root = (inner: string) =>
   `<div id="root" style="width:400px;height:200px;background:#fff;font:14px/1.4 sans-serif">${inner}</div>`;
 
-test('an input\'s value reaches the output — the blank-field defect', { skip: SKIP }, async () => {
+test('an input\'s value reaches the output - the blank-field defect', { skip: SKIP }, async () => {
   const svg = await render(root(`<input value="https://lolly.tools" style="width:300px">`));
   assert.match(svg, />https:\/\/lolly\.tools</, 'expected the input value as text');
 });
@@ -149,6 +149,6 @@ test('the mirror element used for layout does not survive the export', { skip: S
       await (window as any).__render(document.getElementById('root'), { convertPaths: false, rasterFallback: false });
       return [before, document.body.children.length];
     });
-    assert.deepEqual(bodyKids[0], bodyKids[1], 'the throwaway mirror must be removed — an export must not mutate the page');
+    assert.deepEqual(bodyKids[0], bodyKids[1], 'the throwaway mirror must be removed - an export must not mutate the page');
   } finally { await b.close(); }
 });

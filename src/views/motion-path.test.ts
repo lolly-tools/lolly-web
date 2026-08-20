@@ -156,7 +156,7 @@ const nums = (el: SVGElement): number[] =>
 
 // ── (a) + (b): where the layer lives ──────────────────────────────────────────
 
-test('(a) the path layer is NOT inside the canvas — outside the node runtime.export sees', () => {
+test('(a) the path layer is NOT inside the canvas - outside the node runtime.export sees', () => {
   const f = mount([moving()]);
   try {
     const layer = f.layer();
@@ -227,7 +227,7 @@ test('export byte-identity: the artboard is not touched at all, so exports do no
 
 // ── geometry ──────────────────────────────────────────────────────────────────
 
-test('the polyline is the model path through the injected metrics — the outline’s own map', () => {
+test('the polyline is the model path through the injected metrics - the outline’s own map', () => {
   const f = mount([moving()]);
   try {
     f.handle.paint(['a']);
@@ -260,7 +260,7 @@ test('a diamond is drawn at every keyframe inside the window, at the projected p
   } finally { f.teardown(); }
 });
 
-test('a keyframe authored PAST the out-point gets no mark — the path draws what plays', () => {
+test('a keyframe authored PAST the out-point gets no mark - the path draws what plays', () => {
   const f = mount([moving({ kf: 't0_x0*t1000_el_x100*t4000_x300', dur: 1 })]);
   try {
     f.handle.paint(['a']);
@@ -281,7 +281,7 @@ test('a box with no track, or one key, draws nothing at all', () => {
   }
 });
 
-test('a track that animates only OPACITY draws nothing — there is no travel to show', () => {
+test('a track that animates only OPACITY draws nothing - there is no travel to show', () => {
   const f = mount([moving({ kf: 't0_o1*t1000_el_o0' })]);
   try {
     f.handle.paint(['a']);
@@ -309,7 +309,7 @@ test('an UNSELECTED animated box is not drawn, and a selected CAMERA is skipped'
   } finally { f.teardown(); }
 });
 
-test('a tool with no `kf` field never draws — progressive capability, not a special case', () => {
+test('a tool with no `kf` field never draws - progressive capability, not a special case', () => {
   const doc = dom.window.document;
   const stage = doc.createElement('div');
   const overlay = doc.createElement('div');
@@ -329,7 +329,7 @@ test('a tool with no `kf` field never draws — progressive capability, not a sp
 
 // ── the camera moves the path ─────────────────────────────────────────────────
 
-test('a moving CAMERA bends the path — a flat one would lie about what the export does', () => {
+test('a moving CAMERA bends the path - a flat one would lie about what the export does', () => {
   // The camera's window covers the whole clip (windows are half-open, so a `dur` of 1
   // would leave the box's LAST sample - at exactly t = 1000 - outside it and back on
   // the default camera, which is a real rule and a poor probe of this one).
@@ -348,7 +348,7 @@ test('a moving CAMERA bends the path — a flat one would lie about what the exp
     const pts = nums(panned.lines()[0]!);
     assert.equal(pts[0], flatPts[0], 'both start where the camera is still at 0');
     assert.notEqual(pts[pts.length - 2], flatPts[flatPts.length - 2],
-      'and diverge as the camera pans — section 6.5: a path must be projected or it lies');
+      'and diverge as the camera pans - section 6.5: a path must be projected or it lies');
     // camX = +200 subtracts from the projected centre at eff = 1: 300 − 200 = 100.
     assert.equal(pts[pts.length - 2], sx(100));
   } finally { panned.teardown(); }
@@ -381,13 +381,13 @@ test('reduced motion: the flow stroke is NOT MINTED, and the layer says so', () 
     html.setAttribute('data-a11y-motion', 'reduce');
     f.handle.paint(['a']);
     assert.equal(f.flows().length, 0,
-      'the one ANIMATED affordance is gone — omitted, not merely styled away');
+      'the one ANIMATED affordance is gone - omitted, not merely styled away');
     assert.equal(f.lines().length, 1, 'the PATH itself stays: geometry is information');
     assert.equal(f.layer().getAttribute('data-motion'), 'still');
 
     html.removeAttribute('data-a11y-motion');
     f.handle.paint(['a']);
-    assert.equal(f.flows().length, 1, 'and it comes back — a gate, not a latch');
+    assert.equal(f.flows().length, 1, 'and it comes back - a gate, not a latch');
   } finally { html.removeAttribute('data-a11y-motion'); f.teardown(); }
 });
 
@@ -420,11 +420,11 @@ test('motion-path.css: layered, pointer-transparent, and the flow has both a11y 
     .replace(/\/\*[\s\S]*?\*\//g, ' ');
   assert.match(css, /@layer views \{/, 'a lazy sheet must declare its layer, not rely on load order');
   assert.match(css, /\.mp-layer \{[^}]*pointer-events:\s*none/,
-    'belt and braces over .fc-overlay — a path must never be hit-testable');
+    'belt and braces over .fc-overlay - a path must never be hit-testable');
   // The PATH is solid: in this design language a dashed line is a drop area, and the
   // resting state of the overlay must not borrow that meaning.
   assert.equal(/\.mp-line \{[^}]*stroke-dasharray/.test(css), false,
-    'the path itself must stay solid — only the additive flow stroke may dash');
+    'the path itself must stay solid - only the additive flow stroke may dash');
   assert.equal(/border[^:]*:\s*[^;]*dashed/.test(css), false,
     'dashed borders are reserved for drop areas throughout this shell');
   // Both belt-and-braces gates on the one animated thing, beside the OS block each

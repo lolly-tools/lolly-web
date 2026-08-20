@@ -161,7 +161,7 @@ test('no dpi and no metadata writes no pHYs / iTXt / iCCP (negative control)', a
   const png = await encodeHdrPng16(solid(8, 4, 10, 10, 10), { width: 8, height: 4, hdr: NO_BOOST });
   const cs = chunks(png);
   for (const t of ['pHYs', 'iTXt', 'iCCP']) assert.equal(first(cs, t), undefined, `${t} absent`);
-  assert.ok(first(cs, 'cICP'), 'cICP is unconditional — it is the HDR signal');
+  assert.ok(first(cs, 'cICP'), 'cICP is unconditional - it is the HDR signal');
 });
 
 // ── the signal it carries ───────────────────────────────────────────────────
@@ -194,7 +194,7 @@ test('the brand boost is real: a matched colour lands materially above the unboo
 
 // ── the honesty claim: these are generated bits, not padding ─────────────────
 
-test('the low byte carries generated signal — not a v*257 replication of 8 bits', async () => {
+test('the low byte carries generated signal - not a v*257 replication of 8 bits', async () => {
   // A full grey ramp: 256 distinct inputs, so any structure is the transform's.
   const w = 256, h = 1;
   const px = new Uint8ClampedArray(w * 4);
@@ -216,7 +216,7 @@ test('the low byte carries generated signal — not a v*257 replication of 8 bit
   }
   assert.ok(padded < 8, `${padded}/256 samples look like 8-bit padding (v*257)`);
   assert.ok(echoed < 8, `${echoed}/256 samples have low byte === high byte (the padding signature)`);
-  assert.ok(lowSet.size > 64, `only ${lowSet.size} distinct low bytes — expected the PQ curve to spread them`);
+  assert.ok(lowSet.size > 64, `only ${lowSet.size} distinct low bytes - expected the PQ curve to spread them`);
 
   // The banding defect this replaces, demonstrated: two adjacent bright greys
   // collapse to ONE 8-bit PQ code, and stay distinct at 16 bits.

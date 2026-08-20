@@ -100,7 +100,7 @@ test('two stacked linear-gradients emit TWO gradients, not one merged stop list'
     // The defect's signature: offsets that go backwards inside one element.
     for (const offs of gradientOffsets(svg)) {
       assert.ok(offs.every((o, i) => i === 0 || o >= offs[i - 1]!),
-        `stop offsets must not decrease inside one gradient — got ${offs.join(', ')}`);
+        `stop offsets must not decrease inside one gradient - got ${offs.join(', ')}`);
     }
   });
 

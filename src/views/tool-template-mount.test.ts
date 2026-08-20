@@ -77,11 +77,11 @@ function bodyAfter(src: string, head: string): string {
 const CODE = stripComments(readFileSync(join(HERE, 'tool.ts'), 'utf8'));
 const CHOOSER = stripComments(readFileSync(join(HERE, 'template-chooser.ts'), 'utf8'));
 
-test('nothing awaits the template chooser — the mount is never gated on a human click', () => {
+test('nothing awaits the template chooser - the mount is never gated on a human click', () => {
   assert.match(CODE, /openTemplateChooser\s*\(/, 'the chooser is still opened from mountTool');
   assert.ok(
     !/\bawait\s+openTemplateChooser\s*\(/.test(CODE),
-    'the chooser is never awaited — anywhere, handle included. Awaiting it puts ' +
+    'the chooser is never awaited - anywhere, handle included. Awaiting it puts ' +
       'createRuntime behind a human click, which IS the open delay this guards',
   );
   assert.ok(
@@ -105,14 +105,14 @@ test('the chooser is still STARTED before the mount, and only APPLIED after it',
   assert.ok(create < apply, 'the seed can only be applied once the runtime exists');
 });
 
-test('the pick is seeded with applyPatch — no undo step, no collab echo, one render', () => {
+test('the pick is seeded with applyPatch - no undo step, no collab echo, one render', () => {
   const block = bodyAfter(CODE, 'if (templatePick) {');
   assert.match(block, /runtime\.applyPatch\(/, 'the seed goes through the engine atomic apply');
   assert.match(block, /migrateBlockRowIds\(runtime\)/,
     'rows arriving after the mount-time migration still need their stable ids');
   assert.ok(
     !/setInput/.test(block),
-    'setInput is the undo-history wrapper — seeding through it makes ⌘Z erase the template',
+    'setInput is the undo-history wrapper - seeding through it makes ⌘Z erase the template',
   );
   // Precedence must match the pre-mount merge it replaced (`{...chosen, ...initialValues}`):
   // a key the URL/profile already supplied wins, so it never reaches the patch.
@@ -120,7 +120,7 @@ test('the pick is seeded with applyPatch — no undo step, no collab echo, one r
     'a profile/URL-supplied key must still win over the template, as it did pre-mount');
 });
 
-test('the deterministic `?template=` seed stays awaited — export remounts depend on it', () => {
+test('the deterministic `?template=` seed stays awaited - export remounts depend on it', () => {
   // No human in the loop there: an off-screen scene/export remount re-parses the URL and
   // must have the values in the model before the first hydrate, or it renders blank.
   assert.match(CODE, /await\s+fetchTemplateValues\(/,
@@ -153,7 +153,7 @@ test('the chooser yields the main thread around every preview render', () => {
 
 test('a navigate-away before the pick lands cannot patch a torn-down runtime', () => {
   assert.match(CODE, /let templatePickTornDown = false;/,
-    'the latch — set once by _cleanup, read by both the open path and the pick handler');
+    'the latch - set once by _cleanup, read by both the open path and the pick handler');
   assert.match(CODE, /let templatePickClose: \(\(\) => void\) \| null = null;/,
     'the modal-close handle, armed once the chooser actually opens (onOpen, below)');
 
@@ -167,7 +167,7 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
   assert.match(
     openCall,
     /onOpen: close => \{ if \(templatePickTornDown\) close\(\); else templatePickClose = close; \}/,
-    'the close handle is armed onto the holder — or fired immediately if teardown already landed',
+    'the close handle is armed onto the holder - or fired immediately if teardown already landed',
   );
 
   // Applying: the SAME latch is checked before the patch (skips it outright) and again
@@ -229,5 +229,5 @@ test('the chooser hands back a working close only once the modal is real', () =>
   assert.notEqual(onOpenAt, -1);
   assert.ok(finishAt < onOpenAt, 'onOpen must fire after `finish` exists, since it closes over it');
   assert.match(CHOOSER, /opts\.onOpen\?\.\(\(\) => finish\(\{\}\)\);/,
-    'closing resolves blank — identical to Escape / backdrop / ×, and idempotent (settled guard)');
+    'closing resolves blank - identical to Escape / backdrop / ×, and idempotent (settled guard)');
 });

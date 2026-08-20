@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Ambient declarations for export vendor libraries that ship no type
-// definitions. Only the surface the export bridge actually uses is declared —
+// definitions. Only the surface the export bridge actually uses is declared -
 // narrow, honest contracts rather than `any`.
 
 declare module 'dom-to-image-more' {
@@ -42,7 +42,7 @@ declare module 'dom-to-image-more' {
 declare module 'butterchurn' {
   export interface ButterchurnVisualizer {
     connectAudio(node: AudioNode): void;
-    /** Selective — unhooks only this node's branch into butterchurn's tap. */
+    /** Selective - unhooks only this node's branch into butterchurn's tap. */
     disconnectAudio(node: AudioNode): void;
     loadPreset(preset: import('./lib/viz-presets.ts').VizPreset, blendSeconds?: number): void;
     setRendererSize(width: number, height: number, opts?: Record<string, number>): void;

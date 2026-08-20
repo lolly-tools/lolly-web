@@ -26,7 +26,7 @@ test('returns exactly 3 previews, each a non-empty SVG starting with <svg', () =
   }
 });
 
-test('the scenes are self-contained — no <script>, external <image>, or url() refs', () => {
+test('the scenes are self-contained - no <script>, external <image>, or url() refs', () => {
   const all = palettePreviewSvgs(SUSE).map((p) => p.svg).join('\n');
   assert.ok(!/<script/i.test(all), 'no <script>');
   assert.ok(!/<image/i.test(all), 'no <image>');
@@ -42,7 +42,7 @@ test('a passed palette colour appears verbatim in the output', () => {
   assert.ok(poster!.svg.includes('#30ba78'), 'primary is used in the poster');
 });
 
-test('malicious colour strings are sanitised — never emitted verbatim', () => {
+test('malicious colour strings are sanitised - never emitted verbatim', () => {
   const evil = ['#000;url(x)', 'red"/><script>alert(1)</script>', 'javascript:alert(1)', '#12'];
   const all = palettePreviewSvgs(evil).map((p) => p.svg).join('\n');
   for (const bad of evil) {
@@ -81,7 +81,7 @@ test('chart bar count reflects opts.steps', () => {
   assert.ok(countRects(many) > countRects(few), 'more steps → more bars');
 });
 
-test('is deterministic — same input yields identical SVGs', () => {
+test('is deterministic - same input yields identical SVGs', () => {
   const a = palettePreviewSvgs(SUSE, { steps: 6 });
   const b = palettePreviewSvgs(SUSE, { steps: 6 });
   assert.deepEqual(a, b);

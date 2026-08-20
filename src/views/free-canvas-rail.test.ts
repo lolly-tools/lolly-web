@@ -366,7 +366,7 @@ test('the right-click menu still offers the layout actions with nothing selected
 
 // ══ the drag ══════════════════════════════════════════════════════════════════
 
-test('dragging the grip moves the rail with left/top — never a transform', () => {
+test('dragging the grip moves the rail with left/top - never a transform', () => {
   const f = mount([plainBox('a', 300, 300)]);
   assert.equal(f.dock.classList.contains('is-detached'), false, 'docked until dragged');
   dragRail(f, 300, 120);
@@ -490,7 +490,7 @@ test('the rail keeps clear of the docked timeline panel, not just the export pil
   f.destroy();
 });
 
-test('the rail restates [hidden] — the views layer would otherwise beat base.css', () => {
+test('the rail restates [hidden] - the views layer would otherwise beat base.css', () => {
   // base.css's `[hidden]{display:none}` lives in the `base` cascade layer; editor.css is
   // wrapped in `views`, which WINS on layer order no matter the specificity. Without this
   // restatement `.fc-btn`'s own `display: inline-flex` survives and a hidden button keeps

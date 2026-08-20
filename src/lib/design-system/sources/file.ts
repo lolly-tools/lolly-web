@@ -209,7 +209,7 @@ export function tokenSetFilesFromZip(files: Unzipped): TokensExtraction {
     try {
       parsed[stripped[i]!] = JSON.parse(strFromU8(bytes));
     } catch {
-      warnings.push(`${stripped[i]}: not valid JSON — ignored`);
+      warnings.push(`${stripped[i]}: not valid JSON - ignored`);
     }
   }
 

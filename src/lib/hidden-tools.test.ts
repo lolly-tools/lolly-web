@@ -51,7 +51,7 @@ test('loadHiddenTools: merges the brand defaults into a fresh (un-seeded) profil
   assert.deepEqual([...withStored].sort(), ['3d', 'booth-studio', 'org-chart', 'qr-code']);
 });
 
-test('loadHiddenTools: once seeded, defaults are NOT re-merged — the stored set is authoritative', () => {
+test('loadHiddenTools: once seeded, defaults are NOT re-merged - the stored set is authoritative', () => {
   // The user unhid a default; hiddenToolsSeeded latched true on that save. The default
   // must stay revealed, never creep back in.
   const profile = { hiddenTools: ['booth-studio'], hiddenToolsSeeded: true } as unknown as Profile;

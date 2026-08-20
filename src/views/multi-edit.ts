@@ -105,7 +105,7 @@ const num = (v: unknown): number | undefined => {
 
 export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, params: string): Promise<void> {
   // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
-  document.title = tRaw('{name} — Lolly', { name: t('Multi-edit') });
+  document.title = tRaw('{name} - Lolly', { name: t('Multi-edit') });
   const slots = (new URLSearchParams(params).get('s') ?? '')
     .split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
 
@@ -117,7 +117,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       </div>`;
   };
   if (slots.length < MIN_SEL || slots.length > MAX_SEL) {
-    fail(`Multi-edit works on ${MIN_SEL}–${MAX_SEL} saved sessions — got ${slots.length}.`);
+    fail(`Multi-edit works on ${MIN_SEL}–${MAX_SEL} saved sessions - got ${slots.length}.`);
     return;
   }
 
@@ -218,7 +218,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     const h = String(m.data.__export_height ?? '');
     const unit = String(m.data.__export_unit ?? 'px');
     const dpi = String(m.data.__export_dpi ?? '');
-    if (!isExportable(m.tool.manifest)) return `<p class="me-export-note">${t('This tool is render-only — it has no file export.')}</p>`;
+    if (!isExportable(m.tool.manifest)) return `<p class="me-export-note">${t('This tool is render-only - it has no file export.')}</p>`;
     return `
       <div class="me-export" data-me-export="${i}">
         <span class="me-export-label">${t('Export')}</span>
@@ -659,7 +659,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       }
     } catch (err) {
       console.warn('multi-edit action failed:', err);
-      announce(t('Something went wrong — see the console.'));
+      announce(t('Something went wrong - see the console.'));
     } finally {
       busy.removeAttribute('aria-busy');
       exporting = false;

@@ -197,7 +197,7 @@ test('plateWindowDemands: the pad is the layer\'s own spill, in stage px', () =>
   assert.equal(d.get(1)?.pad, spillPad(0, parseDropShadows(shadow)), 'shadow: its own reach');
 });
 
-test('BYTE-IDENTITY FLOOR: a pre-104 blur/shadow asks for NO pad — its plate still carries it', () => {
+test('BYTE-IDENTITY FLOOR: a pre-104 blur/shadow asks for NO pad - its plate still carries it', () => {
   // `shadow: content` and an authored `blur` are pre-104 vocabulary. On a box with no
   // depth, ownership does not move (`ownsLayerFx`): the plate is shot with its filter
   // on, clipped at the box edge exactly as it always was, and the compositor applies
@@ -258,7 +258,7 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
   // this feature it was baked in and exported. `removeProperty` takes exactly the
   // declaration the planner owns and nothing else.
   assert.match(src, /if \(ropts\.neutralFilter\) \{[\s\S]{0,900}el\.style\.removeProperty\('filter'\)/,
-    'and that is what it does — the INLINE declaration only, which is the one the planner read');
+    'and that is what it does - the INLINE declaration only, which is the one the planner read');
   assert.ok(!/el\.style\.filter = 'none'/.test(src),
     'never `filter: none`, which would out-specify (and lose) a stylesheet-authored filter');
   assert.match(src, /const plateOpts: RasterOpts = \{\s*opaque: true,\s*neutralFilter: neutralOf\(L\.idx\),\s*neutralClipPath: clipNeutralOf\(L\.idx\),\s*pad: padOf\(L\.idx\),\s*\};/,
@@ -269,7 +269,7 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
   assert.match(src, /if \(ropts\.neutralClipPath\) \{[\s\S]{0,700}el\.style\.removeProperty\('clip-path'\)/,
     'the clip is lifted for the shot, and only the inline declaration');
   assert.ok(!/el\.style\.clipPath = 'none'/.test(src),
-    'never `clip-path: none` — it would out-specify a stylesheet clip nobody re-applies');
+    'never `clip-path: none` - it would out-specify a stylesheet clip nobody re-applies');
   const bgAt = src.indexOf('bgRaster = await rasterBox(stageEl');
   const optsAt = src.indexOf('const plateOpts');
   assert.ok(bgAt > 0 && optsAt > bgAt, 'the background shot is taken before, and without, the plate recipe');

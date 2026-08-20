@@ -413,7 +413,7 @@ export function derivePeaks(host: unknown, ref: unknown, assetId: string): Promi
     if (!audio?.analyse || (audio.isAvailable && !audio.isAvailable())) {
       if (!loggedUnavailable) {
         loggedUnavailable = true;
-        console.info('[audio-peaks] this shell cannot decode audio — audio assets keep their glyph thumbnail.');
+        console.info('[audio-peaks] this shell cannot decode audio - audio assets keep their glyph thumbnail.');
       }
       failed.add(assetId);
       return null;

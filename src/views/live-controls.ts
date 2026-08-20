@@ -236,7 +236,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     mode = 'camera';
     onStart();
     updateUi();
-    announce(t('Live camera started — the canvas now reacts to your camera'));
+    announce(t('Live camera started - the canvas now reacts to your camera'));
     return true;
   }
 

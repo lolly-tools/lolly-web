@@ -25,7 +25,7 @@ const entry = (over: Partial<RateCardEntry> = {}): RateCardEntry => ({
   ...over,
 });
 
-test('factLine holds only facts Lolly knows — never a claim from the file', () => {
+test('factLine holds only facts Lolly knows - never a claim from the file', () => {
   const line = factLine(entry({ issuerName: 'Acme Print' }));
   assert.match(line, /EUR/);
   assert.match(line, /ab12cd34ef567890/);
@@ -62,7 +62,7 @@ test('refusalMessage covers all three outcomes with distinct copy', () => {
   assert.notEqual(a, c);
 });
 
-test('the create-flow scaffold starts EVERY rate empty — no numeric rate anywhere', () => {
+test('the create-flow scaffold starts EVERY rate empty - no numeric rate anywhere', () => {
   const doc = JSON.parse(EMPTY_RATECARD_TEMPLATE) as {
     currency: string; minimumCharge: unknown;
     lines: Array<{ kind: string; rate: unknown; breaks?: Array<{ rate: unknown }> }>;

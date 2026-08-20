@@ -36,18 +36,18 @@ export const RECORDING_TIPS: RecordingTip[] = [
   { id: 'level', cue: 'level', text: 'Watch the meter: keep it mostly around −12 to −8, with only the loudest moments reaching −5 or −4.' },
   { id: 'wind', cue: 'wind', text: 'If your hair is moving from the wind outdoors, choose another location ;)' },
   { id: 'fan', cue: 'fan',
-    text: 'Keep fans, AC and air vents from blowing on the mic — moving air roars.',
+    text: 'Keep fans, AC and air vents from blowing on the mic - moving air roars.',
     alert: 'Please make sure all fans and air circulation are turned off.' },
   // Lighting tips - shown only when the tool captures video (see mountRecordingHelp).
   { id: 'dark', cue: 'dark', kind: 'video',
-    text: 'Light your face from the front — a window or lamp in front of you, not behind. If the picture looks dark, add light or turn to face it.',
-    alert: 'Too dark — add light or turn to face a window.' },
+    text: 'Light your face from the front - a window or lamp in front of you, not behind. If the picture looks dark, add light or turn to face it.',
+    alert: 'Too dark - add light or turn to face a window.' },
   { id: 'bright', cue: 'bright', kind: 'video',
-    text: 'Aim for soft, even light — harsh light straight on your face washes you out. If you look blown out, dim the light or step back.',
-    alert: 'Too bright — dim the light or step back.' },
+    text: 'Aim for soft, even light - harsh light straight on your face washes you out. If you look blown out, dim the light or step back.',
+    alert: 'Too bright - dim the light or step back.' },
   { id: 'glare', cue: 'glare', kind: 'video',
-    text: 'Keep bright windows and lamps out of the shot behind you — a bright background turns you into a dark silhouette. Face the light instead.',
-    alert: 'Bright background — face the light, don’t sit in front of it.' },
+    text: 'Keep bright windows and lamps out of the shot behind you - a bright background turns you into a dark silhouette. Face the light instead.',
+    alert: 'Bright background - face the light, don’t sit in front of it.' },
 ];
 
 // A Lucide-house-style glyph per cue, so each tip is scannable at a glance: home = the

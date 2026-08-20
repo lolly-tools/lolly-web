@@ -71,7 +71,7 @@ test('sanitizeSvgFile uses RETURN_DOM + XMLSerializer, not the content-dropping 
   assert.doesNotMatch(
     call[0],
     /PARSER_MEDIA_TYPE/,
-    'must NOT use PARSER_MEDIA_TYPE xhtml — its strict parse drops content from real SVGs',
+    'must NOT use PARSER_MEDIA_TYPE xhtml - its strict parse drops content from real SVGs',
   );
   assert.match(src, /new XMLSerializer\(\)\.serializeToString\(svgEl\)/, 'must serialise the node with XMLSerializer');
 });

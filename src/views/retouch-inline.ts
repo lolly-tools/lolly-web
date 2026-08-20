@@ -120,7 +120,7 @@ function frameToBlob(frame: InpaintFrame, fmt: OutFormat): Promise<{ blob: Blob;
 function retouchAssetIds(sourceName: string, now: number): { id: string; name: string } {
   const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
   const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  return { id: `user/retouch/${now}-${slug || 'retouched'}`, name: tRaw('{name} — retouched', { name: base || t('image') }) };
+  return { id: `user/retouch/${now}-${slug || 'retouched'}`, name: tRaw('{name} - retouched', { name: base || t('image') }) };
 }
 
 /**

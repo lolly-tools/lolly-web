@@ -174,7 +174,7 @@ test('createStreamingMux: addFrame awaits while encodeQueueSize > HIGH_WATER, re
   await tick(); await tick();
   assert.equal(settled, false, 'addFrame must not resolve while the encoder queue is above the high-water mark');
   assert.equal(h.video.encodes.length, 1, 'the frame is handed to the encoder before the wait');
-  assert.equal(frameLog[0]!.closes, 1, 'and closed before the wait — never held across backpressure');
+  assert.equal(frameLog[0]!.closes, 1, 'and closed before the wait - never held across backpressure');
 
   // A dequeue that does not drop the queue below the mark keeps us waiting.
   h.video.dispatchDequeue();
@@ -249,7 +249,7 @@ test('createStreamingMux: abort after N frames leaves nothing pending and never 
 
   assert.equal(h.video.closed, 1);
   assert.equal(h.audio!.closed, 1);
-  assert.equal(h.video.flushed, 0, 'abort must not flush — the output is being discarded');
+  assert.equal(h.video.flushed, 0, 'abort must not flush - the output is being discarded');
   assert.equal(h.muxer.finalized, 0);
   assert.deepEqual([...new Set(frameLog.map((f) => f.closes))], [1], 'no VideoFrame leaked past abort');
   assert.equal(h.video.listeners.length, 0);
@@ -283,7 +283,7 @@ test('createStreamingMux: chunks are held back and reach the muxer only at final
   assert.deepEqual(h.muxer.video, [{ chunk: 1, timestamp: 0 }]);
 });
 
-test('createStreamingMux: finalize interleaves streams canonically — ascending timestamp, video first on a tie', async () => {
+test('createStreamingMux: finalize interleaves streams canonically - ascending timestamp, video first on a tie', async () => {
   const { session, h } = harness({ audio: AUDIO });
   const mux = await session;
   await mux.addFrame({} as any, 0);
@@ -296,7 +296,7 @@ test('createStreamingMux: finalize interleaves streams canonically — ascending
   h.video.cb.output({ chunk: 'v@133333', timestamp: 133_333 }, undefined);
   await mux.finalize();
   assert.deepEqual(h.muxer.fed, ['v:66667', 'v:100000', 'a:100000', 'v:133333', 'a:200000'],
-    'one canonical interleave regardless of arrival order — video wins the tie');
+    'one canonical interleave regardless of arrival order - video wins the tie');
   assert.deepEqual(h.muxer.video.map((c: any) => c.chunk), ['v@66667', 'v@100000', 'v@133333'], 'per-stream emit order is preserved');
   assert.deepEqual(h.muxer.audio.map((c: any) => c.chunk), ['a@100000', 'a@200000']);
 });

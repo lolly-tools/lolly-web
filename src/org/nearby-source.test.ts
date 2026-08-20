@@ -100,7 +100,7 @@ test('setVisible posts visible:true for an active window, hide posts false', asy
   assert.deepEqual(JSON.parse(String(posts[2]!.init!.body)), { visible: false });
 });
 
-test('exchangeInvite refuses — the org track has no P2P handoff', async () => {
+test('exchangeInvite refuses - the org track has no P2P handoff', async () => {
   const p = createOrgNearbyProvider(makeTimers().env);
   await assert.rejects(() => p.exchangeInvite('u-andy', 'token'), /no-p2p-exchange/);
 });

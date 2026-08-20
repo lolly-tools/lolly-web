@@ -212,7 +212,7 @@ export function mountCurveEditor(mount: HTMLElement, opts: CurveEditorOptions): 
         <span class="be-curve-axis">${escape(axisLabel(channel, r))}</span>
       </div>
       <svg class="be-curve-plot" viewBox="0 0 ${g.w} ${g.h}" preserveAspectRatio="none"
-           role="group" aria-label="${escape(`${channel} tonal curve — drag a point, or Tab to a point and use Arrow keys (←/→ switch points, Home/End for the extremes)`)}">
+           role="group" aria-label="${escape(`${channel} tonal curve - drag a point, or Tab to a point and use Arrow keys (←/→ switch points, Home/End for the extremes)`)}">
         ${grid}
         <polyline class="be-curve-line" points="${line}"/>
         ${dots}

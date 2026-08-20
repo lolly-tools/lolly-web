@@ -106,7 +106,7 @@ export async function mountDocs(
   // table of contents, plus the band CSS and tab hydration lib/docs-landing.ts owns.
   const isLanding = slug === 'index';
 
-  document.title = tRaw('{name} — Lolly', { name: t('Documentation') });
+  document.title = tRaw('{name} - Lolly', { name: t('Documentation') });
 
   // Paint the chrome + a pending state immediately, then swap in the body once fetched.
   viewEl.innerHTML = shellHtml(`<p class="docs-status">${t('Loading…')}</p>`);
@@ -204,8 +204,8 @@ export async function mountDocs(
   // The landing keeps the reader's own "Documentation" title: its <title> is the site
   // sentence ("Lolly - assets that stay the same so everything else can change"), which
   // the suffix strip cannot shorten and which reads as a marketing line in a tab strip.
-  const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[—-]\s*Lolly\s*$/, '').trim();
-  if (pageTitle && !isLanding) document.title = tRaw('{name} — Lolly', { name: pageTitle });
+  const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[--]\s*Lolly\s*$/, '').trim();
+  if (pageTitle && !isLanding) document.title = tRaw('{name} - Lolly', { name: pageTitle });
 
   // The formats page's detail-dialog data rides in an inert `<script type=
   // "application/json">`, which the strip below removes with every other script -

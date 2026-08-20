@@ -170,14 +170,14 @@ function transformCss(css: string, scope: string, mapSelectors: (selectors: stri
   while (i < n) {
     const c = css[i];
 
-    if (c === '/' && css[i + 1] === '*') {              // comment — copy verbatim
+    if (c === '/' && css[i + 1] === '*') {              // comment - copy verbatim
       const end = css.indexOf('*/', i + 2);
       const j = end === -1 ? n : end + 2;
       buf += css.slice(i, j);
       i = j;
       continue;
     }
-    if (c === '"' || c === "'") {                        // string — copy verbatim
+    if (c === '"' || c === "'") {                        // string - copy verbatim
       const j = scanQuoted(css, i);
       buf += css.slice(i, j);
       i = j;

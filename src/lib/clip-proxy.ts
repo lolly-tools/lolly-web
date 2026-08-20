@@ -748,7 +748,7 @@ async function buildProxyInner(
     if (out.durationSec > 0) {
       const tolerance = Math.max(PROXY_DURATION_TOLERANCE_SEC, probe.durationSec * PROXY_DURATION_TOLERANCE_FRACTION);
       if (probe.durationSec - out.durationSec > tolerance) {
-        log?.('warn', `[clip-proxy] discarded ${assetId}: proxy is ${out.durationSec.toFixed(2)}s of a ${probe.durationSec.toFixed(2)}s source — the transcode ended early`);
+        log?.('warn', `[clip-proxy] discarded ${assetId}: proxy is ${out.durationSec.toFixed(2)}s of a ${probe.durationSec.toFixed(2)}s source - the transcode ended early`);
         return null;
       }
     }

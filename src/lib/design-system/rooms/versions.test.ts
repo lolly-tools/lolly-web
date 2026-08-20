@@ -203,7 +203,7 @@ test('the rail entry is offered only once there is something to publish', async 
   assert.equal(await hasPublishableSystem({ host: own.host as never }), true);
 });
 
-test('a ledger alone is enough — the versions must stay reachable', async () => {
+test('a ledger alone is enough - the versions must stay reachable', async () => {
   const h = fakeHost();
   // The head document is a catalogue's, not this device's, but it carries a
   // ledger: the panel is the only way to those versions, so it is offered.
@@ -265,7 +265,7 @@ test('publish writes the version asset first, then the ledger, and says one sent
   await settle();
 
   assert.deepEqual(writes, [`${USER_TOKENS_ID}/v1`, USER_TOKENS_ID],
-    'the payload lands before the ledger names it — the other order would list a version nothing can load');
+    'the payload lands before the ledger names it - the other order would list a version nothing can load');
   const head = JSON.parse(await store.get(USER_TOKENS_ID)!.blob.text());
   const index = readVersionIndex(head);
   assert.equal(index.versions.length, 1);
@@ -348,7 +348,7 @@ test('a restore offers its undo, and the undo is the studio own step back', asyn
   room.teardown();
 });
 
-test('the restored ledger survives the restore — the list is not what got replaced', async () => {
+test('the restored ledger survives the restore - the list is not what got replaced', async () => {
   const { host, store } = fakeHost(DOC);
   const el = panel();
   const room = mountVersionsRoom(el, {

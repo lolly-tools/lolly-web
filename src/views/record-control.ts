@@ -129,11 +129,11 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     btn.setAttribute('aria-pressed', String(state === 'recording'));
     stageEl.classList.toggle('is-recording', state === 'recording');
     if (state === 'recording') { btn.innerHTML = `${SQUARE}<span>Stop</span>`; btn.title = 'Stop recording'; timerEl.hidden = false; }
-    else if (state === 'armed') { btn.innerHTML = `${DOT}<span>Record</span>`; btn.title = isAudio ? 'Mic live — tap to record' : 'Framing — tap to record'; timerEl.hidden = true; }
+    else if (state === 'armed') { btn.innerHTML = `${DOT}<span>Record</span>`; btn.title = isAudio ? 'Mic live - tap to record' : 'Framing - tap to record'; timerEl.hidden = true; }
     else {
       const warm = willArm();
       btn.innerHTML = `${DOT}<span>${warm ? warmLabel : 'Record'}</span>`;
-      btn.title = warm ? `${warmLabel} — check your levels, then record` : 'Record';
+      btn.title = warm ? `${warmLabel} - check your levels, then record` : 'Record';
       timerEl.hidden = true;
     }
     if (canFlip) flipBtn.hidden = state === 'recording';   // can't switch cameras mid-take
@@ -204,7 +204,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         cameraHost().appendChild(previewVideo);
       }
       previewVideo.srcObject = stream;
-      void previewVideo.play?.().catch(() => { /* autoplay policy — muted inline should be fine */ });
+      void previewVideo.play?.().catch(() => { /* autoplay policy - muted inline should be fine */ });
       startExposureSampler();   // keep exposure coaching live through the take (framing view is gone)
     } else if (previewVideo) {
       stopExposureSampler();
@@ -278,7 +278,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       try {
         sctx.drawImage(vid, 0, 0, w, h);
         feedExposure(sctx.getImageData(0, 0, w, h).data, w, h);
-      } catch { /* frame not paintable yet — try next tick */ }
+      } catch { /* frame not paintable yet - try next tick */ }
     };
     sampRaf = requestAnimationFrame(loop);
   }
@@ -293,7 +293,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       coachUnsub = host.recorder!.meter.subscribe((level) => {
         coachHud?.updateAudio(level, { target: coachTarget, phase: coachPhase });
       });
-    } catch { /* mic denied — the take can still proceed, just without coaching */ }
+    } catch { /* mic denied - the take can still proceed, just without coaching */ }
   }
   function stopCoach(): void {
     if (coachUnsub) { coachUnsub(); coachUnsub = null; }
@@ -363,7 +363,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     stopCoach();   // release the sound-check mic + drop the HUD when the take ends
     state = 'idle'; render(); btn.disabled = false;
     if (res && res.blob.size > 0) await handleClip(res.blob, res.mimeType, takeMs);
-    else if (res) announce('That recording was too short to save — try again.', { assertive: true });
+    else if (res) announce('That recording was too short to save - try again.', { assertive: true });
     // Audio resumes the live meter for the next take; video returns to idle so the
     // freshly-captured clip is shown (tap Record again to re-frame and re-record).
     if (isAudio && runtime.hasLevelHook) { try { coachPhase = 'check'; await runtime.startMeter(); state = 'armed'; render(); } catch { /* ignore */ } }
@@ -378,13 +378,13 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       if (isAudio) {
         coachPhase = 'check';   // arming an audio take is a sound check (room cues valid)
         await runtime.startMeter();
-        announce('Microphone live — check your levels, then tap Record');
+        announce('Microphone live - check your levels, then tap Record');
       } else {
         await startViewfinder(); // no-op if the camera is denied; recording still works
         coachPhase = 'check';
         await startCoach();      // raw mic sound-check → level + background-noise HUD
-        announce(wantCoach ? 'Camera framing + mic check — tap Record when you’re ready'
-          : 'Camera framing — tap Record when you’re ready');
+        announce(wantCoach ? 'Camera framing + mic check - tap Record when you’re ready'
+          : 'Camera framing - tap Record when you’re ready');
       }
       state = 'armed'; render();
     } catch (e) {
@@ -430,7 +430,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
           host as unknown as Parameters<typeof storeRecordingAsset>[0], clip, ext, prevClip?.id, credential ?? undefined,
         );
       } catch (e) {
-        host.log('warn', 'record: could not persist clip — using an in-memory clip', { error: String(e) });
+        host.log('warn', 'record: could not persist clip - using an in-memory clip', { error: String(e) });
         ref = { source: 'user', id: `recording.${ext}`, type: 'video', format: ext, url: URL.createObjectURL(clip), meta: { bytes: clip.size } };
       }
       // Free the prior take's object URL only if it's OUR in-memory fallback (id
@@ -446,7 +446,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       // real-time compositor runs cleanly. Other capture tools (top-tail-recorder) keep
       // the manual "export in the bar" flow.
       if (stageEl.querySelector('[data-record-camera]')) { await autoProcessRecording(ext, takeMs); return; }
-      announce(`Clip captured (${fmtBytes(clip.size)}) — export to save your top-&-tail video.`);
+      announce(`Clip captured (${fmtBytes(clip.size)}) - export to save your top-&-tail video.`);
       return;
     }
     // Audio: sign the take so the downloaded voice recording self-asserts as a live
@@ -461,7 +461,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     const container = captureContainer(mimeType);
     let clip = blob;
     if (container) clip = (await stampCaptureClip(host, blob, container, { microphone: true })).blob;
-    else host.log('warn', 'record: take saved without Content Credentials — no embedder for this container', { mimeType });
+    else host.log('warn', 'record: take saved without Content Credentials - no embedder for this container', { mimeType });
     showAudioDownload(clip, mimeType, container);
   }
 
@@ -469,7 +469,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   // let the template re-render with the clip + decode a frame, then run the record
   // compositor (renderRecord via runtime.export) and hand back the finished MP4.
   async function autoProcessRecording(ext: string, takeMs = 0): Promise<void> {
-    if (!stageEl.querySelector('[data-record-stage]')) { announce('Clip captured — export to save your video.'); return; }
+    if (!stageEl.querySelector('[data-record-stage]')) { announce('Clip captured - export to save your video.'); return; }
     const curtain = showProcessing();
     try {
       // CRITICAL: setInput('clip') repaints by rebuilding #tool-content's innerHTML, which
@@ -485,7 +485,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         recStage = stageEl.querySelector('[data-record-stage]') as HTMLElement | null;
         clipVid = (recStage?.querySelector('[data-record-clip]') as HTMLVideoElement | null) ?? null;
       }
-      if (!recStage) { curtain.close(); announce('Clip captured — export to save your video.'); return; }
+      if (!recStage) { curtain.close(); announce('Clip captured - export to save your video.'); return; }
       // Hand the compositor the measured take length: a fresh MediaRecorder blob often
       // reports duration=Infinity/0, and without this renderRecord falls back to a blind
       // 6s and truncates a longer take (see export.ts renderRecord).
@@ -506,11 +506,11 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       if (!blob || blob.size < 1024) throw new Error(`empty render (${blob?.size ?? 0} bytes)`);
       await host.export.download(blob, `${filename}.${ext}`);
       markSessionDirty();
-      announce(`Your video is ready — ${fmtBytes(blob.size)}.`);
+      announce(`Your video is ready - ${fmtBytes(blob.size)}.`);
       curtain.succeed(`${fmtBytes(blob.size)} · ready`);   // self-closes after a beat
     } catch (e) {
       host.log('warn', 'record auto-export failed', { error: String(e) });
-      announce('Couldn’t process the video automatically — use the Export button to try again.', { assertive: true });
+      announce('Couldn’t process the video automatically - use the Export button to try again.', { assertive: true });
       curtain.close();
     }
   }
@@ -575,10 +575,10 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     // about it (plan 102 section 5.4).
     const portableCred = container === 'm4a' || container === 'mp3' || container === 'wav';
     natBtn.title = !container
-      ? 'Saved without Content Credentials — no embedder for this container.'
+      ? 'Saved without Content Credentials - no embedder for this container.'
       : portableCred
         ? 'Includes Content Credentials any C2PA viewer can read.'
-        : 'Includes Content Credentials — readable in Lolly. This container has no cross-tool C2PA standard yet; save MP3 for one that travels.';
+        : 'Includes Content Credentials - readable in Lolly. This container has no cross-tool C2PA standard yet; save MP3 for one that travels.';
     mp3Btn.title = 'Re-encodes your take and includes Content Credentials any C2PA viewer can read.';
     actions.append(mp3Btn, natBtn, xBtn);
     dlBar.append(player, actions);
@@ -599,7 +599,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         await host.export.file(signed, { filename: `${base}.mp3` });
       } catch (err) {
         host.log('warn', 'mp3 transcode failed', { error: String(err) });
-        announce('MP3 encoding failed — saving the original instead.', { assertive: true });
+        announce('MP3 encoding failed - saving the original instead.', { assertive: true });
         await host.export.file(blob, { filename: `${base}.${nativeExt}` });
       } finally { mp3Btn.disabled = false; mp3Btn.textContent = 'Save MP3'; }
     });

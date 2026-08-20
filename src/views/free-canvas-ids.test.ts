@@ -178,7 +178,7 @@ test('ids survive a save/load round trip unchanged', () => {
 
 // ══ legacy documents ══════════════════════════════════════════════════════════
 
-test('a legacy row without an id gets one on load — exactly once', () => {
+test('a legacy row without an id gets one on load - exactly once', () => {
   const legacy = [box({ id: 'keep-me', x: 100, y: 100 }), box({ x: 400, y: 400 }), box({ id: '', x: 700, y: 700 })];
   const f = mount(legacy);
   const after = f.boxes();
@@ -210,7 +210,7 @@ test('a manifest with no id field keeps the historical index behaviour', () => {
 
 // ══ no index fallback ═════════════════════════════════════════════════════════
 
-test('selection never keys on the array index — a box whose id is "1" is not row 1', () => {
+test('selection never keys on the array index - a box whose id is "1" is not row 1', () => {
   // Under the old `idOf`, the legacy row at index 1 keyed to '1' - the SAME key as the
   // box whose declared id happens to be the string "1" - so dragging one dragged both.
   const f = mount([box({ id: '1', x: 100, y: 100 }), box({ x: 600, y: 600 })]);

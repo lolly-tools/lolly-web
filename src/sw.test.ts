@@ -294,7 +294,7 @@ describe('service worker: the offline-download buckets', () => {
       'once fetched, /ort-hf/ serves offline from lolly-ort-hf');
   });
 
-  test('/ort-hf falls back to the legacy lolly-ort bucket — Verify pre-downloaders are not stranded', async () => {
+  test('/ort-hf falls back to the legacy lolly-ort bucket - Verify pre-downloaders are not stranded', async () => {
     // Migration: before the ort/ortHf split, the runtime was downloaded by the VERIFY
     // part into lolly-ort. The SW now checks lolly-ort-hf first, then lolly-ort, so a
     // user who pre-downloaded it via Verify keeps offline speech without a re-download.
@@ -308,7 +308,7 @@ describe('service worker: the offline-download buckets', () => {
       'offline, with the runtime only in the legacy lolly-ort bucket, /ort-hf/ is still served');
   });
 
-  test('the whole app group serves offline — not just /assets/: voice, viz-presets, share stubs', async () => {
+  test('the whole app group serves offline - not just /assets/: voice, viz-presets, share stubs', async () => {
     // Regression pin for the review finding that downloadApp filled lolly-app
     // with /voice/, /viz-presets/, /t/ etc. but no fetch-handler rule ever
     // read the bucket for those paths - "downloaded" yet unservable.
@@ -367,7 +367,7 @@ describe('service worker: the offline-download buckets', () => {
     h.offline.value = true;
     assert.equal(await subresource(h, 'https://lolly.tools/assets/lazy-view-abc123.js'), 'CHUNK');
     assert.equal(await subresource(h, 'https://lolly.tools/fonts/Outfit-latin%5Bwght%5D.woff2'), 'FONT',
-      '/fonts/ must have an offline path — before v13 it had no rule at all');
+      '/fonts/ must have an offline path - before v13 it had no rule at all');
   });
 });
 
@@ -403,29 +403,29 @@ describe('precache.json grouping (vite.config.js)', () => {
     const names = (list: { url: string }[]) => list.map(f => f.url);
 
     assert.deepEqual(names(groups.app), ['/index.html', '/assets/index-abc123.js', '/fonts/Outfit-latin[wght].woff2'],
-      'the app group must exclude /ort/, /ort-hf/ and /models/ — lolly-app never serves those');
+      'the app group must exclude /ort/, /ort-hf/ and /models/ - lolly-app never serves those');
     assert.deepEqual(names(groups.ort), [
       '/ort/ort-wasm-simd-threaded.wasm',
-    ], 'the ort group is the /ort/ runtime ONLY (verify\'s deep-scan detectors) — the speech runtime moved to its own ortHf group');
+    ], 'the ort group is the /ort/ runtime ONLY (verify\'s deep-scan detectors) - the speech runtime moved to its own ortHf group');
     assert.deepEqual(names(groups.ortHf), [
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm',
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
-    ], 'the ortHf group is transformers.js\'s ort-wasm-* runtime — owned by the speech part so downloading Speech is offline-complete');
+    ], 'the ortHf group is transformers.js\'s ort-wasm-* runtime - owned by the speech part so downloading Speech is offline-complete');
     assert.deepEqual(names(groups.models), ['/models/trustmark/decoder_Q.onnx'],
-      'verify\'s models are the TrustMark ones only — kokoro belongs to the speech part');
+      'verify\'s models are the TrustMark ones only - kokoro belongs to the speech part');
     assert.deepEqual(names(groups.speech), [
       '/models/kokoro/onnx/model_quantized.onnx',
       '/models/kokoro/voices/af_heart.bin',
       '/models/whisper/onnx/encoder_model_quantized.onnx',
-    ], 'the speech group is the kokoro + whisper model sets — nothing else');
+    ], 'the speech group is the kokoro + whisper model sets - nothing else');
     assert.deepEqual(names(groups.upscale), ['/models/upscale/realesr-general-x4v3.onnx'],
-      'the upscale group is the AI-upscaler models only (host.upscale) — SW-bypassed like the others');
+      'the upscale group is the AI-upscaler models only (host.upscale) - SW-bypassed like the others');
     assert.deepEqual(names(groups.matte), ['/models/matte/birefnet-lite.onnx'],
-      'the matte group is the background-removal models only (host.matte) — SW-bypassed like the others');
+      'the matte group is the background-removal models only (host.matte) - SW-bypassed like the others');
     assert.deepEqual(names(groups.reword), ['/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx'],
-      'the reword group is the SmolLM2 model set only (plans/127) — it rides transformers-cache like speech, never the app bucket');
+      'the reword group is the SmolLM2 model set only (plans/127) - it rides transformers-cache like speech, never the app bucket');
     assert.deepEqual(names(groups.embed), ['/models/embed/onnx/model_quantized.onnx'],
-      'the embed group is the Ask matching model only (plans/103 M1) — it rides transformers-cache like speech and reword');
+      'the embed group is the Ask matching model only (plans/103 M1) - it rides transformers-cache like speech and reword');
   });
 
   test('release-versioned binaries are exempt from content hashing', async () => {

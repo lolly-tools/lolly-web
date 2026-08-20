@@ -274,7 +274,7 @@ test('ensureProxy: builds, stores, and returns the proxy for a worthwhile clip',
   assert.ok(rec.createdAt > 0);
 });
 
-test('ensureProxy: an existing matching row is reused — no second transcode', async () => {
+test('ensureProxy: an existing matching row is reused - no second transcode', async () => {
   const store = fakeStore();
   const conv = fakeConverter();
   reset(store, conv);
@@ -331,7 +331,7 @@ test('ensureProxy: the caller hint skips the container probe entirely', async ()
   reset(store, conv);
 
   await ensureProxy('user/x', GOOD_SOURCE, { hint: { durationSec: 30, width: 1920, height: 1080 } });
-  assert.equal(conv.probes, 0, 'ingest already measured this — do not walk the container twice');
+  assert.equal(conv.probes, 0, 'ingest already measured this - do not walk the container twice');
   assert.equal(conv.converts, 1);
 });
 
@@ -502,7 +502,7 @@ test('primeScrubUrl: "there is no proxy" is remembered, not re-queried', async (
   assert.equal(await primeScrubUrl('blob:a'), null);
   const after = store.gets;
   assert.equal(await primeScrubUrl('blob:a'), null);
-  assert.equal(store.gets, after, 'the negative answer is cached — scrub is a hot path');
+  assert.equal(store.gets, after, 'the negative answer is cached - scrub is a hot path');
   assert.equal(peekScrubUrl('blob:a'), 'blob:a');
 });
 
@@ -616,7 +616,7 @@ test('a build can be cancelled, and a cancelled one stores nothing', async () =>
   await new Promise((r) => setTimeout(r, 5));
   ctl.abort();
   release();
-  assert.equal(await p, null, 'a cancelled build resolves null — it never throws into its caller');
+  assert.equal(await p, null, 'a cancelled build resolves null - it never throws into its caller');
   assert.equal(store.rows.size, 0);
   reset(null, null);
 });
@@ -679,17 +679,17 @@ const read = (rel: string): string => readFileSync(join(webSrc, rel), 'utf8');
 const PROXY_CONSUMERS: Record<string, string> = {
   'lib/clip-proxy.ts': 'the feature itself',
   'lib/clip-proxy.test.ts': 'this file',
-  'lib/clip-proxy-job.test.ts': 'the WP-F job wiring of the transcode (heavy slot, failure, cancel) — tests only, no export path',
+  'lib/clip-proxy-job.test.ts': 'the WP-F job wiring of the transcode (heavy slot, failure, cancel) - tests only, no export path',
   'lib/scrub-registry.ts': 'the synchronous half of the feature',
   'lib/scrub-registry.test.ts': 'its tests',
-  'lib/clip-thumbs.ts': 'THE preview consumer — filmstrips and waveforms',
+  'lib/clip-thumbs.ts': 'THE preview consumer - filmstrips and waveforms',
   'bridge/assets.ts': 'lifecycle only: register the url→id pairing, evict on delete',
   'views/picker.ts': 'schedules the build at ingest',
   'views/profile.ts': 'storage meter + clear cache',
   'bridge/db.ts': 'comments only: it declares the derived-media store the proxies live in',
-  'views/timeline-panel.ts': 'comment only: cites the proxy rule to AVOID it — frame export decodes the ORIGINAL asset, never the proxy',
+  'views/timeline-panel.ts': 'comment only: cites the proxy rule to AVOID it - frame export decodes the ORIGINAL asset, never the proxy',
   'views/timeline-panel.test.ts': 'imports scrub-registry only to PROVE the frame export resolves the original asset id, not a proxy',
-  'lib/video-jobs.ts': 'comments only: cites the clip-proxy decode APPROACH — the pipeline decodes the ORIGINAL asset via mediabunny, never a proxy',
+  'lib/video-jobs.ts': 'comments only: cites the clip-proxy decode APPROACH - the pipeline decodes the ORIGINAL asset via mediabunny, never a proxy',
 };
 
 /** Every .ts under shells/web/src, repo-relative to it. */
@@ -727,7 +727,7 @@ test('GUARD: every declared consumer still exists and still uses it', () => {
   const all = new Set(everySource());
   for (const rel of Object.keys(PROXY_CONSUMERS)) {
     assert.ok(all.has(rel), `${rel} is on the proxy allowlist but no longer exists`);
-    assert.ok(PROXY_SYMBOLS.some(sym => read(rel).includes(sym)), `${rel} no longer touches the proxy feature — drop it from the allowlist`);
+    assert.ok(PROXY_SYMBOLS.some(sym => read(rel).includes(sym)), `${rel} no longer touches the proxy feature - drop it from the allowlist`);
   }
 });
 
@@ -743,7 +743,7 @@ test('GUARD: the executors that produce exported bytes are clean', () => {
     assert.ok(!(rel in PROXY_CONSUMERS), `${rel} must never be an allowed proxy consumer`);
     const src = read(rel);
     for (const sym of PROXY_SYMBOLS) {
-      assert.ok(!src.includes(sym), `${rel} must not reference ${sym} — export always uses the original`);
+      assert.ok(!src.includes(sym), `${rel} must not reference ${sym} - export always uses the original`);
     }
   }
 });
@@ -756,7 +756,7 @@ test('GUARD: the assets bridge wires lifecycle ONLY, and never proxy resolution'
   assert.ok(m, 'assets.ts is expected to register the url→id pairing');
   const named = m[1]!.split(',').map(x => x.trim()).filter(Boolean).sort();
   assert.deepEqual(named, ['noteScrubSource'],
-    'asset RESOLUTION must never be able to return a proxy — only registration belongs here');
+    'asset RESOLUTION must never be able to return a proxy - only registration belongs here');
   assert.ok(!/^import .*clip-proxy/m.test(src),
     'clip-proxy must be reached only through a dynamic import, off the first-paint graph');
   assert.ok(src.includes("import('../lib/clip-proxy.ts')"), 'eviction is still wired, just lazily');
@@ -776,9 +776,9 @@ test('GUARD: mediabunny stays lazy, and never ALL_FORMATS', () => {
   assert.ok(!/\bALL_FORMATS\b/.test(src.replace(/`ALL_FORMATS`/g, '')), 'explicit container singletons only');
 });
 
-test('GUARD: the phase-3 duration rule holds — computeDuration, never the metadata claim', () => {
+test('GUARD: the phase-3 duration rule holds - computeDuration, never the metadata claim', () => {
   const src = read('lib/clip-proxy.ts');
   assert.ok(src.includes('input.computeDuration()'));
   assert.ok(!/\.getDurationFromMetadata\b/.test(src),
-    'a truncated container still claims its original length — never trust the header');
+    'a truncated container still claims its original length - never trust the header');
 });

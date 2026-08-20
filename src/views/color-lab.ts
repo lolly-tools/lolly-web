@@ -185,7 +185,7 @@ const PLANE_TITLE: Record<SlicePlane, string> = {
 };
 const PLANE_WHY: Record<SlicePlane, string> = {
   lc: 'How much punch this hue can take, at every lightness.',
-  ch: 'Which hues hold up at this lightness — and which collapse.',
+  ch: 'Which hues hold up at this lightness - and which collapse.',
   lh: 'The lightness band that can carry this much chroma.',
 };
 
@@ -216,9 +216,9 @@ const limitTitle = (limit: GamutLimit): string =>
   (typeof limit === 'string' ? GAMUT_TITLE[limit] : resolveGamutSource(limit).label);
 
 const GAMUT_BLURB: Record<GamutName, string> = {
-  srgb: 'Reproducible everywhere — every screen, every browser, every print pipeline.',
+  srgb: 'Reproducible everywhere - every screen, every browser, every print pipeline.',
   p3: 'More vivid than sRGB reaches. Shown in full on most phones and recent laptops; older monitors fall back.',
-  rec2020: 'More vivid still — beyond Display-P3. Very few screens show all of this today.',
+  rec2020: 'More vivid still - beyond Display-P3. Very few screens show all of this today.',
   none: 'Beyond every display and print process we can describe. This one will always be mapped down.',
 };
 
@@ -765,12 +765,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // the same reasoning as the notation table's fit note. The gamut verdict is on
       // the TRUE colour, so it is unaffected by the vision preview.
       const tip = oog
-        ? `${sw.name} ${sw.hex}\n${tRaw('Outside {gamut} — clips to {hex} (ΔE {de})', {
+        ? `${sw.name} ${sw.hex}\n${tRaw('Outside {gamut} - clips to {hex} (ΔE {de})', {
             gamut: gName, hex: g!.clippedHex, de: g!.deltaE.toFixed(2),
           })}`
         : `${sw.name} ${sw.hex}`;
       const label = oog
-        ? tRaw('Inspect {name} — outside {gamut}', { name: sw.name, gamut: gName })
+        ? tRaw('Inspect {name} - outside {gamut}', { name: sw.name, gamut: gName })
         : tRaw('Inspect {name}', { name: sw.name });
       // Normal mode paints exactly as before: --sw the sRGB hex fallback, --sw-real
       // the richest value the CSS layers on top. A vision preview replaces BOTH with
@@ -1353,7 +1353,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (note) {
       const base = m.inside
         ? tRaw('{deg}° · drag to turn', { deg: String(Math.round(((solidView.yaw % 360) + 360) % 360)) })
-        : tRaw('Outside {g} — the marker sits off the surface', { g: limitTitle(limit) });
+        : tRaw('Outside {g} - the marker sits off the surface', { g: limitTitle(limit) });
       // Unlabelled white lines over a coloured surface read as decoration. One
       // clause, only when they are actually drawn, naming them in the order they
       // are keyed everywhere else on the page.
@@ -1722,7 +1722,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // rather than as the headline. An untagged file is sRGB by convention only,
     // and every figure above rests on that.
     bits.push(cloud.assumedSpace
-      ? tRaw('no profile — read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') })
+      ? tRaw('no profile - read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') })
       : tRaw('read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') }));
     cloudStats.textContent = `${name} · ${bits.join(' · ')}`;
     cloudStats.hidden = false;
@@ -2079,7 +2079,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // it's about a quarter of that, and the sharp repaint lands on release.
     paintCharts(opts.live ? 'draft' : 'full');
     scheduleSolid();
-    if (!opts.silent) announce(tRaw('{c} — {g}', { c: desc.srgbHex, g: GAMUT_TITLE[desc.gamut] }));
+    if (!opts.silent) announce(tRaw('{c} - {g}', { c: desc.srgbHex, g: GAMUT_TITLE[desc.gamut] }));
     if (!opts.live) syncUrl();
   }
 
@@ -2235,7 +2235,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     head.querySelector('[data-lab-headroom-val]')!.textContent =
       `${over ? '' : '+'}${desc.headroom.toFixed(3)}`;
     head.querySelector('[data-lab-headroom-note]')!.textContent = over
-      ? tRaw('beyond sRGB’s ceiling of {max} at this lightness and hue — reach a wider gamut to keep it', { max: desc.ceiling.srgb.toFixed(3) })
+      ? tRaw('beyond sRGB’s ceiling of {max} at this lightness and hue - reach a wider gamut to keep it', { max: desc.ceiling.srgb.toFixed(3) })
       : tRaw('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
 
     const ceils = $('[data-lab-ceilings]')!;
@@ -2296,14 +2296,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const wcagWinner = v.against === '#ffffff' ? 'white' : 'black';
       const best = apcaWinner === 'white' ? white : black;
       floor.textContent = best
-        ? tRaw('Best pairing: {ink} at Lc {lc} — {use}. WCAG says {ratio}:1, {level} for body text.', {
+        ? tRaw('Best pairing: {ink} at Lc {lc} - {use}. WCAG says {ratio}:1, {level} for body text.', {
           ink: t(apcaWinner),
           lc: best.abs.toFixed(1),
           use: t(best.label),
           ratio: v.ratio.toFixed(2),
           level: v.level === 'fail' ? t('below AA') : v.level,
         }) + (apcaWinner === wcagWinner ? ''
-          : ` ${tRaw('The two disagree here — WCAG prefers {other}.', { other: t(wcagWinner) })}`)
+          : ` ${tRaw('The two disagree here - WCAG prefers {other}.', { other: t(wcagWinner) })}`)
         : '';
     }
   }
@@ -2341,7 +2341,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         // WCAG's ratio cannot see.
         pol.hidden = !apca?.reversed;
         pol.textContent = t('light on dark');
-        pol.title = t('Light text on a dark background — APCA scores this polarity differently, WCAG cannot tell.');
+        pol.title = t('Light text on a dark background - APCA scores this polarity differently, WCAG cannot tell.');
       }
     }
 
@@ -2451,7 +2451,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         <td><code>${escape(n.css)}</code></td>
         ${/* The marker's explanation IS its content - "clamped" alone means nothing - 
               so it goes on `data-tip` rather than `title`, which no phone can open. */''}
-        <td class="lab-note-fit">${n.exact ? '' : `<span data-tip="${escape(t('This space cannot hold the colour — CSS would clamp these numbers.'))}" tabindex="0">${escape(t('clamped'))}</span>`}</td>
+        <td class="lab-note-fit">${n.exact ? '' : `<span data-tip="${escape(t('This space cannot hold the colour - CSS would clamp these numbers.'))}" tabindex="0">${escape(t('clamped'))}</span>`}</td>
         <td><button type="button" class="lab-copy" data-lab-copy="${escape(n.css)}">${escape(t('Copy'))}</button></td>
       </tr>`);
     // …then the press, after the CSS spaces. The ONLY CMYK numbers this table
@@ -2486,7 +2486,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ? iccRoundTripDeltaE(ap.profile, ap.intent, desc.oklch.l, desc.oklch.c, desc.oklch.h)
       : null;
     const fit = fits ? '' : `<span tabindex="0" data-tip="${escape(shift != null
-      ? tRaw('Round-trips {de} ΔE away — past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
+      ? tRaw('Round-trips {de} ΔE away - past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
       : t('Outside this profile’s gamut.'))}">${escape(t('outside'))}</span>`;
     return `
       <tr${fits ? '' : ' class="is-inexact"'}>
@@ -2692,7 +2692,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // Rec.2020. That is correct, not a bug; don't fake a badge to fill the gap.
       if (!brandSwatches.some((s) => s.real !== s.hex)) {
         console.info('[color-lab] brand palette is sRGB-sourced (no wide-gamut faces); ' +
-          'display-gamut targets (Display-P3/Rec.2020) will not badge — only a narrower press profile can.');
+          'display-gamut targets (Display-P3/Rec.2020) will not badge - only a narrower press profile can.');
       }
     } else if (section) {
       section.hidden = true; // no brand mounted - say nothing rather than show an empty rail
@@ -3127,7 +3127,7 @@ function shellHtml(): string {
                 <span class="lab-cloud-add-ic" aria-hidden="true">${IMG_GLYPH}</span>
                 <span class="lab-cloud-add-txt">
                   <strong>${escape(t('Plot an image'))}</strong>
-                  <em>${escape(t('or drop one on the chart — see its colours in here'))}</em>
+                  <em>${escape(t('or drop one on the chart - see its colours in here'))}</em>
                 </span>
               </label>
               <button type="button" class="lab-cloud-clear" data-lab-cloud-clear hidden>${escape(t('Clear'))}</button>
@@ -3143,7 +3143,7 @@ function shellHtml(): string {
               <summary>${escape(t('Vector snapshot (SVG)'))}</summary>
               <div class="lab-vecsnap-body" data-lab-solid-svg role="img"
                 aria-label="${escape(t('The current gamut solid as a still vector image, at the angle shown above.'))}"></div>
-              <p class="lab-vecsnap-note">${escape(t('A still SVG of the shape above, painted in sRGB — it shows the hull’s structure, not colours beyond sRGB.'))}</p>
+              <p class="lab-vecsnap-note">${escape(t('A still SVG of the shape above, painted in sRGB - it shows the hull’s structure, not colours beyond sRGB.'))}</p>
             </details>
           </figcaption>
         </figure>
@@ -3155,7 +3155,7 @@ function shellHtml(): string {
             Folded; rendered on open - see renderCompare. */''}
       <details class="lab-compare" data-lab-compare-panel>
         <summary>${escape(t('Compare gamuts: Display-P3 vs Rec.2020'))}</summary>
-        <p class="lab-section-note">${escape(t('The two widest screen gamuts, side by side at the same angle and scale — turn the solid above and reopen this to match it. Display-P3 is not contained by Rec.2020, which is why the shapes differ. Painted in sRGB: these stills show the hulls’ structure, not colours beyond sRGB.'))}</p>
+        <p class="lab-section-note">${escape(t('The two widest screen gamuts, side by side at the same angle and scale - turn the solid above and reopen this to match it. Display-P3 is not contained by Rec.2020, which is why the shapes differ. Painted in sRGB: these stills show the hulls’ structure, not colours beyond sRGB.'))}</p>
         <div class="lab-compare-grid" data-lab-compare-body></div>
       </details>
     </section>
@@ -3165,7 +3165,7 @@ function shellHtml(): string {
       <h2 class="lab-h2 lab-step-h">
         <span class="lab-step-n" aria-hidden="true">3</span>${escape(t('Every notation'))}
       </h2>
-      <p class="lab-section-note">${escape(t('The same colour, written for each space. A row marked “clamped” names a space too narrow to hold it — CSS would round those numbers into range.'))}</p>
+      <p class="lab-section-note">${escape(t('The same colour, written for each space. A row marked “clamped” names a space too narrow to hold it - CSS would round those numbers into range.'))}</p>
       <table class="lab-notations">
         <thead><tr>
           <th scope="col">${escape(t('Space'))}</th>
@@ -3238,7 +3238,7 @@ function shellHtml(): string {
                     hover, so a tap shows it. aria-label carries the same text, since
                     the bubble is a pseudo-element and never read. */''}
               ${BLEND_STYLES.map(b => `<button type="button" class="view-seg-btn" data-val="${b.space}"
-                data-tip="${escape(t(b.why))}" aria-label="${escape(`${t(b.label)} — ${t(b.why)}`)}"
+                data-tip="${escape(t(b.why))}" aria-label="${escape(`${t(b.label)} - ${t(b.why)}`)}"
                 aria-pressed="${b.space === BLEND_DEFAULT_SPACE}">${escape(t(b.label))}</button>`).join('')}
             </div>
             ${/* Hue travel only means anything in a polar space, so the row is present but
@@ -3267,7 +3267,7 @@ function shellHtml(): string {
       </div>
     </section>
     <!-- 5 · WHAT IT COSTS YOU. The verdict and the readability scores: real, but
-         reference material rather than the reason you opened the page — so they
+         reference material rather than the reason you opened the page - so they
          sit under the charts and the ramps instead of in front of them. -->
     <section class="lab-step-block">
       <h2 class="lab-h2 lab-step-h">
@@ -3307,13 +3307,13 @@ function shellHtml(): string {
                 device cube, not by the round trip (iccRoundTripDecides), so the
                 sentence would state a rule the verdict above it does not follow. */''}
           <p class="lab-card-note" data-lab-press-note hidden>${escape(tRaw(
-            'In gamut is decided by a round trip within ΔE {tol} — a colour can pass and still shift visibly.',
+            'In gamut is decided by a round trip within ΔE {tol} - a colour can pass and still shift visibly.',
             { tol: ICC_GAMUT_DELTA_E.toFixed(1) },
           ))}</p>
         </div>
       </div>
       <h3 class="lab-h3">${escape(t('Readability'))}</h3>
-      <p class="lab-section-note">${escape(t('APCA first, WCAG second: APCA models polarity — light text on dark reads worse than the same pair inverted — which the WCAG ratio scores identically. Black and white are the ceiling on what the colour can carry; the third surface is yours to set.'))}</p>
+      <p class="lab-section-note">${escape(t('APCA first, WCAG second: APCA models polarity - light text on dark reads worse than the same pair inverted - which the WCAG ratio scores identically. Black and white are the ceiling on what the colour can carry; the third surface is yours to set.'))}</p>
       <p class="lab-section-note">${escape(t(APCA_SRGB_ONLY))}</p>
       ${/* The three cards are STABLE markup, scored in place - they are NOT rebuilt on
             every change. The third one hosts a live popover picker, and re-rendering
@@ -3338,7 +3338,7 @@ function shellHtml(): string {
           <span class="lab-diag-hint">${escape(t('An APCA grid, and how it reads for colour-vision deficiency'))}</span>
         </summary>
         <div class="lab-diag-body">
-          <p class="lab-section-note">${escape(t('Every palette colour as TEXT (down the rows) over every palette colour as BACKGROUND (across the columns), plus white and black. APCA is polarity-dependent, so a cell and its mirror differ and the diagonal — a colour on itself — reads ~0. Pick a vision mode to recolour the grid and the brand rail and rescore each pairing for that vision.'))}</p>
+          <p class="lab-section-note">${escape(t('Every palette colour as TEXT (down the rows) over every palette colour as BACKGROUND (across the columns), plus white and black. APCA is polarity-dependent, so a cell and its mirror differ and the diagonal - a colour on itself - reads ~0. Pick a vision mode to recolour the grid and the brand rail and rescore each pairing for that vision.'))}</p>
           <div class="lab-cvd">
             <div class="view-seg lab-seg" role="group" aria-label="${escape(t('Vision preview'))}" data-lab-cvd>
               <button type="button" class="view-seg-btn" data-val="normal" aria-pressed="true">${escape(t('Normal'))}</button>

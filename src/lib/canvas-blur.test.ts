@@ -399,7 +399,7 @@ test('boxBlurRgba: no sizes, no work', () => {
 
 // ── the pool ────────────────────────────────────────────────────────────────
 
-test('takeStage answers null where the realm has no canvas — and every caller survives it', () => {
+test('takeStage answers null where the realm has no canvas - and every caller survives it', () => {
   _setBlurCanvasFactory(() => null);
   try {
     assert.equal(takeStage(10, 10), null);

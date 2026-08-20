@@ -70,7 +70,7 @@ test('chromaRange widens past 0.4 to fit a saturated curve, never clipping a sto
   assert.equal(r.min, 0);
 });
 
-test('cloneCurve is a deep copy — mutating the clone never touches the source', () => {
+test('cloneCurve is a deep copy - mutating the clone never touches the source', () => {
   const src = defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 5);
   const copy = cloneCurve(src);
   assert.deepEqual(copy, src);
@@ -116,7 +116,7 @@ test('stepPointValue: Shift multiplies the step by KEY_BIG, direction flips the 
   assert.ok(Math.abs(stepPointValue(v, 'C', -1, false, r) - (v - CHANNEL_STEP.C)) < 1e-9);
 });
 
-test('stepPointValue clamps to the axis range — a curve point never leaves its plot', () => {
+test('stepPointValue clamps to the axis range - a curve point never leaves its plot', () => {
   const r = CHANNEL_RANGE.L; // 0..1
   assert.equal(stepPointValue(0.995, 'L', 1, false, r), 1, 'up clamps at max');
   assert.equal(stepPointValue(0.005, 'L', -1, false, r), 0, 'down clamps at min');

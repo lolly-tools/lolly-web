@@ -524,7 +524,7 @@ test('a handle drag on a corner node leaves the other handle alone', () => {
   assert.equal(next.hOutX, 30);
 });
 
-test('inserting a node on a cubic is EXACT — on the curve, and the shape does not move', () => {
+test('inserting a node on a cubic is EXACT - on the curve, and the shape does not move', () => {
   const p: AuthoredPath = {
     kind: 'cubic', closed: false,
     nodes: [
@@ -609,7 +609,7 @@ test('drawing three nodes and closing commits exactly ONE setInput, as one path 
   armPen(f);
   const before = f.commits();
   for (const [x, y] of P) { place(f, x, y); frames(); }
-  assert.equal(f.commits(), before, 'placing nodes commits nothing — the draft is not in the model');
+  assert.equal(f.commits(), before, 'placing nodes commits nothing - the draft is not in the model');
   place(f, P[0]![0], P[0]![1]);                 // clicking the first node closes the path
   frames();
   assert.equal(f.commits() - before, 1, 'exactly one setInput for the whole drawing');
@@ -712,7 +712,7 @@ test('Alt-click with no drag places a CORNER, so no handles are pulled', () => {
 
 // The tracing gesture: a corner whose two sides are independent, authored in ONE pass
 // instead of drawing everything smooth and breaking the pairs afterwards in node-edit mode.
-test('Alt-DRAG breaks the pair — it steers the outgoing arm and leaves the incoming one', () => {
+test('Alt-DRAG breaks the pair - it steers the outgoing arm and leaves the incoming one', () => {
   const f = mount([]);
   armPen(f);
   place(f, 200, 200, { drag: [240, 220] });       // node 0: an ordinary symmetric pull
@@ -803,7 +803,7 @@ test('a double-click ends an open path', () => {
   f.destroy();
 });
 
-test('a pan or zoom mid-draw keeps the draft — it never touched the model', () => {
+test('a pan or zoom mid-draw keeps the draft - it never touched the model', () => {
   const f = mount([]);
   armPen(f);
   for (const [x, y] of P) { place(f, x, y); frames(); }
@@ -1295,7 +1295,7 @@ test('a node INSERTED outside the frame is contained too, and the curve is unmov
   f.destroy();
 });
 
-test('a handle pulled far outside does NOT inflate the frame — the curve does not follow the hull', () => {
+test('a handle pulled far outside does NOT inflate the frame - the curve does not follow the hull', () => {
   // The reason the refit uses `pathBounds` (the tight bbox, from the derivative's roots) and
   // not the control hull. A cubic reaches only ~3/4 of the way to a control point, so a
   // handle can sit a long way outside the frame with the CURVE barely leaving it - and

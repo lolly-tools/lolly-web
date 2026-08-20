@@ -35,7 +35,7 @@ test('LEGACY: ?tab= opens the same rooms', () => {
   }
 });
 
-test('LEGACY: #/start?tab=type — the dashboard "Manage fonts" link', () => {
+test('LEGACY: #/start?tab=type - the dashboard "Manage fonts" link', () => {
   assert.deepEqual(resolveStartRoute('tab=type'), { area: 'type', wheel: false, importOpen: false, focus: null, source: null });
 });
 
@@ -43,7 +43,7 @@ test('LEGACY: #/start?tab=color&wheel opens the colour room with the chart flag'
   assert.deepEqual(resolveStartRoute('tab=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null });
 });
 
-test('LEGACY: ?wheel is presence, not value — ?wheel=0 has always meant open', () => {
+test('LEGACY: ?wheel is presence, not value - ?wheel=0 has always meant open', () => {
   assert.equal(resolveStartRoute('area=color&wheel=0').wheel, true);
   assert.equal(resolveStartRoute('area=color').wheel, false);
 });
@@ -55,7 +55,7 @@ test('LEGACY: #/start?import opens the source modal, ?import=0 leaves it shut', 
   assert.equal(resolveStartRoute('import=0').importOpen, false);
 });
 
-test('?import carries its own area — it does not force one', () => {
+test('?import carries its own area - it does not force one', () => {
   assert.equal(resolveStartRoute('import').area, 'overview');
   assert.equal(resolveStartRoute('area=logos&import').area, 'logos');
 });
@@ -74,7 +74,7 @@ test('an unrecognised room name resolves to Overview', () => {
   assert.equal(resolveStartRoute('area=nope&tab=alsonope').area, 'overview');
 });
 
-test('room names are exact — a cased or padded value is not a room', () => {
+test('room names are exact - a cased or padded value is not a room', () => {
   assert.equal(resolveStartRoute('area=COLOR').area, 'overview');
   assert.equal(resolveStartRoute('area=%20color').area, 'overview');
 });
@@ -137,7 +137,7 @@ test('?source=pdf and ?source=url resolve now and open the plain picker (M5/M6 g
   for (const src of START_SOURCES) assert.equal(resolveStartRoute(`source=${src}`).source, src, src);
 });
 
-test('an unknown ?source= is null and opens NOTHING — it falls through like an unknown ?area=', () => {
+test('an unknown ?source= is null and opens NOTHING - it falls through like an unknown ?area=', () => {
   const r = resolveStartRoute('source=zzz');
   assert.equal(r.source, null);
   assert.equal(r.importOpen, false);

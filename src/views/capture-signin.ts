@@ -91,7 +91,7 @@ export function mountCaptureSignin({ inputsEl, runtime, t, announce }: CaptureSi
     status.hidden = !active;
     clearBtn.hidden = !active;
     if (active) {
-      status.innerHTML = `${icon('check', { size: 14 })}<span>${t('Signed-in session active — screenshots use it')}</span>`;
+      status.innerHTML = `${icon('check', { size: 14 })}<span>${t('Signed-in session active - screenshots use it')}</span>`;
     }
   };
 
@@ -108,7 +108,7 @@ export function mountCaptureSignin({ inputsEl, runtime, t, announce }: CaptureSi
     signInBtn.disabled = true;
     void invoke('capture_signin_open', { url })
       .then(() => {
-        announce?.(t('Signed-in browser opened — log in, then come back and export.'));
+        announce?.(t('Signed-in browser opened - log in, then come back and export.'));
         return refreshStatus();
       })
       .catch((e: unknown) => announce?.(String((e as Error)?.message ?? e)))

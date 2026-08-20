@@ -131,7 +131,7 @@ test('generatedSongSpec: no Math.random / Date / performance leak on the spec pa
   // failure would show up as "the music changed", months later, with no stack.
   const src = readFileSync(fileURLToPath(new URL('./sequence-providers.ts', import.meta.url)), 'utf8');
   const section = src.slice(src.indexOf('procedural audio: the `zzfxm:` scheme'));
-  assert.ok(section.length > 1000, 'the procedural section moved — retarget this guard');
+  assert.ok(section.length > 1000, 'the procedural section moved - retarget this guard');
   const code = section.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   for (const forbidden of ['Math.random', 'Date.now', 'new Date', 'performance.now', 'crypto.']) {
     assert.equal(code.includes(forbidden), false, `${forbidden} destroys reproducibility`);
@@ -184,7 +184,7 @@ test('zzfxmTargetSec: rounds UP to the grid, clamps to the floor and ceiling', (
   assert.equal(zzfxmTargetSec(30.5), 30.5);
 });
 
-test('zzfxmTargetSec: absorbs float jitter in totalMs — the whole reason it exists', () => {
+test('zzfxmTargetSec: absorbs float jitter in totalMs - the whole reason it exists', () => {
   // 8000ms and 8000.0000001ms are the same composition, or a preview and its
   // export would be different songs.
   assert.equal(zzfxmTargetSec(20), zzfxmTargetSec(20 + 1e-9));

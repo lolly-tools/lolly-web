@@ -145,7 +145,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
       return `
         <h2 class="modal-title">${t('Where should Lolly get its tools?')}</h2>
         <p class="modal-msg">${firstRun
-          ? t('Choose once — you can change this later from your profile.')
+          ? t('Choose once - you can change this later from your profile.')
           : t('Choose what this install reads its catalogue and tools from.')}</p>
         <div class="instance-choices">
           <button type="button" class="instance-choice" data-act="choose-bundled">
@@ -163,7 +163,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
             </span>
           </button>
         </div>
-        <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones — connect only to instances you trust.')}</p>
+        <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones - connect only to instances you trust.')}</p>
         ${current ? `<p class="modal-msg">${t('Currently connected to {base}.', { base: current })}</p>` : ''}
       `;
     }
@@ -180,7 +180,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
           <input type="url" class="field-input field-input--mono" id="instance-url" placeholder="https://your-instance.example.com" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
         </div>
         ${err}${probe}
-        <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones — connect only to instances you trust.')}</p>
+        <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones - connect only to instances you trust.')}</p>
         <div class="modal-actions">
           <button type="button" class="btn" data-act="connect-back">${t('Back')}</button>
           ${s.probed
@@ -195,7 +195,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
       const summary = s.summary ? `<p class="instance-summary">${escape(s.summary)}</p>` : '';
       return `
         <h2 class="modal-title">${t('Import your data (optional)')}</h2>
-        <p class="modal-msg">${t('Bring your saved sessions, images and profile across from a Lolly backup zip — from a link, or a file on this device.')}</p>
+        <p class="modal-msg">${t('Bring your saved sessions, images and profile across from a Lolly backup zip - from a link, or a file on this device.')}</p>
         <div class="instance-field-row">
           <input type="url" class="field-input field-input--mono" id="instance-import-url" placeholder="https://…/LollyTools-backup.zip" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
           <button type="button" class="btn" data-act="import-url"${s.busy ? ' disabled' : ''}>${t('Fetch')}</button>
@@ -282,7 +282,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
             // "sync's public resync/bust entry" - the same exported function
             // gallery.ts's own empty-catalog retry button calls.
             await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
-          } catch { /* offline — sync falls back to cache; the instance is still set */ }
+          } catch { /* offline - sync falls back to cache; the instance is still set */ }
           window.dispatchEvent(new Event('lolly:remount'));
           announce(tRaw('Connected to {base}.', { base }));
           goImportStep();

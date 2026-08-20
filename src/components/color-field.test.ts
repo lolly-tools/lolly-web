@@ -113,7 +113,7 @@ function type(field: HTMLElement, text: string): void {
 
 // ── Trap 1: nothing may emit at mount ────────────────────────────────────────
 
-test('wiring a field emits NOTHING — no mount-time echo, in any configuration', () => {
+test('wiring a field emits NOTHING - no mount-time echo, in any configuration', () => {
   // The bug this pins: the picker used to emit an onChange while wiring up,
   // carrying the sRGB hex it had just been handed. A host that treats that as a
   // user edit overwrites its own state - in Colour Lab it made EVERY colour report
@@ -135,7 +135,7 @@ test('wiring a field emits NOTHING — no mount-time echo, in any configuration'
   }
 });
 
-test('switching space emits nothing — it changes the numbers, not the colour', () => {
+test('switching space emits nothing - it changes the numbers, not the colour', () => {
   const { field, seen } = mount('#30ba78', { inline: true, modes: true });
   const modes = field.querySelector<HTMLElement>('[data-color-modes]')!;
   for (const spec of colorSpaces()) {
@@ -160,7 +160,7 @@ test('switching space emits nothing — it changes the numbers, not the colour',
 
 test('one flat tablist, grouped into three labelled families, wired to its panels', () => {
   const { field } = mount('#30ba78', { inline: true, modes: true });
-  assert.equal(field.querySelectorAll('[role="tablist"]').length, 1, 'ONE tablist — not one per family');
+  assert.equal(field.querySelectorAll('[role="tablist"]').length, 1, 'ONE tablist - not one per family');
   const tabs = [...field.querySelectorAll<HTMLElement>('[role="tab"]')];
   assert.equal(tabs.length, colorSpaces().length);
   // Order in the registry IS visual order IS arrow-key order.
@@ -284,7 +284,7 @@ test('a near-grey keeps its hue across lightness drags (no hex round trip)', () 
   assert.equal(seen.at(-1)!.detail.color.components[0], 200, 'HSL hue survived a lightness drag');
 });
 
-test('a drag composes straight to the space it is in — CMYK stays put on K', () => {
+test('a drag composes straight to the space it is in - CMYK stays put on K', () => {
   const { field, seen } = mount('#3c7a9f', { inline: true, modes: true });
   field.querySelector<HTMLElement>('[data-mode="cmyk"]')!
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -315,7 +315,7 @@ test('the emitted value is unchanged: a lowercase sRGB hex, alpha byte-exact', (
   assert.equal(field.querySelector<HTMLElement>('.color-alpha-pct')!.textContent, '100%');
 });
 
-test('transparent stays transparent — it is not a CssColor and must not become black', () => {
+test('transparent stays transparent - it is not a CssColor and must not become black', () => {
   const { field, seen } = mount('transparent', { inline: true, modes: true });
   assert.equal(field.dataset.colorCanon, 'transparent');
   type(field, 'transparent');
@@ -535,7 +535,7 @@ test('the hairlines move with the ramp they mark', async () => {
 test('the dial hairline is a rotated element, styled entirely from CSS', () => {
   const css = readFileSync(new URL('../styles/parts/color-field.css', import.meta.url), 'utf8');
   const rule = /\.color-dial-edge::before \{([^}]*)\}/.exec(css);
-  assert.ok(rule, 'the dial hairline rule moved — find it before deleting this test');
+  assert.ok(rule, 'the dial hairline rule moved - find it before deleting this test');
   const body = rule![1]!;
   // Not dashed (that means DROP AREA here) and not a border - it is a mark of its own.
   assert.ok(!/dashed/.test(body), `no dashed hairline: ${body.trim()}`);
@@ -550,7 +550,7 @@ test('the dial hairline is a rotated element, styled entirely from CSS', () => {
   assert.match(body, /width:\s*var\(--dial-edge-w/);
   const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
   const emit = /function dialEdgesHtml\([^)]*\): string \{([\s\S]*?)\n\}/.exec(src);
-  assert.ok(emit, 'dialEdgesHtml moved — find it before deleting this test');
+  assert.ok(emit, 'dialEdgesHtml moved - find it before deleting this test');
   assert.ok(!/background|color-mix|border/.test(emit![1]!), `JS writes the angle only: ${emit![1]!}`);
 });
 
@@ -561,11 +561,11 @@ test('the caution line names the space just switched to, on the leading edge', (
   // Wiring writes the note, priming the throttle - so a switch inside 300ms used to
   // be deferred and this role="status" line kept naming the space the user left.
   selectSpace(field, 'cmyk');
-  assert.equal(noteText(field), 'CMYK — exact');
+  assert.equal(noteText(field), 'CMYK - exact');
   selectSpace(field, 'lab');
-  assert.equal(noteText(field), 'Lab — exact', 'each step of an arrow-key walk must announce its own space');
+  assert.equal(noteText(field), 'Lab - exact', 'each step of an arrow-key walk must announce its own space');
   selectSpace(field, 'oklch');
-  assert.equal(noteText(field), 'OKLCH — exact');
+  assert.equal(noteText(field), 'OKLCH - exact');
 });
 
 test('a superseded caution never lands on top of the colour that contradicts it', async () => {
@@ -751,7 +751,7 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
   // left off this selector it paid the light amounts over a near-black rail - the
   // faintest rings of the three shipped themes, in the one that is the pre-JS default.
   const boost = /(\[data-theme[^{]*)\{[^}]*--track-tier-1:/.exec(tokens);
-  assert.ok(boost, 'the dark tier boost moved — find it before deleting this test');
+  assert.ok(boost, 'the dark tier boost moved - find it before deleting this test');
   for (const theme of ['dark', 'brand']) {
     assert.match(boost![1]!, new RegExp(`\\[data-theme="${theme}"\\]`),
       `${theme} is a dark ground and must get the dark tier amounts: ${boost![1]!.trim()}`);
@@ -770,7 +770,7 @@ test('the color-mix support probe can actually fail', () => {
   // is not available here.
   const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
   const arg = /CSS\.supports\?\.\(\s*'background', '([^']+)'/.exec(src);
-  assert.ok(arg, 'the support probe moved — find it before deleting this test');
+  assert.ok(arg, 'the support probe moved - find it before deleting this test');
   assert.ok(!arg![1]!.includes('var('), `a var() makes the probe vacuous: ${arg![1]}`);
   assert.match(arg![1]!, /color-mix\(in oklab, [^,]+ \d+%, transparent\)/,
     'a literal percentage is what makes it discriminate');
@@ -793,7 +793,7 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   // rail is the BOTTOM LAYER of that same shorthand, out of --track-rail.
   const css = readFileSync(new URL('../styles/parts/color-field.css', import.meta.url), 'utf8');
   const rail = /\.color-lch-slider,\s*\.color-mode-slider,\s*\.color-dial \{([^}]*)\}/.exec(css);
-  assert.ok(rail, 'the track rail rule moved — find it before deleting this test');
+  assert.ok(rail, 'the track rail rule moved - find it before deleting this test');
   const body = rail![1]!;
   assert.ok(!/dashed/.test(body), `no dashed border on a slider, got "${body.trim()}"`);
   assert.ok(!/box-shadow:\s*inset/.test(body), 'an inset rail would paint over the runs');
@@ -829,7 +829,7 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   // affordance - so an amber outline silently removed the keyboard focus ring from
   // precisely the sliders an out-of-gamut colour is being dragged on.
   assert.ok(!/outline/.test(clamp![1]!),
-    `the clamp mark must not use outline — it would eat the focus ring: "${clamp![1]!.trim()}"`);
+    `the clamp mark must not use outline - it would eat the focus ring: "${clamp![1]!.trim()}"`);
   assert.match(clamp![1]!, /box-shadow:\s*inset/, 'an inset ring coexists with the focus outline');
   assert.match(css, /:focus-visible[^{]*\{[^}]*outline:\s*2px solid hsl\(var\(--ring\)\)/,
     'the focus ring is still an outline, and now nothing outranks it');

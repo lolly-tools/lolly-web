@@ -720,7 +720,7 @@ export async function createVideoProvider(src: Blob | string, opts: ProviderOpts
       return await withTimeout(openMediabunnyProvider(src, opts), timeout, 'open (mediabunny)');
     } catch (err) {
       const e = err as Error & { code?: string };
-      log('warn', `sequence provider: mediabunny declined (${e.code ?? 'error'}: ${e.message}) — falling back to element seek`);
+      log('warn', `sequence provider: mediabunny declined (${e.code ?? 'error'}: ${e.message}) - falling back to element seek`);
     }
   }
   const make = deps.elementProvider ?? createElementProvider;
@@ -1153,7 +1153,7 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
     const ref = parseZzfxmRef(src);
     if (ref) return openZzfxmAudio(ref, opts);
     if (src.startsWith(ZZFXM_SCHEME)) {
-      log('warn', `sequence audio: "${src}" is not a valid ${ZZFXM_SCHEME} ref — clip will be silent`);
+      log('warn', `sequence audio: "${src}" is not a valid ${ZZFXM_SCHEME} ref - clip will be silent`);
       return null;
     }
     // A source that NAMES itself a tracker module never goes near the demuxer:
@@ -1164,7 +1164,7 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
     if (isModuleUrl(src)) {
       const clip = await openModuleAudio(src, opts, 'declared');
       if (!clip) {
-        log('warn', `sequence audio: ${src.slice(0, 120)} is a tracker module that could not be rendered — clip will be silent`);
+        log('warn', `sequence audio: ${src.slice(0, 120)} is a tracker module that could not be rendered - clip will be silent`);
       }
       return clip;
     }
@@ -1187,7 +1187,7 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
       // can identify it.
       const mod = await openModuleAudio(src, opts, 'sniffed');
       if (mod) return mod;
-      log('warn', `sequence audio: ${e.code ?? 'error'}: ${e.message} — clip will be silent`);
+      log('warn', `sequence audio: ${e.code ?? 'error'}: ${e.message} - clip will be silent`);
       return null;
     }
   }
@@ -1426,7 +1426,7 @@ function moduleClip(bytes: Uint8Array, opts: ClipAudioOpts): ClipAudio {
       const frames = pcm.left.length;
       if (frames * 2 * 4 > MAX_MODULE_PCM_BYTES) {
         // Loud, and silent for this box only - the rest of the mix still renders.
-        log('warn', `sequence audio: a tracker module rendered ${Math.round(frames / Math.max(1, pcm.sampleRate))}s of PCM, past the ${Math.round(MAX_MODULE_PCM_BYTES / (1024 * 1024))} MB ceiling — clip will be silent`);
+        log('warn', `sequence audio: a tracker module rendered ${Math.round(frames / Math.max(1, pcm.sampleRate))}s of PCM, past the ${Math.round(MAX_MODULE_PCM_BYTES / (1024 * 1024))} MB ceiling - clip will be silent`);
         return { channels: [], sampleRate };
       }
       duration = pcm.sampleRate > 0 ? frames / pcm.sampleRate : 0;
@@ -1565,7 +1565,7 @@ function openZzfxmAudio(ref: ZzfxmRef, opts: ClipAudioOpts): ClipAudio {
   let cached: Promise<RenderedPcm> | null = null;
 
   if (ref.rawStyle) {
-    log('warn', `sequence audio: unknown ${ZZFXM_SCHEME} style "${ref.rawStyle}" — using the seed's own style.`);
+    log('warn', `sequence audio: unknown ${ZZFXM_SCHEME} style "${ref.rawStyle}" - using the seed's own style.`);
   }
 
   return {

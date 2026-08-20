@@ -124,7 +124,7 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
       // The button has visible text, so its name only needs the column prefix - 
       // and keeps the visible string inside it (label-in-name).
       if (!ref || !(ref.url || ref.id)) {
-        return `<button type="button" ${attrList('pro-control', label ? `${label} — Choose…` : '')} data-asset-pick>Choose…</button>`;
+        return `<button type="button" ${attrList('pro-control', label ? `${label} - Choose…` : '')} data-asset-pick>Choose…</button>`;
       }
       const name = ref.meta?.name || ref.id || 'Selected';
       const thumb = ref.url ? `<img class="pro-asset-thumb" src="${esc(ref.url)}" alt="">` : '';
@@ -132,7 +132,7 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
       // can be cleared without opening the picker (handled by the grid click
       // delegate, which checks [data-asset-clear] before [data-asset-pick]).
       const clear = `<span class="pro-asset-clear" data-asset-clear role="button" aria-label="Remove image" title="Remove image"></span>`;
-      return `<button type="button" ${attrList('pro-control', label ? `${label} — ${name}` : '')} data-asset-pick data-selected>${thumb}<span class="pro-asset-name">${esc(name)}</span>${clear}</button>`;
+      return `<button type="button" ${attrList('pro-control', label ? `${label} - ${name}` : '')} data-asset-pick data-selected>${thumb}<span class="pro-asset-name">${esc(name)}</span>${clear}</button>`;
     }
 
     case 'url':

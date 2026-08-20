@@ -38,7 +38,7 @@ test('planBatch: renderable/skipped are unchanged when nothing is skipped', asyn
   assert.deepEqual(plan.findings, []);
 });
 
-test('planBatch: the worked example — 5 rows, r2 and r4 have no template', async () => {
+test('planBatch: the worked example - 5 rows, r2 and r4 have no template', async () => {
   // The brief's case: grid row 5 becomes queue position 3, and today nothing anywhere
   // could tell the user which row "3" was.
   const rows = rowsOf(['r1', 'qr-code'], ['r2', ''], ['r3', 'qr-code'], ['r4', ''], ['r5', 'qr-code']);

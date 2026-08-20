@@ -39,7 +39,7 @@ test('buildDeck: linear deck is one-frame columns in order', () => {
   assert.deepEqual(deck.columns.map((c) => c.length), [1, 1, 1]);
 });
 
-test('buildDeck: sorts by order, then x, then id — not input order', () => {
+test('buildDeck: sorts by order, then x, then id - not input order', () => {
   const deck = buildDeck([
     { id: 'c', order: 2, x: 0, y: 0, w: 10, h: 10 },
     { id: 'a', order: 0, x: 0, y: 0, w: 10, h: 10 },

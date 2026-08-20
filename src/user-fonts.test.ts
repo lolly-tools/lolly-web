@@ -262,7 +262,7 @@ function patchOs2(src: ArrayBuffer, patch: { weight?: number; fsType?: number })
     if (patch.fsType !== undefined) v.setUint16(at + 8, patch.fsType, false);
     return out;
   }
-  throw new Error('fixture has no OS/2 table — patchOs2 would silently do nothing');
+  throw new Error('fixture has no OS/2 table - patchOs2 would silently do nothing');
 }
 
 /** Rewrite one table's 4-byte tag, which is how a reader that finds a table by
@@ -277,7 +277,7 @@ function renameTable(src: ArrayBuffer, from: string, to: string): ArrayBuffer {
     for (let c = 0; c < 4; c++) v.setUint8(off + c, to.charCodeAt(c));
     return out;
   }
-  throw new Error(`fixture has no ${from} table — renameTable would silently do nothing`);
+  throw new Error(`fixture has no ${from} table - renameTable would silently do nothing`);
 }
 
 /** The fixture as a STATIC face of one weight: fvar hidden, so the only weight

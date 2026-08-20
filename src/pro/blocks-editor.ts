@@ -191,7 +191,7 @@ export function openBlocksEditor({ input, value, host, assetPicker = false, onCh
         if (previewOpen) (res && res.blob) ? showPreviewBlob(res.blob) : setPreviewMsg('Nothing to preview yet.');
       } catch (err) {
         if (previewOpen) setPreviewMsg(
-          (err as { message?: string } | null | undefined)?.message === 'timeout' ? 'This template is slow to render — preview skipped.'
+          (err as { message?: string } | null | undefined)?.message === 'timeout' ? 'This template is slow to render - preview skipped.'
             : ((err as { message?: string } | null | undefined)?.message || 'Preview failed to render.'), true);
       } finally {
         previewBusy = false;
@@ -238,7 +238,7 @@ export function openBlocksEditor({ input, value, host, assetPicker = false, onCh
       const prev = firstId ? String(rec[firstId] ?? '').trim() : '';
       return `<div class="pro-blk-card${expanded[i] ? ' is-open' : ''}" data-bi="${i}">
         <div class="pro-blk-card-head">
-          <button type="button" class="pro-blk-grip" data-blk-grip data-bi="${i}" title="Drag to reorder — or focus and use ↑ / ↓" aria-label="Reorder block ${i + 1} of ${records.length}">${GRIP_SVG}</button>
+          <button type="button" class="pro-blk-grip" data-blk-grip data-bi="${i}" title="Drag to reorder - or focus and use ↑ / ↓" aria-label="Reorder block ${i + 1} of ${records.length}">${GRIP_SVG}</button>
           <button type="button" class="pro-blk-toggle" data-blk-toggle data-bi="${i}" aria-expanded="${expanded[i] ? 'true' : 'false'}" title="${expanded[i] ? 'Collapse' : 'Expand'} block">
             ${CHEV_SVG}<span class="pro-blk-card-n">Block ${i + 1}</span>${prev ? `<span class="pro-blk-card-prev">${esc(prev)}</span>` : ''}
           </button>

@@ -191,7 +191,7 @@ export function createSpeechAPI(): SpeechAPI {
       // crosses to the worker; the worker re-checks as defence in depth.
       if (text.length > MAX_INPUT_CHARS) {
         return Promise.reject(new Error(
-          `speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) — split the text and synthesize in parts`,
+          `speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) - split the text and synthesize in parts`,
         ));
       }
       const w = ensureWorker();

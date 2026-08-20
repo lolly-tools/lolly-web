@@ -484,7 +484,7 @@ function lollyReadme(manifest: LollyManifest, summary: LollySummary): string {
   const lines = [
     BUNDLE_HEADER,
     '',
-    'This is a .lolly file — a design created with Lolly.',
+    'This is a .lolly file - a design created with Lolly.',
     `Open it in Lolly (https://lolly.tools) to keep editing: drop it onto the app, or use Open.`,
     '',
     `Tool:     ${manifest.tool.id}${manifest.bundledTool ? ' (included)' : ''}`,
@@ -500,7 +500,7 @@ function lollyReadme(manifest: LollyManifest, summary: LollySummary): string {
     // ordinary files under assets/ with their original names + extensions, so a
     // designer can lift any one out directly. manifest.json maps each back to its id.
     lines.push('', 'The embedded assets are under assets/uploads/ (your files) and',
-      'assets/catalog/ (brand + catalog art), with their real names and extensions —',
+      'assets/catalog/ (brand + catalog art), with their real names and extensions -',
       'rename this file to .zip to browse them. manifest.json lists each one.');
   }
   const c = manifest.creator;

@@ -63,9 +63,9 @@ test('compact round-trip through the engine decoder preserves every field', () =
   const img = back[0]!.img as { source: string; id: string };
   assert.equal(img.source, 'library');
   assert.equal(img.id, 'user/upload/171-l1.png');
-  assert.equal(back[0]!.x, '-30', 'numbers arrive as strings — the hook normalises');
+  assert.equal(back[0]!.x, '-30', 'numbers arrive as strings - the hook normalises');
   assert.equal(back[0]!.b, 'multiply');
-  assert.equal(back[1]!.v, 'false', 'booleans arrive as the STRING "false" — the hook MUST normalise (a truthy trap otherwise)');
+  assert.equal(back[1]!.v, 'false', 'booleans arrive as the STRING "false" - the hook MUST normalise (a truthy trap otherwise)');
   assert.equal(back[1]!.g, 'Header/logo');
 });
 

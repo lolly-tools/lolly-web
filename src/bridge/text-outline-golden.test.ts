@@ -103,16 +103,16 @@ const suseVariableAvailable = fontExists(VARIABLE);
 const outfitAvailable = fontExists(OUTFIT_VARIABLE);
 
 const SKIP_NO_SUSE = suseStaticsAvailable ? false
-  : `SUSE static fonts not present at ${REGULAR} etc. — this checkout's active profile ` +
+  : `SUSE static fonts not present at ${REGULAR} etc. - this checkout's active profile ` +
     `(see profiles.json) has no SUSE fonts mounted under catalog/fonts/. Skipping.`;
 // Not profile-gated any more - the face ships with the shell this file lives in,
 // so this reads as a corrupt checkout rather than as an unmounted brand pack, and
 // it must never quietly become the normal state again.
 const SKIP_NO_VARIABLE = suseVariableAvailable ? false
-  : `SUSE variable font missing from the web shell's own fonts at ${VARIABLE} — this ` +
+  : `SUSE variable font missing from the web shell's own fonts at ${VARIABLE} - this ` +
     `ships on every profile, so a checkout without it is broken, not unmounted.`;
 const SKIP_NO_FALLBACK = (suseStaticsAvailable && outfitAvailable) ? false
-  : `Missing ${!suseStaticsAvailable ? REGULAR : OUTFIT_VARIABLE} — skipping fallbackFonts golden case.`;
+  : `Missing ${!suseStaticsAvailable ? REGULAR : OUTFIT_VARIABLE} - skipping fallbackFonts golden case.`;
 
 // ── golden fixture I/O ───────────────────────────────────────────────────────
 const FIXTURE_PATH = repoPath('shells/web/src/bridge/__fixtures__/text-outline.golden.json');
@@ -179,7 +179,7 @@ async function goldenCase(id: string, opts: ToPathOpts): Promise<NormalizedResul
   const expected = committed[id];
   assert.ok(
     expected,
-    `No committed golden for "${id}" — regenerate with: ` +
+    `No committed golden for "${id}" - regenerate with: ` +
     `UPDATE_GOLDENS=1 node --test "shells/web/src/bridge/text-outline-golden.test.ts"`,
   );
   assert.deepEqual(live, expected, `Golden mismatch for "${id}"`);
@@ -294,7 +294,7 @@ test('letterSpacing strictly widens advanceWidth over the same run at 0', { skip
     `expected letterSpacing:4 advanceWidth (${spaced.advanceWidth}) > letterSpacing:0 (${tight.advanceWidth})`);
 });
 
-test('a codepoint no face covers shapes as .notdef and is counted — the caller\'s cue to keep <text>', { skip: SKIP_NO_SUSE }, async () => {
+test('a codepoint no face covers shapes as .notdef and is counted - the caller\'s cue to keep <text>', { skip: SKIP_NO_SUSE }, async () => {
   const cjk = await api.toPath({ text: '中', fontUrl: REGULAR, fontSize: 48 }); // 中
   assert.ok((cjk.notdef ?? 0) > 0, 'expected notdef > 0 for an uncovered CJK character');
 
@@ -381,7 +381,7 @@ test('an unparseable variation/feature string is dropped, not thrown (a caller t
   const text = 'Hamburgefonstiv';
   const defaultInstance = await api.toPath({ text, fontUrl: VARIABLE, fontSize: 48 });
   const bogusVariation = await api.toPath({ text, fontUrl: VARIABLE, fontSize: 48, variations: ['nonsense=1'] });
-  assert.equal(bogusVariation.d, defaultInstance.d, 'a malformed axis string is filtered, leaving the default instance — not thrown');
+  assert.equal(bogusVariation.d, defaultInstance.d, 'a malformed axis string is filtered, leaving the default instance - not thrown');
 
   // Shaped through the same master rather than the static: the claim is about
   // the FEATURE STRING being filtered, which no face is special to, and reading

@@ -90,7 +90,7 @@ function destroyEntry(entry: Entry): void {
   try {
     entry.anim.destroy(); // unregisters from lottie's global animationManager
   } catch {
-    /* already destroyed — destroy must be idempotent */
+    /* already destroyed - destroy must be idempotent */
   }
 }
 
@@ -140,7 +140,7 @@ async function mountOne(el: Element, lottie: LottiePlayer, isCurrent: () => bool
     renderer: 'svg',
     loop: el.getAttribute('data-lottie-loop') !== 'false',
     autoplay: el.getAttribute('data-lottie-autoplay') !== 'false',
-    animationData: structuredClone(data), // lottie-web mutates it — never hand it the cache
+    animationData: structuredClone(data), // lottie-web mutates it - never hand it the cache
     rendererSettings: {
       preserveAspectRatio:
         el.getAttribute('data-lottie-fit') === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet',

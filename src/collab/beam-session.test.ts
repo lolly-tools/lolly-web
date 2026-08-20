@@ -415,7 +415,7 @@ test('a session and its closure round-trip over a lane pair, byte-exact, both wa
   sessionA.toast.accept(back.beamId);
   await waitFor(() => only(eventsA, 'complete').length === 2, 'the return beam to land');
 
-  assert.equal(hostA.records.size, 1, 'identical bytes already here are reused — no second row (section 6.4)');
+  assert.equal(hostA.records.size, 1, 'identical bytes already here are reused - no second row (section 6.4)');
   assert.equal(sinkA!.discards, 1);
 
   sessionA.close();
@@ -490,7 +490,7 @@ test('a receiver with no ingest configured declines at offer time, before any by
   assert.equal(laneA.sent.length, 1, 'the offer, and nothing else');
   assert.equal(laneA.sent[0]?.kind, 'json');
   assert.equal(laneA.sent.filter((f) => f.kind === 'binary').length, 0);
-  assert.equal(sinkB, null, 'the sink was never staged — this was refused before that point');
+  assert.equal(sinkB, null, 'the sink was never staged - this was refused before that point');
 
   assert.equal(sessionA.state().outgoing?.beamId, out.beamId);
   assert.equal(sessionA.state().outgoing?.phase, 'declined');
@@ -505,7 +505,7 @@ test('a receiver with no ingest configured declines at offer time, before any by
   sessionB.close();
 });
 
-test('the sender writes only from a pull — the lane’s buffer is the pace', async () => {
+test('the sender writes only from a pull - the lane’s buffer is the pace', async () => {
   const hostA = senderHost(4000);
   const laneA = makeLane(64);          // one chunk is already over the threshold
   const laneB = makeLane();
@@ -730,7 +730,7 @@ test('close() discards staging for a beam still in flight', async () => {
   sessionA.close();
 });
 
-test('sendCurrentSession packs a live, unsaved state — no slot required', async () => {
+test('sendCurrentSession packs a live, unsaved state - no slot required', async () => {
   const hostA = makeHost();
   addAsset(hostA, PHOTO, pngOf(1500, 11));           // the upload exists…
   const hostB = makeHost();                          // …but the session was never saved

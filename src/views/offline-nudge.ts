@@ -62,11 +62,11 @@ export function offlineNudgeMarkup(profile: Profile | null | undefined): string 
   if (profile?.offlineNudgeDismissed) return '';  // already seen it
   const standalone = runsStandalone();
   const title = standalone
-    ? t('Installed — but not all of it yet')
+    ? t('Installed - but not all of it yet')
     : t('Lolly works offline');
   const text = standalone
     ? t('The app icon is on your device, but Lolly still needs the internet until you download it. Grab everything now and it works anywhere.')
-    : t('Download the app and your tools once, and everything here keeps working with no connection — handy before a flight.');
+    : t('Download the app and your tools once, and everything here keeps working with no connection - handy before a flight.');
   return `
     <aside class="personalize-nudge offline-nudge" role="note" aria-label="${escape(t('Offline downloads'))}">
       <button type="button" class="personalize-nudge-close" aria-label="${escape(t('Dismiss'))}">&times;</button>
@@ -100,7 +100,7 @@ export function mountOfflineNudge(viewEl: HTMLElement, host: NudgeHost): void {
         const current = await host.profile.get();
         if (current.offlineNudgeDismissed) return;   // already recorded
         await host.profile.set({ ...current, offlineNudgeDismissed: true });
-      } catch { /* best-effort — a failed write just means it may show once more */ }
+      } catch { /* best-effort - a failed write just means it may show once more */ }
     })();
   };
   const dismiss = () => { persist(); nudge.remove(); };
@@ -117,6 +117,6 @@ export function mountOfflineNudge(viewEl: HTMLElement, host: NudgeHost): void {
         pinnedToolBytes(),
       ]);
       if (Object.keys(parts).length || pins.count) dismiss();
-    } catch { /* unreadable state — leave the toast up */ }
+    } catch { /* unreadable state - leave the toast up */ }
   })();
 }

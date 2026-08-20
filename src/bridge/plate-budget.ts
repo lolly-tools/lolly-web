@@ -299,14 +299,14 @@ export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
   if (budgetClamped) {
     warning = `sequence: depth plates wanted ${mb(wantedBytes)} against a ${mb(budgetBytes)} plate budget`
       + (reservedBytes > 0 ? ` (${mb(reservedBytes)} of it reserved for blur scratches)` : '')
-      + ` — every layer's extra resolution scaled by ${lambda.toFixed(2)} (now ${mb(bytes)}).`
+      + ` - every layer's extra resolution scaled by ${lambda.toFixed(2)} (now ${mb(bytes)}).`
       + ' Flown-past layers will look softer; nothing else changes.';
   } else if (sideClamped) {
     warning = `sequence: a depth plate would have exceeded the ${cap}px per-plate limit`
-      + ' — that layer\'s extra resolution was capped. Flown-past layers will look softer.';
+      + ' - that layer\'s extra resolution was capped. Flown-past layers will look softer.';
   } else if (padClamped) {
     warning = `sequence: a blur/shadow margin would have pushed a plate past the ${cap}px per-plate limit`
-      + ' — the captured margin was trimmed, so a very large blur is clipped at that distance'
+      + ' - the captured margin was trimmed, so a very large blur is clipped at that distance'
       + ' rather than losing the whole layer to a refused canvas.';
   }
 

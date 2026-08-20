@@ -47,14 +47,14 @@ test('sections and cards are structurally sound', () => {
 
 test('ids and deep-link flags are unique', () => {
   const ids = CAPABILITY_SECTIONS.map((s) => s.id);
-  assert.equal(new Set(ids).size, ids.length, 'duplicate section id — a deep link would jump to whichever came first');
+  assert.equal(new Set(ids).size, ids.length, 'duplicate section id - a deep link would jump to whichever came first');
   // A flag is a space-separated list of deep-link keys (#/d?print). Two sections
   // claiming one key makes that link ambiguous.
   const flags = CAPABILITY_SECTIONS.flatMap((s) => s.flag.split(/\s+/).filter(Boolean));
   assert.equal(new Set(flags).size, flags.length, `duplicate deep-link flag among: ${flags.join(', ')}`);
 });
 
-test('card titles are unique — the search result list shows titles alone', () => {
+test('card titles are unique - the search result list shows titles alone', () => {
   const titles = allCards.map((c) => c.title);
   const dupes = titles.filter((x, i) => titles.indexOf(x) !== i);
   assert.deepEqual(dupes, [], `two cards share a title, so a search hit is ambiguous: ${dupes.join(', ')}`);
@@ -78,7 +78,7 @@ test('desc inline HTML sticks to the reviewed tag allowlist', () => {
   }
 });
 
-test('desc tags are balanced — an unclosed tag would swallow the rest of the dialog', () => {
+test('desc tags are balanced - an unclosed tag would swallow the rest of the dialog', () => {
   for (const f of allFeatures) {
     const open = [...f.desc.matchAll(/<([a-zA-Z][a-zA-Z0-9]*)(?![^>]*\/>)[^>]*>/g)].map((m) => m[1]!.toLowerCase()).filter((tg) => tg !== 'br');
     const close = [...f.desc.matchAll(/<\/([a-zA-Z][a-zA-Z0-9]*)>/g)].map((m) => m[1]!.toLowerCase());
@@ -108,7 +108,7 @@ test('every card carries search keywords', () => {
   const bare = allCards.filter((c) => !c.keywords?.trim()).map((c) => c.title);
   assert.deepEqual(bare, [], `cards missing keywords: ${bare.join(', ')}`);
   for (const c of allCards) {
-    assert.equal(c.keywords, c.keywords!.toLowerCase(), `keywords for "${c.title}" must be lowercase — the filter lowercases the query, not the haystack`);
+    assert.equal(c.keywords, c.keywords!.toLowerCase(), `keywords for "${c.title}" must be lowercase - the filter lowercases the query, not the haystack`);
   }
 });
 
@@ -135,6 +135,6 @@ test('a card`s `shot` is the base slug, never a variant suffix', () => {
   // already carried `.dark` or a locale would be doubled into a 404.
   for (const c of allCards) {
     if (!c.shot) continue;
-    assert.doesNotMatch(c.shot, /\.(dark|svg|png|jpg)$/, `card "${c.title}" — \`shot\` must be the bare slug, not "${c.shot}"`);
+    assert.doesNotMatch(c.shot, /\.(dark|svg|png|jpg)$/, `card "${c.title}" - \`shot\` must be the bare slug, not "${c.shot}"`);
   }
 });

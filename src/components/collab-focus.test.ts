@@ -221,7 +221,7 @@ test('the outline layer is a SIBLING of the canvas, never a child', () => {
   assert.ok(layer, 'a canvas with a parent gets a layer');
   assert.equal(f.canvas.contains(layer), false, 'presence chrome never enters the export stage (section 4.6)');
   assert.equal(layer.parentElement, f.stage,
-    'it hangs off .tool-stage — the anchor collab.css describes, and the one that is not '
+    'it hangs off .tool-stage - the anchor collab.css describes, and the one that is not '
     + 'clipped by .tool-canvas-outer\'s overflow:hidden');
   assert.ok(layer.classList.contains('collab-canvas-layer'), 'the class the shared sheet styles');
   assert.equal(f.canvas.querySelectorAll('.collab-focus-box').length, 0);
@@ -239,7 +239,7 @@ test('canvas outlines anchor from the annotated element rects', () => {
   assert.equal(ring.style.height, '46px');
   assert.equal(ring.style.getPropertyValue('--collab-color'), '#4ea1ff');
   assert.equal(ring.querySelector('.collab-focus-box-label')?.textContent, 'Priya',
-    'the name rides the outline — colour is never the only differentiator (section 4.8)');
+    'the name rides the outline - colour is never the only differentiator (section 4.8)');
 
   // A blocks row resolves through the SAME index mapping the sidebar uses, so both
   // decorations point at the same row.
@@ -252,7 +252,7 @@ test('a focus with no rendered canvas region simply gets no outline', () => {
   const f = mount();
   // "scenes:R2" is a real row, but the template only annotated rows 0 and 1.
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'scenes:R2')]);
-  assert.equal(f.rings().length, 0, 'no anchor, no outline — and no thrown error');
+  assert.equal(f.rings().length, 0, 'no anchor, no outline - and no thrown error');
   assert.equal(f.rows().length, 1, 'the sidebar still shows who is where');
   f.focus.dispose();
 });
@@ -291,7 +291,7 @@ test('a remote focus rings its sidebar row, and leaves no trace when it goes', (
 
   f.focus.setPeers([]);
   assert.equal(row.outerHTML, before,
-    'a row that was decorated is indistinguishable from one that never was — no class, '
+    'a row that was decorated is indistinguishable from one that never was - no class, '
     + 'no chip, not even an empty style=""');
   f.focus.dispose();
 });
@@ -442,7 +442,7 @@ test('a focus handoff is spoken, a heartbeat is not', () => {
   const f = mount();
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   assert.deepEqual(f.said, ['Priya is editing Headline'],
-    'the visible label, not the raw input id — and via announce(), because the chips are aria-hidden');
+    'the visible label, not the raw input id - and via announce(), because the chips are aria-hidden');
 
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   assert.equal(f.said.length, 1, 'restating the same focus says nothing');
@@ -459,7 +459,7 @@ test('reduced motion removes the outline transition rather than the outline', ()
   f.focus.setPeers([peer('p1', 'Priya', '#4ea1ff', 'headline')]);
   assert.equal(f.rings()[0]?.style.transition, 'none',
     'rings do not move on their own, so section 4.8 only has to stop them SLIDING when they '
-    + 're-anchor — and the inline mirror covers the injected preference seam, which is '
+    + 're-anchor - and the inline mirror covers the injected preference seam, which is '
     + 'the one thing collab.css\'s own two gates cannot see');
   assert.equal(f.rings().length, 1, 'the presence itself is never hidden');
 

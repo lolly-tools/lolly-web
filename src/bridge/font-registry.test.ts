@@ -47,7 +47,7 @@ test('coverage: latin subset covers ASCII, not latin-ext; whitespace ignored', (
   assert.equal(rangesCover(latin, 'привет'), false);      // cyrillic
 });
 
-test('an empty range list means an unsubsetted face — covers everything', () => {
+test('an empty range list means an unsubsetted face - covers everything', () => {
   assert.equal(rangesCover([], 'anything 漢字 ✓'), true);
 });
 

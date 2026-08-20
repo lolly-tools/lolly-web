@@ -169,7 +169,7 @@ function renderOfflineChip(offline: boolean): void {
     chip.id = 'sbt-offline-chip';
     chip.setAttribute('role', 'status');
     chip.setAttribute('aria-live', 'polite');
-    chip.textContent = t('Offline — showing saved content');
+    chip.textContent = t('Offline - showing saved content');
     chip.style.cssText = [
       'position:fixed', 'left:12px', 'bottom:12px', 'z-index:2147483647',
       'pointer-events:none', 'padding:6px 10px', 'border-radius:999px',
@@ -202,7 +202,7 @@ function setCatalogMeta(key: string, value: CatalogMeta): void {
   try {
     localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
   } catch {
-    // Storage quota exceeded — non-fatal, ETags are a perf hint only.
+    // Storage quota exceeded - non-fatal, ETags are a perf hint only.
   }
 }
 
@@ -370,7 +370,7 @@ async function syncAssets(host: SyncHost): Promise<void> {
         if (pinned.has(a.id) || scoped?.(a)) keepIds.add(a.id);
       }
     }
-  } catch { /* pins unreadable — prune with session refs only */ }
+  } catch { /* pins unreadable - prune with session refs only */ }
   const pruned = await host.assets._pruneStale(index.assets, sessionRefs, keepIds);
   if (pruned.blobs || pruned.meta) {
     host.log('info', `Pruned stale assets: ${pruned.blobs} blobs, ${pruned.meta} metadata entries`);

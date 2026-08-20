@@ -46,7 +46,7 @@ test('at p = 0 every animated kind is fully transparent, and none is a hard cut'
   }
 });
 
-test('p is clamped to [0,1] — out-of-range progress never overshoots', () => {
+test('p is clamped to [0,1] - out-of-range progress never overshoots', () => {
   for (const kind of TRANSITION_KINDS) {
     assert.deepEqual(recTransition(kind, -5, W, H), recTransition(kind, 0, W, H), kind);
     assert.deepEqual(recTransition(kind, 12, W, H), recTransition(kind, 1, W, H), kind);
@@ -166,10 +166,10 @@ test('an unauthored ease is byte-identical to the curve every kind was born with
     for (const p of [0, 0.1, 0.25, 1 / 3, 0.5, 0.75, 0.9, 1]) {
       const before = recTransition(kind, p, 640, 360);
       const after = recTransition(kind, p, 640, 360, undefined);
-      assert.deepEqual(after, before, `${kind} @ ${p} — omitting the argument must change nothing`);
+      assert.deepEqual(after, before, `${kind} @ ${p} - omitting the argument must change nothing`);
       // Junk, an empty string and an out-of-range curve all mean "not authored".
       for (const junk of ['', 'wobble', 'cubic-bezier(2,0,1,1)', 'cubic-bezier(0,0)', null, 42]) {
-        assert.deepEqual(recTransition(kind, p, 640, 360, junk), before, `${kind} @ ${p} — ${JSON.stringify(junk)} falls back`);
+        assert.deepEqual(recTransition(kind, p, 640, 360, junk), before, `${kind} @ ${p} - ${JSON.stringify(junk)} falls back`);
       }
     }
   }
@@ -203,7 +203,7 @@ test('every endpoint is pinned whatever the curve, so nothing lands off its mark
   }
 });
 
-test('overshoot curves are allowed to leave the unit interval — that is the point', () => {
+test('overshoot curves are allowed to leave the unit interval - that is the point', () => {
   // y outside [0,1] is legal CSS and is the whole overshoot/anticipate family; x
   // outside it is not, because the curve would stop being a function of progress.
   assert.ok(easingPoints('overshoot')![1] > 1, 'overshoot passes its resting value');

@@ -19,7 +19,7 @@ test('the pool keeps brand order and drops non-hex entries', () => {
   assert.deepEqual(pool, ['#30ba78', '#fe7c3f']);
 });
 
-test('near-duplicates collapse — two tiles a JND apart are one tile to a viewer', () => {
+test('near-duplicates collapse - two tiles a JND apart are one tile to a viewer', () => {
   const pool = audioThumbPool([{ hex: '#30ba78' }, { hex: '#30ba79' }, { hex: '#fe7c3f' }], host);
   assert.deepEqual(pool, ['#30ba78', '#fe7c3f'], 'the near-identical green was dropped');
 });
@@ -45,7 +45,7 @@ test('the pool is capped so neighbouring tiles stay tellable apart', () => {
 
 // ─── the decorrelation this module exists for ────────────────────────────────
 
-test('shape and colour do NOT correlate — a shape does not imply a colour', () => {
+test('shape and colour do NOT correlate - a shape does not imply a colour', () => {
   const pool = audioThumbPool(SUSE, host, 'light');
   assert.ok(pool.length >= 3, `need a real pool to test against, got ${pool.length}`);
 
@@ -59,11 +59,11 @@ test('shape and colour do NOT correlate — a shape does not imply a colour', ()
   // The failure this guards: one shared hash makes every `blob` the same colour, so
   // each shape would map to exactly ONE index and identity collapses to 5, not 5×N.
   for (const [shape, indices] of byShape) {
-    assert.ok(indices.size > 1, `shape "${shape}" only ever gets colour ${[...indices]} — the hashes correlate`);
+    assert.ok(indices.size > 1, `shape "${shape}" only ever gets colour ${[...indices]} - the hashes correlate`);
   }
 });
 
-test('the pairing is stable — the same id always yields the same ink', () => {
+test('the pairing is stable - the same id always yields the same ink', () => {
   const pool = audioThumbPool(SUSE, host, 'light');
   const a = audioThumbInk('lolly/loops/3-am-echoes', pool)!;
   const b = audioThumbInk('lolly/loops/3-am-echoes', pool)!;
@@ -96,7 +96,7 @@ test('a monochrome brand gets its own greys, never a fabricated hue', () => {
   const pool = audioThumbPool(mono, host, 'light');
   for (const hex of pool) {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-    assert.ok(Math.max(r!, g!, b!) - Math.min(r!, g!, b!) <= 4, `${hex} is not neutral — a hue was invented`);
+    assert.ok(Math.max(r!, g!, b!) - Math.min(r!, g!, b!) <= 4, `${hex} is not neutral - a hue was invented`);
   }
 });
 
@@ -106,14 +106,14 @@ test('an empty or colourless palette yields no ink rather than a made-up one', (
   assert.equal(audioThumbInkStyle(null), '', 'no ink means no custom property, so the tile inherits currentColor');
 });
 
-test('a single-colour brand is valid — every tile shares it, variety comes from shape', () => {
+test('a single-colour brand is valid - every tile shares it, variety comes from shape', () => {
   const pool = audioThumbPool([{ hex: '#30ba78' }], host);
   assert.deepEqual(pool, ['#30ba78']);
   assert.equal(audioThumbInk('a', pool)!.hex, '#30ba78');
   assert.equal(audioThumbInk('b', pool)!.hex, '#30ba78');
 });
 
-test('without host.color the pool still works — a shell degrades, it does not go blank', () => {
+test('without host.color the pool still works - a shell degrades, it does not go blank', () => {
   const pool = audioThumbPool(SUSE, undefined);
   assert.ok(pool.length >= 3, 'the legibility guard cannot run, so candidates pass through');
   assert.ok(audioThumbInk('x', pool));
@@ -124,7 +124,7 @@ test('the style is a custom property, so the SVG keeps painting currentColor', (
   assert.match(audioThumbInkStyle(audioThumbInk('x', pool)), /^--audio-thumb-ink:#[0-9a-f]{6}$/);
 });
 
-test('the index is always in range — the signed-xor trap', () => {
+test('the index is always in range - the signed-xor trap', () => {
   // `^` yields a SIGNED 32-bit int, so an un-normalised finaliser makes `h % n`
   // negative and `pool[-2]` undefined - a tile that paints nothing. Measured over a
   // 4-colour pool this produced indices from -3 to 3.

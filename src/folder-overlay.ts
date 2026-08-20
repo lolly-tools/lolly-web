@@ -232,7 +232,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
           <button type="button" class="gtile-iconbtn meta-dialog-close" aria-label="Close">&#x2715;</button>
         </div>
       </header>
-      ${tiles ? `<div class="folder-grid">${tiles}</div>` : `<p class="folder-overlay-empty">This folder is empty — move items in from the “⋯” menu.</p>`}
+      ${tiles ? `<div class="folder-grid">${tiles}</div>` : `<p class="folder-overlay-empty">This folder is empty - move items in from the “⋯” menu.</p>`}
     `;
   }
 

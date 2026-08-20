@@ -83,14 +83,14 @@ export function coachVideo(stats: LumaStats): VideoCoaching {
   if (stats.clipHi >= BLOWN_FRAC) {
     return {
       tone: 'hot', cue: 'glare',
-      warning: 'Overexposed — highlights are blown out. Move out of direct sun, or don’t sit with a bright window behind you.',
+      warning: 'Overexposed - highlights are blown out. Move out of direct sun, or don’t sit with a bright window behind you.',
     };
   }
   if (stats.mean >= BRIGHT_MEAN) {
-    return { tone: 'hot', cue: 'bright', warning: 'Too bright — dim the light or step back a little.' };
+    return { tone: 'hot', cue: 'bright', warning: 'Too bright - dim the light or step back a little.' };
   }
   if (stats.mean <= DARK_MEAN || stats.clipLo >= CRUSH_FRAC) {
-    return { tone: 'low', cue: 'dark', warning: 'Too dark — add light or turn to face a window.' };
+    return { tone: 'low', cue: 'dark', warning: 'Too dark - add light or turn to face a window.' };
   }
   return { tone: 'ok', warning: '', cue: null };
 }

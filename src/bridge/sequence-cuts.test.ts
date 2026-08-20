@@ -189,7 +189,7 @@ test('a pdf sheet is ONE document of N pages, playhead advanced per page', async
   assert.ok(blob.size > 0);
 });
 
-test('the artboard is restored — after a clean run AND after a throw', async () => {
+test('the artboard is restored - after a clean run AND after a throw', async () => {
   const root = stage();
   const before = root.innerHTML;
 

@@ -500,7 +500,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
         ${manifest.render.units === false ? '' : `
         <select class="dim-unit" data-action="export-unit" aria-label="Units"
-                title="Units for width & height. Physical units (mm/cm/in/pt) export at the right size for print — PDF as a true page, raster at the chosen DPI.">
+                title="Units for width & height. Physical units (mm/cm/in/pt) export at the right size for print - PDF as a true page, raster at the chosen DPI.">
           ${UNITS.map(u => `<option value="${u}" ${u === initUnit ? 'selected' : ''}>${u}</option>`).join('')}
         </select>
         <label class="dim-dpi" data-dpi-field style="display:${initUnit === 'px' ? 'none' : 'inline-flex'}"
@@ -579,10 +579,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
                  value="${escape(exportDefaults.password ?? '')}"
                  placeholder="Leave blank for no password" aria-label="Open password">
           <select class="pdfpass-tier field-select field-select--sm" data-action="pdf-lock-tier" aria-label="Encryption strength">
-            <option value="standard">Standard lock — opens in any PDF app</option>
-            <option value="strong">Strong · AES-256 — newer apps only ⓘ</option>
+            <option value="standard">Standard lock - opens in any PDF app</option>
+            <option value="strong">Strong · AES-256 - newer apps only ⓘ</option>
           </select>
-          <p class="pdfpass-hint" data-pdfpass-hint>Requires this password to open the PDF. A basic 40-bit lock — it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.</p>
+          <p class="pdfpass-hint" data-pdfpass-hint>Requires this password to open the PDF. A basic 40-bit lock - it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.</p>
         </div>
       </div>` : '';
 
@@ -605,7 +605,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // /verify page (not the Adobe-run contentcredentials.org checker) so people can
   // confirm their own exports here.
   const c2paTip = c2paFormats.length ? helpTip(
-    'Embeds a signed C2PA manifest recording that this file was made with Lolly — plus your name when profile details are on. '
+    'Embeds a signed C2PA manifest recording that this file was made with Lolly - plus your name when profile details are on. '
     + 'Signed on-device, so viewers show it as an unverified credential unless you enrol a verified identity (Profile → Content Credentials).',
     { href: '#/verify', text: 'Check a file →' }
   ) : null;
@@ -617,7 +617,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           ${c2paTip!.button}
           ${c2paTip!.pop}
         </label>
-        <p class="c2pa-hint" data-c2pa-webm style="display:${initialFmt === 'webm' ? 'block' : 'none'}">WebM credentials are Lolly's own mapping for now — external C2PA viewers can't read WebM.</p>
+        <p class="c2pa-hint" data-c2pa-webm style="display:${initialFmt === 'webm' ? 'block' : 'none'}">WebM credentials are Lolly's own mapping for now - external C2PA viewers can't read WebM.</p>
         <div class="c2pa-life" data-c2pa-life>
           <label class="c2pa-life-pick"><span class="c2pa-life-label">Expires:</span>
             <select class="field-select field-select--sm field-select--auto" data-action="c2pa-days" aria-label="Credential lifetime">
@@ -643,8 +643,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // rotated or CSS-filtered elements, effect layers, inline SVG art, rendered charts.
   const containerImprintFmt = imprintFmts.some((f) => f === 'pptx' || f === 'pdf' || f === 'pdf-cmyk');
   const imprintTip = imprintFmts.length ? helpTip(
-    t('Hides the Lolly Imprint — a durable, invisible watermark — in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.')
-    + (containerImprintFmt ? ' ' + t('It rides embedded raster images, not the vector shapes and text — a slide or page built only of headings, boxes and a vector logo has no pixels to carry it.') : ''),
+    t('Hides the Lolly Imprint - a durable, invisible watermark - in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.')
+    + (containerImprintFmt ? ' ' + t('It rides embedded raster images, not the vector shapes and text - a slide or page built only of headings, boxes and a vector logo has no pixels to carry it.') : ''),
     { href: '#/verify', text: t('Check a file →') }
   ) : null;
   const imprintRow = imprintFmts.length ? `
@@ -667,7 +667,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // no origin to fetch the ~33 MB model from), so the toggle never shows as a no-op.
   const durableFmts = durableSupport() ? formats.filter(isDurableFmt) : [];
   const durableTip = durableFmts.length ? helpTip(
-    t('Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding — and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'),
+    t('Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding - and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'),
     { href: '#/verify', text: t('Check a file →') }
   ) : null;
   const durableRow = durableFmts.length ? `
@@ -687,7 +687,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // ?hdr=1 (see views/tool.ts syncUrl + engine/src/hdr.ts).
   const hdrFmts = formats.filter(isHdrFmt);
   const hdrTip = hdrFmts.length ? helpTip(
-    t('HDR (Rec.2100 PQ) boosts your brand colours and white text toward peak brightness so they glow on HDR-capable screens — Safari/Preview on Apple devices, Chrome on an HDR display — while dark areas stay dark. IMPORTANT: only use it where the destination supports HDR. Many platforms (social media, messaging apps, some websites) re-encode uploads and strip the HDR signal, which can leave the image looking dark or washed out. On an ordinary SDR screen it still shows as a normal image.'),
+    t('HDR (Rec.2100 PQ) boosts your brand colours and white text toward peak brightness so they glow on HDR-capable screens - Safari/Preview on Apple devices, Chrome on an HDR display - while dark areas stay dark. IMPORTANT: only use it where the destination supports HDR. Many platforms (social media, messaging apps, some websites) re-encode uploads and strip the HDR signal, which can leave the image looking dark or washed out. On an ordinary SDR screen it still shows as a normal image.'),
   ) : null;
   // Author dials - seeded from a tuned ?hdr= value, else the engine defaults. The
   // body reveals when the toggle is on (like the print card). All four map onto
@@ -825,11 +825,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           </label>
           ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only data-live-capture
                  style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
-                 title="Record the on-screen preview in real time through a screen share — motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
+                 title="Record the on-screen preview in real time through a screen share - motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
             <input type="checkbox" class="field-check" data-action="video-live">
             Record live
           </label>` : ''}
-          ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed — start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
+          ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed - start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
         </div>` : '';
   // Audio track card - webm/mp4 only. An optional catalog music bed (type:
   // 'audio', suse/music/*) muxed into the recording; it plays for the clip
@@ -863,7 +863,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const bedPickHtml = `
         <div class="audio-pick">
           <select class="field-select" data-action="video-audio" aria-label="${hasToolAudioInput ? escape(t('Mix-in track')) : 'Audio track'}"
-                  title="${hasToolAudioInput ? escape(t('Optional track mixed around this tool’s audio, looping if the clip is longer than the track.')) : 'Optional music bed muxed into the recording — plays for the clip duration, looping if the clip is longer than the track.'}">
+                  title="${hasToolAudioInput ? escape(t('Optional track mixed around this tool’s audio, looping if the clip is longer than the track.')) : 'Optional music bed muxed into the recording - plays for the clip duration, looping if the clip is longer than the track.'}">
             <option value="">None</option>
             <option value="__generate__">${escape(t('Generate music'))}</option>
           </select>
@@ -1163,7 +1163,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         : 'No profile on this device to embed';
       cmykSel.append(o);
       cmykSel.value = 'own';
-    }).catch(() => { /* no profile store on this host — the registry rows stand alone */ });
+    }).catch(() => { /* no profile store on this host - the registry rows stand alone */ });
   }
 
   // Fill the audio-track select from the catalog (music beds, type: 'audio').
@@ -1215,7 +1215,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         }
         audioSel.appendChild(grp3);
       });
-    }).catch(() => { /* pre-sync/offline — leave "None" only */ });
+    }).catch(() => { /* pre-sync/offline - leave "None" only */ });
   }
 
   // The tool's own audio slot (assetType 'audio'), read LIVE from the model so the
@@ -1242,7 +1242,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       try {
         const r = await host.assets.get(ref.id);
         if (r?.url) return { url: r.url, format: r.format };
-      } catch { /* not in the store (transient ref) — fall back to its own url */ }
+      } catch { /* not in the store (transient ref) - fall back to its own url */ }
     }
     return ref.url ? { url: ref.url, format: ref.format } : null;
   }
@@ -1482,12 +1482,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // built into an unfinished document - so it works only on a plain RGB `pdf` with
   // no print finishing. Strong = AES-256 encrypt-last, which composes with CMYK /
   // marks / pdf-cmyk. When Standard can't apply we disable it and fall to Strong.
-  const STD_LOCK_HINT = 'Requires this password to open the PDF. A basic 40-bit lock — it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
-  const STRONG_LOCK_HINT = 'AES-256 encryption (PDF 2.0). The recipient must type this exact password to open — it is never included in a link and can’t be recovered if lost. It opens only in newer PDF apps (Acrobat / Preview from ~2018 on); older apps may report the file as damaged.';
+  const STD_LOCK_HINT = 'Requires this password to open the PDF. A basic 40-bit lock - it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
+  const STRONG_LOCK_HINT = 'AES-256 encryption (PDF 2.0). The recipient must type this exact password to open - it is never included in a link and can’t be recovered if lost. It opens only in newer PDF apps (Acrobat / Preview from ~2018 on); older apps may report the file as damaged.';
   // ZIP variants - same two tiers, different reach: standard = PKWARE ZipCrypto
   // (opens anywhere incl. Windows Explorer, weak); strong = WinZip AES-256.
-  const STD_ZIP_HINT = 'Locks the ZIP with a password. Traditional Zip encryption — it opens in any unzip tool including Windows Explorer, and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
-  const STRONG_ZIP_HINT = 'AES-256 ZIP encryption. The recipient must type this exact password — it is never included in a link and can’t be recovered if lost. It opens in 7-Zip, Keka, WinZip or macOS Archive Utility, but NOT Windows Explorer’s built-in extract.';
+  const STD_ZIP_HINT = 'Locks the ZIP with a password. Traditional Zip encryption - it opens in any unzip tool including Windows Explorer, and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
+  const STRONG_ZIP_HINT = 'AES-256 ZIP encryption. The recipient must type this exact password - it is never included in a link and can’t be recovered if lost. It opens in 7-Zip, Keka, WinZip or macOS Archive Utility, but NOT Windows Explorer’s built-in extract.';
   function refreshLockTier(): void {
     const tierEl = el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]');
     if (!tierEl) return;
@@ -1501,9 +1501,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const strongOpt = tierEl.querySelector<HTMLOptionElement>('option[value="strong"]');
     if (stdOpt) {
       stdOpt.disabled = !standardOk;
-      stdOpt.textContent = isZip ? 'Standard lock — opens in any unzip tool' : 'Standard lock — opens in any PDF app';
+      stdOpt.textContent = isZip ? 'Standard lock - opens in any unzip tool' : 'Standard lock - opens in any PDF app';
     }
-    if (strongOpt) strongOpt.textContent = isZip ? 'Strong · AES-256 — 7-Zip / Keka / macOS' : 'Strong · AES-256 — newer apps only ⓘ';
+    if (strongOpt) strongOpt.textContent = isZip ? 'Strong · AES-256 - 7-Zip / Keka / macOS' : 'Strong · AES-256 - newer apps only ⓘ';
     if (!standardOk) tierEl.value = 'strong';
     // Never let a URL-prefilled password become a STRONG key: clear it the moment
     // the tier is strong (whether force-flipped here or picked by the user).
@@ -1647,7 +1647,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const lifeEl = el!.querySelector<HTMLElement>('[data-c2pa-life]');
     if (!lifeEl) return;
     let s: IdentityStatus | null | undefined = null;
-    try { s = await host.identity?.status(); } catch { /* CA/bridge absent — keep the picker */ }
+    try { s = await host.identity?.status(); } catch { /* CA/bridge absent - keep the picker */ }
     if (!s?.enrolled || s.expired) return;
     const until = s.notAfter ? new Date(s.notAfter).toLocaleDateString() : '';
     const renew = (s.daysLeft ?? Infinity) < 7 ? ' <a href="#/profile">Renew soon</a>' : '';
@@ -1851,7 +1851,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       if (!Array.isArray(colors) || colors.length === 0) return;   // stays 'not-resolved'
       palette = { known: true, value: colors.map(s => ({ path: s.path, name: s.name, spot: s.spot ?? null, cmyk: s.cmyk ?? undefined, hex: s.value })) };
       refreshPreflight();
-    } catch { /* stays 'not-resolved' — never a fabricated empty palette */ }
+    } catch { /* stays 'not-resolved' - never a fabricated empty palette */ }
   })();
 
   /** DOM truths, the only channel through which the stage reaches the engine. */
@@ -2294,7 +2294,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         message: tRaw('This changes all {n} artboards to {w}×{h} px and lays them out in a row.', { n: String(frames.length), w: String(pxW), h: String(pxH) }),
         confirmLabel: t('Resize all'),
       });
-      if (!ok) { // artboards stay the truth — restore the fields to the current artboard size
+      if (!ok) { // artboards stay the truth - restore the fields to the current artboard size
         setDims({ width: Math.round(artNum(frames[0]!.w)), height: Math.round(artNum(frames[0]!.h)), unit: 'px' });
         return;
       }
@@ -2395,7 +2395,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // Honest feedback: on browsers without image-clipboard support the bridge
       // downloads the file instead, so don't claim it was copied.
       announce(res?.method === 'download'
-        ? 'Clipboard image not supported here — downloaded instead'
+        ? 'Clipboard image not supported here - downloaded instead'
         : 'Copied to clipboard');
     }).catch(err => console.error('Copy failed:', err));
   });
@@ -2494,7 +2494,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
         return { method: 'clipboard' };
-      } catch { /* fall through to the bridge path — blobPromise has already resolved */ }
+      } catch { /* fall through to the bridge path - blobPromise has already resolved */ }
     }
     // Bridge path: image clipboard write unavailable (e.g. older Firefox) - this
     // returns { method: 'download' } when it falls back to saving the file instead.
@@ -2925,10 +2925,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       btn.removeAttribute('aria-busy');
       // Surface WHY so users don't just retry the same doomed export.
       const raw = String((err as { message?: string })?.message || '');
-      const why = /too large|maximum|exceeds|canvas size|dimensions/i.test(raw) ? 'Too large — reduce size or DPI'
+      const why = /too large|maximum|exceeds|canvas size|dimensions/i.test(raw) ? 'Too large - reduce size or DPI'
         : /not supported|unsupported|no encoder|mime|codec/i.test(raw) ? `Can’t export ${fmt} in this browser`
         : (raw && raw.length <= 48) ? raw
-        : 'Export failed — try again';
+        : 'Export failed - try again';
       btn.textContent = why;
       announce(why, { assertive: true });
       setTimeout(() => { btn.textContent = prev; btn.toggleAttribute('disabled', false); }, 3500);
@@ -2993,7 +2993,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     } catch (err) {
       console.error(`Send to ${kind} failed:`, err);
       const msg = String((err as Error)?.message || '');
-      if (status) status.textContent = msg && msg.length <= 120 ? msg : t('Send failed — try again');
+      if (status) status.textContent = msg && msg.length <= 120 ? msg : t('Send failed - try again');
       announce('Send failed', { assertive: true });
     } finally {
       btn.removeAttribute('aria-busy');

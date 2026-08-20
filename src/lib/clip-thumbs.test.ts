@@ -238,7 +238,7 @@ test('windowPeaks: a trim window shows THAT part of the track, not the whole thi
   assert.ok(whole.slice(0, 5).every(v => v === 0) && whole.slice(5).every(v => v === 1));
 });
 
-test('windowPeaks: total over nonsense — never throws, always the requested length', () => {
+test('windowPeaks: total over nonsense - never throws, always the requested length', () => {
   const m = new Float32Array([0, 0.5, 1]);
   for (const [dur, a, b] of [[0, 0, 1], [10, 5, 5], [10, 8, 2], [10, -5, 999], [Number.NaN, 0, 1]] as const) {
     const out = windowPeaks(m, dur as number, a as number, b as number, 8);
@@ -570,7 +570,7 @@ async function withDom(fn: (probe: DomProbe) => Promise<void>): Promise<void> {
   }
 }
 
-test('stillFrames: an already-aborted signal does no work at all — no <img>, no request', async () => {
+test('stillFrames: an already-aborted signal does no work at all - no <img>, no request', async () => {
   await withDom(async ({ made, drawn }) => {
     const ctrl = new AbortController();
     ctrl.abort();
@@ -637,7 +637,7 @@ test('svgDataUrl: takes the pixel size from the viewBox and inlines the markup',
   const markup = decodeURIComponent(url.slice('data:image/svg+xml;charset=utf-8,'.length));
   assert.match(markup, /width="512"/, 'the viewBox drives the standalone width');
   assert.match(markup, /height="288"/);
-  assert.ok(!markup.includes('width:100%'), 'the percentage style is dropped — it resolves to 0 standalone');
+  assert.ok(!markup.includes('width:100%'), 'the percentage style is dropped - it resolves to 0 standalone');
   assert.match(markup, /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, 'a standalone SVG needs its namespace');
 });
 
@@ -724,7 +724,7 @@ test('readBounded: a throwing stream resolves null rather than rejecting into pe
 // waveform. The panel now resolves the length through span(); this pins the arithmetic
 // that made the symptom, so a future caller passing a zero-width window is caught here
 // rather than by eye.
-test('windowPeaks: a zero-width window is silence — which is why callers must resolve open-ended lengths', () => {
+test('windowPeaks: a zero-width window is silence - which is why callers must resolve open-ended lengths', () => {
   const master = new Float32Array(100).fill(1);
   const collapsed = windowPeaks(master, 10, 0, 0, 16);
   assert.ok(collapsed.every(v => v === 0), 'to === from can only mean silence');
@@ -931,7 +931,7 @@ async function untilParked(box: HTMLElement): Promise<void> {
   assert.equal(box.classList.contains('tl-shot'), true, 'the shot parked the box it borrowed');
 }
 
-test('nodeStill: scrubbing onto a box mid-shot un-parks it — the shot never hides the live scene', async () => {
+test('nodeStill: scrubbing onto a box mid-shot un-parks it - the shot never hides the live scene', async () => {
   // The headline bug: the applier removed `seq-off` and believed the scene was on screen,
   // but `tl-shot` (translate(-200vw,-200vw)) was still on the box, so the stage stayed
   // black for the rest of the shot and the scene popped in when it settled.
@@ -1014,7 +1014,7 @@ test('nodeStill: a shot that comes back with nothing is remembered, not retried 
   });
 });
 
-test('nodeStill: an ABORTED shot is not remembered as a failure — nothing was learned', async () => {
+test('nodeStill: an ABORTED shot is not remembered as a failure - nothing was learned', async () => {
   await withNodeStage(async ({ box }) => {
     let calls = 0;
     _setNodeRasterer(async () => { calls++; return canvasOf(20, 10); });
@@ -1027,7 +1027,7 @@ test('nodeStill: an ABORTED shot is not remembered as a failure — nothing was 
   });
 });
 
-test('nodeStill: a DETACHED box is never photographed — an unstyled blank would be cached as its picture', async () => {
+test('nodeStill: a DETACHED box is never photographed - an unstyled blank would be cached as its picture', async () => {
   // A shot can wait a long time behind five others. If the runtime re-rendered the tool
   // meanwhile, `job.box` points at a node that is no longer in the document, whose
   // computed styles are empty - and the blank that comes back would be cached under the
@@ -1042,7 +1042,7 @@ test('nodeStill: a DETACHED box is never photographed — an unstyled blank woul
   });
 });
 
-test('nodeRasterPending: a bar already in flight is not a miss — that is what makes the retry chain converge', async () => {
+test('nodeRasterPending: a bar already in flight is not a miss - that is what makes the retry chain converge', async () => {
   // The budget is per pass, but the shots are serialised, so a continuation pass fires
   // long before its predecessor's have landed in the cache. Counting those as misses
   // made the retry re-spend its whole budget on bars that were already being taken.

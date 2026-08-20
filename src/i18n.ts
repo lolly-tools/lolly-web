@@ -227,7 +227,7 @@ export async function switchLang(host: LangSwitchHost, next: Lang): Promise<void
     const current = await host.profile.get();
     const { lang: _drop, ...rest } = current as Record<string, unknown>;
     await host.profile.set?.(next === 'en' ? rest : { ...rest, lang: next });
-  } catch { /* preference save is best-effort — the switch below still applies for this session */ }
+  } catch { /* preference save is best-effort - the switch below still applies for this session */ }
   await setActiveLang(next, { persist: true });
   window.location.reload();
 }

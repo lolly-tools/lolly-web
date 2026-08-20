@@ -44,7 +44,7 @@ test('parseTemplates: drops malformed entries rather than throwing', () => {
     { name: 'no-id', values: {} },      // missing id
     { id: 'no-name', values: {} },      // missing name
     { id: 'dup', name: 'A', values: {} },
-    { id: 'dup', name: 'B', values: {} }, // duplicate id — first wins
+    { id: 'dup', name: 'B', values: {} }, // duplicate id - first wins
     null,
     'nonsense',
     { id: 'bad-values', name: 'Bad', values: [1, 2] }, // array values → {}
@@ -212,7 +212,7 @@ test('openTemplateChooser: yields to idle before the render chunk and between re
     void openTemplateChooser({ toolName: 'T', toolId: 't', templates, host, formats: ['svg'] });
     for (let i = 0; i < 200 && getKeys.length < 2; i++) await new Promise(r => setTimeout(r, 0));
 
-    assert.equal(getKeys.length, 2, 'both templates still render — the yield defers, it never drops');
+    assert.equal(getKeys.length, 2, 'both templates still render - the yield defers, it never drops');
     assert.ok(idleBeforeFirstRender >= 1,
       'the first render waits for an idle gap (so the render-engine chunk is not even fetched during the mount burst)');
     assert.ok(idleTimeouts.length >= 2, 'and a second yield separates the two renders');

@@ -37,7 +37,7 @@ const TOOL_TS = readFileSync(join(HERE, 'tool.ts'), 'utf8');
  *  One helper so the scans below stay in step across the export-param extraction. */
 function fnBody(name: string): string {
   const start = TOOL_TS.indexOf(`function ${name}(`);
-  assert.ok(start > 0, `${name} not found — this guard needs updating`);
+  assert.ok(start > 0, `${name} not found - this guard needs updating`);
   const end = TOOL_TS.indexOf('\n}', start);
   assert.ok(end > start, `could not find the end of ${name}`);
   return TOOL_TS.slice(start, end);
@@ -75,10 +75,10 @@ function shareParams(): Set<string> {
 test('every export setting the address bar writes is also carried by the Share link', () => {
   const bar = syncUrlParams();
   const share = shareParams();
-  assert.ok(bar.size >= 10, `expected syncUrl to write many params, found ${bar.size} — the scan probably broke`);
+  assert.ok(bar.size >= 10, `expected syncUrl to write many params, found ${bar.size} - the scan probably broke`);
 
   const missing = [...bar].filter(p => !share.has(p) && !(p in SHARE_EXEMPT)).sort();
-  assert.deepEqual(missing, [], `Share link drops ${missing.join(', ')} — settings the address bar shows the user. `
+  assert.deepEqual(missing, [], `Share link drops ${missing.join(', ')} - settings the address bar shows the user. `
     + 'Add them to buildShareParams, or list them in SHARE_EXEMPT with a reason.');
 });
 
@@ -88,7 +88,7 @@ test('the Share link does not invent params the address bar never writes', () =>
   // The reverse direction: a param only the share link knows about is just as much
   // a drift, and means the address bar is the one under-reporting.
   const extra = [...share].filter(p => !bar.has(p)).sort();
-  assert.deepEqual(extra, [], `Share link carries ${extra.join(', ')} which syncUrl never writes — `
+  assert.deepEqual(extra, [], `Share link carries ${extra.join(', ')} which syncUrl never writes - `
     + 'the address bar is under-reporting, or the share builder is guessing.');
 });
 
@@ -99,7 +99,7 @@ test('group:"export" inputs are not excluded from the Share link', () => {
   // finish switches) even though syncUrl's input loop writes them.
   assert.ok(
     !/if\s*\(\s*group\s*===\s*'export'\s*\)\s*continue/.test(body),
-    'buildShareParams skips group:"export" inputs again — those are ordinary declared '
+    'buildShareParams skips group:"export" inputs again - those are ordinary declared '
     + 'model values that the address bar writes, so skipping them silently drops settings.',
   );
 });

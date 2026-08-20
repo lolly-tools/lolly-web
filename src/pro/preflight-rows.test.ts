@@ -47,7 +47,7 @@ const ENV: BatchPreflightEnv = {
 
 const CTX = { srcIndex: 0 };
 
-test('a clean row produces NOTHING — not one note, not one refusal', () => {
+test('a clean row produces NOTHING - not one note, not one refusal', () => {
   // The per-row channel is a claim about THIS row. `refuse.output-file-size` fires on
   // every job ever, so left in here it put a chip on all 50 cards of a clean 50-row
   // batch and made the headline read "50 with notes" - the noise plan section 6 names.
@@ -60,7 +60,7 @@ test('a clean row produces NOTHING — not one note, not one refusal', () => {
     `a clean row carries its counts and nothing else, got ${JSON.stringify(png.map(f => f.id))}`);
 });
 
-test('the run-invariant findings are not dropped — they are handed to the run channel', () => {
+test('the run-invariant findings are not dropped - they are handed to the run channel', () => {
   const runLevel: Finding[] = [];
   const row: BatchRow = { toolId: 'demo', values: { title: 'hello' }, format: 'png' };
   preflightRow(row, toPreflightManifest(manifestOf()), 0, CTX, ENV, f => runLevel.push(f));
@@ -252,7 +252,7 @@ test('a dimension-less RASTER row reports the pixels rasterStyle will actually p
   assert.equal(size.declaredBy, 'manifest');
 });
 
-test('a dimension-less VECTOR row keeps the unscaled canvas — rasterStyle never runs for it', () => {
+test('a dimension-less VECTOR row keeps the unscaled canvas - rasterStyle never runs for it', () => {
   const size = rowSize({ toolId: 'demo', values: {}, format: 'pdf' }, toPreflightManifest(manifestOf()), {});
   assert.deepEqual(size.width, { value: 1200, unit: 'px' });
   assert.deepEqual(size.height, { value: 900, unit: 'px' });

@@ -108,7 +108,7 @@ test('textSnippet caps, reports what it left out, and never splits a surrogate p
 
 // ═══ the url gate ═════════════════════════════════════════════════════════════
 
-test('classifyUrl: the `?src=` policy, verbatim — a single-slash path is the only bare form', () => {
+test('classifyUrl: the `?src=` policy, verbatim - a single-slash path is the only bare form', () => {
   assert.deepEqual(classifyUrl('/creds/doc.c2pa', ORIGIN), { kind: 'same-origin', path: '/creds/doc.c2pa' });
   assert.deepEqual(classifyUrl('/', ORIGIN), { kind: 'same-origin', path: '/' });
   // Protocol-relative is a URL to another host wearing a path's clothes.
@@ -116,7 +116,7 @@ test('classifyUrl: the `?src=` policy, verbatim — a single-slash path is the o
   assert.deepEqual(classifyUrl('//evil.test', ORIGIN), { kind: 'unresolvable' });
 });
 
-test('classifyUrl: a same-origin absolute URL normalises to a path — but only a safe one', () => {
+test('classifyUrl: a same-origin absolute URL normalises to a path - but only a safe one', () => {
   assert.deepEqual(classifyUrl(`${ORIGIN}/creds/doc.c2pa`, ORIGIN), { kind: 'same-origin', path: '/creds/doc.c2pa' });
   assert.deepEqual(classifyUrl(`${ORIGIN}/c?v=2`, ORIGIN), { kind: 'same-origin', path: '/c?v=2' });
   // THE ONE that bites: a same-origin URL whose pathname is itself
@@ -205,7 +205,7 @@ test('manifest.inaccessible NEVER renders as a broken credential', () => {
   const notes = verifyTextNotices(r, { origin: ORIGIN, refetchable: true });
   const n = byId(notes, 'manifest-elsewhere')!;
   assert.ok(n, 'the external reference is explained');
-  assert.equal(n.tone, 'info', 'informational — the credential is elsewhere, not broken');
+  assert.equal(n.tone, 'info', 'informational - the credential is elsewhere, not broken');
   assert.equal(n.url, '/creds/doc.c2pa', 'the address is shown verbatim');
   assert.equal(n.fetchPath, '/creds/doc.c2pa', 'same-origin, so "Fetch and check" is offered');
   assert.ok(!/modif|tamper|broken|damaged/i.test(`${n.title} ${n.body}`), 'no accusation anywhere in the copy');
@@ -238,7 +238,7 @@ test('a relative credential reference needs the address the document came from',
   assert.equal(with_.fetchPath, '/docs/doc.c2pa');
 });
 
-test('a fetched external credential says so — a valid verdict must not read as "the credential inside this file"', () => {
+test('a fetched external credential says so - a valid verdict must not read as "the credential inside this file"', () => {
   const r = report({
     state: 'valid',
     checks: [ok('assertion.dataHash.match')],
@@ -280,7 +280,7 @@ const NOTICE_ID_FOR_STATUS: Record<string, string> = {
 test('every carrier status maps to a NON-accusatory note', () => {
   const cases = Object.entries(C2PA_TEXT_STATUS).map(([key, status]) => {
     const id = NOTICE_ID_FOR_STATUS[key];
-    assert.ok(id, `C2PA_TEXT_STATUS.${key} (${status}) has no notice — add one to valid-text.ts, then to NOTICE_ID_FOR_STATUS`);
+    assert.ok(id, `C2PA_TEXT_STATUS.${key} (${status}) has no notice - add one to valid-text.ts, then to NOTICE_ID_FOR_STATUS`);
     return [status, id!] as [string, string];
   });
   assert.equal(cases.length, Object.keys(C2PA_TEXT_STATUS).length);
@@ -343,7 +343,7 @@ test('a truncated wrapper walk says "none of the first N", not "none"', () => {
   assert.match(n.body, /none of the first/);
 });
 
-test('fragment fires only from the binding flag — never inferred from a mismatch', () => {
+test('fragment fires only from the binding flag - never inferred from a mismatch', () => {
   const flagged = verifyTextNotices(report({ textBinding: { kind: 'text', fragment: true } }), { origin: ORIGIN });
   const n = byId(flagged, 'fragment')!;
   assert.match(n.title, /fragment of a larger signed text/);
@@ -372,7 +372,7 @@ test('the two exclusion-conformance shapes are told apart, and only one is a war
 
 // ═══ the re-serialized carrier ════════════════════════════════════════════════
 
-test('a pasted, re-serialized carrier is explained rather than accused — and only with the evidence for it', () => {
+test('a pasted, re-serialized carrier is explained rather than accused - and only with the evidence for it', () => {
   const pastedHtml = report({
     state: 'invalid',
     format: 'html',
@@ -485,7 +485,7 @@ test('an absolute credential address this page refuses is not called "relative"'
   assert.match(rel.body, /relative address/);
 });
 
-test('classifyUrl: a bare path is NORMALISED, not trusted — the backslash authority escape', () => {
+test('classifyUrl: a bare path is NORMALISED, not trusted - the backslash authority escape', () => {
   // `fetch()` resolves a path against the document, and for http(s) the WHATWG
   // URL parser treats `\` as a path separator. A single-`/` regex therefore
   // passes `/\evil.test/x` straight through to a cross-origin request, after an

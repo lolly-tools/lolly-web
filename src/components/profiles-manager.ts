@@ -222,7 +222,7 @@ const DISPLAY_PRESETS: readonly DisplayPreset[] = [
     // Probed 2026-07-28 with our own parseIccProfile: mntr, RGB, 3 ch, v2.0.0,
     // desc 'sRGB2014', all four intents answerable. A real display gamut, unlike the
     // v4 preference profile served two links away from it.
-    info: 'sRGB v2 (2014) — the ICC’s own',
+    info: 'sRGB v2 (2014) - the ICC’s own',
     match: ['srgb2014'],
     files: ['sRGB2014.icc'],
     source: {
@@ -335,7 +335,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
           <span class="updz-icon" aria-hidden="true">${icon('upload')}</span>
           <span class="updz-copy">
             <span class="updz-text">${escape(t('Drop an .icc here, or'))} <span class="updz-browse">${escape(t('browse'))}</span></span>
-            <span class="updz-hint">${escape(t('ICC v2 or v4 — a press condition, or any device profile'))}</span>
+            <span class="updz-hint">${escape(t('ICC v2 or v4 - a press condition, or any device profile'))}</span>
 
           </span>
         </label>
@@ -445,15 +445,15 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
         // refusal - a condition with no profile still exports exactly as it did.
         const state = found ? 'loaded' : src ? 'fetch' : 'declare';
         const note = found
-          ? tRaw('Loaded — {name}', { name: found.description || found.name })
+          ? tRaw('Loaded - {name}', { name: found.description || found.name })
           : src
             // The row names the FILE it will fetch, not the condition, because those are
             // not always the same thing: an export declares CGATS TR 001 for SWOP and the
             // registry's profile is built from TR003. Saying which file it is getting is
             // how the reader can tell.
             ? (sourceIsExact(c)
-              ? tRaw('Get {file} — free from the ICC registry', { file: src.name })
-              : tRaw('Get {file} — free from the ICC registry, built from {data}', { file: src.name, data: src.charData ?? '' }))
+              ? tRaw('Get {file} - free from the ICC registry', { file: src.name })
+              : tRaw('Get {file} - free from the ICC registry, built from {data}', { file: src.name, data: src.charData ?? '' }))
           : c.files.length
             ? tRaw('Exports can declare it. Look for {file} on this device.', { file: c.files[0]! })
             : t('Exports can declare it. Load its profile to compare against it.');
@@ -486,8 +486,8 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
           identifier: d.identifier,
           name: d.info,
           note: found
-            ? tRaw('Loaded — {name}', { name: found.description || found.name })
-            : tRaw('Get {file} — free from the ICC registry', { file: d.source.name }),
+            ? tRaw('Loaded - {name}', { name: found.description || found.name })
+            : tRaw('Get {file} - free from the ICC registry', { file: d.source.name }),
           label: found
             ? tRaw('Compare against {name}', { name: d.info })
             : tRaw('Get the profile for {name}', { name: d.info }),
@@ -567,7 +567,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       if (!bytes) {
         say(files.length
           ? tRaw('Couldn’t fetch it. Look for {file} on this device.', { file: files[0]! })
-          : t('Couldn’t fetch it — add the file yourself.'));
+          : t('Couldn’t fetch it - add the file yourself.'));
         return null;
       }
       return bytes;
@@ -604,7 +604,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
     async function chartAgainst(digest: string, intent: RenderingIntent): Promise<void> {
       const ok = await opts.onActivate(digest, intent);
       if (ok) { opts.active = { digest, intent }; modal.close(); return; }
-      say(t('That profile could not be read — add the file again.'));
+      say(t('That profile could not be read - add the file again.'));
       await refresh();
     }
 
@@ -682,7 +682,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
         } else {
           // The charts did NOT move, so the button must not read pressed. Say what
           // is true of the file rather than of the click: re-adding it is the fix.
-          say(t('That profile could not be read — add the file again.'));
+          say(t('That profile could not be read - add the file again.'));
         }
         return refresh();
       });

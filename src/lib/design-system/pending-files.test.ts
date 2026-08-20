@@ -57,7 +57,7 @@ test('hasPendingLogoFiles does not empty the stash', () => {
   assert.equal(takePendingLogoFiles().length, 1);
 });
 
-test('a second send replaces the first — the stash is a message, not a queue', () => {
+test('a second send replaces the first - the stash is a message, not a queue', () => {
   stashPendingLogoFiles([mark('old.svg')]);
   stashPendingLogoFiles([mark('new.svg')]);
   assert.deepEqual(takePendingLogoFiles().map(f => f.name), ['new.svg']);
@@ -107,7 +107,7 @@ test('an ordinary send reports exactly what was armed', () => {
   assert.deepEqual(stashPendingLogoFiles([]), { sent: 0, tooBig: 0, overflow: 0 });
 });
 
-test('a mark of exactly the byte cap travels — the limit is inclusive', () => {
+test('a mark of exactly the byte cap travels - the limit is inclusive', () => {
   stashPendingLogoFiles([mark('exact.svg', PENDING_LOGO_MAX_BYTES)]);
   assert.equal(takePendingLogoFiles().length, 1);
   assert.equal(warnings.length, 0);

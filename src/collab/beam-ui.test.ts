@@ -322,7 +322,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   assert.deepEqual(
     result.ok ? [...result.byReference] : null,
     ['suse/logo/primary'],
-    'a catalog ref is LISTED, never sent (section 11.16) — the receiver resolves it locally',
+    'a catalog ref is LISTED, never sent (section 11.16) - the receiver resolves it locally',
   );
 
   // Consent, through the toast port - the only door there is (section 11.24).
@@ -356,7 +356,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   assert.equal(
     (data.logo as { id: string }).id,
     'suse/logo/primary',
-    'the catalog ref is untouched — it resolves on the receiver\'s own device',
+    'the catalog ref is untouched - it resolves on the receiver\'s own device',
   );
 
   // Both ends watched it through the SAME component. The sender's card is its own
@@ -423,7 +423,7 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
   // library would come back `{ ok: false, code: 'no-session' }` rather than an offer.
   const sent = await acceptor.sendCurrentSessionNow();
   assert.equal(sent.ok, true,
-    `the acceptor could not pack its own working copy: ${JSON.stringify(sent)} — the send `
+    `the acceptor could not pack its own working copy: ${JSON.stringify(sent)} - the send `
     + 'path is reading the library instead of the ephemeral store');
 
   const toInviter = inviterToast.events.find((e) => e.t === 'offer-received');
@@ -451,7 +451,7 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
 
   const landed = [...library.sessions.values()];
   assert.equal(landed.length, 1,
-    'an accepted beam must land in the receiver\'s real library — section 6.4 promises it lands '
+    'an accepted beam must land in the receiver\'s real library - section 6.4 promises it lands '
     + 'attributed, with the storage meter updated honestly, and a memory store keeps '
     + 'neither promise past teardown');
   assert.equal(landed[0]!.data.headline, 'A gift');
@@ -476,7 +476,7 @@ test('the toast mounts once per collab and unmounts on close, container and all'
     mountToast: spy.mount,
   });
 
-  assert.equal(spy.mounts.length, 1, 'one toast per collab — the session multiplexes both directions');
+  assert.equal(spy.mounts.length, 1, 'one toast per collab - the session multiplexes both directions');
   const container = spy.mounts[0]!.container;
   assert.equal(container.parentNode, document.body, 'the default container is attached to the page');
 
@@ -488,7 +488,7 @@ test('the toast mounts once per collab and unmounts on close, container and all'
   assert.equal(spy.disposals(), 1, 'close is idempotent');
 });
 
-test('a caller-supplied container is the caller\'s — closing never removes it', () => {
+test('a caller-supplied container is the caller\'s - closing never removes it', () => {
   const { a } = pair();
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -537,7 +537,7 @@ test('a refusal comes back as a reason, never as a throw', async () => {
   const down = createCollabBeamUi({
     link: link(a), host: makeHost(), currentSession: () => ({ state: liveState() }), mountToast: spy.mount,
   });
-  assert.equal(down.isOpen(), false, 'a dead lane must report itself — the send control reads this');
+  assert.equal(down.isOpen(), false, 'a dead lane must report itself - the send control reads this');
   assert.deepEqual(await down.sendCurrentSessionNow(), { ok: false, reason: 'lane-closed' });
   down.close();
 
@@ -556,7 +556,7 @@ test('a refusal comes back as a reason, never as a throw', async () => {
 test('beamLinkOf answers only for a connection that really published a lane', () => {
   const { a } = pair();
   assert.equal(beamLinkOf(undefined), null);
-  assert.equal(beamLinkOf({}), null, 'a work collab publishes no beam — Track B has no bulk lane');
+  assert.equal(beamLinkOf({}), null, 'a work collab publishes no beam - Track B has no bulk lane');
   assert.equal(beamLinkOf({ beam: {} }), null, 'a beam key with no transport is not a beam');
   assert.equal(
     beamLinkOf({ beam: { transport: { on: () => () => {} }, role: 'inviter' } }),

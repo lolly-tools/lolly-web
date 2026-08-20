@@ -23,7 +23,7 @@ export function createCaptureAPI(): CaptureAPI {
   return {
     async page() {
       throw new Error(
-        'Page capture isn’t available in the web app — a browser can’t ' +
+        'Page capture isn’t available in the web app - a browser can’t ' +
         'screenshot a cross-origin URL. Use the desktop app to capture URLs.',
       );
     },

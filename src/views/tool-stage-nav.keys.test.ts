@@ -67,15 +67,15 @@ test("Shift+'+' / Shift+'_' step the canvas zoom (the studio's keys, preventDefa
   try {
     assert.equal(scaleOf(h.outer), 1, 'precondition: mounted at Fit');
     const zin = press('+', { shiftKey: true });
-    assert.equal(zin.defaultPrevented, true, "Shift+'+' is the canvas's — consumed");
+    assert.equal(zin.defaultPrevented, true, "Shift+'+' is the canvas's - consumed");
     assert.ok(Math.abs(scaleOf(h.outer) - 1.25) < 1e-9, 'one step in = scale 1.25');
     const zout = press('_', { shiftKey: true });
-    assert.equal(zout.defaultPrevented, true, "Shift+'_' is the canvas's — consumed");
+    assert.equal(zout.defaultPrevented, true, "Shift+'_' is the canvas's - consumed");
     assert.ok(Math.abs(scaleOf(h.outer) - 1) < 1e-9, 'one step back out returns to Fit');
   } finally { h.teardown(); }
 });
 
-test('the bare keys still work — = / - step, 0 fits (unshifted layouts keep their zoom)', () => {
+test('the bare keys still work - = / - step, 0 fits (unshifted layouts keep their zoom)', () => {
   const h = mount();
   try {
     assert.equal(press('=').defaultPrevented, true);
@@ -88,7 +88,7 @@ test('the bare keys still work — = / - step, 0 fits (unshifted layouts keep th
   } finally { h.teardown(); }
 });
 
-test('Cmd/Ctrl/Alt chords pass through untouched — browser whole-UI zoom is never captured', () => {
+test('Cmd/Ctrl/Alt chords pass through untouched - browser whole-UI zoom is never captured', () => {
   const h = mount();
   try {
     // Zoom first, so a mistaken fit()/zoom on a chord is visible as a scale change.
@@ -109,7 +109,7 @@ test('Cmd/Ctrl/Alt chords pass through untouched — browser whole-UI zoom is ne
   } finally { h.teardown(); }
 });
 
-test("typing '+' (or 0/1) in a text field types — the canvas does not zoom underneath", () => {
+test("typing '+' (or 0/1) in a text field types - the canvas does not zoom underneath", () => {
   const h = mount();
   const input = document.createElement('input');
   document.body.appendChild(input);

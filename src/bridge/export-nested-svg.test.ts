@@ -100,7 +100,7 @@ test('a class-styled status ring survives: computed fill/stroke baked inline, va
   assert.ok(!/var\(--ok\)/.test(ring + glyph), 'no unresolved var() reaches the standalone file');
 });
 
-test('a stroke="var(--series)" ATTRIBUTE paints standalone — the computed literal is baked over it', { skip: SKIP }, async () => {
+test('a stroke="var(--series)" ATTRIBUTE paints standalone - the computed literal is baked over it', { skip: SKIP }, async () => {
   const out = await render(root(`
     <svg viewBox="0 0 100 40" width="100" height="40">
       <path d="M0 20 L100 20" fill="none" stroke="var(--series-1)" stroke-width="2"></path>
@@ -110,7 +110,7 @@ test('a stroke="var(--series)" ATTRIBUTE paints standalone — the computed lite
   assert.match(line, /stroke:\s*rgb\(42,\s*120,\s*214\)/, 'the chart line has a literal stroke');
 });
 
-test('nested-svg <text> carries its inherited font and fill — no more viewer-default serif', { skip: SKIP }, async () => {
+test('nested-svg <text> carries its inherited font and fill - no more viewer-default serif', { skip: SKIP }, async () => {
   const out = await render(root(`
     <svg viewBox="0 0 60 30" width="60" height="30">
       <text class="num" x="10" y="20">42</text>
@@ -123,7 +123,7 @@ test('nested-svg <text> carries its inherited font and fill — no more viewer-d
   assert.match(num, /fill:\s*rgb\(91,\s*102,\s*112\)/);
 });
 
-test('url(#…) paints survive verbatim — a gradient fill is referenced, never clobbered by a literal', { skip: SKIP }, async () => {
+test('url(#…) paints survive verbatim - a gradient fill is referenced, never clobbered by a literal', { skip: SKIP }, async () => {
   const out = await render(root(`
     <svg viewBox="0 0 100 40" width="100" height="40">
       <defs><linearGradient id="lg"><stop class="s0" offset="0"></stop><stop offset="1" stop-color="#fff"></stop></linearGradient></defs>

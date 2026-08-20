@@ -51,7 +51,7 @@ test('walkSwatches finds the starter brand’s ramps and one theme’s roles', (
   // spectrum and NO secondary ramp: a new brand grows by ADDING those, not by clearing
   // a big preset (chart tools fall back to their own palette until a spectrum exists).
   assert.equal(ramps.length, 18, 'primary + neutral, 9 steps each');
-  assert.equal(spectrum.length, 0, 'the starter ships no spectrum — the user adds one');
+  assert.equal(spectrum.length, 0, 'the starter ships no spectrum - the user adds one');
   assert.equal(roles.length, 7);
   assert.equal(s.length, ramps.length + spectrum.length + roles.length, 'no swatch is walked twice or missed');
 
@@ -371,7 +371,7 @@ test('addSwatch displayGroup files a custom swatch under a derived section headi
   assert.ok(path);
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'))
     .find(x => x.path.length === path.length && x.path.every((seg, i) => seg === path[i]))!;
-  assert.equal(s.kind, 'custom', 'still a custom token — the tag only relabels the section');
+  assert.equal(s.kind, 'custom', 'still a custom token - the tag only relabels the section');
   assert.equal(s.group, 'Primary');
   assert.equal(s.deletable, true);
   // Without the tag the group stays the structural one.
@@ -550,7 +550,7 @@ test('rotateCurveHue: a full ±360° turn is an identity on the control points',
   }
 });
 
-test('a rotated curve is an ordinary ColorCurve — round-trips through set/getRampCurve', () => {
+test('a rotated curve is an ordinary ColorCurve - round-trips through set/getRampCurve', () => {
   const doc = load();
   const steps = 9;
   const base = seedRampCurve(doc, 'primary', steps);
@@ -562,7 +562,7 @@ test('a rotated curve is an ordinary ColorCurve — round-trips through set/getR
   assert.equal(setRampCurve(doc, 'primary', curve), true);
   const json = getRampCurve(doc, 'primary');
   assert.ok(json, 'the rotated curve reads back');
-  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip — it is just a curve');
+  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip - it is just a curve');
   // And overlaying it bakes the ramp steps + re-stamps the curve (same machinery
   // every other curve rides), so the rotation persists like any hand edit.
   overlayRampCurves(doc, { primary: curve }, steps);
@@ -685,7 +685,7 @@ test('contrastLockCurve retones each step to its APCA target (or caps it), prese
   assert.equal(contrastLockCurve(base, steps, contrastTargets('even', steps, '999'), bg).unreachable, steps);
 });
 
-test('a contrast-locked curve is an ordinary ColorCurve — round-trips through set/getRampCurve', () => {
+test('a contrast-locked curve is an ordinary ColorCurve - round-trips through set/getRampCurve', () => {
   const steps = 7;
   const doc = deriveBrandTokens({ primary: '#c0392b', steps, name: 'x' }) as Record<string, unknown>;
   const base = seedRampCurve(doc, 'secondary', steps);
@@ -694,7 +694,7 @@ test('a contrast-locked curve is an ordinary ColorCurve — round-trips through 
   assert.equal(setRampCurve(doc, 'secondary', curve), true);
   const json = getRampCurve(doc, 'secondary');
   assert.ok(json, 'the locked curve reads back');
-  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip — it is just a curve');
+  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip - it is just a curve');
   // And overlaying it bakes the ramp steps to those exact tones (same machinery
   // every other curve rides), so the transform is persisted like any hand edit.
   overlayRampCurves(doc, { secondary: curve }, steps);

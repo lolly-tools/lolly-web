@@ -374,7 +374,7 @@ test('the acceptor sets observer-only from the invite, and a minor op skew does 
   assert.equal(same.state.observerOnly, false);
 });
 
-test('an undeclared op version is silence, not a gap — the in-band hello settles it', async () => {
+test('an undeclared op version is silence, not a gap - the in-band hello settles it', async () => {
   const clock = new TestClock();
   const m = createCeremony({ role: 'acceptor', effects: stub().effects, timers: clock });
   // The QR-budget case: sdp-codec's payload carries no version, so the invite has none.
@@ -700,7 +700,7 @@ function racingEffects(
   };
 }
 
-test('acceptor: a handshake finishing inside createAnswer used to strand the pair — the level read connects it', async () => {
+test('acceptor: a handshake finishing inside createAnswer used to strand the pair - the level read connects it', async () => {
   const clock = new TestClock();
   // ICE *and* the lane come up inside the mint, and only the level reads can find them:
   // no edge is pushed for the lane at all.
@@ -738,7 +738,7 @@ test('THE LOOPBACK RACE: ICE connected before the answer is delivered must NOT c
   await settle();
 
   assert.deepEqual(rig.pushed, ['checking', 'connected']);
-  assert.ok(rig.reads() > 0, 'the ICE level read still happens — it just no longer promotes');
+  assert.ok(rig.reads() > 0, 'the ICE level read still happens - it just no longer promotes');
   assert.equal(m.state.phase, 'awaiting-connection', 'ICE connected is not a session');
   assert.equal(m.state.answer?.signal, 'answer-blob', 'and the reply is published and deliverable');
   assert.equal(m.state.everConnected, false);
@@ -808,7 +808,7 @@ test('a `ready` that arrives too early is BUFFERED: the answer is published firs
   assert.equal(seen[published]?.answer?.signal, 'answer-blob', 'and it must carry the reply');
 });
 
-test('acceptor: with no level read the pair is stranded — the drill failure, pinned', async () => {
+test('acceptor: with no level read the pair is stranded - the drill failure, pinned', async () => {
   const clock = new TestClock();
   const rig = racingEffects('createAnswer', { levelRead: false });
   const m = createCeremony({ role: 'acceptor', effects: rig.effects, timers: clock });

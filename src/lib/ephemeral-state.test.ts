@@ -65,7 +65,7 @@ test('a re-save carries the original creation time forward', async () => {
   assert.equal(row.label, 'v2');
 });
 
-test('a saved record is a snapshot — later mutation of the caller\'s object cannot reach it', async () => {
+test('a saved record is a snapshot - later mutation of the caller\'s object cannot reach it', async () => {
   const state = createMemoryStateAPI();
   const data = SESSION('live');
   await state.save('slot', data);
@@ -101,7 +101,7 @@ test('two ephemeral APIs are isolated, and neither touches a shared store', asyn
   assert.equal((await acceptor.list()).length, 1);
 });
 
-test('the driver itself is a plain Map — no store name is honoured, no IDB involved', async () => {
+test('the driver itself is a plain Map - no store name is honoured, no IDB involved', async () => {
   const db = createMemoryStateDb();
   assert.equal(await db.get('state', 'nope'), undefined);
   await db.put('state', {

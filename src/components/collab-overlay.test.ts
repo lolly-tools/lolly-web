@@ -236,7 +236,7 @@ test('pooled nodes keep their identity across roster churn', () => {
   h.cursors.dispose();
 });
 
-test('a peer with no cursor — or an away peer — holds no node at all', () => {
+test('a peer with no cursor - or an away peer - holds no node at all', () => {
   const h = mount();
   h.cursors.setPeers([
     peer('a', 0.5, 0.5),
@@ -248,7 +248,7 @@ test('a peer with no cursor — or an away peer — holds no node at all', () =>
   h.cursors.dispose();
 });
 
-test('the ticker runs only while somebody is MOVING — a parked pointer and an empty roster both stand it down', () => {
+test('the ticker runs only while somebody is MOVING - a parked pointer and an empty roster both stand it down', () => {
   const h = mount();
   assert.equal(h.frames.pending(), 0, 'nothing is scheduled before anyone arrives');
 
@@ -300,7 +300,7 @@ test('reduced motion draws static dots and starts no ticker at all', () => {
   h.cursors.setPeers([peer('a', 0.25, 0.5)]);
   assert.equal(h.frames.pending(), 0, 'no frame loop is started (section 4.8)');
   assert.equal(h.transformOf(), 'translate3d(120px, 110px, 0)',
-    'the position is still painted — a calmer app is not a blind one');
+    'the position is still painted - a calmer app is not a blind one');
   const node = h.nodes()[0]!;
   assert.ok(node.classList.contains('collab-cursor--still'),
     'and the node switches to the dot presentation instead of the arrow');
@@ -415,7 +415,7 @@ test('the module injects its own sheet, and every class it writes is defined the
   h.cursors.setPeers([peer('a', 0.5, 0.5)]);
 
   const sheet = document.getElementById('lolly-collab-overlay-css');
-  assert.ok(sheet, 'the component carries its own <style>, like collab-pill.ts — nothing '
+  assert.ok(sheet, 'the component carries its own <style>, like collab-pill.ts - nothing '
     + 'in styles/parts/ defines these names, and an unlayered injected sheet is the only '
     + 'thing that could win over the @layer-imported parts anyway');
   const css = sheet.textContent ?? '';

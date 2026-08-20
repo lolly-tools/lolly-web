@@ -127,7 +127,7 @@ test('add() dedupes on type+value case-insensitively and reports only the new on
   assert.equal(tray.list().length, 1);
 
   const dupe = await tray.add([colorCandidate('#abcdef')]);
-  assert.equal(dupe, 0, 'same value, different case — not new');
+  assert.equal(dupe, 0, 'same value, different case - not new');
   assert.equal(tray.list().length, 1);
 
   const mixed = await tray.add([colorCandidate('#abcdef'), colorCandidate('#123456')]);
@@ -146,7 +146,7 @@ test('re-adding a dismissed candidate revives it to pending', async () => {
   assert.equal(tray.list()[0]!.state, 'dismissed');
 
   const revived = await tray.add([colorCandidate('#abcdef')]);
-  assert.equal(tray.list().length, 1, 'no second row — it is the same candidate');
+  assert.equal(tray.list().length, 1, 'no second row - it is the same candidate');
   assert.equal(tray.list()[0]!.state, 'pending');
   assert.equal(revived, 1, 'coming back from dismissed counts as a new pending item');
 });

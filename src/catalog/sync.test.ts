@@ -76,7 +76,7 @@ test('a second localize pass cannot stash already-localized strings over the Eng
   assert.deepEqual(index.tools[0]!.en, { name: 'Compress PDF', description: 'Shrink a PDF on-device' });
 });
 
-test('English session: a pure no-op — nothing overlaid, nothing stashed', async () => {
+test('English session: a pure no-op - nothing overlaid, nothing stashed', async () => {
   await setActiveLang('en', { persist: false });
   const index = fixture();
   localizeToolIndex(index);

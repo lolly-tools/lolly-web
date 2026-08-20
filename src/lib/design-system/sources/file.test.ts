@@ -294,7 +294,7 @@ test('chooserRows caps the list but never drops the seeded primary', () => {
   assert.ok(!plain.some(r => r.path === seeded), 'without a seed the cap is just the cap');
 
   const withSeed = chooserRows(rows, seeded);
-  assert.equal(withSeed.length, 12, 'the cap holds — the card stays one decision');
+  assert.equal(withSeed.length, 12, 'the cap holds - the card stays one decision');
   assert.ok(withSeed.some(r => r.path === seeded),
     'the chip the card arrives pressed on is always among the ones it shows');
   assert.equal(withSeed[0]!.path, 'color.p0', 'and the ranking is otherwise untouched');

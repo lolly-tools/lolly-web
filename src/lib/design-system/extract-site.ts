@@ -124,7 +124,7 @@ const GENERIC_FAMILIES = new Set<string>([
 
 const ENTITIES: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-  mdash: '—', ndash: '–', hellip: '…', middot: '·',
+  mdash: '-', ndash: '–', hellip: '…', middot: '·',
   copy: '©', reg: '®', trade: '™', times: '×',
   laquo: '«', raquo: '»', rsquo: '’', lsquo: '‘',
 };
@@ -456,7 +456,7 @@ export function extractSite(input: SiteInput): SiteExtract {
 
   let label = 'site';
   if (baseUrl != null) {
-    try { label = new URL(baseUrl).hostname || 'site'; } catch { /* not an address — stay generic */ }
+    try { label = new URL(baseUrl).hostname || 'site'; } catch { /* not an address - stay generic */ }
   }
 
   const siteName = ogSiteName || ogTitle || titleText;

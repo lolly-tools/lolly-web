@@ -134,7 +134,7 @@ test('MatteAlphaSmoother: EMA smooths a steady shot (new = 0.6·prev + 0.4·cur)
   assert.equal(f2.data[3], Math.round(0.6 * 200 + 0.4 * 100)); // 160
 });
 
-test('MatteAlphaSmoother: a scene cut (luma jump) resets the EMA — alpha unblended', () => {
+test('MatteAlphaSmoother: a scene cut (luma jump) resets the EMA - alpha unblended', () => {
   const s = new MatteAlphaSmoother();
   const black = { data: new Uint8ClampedArray(4 * 4 * 4), width: 4, height: 4 };
   for (let i = 3; i < black.data.length; i += 4) black.data[i] = 220; // rgb 0, alpha 220
@@ -209,7 +209,7 @@ test('videoProvenanceFor: grade = colour_adjustments, no aiGenerated, no credit 
   const p = videoProvenanceFor('grade', { lutLabel: 'Muted chrome' });
   assert.equal(p.tool, 'Colour grade');
   assert.equal(p.actions[0]!.action, 'c2pa.color_adjustments');
-  assert.equal(p.actions[0]!.description, 'Colour graded — Muted chrome');
+  assert.equal(p.actions[0]!.description, 'Colour graded - Muted chrome');
   assert.equal(p.actions[0]!.parameters, undefined);   // a CC0/anonymous look carries none
   assert.equal(p.aiGenerated, undefined);
 });
@@ -225,7 +225,7 @@ test('videoProvenanceFor: a credited LUT names its author + rights owner in desc
   // Human-readable: author + affiliation + licence, appended to the look name.
   assert.equal(
     p.actions[0]!.description,
-    'Colour graded — SUSE7 S-Log3 (Heavy) by Peter Chamalian, SUSE · CC BY 4.0',
+    'Colour graded - SUSE7 S-Log3 (Heavy) by Peter Chamalian, SUSE · CC BY 4.0',
   );
   // Machine-readable: the full record under a Lolly-namespaced key. Author (Peter)
   // and copyright owner (SUSE) are distinct fields.

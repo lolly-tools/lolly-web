@@ -69,7 +69,7 @@ export function mountPersonalizeNudge(viewEl: HTMLElement, host: NudgeHost): voi
         const current = await host.profile.get();
         if (current.personalizeNudgeDismissed) return;   // already recorded
         await host.profile.set({ ...current, personalizeNudgeDismissed: true });
-      } catch { /* best-effort — a failed write just means it may show once more */ }
+      } catch { /* best-effort - a failed write just means it may show once more */ }
     })();
   };
   const dismiss = () => { persist(); nudge.remove(); };

@@ -87,7 +87,7 @@ async function loadDoc(file: File | Blob): Promise<PDFDocument> {
   try {
     return await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false, updateMetadata: false });
   } catch (err) {
-    throw new Error('Couldn’t read this PDF/.ai — it may be encrypted or damaged. (' + msg(err) + ')');
+    throw new Error('Couldn’t read this PDF/.ai - it may be encrypted or damaged. (' + msg(err) + ')');
   }
 }
 
@@ -768,7 +768,7 @@ export interface PdfPageSvgOpts {
 const FONT_FILE_KEYS = [
   { key: 'FontFile', ext: 'pfb' as const },   // Type1
   { key: 'FontFile2', ext: 'ttf' as const },  // TrueType
-  { key: 'FontFile3', ext: 'cff' as const },  // CFF — /Subtype refines this below
+  { key: 'FontFile3', ext: 'cff' as const },  // CFF - /Subtype refines this below
 ];
 
 /**
@@ -1523,7 +1523,7 @@ export function pickPdfPages(
       <div class="pdfpick-backdrop" aria-hidden="true"></div>
       <div class="pdfpick-panel" role="dialog" aria-modal="true" aria-label="${mode === 'single' ? 'Choose a page' : 'Choose pages'}">
         <header class="pdfpick-head">
-          <span class="pdfpick-title">${mode === 'single' ? 'Choose a page' : 'Choose pages'}${fileName ? ` — ${xmlEsc(fileName)}` : ''}</span>
+          <span class="pdfpick-title">${mode === 'single' ? 'Choose a page' : 'Choose pages'}${fileName ? ` - ${xmlEsc(fileName)}` : ''}</span>
           <button type="button" class="pdfpick-close" aria-label="Close">&times;</button>
         </header>
         <p class="pdfpick-sub">${mode === 'single'
@@ -1661,8 +1661,8 @@ export async function ingestPdfAsSvgAssets(
   for (const p of pages) {
     try {
       const pageSvg = await handle.pageToSvg(p, { warn });
-      if (!pageSvg.elementCount) { warn(`Page ${p + 1} has no importable artwork — skipped.`); continue; }
-      const svgName = handle.pageCount === 1 ? `${base}.svg` : `${base} — page ${p + 1}.svg`;
+      if (!pageSvg.elementCount) { warn(`Page ${p + 1} has no importable artwork - skipped.`); continue; }
+      const svgName = handle.pageCount === 1 ? `${base}.svg` : `${base} - page ${p + 1}.svg`;
       const svgFile = new File([pageSvg.svg], svgName, { type: 'image/svg+xml' });
       refs.push(await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile));
     } catch (err) {

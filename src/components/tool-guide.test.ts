@@ -71,7 +71,7 @@ test('the first track renders as a numbered list, with **bold** the only markup'
   handle!.close();
 });
 
-test('a manifest string can never inject markup — it is escaped, then only ** re-admitted', () => {
+test('a manifest string can never inject markup - it is escaped, then only ** re-admitted', () => {
   reset();
   const handle = showToolGuide({
     id: 'x',

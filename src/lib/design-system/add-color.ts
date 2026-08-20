@@ -309,7 +309,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
       // hence the empty catch. The result FILLS the field; adding stays explicit.
       void new EyeDropper().open()
         .then(res => { input.value = res.sRGBHex; sync(); input.focus(); })
-        .catch(() => { /* dismissed — nothing picked */ });
+        .catch(() => { /* dismissed - nothing picked */ });
     }
   };
 

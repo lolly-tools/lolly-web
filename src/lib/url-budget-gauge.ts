@@ -150,7 +150,7 @@ export function createUrlGauge(
       el.style.left = `${Math.max(4, Math.min(saved.left, maxL))}px`;
       el.style.top = `${Math.max(4, Math.min(saved.top, maxT))}px`;
     }
-  } catch { /* no/bad storage — keep the CSS default (canvas top-left) */ }
+  } catch { /* no/bad storage - keep the CSS default (canvas top-left) */ }
 
   // ── drag to move / click to share ──
   let dragging = false;

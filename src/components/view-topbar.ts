@@ -108,6 +108,6 @@ export function mountViewTopbar(viewEl: HTMLElement, host: HostV1, opts: MountVi
       }
       img.src = url;
       link.classList.add('has-avatar');
-    }).catch(() => { /* no avatar — the name-only pill stands */ });
+    }).catch(() => { /* no avatar - the name-only pill stands */ });
   }
 }

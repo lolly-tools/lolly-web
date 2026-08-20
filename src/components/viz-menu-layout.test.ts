@@ -41,7 +41,7 @@ test('the preset list keeps a non-zero height floor so it cannot be shrunk away'
   const list = blocks('.viz-list');
   assert.equal(list.length, 1, 'one rule owns the list box');
   const min = /min-height:\s*([^;]+)/.exec(list[0]!)?.[1]?.trim();
-  assert.ok(min, '.viz-list must declare a min-height — without one the flex column collapses it');
+  assert.ok(min, '.viz-list must declare a min-height - without one the flex column collapses it');
   assert.notEqual(min, '0', 'min-height:0 is exactly the bug: the list absorbs all overflow and hits 0px');
   const px = min!.endsWith('rem') ? parseFloat(min!) * 16 : parseFloat(min!);
   assert.ok(px >= 80, `the floor must clear a couple of rows, got ${min}`);

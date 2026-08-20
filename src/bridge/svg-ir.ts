@@ -368,7 +368,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const def = el.ownerDocument?.getElementById(id) ?? svgEl.querySelector(`#${CSS.escape(id)}`);
     const parsed = def && def.tagName.toLowerCase().replace(/^svg:/, '') === 'filter'
       ? parseSvgDropShadow(def) : null;
-    if (!parsed) warn(`filter #${id} is not a drop shadow — left out of this format`);
+    if (!parsed) warn(`filter #${id} is not a drop shadow - left out of this format`);
     filterCache.set(id, parsed);
     return parsed;
   };
@@ -645,7 +645,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     try {
       result = await textApi!.toPath({ text: raw, fontUrl: fontUrl!, fontSize, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
     } catch (e) {
-      throw new Error(`EMF export: text shaping failed for "${raw.slice(0, 24)}" — ${(e as Error).message}`);
+      throw new Error(`EMF export: text shaping failed for "${raw.slice(0, 24)}" - ${(e as Error).message}`);
     }
     if (!result?.d) return;            // whitespace-only / no glyphs
 

@@ -71,25 +71,25 @@ function renderWelcomeContent(withImport: boolean): string {
   return `
     <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
     <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
-    <p class="welcome-sub">${t('Finished creative assets from simple inputs — pick a path, change your mind any time.')}</p>
+    <p class="welcome-sub">${t('Finished creative assets from simple inputs - pick a path, change your mind any time.')}</p>
     <div class="welcome-cards">
       <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
         <span class="welcome-card-icon">${icon('heart', { size: 22 })}</span>
         <span class="welcome-card-kicker">${t('Make it yours')}</span>
-        <span class="welcome-card-line">${t('Start from one colour or your design tokens — everything stays on this device.')}</span>
+        <span class="welcome-card-line">${t('Start from one colour or your design tokens - everything stays on this device.')}</span>
         <span class="welcome-card-cta" aria-hidden="true">${t('Set up your brand →')}</span>
       </button>
       ${withImport ? `
       <button type="button" class="welcome-card" data-choice="import">
         <span class="welcome-card-icon">${icon('filePlus', { size: 22 })}</span>
         <span class="welcome-card-kicker">${t('Bring your design')}</span>
-        <span class="welcome-card-line">${t('Drop in a Figma, Penpot, InDesign or PDF file — it becomes an editable layout.')}</span>
+        <span class="welcome-card-line">${t('Drop in a Figma, Penpot, InDesign or PDF file - it becomes an editable layout.')}</span>
         <span class="welcome-card-cta" aria-hidden="true">${t('Import a file →')}</span>
       </button>` : ''}
       <button type="button" class="welcome-card" data-choice="explore">
         <span class="welcome-card-icon">${icon('eye', { size: 22 })}</span>
         <span class="welcome-card-kicker">${t('Explore the community tools')}</span>
-        <span class="welcome-card-line">${t('Jump straight in — QR codes, street maps, filters and more, no setup needed.')}</span>
+        <span class="welcome-card-line">${t('Jump straight in - QR codes, street maps, filters and more, no setup needed.')}</span>
         <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
       </button>
     </div>

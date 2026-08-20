@@ -132,7 +132,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
     throw new Error(`encodeGainMapJpeg: ${rgba.length} samples for ${width}x${height} (expected ${width * height * 4}).`);
   }
   if (o.depth === 'float') {
-    log('info', 'jpeg: depth=float satisfied by a gain map — JPEG has no float sample format, so the extra range rides in the appended gain-map image (use EXR or a float TIFF for float samples).');
+    log('info', 'jpeg: depth=float satisfied by a gain map - JPEG has no float sample format, so the extra range rides in the appended gain-map image (use EXR or a float TIFF for float samples).');
   }
 
   // ── the delivered SDR pixels: marks first, so base and map agree ───────────
@@ -169,7 +169,7 @@ export async function encodeGainMapJpeg(rgba: Uint8ClampedArray, o: GainMapJpegO
   // map that carries no light is also exactly the padding-as-quality this plan
   // refuses (section 10, depth follows provenance), so ship the plain SDR JPEG instead.
   if (gm.meta.gainMapMax <= NO_BOOST_EPS) {
-    log('info', 'jpeg: the HDR view transform found nothing to boost — writing a plain SDR JPEG rather than a gain map that carries no extra light.');
+    log('info', 'jpeg: the HDR view transform found nothing to boost - writing a plain SDR JPEG rather than a gain map that carries no extra light.');
     return { bytes: base, baseLength: base.length, mapLength: 0, stats: gm.stats };
   }
   if (gm.stats.degenerate) {

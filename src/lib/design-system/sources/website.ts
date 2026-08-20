@@ -780,7 +780,7 @@ export function detectSiteTransport(host: HostV1 | null | undefined): SiteTransp
 /** Why a scan produced nothing. Each maps to the caller's own sentence. */
 export type SiteScanRefusal =
   | SiteUrlRefusal
-  /** No transport was passed — the tile should not have rendered. */
+  /** No transport was passed - the tile should not have rendered. */
   | 'no-transport'
   /** The transport answered with an error. `detail` carries its own words. */
   | 'fetch-failed'

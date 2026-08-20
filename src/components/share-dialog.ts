@@ -215,12 +215,12 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       <p class="share-warning" data-share-warning role="status" hidden></p>
       ${showImageNote ? `<p class="share-note">
         <span class="share-note-ico" aria-hidden="true">🛫</span>
-        <span>Only the <b>inputs</b>, <b>settings</b>, <b>tool</b> selection, and <b>catalog assets</b> travel in this link. <br><b>images</b> or <b>files</b> you added from <b>this device stay here</b> <i>— you'll need to share those separately</i>.</span>
+        <span>Only the <b>inputs</b>, <b>settings</b>, <b>tool</b> selection, and <b>catalog assets</b> travel in this link. <br><b>images</b> or <b>files</b> you added from <b>this device stay here</b> <i>- you'll need to share those separately</i>.</span>
       </p>` : ''}
       ${lolly ? `<div class="share-file" data-share-file>
         <div class="share-file-text">
           <strong>Send it as a file</strong>
-          <span class="share-file-note">A .lolly file carries the whole design — images and all — and always opens complete.</span>
+          <span class="share-file-note">A .lolly file carries the whole design - images and all - and always opens complete.</span>
         </div>
         <div class="share-file-btns">
           ${jellyActive()
@@ -254,12 +254,12 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
             <input type="checkbox" class="field-check" data-encrypt>
             <span class="share-shortest-text">
               <strong>Password-protect this link</strong>
-              <span class="share-shortest-note">Encrypts the whole link (AES-256). The recipient types a password to open it — no server.</span>
+              <span class="share-shortest-note">Encrypts the whole link (AES-256). The recipient types a password to open it - no server.</span>
             </span>
           </label>
           <div data-encrypt-body hidden style="margin:-.2rem 0 .2rem 1.7rem">
             <input type="password" class="field-input" data-encrypt-pw aria-label="Password to protect this link" autocomplete="off" spellcheck="false" placeholder="Set a password">
-            <span class="share-shortest-note" style="display:block;margin-top:.3rem">The password is <b>not</b> in the link — share it separately, and note it can't be recovered if lost.</span>
+            <span class="share-shortest-note" style="display:block;margin-top:.3rem">The password is <b>not</b> in the link - share it separately, and note it can't be recovered if lost.</span>
           </div>` : ''}
           ${version ? `<label class="share-toggle-row field-toggle"><input type="checkbox" class="field-check" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
         </div>
@@ -459,7 +459,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       toolCheck.checked = offer.suggested;
       const label = dialog.querySelector('[data-lolly-tool-label]');
       if (label) label.textContent = offer.trust === 'custom'
-        ? 'Include the tool — opens on devices that don’t have it'
+        ? 'Include the tool - opens on devices that don’t have it'
         : 'Include the tool (opens even without the catalog)';
       dialog.querySelector('[data-lolly-tool-wrap]')?.removeAttribute('hidden');
     }).catch(() => { /* no offer ⇒ the toggle stays hidden, tool travels by reference */ });

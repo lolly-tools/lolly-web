@@ -103,9 +103,9 @@ export async function verifyIntegrity(
   if (!integrity || !SUBTLE) return;
   for (const [path, expected] of Object.entries(integrity as Record<string, string>)) {
     const part = files[path];
-    if (!part) throw new Error(`${subject} is incomplete — "${path}" is missing.`);
+    if (!part) throw new Error(`${subject} is incomplete - "${path}" is missing.`);
     if ((await sha256(part)) !== expected) {
-      throw new Error(`${subject} appears corrupted — "${path}" failed its integrity check.`);
+      throw new Error(`${subject} appears corrupted - "${path}" failed its integrity check.`);
     }
   }
 }

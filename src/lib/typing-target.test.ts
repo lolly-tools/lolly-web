@@ -34,7 +34,7 @@ function jellyHost(tag: string, inner: 'input' | 'textarea', type?: string) {
 test('deepestFocus descends an open shadow root to the focused control', () => {
   const { host, field } = jellyHost('jelly-input', 'input');
   field.focus();
-  assert.equal(doc.activeElement, host, 'the document reports the HOST — the whole problem');
+  assert.equal(doc.activeElement, host, 'the document reports the HOST - the whole problem');
   assert.equal(deepestFocus(host), field, 'the walk finds the real <input>');
   assert.equal(deepActiveElement(doc), field);
 });

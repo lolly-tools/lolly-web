@@ -32,7 +32,7 @@ import { preflight } from '@lolly/engine';
 // override the flag's own `default:false` must hold, never the historic
 // missing-key-means-ON fallback - then enable for the rest of the suite, which
 // tests the surface as a user who turned it on sees it.
-test('preflight card is absent by default — the user (or governance) opts in', () => {
+test('preflight card is absent by default - the user (or governance) opts in', () => {
   assert.equal(preflightRowHtml(), '', 'flag off ⇒ no card markup at all');
   overrideFlagInMemory(PREFLIGHT_FLAG.id, true);
   assert.notEqual(preflightRowHtml(), '');
@@ -87,7 +87,7 @@ test('the verdict states what there is to fix, and carries no counts of things',
   ]), CTX);
   assert.equal(bad.tone, 'fix');
   assert.equal(bad.verdict, '2 to fix, 1 not checked',
-    'a refusal is never summed into "to know" — counted and not-counted are different answers');
+    'a refusal is never summed into "to know" - counted and not-counted are different answers');
 
   const counted = preflightView(report([
     { id: 'print.no-bleed', severity: 'warn', message: 'w' },
@@ -179,7 +179,7 @@ test('no view, for any job, contains a currency symbol or the word cost', () => 
     // about a render, and a test that failed on it would push the wording around
     // instead of catching money. The monetary senses are matched instead.
     assert.doesNotMatch(text, /[$€£¥]|\bcosts?\b|\bprices?\b|\bquote\b|\brate card\b|\bUSD\b|\bEUR\b|\bper unit\b/i, `for ${r.job.format}`);
-    assert.doesNotMatch(text, /—/, 'house copy rule: no em-dashes');
+    assert.doesNotMatch(text, /-/, 'house copy rule: no em-dashes');
   }
 });
 

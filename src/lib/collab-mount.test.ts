@@ -92,7 +92,7 @@ test('with no mount the connection is parked, not dropped, and reported as unhan
   const conn = fake('street-map');
   assert.equal(deliverCollabConnection(conn), false, 'the caller is told nobody took it');
   assert.equal(parkedCount(), 1);
-  assert.equal(conn.closes(), 0, 'a parked connection stays LIVE — that is the whole point');
+  assert.equal(conn.closes(), 0, 'a parked connection stays LIVE - that is the whole point');
 });
 
 test('a late registrant adopts what was parked, and the drain is one-shot', () => {
@@ -116,7 +116,7 @@ test('parking is bounded, and an evicted connection is hung up rather than leake
   const conns = [fake('1'), fake('2'), fake('3')];
   for (const c of conns) parkHandle(c);
   assert.equal(parkedCount(), MAX_PARKED);
-  assert.equal(conns[0]!.closes(), 1, 'the evicted transport is closed — we hold it, so we can');
+  assert.equal(conns[0]!.closes(), 1, 'the evicted transport is closed - we hold it, so we can');
   assert.equal(conns[2]!.closes(), 0);
   assert.deepEqual(takeParked().map((c) => c.toolId), ['2', '3']);
 });
@@ -150,7 +150,7 @@ test('releasing never hangs up a connection somebody owns', () => {
   assert.equal(mounted.closes(), 0, 'closing behind a live mount would kill the session it just started');
 });
 
-test('a throwing mount still counts as handled — it owns the connection from the call', () => {
+test('a throwing mount still counts as handled - it owns the connection from the call', () => {
   registerCollabMount(() => { throw new Error('the stitch is broken'); });
   const conn = fake('boom');
   assert.equal(deliverCollabConnection(conn), true);

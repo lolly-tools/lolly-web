@@ -145,7 +145,7 @@ test('html: contiguous list items group into nested lists', () => {
 // ── RTF ───────────────────────────────────────────────────────────────────────
 
 test('rtf: escapes braces and backslashes, toggles bold, encodes non-ASCII', () => {
-  const rtf = mdToRtf('braces { } and back \\ slash\n\n**bold** run\n\naccent é dash —');
+  const rtf = mdToRtf('braces { } and back \\ slash\n\n**bold** run\n\naccent é dash -');
   assert.ok(rtf.startsWith('{\\rtf1\\ansi\\deff0'));
   assert.ok(rtf.includes('braces \\{ \\} and back \\\\ slash'));
   assert.ok(rtf.includes('\\b bold\\b0 '));

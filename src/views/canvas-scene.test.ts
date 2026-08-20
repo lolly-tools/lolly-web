@@ -115,7 +115,7 @@ test('diffBoxes: no change is clean', () => {
     assert.equal(lane.length, 0);
 });
 
-test('diffBoxes: geometry change is a move, content change is a restyle — separate lanes', () => {
+test('diffBoxes: geometry change is a move, content change is a restyle - separate lanes', () => {
   const boxes = makeBoxes(50, 2);
   const geom = boxes.map((b) => ({ ...b }));
   const g10 = geom[10]!;

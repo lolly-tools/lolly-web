@@ -262,7 +262,7 @@ function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
     return {
       ...base,
       title: 'The credential can be fetched from this site',
-      body: 'This file names the address below instead of carrying its Content Credential, and that address is served by this site — so it can be fetched and checked against these bytes. Nothing is fetched until you ask for it.',
+      body: 'This file names the address below instead of carrying its Content Credential, and that address is served by this site - so it can be fetched and checked against these bytes. Nothing is fetched until you ask for it.',
       ...(ctx.refetchable ? { fetchPath: gate.path } : {}),
     };
   }
@@ -278,7 +278,7 @@ function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
     return {
       ...base,
       title: 'Where the credential lives cannot be worked out here',
-      body: 'This file names the address below instead of carrying its Content Credential, and it is a relative address — it only means something next to the place the file itself is served from, and a copy on your device no longer records where that was.',
+      body: 'This file names the address below instead of carrying its Content Credential, and it is a relative address - it only means something next to the place the file itself is served from, and a copy on your device no longer records where that was.',
     };
   }
   // `unresolvable`: an ABSOLUTE reference this page will not follow - a scheme
@@ -289,7 +289,7 @@ function externalNotice(b: TextBinding, ctx: NoticeContext): VerifyNotice {
   return {
     ...base,
     title: 'That credential address is not one this page will follow',
-    body: 'This file names the address below instead of carrying its Content Credential, but that address is not one this page is willing to resolve — it points somewhere other than the plain http(s) location a credential can be fetched from. Nothing was fetched, so this copy has not been checked against it.',
+    body: 'This file names the address below instead of carrying its Content Credential, but that address is not one this page is willing to resolve - it points somewhere other than the plain http(s) location a credential can be fetched from. Nothing was fetched, so this copy has not been checked against it.',
   };
 }
 
@@ -330,12 +330,12 @@ const STATUS_NOTICE: Record<string, { id: string; title: string; body: string }>
   [STATUS.htmlMultipleManifests]: {
     id: 'multiple-manifests',
     title: 'This file declares more than one credential',
-    body: 'C2PA allows a file to be associated with a single manifest, so there is no way to tell which one is meant to bind these bytes. That is a problem with how the file was written or copied — nothing here says its content was changed.',
+    body: 'C2PA allows a file to be associated with a single manifest, so there is no way to tell which one is meant to bind these bytes. That is a problem with how the file was written or copied - nothing here says its content was changed.',
   },
   [STATUS.structuredTextMultipleReferences]: {
     id: 'multiple-manifests',
     title: 'This file declares more than one credential',
-    body: 'C2PA allows a file to be associated with a single manifest, so there is no way to tell which one is meant to bind these bytes. That is a problem with how the file was written or copied — nothing here says its content was changed.',
+    body: 'C2PA allows a file to be associated with a single manifest, so there is no way to tell which one is meant to bind these bytes. That is a problem with how the file was written or copied - nothing here says its content was changed.',
   },
   [STATUS.structuredTextNoManifest]: {
     id: 'no-manifest-block',
@@ -360,7 +360,7 @@ const STATUS_NOTICE: Record<string, { id: string; title: string; body: string }>
   [STATUS.malformedBase64]: {
     id: 'malformed-base64',
     title: 'The credential could not be decoded',
-    body: 'A C2PA manifest travels through text as base64, and this copy is not valid base64 — the usual cause is a truncated or re-wrapped copy rather than a changed file.',
+    body: 'A C2PA manifest travels through text as base64, and this copy is not valid base64 - the usual cause is a truncated or re-wrapped copy rather than a changed file.',
   },
   [STATUS.htmlUnterminatedScript]: {
     id: 'unterminated-script',
@@ -375,7 +375,7 @@ const STATUS_NOTICE: Record<string, { id: string; title: string; body: string }>
   [STATUS.credentialUnreadable]: {
     id: 'unreadable',
     title: 'The credential could not be read',
-    body: 'A C2PA credential is declared here, but it could not be read at all — so there is nothing to check these bytes against.',
+    body: 'A C2PA credential is declared here, but it could not be read at all - so there is nothing to check these bytes against.',
   },
 };
 
@@ -397,7 +397,7 @@ export function verifyTextNotices(report: VerifyReport, ctx: NoticeContext): Ver
         id: 'external-used',
         tone: 'info',
         title: 'Checked against a credential fetched from this site',
-        body: 'The credential is not inside this file. It was fetched from the address below when you asked, and checked against these bytes — so this verdict is about this file and that credential together.',
+        body: 'The credential is not inside this file. It was fetched from the address below when you asked, and checked against these bytes - so this verdict is about this file and that credential together.',
         url: b.manifestUrl,
       });
     } else if (b.manifestUrl) {
@@ -473,7 +473,7 @@ export function reserializedNotice(report: VerifyReport, ctx: NoticeContext): Ve
     id: 'reserialized',
     tone: 'info',
     title: 'These bytes were re-serialized on the way here',
-    body: 'The credential itself checks out — its signature is valid and everything it references matches — but the pasted bytes do not hash to what was signed. Copying markup out of a rendered page gives you what the browser rewrote (quoting, attribute order, entities, whitespace), not the file the author signed. Save or download the original file and check that instead.',
+    body: 'The credential itself checks out - its signature is valid and everything it references matches - but the pasted bytes do not hash to what was signed. Copying markup out of a rendered page gives you what the browser rewrote (quoting, attribute order, entities, whitespace), not the file the author signed. Save or download the original file and check that instead.',
   };
 }
 

@@ -938,9 +938,9 @@ export function extract(sdp: string, opts: ExtractOptions = {}): CodecResult<Sdp
     if (sdp.length === 0) fail('empty', 'sdp-codec: empty SDP');
     if (sdp.length > MAX_SDP_CHARS) fail('too-large', `sdp-codec: SDP exceeds ${MAX_SDP_CHARS} characters`);
     const lines = sdp.split(/\r\n|\r|\n/).map(l => l.trim()).filter(l => l !== '');
-    if (!lines.some(l => l === 'v=0')) fail('not-sdp', 'sdp-codec: no v=0 line — not an SDP');
+    if (!lines.some(l => l === 'v=0')) fail('not-sdp', 'sdp-codec: no v=0 line - not an SDP');
     if (!lines.some(l => /^m=application\s/.test(l))) {
-      fail('not-sdp', 'sdp-codec: no m=application section — not a data-channel description');
+      fail('not-sdp', 'sdp-codec: no m=application section - not a data-channel description');
     }
 
     let fingerprint: DtlsFingerprint | null = null;

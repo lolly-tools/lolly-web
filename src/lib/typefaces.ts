@@ -68,7 +68,7 @@ export const FONTS: FontSpec[] = [
   },
   {
     family: 'Outfit',
-    role: 'Legacy — the default face before 2026-08-10',
+    role: 'Legacy - the default face before 2026-08-10',
     stack: "'Outfit', ui-sans-serif, system-ui, sans-serif",
     variable: true,
     weights: '100–900',

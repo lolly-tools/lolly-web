@@ -129,7 +129,7 @@ function headerCell(col: Column, widths: Record<string, number> | undefined): st
   return `<th class="pro-col" data-col="${esc(col.key)}" style="${dataWidthStyle(col.key, widths)}">
     <div class="pro-col-head">
       <button type="button" class="pro-col-label" data-collapse-col="${esc(col.key)}"
-        title="Hide “${esc(col.label)}” — click its tag below to bring it back">${esc(col.label)}</button>
+        title="Hide “${esc(col.label)}” - click its tag below to bring it back">${esc(col.label)}</button>
       ${action}
     </div>
   </th>`;
@@ -142,7 +142,7 @@ function exportHeaderCell(col: ExportCol, widths: Record<string, number> | undef
   return `<th class="pro-col-fixed" data-col="${esc(col.key)}" style="${widthStyle(col.key, widths)}">
     <div class="pro-col-head">
       <button type="button" class="pro-col-label" data-collapse-col="${esc(col.key)}"
-        title="Hide “${esc(col.label)}” — restore it from the tag at the front of the bar below">${esc(col.label)}</button>
+        title="Hide “${esc(col.label)}” - restore it from the tag at the front of the bar below">${esc(col.label)}</button>
     </div>
   </th>`;
 }
@@ -173,7 +173,7 @@ function columnsBarHtml(visible: Column[], hidden: Column[], queued: number, col
   // "Hide all columns" + "Show all" controls.
   const hideAll = visible.length
     ? `<button type="button" class="pro-cols-action" data-hide-all-cols
-        title="Hide every input column — then click the ones you want to edit">Hide all columns</button>`
+        title="Hide every input column - then click the ones you want to edit">Hide all columns</button>`
     : '';
   // "Show all" restores everything - data columns AND collapsed export columns.
   const showAll = (hidden.length || collapsedExport.length)
@@ -221,7 +221,7 @@ function dataCell(col: Column, row: GridRow, ctx: GridCtx): string {
     const summary = n ? `${n} row${n === 1 ? '' : 's'}${preview ? ' · ' + preview : ''}` : 'Add…';
     return `<td class="pro-cell pro-cell--blocks" data-col="${esc(col.key)}" data-row="${esc(row.uid)}">
       <button type="button" class="pro-control pro-blocks-trigger${n ? '' : ' is-empty'}" data-blocks-trigger data-row="${esc(row.uid)}" data-col="${esc(col.key)}"
-        title="Edit “${esc(col.label)}” — ${n} item${n === 1 ? '' : 's'}">${esc(summary)}</button>
+        title="Edit “${esc(col.label)}” - ${n} item${n === 1 ? '' : 's'}">${esc(summary)}</button>
     </td>`;
   }
 
@@ -270,7 +270,7 @@ export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
     : DOC_SVG;
   const fmtSelect = (tool && formats.length)
     ? `<label class="pro-fmt${row.format ? ' pro-fmt--set' : ''}"
-         title="Output format for this row${row.format ? ` — ${esc(row.format.toUpperCase())}` : ' (blank uses the format set above)'}">
+         title="Output format for this row${row.format ? ` - ${esc(row.format.toUpperCase())}` : ' (blank uses the format set above)'}">
         ${fmtFace}
         <select class="pro-fmt-select" data-row-format="${uid}" tabindex="-1" aria-label="Format for this row">
           <option value="">Auto</option>
@@ -287,10 +287,10 @@ export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
 
   // The template "control" is a trigger that opens a search popover (built in
   // index.js) - far easier to hit on touch than the old datalist combobox.
-  const templateCell = `<td class="pro-cell-template${isExp ? ' pro-exp' : ''}" data-row="${uid}" data-col="__template"${isExp ? ' title="Experimental — exports are watermarked"' : ''}>
+  const templateCell = `<td class="pro-cell-template${isExp ? ' pro-exp' : ''}" data-row="${uid}" data-col="__template"${isExp ? ' title="Experimental - exports are watermarked"' : ''}>
     <span class="pro-template-format">${fmtSelect}</span>
     <button type="button" class="pro-template-select pro-template-trigger${fmtSelect ? ' has-fmt' : ''}" data-template-trigger data-row="${uid}"
-      title="${tool ? `${esc(tool.name)} — click or press Enter to change` : 'Choose a template'}">
+      title="${tool ? `${esc(tool.name)} - click or press Enter to change` : 'Choose a template'}">
       <span class="pro-template-name${tool ? '' : ' is-placeholder'}">${esc(tool?.name ?? 'Search templates…')}</span>
     </button>
     <span class="pro-template-actions">${eyeBtn}</span>

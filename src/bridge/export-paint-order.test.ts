@@ -237,7 +237,7 @@ test('a unit hoisted out of an overflow-clip group re-applies the clip',
 // The one way this work can turn correct output into wrong output is a MISSED
 // context creator letting content escape a subtree it belongs to. Two guards,
 // both green before AND after.
-test('hoisting stops at opacity<1 — a z-index:99 child stays inside the opacity group',
+test('hoisting stops at opacity<1 - a z-index:99 child stays inside the opacity group',
   { skip: SKIP }, async () => {
     const markup = `<div id="root" style="position:relative;width:300px;height:200px">
       <div style="opacity:0.6;width:100px;height:100px;background:#edf2f7">
@@ -279,7 +279,7 @@ test('KNOWN LIMITATION: floats are painted in tree order, not section E.2 layer 
     </div>`;
     const svg = await renderFixture(markup, true);
     assert.ok(at(svg, 43, 108, 176) < at(svg, 229, 62, 62),
-      'floats still paint in tree order — update this when a float model lands');
+      'floats still paint in tree order - update this when a float model lands');
   });
 
 // ─── RISK #1: tool exports must be untouched unless opted in ──────────────────
@@ -404,7 +404,7 @@ test('a canvas with NO vector twin serialises byte-identically before and after 
     assert.ok(out.twinned!.includes('rgb(9,9,9)'), 'the twin\'s own paint must be present');
     assert.match(out.twinned!, /id="tw\d+-twin-clip"/, 'twin ids must be namespaced at insertion');
     assert.match(out.twinned!, /url\(#tw\d+-twin-clip\)/, 'references must follow the rename');
-    assert.ok(!/id="twin-clip"/.test(out.twinned!), 'the raw twin-local id must not survive — it collides');
+    assert.ok(!/id="twin-clip"/.test(out.twinned!), 'the raw twin-local id must not survive - it collides');
     // Placed exactly where the raster was: same box, same stretch. (The document's own
     // root <svg> carries no preserveAspectRatio, so this can only match the twin.)
     assert.match(out.twinned!, /<svg[^>]*\bwidth="100"[^>]*\bheight="50"[^>]*\bpreserveAspectRatio="none"/,
@@ -462,7 +462,7 @@ test('a twin producer that re-enters the walker gets NO twins inside it (depth g
     assert.ok(!/<image[^>]*\bwidth="100"[^>]*\bheight="50"/.test(svg),
       'premise: the outer canvas took the twin path, not the raster path');
     assert.match(svg, /<image[^>]*href="data:image\/png[^>]*\bwidth="40"[^>]*\bheight="20"/,
-      'the INNER canvas must still rasterise — only the outermost walk may use twins');
+      'the INNER canvas must still rasterise - only the outermost walk may use twins');
     assert.ok(!svg.includes('rgb(200,0,0)'),
       'the inner canvas\'s own twin must NOT have been consulted during a nested walk');
   });

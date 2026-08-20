@@ -117,7 +117,7 @@ const MAX_FINGERPRINT_BYTES = 255;
  */
 export const sha256Bytes: PlateHasher = async (bytes) => {
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('plate: no Web Crypto — cannot derive a connection plate');
+  if (!subtle) throw new Error('plate: no Web Crypto - cannot derive a connection plate');
   const copy = new Uint8Array(bytes.length);
   copy.set(bytes);
   return new Uint8Array(await subtle.digest('SHA-256', copy.buffer));

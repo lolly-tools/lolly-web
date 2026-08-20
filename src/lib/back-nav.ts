@@ -115,6 +115,6 @@ export function getPrevView(): PrevView | null {
 
 function labelFor(routeName: string): string {
   if (routeName === 'gallery') return t('Home');
-  const stripped = document.title.replace(/\s*[—–·-]\s*Lolly$/u, '').trim();
+  const stripped = document.title.replace(/\s*[-–·-]\s*Lolly$/u, '').trim();
   return stripped && stripped !== 'Lolly' ? stripped : t('Home');
 }

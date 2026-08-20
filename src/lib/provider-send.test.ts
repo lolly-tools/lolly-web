@@ -106,9 +106,9 @@ test('amzDates renders the ISO-basic pair', () => {
 // ── Dropbox ───────────────────────────────────────────────────────────────────
 
 test('Dropbox-API-Arg JSON is pure ASCII whatever the filename', () => {
-  const arg = dropboxApiArg({ path: '/gráfico – ñandú.png', mode: 'add' });
+  const arg = dropboxApiArg({ path: '/gráfico - ñandú.png', mode: 'add' });
   assert.ok(/^[\x20-\x7e]+$/.test(arg), `non-ASCII survived: ${arg}`);
-  assert.deepEqual(JSON.parse(arg), { path: '/gráfico – ñandú.png', mode: 'add' });
+  assert.deepEqual(JSON.parse(arg), { path: '/gráfico - ñandú.png', mode: 'add' });
 });
 
 // ── OneDrive upload sessions ──────────────────────────────────────────────────

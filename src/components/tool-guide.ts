@@ -148,7 +148,7 @@ function markGuideSeen(id: string): void {
   try {
     const seen = (localStorage.getItem(SEEN_KEY) ?? '').split(',').filter(Boolean);
     if (!seen.includes(id)) localStorage.setItem(SEEN_KEY, [...seen, id].join(','));
-  } catch { /* storage off — it just opens again next visit */ }
+  } catch { /* storage off - it just opens again next visit */ }
 }
 
 function trackHtml(track: ToolGuideTrack): string {

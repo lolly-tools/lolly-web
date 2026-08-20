@@ -75,7 +75,7 @@ const PILL_H = 34;              // pill box height incl. padding - placement mat
 const PILL_GAP = 12;
 
 const NOT_FOUND_MSG =
-  "Couldn't find the canvas in the shared picture — share this tab (or the screen it's on) and keep it visible.";
+  "Couldn't find the canvas in the shared picture - share this tab (or the screen it's on) and keep it visible.";
 
 /** One compositor frame: rVFC where available (Safari 15.4+, Firefox 130+, Chrome), rAF otherwise. */
 function nextFrame(video: RvfcVideo): Promise<void> {
@@ -252,7 +252,7 @@ async function locateStage(video: RvfcVideo, overlay: LiveOverlay): Promise<Rect
   sample.width = sw;
   sample.height = sh;
   const ctx = sample.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Canvas 2D is unavailable — cannot locate the stage.');
+  if (!ctx) throw new Error('Canvas 2D is unavailable - cannot locate the stage.');
 
   const locator = createStageLocator();
   const t0 = performance.now();
@@ -283,7 +283,7 @@ function startCropPump(video: RvfcVideo, crop: Rect, disposers: Array<() => void
   canvas.width = crop.w;
   canvas.height = crop.h;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas 2D is unavailable — cannot crop the recording.');
+  if (!ctx) throw new Error('Canvas 2D is unavailable - cannot crop the recording.');
   let stream = canvas.captureStream(0);
   const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
   let deliver: () => void;
@@ -373,7 +373,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
         try {
           await track.cropTo(await CT.fromElement(stage));
           cropped = true;
-        } catch { /* not our tab, or cropping refused — locate the stage instead */ }
+        } catch { /* not our tab, or cropping refused - locate the stage instead */ }
       }
     }
 
@@ -399,9 +399,9 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
 
     // Drifting mid-take is unrecoverable for tier 2 (the crop rect is fixed in
     // screen space) and merely unnecessary for the element tiers - warn either way.
-    const onScroll = (): void => opts.onWarn?.('Page scrolled during the live recording — the canvas may drift out of frame.');
+    const onScroll = (): void => opts.onWarn?.('Page scrolled during the live recording - the canvas may drift out of frame.');
     const onVis = (): void => {
-      if (document.hidden) opts.onWarn?.('Tab hidden during the live recording — frames freeze while it is not visible.');
+      if (document.hidden) opts.onWarn?.('Tab hidden during the live recording - frames freeze while it is not visible.');
     };
     window.addEventListener('scroll', onScroll, { once: true, capture: true });
     document.addEventListener('visibilitychange', onVis);
@@ -450,7 +450,7 @@ export async function captureLiveClip(stage: Element, opts: LiveCaptureOpts): Pr
       track.addEventListener('ended', () => { clearInterval(timer); stop(); }, { once: true });
     });
 
-    if (blob.size === 0) throw new Error('The live recording was empty — the share ended before any frames arrived.');
+    if (blob.size === 0) throw new Error('The live recording was empty - the share ended before any frames arrived.');
     return blob;
   } finally {
     cleanup();

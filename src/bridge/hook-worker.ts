@@ -237,7 +237,7 @@ export function getWorkerHookExecutor(): HookExecutor {
     try {
       return await mountInWorker(tool, host);
     } catch (e) {
-      host.log('warn', `worker hooks unavailable — running in-realm: ${(e as Error).message}`, { toolId: tool.manifest.id });
+      host.log('warn', `worker hooks unavailable - running in-realm: ${(e as Error).message}`, { toolId: tool.manifest.id });
       return inRealmHookExecutor(tool, host);
     }
   };

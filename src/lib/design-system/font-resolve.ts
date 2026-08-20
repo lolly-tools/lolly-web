@@ -151,7 +151,7 @@ function tokenize(raw: string): string[] {
   s = s.replace(FONT_EXT_RE, '');
   s = s.replace(SUBSET_PREFIX_RE, '');
   s = s.replace(/[_+.]+/g, ' ');
-  s = s.replace(/[-‐–—]+/g, ' ');
+  s = s.replace(/[-‐–-]+/g, ' ');
   s = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
   s = s.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   s = s.replace(/([a-z])(\d)/g, '$1 $2');

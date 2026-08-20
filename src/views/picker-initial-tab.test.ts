@@ -170,7 +170,7 @@ test('no initialTab keeps the historical default: Library for a slot-fill pick',
   const p = await open({ allowUpload: true });
   assert.equal(p.visiblePane(), 'library');
   assert.equal(p.selectedTab(), 'library');
-  assert.ok(p.tab('tools'), 'the Tools tab still exists — it just is not the one open');
+  assert.ok(p.tab('tools'), 'the Tools tab still exists - it just is not the one open');
   await p.close();
 });
 

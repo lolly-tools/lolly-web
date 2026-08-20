@@ -150,7 +150,7 @@ function dotHtml(d: WheelDot, p: Plot): string {
   return `<button type="button" class="dash-wheel-dot dash-wheel-dot--edit${p.light ? ' is-light' : ''}"
     style="left:${p.x.toFixed(2)}%;top:${p.y.toFixed(2)}%;--dot:${escapeHtml(d.hex || 'transparent')}"
     data-be-widx="${d.idx}" data-hex="${escapeHtml((d.hex || '').toUpperCase())}"
-    aria-label="${escapeHtml(d.label)} ${escapeHtml(d.hex)} — ${where}, click to edit"></button>`;
+    aria-label="${escapeHtml(d.label)} ${escapeHtml(d.hex)} - ${where}, click to edit"></button>`;
 }
 
 /** The editable wheel's markup. Dots carry `data-be-widx` (their swatch index). */
@@ -162,8 +162,8 @@ export function renderBrandWheel(dots: readonly WheelDot[]): string {
   }
   return `
     ${plotHtml(disc, rail,
-      'data-be-wheel role="group" aria-label="Palette wheel — drag a dot to recolour, click to edit, click empty space to add"',
-      'data-be-rail role="group" aria-label="Neutral rail — drag a grey up or down to relight it, click to edit"',
+      'data-be-wheel role="group" aria-label="Palette wheel - drag a dot to recolour, click to edit, click empty space to add"',
+      'data-be-rail role="group" aria-label="Neutral rail - drag a grey up or down to relight it, click to edit"',
       true)}
     <p class="be-wheel-hint">Angle = hue · distance out = chroma · greys ride the rail, where height = lightness. Drag to recolour · click to edit · click empty space to add.</p>`;
 }

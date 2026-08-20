@@ -443,8 +443,8 @@ export async function ingestPptxAsSvgAssets(
   for (const p of pages) {
     try {
       const pageSvg = await handle.pageToSvg(p, { warn });
-      if (!pageSvg.elementCount) { warn(`Slide ${p + 1} has no importable content — skipped.`); continue; }
-      const svgName = handle.pageCount === 1 ? `${base}.svg` : `${base} — slide ${p + 1}.svg`;
+      if (!pageSvg.elementCount) { warn(`Slide ${p + 1} has no importable content - skipped.`); continue; }
+      const svgName = handle.pageCount === 1 ? `${base}.svg` : `${base} - slide ${p + 1}.svg`;
       const svgFile = new File([pageSvg.svg], svgName, { type: 'image/svg+xml' });
       // storeUserUpload's param is a shell-internal PickerHost superset of HostV1;
       // the real host satisfies it at runtime (same object the picker uses).

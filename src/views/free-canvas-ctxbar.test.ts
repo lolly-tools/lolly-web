@@ -104,7 +104,7 @@ test('an unmeasurable stage returns a padded strip instead of a band from zeroes
   assert.deepEqual(ctxTopBand({ w: 0, h: 0 }, [HUD]), { lo: 6, hi: 6, top: 6 });
 });
 
-test('chrome that leaves no gap never inverts the band — hi clamps up to lo', () => {
+test('chrome that leaves no gap never inverts the band - hi clamps up to lo', () => {
   const band = ctxTopBand({ w: 300, h: 700 }, [
     { left: 0, top: 8, right: 160, bottom: 48 },
     { left: 150, top: 8, right: 300, bottom: 48 },
@@ -118,7 +118,7 @@ test('chrome that leaves no gap never inverts the band — hi clamps up to lo', 
 const css = readFileSync(new URL('../styles/parts/editor.css', import.meta.url), 'utf8');
 const ctxRule = css.match(/^\.fc-ctxbar\s*\{[^}]*\}/m);
 
-test('the bar scrolls its controls into reach — the one-row overflow the top-pin leans on', () => {
+test('the bar scrolls its controls into reach - the one-row overflow the top-pin leans on', () => {
   assert.ok(ctxRule, 'editor.css declares .fc-ctxbar');
   assert.match(ctxRule![0], /overflow-x:\s*auto/, 'a horizontal scroll for a bar wider than the band');
   assert.match(ctxRule![0], /max-width:/, 'capped so the scroll has something to clip against');
@@ -169,5 +169,5 @@ test('the rail does NOT try to keep a `[hidden]` button laid out', () => {
   // this is the local restatement, so the same idea cannot come back in this sheet.
   assert.match(css, /\.fc-btn\[hidden\]\s*\{[^}]*display:\s*none/, 'the plain rule survives');
   assert.equal(css.match(/\.fc-toolbar \.fc-btn\[hidden\]\s*\{[^}]*\}/), null,
-    'the rail must not override [hidden] — gate with a class + inert if it needs to stay laid out');
+    'the rail must not override [hidden] - gate with a class + inert if it needs to stay laid out');
 });

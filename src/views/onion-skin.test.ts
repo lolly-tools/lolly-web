@@ -116,7 +116,7 @@ const box = (id: string, extra: Record<string, unknown> = {}): Box =>
 
 // ── (a) + (b): where the layer lives ──────────────────────────────────────────
 
-test('(a) the ghost layer is NOT inside the canvas — outside the node runtime.export sees', () => {
+test('(a) the ghost layer is NOT inside the canvas - outside the node runtime.export sees', () => {
   const f = mount([box('a'), box('b')]);
   try {
     const layer = f.layer();
@@ -192,7 +192,7 @@ test('export byte-identity: the artboard is not touched at all, so exports do no
 
 // ── geometry ──────────────────────────────────────────────────────────────────
 
-test('a ghost is the MODEL rect through the injected metrics — the same map the outline uses', () => {
+test('a ghost is the MODEL rect through the injected metrics - the same map the outline uses', () => {
   const f = mount([box('a', { x: 200, y: 100, w: 400, h: 300, rot: 12, radius: 40 })]);
   try {
     f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1 });
@@ -240,7 +240,7 @@ test('an id with no box in the model is skipped, not drawn as a phantom', () => 
 
 // ── modes ─────────────────────────────────────────────────────────────────────
 
-test('outline mode draws no fill and no picture — the default is deliberately austere', () => {
+test('outline mode draws no fill and no picture - the default is deliberately austere', () => {
   const f = mount([box('a', { bg: '#ff0000' })], {
     a: '<img class="lolly-box-img" src="https://x.test/p.png">',
   });
@@ -251,7 +251,7 @@ test('outline mode draws no fill and no picture — the default is deliberately 
   } finally { f.teardown(); }
 });
 
-test('filled mode adds the box fill and reuses the box’s OWN cached <img> — no rasteriser', () => {
+test('filled mode adds the box fill and reuses the box’s OWN cached <img> - no rasteriser', () => {
   const f = mount([box('a', { bg: '#ff0000', fit: 'cover' })], {
     a: '<img class="lolly-box-img" src="https://x.test/p.png">',
   });
@@ -316,7 +316,7 @@ test('a ghost coincident with the ACTIVE scene escalates to the picture, even in
     assert.ok(g.hasAttribute('data-coincident'), 'flagged for the stylesheet');
     assert.ok(g.querySelector('.onion-fill'), 'the neighbour’s colour');
     const holder = g.querySelector('.onion-text') as HTMLElement;
-    assert.ok(holder, 'and its words — a text-only scene has no fill worth 12% and no <img>');
+    assert.ok(holder, 'and its words - a text-only scene has no fill worth 12% and no <img>');
     assert.equal(holder.textContent, 'One');
     // Laid out at the box's NATIVE size and scaled as a unit: the font-size is native px.
     assert.equal(holder.style.width, '100px');
@@ -368,7 +368,7 @@ test('"Hide colourful previews" suppresses the escalation too, not just filled m
   } finally { html.removeAttribute('data-a11y-previews'); f.teardown(); }
 });
 
-test('the cloned text carries no id — a duplicate would capture the original’s references', () => {
+test('the cloned text carries no id - a duplicate would capture the original’s references', () => {
   const f = mount([box('a', { bg: '#ff0000' }), box('live', { bg: '#0000ff' })], {
     a: '<div class="lolly-box-text" id="t1">One <span id="inner">two</span></div>',
   });
@@ -445,7 +445,7 @@ test('onion.css: layered, pointer-transparent, non-dashed, and colour-blind safe
   const css = readFileSync(join(HERE, '..', 'styles', 'parts', 'onion.css'), 'utf8');
   assert.match(css, /@layer views \{/, 'a lazy sheet must declare its layer, not rely on load order');
   assert.match(css, /\.onion-layer \{[^}]*pointer-events:\s*none/,
-    'belt and braces over .fc-overlay — a ghost must never be hit-testable');
+    'belt and braces over .fc-overlay - a ghost must never be hit-testable');
   assert.equal(/border[^:]*:\s*[^;]*dashed/.test(css), false,
     'dashed borders are reserved for drop areas throughout this shell');
   // The redundant non-colour channel (WCAG 1.4.1) is the corner chip, not a dash.
@@ -476,7 +476,7 @@ test('onion.css: no custom property is defined in terms of ITSELF', () => {
   for (const [, prop, value] of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;{}]+)/gi)) {
     assert.equal(
       value!.includes(`var(${prop})`), false,
-      `${prop} references itself — that is a cycle, not a read of the inherited value`,
+      `${prop} references itself - that is a cycle, not a read of the inherited value`,
     );
   }
   // And the floor really is wired into both opacity declarations.

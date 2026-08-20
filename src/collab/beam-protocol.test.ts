@@ -315,7 +315,7 @@ test('backpressure: one pull is one frame, in order, and pause holds the line', 
   sender.offer();
   receiver.accept();
 
-  assert.equal(wires.binaryFrames(), 0, 'consent alone sends nothing — the transport pulls');
+  assert.equal(wires.binaryFrames(), 0, 'consent alone sends nothing - the transport pulls');
 
   assert.equal(await sender.nextChunk(), 'sent');
   assert.equal(wires.binaryFrames(), 1, 'exactly one payload frame per pull');
@@ -422,7 +422,7 @@ test('decline sends nothing and still discards staging', async () => {
   assert.equal(sink.writes.length, 0);
   assert.deepEqual(wires.toReceiver.map((m) => m.t), ['offer'], 'the offer was the only thing sent');
   await receiver.drain();
-  assert.equal(sink.discards(), 1, 'section 11.18 is unconditional — a declined beam discards too');
+  assert.equal(sink.discards(), 1, 'section 11.18 is unconditional - a declined beam discards too');
 });
 
 test('a chunk header before accept is a protocol violation, not an early start', async () => {
@@ -602,7 +602,7 @@ async function lonelyReceiver(policy?: Parameters<typeof createBeamReceiver>[0][
   return { receiver, sink, sent, items, offer };
 }
 
-test('out-of-order seq is rejected — both a skip and a replay', async () => {
+test('out-of-order seq is rejected - both a skip and a replay', async () => {
   for (const [label, badSeq] of [['skipped', 2], ['replayed', 0]] as const) {
     const { receiver, sink, sent, offer } = await lonelyReceiver();
     receiver.receive(offer);

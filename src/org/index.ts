@@ -324,7 +324,7 @@ async function fetchOrgConfig(): Promise<OrgConfigLoad> {
   const init: RequestInit = orgConfigEtag ? { headers: { 'If-None-Match': orgConfigEtag } } : {};
   const res = await safeFetch('/api/v1/org-config', init);
   if (!res) return { ok: false };                       // network error / timeout
-  if (res.status === 304) {                             // unchanged — honour the cache
+  if (res.status === 304) {                             // unchanged - honour the cache
     if (!orgConfigState) return { ok: false };
     rememberOrgConfig(orgConfigState, orgConfigEtag);   // re-stamp so the cache stays fresh
     return { ok: true, config: orgConfigState };
@@ -528,7 +528,7 @@ function renderGate(auth: AuthConfig, instanceName?: string): boolean {
   const heading = instanceName
     ? t('Sign in to {name}', { name: instanceName })
     : t('Sign in to continue');
-  document.title = `${t('Sign in')} — Lolly`;
+  document.title = `${t('Sign in')} - Lolly`;
   // Built here rather than inline so the suppression can sit on the sink's own
   // line - semgrep honours nosemgrep only there or on the line directly above,
   // and inside a template literal a JS comment would be emitted as page text.
@@ -574,7 +574,7 @@ export async function initOrg(): Promise<OrgState | null> {
     if (auth.mode === 'gated' && !isMember) {
       const gated = renderGate(auth);
       if (gated) return { auth, session, config: null, gate: true };
-      // Could not render a gate (no loginPath) — fall through and let the app mount.
+      // Could not render a gate (no loginPath) - fall through and let the app mount.
     }
 
     // Member → load org-config, apply its profile policy, surface the inbox.
@@ -747,7 +747,7 @@ function isRecentlyAbsent(): boolean {
     const at = Number(raw);
     if (Number.isFinite(at) && Date.now() - at < ABSENT_TTL_MS) return true;
     localStorage.removeItem(absentKey());
-  } catch { /* storage unavailable — just probe */ }
+  } catch { /* storage unavailable - just probe */ }
   return false;
 }
 
@@ -767,7 +767,7 @@ function rememberOrgConfig(config: OrgConfig, etag: string | null): void {
   try {
     const rec: CachedOrgConfig = { at: Date.now(), etag, config };
     localStorage.setItem(orgConfigKey(), JSON.stringify(rec));
-  } catch { /* storage unavailable — nothing to fall back on later, that's fine */ }
+  } catch { /* storage unavailable - nothing to fall back on later, that's fine */ }
 }
 
 /** The cached org-config when one is stored, well-formed, and still within the freshness

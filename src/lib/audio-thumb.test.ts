@@ -90,7 +90,7 @@ test('audioThumbShape spreads the REAL catalog ids across all five shapes', () =
   for (const s of SHAPES) {
     const n = counts.get(s) ?? 0;
     assert.ok(n > 0, `shape ${s} unused across ${ids.length} real ids`);
-    assert.ok(n < ids.length * 0.5, `shape ${s} took ${n}/${ids.length} — badly distributed`);
+    assert.ok(n < ids.length * 0.5, `shape ${s} took ${n}/${ids.length} - badly distributed`);
   }
 });
 

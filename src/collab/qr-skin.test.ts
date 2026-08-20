@@ -629,7 +629,7 @@ test('mask selection is automatic, deterministic and not a constant', () => {
   assert.deepEqual([...a.modules], [...b.modules], 'the same input must give the same symbol');
   const masks = new Set<number>();
   for (let i = 0; i < 40; i++) masks.add(ok(encodeQr(`COLLAB INVITE ${i}`)).mask);
-  assert.ok(masks.size > 1, 'penalty scoring never chose a second mask — is it wired up?');
+  assert.ok(masks.size > 1, 'penalty scoring never chose a second mask - is it wired up?');
 });
 
 test('forcing byte mode on alphanumeric text still round-trips (and costs a version)', () => {
@@ -805,7 +805,7 @@ test('SVG carries a viewBox, the quiet zone and crisp rendering', () => {
   // cannot silently invert the symbol.
   assert.match(svg, /color="#000"/);
   assert.match(svg, /aria-hidden="true"/);
-  assert.ok(svg.startsWith('<svg '), 'no XML preamble — this is an inline fragment');
+  assert.ok(svg.startsWith('<svg '), 'no XML preamble - this is an inline fragment');
   assert.ok(svg.endsWith('</svg>'));
 
   // Every path command lands inside the viewBox.
@@ -991,7 +991,7 @@ test('a real invite token fits well inside version 10, with margin', (t) => {
   }
 });
 
-test('byte mode alone would NOT hold a typical invite — the base32 skin is load-bearing', () => {
+test('byte mode alone would NOT hold a typical invite - the base32 skin is load-bearing', () => {
   const payload: CollabPayload = {
     kind: 'invite',
     material: material([

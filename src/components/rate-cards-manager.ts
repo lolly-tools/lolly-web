@@ -59,7 +59,7 @@ export interface RateCardsPanelOpts {
 export const EMPTY_RATECARD_TEMPLATE = JSON.stringify({
   $format: 'lolly-ratecard',
   formatVersion: 1,
-  issuer: { name: '', url: '', issued: '', validUntil: '', note: "Type your printer's own numbers. Every rate starts empty on purpose — Lolly never invents a price." },
+  issuer: { name: '', url: '', issued: '', validUntil: '', note: "Type your printer's own numbers. Every rate starts empty on purpose - Lolly never invents a price." },
   currency: '',
   taxIncluded: false,
   minimumCharge: '',
@@ -158,7 +158,7 @@ export function openRateCardsPanel(opts: RateCardsPanelOpts): Promise<void> {
           <button type="button" class="rcm-close" data-rcm-close
             aria-label="${escape(t('Close'))}">×</button>
         </header>
-        <p class="rcm-intro">${escape(t('Drop the rate card your printer gave you. Lolly multiplies its numbers by quantities it counted — it never invents a price. Nothing leaves this device.'))}</p>
+        <p class="rcm-intro">${escape(t('Drop the rate card your printer gave you. Lolly multiplies its numbers by quantities it counted - it never invents a price. Nothing leaves this device.'))}</p>
         <label class="updz rcm-drop">
           <input type="file" class="updz-input visually-hidden" data-rcm-file multiple
             accept=".json,application/json"
@@ -166,7 +166,7 @@ export function openRateCardsPanel(opts: RateCardsPanelOpts): Promise<void> {
           <span class="updz-icon" aria-hidden="true">${icon('upload')}</span>
           <span class="updz-copy">
             <span class="updz-text">${escape(t('Drop a rate card here, or'))} <span class="updz-browse">${escape(t('browse'))}</span></span>
-            <span class="updz-hint">${escape(t('A .json rate card — every rate is a number you typed from your supplier.'))}</span>
+            <span class="updz-hint">${escape(t('A .json rate card - every rate is a number you typed from your supplier.'))}</span>
           </span>
         </label>
         <div class="rcm-actions">
@@ -216,7 +216,7 @@ export function openRateCardsPanel(opts: RateCardsPanelOpts): Promise<void> {
           continue;
         }
         // A stored card - state the COUNTS, never money.
-        say(tRaw('Added {name} — {summary}.', { name: r.name, summary: pricedSummary(r).toLowerCase() }));
+        say(tRaw('Added {name} - {summary}.', { name: r.name, summary: pricedSummary(r).toLowerCase() }));
         await opts.onChange?.();
       }
       drop.classList.remove('is-busy');

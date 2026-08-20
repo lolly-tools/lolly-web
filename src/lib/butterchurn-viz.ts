@@ -177,7 +177,7 @@ export function resolveButterchurn(mod: unknown): Butterchurn {
     if (!next || next === cur) break;
     cur = next;
   }
-  throw new Error('butterchurn loaded but exposes no createVisualizer — unexpected module shape');
+  throw new Error('butterchurn loaded but exposes no createVisualizer - unexpected module shape');
 }
 
 let loggedPalette = false;

@@ -776,7 +776,7 @@ export async function attachCollabBeam(opts: CollabBeamAttachOptions): Promise<C
         // A refusal before the offer frame has nothing to show in the toast (it paints
         // from `offer-received` onward), so it is thrown for the pill to announce.
         // Everything that fails AFTER that is the toast's, with its typed reason.
-        if (!result.ok) throw new Error(`beam: ${result.reason}${result.detail ? ` — ${result.detail}` : ''}`);
+        if (!result.ok) throw new Error(`beam: ${result.reason}${result.detail ? ` - ${result.detail}` : ''}`);
       },
     }],
     close() {

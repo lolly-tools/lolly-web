@@ -140,7 +140,7 @@ beforeEach(() => {
 
 // ── Registration ──────────────────────────────────────────────────────────────
 
-test("importing the module registers the 'private' slot — that IS the wiring", () => {
+test("importing the module registers the 'private' slot - that IS the wiring", () => {
   assert.equal(typeof getCollabOpener('private'), 'function');
   assert.equal(getCollabOpener('work'), undefined, "the other track is not this file's business");
 });
@@ -159,7 +159,7 @@ test('the flag is read per open, not captured at registration', async () => {
     openCeremony: trackedOpen,
     effects: plainEffects(),
   });
-  assert.equal(off, null, 'the mirror beforeEach wrote is off — a user who turned the flag off');
+  assert.equal(off, null, 'the mirror beforeEach wrote is off - a user who turned the flag off');
   assert.equal(opened.length, 0);
 
   setFlagMirror(PRIVATE_COLLAB_FLAG.id, true);
@@ -330,5 +330,5 @@ test('a browser with no BroadcastChannel opens the ceremony anyway', async () =>
     renderQr: null,
     scan: null,
   });
-  assert.ok(dialog, 'the reply link is one skin of three — losing it is not losing the ceremony');
+  assert.ok(dialog, 'the reply link is one skin of three - losing it is not losing the ceremony');
 });

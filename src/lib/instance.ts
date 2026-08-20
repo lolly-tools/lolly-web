@@ -118,7 +118,7 @@ export async function setInstanceBase(url: string | null): Promise<void> {
     localStorage.removeItem('sbt-catalog:tool-index');
     localStorage.removeItem('sbt-catalog:assets-index');
     localStorage.removeItem('sbt-tool-index');
-  } catch { /* storage unavailable — sync will just revalidate */ }
+  } catch { /* storage unavailable - sync will just revalidate */ }
 }
 
 /** Load the persisted base. Memoised; never throws (unreadable → bundled).

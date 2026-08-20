@@ -59,7 +59,7 @@ const ROWS: Row[] = [
   { name: 'range is not text', d: { tag: 'input', type: 'range', value: '5' }, text: null },
   { name: 'color is not text', d: { tag: 'input', type: 'color', value: '#ff0000' }, text: null },
   { name: 'hidden is not text', d: { tag: 'input', type: 'hidden', value: 'secret' }, text: null },
-  { name: 'file is not text — the chooser lives in a closed UA shadow root',
+  { name: 'file is not text - the chooser lives in a closed UA shadow root',
     d: { tag: 'input', type: 'file', value: 'C:\\fakepath\\a.png' }, text: null },
 
   // An unrecognised type must fall through to nothing rather than have some future
@@ -102,7 +102,7 @@ const RANGES: [string, ControlDesc, number][] = [
 for (const [name, d, want] of RANGES) {
   test(`rangeFraction: ${name}`, () => {
     const f = rangeFraction(d);
-    assert.ok(Number.isFinite(f), `got ${f} — a non-finite fraction becomes an unparseable coordinate`);
+    assert.ok(Number.isFinite(f), `got ${f} - a non-finite fraction becomes an unparseable coordinate`);
     assert.ok(f >= 0 && f <= 1, `fraction out of range: ${f}`);
     assert.equal(Math.round(f * 1000) / 1000, want);
   });

@@ -32,7 +32,7 @@ export function renderActivity(
   tools: Array<{ id: string } & Record<string, unknown>>,
 ): string {
   if (!hasActivity(m)) {
-    return `<p class="storage-hint-text">Nothing here yet — open a tool and make something. It all gets counted right here on your device.</p>`;
+    return `<p class="storage-hint-text">Nothing here yet - open a tool and make something. It all gets counted right here on your device.</p>`;
   }
 
   const num = (n: number) => Number(n).toLocaleString();
@@ -70,7 +70,7 @@ export function renderActivity(
     `Creating since <strong>${escape(since)}</strong>`,
     favTool ? `Favourite tool <a class="activity-fav" href="#/tool/${encodeURIComponent(favTool.id)}" aria-label="Open ${escape(String(favTool.name ?? favTool.id))}">${escape(String(favTool.name ?? favTool.id))}</a>` : '',
     m.batchRuns ? `<strong>${m.batchRuns}</strong> batch run${m.batchRuns === 1 ? '' : 's'}${m.biggestBatch > 1 ? ` (biggest ${num(m.biggestBatch)})` : ''}` : '',
-    `<strong>0</strong> uploaded — all on your device`,
+    `<strong>0</strong> uploaded - all on your device`,
   ].filter(Boolean).join(' <span class="dot" aria-hidden="true">·</span> ');
 
   // Stat tiles sit beside the format leaderboard on desktop (split), and stack

@@ -264,7 +264,7 @@ test('a MIXED selection offers no stroke controls rather than half-applicable on
   f.destroy();
 });
 
-test('the stroke panel carries width, style, ends, corners and fill rule — and no alignment', () => {
+test('the stroke panel carries width, style, ends, corners and fill rule - and no alignment', () => {
   const f = mount([pathBox()]);
   selectAt(f, ...centre(byId(f, 'p1')));
   const p = openStrokePanel(f);

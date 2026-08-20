@@ -230,7 +230,7 @@ export async function listCatalogRateCards(host: CatalogRateCardsHost): Promise<
       entry.assetId = ref.id;       // the catalog identity, not user/ratecards/…
       entry.catalogUrl = ref.url;   // where resolveCatalogRateCard re-reads it
       out.push(entry);
-    } catch { /* unreachable/hostile card — skip */ }
+    } catch { /* unreachable/hostile card - skip */ }
   }
   return out;
 }

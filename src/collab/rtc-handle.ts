@@ -792,7 +792,7 @@ export function createRtcCollabHandle(opts: RtcCollabHandleOptions): RtcCollabHa
       if (!isCompatibleOpVersion(version)) downgrade('op-version');
     }
     // `message.seed` is deliberately ignored here: a packed session seed is the
-    // ceremony's business (and untrusted URL text — section 11.21), and a caller that wants
+    // ceremony's business (and untrusted URL text - section 11.21), and a caller that wants
     // it subscribes to `transport.on('message')` itself.
   }
 

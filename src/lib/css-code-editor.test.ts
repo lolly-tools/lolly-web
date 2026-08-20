@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { highlightCss, cssCompletions, CSS_PROPERTIES } from './css-code-editor.ts';
 
-test('highlightCss: escapes HTML — never emits raw markup', () => {
+test('highlightCss: escapes HTML - never emits raw markup', () => {
   const html = highlightCss('.x { content: "</style><script>"; }');
   assert.ok(!html.includes('<script>'), 'no raw <script>');
   assert.ok(!html.includes('</style>'), 'no raw </style>');

@@ -174,7 +174,7 @@ export async function csvToBatch<R extends IoRow>(
   const seenHeaders = new Set<string>();
   for (const h of header) {
     if (h === '' || RESERVED.has(h)) continue;
-    if (seenHeaders.has(h)) errors.push(`Duplicate column "${h}" — later values overwrite earlier ones.`);
+    if (seenHeaders.has(h)) errors.push(`Duplicate column "${h}" - later values overwrite earlier ones.`);
     else seenHeaders.add(h);
   }
 
@@ -191,7 +191,7 @@ export async function csvToBatch<R extends IoRow>(
       // r is 0-based into the parsed grid (row 0 is the header), so the human
       // line is r + 1. Caveat: parseDelimited drops wholly-empty rows, so this
       // can under-count if the source file had blank lines above this one.
-      errors.push(`Row ${r + 1}: unknown tool "${toolId}" — skipped its data.`);
+      errors.push(`Row ${r + 1}: unknown tool "${toolId}" - skipped its data.`);
       rows.push(row);
       continue;
     }

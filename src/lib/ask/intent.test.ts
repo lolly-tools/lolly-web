@@ -28,7 +28,7 @@ test('make verbs lead with tools', () => {
   }
 });
 
-test('only the first token decides — "how do I export" is docs, not make', () => {
+test('only the first token decides - "how do I export" is docs, not make', () => {
   assert.equal(classifyIntent('how do I export a transparent png'), 'docs');
   assert.equal(classifyIntent('where do I make a badge'), 'find');
 });

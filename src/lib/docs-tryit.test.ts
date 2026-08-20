@@ -29,7 +29,7 @@ const {
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
-test('shotSlug strips path, extension, dark twin and locale — matching the recipe key', () => {
+test('shotSlug strips path, extension, dark twin and locale - matching the recipe key', () => {
   assert.equal(shotSlug('/info/shots/exp-url-qr-color.svg'), 'exp-url-qr-color');
   assert.equal(shotSlug('/info/shots/exp-url-qr-color.dark.svg'), 'exp-url-qr-color');
   assert.equal(shotSlug('/info/shots/brand-studio.de.svg'), 'brand-studio');
@@ -158,7 +158,7 @@ test('clicking the live button mounts/removes the iframe over the retained image
   root.remove();
 });
 
-test('reduced motion offers navigate only — no in-place live embed', async () => {
+test('reduced motion offers navigate only - no in-place live embed', async () => {
   stubManifestFetch();
   const root = buildFragment();
   document.body.appendChild(root);

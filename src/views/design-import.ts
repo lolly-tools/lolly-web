@@ -369,7 +369,7 @@ async function svgToNodes(
     mount.remove();
   }
 
-  if (truncated) warn(`This design has a lot of elements — only the first ${MAX_ELEMENTS} were imported.`);
+  if (truncated) warn(`This design has a lot of elements - only the first ${MAX_ELEMENTS} were imported.`);
 
   return { nodes, width: Math.round(canvasW), height: Math.round(canvasH) };
 }
@@ -544,7 +544,7 @@ async function storeImage(host: HostV1 | undefined, href: string, imageCache: Ma
   // strips external hrefs before the mount, but never fetch an off-device URL from an
   // untrusted design file (privacy / SSRF).
   if (!/^data:/i.test(String(href).trim())) {
-    warn('Skipped an external image — only images embedded in the design are imported.');
+    warn('Skipped an external image - only images embedded in the design are imported.');
     return null;
   }
   try {
@@ -952,7 +952,7 @@ async function parseFig(files: Record<string, Uint8Array>, { host, warn, map }: 
   let doc: any;
   try { doc = await decodeCanvasFig(canvasFig); }
   catch (err) {
-    throw new Error('Couldn’t read this .fig — Figma may have changed its file format. Try exporting the frame as SVG instead. (' + String((err as Error) && (err as Error).message || err) + ')');
+    throw new Error('Couldn’t read this .fig - Figma may have changed its file format. Try exporting the frame as SVG instead. (' + String((err as Error) && (err as Error).message || err) + ')');
   }
   const nodeChanges = doc && doc.nodeChanges;
   if (!Array.isArray(nodeChanges) || !nodeChanges.length) throw new Error('This .fig contained no nodes.');
@@ -1224,7 +1224,7 @@ export async function openFigFile(files: Record<string, Uint8Array>): Promise<Un
   if (!canvasFig || !canvasFig.length) throw new Error('This .fig has no canvas data.');
   let doc: any;
   try { doc = await decodeCanvasFig(canvasFig); }
-  catch { throw new Error('Could not read this .fig — Figma may have changed its file format. Export the frame as SVG and open that.'); }
+  catch { throw new Error('Could not read this .fig - Figma may have changed its file format. Export the frame as SVG and open that.'); }
   const nodeChanges = doc && doc.nodeChanges;
   if (!Array.isArray(nodeChanges) || !nodeChanges.length) throw new Error('This .fig contained no nodes.');
 
@@ -1684,7 +1684,7 @@ async function bakeFrames(
   frames: Array<{ name: string; width: number; height: number; boxes: unknown[]; enter?: string; enterMs?: number }>,
 ): Promise<DesignSceneAsset[]> {
   if (frames.length > MAX_SCENES) {
-    warn(`This file has ${frames.length} frames — only the first ${MAX_SCENES} were imported.`);
+    warn(`This file has ${frames.length} frames - only the first ${MAX_SCENES} were imported.`);
     frames = frames.slice(0, MAX_SCENES);
   }
   const scenes: DesignSceneAsset[] = [];
@@ -1707,7 +1707,7 @@ async function parseFigScenes(files: Record<string, Uint8Array>, { host, warn, m
   let doc: any;
   try { doc = await decodeCanvasFig(canvasFig); }
   catch (err) {
-    throw new Error('Couldn’t read this .fig — Figma may have changed its file format. Try exporting the frames as SVG instead. (' + String((err as Error) && (err as Error).message || err) + ')');
+    throw new Error('Couldn’t read this .fig - Figma may have changed its file format. Try exporting the frames as SVG instead. (' + String((err as Error) && (err as Error).message || err) + ')');
   }
   const sceneDefs: DesignFrameScene[] = figmaNodesToScenes(doc && doc.nodeChanges, doc && doc.blobs);
   if (!sceneDefs.length) throw new Error('This .fig has no importable frames.');
@@ -1757,7 +1757,7 @@ async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, w
         if (asset) scenes.push({ name, asset });
       }
     }
-    if (svgPaths.length > MAX_SCENES) warn(`This file has ${svgPaths.length} pages — only the first ${MAX_SCENES} were imported.`);
+    if (svgPaths.length > MAX_SCENES) warn(`This file has ${svgPaths.length} pages - only the first ${MAX_SCENES} were imported.`);
     if (!scenes.length) throw new Error('This Penpot file didn’t contain any importable pages.');
     return { scenes };
   }

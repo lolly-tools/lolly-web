@@ -452,7 +452,7 @@ test('a remote batch mixing param + geom + add ops produces no outbound op of AN
   }]);
   assert.deepEqual(rt.base, [], 'setInput itself was never called for a remote apply');
   assert.deepEqual(adapter.applied, [], 'no outbound op minted for any op kind in the batch');
-  assert.deepEqual(emitted, [], 'onOps — the SAME spy a local edit reports through — never fires for a remote batch');
+  assert.deepEqual(emitted, [], 'onOps - the SAME spy a local edit reports through - never fires for a remote batch');
 });
 
 test('remote param ops for undeclared ids, wrong lanes and bindings are dropped', async () => {
@@ -636,10 +636,10 @@ test('an inbound value that LOST the merge never reaches the model', async () =>
   await sched.frame();
 
   assert.equal(adapter.doc.state().params.get('title'), 'winner',
-    'the document discarded the older write — it always did');
+    'the document discarded the older write - it always did');
   assert.deepEqual(rt.patches, [{ title: 'winner', rows: [{ id: 'AAA', label: 'winner' }] }],
     'and the patch carries what the document converged to, on BOTH the param lane '
-    + 'and the field lane inside a collection — not what was on the wire');
+    + 'and the field lane inside a collection - not what was on the wire');
   assert.equal(rt.valueOf('title'), 'winner');
 });
 

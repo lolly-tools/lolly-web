@@ -21,7 +21,7 @@ import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { displayGamutClaim } from './display-gamut.ts';
 
-const DASH = '—';
+const DASH = '-';
 const yesNo = (v: boolean | null | undefined): string => (v === true ? t('Yes') : v === false ? t('No') : DASH);
 
 // Values that can change while the session is live (window resize, device
@@ -572,7 +572,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
       key: 'render',
       title: t('Rendering stack'),
       icon: ICONS.render!,
-      note: t('The engine’s native 2D and text libraries — inferred from engine + OS, not reported by any web API.'),
+      note: t('The engine’s native 2D and text libraries - inferred from engine + OS, not reported by any web API.'),
       rows: [
         // Library names (Skia, HarfBuzz, Core Text…) are proper nouns - untranslated.
         { k: t('2D rasteriser'), v: stack.raster },

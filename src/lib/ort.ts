@@ -181,7 +181,7 @@ export function createModelFetcher(
         return cached.bytes;
       }
     } catch {
-      // IDB unavailable — fall through to a network-only (uncached) fetch below.
+      // IDB unavailable - fall through to a network-only (uncached) fetch below.
     }
 
     if (cacheOnly) { dbg('fetch', { file: fileName, source: 'cache-only-miss' }); return null; }
@@ -220,7 +220,7 @@ export function createModelFetcher(
       await db.put(store, { bytes, version, cachedAt: Date.now() }, fileName);
       await afterCache?.(fileName, db);
     } catch {
-      // Best-effort cache write — a failed put just means re-fetching next time.
+      // Best-effort cache write - a failed put just means re-fetching next time.
     }
     return bytes;
   };

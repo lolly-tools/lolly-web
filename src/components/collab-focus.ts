@@ -98,7 +98,7 @@ const STYLE_ID = 'lolly-collab-focus-css';
 
 const CSS = `
 /* ── Sidebar: a remote collaborator is IN this control ────────────────────── */
-/* A tinted wash in the collaborator's colour plus a soft glow — deliberately NOT
+/* A tinted wash in the collaborator's colour plus a soft glow - deliberately NOT
    a coloured outline on a rounded row. A resting accent border on a rounded card
    is a house no (it reads as templated), and a wash also survives the row's own
    background (.block-item.is-typed paints one). Colour is never the only signal:
@@ -139,7 +139,7 @@ html[data-a11y-motion="reduce"] .block-item.is-remote-focus { transition: none; 
 /* Fixed ink on the collaborator's ground, for the reason collab-pill.ts's
    .collab-av states: COLLAB_BAND projects every hue into one OKLCH
    lightness/chroma calibrated for APCA contrast against that ink, in both
-   themes — so one ink is legible on all six. */
+   themes - so one ink is legible on all six. */
 .collab-focus-chip {
   position: absolute;
   inset-block-start: calc(-9px * var(--a11y-fs));
@@ -161,7 +161,7 @@ html[data-a11y-motion="reduce"] .block-item.is-remote-focus { transition: none; 
 
 /* ── Canvas: the outline on the shared overlay layer ──────────────────────── */
 /* This one IS a coloured ring, and the card rule does not reach it: it is a
-   selection marquee over artwork — the tldraw/Figma idiom — not a rounded card in
+   selection marquee over artwork - the tldraw/Figma idiom - not a rounded card in
    the chrome. The 2px radius keeps it reading as a marquee. The theme-ground
    hairline on both sides of the stroke is the SHAPE signal that keeps it visible
    over artwork sharing the collaborator's own hue. */

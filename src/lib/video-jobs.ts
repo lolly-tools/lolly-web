@@ -506,7 +506,7 @@ export function videoProvenanceFor(
     // A credited look (a preset whose author asked to be named) additionally
     // carries the creator in the description AND the action parameters, so the
     // attribution travels forward into any file that uses the graded clip.
-    const label = p.lutLabel ? `Colour graded — ${p.lutLabel}` : 'Colour graded (on-device)';
+    const label = p.lutLabel ? `Colour graded - ${p.lutLabel}` : 'Colour graded (on-device)';
     return {
       tool: 'Colour grade',
       actions: [{

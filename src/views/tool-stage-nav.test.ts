@@ -30,7 +30,7 @@ test('the zoom HUD is anchored to the stage top, not the timeline\'s bottom lane
   const rule = baseRule();
   assert.match(rule, /(^|;|\s)top:/, '.stage-nav must set `top`');
   assert.doesNotMatch(rule, /(^|;|\s)bottom:/,
-    '.stage-nav must not be bottom-anchored — the docked timeline band (z-index 22) owns that lane');
+    '.stage-nav must not be bottom-anchored - the docked timeline band (z-index 22) owns that lane');
 });
 
 test('the zoom HUD sizes and insets itself off the shared top-row tokens', () => {

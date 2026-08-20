@@ -690,7 +690,7 @@ function frames(n = 2): Promise<void> {
 
 // ── leaked-state regressions ──────────────────────────────────────────────────
 
-test('a reorder clears is-drop-target on release — a stale ring cannot outlive the drag', async () => {
+test('a reorder clears is-drop-target on release - a stale ring cannot outlive the drag', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     const el = h.bar('a');
@@ -780,7 +780,7 @@ test('the inspector opens for an UNTIMED box, with empty Start/Length and the tr
     const len = field(h.root, 'Length');
     assert.equal(start.value, '', 'Start is EMPTY, not a misleading 0');
     assert.equal(len.value, '', 'Length is EMPTY, not a misleading 0');
-    assert.equal(start.placeholder, '—');
+    assert.equal(start.placeholder, '-');
     // The animate controls are authorable before the box is timed.
     assert.ok(field(h.root, 'Animate in'), 'Animate in is reachable');
     assert.ok(field(h.root, 'Animate out'), 'Animate out is reachable');
@@ -801,7 +801,7 @@ test('the inspector leaves the layout entirely when nothing is selected', () => 
   try {
     const ins = h.root.querySelector('.tl-inspector') as HTMLElement;
     assert.ok(ins, 'precondition: the row exists');
-    assert.equal(ins.hidden, true, 'no selection, no row — not an empty box still claiming the bar gap');
+    assert.equal(ins.hidden, true, 'no selection, no row - not an empty box still claiming the bar gap');
 
     h.select(['a']);
     assert.equal(ins.hidden, false, 'selecting a clip brings the row back');
@@ -856,7 +856,7 @@ test('the inspector never right-aligns its overflow off the unreachable start ed
   assert.ok(block.includes('justify-content: flex-start'),
     'the inspector packs from the start, so nothing overflows the edge that cannot be scrolled to');
   assert.ok(!/justify-content:\s*flex-end/.test(block),
-    'flex-end is the defect itself — it must not come back');
+    'flex-end is the defect itself - it must not come back');
   assert.ok(/\.tl-inspector\s*>\s*:first-child\s*\{[^}]*margin-inline-start:\s*auto/.test(decls),
     'the right-aligned look comes from an auto start margin, which collapses instead of clipping');
 });
@@ -900,7 +900,7 @@ test('choosing a preset is exactly ONE commit, carrying the wire string', () => 
   try {
     h.select(['a']);
     pick(easeSel(h.root, 'In curve'), 'overshoot');
-    assert.equal(h.commits.length, 1, 'one commit, one undo step — like every other field in this row');
+    assert.equal(h.commits.length, 1, 'one commit, one undo step - like every other field in this row');
     assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.enterEase, 'overshoot');
     assert.equal(h.commits[0]!.find((b) => b.id === 'b')!.enterEase, undefined, 'and only the selected box');
 
@@ -939,7 +939,7 @@ test('"Custom…" is a route, not a value: it opens the editor and leaves the mo
     assert.ok(pop, 'the curve editor opened');
     assert.ok(pop!.querySelector('.ease-ed-plot'), 'with the plot in it');
     assert.equal(pop!.parentElement, dom.window.document.body,
-      'body-mounted — a fixed popover parented inside the panel is knocked off screen by any ancestor transform');
+      'body-mounted - a fixed popover parented inside the panel is knocked off screen by any ancestor transform');
   } finally { h.teardown(); }
 });
 
@@ -964,7 +964,7 @@ test('Escape closes the curve editor and puts focus back on the control that ope
     pick(sel, '__custom');
     assert.ok(openMenu('.tl-ease-pop'), 'precondition: it is up');
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    assert.equal(openMenu('.tl-ease-pop'), null, 'Escape closes it — the standing repo rule');
+    assert.equal(openMenu('.tl-ease-pop'), null, 'Escape closes it - the standing repo rule');
     assert.equal(dom.window.document.activeElement, sel, 'and focus comes back to the trigger, not to <body>');
     assert.equal(h.commits.length, 0, 'opened and abandoned, the box is as unauthored as it was');
   } finally { h.teardown(); }
@@ -1000,7 +1000,7 @@ test('typing a Start promotes an untimed box in EXACTLY ONE commit, onto an over
     const before = tracksKey(h.boxes, cfg);
     h.select(['s']);
     type(field(h.root, 'Start'), '2');
-    assert.equal(h.commits.length, 1, 'ONE commit — one undo step for the whole promotion');
+    assert.equal(h.commits.length, 1, 'ONE commit - one undo step for the whole promotion');
 
     const written = h.commits[0]!.find((b) => b.id === 's')!;
     assert.equal(written.start, 2, 'the typed start landed');
@@ -1061,7 +1061,7 @@ test('the scenery chip\'s + button promotes straight from the strip, one commit'
   } finally { h.teardown(); }
 });
 
-test('a timed OVERLAY demotes back to scenery in one commit — "always on" is not a trap', async () => {
+test('a timed OVERLAY demotes back to scenery in one commit - "always on" is not a trap', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1)]);
   try {
     const before = tracksKey(h.boxes, cfg);
@@ -1072,7 +1072,7 @@ test('a timed OVERLAY demotes back to scenery in one commit — "always on" is n
     assert.equal(h.commits.length, 1, 'ONE commit');
 
     const written = h.commits[0]!.find((b) => b.id === 'o')!;
-    assert.equal(written.start, '', 'start CLEARED — an empty field, never a 0');
+    assert.equal(written.start, '', 'start CLEARED - an empty field, never a 0');
     assert.equal(written.dur, '');
     assert.equal(written.lane, '');
     assert.notEqual(tracksKey(h.boxes, cfg), before, 'un-timing changes the row structure');
@@ -1160,7 +1160,7 @@ test('the + menu lists the TOOL\'s declared add-kinds, not a hardcoded set', () 
     const menu = openMenu();
     assert.ok(menu, 'clicking opens a menu');
     assert.deepEqual(menuLabels(menu), ['Clip', 'Sound', 'Widget'],
-      'exactly the manifest\'s kinds, in its order — including one no module knows about');
+      'exactly the manifest\'s kinds, in its order - including one no module knows about');
     assert.equal(add.getAttribute('aria-expanded'), 'true');
   } finally { h.teardown(); }
 });
@@ -1180,7 +1180,7 @@ test('choosing a kind dispatches tl-add with that kind and the CURRENT playhead'
     click(h.root.querySelector('.tl-tools .tl-add')!);
     const audio = Array.from(openMenu()!.querySelectorAll('.folder-menu-item'))
       .find((n) => n.textContent?.trim() === 'Sound');
-    assert.ok(audio, 'AUDIO is one click away from the timeline — the whole point');
+    assert.ok(audio, 'AUDIO is one click away from the timeline - the whole point');
     click(audio!);
     assert.deepEqual(adds, [{ kind: 'audio', atMs: 2500 }], 'the kind id and the playhead, in ms');
     assert.equal(h.commits.length, 0, 'the panel never creates the box itself');
@@ -1188,7 +1188,7 @@ test('choosing a kind dispatches tl-add with that kind and the CURRENT playhead'
   } finally { h.teardown(); }
 });
 
-test('the empty-sequence dropslot still works — it dispatches tl-add for a clip', () => {
+test('the empty-sequence dropslot still works - it dispatches tl-add for a clip', () => {
   // Overlay only: the seq row is empty, which is the only time the slot renders.
   const h = mount([overlay('o', 1, 1)]);
   try {
@@ -1216,7 +1216,7 @@ test('right-clicking a scenery chip offers promotion, and it is ONE commit', () 
     assert.deepEqual(menuLabels(menu), ['Add to the timeline', 'Delete'],
       'an untimed box is offered a time, not a split');
     click(menu!.querySelector('.folder-menu-item')!);
-    assert.equal(h.commits.length, 1, 'ONE commit — the same promote() the inspector calls');
+    assert.equal(h.commits.length, 1, 'ONE commit - the same promote() the inspector calls');
     const written = h.commits[0]!.find((b) => b.id === 's')!;
     assert.equal(written.start, 0, 'placed at the playhead');
     assert.equal(written.dur, 3, 'with the pack default length');
@@ -1234,7 +1234,7 @@ test('right-clicking a timed bar offers split + demote + delete, and demote is O
     const demote = Array.from(menu!.querySelectorAll('.folder-menu-item'))
       .find((n) => n.textContent?.trim() === 'Make always on')!;
     click(demote);
-    assert.equal(h.commits.length, 1, 'ONE commit — demote(), not a second implementation');
+    assert.equal(h.commits.length, 1, 'ONE commit - demote(), not a second implementation');
     const written = h.commits[0]!.find((b) => b.id === 'o')!;
     assert.equal(written.start, '', 'start CLEARED to empty, never a 0');
     assert.equal(written.dur, '');
@@ -1286,7 +1286,7 @@ test('the context menu is keyboard reachable (Shift+F10) and Escape closes it', 
     el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
     assert.ok(openMenu('.tl-ctx-menu'), 'Shift+F10 opens the menu on the focused bar');
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    assert.equal(openMenu('.tl-ctx-menu'), null, 'Escape closes it — the standing repo rule');
+    assert.equal(openMenu('.tl-ctx-menu'), null, 'Escape closes it - the standing repo rule');
     assert.equal(h.commits.length, 0, 'opening and closing a menu edits nothing');
   } finally { h.teardown(); }
 });
@@ -1447,7 +1447,7 @@ function fakeClock(): { set(ms: number): void; restore(): void } {
   return { set: (ms: number) => { at = ms; }, restore: () => { globalThis.performance.now = real; } };
 }
 
-test('the mic button needs a recording host and an audio add-kind — NOT a manifest capability', () => {
+test('the mic button needs a recording host and an audio add-kind - NOT a manifest capability', () => {
   // No recording host: the shipped default for every shell that cannot capture audio.
   const plain = mount([clip('a', 0, 3)], 40, AUDIO_KINDS);
   try {
@@ -1491,7 +1491,7 @@ test('a completed take inserts ONE audio box at the playhead, with the MEASURED 
     assert.equal(mic.getAttribute('aria-pressed'), 'true', 'the button reads as live');
     assert.equal((h.root.querySelector('.tl-rec') as HTMLElement).hidden, false, 'the take HUD is up');
     assert.equal(h.root.querySelector('.tl-play')?.getAttribute('aria-label'), 'Pause',
-      'the playhead RUNS during the take — the transport says so');
+      'the playhead RUNS during the take - the transport says so');
     assert.ok(painted.every((el) => el.getAttribute('data-t-mute') === '1'),
       'the composition is silenced in the clock\'s own vocabulary while recording');
     assert.equal(h.commits.length, 0, 'nothing is written to the model until the take lands');
@@ -1501,7 +1501,7 @@ test('a completed take inserts ONE audio box at the playhead, with the MEASURED 
     click(mic);
     await done;
 
-    assert.equal(h.commits.length, 1, 'ONE commit for the insertion — one undo step');
+    assert.equal(h.commits.length, 1, 'ONE commit for the insertion - one undo step');
     const next = h.commits[0]!;
     assert.equal(next.length, 2, 'exactly one box was added');
     const box = next.find((b) => b.id !== 'a')!;
@@ -1514,7 +1514,7 @@ test('a completed take inserts ONE audio box at the playhead, with the MEASURED 
     const stored = fake.uploads().get(ref.id)!;
     assert.equal(stored.type, 'audio', 'typed audio, not a silent video');
     assert.equal(stored.meta?.durationMs, 4200,
-      'meta.durationMs is what becomes data-audio-dur — without it the box cannot be trimmed');
+      'meta.durationMs is what becomes data-audio-dur - without it the box cannot be trimmed');
 
     assert.equal(fake.meterRefs(), 0, 'the sound-check microphone reference was released');
     assert.ok(painted.every((el) => !el.hasAttribute('data-t-mute')), 'the composition is audible again');
@@ -1547,7 +1547,7 @@ test('re-taking over a selected take REPLACES its asset in one commit', async ()
     click(mic);
     await done;
 
-    assert.equal(h.commits.length, 1, 'ONE commit for the replacement — one undo step');
+    assert.equal(h.commits.length, 1, 'ONE commit for the replacement - one undo step');
     const next = h.commits[0]!;
     assert.equal(next.length, 2, 'no box was added; the existing one was rewritten');
     const box = next.find((b) => b.id === 'vo')!;
@@ -1628,13 +1628,13 @@ test('pressing the mic through a slow permission prompt never leaves a microphon
     const live = takeReaches(h.root, 'recording');
     fake.grant();
     await live;
-    assert.equal(fake.sessions(), 1, 'exactly ONE recorder session — never two at once');
+    assert.equal(fake.sessions(), 1, 'exactly ONE recorder session - never two at once');
 
     const done = takeReaches(h.root, 'idle');
     click(mic);
     await done;
     await frames(2);
-    assert.equal(fake.meterRefs(), 0, 'every meter reference was balanced — the mic is off');
+    assert.equal(fake.meterRefs(), 0, 'every meter reference was balanced - the mic is off');
     assert.equal(h.commits.length, 1, 'and one take landed, not two');
   } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; }
 });
@@ -1687,7 +1687,7 @@ test('a VIDEO in the user/recording namespace is never offered as a take to reco
     h.select(['screen']);
     const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
     assert.equal(mic.getAttribute('aria-label'), 'Record a voiceover',
-      'a screen/camera recording is not one of our takes — recording adds a box, never overwrites it');
+      'a screen/camera recording is not one of our takes - recording adds a box, never overwrites it');
   } finally { h.teardown(); }
 });
 
@@ -1766,7 +1766,7 @@ const thumbCanvas = (h: Harness, id: string): HTMLCanvasElement =>
 /** Wait past the thumb pass's idle timeout (onIdle's setTimeout fallback in node). */
 const thumbPass = (): Promise<void> => new Promise((r) => setTimeout(r, 120));
 
-test('every clip kind is classified off the live canvas — including a Lottie and a tool clip', async () => {
+test('every clip kind is classified off the live canvas - including a Lottie and a tool clip', async () => {
   const h = mount([clip('img', 0, 1), clip('tool', 1, 1), clip('anim', 2, 1), clip('card', 3, 1), overlay('snd', 0, 2)]);
   try {
     paintMediaBoxes(h, {
@@ -1898,7 +1898,7 @@ test('a frame bar upgrades from its fill to a photograph of the box', async () =
   });
 });
 
-test('a bar NARROWER than one tile draws the WHOLE tile — the raster and its vector twin agree', async () => {
+test('a bar NARROWER than one tile draws the WHOLE tile - the raster and its vector twin agree', async () => {
   // The preview-authenticity rule: a vector twin is what the user was actually looking
   // at. The twin sizes the walk to the full `tile` (preserveAspectRatio="none") and then
   // CLIPS it at `min(tile, w)`, exactly as `drawTiled` has always let the canvas edge cut
@@ -1921,13 +1921,13 @@ test('a bar NARROWER than one tile draws the WHOLE tile — the raster and its v
 
         const draws = (ops.get(thumbCanvas(h, 'card')) ?? []).filter((o) => o.op === 'drawImage');
         assert.deepEqual(draws.map((o) => o.args.slice(1)), [[0, 0, 68, 34]],
-          'the full tile, cut by the canvas edge — never squeezed into the bar width');
+          'the full tile, cut by the canvas edge - never squeezed into the bar width');
       } finally { h.teardown(); }
     });
   });
 });
 
-test('a TRANSPARENT text box and a pen shape get pictures — before this they painted nothing', async () => {
+test('a TRANSPARENT text box and a pen shape get pictures - before this they painted nothing', async () => {
   await withNodeRaster(okShot, async (calls) => {
     await withThumbStubs(async (ops) => {
       // Rows that differ in APPEARANCE, not just in id: the signature deliberately
@@ -1952,7 +1952,7 @@ test('a TRANSPARENT text box and a pen shape get pictures — before this they p
         assert.deepEqual(calls.slice().sort(), ['shape', 'words']);
         for (const id of ['words', 'shape']) {
           const log = ops.get(thumbCanvas(h, id)) ?? [];
-          assert.equal(log.some((o) => o.op === 'fillRect'), false, `${id}: nothing to underlay — it is transparent`);
+          assert.equal(log.some((o) => o.op === 'fillRect'), false, `${id}: nothing to underlay - it is transparent`);
           assert.equal(log.some((o) => o.op === 'drawImage'), true, `${id}: got a picture`);
           assert.equal(h.bar(id).classList.contains('has-thumbs'), true, `${id}: scrim`);
         }
@@ -2073,7 +2073,7 @@ test('a box that cannot be photographed is retired, not retried on every pass fo
   });
 });
 
-test('editing a card’s text re-photographs its bar — a stale picture would LIE about the box', async () => {
+test('editing a card’s text re-photographs its bar - a stale picture would LIE about the box', async () => {
   // `tracksKey` is id/lane/timed only, so a text or colour edit took the restyle branch
   // and never re-ran a thumb pass: the bar went on showing a photograph of the old
   // words indefinitely. Timing is excluded from the appearance key on purpose, so this
@@ -2253,7 +2253,7 @@ test('an image bar TILES one still across its width rather than stretching it', 
       const draws = (ops.get(bar) ?? []).filter((o) => o.op === 'drawImage');
       // A 100×50 picture at a 34px bar height is a 68px tile, so a 120px bar shows two.
       assert.deepEqual(draws.map((o) => o.args.slice(1)), [[0, 0, 68, 34], [68, 0, 68, 34]],
-        'consecutive tiles at the asset’s own aspect — never one stretched thumbnail');
+        'consecutive tiles at the asset’s own aspect - never one stretched thumbnail');
       assert.equal(h.bar('shot').classList.contains('has-thumbs'), true);
     } finally {
       h.teardown();
@@ -2292,7 +2292,7 @@ test('clicking a clip the playhead is NOT inside moves the playhead to it, once'
 
     assert.deepEqual(h.selSets, [['b']], 'the selection was written exactly once');
     assert.equal(playheadPx(h), 120, 'and the picture moved to the top of clip b (3s × 40px/s)');
-    assert.equal(h.commits.length, 0, 'revealing is not an edit — nothing reached the model');
+    assert.equal(h.commits.length, 0, 'revealing is not an edit - nothing reached the model');
   } finally { h.teardown(); }
 });
 
@@ -2308,7 +2308,7 @@ test('clicking a clip the playhead is ALREADY inside costs no seek at all', asyn
   } finally { h.teardown(); }
 });
 
-test('while PLAYING, selecting a clip never yanks the playhead — that would be a jump cut', async () => {
+test('while PLAYING, selecting a clip never yanks the playhead - that would be a jump cut', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     await frames(3);
@@ -2333,7 +2333,7 @@ test('while PLAYING, selecting a clip never yanks the playhead — that would be
   }
 });
 
-test('Shift-extending a selection does not seek — there is no single clip to reveal', async () => {
+test('Shift-extending a selection does not seek - there is no single clip to reveal', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     await frames(3);
@@ -2440,7 +2440,7 @@ test('the trim hit zone follows the POINTER: 20px in is a trim by finger, a move
   }
 });
 
-test('a bar too narrow to carry two zones offers none — and says where to trim instead', () => {
+test('a bar too narrow to carry two zones offers none - and says where to trim instead', () => {
   // 0.5s at 40px/s = 20px, under MIN_TRIM_BAR_PX. Pressing its very first pixel must
   // still be a grab, or the clip could never be moved again at this zoom.
   const h = mount([clip('a', 0, 5), overlay('o', 1, 0.5)]);
@@ -2585,7 +2585,7 @@ test('keyboard trim: `[` / `]` arm an edge and `,` / `.` walk it ONE frame, one 
     assert.equal(Number(h.commits[1]!.find((x) => x.id === 'a')!.dur), 2.934, 'the out edge came back a frame');
 
     press(el, '.', { shiftKey: true });
-    assert.equal(h.commits.length, 3, 'Shift is ten frames — still one write');
+    assert.equal(h.commits.length, 3, 'Shift is ten frames - still one write');
     assert.equal(Number(h.commits[2]!.find((x) => x.id === 'a')!.dur), 3.267);
   } finally { h.teardown(); }
 });
@@ -2672,7 +2672,7 @@ test('Shift+S splits every clip the playhead is inside, in EXACTLY ONE commit', 
   } finally { h.teardown(); }
 });
 
-test('a split at an existing cut writes NOTHING — no undo entry for a no-op', async () => {
+test('a split at an existing cut writes NOTHING - no undo entry for a no-op', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     await frames(2);
@@ -2683,7 +2683,7 @@ test('a split at an existing cut writes NOTHING — no undo entry for a no-op', 
     h.commits.length = 0;
     h.root.dispatchEvent(new dom.window.Event('pointerenter'));
     press(h.root, 's');
-    assert.equal(h.commits.length, 0, 'ZERO commits — the playhead is already at a cut');
+    assert.equal(h.commits.length, 0, 'ZERO commits - the playhead is already at a cut');
     press(h.root, 'S', { shiftKey: true });
     assert.equal(h.commits.length, 0, 'and the same for the split-everything variant');
   } finally { h.teardown(); }
@@ -2751,7 +2751,7 @@ test('Join is NOT offered at a seam that is a real decision', async () => {
     assert.equal(h.root.querySelectorAll('.tl-seam.is-through').length, 0, 'no hairline on a real cut');
     rightClick(h.bar('a'));
     assert.equal(menuLabels(openMenu('.tl-ctx-menu')).includes('Join clips'), false,
-      'and the menu does not offer it either — absent, not greyed out');
+      'and the menu does not offer it either - absent, not greyed out');
   } finally { h.teardown(); }
 });
 
@@ -2857,7 +2857,7 @@ test('Shift+D detaches from the keyboard, and again to put it back', async () =>
     h.panel.setOpen(false); h.panel.setOpen(true);
     const el = armKeys(h, 'v', 60);
     press(el, 'd');
-    assert.equal(h.commits.length, 0, 'a bare `d` is not the shortcut — nothing happens');
+    assert.equal(h.commits.length, 0, 'a bare `d` is not the shortcut - nothing happens');
     press(el, 'D', { shiftKey: true });
     assert.equal(h.commits.length, 1, 'Shift+D detached');
     assert.equal(h.commits[0]!.length, 2);
@@ -2941,7 +2941,7 @@ test('onion skin is OFF with nothing stored, and no tl-time carries a mode', asy
       assert.ok(btn, 'the toggle is in the tool row');
       assert.equal(btn.getAttribute('aria-pressed'), 'false');
       assert.equal(btn.classList.contains('is-active'), false);
-      assert.equal(store.map.has('lolly:onion'), false, 'absence IS the off state — nothing written');
+      assert.equal(store.map.has('lolly:onion'), false, 'absence IS the off state - nothing written');
 
       const seen: Array<{ mode?: string }> = [];
       h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
@@ -3027,7 +3027,7 @@ test('a hostile stored record degrades to a usable preference rather than throwi
   }
 });
 
-test('localStorage throwing does not break the toggle — the session still gets its ghosts', async () => {
+test('localStorage throwing does not break the toggle - the session still gets its ghosts', async () => {
   const hostile = {
     getItem() { throw new Error('denied'); },
     setItem() { throw new Error('denied'); },
@@ -3142,7 +3142,7 @@ test('the shortcuts sheet cannot drift from the key handler: every documented ke
           key: ev.key, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey, bubbles: true, cancelable: true,
         });
         h.root.dispatchEvent(e);
-        assert.equal(e.defaultPrevented, true, `${row.keys} (${JSON.stringify(ev)}) — "${row.label}" is documented but not handled`);
+        assert.equal(e.defaultPrevented, true, `${row.keys} (${JSON.stringify(ev)}) - "${row.label}" is documented but not handled`);
         closeOverlays();
       }
     }
@@ -3167,7 +3167,7 @@ test('the shortcuts sheet cannot drift from the key handler: every handled key i
   assert.deepEqual(
     undocumented, [],
     'onKey handles a key the sheet never mentions. Every shortcut this panel binds is a '
-      + 'bare letter or punctuation chosen because no browser fights for it — which means '
+      + 'bare letter or punctuation chosen because no browser fights for it - which means '
       + 'none of them is guessable, and an undocumented one is unreachable.',
   );
 });
@@ -3186,7 +3186,7 @@ test('`?` opens the shortcuts sheet, and closing it puts focus back where it cam
     assert.deepEqual(
       rows.map((r) => r.querySelector('kbd')?.textContent),
       PANEL_SHORTCUTS.map((s) => s.keys),
-      'the sheet IS PANEL_SHORTCUTS, in order — there is no second list to keep in step',
+      'the sheet IS PANEL_SHORTCUTS, in order - there is no second list to keep in step',
     );
     assert.deepEqual(
       rows.map((r) => r.querySelector('.tl-keys-what')?.firstChild?.textContent),
@@ -3260,7 +3260,7 @@ test('the Split button says what it would cut, and is disabled when it would cut
   } finally { h.teardown(); }
 });
 
-test('the Split blade goes inert with aria-disabled, never the property — pressing it must not drop focus', async () => {
+test('the Split blade goes inert with aria-disabled, never the property - pressing it must not drop focus', async () => {
   // A successful split leaves the playhead exactly on the cut it just made, so the blade
   // resolves "nothing to cut" on the very next restyle: it goes inert the instant you use
   // it. With the real `disabled` property the browser unfocuses a focused control, focus
@@ -3281,7 +3281,7 @@ test('the Split blade goes inert with aria-disabled, never the property — pres
 
     assert.equal(h.commits.length, 1, 'the cut landed');
     assert.equal(bladeOff(btn), true, 'and the blade correctly reports nothing left to cut here');
-    assert.equal(btn.disabled, false, 'but the DOM property is never written — the button stays focusable');
+    assert.equal(btn.disabled, false, 'but the DOM property is never written - the button stays focusable');
     assert.equal(dom.window.document.activeElement, btn, 'so focus stays on the blade');
 
     // Inert means inert: a second press writes nothing at all.
@@ -3298,7 +3298,7 @@ test('the Split blade goes inert with aria-disabled, never the property — pres
   } finally { h.teardown(); }
 });
 
-test('the blade never promises a cut the press then refuses — the MIN_DUR band and open-ended clips', async () => {
+test('the blade never promises a cut the press then refuses - the MIN_DUR band and open-ended clips', async () => {
   // splitBox refuses within MIN_DUR (0.1s) of either edge rather than mint a sliver, and
   // refuses an open-ended clip outright (no end to split against). Snapping does not
   // cover the first gap: the tolerance is SNAP_PX_FINE/pxPerSec, which is under 0.1s at
@@ -3313,7 +3313,7 @@ test('the blade never promises a cut the press then refuses — the MIN_DUR band
     assert.equal(bladeOff(btn), true, 'the blade is inert inside the sliver band');
     assert.equal(btn.getAttribute('data-tip'), 'Split at playhead');
     btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    assert.equal(h.commits.length, 0, 'and the press writes nothing — label and press agree');
+    assert.equal(h.commits.length, 0, 'and the press writes nothing - label and press agree');
 
     // Clear of the band, the same clip is splittable.
     h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 4000 } }));
@@ -3323,7 +3323,7 @@ test('the blade never promises a cut the press then refuses — the MIN_DUR band
   } finally { h.teardown(); }
 });
 
-test('an OPEN-ENDED overlay is never offered as splittable — splitBox has no end to cut against', async () => {
+test('an OPEN-ENDED overlay is never offered as splittable - splitBox has no end to cut against', async () => {
   const h = mount([clip('a', 0, 5), { id: 'o', start: 1, dur: '', lane: '' } as Box]);
   try {
     const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
@@ -3365,7 +3365,7 @@ test('Caps Lock cannot invert the onion pair: the branch reads e.shiftKey, not t
   }
 });
 
-test('the panel declines Ctrl/Cmd/Alt chords — Save, Find, Open and browser zoom are not hijacked', () => {
+test('the panel declines Ctrl/Cmd/Alt chords - Save, Find, Open and browser zoom are not hijacked', () => {
   // Every binding here is a bare letter or punctuation chosen BECAUSE no browser fights
   // for it. That reasoning only holds if the handler also declines the CHORD: otherwise
   // Cmd+S splits instead of saving, Cmd+F fits instead of finding, and Ctrl+- zooms the
@@ -3406,7 +3406,7 @@ test('the panel declines Ctrl/Cmd/Alt chords — Save, Find, Open and browser zo
     for (const key of ['ArrowLeft', 'ArrowRight']) {
       const alt = new dom.window.KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true });
       el.dispatchEvent(alt);
-      assert.equal(alt.defaultPrevented, true, `Alt+${key} is the panel's — previous/next keyframe`);
+      assert.equal(alt.defaultPrevented, true, `Alt+${key} is the panel's - previous/next keyframe`);
     }
   } finally { h.teardown(); }
 });
@@ -3438,14 +3438,14 @@ test('the shortcuts sheet drift guard also covers the modifier chord for every d
             key: ev.key, shiftKey: !!ev.shiftKey, [mod]: true, bubbles: true, cancelable: true,
           });
           h.root.dispatchEvent(e);
-          assert.equal(e.defaultPrevented, false, `${mod}+${row.keys} — "${row.label}" swallowed a browser chord`);
+          assert.equal(e.defaultPrevented, false, `${mod}+${row.keys} - "${row.label}" swallowed a browser chord`);
         }
       }
     }
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('Escape during a LIVE trim leaves the trim, not the panel — one rung per press', async () => {
+test('Escape during a LIVE trim leaves the trim, not the panel - one rung per press', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     h.root.dispatchEvent(new dom.window.Event('pointerenter'));
@@ -3460,7 +3460,7 @@ test('Escape during a LIVE trim leaves the trim, not the panel — one rung per 
     press(h.root, 'Escape');
     assert.equal(el.classList.contains('is-trimming'), false, 'the trim was abandoned');
     assert.equal(badge.hidden, true);
-    assert.equal(h.panel.isOpen(), true, 'and the panel is STILL OPEN — Escape took one rung');
+    assert.equal(h.panel.isOpen(), true, 'and the panel is STILL OPEN - Escape took one rung');
     // The pointerup that follows finds no gesture, so nothing is written either way.
     h.root.dispatchEvent(pointer('pointerup', 78, { altKey: true }));
     assert.equal(h.commits.length, 0, 'an abandoned trim writes nothing');
@@ -3515,7 +3515,7 @@ test('deleting a detached sound un-mutes the picture and takes the dangling link
     assert.equal(h.commits[0]!.length, 1, 'the sound is gone');
     assert.equal(String(v.linkOf ?? ''), '', 'and its partner is not left pointing at a ghost');
     assert.ok(v.mute !== true && v.mute !== 'true',
-      'the picture was only silent because its sound lived on that clip — it is audible again');
+      'the picture was only silent because its sound lived on that clip - it is audible again');
   } finally { h.teardown(); }
 });
 
@@ -3626,7 +3626,7 @@ test('changing an option turns the feature ON, and writes through the clamped wr
       mode.value = 'filled';
       mode.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
       assert.equal(btn.getAttribute('aria-pressed'), 'true',
-        'you do not open the options to configure something invisible — the change turns it on');
+        'you do not open the options to configure something invisible - the change turns it on');
       assert.deepEqual(JSON.parse(store.map.get('lolly:onion')!), { mode: 'filled', before: 1, after: 1, opacity: 1 });
 
       // The steppers are independent, and both clamp to the 0…ONION_MAX_STEPS ceiling.
@@ -3656,7 +3656,7 @@ test('changing an option turns the feature ON, and writes through the clamped wr
   });
 });
 
-test('a LONG press opens the options — and the click that ends it does not toggle the layer', async () => {
+test('a LONG press opens the options - and the click that ends it does not toggle the layer', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     const btn = onionBtnOf(h);
@@ -3701,7 +3701,7 @@ test('the snap tolerance follows the POINTER: a finger snaps from 12px, a cursor
   }
 });
 
-test('a newly engaged snap ticks the vibrator — on a finger only, and never under reduced motion', async () => {
+test('a newly engaged snap ticks the vibrator - on a finger only, and never under reduced motion', async () => {
   // The panel reads the AMBIENT `navigator`, not window's - node has one of its own and
   // this file does not copy jsdom's over the top of it.
   const nav = globalThis.navigator as unknown as { vibrate?: (n: number) => boolean };
@@ -3739,7 +3739,7 @@ test('a newly engaged snap ticks the vibrator — on a finger only, and never un
   }
 });
 
-test('a keyboard trim that hits a wall costs no undo entry — but still reads back', () => {
+test('a keyboard trim that hits a wall costs no undo entry - but still reads back', () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     const el = armKeys(h, 'a', 60);
@@ -3825,7 +3825,7 @@ test('the inspector renders GROUPS, each an icon + a text label + a disclosure b
     assert.deepEqual(
       Array.from(h.root.querySelectorAll<HTMLElement>('.tl-inspector .tl-group')).map((g) => g.dataset.group),
       ['time', 'animate'],
-      'a plain timed clip gets Time and Animate — no Keyframes, which it has not earned, '
+      'a plain timed clip gets Time and Animate - no Keyframes, which it has not earned, '
       + 'and no Sound, which section 8\'s M2.6 pass turned into a plain toggle on the strip',
     );
     for (const gid of ['time', 'animate']) {
@@ -3834,7 +3834,7 @@ test('the inspector renders GROUPS, each an icon + a text label + a disclosure b
       assert.equal(head.type, 'button', `${gid}: never a submit`);
       assert.ok(head.querySelector('.tl-group-icon svg'), `${gid}: carries a registry glyph`);
       assert.equal(head.querySelector('.tl-group-icon svg')!.getAttribute('aria-hidden'), 'true',
-        `${gid}: the icon DECORATES — the accessible name is the text label`);
+        `${gid}: the icon DECORATES - the accessible name is the text label`);
       const label = head.querySelector('.tl-group-label')?.textContent ?? '';
       assert.ok(label.length > 0, `${gid}: icons never replace the word`);
       assert.ok(head.hasAttribute('aria-expanded'), `${gid}: says whether it is open`);
@@ -3901,7 +3901,7 @@ test('a shut group reads as its values: the summary chips', async () => {
     h.notify();
     await frames(3);
     assert.deepEqual(groupChips(h.root, 'animate'), ['Rise'],
-      'a CUT contributes nothing — never a placeholder, never an em dash');
+      'a CUT contributes nothing - never a placeholder, never an em dash');
   } finally { closeOverlays(); h.teardown(); }
 
   // Both directions cut - the state an untouched box is in - reads as NO chip at all.
@@ -3962,7 +3962,7 @@ test('the disclosure opens a POPOVER above the transport, and writes nothing', (
     // which one they had just opened.
     assert.equal(pop!.getAttribute('aria-label'), 'Animate');
     assert.equal(pop!.parentElement, dom.window.document.body,
-      'on the BODY, never inside the panel — .tl-panel is a transformed/clipping ancestor and a '
+      'on the BODY, never inside the panel - .tl-panel is a transformed/clipping ancestor and a '
       + 'fixed popover parented under it would be positioned against the wrong containing block');
     assert.equal(head.getAttribute('aria-expanded'), 'true');
     assert.equal(body.hidden, false, 'open: the controls are reachable');
@@ -3978,10 +3978,10 @@ test('the disclosure opens a POPOVER above the transport, and writes nothing', (
     assert.equal(groupPopEl(), null, 'pressing the segment again shuts it');
     assert.equal(body.hidden, true);
     assert.equal(body.parentElement, group(h.root, 'animate'),
-      'and the body came HOME — left inside the removed popover it would be a live node '
+      'and the body came HOME - left inside the removed popover it would be a live node '
       + 'nobody can see, still being written to by the latch');
 
-    assert.equal(h.commits.length, 0, 'a disclosure is not an edit — three presses, zero undo steps');
+    assert.equal(h.commits.length, 0, 'a disclosure is not an edit - three presses, zero undo steps');
   } finally { closeOverlays(); h.teardown(); }
 });
 
@@ -4034,7 +4034,7 @@ test('the popover is placed ABOVE the transport, never dropped into the tracks',
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('closing the panel takes the popover with it — it floats ABOVE the panel', () => {
+test('closing the panel takes the popover with it - it floats ABOVE the panel', () => {
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
@@ -4092,13 +4092,13 @@ test('the disclosure is SESSION-local: nothing about it is written to storage', 
       setGroup(h.root, 'animate', true);
       setGroup(h.root, 'time', true);
       assert.equal(store.map.size, 0,
-        `the disclosure wrote ${JSON.stringify([...store.map.keys()])} — a group left open is a working posture, `
+        `the disclosure wrote ${JSON.stringify([...store.map.keys()])} - a group left open is a working posture, `
         + 'not a setting, and reviving it a week later would be someone else\'s inspector');
     } finally { closeOverlays(); h.teardown(); }
   });
 });
 
-test('a static box gets the DOOR and nothing else — nobody keyframes by accident', () => {
+test('a static box gets the DOOR and nothing else - nobody keyframes by accident', () => {
   const kfCfg = { cfgPatch: { kfField: 'kf' } };
   const plain = mount([clip('a', 0, 3)], 40, ADD_KINDS, kfCfg);
   try {
@@ -4116,7 +4116,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
     assert.deepEqual(
       Array.from(body.children).map((c) => c.textContent),
       ['Animate'],
-      'ONE action behind the disclosure — no latch, no list until there is a track',
+      'ONE action behind the disclosure - no latch, no list until there is a track',
     );
     assert.equal(plain.root.querySelector('.tl-kf-strip'), null, 'and no diamonds on the bar');
     assert.equal(g.querySelector('.tl-group-chips')!.textContent, 'Not animated');
@@ -4152,7 +4152,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
     // them is behind a disclosure. The latch READOUT is what the group keeps.
     assert.equal(inspEl('.tl-kf-add'), null, 'no third copy of the action hidden in here');
     assert.ok(inspEl('.tl-kf-state'), 'the latch readout stays');
-    assert.equal(inspEl('.tl-kf-animate'), null, 'a camera is never offered the door — it IS animation');
+    assert.equal(inspEl('.tl-kf-animate'), null, 'a camera is never offered the door - it IS animation');
     assert.equal(inspEl('.tl-kf-clear'), null, 'nothing to remove yet');
     assert.equal(cam.root.querySelector('.tl-kf-btn')!.getAttribute('aria-disabled'), 'false',
       'and the transport button is live for it');
@@ -4167,7 +4167,7 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
   } finally { noField.teardown(); }
 });
 
-test('a no-track box surfaces Depth directly — it writes the box z, not a keyframe (A5#1)', () => {
+test('a no-track box surfaces Depth directly - it writes the box z, not a keyframe (A5#1)', () => {
   // Depth is a box PROPERTY, and standing a lifted layer off the board is parallax setup,
   // not animation - so it should not cost a keyframe track to reach. On a box with no
   // track the Depth control now sits beside the Animate door (KF_CFG declares `zField`),
@@ -4181,14 +4181,14 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
     setGroup(h.root, 'keyframes', true);
     const num = inspEl('.tl-depth-num') as HTMLInputElement;
     const slider = inspEl('.tl-depth-slider') as HTMLInputElement;
-    assert.ok(num && slider, 'Depth is surfaced on a box with no track — no need to press Animate first');
+    assert.ok(num && slider, 'Depth is surfaced on a box with no track - no need to press Animate first');
     assert.ok(inspEl('.tl-kf-animate'), 'and the Animate door still stands beside it');
-    assert.equal(inspEl('.tl-kf-list'), null, 'but there is no keyframe list — Depth is not a track');
+    assert.equal(inspEl('.tl-kf-list'), null, 'but there is no keyframe list - Depth is not a track');
 
     type(num, '120');
     const a = h.boxes.find((b) => b.id === 'a')!;
     assert.equal(Number(a.z), 120, 'the box gained a base depth from the property write');
-    assert.equal(String(a.kf ?? ''), '', 'and NO keyframe track was minted — nobody keyframes by accident');
+    assert.equal(String(a.kf ?? ''), '', 'and NO keyframe track was minted - nobody keyframes by accident');
     assert.ok(h.boxes.some((b) => b.kind === 'camera'), 'the scene camera was minted so the depth can be seen');
     assert.equal(h.commits.length, 1, 'one gesture, one commit, one undo step');
   } finally { closeOverlays(); h.teardown(); }
@@ -4203,7 +4203,7 @@ test('a no-track box surfaces Depth directly — it writes the box z, not a keyf
   } finally { closeOverlays(); noDepth.teardown(); }
 });
 
-test('a SOUND is offered no keyframe affordance anywhere — not a group, not a door, not a diamond', async () => {
+test('a SOUND is offered no keyframe affordance anywhere - not a group, not a door, not a diamond', async () => {
   // section 8's disclosure law, the other way round: "Every other box has no keyframe affordance
   // anywhere in the UI - not a disabled one, not an empty one." `kfActionIds` excludes
   // audio (plan 101 owns keyframed gain), so an inspector that offered the group anyway
@@ -4214,7 +4214,7 @@ test('a SOUND is offered no keyframe affordance anywhere — not a group, not a 
   try {
     h.select(['snd']);
     assert.equal(h.root.querySelector('.tl-inspector .tl-group[data-group="keyframes"]'), null,
-      'no Keyframes group — and therefore no Animate door to write the refused track');
+      'no Keyframes group - and therefore no Animate door to write the refused track');
     assert.equal(h.bar('snd').querySelector('.tl-kf-strip'), null,
       'and no diamonds on the waveform for a track nothing can reach');
     assert.equal(h.root.querySelector('.tl-kf-btn')!.getAttribute('aria-disabled'), 'true',
@@ -4270,12 +4270,12 @@ test('a curve editor opened from INSIDE a group card does not dismiss the card',
     // cannot separate them; `isInside` is what does.
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     assert.equal(openMenu('.tl-ease-pop'), null, 'the editor closed');
-    assert.ok(groupPopEl(), 'and only the editor — the card is not collateral');
+    assert.ok(groupPopEl(), 'and only the editor - the card is not collateral');
     assert.equal(h.commits.length, 0, 'opened and abandoned: not an edit');
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the A/V link is offered by the CLIP MENU alone — the inspector strip carries no copy', async () => {
+test('the A/V link is offered by the CLIP MENU alone - the inspector strip carries no copy', async () => {
   // section 8's M2.6 pass: "The link/detach affordance returns to the clip context menu (its
   // pre-M2 home)". M2.5 had put a second copy in the Sound group beside the mute, and
   // when that group became a bare toggle the copy had nowhere honest to live: detaching
@@ -4297,7 +4297,7 @@ test('the A/V link is offered by the CLIP MENU alone — the inspector strip car
       .find((n) => n.textContent?.trim().startsWith('Detach audio')) as HTMLElement;
     assert.ok(detach, 'the clip menu offers it');
     click(detach);
-    assert.equal(h.commits.length, 1, 'ONE commit — the same writer the strip used to call');
+    assert.equal(h.commits.length, 1, 'ONE commit - the same writer the strip used to call');
     h.notify();
     await frames(3);
     h.select(['v']);
@@ -4337,12 +4337,12 @@ test('the mute toggle IS its state: aria-pressed, the flipped glyph and the flip
     assert.equal(b.getAttribute('data-tip'), null);
     assert.ok(b.querySelector('svg'), 'the glyph is a registry icon, never a CSS drawing');
     assert.equal(b.querySelector('svg')!.getAttribute('aria-hidden'), 'true',
-      'and it DECORATES — aria-label is the whole accessible name');
+      'and it DECORATES - aria-label is the whole accessible name');
     const audible = b.innerHTML;
     assert.equal(b.getAttribute('aria-haspopup'), null, 'it opens nothing');
 
     b.click();
-    assert.equal(h.commits.length, 1, 'ONE model write per press — one gesture, one undo step');
+    assert.equal(h.commits.length, 1, 'ONE model write per press - one gesture, one undo step');
     assert.equal(h.commits[0]!.find((x) => x.id === 'a')!.mute, 'true',
       'through the manifest\'s own mute sub-field, the same one the ctx menu and the detach writer use');
     assert.deepEqual(h.commits[0]!.map((x) => x.id), ['a'], 'and it touched nothing else');
@@ -4427,7 +4427,7 @@ test('the groups work right-to-left', () => {
   assert.ok(/\[dir="rtl"\][^{]*\.tl-group-caret\s*\{[^}]*rotate\(90deg\)/.test(block),
     'the shut caret points along the READING direction, which flips in RTL');
   assert.equal(/(?:^|[\s;{])(?:border|margin|padding)-(?:left|right)\s*:/.test(block), false,
-    'logical properties only — no physical left/right in the group block');
+    'logical properties only - no physical left/right in the group block');
   assert.ok(block.includes('border-inline-start'), 'the chip separator is a logical border');
 });
 
@@ -4505,7 +4505,7 @@ test('diamonds are absent for a static box and hidden on a bar too tight to hit 
     // inspector list still lists every keyframe.
     const tight = h.bar('b').querySelector('.tl-kf-strip') as HTMLElement;
     assert.ok(tight, 'the strip is still built');
-    assert.equal(tight.hidden, true, 'and hidden via the property — nothing in the sheet styles [hidden]');
+    assert.equal(tight.hidden, true, 'and hidden via the property - nothing in the sheet styles [hidden]');
   } finally { h.teardown(); }
 });
 
@@ -4586,7 +4586,7 @@ test('an on-diamond pose edit rewrites exactly ONE keyframe, as a full pose, in 
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('parked OFF a diamond, nothing can write the track — the base is what an edit means there', async () => {
+test('parked OFF a diamond, nothing can write the track - the base is what an edit means there', async () => {
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     h.select(['a']);
@@ -4620,7 +4620,7 @@ test('parked OFF a diamond, nothing can write the track — the base is what an 
     late.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(h.commits.length, 0, 'the late commit writes nothing');
     assert.equal(kfOf(h, 'a'), 't0_x0*t1500_eo_x40',
-      'and no third keyframe at 2:200 — a value typed on a diamond can never mint one off it');
+      'and no third keyframe at 2:200 - a value typed on a diamond can never mint one off it');
 
     // Exact ms equality, never a tolerance: one millisecond off a diamond is OFF it.
     await seek(h, 1501);
@@ -4670,7 +4670,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     await seek(h, 750);
     const mid = values();
     assert.deepEqual(pose().map((n) => n.disabled), [false, true, true, true],
-      'still inert — except Depth, which has a base field to write (section 5.3)');
+      'still inert - except Depth, which has a base field to write (section 5.3)');
     assert.notDeepEqual(mid, ['', '', '', ''], 'and no longer blank');
     const z = Number(mid[0]);
     assert.ok(z > 0 && z < 300, `depth reads between its two diamonds (got ${mid[0]})`);
@@ -4696,7 +4696,7 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the "size is not keyframable" claim is GONE — w/h are channels now (section 5.2 reversed)', async () => {
+test('the "size is not keyframable" claim is GONE - w/h are channels now (section 5.2 reversed)', async () => {
   // P1 reversed it (Andy, 2026-08-12 hands-on: "I can't change width and height of
   // elements and have them tween"). The wire carries `w`/`h`, a resize ON a diamond
   // writes them, and a standing sentence - or a tooltip - saying otherwise is now a
@@ -4742,7 +4742,7 @@ test('the canvas seam writes one full-pose key per selected box, in ONE array th
     assert.deepEqual({ ...ta[1]!.v }, { x: 52, y: -4 });
     assert.deepEqual({ ...tb[1]!.v }, { x: 2, y: 1 });
     assert.deepEqual({ ...ta[0]!.v }, { x: 0, y: 0 }, 'the untouched keyframes stay untouched');
-    assert.equal(h.commits.length, 0, 'and the seam itself never commits — the caller owns the write');
+    assert.equal(h.commits.length, 0, 'and the seam itself never commits - the caller owns the write');
   } finally { h.teardown(); }
 });
 
@@ -4768,7 +4768,7 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
     assert.deepEqual(cluster, [
       'tl-add', 'tl-mic', 'tl-script', 'tl-split', 'tl-snap', 'tl-onion',
       'tl-zoom-out', 'tl-zoom-in', 'tl-fit', 'tl-keys', 'tl-kf-btn',
-    ], 'the diamond is LAST — never back among +, mic and script');
+    ], 'the diamond is LAST - never back among +, mic and script');
     assert.equal(cluster.at(-1), 'tl-kf-btn', 'and nothing may be appended after it');
     assert.ok(b.querySelector('svg'), 'it is the diamond glyph');
 
@@ -4782,7 +4782,7 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
 
     h.select(['a']);
     assert.equal(b.getAttribute('aria-disabled'), 'false');
-    assert.equal(b.getAttribute('aria-label'), '+Keyframe', 'Andy\'s copy, exactly — never "ADD KF"');
+    assert.equal(b.getAttribute('aria-label'), '+Keyframe', 'Andy\'s copy, exactly - never "ADD KF"');
 
     h.select(['a', 'z']);
     assert.equal(b.getAttribute('aria-label'), '+Keyframe on 2 objects', 'and it counts its scope');
@@ -4816,7 +4816,7 @@ test('+Keyframe at a diamond UPDATES it; off one it adds; both are a single comm
     const track = parse(kfOf(h, 'a'));
     assert.deepEqual(track.map((k) => k.t), [0, 1500, 2000]);
     assert.deepEqual({ ...track[2]!.v }, { x: 40 },
-      'the new diamond holds the pose the box was ALREADY striking there — adding one never moves anything');
+      'the new diamond holds the pose the box was ALREADY striking there - adding one never moves anything');
     assert.equal(track[2]!.ease, 'eo', 'and it inherits the curve of the segment it landed inside');
   } finally { h.teardown(); }
 });
@@ -4842,7 +4842,7 @@ test('+Keyframe on an UNTIMED box promotes it AND keys it in ONE commit', async 
     // t = 0 in the box\'s OWN time, because the playhead IS its start now.
     assert.deepEqual(parse(String(s0.kf)).map((k) => k.t), [0]);
     assert.deepEqual({ ...parse(String(s0.kf))[0]!.v }, { x: 0, y: 0, s: 1, r: 0, o: 1 },
-      'a full pose at its composition-neutral values — being keyed moves nothing');
+      'a full pose at its composition-neutral values - being keyed moves nothing');
     // One commit is one undo step: the array the caller was handed carries both edits,
     // so there is no state in which the box is timed but unkeyed.
     const committed = h.commits[0]!.find((b) => b.id === 's')!;
@@ -4885,7 +4885,7 @@ test('audio has no pose to strike, so +Keyframe leaves it out of a mixed selecti
   } finally { h.teardown(); }
 });
 
-test('K is the SAME action from the keyboard — including the auto-promotion', async () => {
+test('K is the SAME action from the keyboard - including the auto-promotion', async () => {
   // section 8's M2.5 revision: "K stays" and routes through the one action, so a keyboard user
   // gets the whole feature rather than the half of it that existed before the button
   // did. Which means K now opens the door too: the panel being up with something
@@ -5055,7 +5055,7 @@ test('the Animate door writes a t = 0 pose wherever the playhead is, and Remove 
     assert.equal(clear.querySelector('.tl-action-label')?.textContent, 'Remove 1 keyframe',
       'the destructive action carries its own count');
     clear.click();
-    assert.equal(kfOf(h, 'a'), '', 'disabling animation IS removing the track — there is no flag to clear');
+    assert.equal(kfOf(h, 'a'), '', 'disabling animation IS removing the track - there is no flag to clear');
     assert.equal(h.commits.length, 2);
   } finally { closeOverlays(); h.teardown(); }
 });
@@ -5079,7 +5079,7 @@ test('a diamond right-click offers curve / duplicate / delete, and each is the S
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('K and Alt+←/→ are in PANEL_SHORTCUTS — the sheet IS the contract, in both directions', () => {
+test('K and Alt+←/→ are in PANEL_SHORTCUTS - the sheet IS the contract, in both directions', () => {
   const rows = PANEL_SHORTCUTS.filter((r) => /Keyframe|keyframe/.test(r.label));
   assert.deepEqual(rows.map((r) => r.keys), ['Alt + ← →', 'K'],
     'both are printed on the sheet a user presses `?` to read');
@@ -5117,13 +5117,13 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
   assert.ok(/kfPoseWrite\(boxes, \[rotId\], \{ w: live\.w, h: live\.h \}, 'set'\)/.test(sizeBranch),
     "and it writes them with 'set', because w/h are absolute px (section 5.2)");
   assert.equal((sizeBranch.match(/\bcommit\(/g) ?? []).length, 3,
-    'the three mutually exclusive endings of one gesture — posed rotate, posed size, base write');
+    'the three mutually exclusive endings of one gesture - posed rotate, posed size, base write');
   // Bounded to the BRANCH, not "everything after it": onGestureEnd is not the last
   // redirected commit site in the file (the arrow nudge is, below), and an unbounded
   // slice would read that one as this branch's.
   const gs = end.slice(end.indexOf("if (g.type === 'gscale'"), end.indexOf('function applyLiveRect'));
   assert.equal(gs.includes('kfPoseWrite('), false,
-    'group scale ALWAYS writes the base — section 5.2 keeps that rule even now that a single-box resize poses');
+    'group scale ALWAYS writes the base - section 5.2 keeps that rule even now that a single-box resize poses');
 });
 
 test('the KEYBOARD move is redirected exactly like the pointer one, and declines the SEEK chord only', () => {
@@ -5145,7 +5145,7 @@ test('the KEYBOARD move is redirected exactly like the pointer one, and declines
   assert.ok(nudge.includes('kfPoseIds(') && nudge.includes('kfPoseWrite('),
     'and asks the same two-call seam the pointer commit asks');
   assert.equal((nudge.match(/\bcommit\(/g) ?? []).length, 1,
-    'ONE commit, however the selection splits — one undo step, like the drag');
+    'ONE commit, however the selection splits - one undo step, like the drag');
 });
 
 // ── P1: the camera, the depth slider, and section 8's M2.6/M2.7 polish ───────────────
@@ -5186,7 +5186,7 @@ test('the depth slider writes the BASE off a diamond, and mints the scene camera
     setGroup(h.root, 'keyframes', true);
     await seek(h, 2000);                                  // off every diamond
     const slider = inspEl<HTMLInputElement>('.tl-kf-slider')!;
-    assert.equal(slider.disabled, false, 'the slider is live off a diamond — that is the point of it');
+    assert.equal(slider.disabled, false, 'the slider is live off a diamond - that is the point of it');
 
     slider.value = '120';
     slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -5202,7 +5202,7 @@ test('the depth slider writes the BASE off a diamond, and mints the scene camera
     const cam = cameraOf(h);
     assert.ok(cam, 'the first depth interaction minted the scene camera');
     assert.equal(String(cam!.kind), 'camera');
-    assert.equal(cam!.start ?? '', '', 'UNTIMED — an "Always on" scenery chip, not a clip');
+    assert.equal(cam!.start ?? '', '', 'UNTIMED - an "Always on" scenery chip, not a clip');
 
     // …and only once. A second lift finds the camera that is already there.
     h.notify();
@@ -5238,7 +5238,7 @@ test('the depth slider scrubs the tasteful band and the number takes the whole f
   const { KF_Z_FIELD_CLAMP } = await import('../../../../engine/src/keyframes.ts');
   const { KF_Z_SLIDER } = await import('./timeline-panel.ts');
   assert.ok(KF_Z_SLIDER[0] >= KF_Z_FIELD_CLAMP[0] && KF_Z_SLIDER[1] <= KF_Z_FIELD_CLAMP[1],
-    'the scrub band lies INSIDE the engine\'s field clamp — the clamp is never re-typed, only narrowed');
+    'the scrub band lies INSIDE the engine\'s field clamp - the clamp is never re-typed, only narrowed');
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_z0*t1500_z0' } as Box), 40, CAM_KINDS, KF_CFG);
   try {
     h.select(['a']);
@@ -5254,7 +5254,7 @@ test('the depth slider scrubs the tasteful band and the number takes the whole f
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the TILT fields take the control band, not the wire clamp — because κ > 0 is an invariant', async () => {
+test('the TILT fields take the control band, not the wire clamp - because κ > 0 is an invariant', async () => {
   // ⚑ `buildPlan`'s depth sort is by resolved `z`, and that reproduces a perspective
   // render only while `κ = cos(rx)·cos(ry) > 0`. Past a quarter turn the sign flips: at
   // `rx = −120` three layers at z 0/100/200 have view-axis depths 1200/1250/1300, so the
@@ -5268,7 +5268,7 @@ test('the TILT fields take the control band, not the wire clamp — because κ >
   const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
   const [lo, hi] = KF_TILT_CONTROL;
   assert.ok(lo >= KF_CLAMPS.rx[0] && hi <= KF_CLAMPS.rx[1],
-    'the control band lies INSIDE the wire clamp — the clamp is never re-typed, only narrowed');
+    'the control band lies INSIDE the wire clamp - the clamp is never re-typed, only narrowed');
   assert.ok(hi < 90 && lo > -90, 'and inside the quarter turn, or κ can reach 0');
   // The invariant itself, at the worst corner of the band: both axes at the extreme.
   const kappa = Math.cos((hi * Math.PI) / 180) * Math.cos((hi * Math.PI) / 180);
@@ -5360,7 +5360,7 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
     assert.deepEqual(
       Array.from(h.root.querySelectorAll<HTMLElement>('.tl-inspector .tl-group')).map((g) => g.dataset.group),
       ['camera', 'keyframes'],
-      'the camera panel and its poses — no Time (the switch below is its promotion route), no Animate (v1 ignores a camera\'s transitions)',
+      'the camera panel and its poses - no Time (the switch below is its promotion route), no Animate (v1 ignores a camera\'s transitions)',
     );
     setGroup(h.root, 'camera', true);
     const labels = inspAll<HTMLElement>('.tl-cam-row .field-label').map((n) => n.textContent);
@@ -5368,7 +5368,7 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
     // up in (where the camera is, which way it is pointing, how far away it is).
     assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Tilt X', 'Tilt Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
       'the section 4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
-    assert.equal(labels.some((l) => /zoom/i.test(l ?? '')), false, 'never "zoom" — eff(z = camZ) = 1 for every p');
+    assert.equal(labels.some((l) => /zoom/i.test(l ?? '')), false, 'never "zoom" - eff(z = camZ) = 1 for every p');
     const chips = inspAll<HTMLElement>('.tl-cam-chip');
     assert.deepEqual(chips.map((c) => c.textContent), ['Drag', 'Drag', 'Shift-drag', 'Shift-drag', 'Scroll'],
       'the affordance chips name the canvas gesture that does the same job');
@@ -5386,7 +5386,7 @@ test('a camera preset writes the whole track in ONE commit, at the section 4.6 q
     await frames(3);
     setGroup(h.root, 'camera', true);
     click(presetBtn('Push in'));
-    assert.equal(h.commits.length, 1, 'ONE commit — one undo step takes the whole move back');
+    assert.equal(h.commits.length, 1, 'ONE commit - one undo step takes the whole move back');
     const wire = String(h.boxes.find((b) => b.id === 'cam')!.kf ?? '');
     const { rescaleKfTrack } = await import('./timeline-math.ts');
     const push = KF_CAMERA_PRESETS.find((p) => p.id === 'push-in')!;
@@ -5419,10 +5419,10 @@ test('a camera preset scales its timing to the scene length (A1#5)', async () =>
 
     click(presetBtn('Push in'));
     const push = parse(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''));
-    assert.equal(push.length, 2, 'still two poses — scaling changes tempo, not shape');
+    assert.equal(push.length, 2, 'still two poses - scaling changes tempo, not shape');
     assert.equal(push[0]!.t, 0, 'the move still opens at t0');
     assert.equal(push[push.length - 1]!.t, 8000, 'and RESOLVES at the 8 s scene end, not the authored 4 s');
-    assert.ok((push[1]!.v.z ?? 0) < (push[0]!.v.z ?? 0), 'values are untouched — the push still pushes in');
+    assert.ok((push[1]!.v.z ?? 0) < (push[0]!.v.z ?? 0), 'values are untouched - the push still pushes in');
 
     // Every preset fills the scene, whatever its authored length - surface-glide (5.2 s)
     // and its middle keyframe land on the same 8 s end, mid-point ratio preserved.
@@ -5441,7 +5441,7 @@ test('a camera preset scales its timing to the scene length (A1#5)', async () =>
 // The inversion is the point of keeping the test at this name: a reason that has stopped
 // being true must not be left standing on a control, and the form of the failure if
 // somebody re-disables it is "the button that says it cannot yet, when it can".
-test('Orbit is a real move now that tilt has landed — the dimmed twin is gone', async () => {
+test('Orbit is a real move now that tilt has landed - the dimmed twin is gone', async () => {
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
   try {
@@ -5456,14 +5456,14 @@ test('Orbit is a real move now that tilt has landed — the dimmed twin is gone'
     assert.equal(h.commits.length, 1, 'one preset, one commit, one undo step');
     const wire = String(h.boxes.find((b) => b.id === 'cam')!.kf ?? '');
     assert.ok(wire.length > 0, 'it writes a real track');
-    assert.match(wire, /ry/, 'and the track is an ORBIT — it swings the camera about the aim point');
+    assert.match(wire, /ry/, 'and the track is an ORBIT - it swings the camera about the aim point');
     // It is in the TABLE, so every other consumer (the announcement, a future menu)
     // resolves it exactly like its siblings.
     assert.equal(KF_CAMERA_PRESETS.some((p) => p.id === 'orbit'), true);
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the two TILT presets end at the rest pose — THE RESOLUTION RULE, enforced', async () => {
+test('the two TILT presets end at the rest pose - THE RESOLUTION RULE, enforced', async () => {
   // Andy, 2026-08-12, binding on every generated animation: "elements lift off and rest
   // back down on the page; the animations showing them falling apart need to close out
   // with it all coming together." So the last keyframe of anything WE generate is the
@@ -5489,7 +5489,7 @@ test('the two TILT presets end at the rest pose — THE RESOLUTION RULE, enforce
     const pose = evaluateKf(track, end);
     for (const ch of kfChannelsUsed(track)) {
       assert.equal(pose[ch], REST[ch] ?? 0,
-        `${preset.id}: channel ${ch} ends at ${pose[ch]}, not at rest (${REST[ch] ?? 0}) — `
+        `${preset.id}: channel ${ch} ends at ${pose[ch]}, not at rest (${REST[ch] ?? 0}) - `
         + 'the glide is a departure that comes home');
     }
     // …and it actually WENT somewhere first, or "ends at rest" is vacuous.
@@ -5548,7 +5548,7 @@ test('camera mode is entered by SELECTION, and only while the camera is running'
     h.select(['cam']);
     await frames(3);
     h.panel.setOpen(false);
-    assert.equal(h.panel.cameraModeId(), '', 'a CLOSED panel arms nothing — the same rule kfPoseIds obeys');
+    assert.equal(h.panel.cameraModeId(), '', 'a CLOSED panel arms nothing - the same rule kfPoseIds obeys');
   } finally { closeOverlays(); h.teardown(); }
 });
 
@@ -5561,7 +5561,7 @@ test('cameraWrite folds a gesture into the SCENE DEFAULT, and refuses a moving c
     // the fresh implicit camera behaves as SCENE DEFAULTS with no keyframe UI in the way.
     const next = h.panel.cameraWrite(h.boxes, { x: -40 });
     const keys = parse(String(next.find((b) => b.id === 'cam')!.kf));
-    assert.equal(keys.length, 1, 'one key — the scene pose');
+    assert.equal(keys.length, 1, 'one key - the scene pose');
     assert.equal(keys[0]!.t, 0, 'at t = 0, not under the playhead: no diamond was invented');
     assert.equal(keys[0]!.v.x, -40);
 
@@ -5573,7 +5573,7 @@ test('cameraWrite folds a gesture into the SCENE DEFAULT, and refuses a moving c
 
     // A real MOVE, with the playhead off every diamond, has nowhere honest to land.
     const moving = h.boxes.map((b) => (b.id === 'cam' ? { ...b, kf: 't0_x0*t1000_x100' } : b));
-    assert.equal(h.panel.cameraWrite(moving, { x: 25 }), moving, 'refused — by identity, so the caller commits nothing');
+    assert.equal(h.panel.cameraWrite(moving, { x: 25 }), moving, 'refused - by identity, so the caller commits nothing');
   } finally { closeOverlays(); h.teardown(); }
 });
 
@@ -5595,7 +5595,7 @@ test('the camera gesture map: the canvas hands the WHEEL to the view unless a ca
     'Space+drag stays the view pan');
   // The pan takes the gesture the MARQUEE would have had, on both empty surfaces.
   assert.equal((src.match(/camModeId\(\)\) \{\n      beginGesture\(e, \{/g) ?? []).length, 2,
-    'the artboard and the backdrop — a camera pan with an invisible boundary is not one');
+    'the artboard and the backdrop - a camera pan with an invisible boundary is not one');
   // P2 SPENDS THE RESERVED CHORD. Shift-drag was held back at M2.5 ("shift-drag
   // reserved for tilt (P2)") precisely so it could be given one meaning once rather
   // than two in a row; both entry points now branch on it, and the additive marquee
@@ -5663,7 +5663,7 @@ test('the curve editor is DOCKED in the Keyframes popup, and a drag switches the
 
     await seek(h, 1500);
     const plot = inspEl<HTMLElement>('.tl-kf-dock .ease-ed-plot');
-    assert.ok(plot, 'ON a diamond the plot is docked INSIDE the popup — never a second popover');
+    assert.ok(plot, 'ON a diamond the plot is docked INSIDE the popup - never a second popover');
     // …and ONLY while the popup shows it: the editor runs a rAF loop for its motion
     // strip, and a group's body stays in the document when the group is shut.
     setGroup(h.root, 'keyframes', false);
@@ -5711,7 +5711,7 @@ test('M2.6 lows: no focusable node in the aria-hidden strip, and the enlarged ma
     const strip = h.bar('a').querySelector('.tl-kf-strip') as HTMLElement;
     assert.equal(strip.getAttribute('aria-hidden'), 'true');
     assert.equal(strip.querySelectorAll('[tabindex], a[href], button, input, select, textarea').length, 0,
-      'nothing inside an aria-hidden subtree may be focusable — not even tabindex="-1"');
+      'nothing inside an aria-hidden subtree may be focusable - not even tabindex="-1"');
     assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, true],
       'precondition: the playhead\'s diamond draws large');
 
@@ -5724,7 +5724,7 @@ test('M2.6 lows: no focusable node in the aria-hidden strip, and the enlarged ma
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('M2.6 low: Alt+←/→ says what it actually found — nothing selected, nothing animated, or the end', async () => {
+test('M2.6 low: Alt+←/→ says what it actually found - nothing selected, nothing animated, or the end', async () => {
   const h = mount(kfScene({ ...clip('a', 0, 3) } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     const alt = (key: string): void => {
@@ -5757,7 +5757,7 @@ test('M2.6 low: the Animate chip is never capped, so its second kind cannot be e
   const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
   const rule = css.slice(css.indexOf('.tl-group[data-group="animate"]'));
   assert.ok(/\.tl-group\[data-group="animate"\][^{]*\.tl-group-chip \{ max-width: none; \}/.test(rule.slice(0, 400)),
-    'the pair chip is uncapped — the strip it sits in scrolls, so a longer segment is not a lost one');
+    'the pair chip is uncapped - the strip it sits in scrolls, so a longer segment is not a lost one');
   assert.ok(/\.tl-group\[data-group="animate"\] > \.tl-group-head/.test(rule.slice(0, 400)),
     'and the head\'s own cap goes with it, or the chip is capped by its container instead');
 });
@@ -5784,7 +5784,7 @@ test('the camera add-kind is offered by the panel\'s + menu, with its own glyph'
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam\'s half of section 5.2', async () => {
+test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY - the resize seam\'s half of section 5.2', async () => {
   // free-canvas hands the handle's resulting WIDTH, not a change to it, so the seam has
   // to take a value rather than a delta. The mode is the caller's to choose because only
   // the caller knows which reading its gesture produced: a drag is relative, a resize is
@@ -5804,13 +5804,13 @@ test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam
     const wrong = h.panel.kfPoseWrite(h.boxes, ['a'], { w: 640, h: 360 });
     assert.equal(parse(String(wrong.find((b) => b.id === 'a')!.kf))[1]!.v.w, 640,
       'add over an unauthored size is the size itself (neutral 0), which is why the default is safe but not right');
-    assert.equal(h.commits.length, 0, 'the seam never commits — the caller owns the write');
+    assert.equal(h.commits.length, 0, 'the seam never commits - the caller owns the write');
   } finally { closeOverlays(); h.teardown(); }
 });
 
 // ── Export frame (WP-D) ────────────────────────────────────────────────────
 
-test('Export frame decodes the clip\'s ORIGINAL asset at its own local media time — never a registered scrub proxy', async () => {
+test('Export frame decodes the clip\'s ORIGINAL asset at its own local media time - never a registered scrub proxy', async () => {
   const { noteScrubSource, setProxyUrl, resetScrubCache } = await import('../lib/scrub-registry.ts');
   const calls: Array<{ url: string; tSec: number }> = [];
   _setFrameAtImpl(async (url, tSec) => { calls.push({ url, tSec }); return null; });
@@ -5844,9 +5844,9 @@ test('Export frame decodes the clip\'s ORIGINAL asset at its own local media tim
     await frames(3);
 
     assert.equal(calls.length, 1, 'the decode was attempted exactly once');
-    assert.equal(calls[0]!.url, 'blob:clip-original-abc', 'the ORIGINAL asset url — never the registered proxy');
+    assert.equal(calls[0]!.url, 'blob:clip-original-abc', 'the ORIGINAL asset url - never the registered proxy');
     assert.notEqual(calls[0]!.url, 'blob:proxy-fake', 'the proxy is never the id this resolves to');
-    assert.equal(calls[0]!.tSec, 4, 'clipIn + elapsed×speed — the box\'s own local-media-time mapping');
+    assert.equal(calls[0]!.tSec, 4, 'clipIn + elapsed×speed - the box\'s own local-media-time mapping');
   } finally {
     _setFrameAtImpl(null);
     resetScrubCache();
@@ -5854,7 +5854,7 @@ test('Export frame decodes the clip\'s ORIGINAL asset at its own local media tim
   }
 });
 
-test('Export frame is offered only for a video clip — absent, never greyed, on anything else', () => {
+test('Export frame is offered only for a video clip - absent, never greyed, on anything else', () => {
   const h = mount([clip('card', 0, 3)]);
   try {
     assert.equal(ctxLabels(h, 'card').includes('Export frame'), false);

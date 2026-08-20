@@ -191,13 +191,13 @@ function finalizeColumn(col: DraftColumn): Column {
 
   let reason = '';
   if (uniformType === 'mixed') {
-    reason = 'Tools share this field name but use different input types — edit each cell.';
+    reason = 'Tools share this field name but use different input types - edit each cell.';
   } else if (!inline) {
     reason = 'This input type is edited in the single-tool view; cells use defaults.';
   } else if (!BULK_TYPES.has(uniformType)) {
-    reason = 'This input type cannot be bulk-filled — edit each cell.';
+    reason = 'This input type cannot be bulk-filled - edit each cell.';
   } else if (signatures.size > 1) {
-    reason = 'Tools constrain this field differently (e.g. min/max) — edit each cell.';
+    reason = 'Tools constrain this field differently (e.g. min/max) - edit each cell.';
   }
 
   return {

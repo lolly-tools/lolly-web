@@ -362,7 +362,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
           v.muted = v.getAttribute('data-present-audio') !== '1';
           const p = v.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {});
         } else {
-          try { v.muted = true; v.pause(); } catch { /* jsdom / not-ready — never throw */ }
+          try { v.muted = true; v.pause(); } catch { /* jsdom / not-ready - never throw */ }
         }
       }
       // Lottie: play the active slide's players, pause the rest (mounted below, async - a
@@ -535,7 +535,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
       // A preview never plays: freeze its media so N previews don't spin decoders.
       for (const v of clone.querySelectorAll<HTMLVideoElement>('video')) {
         v.muted = true; v.autoplay = false; v.removeAttribute('autoplay');
-        try { v.pause(); } catch { /* not-ready — ignore */ }
+        try { v.pause(); } catch { /* not-ready - ignore */ }
       }
       wrap.appendChild(clone);
     }
@@ -665,7 +665,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
       setupSpeakerWindow(win);
       buildSpeaker(speakerDoc, speakerDoc.body);
       speakerDoc.addEventListener('keydown', onSpeakerKey, true);
-      try { win.focus(); } catch { /* focus may be denied — harmless */ }
+      try { win.focus(); } catch { /* focus may be denied - harmless */ }
     } else {
       // Popup blocked / unavailable → in-page overlay that covers the deck.
       speakerWin = null;

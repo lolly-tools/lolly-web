@@ -53,7 +53,7 @@ export const LOGO_VARIANTS: readonly LogoVariant[] =
   LOGO_ORIENTATIONS.flatMap(o => LOGO_TREATMENTS.map(t => `${o}-${t}` as LogoVariant));
 
 export const ORIENTATION_META: Record<LogoOrientation, { label: string; hint: string }> = {
-  horizontal: { label: t('Horizontal'), hint: t('Wordmark + symbol in a row — the default lockup.') },
+  horizontal: { label: t('Horizontal'), hint: t('Wordmark + symbol in a row - the default lockup.') },
   vertical: { label: t('Vertical'), hint: t('Stacked mark for square and tall spaces.') },
 };
 export const TREATMENT_META: Record<LogoTreatment, { label: string; hint: string }> = {
@@ -199,7 +199,7 @@ async function userDoc(host: LogoHost): Promise<Rec> {
   try {
     const blob = await host.assets._getBlob(USER_TOKENS_ID);
     if (blob) { const parsed = JSON.parse(await blob.text()); if (isRec(parsed)) return parsed; }
-  } catch { /* no/corrupt doc — start from empty, same as the font path */ }
+  } catch { /* no/corrupt doc - start from empty, same as the font path */ }
   return {};
 }
 
@@ -240,7 +240,7 @@ export async function installLogo(
   if (opts.identity === LOGO_DEFAULT_IDENTITY) {
     // 'default' is the UNNAMED identity's reserved key - naming a second logo
     // "default" would silently merge it into the primary one.
-    throw new Error(t('“default” is reserved — pick a different name for the identity.'));
+    throw new Error(t('“default” is reserved - pick a different name for the identity.'));
   }
   if (identity !== LOGO_DEFAULT_IDENTITY) {
     if (!LOGO_SLUG_RE.test(identity)) {
@@ -249,11 +249,11 @@ export async function installLogo(
     // An identity named after a matrix slot would shadow that slot's token
     // (asset.logo.<key> can't be a token AND a group).
     if (isCanonicalVariant(identity)) {
-      throw new Error(tRaw('“{identity}” is a variant name — pick a different name for the identity.', { identity }));
+      throw new Error(tRaw('“{identity}” is a variant name - pick a different name for the identity.', { identity }));
     }
   }
   if (!ACCEPT.test(file.type)) throw new Error(t('Use a PNG, JPEG, SVG or WebP image.'));
-  if (file.size > MAX_BYTES) throw new Error(t('That logo is {size} MB — the limit is 4 MB.', { size: (file.size / 1024 / 1024).toFixed(1) }));
+  if (file.size > MAX_BYTES) throw new Error(t('That logo is {size} MB - the limit is 4 MB.', { size: (file.size / 1024 / 1024).toFixed(1) }));
   // asset.logo.<key> is ONE namespace shared by default-identity variants and
   // identity groups - refuse a write whose key currently holds the OTHER shape,
   // instead of letting withLogoToken silently destroy it.
@@ -261,10 +261,10 @@ export async function installLogo(
     const cur = logoGroupOf(await userDoc(host))?.[identity !== LOGO_DEFAULT_IDENTITY ? identity : variant];
     if (isRec(cur)) {
       if (identity !== LOGO_DEFAULT_IDENTITY && '$value' in cur) {
-        throw new Error(tRaw('“{identity}” is already a mark’s name — pick a different name for the identity.', { identity }));
+        throw new Error(tRaw('“{identity}” is already a mark’s name - pick a different name for the identity.', { identity }));
       }
       if (identity === LOGO_DEFAULT_IDENTITY && !('$value' in cur) && !isCanonicalVariant(variant)) {
-        throw new Error(tRaw('“{variant}” is already a logo’s name — pick a different name for the mark.', { variant }));
+        throw new Error(tRaw('“{variant}” is already a logo’s name - pick a different name for the mark.', { variant }));
       }
     }
   }

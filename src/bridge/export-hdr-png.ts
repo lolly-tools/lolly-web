@@ -148,9 +148,9 @@ export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): 
   // depth= is a request, never a promise (plan section 10). Deep is the only honest
   // answer for PQ, so an 8-bit request is answered and explained, not obeyed.
   if (o.depth === 8) {
-    log('info', 'png: depth=8 ignored for an HDR export — PQ code values quantised to 8 bits band in the shadows, so HDR PNG is always written at 16 bits per channel.');
+    log('info', 'png: depth=8 ignored for an HDR export - PQ code values quantised to 8 bits band in the shadows, so HDR PNG is always written at 16 bits per channel.');
   } else if (o.depth === 'float') {
-    log('info', 'png: depth=float satisfied at 16 bits — PNG has no float sample format (use TIFF float32 or EXR for that).');
+    log('info', 'png: depth=float satisfied at 16 bits - PNG has no float sample format (use TIFF float32 or EXR for that).');
   }
 
   // ── the float path: this is where the extra bits are actually generated ────

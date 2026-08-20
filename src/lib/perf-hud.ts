@@ -24,7 +24,7 @@ import { perfHudOn } from '../feature-flags.ts';
 import { tRaw } from '../i18n.ts';
 import { icon } from './icons.ts';
 
-const DASH = '—';
+const DASH = '-';
 
 let root: HTMLElement | null = null;
 let fpsEl: HTMLElement | null = null;

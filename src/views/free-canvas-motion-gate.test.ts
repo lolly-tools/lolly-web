@@ -188,7 +188,7 @@ async function setPanel(f: Fixture, want: boolean): Promise<void> {
   assert.equal(b.getAttribute('aria-pressed'), String(want), `the panel is ${want ? 'open' : 'closed'}`);
 }
 
-test('a closed timeline draws no path — and never even fetches the chunk', async () => {
+test('a closed timeline draws no path - and never even fetches the chunk', async () => {
   const f = mount([ANIMATED()]);
   try {
     // Closed BEFORE anything is selected, so the gate has never once been open on a
@@ -214,7 +214,7 @@ test('opening the timeline draws the selected box’s path; closing it takes it 
     assert.equal(layer!.hidden, false, 'and it is showing');
     assert.ok(f.lines().length >= 1, 'with a polyline of the box’s travel');
     assert.equal(layer!.getAttribute('data-export-hide'), '',
-      'still stamped for detachExportHidden — the gate must not be the only thing '
+      'still stamped for detachExportHidden - the gate must not be the only thing '
       + 'keeping a path out of a file');
     const path = layer!.querySelector('.mp-path');
     assert.equal(path?.getAttribute('data-box-id'), 'a', 'and it is THIS box’s path');
@@ -226,11 +226,11 @@ test('opening the timeline draws the selected box’s path; closing it takes it 
     assert.ok(f.stageEl.querySelector('.tl-panel'), 'the panel is still mounted, just closed');
     assert.equal(f.layer()?.hidden, true,
       'a path with no playhead, no diamonds and no transport under it is a picture of '
-      + 'a move the user cannot reach — so the overlay goes with the panel');
+      + 'a move the user cannot reach - so the overlay goes with the panel');
     assert.equal(f.lines().length, 0, 'and the polyline is gone, not merely covered');
 
     await setPanel(f, true);
-    assert.equal(f.layer()?.hidden, false, 'reopening brings it back — a state, not a one-way door');
+    assert.equal(f.layer()?.hidden, false, 'reopening brings it back - a state, not a one-way door');
     assert.ok(f.lines().length >= 1);
   } finally { f.destroy(); }
 });
@@ -258,17 +258,17 @@ test('a drag in flight leaves the path where it was authored; the COMMIT is what
     f.canvasEl.dispatchEvent(pointerEvent('pointermove', 260, 190));
     await settle();
     assert.equal(f.writes(), writes0,
-      'precondition: the gesture is IN FLIGHT — nothing is written while the pointer '
+      'precondition: the gesture is IN FLIGHT - nothing is written while the pointer '
       + 'is down, which is the discipline every gesture in this file follows');
     assert.equal(f.lines()[0]?.getAttribute('points'), before,
-      'the box has moved in the DOM, and the path has not — it describes the authored '
+      'the box has moved in the DOM, and the path has not - it describes the authored '
       + 'pose, and no keyframe has been written yet');
 
     f.canvasEl.dispatchEvent(pointerEvent('pointerup', 260, 190));
     await settle();
     assert.equal(f.writes(), writes0 + 1, 'one commit for the whole gesture');
     assert.notEqual(f.lines()[0]?.getAttribute('points'), before,
-      'and the commit — one array, one new identity — is what lets it follow');
+      'and the commit - one array, one new identity - is what lets it follow');
   } finally { f.destroy(); }
 });
 
@@ -280,7 +280,7 @@ test('an open timeline is not enough: the box has to be selected AND animated', 
 
     await select(f, 600, 150);                 // the box with no track
     assert.equal(f.layer(), null,
-      'a box with no `kf` value cannot have a path — the cheap half of the gate, which '
+      'a box with no `kf` value cannot have a path - the cheap half of the gate, which '
       + 'is why an ordinary selection never pays for the chunk');
 
     await select(f, 200, 150);                 // the animated one

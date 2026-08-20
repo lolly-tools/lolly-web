@@ -192,7 +192,7 @@ test('letter-spacing reaches the shaper and changes the emitted geometry',
     const loose = pathData(await render(OUTFIT('AVWA', 'letter-spacing:6px')))[0];
     assert.ok(tight && loose, 'both runs must outline');
     assert.notEqual(tight, loose,
-      'letter-spacing was dropped on the way to toPath — the glyphs would export at the wrong advances');
+      'letter-spacing was dropped on the way to toPath - the glyphs would export at the wrong advances');
   });
 
 test('a variable-font weight reaches the shaper (Outfit is wght 100..900)',
@@ -201,7 +201,7 @@ test('a variable-font weight reaches the shaper (Outfit is wght 100..900)',
     const heavy = pathData(await render(OUTFIT('Weight', 'font-weight:800')))[0];
     assert.ok(light && heavy, 'both weights must outline');
     assert.notEqual(light, heavy,
-      'both weights produced identical outlines — the variations axis is not being passed, ' +
+      'both weights produced identical outlines - the variations axis is not being passed, ' +
       'so every weight would export at the default instance');
   });
 
@@ -229,7 +229,7 @@ test('font-feature-settings reaches the shaper (frac changes the emitted geometr
     const frac = pathData(await render(OUTFIT('1/2', "font-feature-settings:'frac' 1")))[0];
     assert.ok(plain && frac, 'both runs must outline');
     assert.notEqual(plain, frac,
-      'font-feature-settings was dropped on the way to toPath — declared OpenType ' +
+      'font-feature-settings was dropped on the way to toPath - declared OpenType ' +
       'features would silently not apply to vector exports');
   });
 
@@ -271,7 +271,7 @@ test('convertPaths:false keeps every run as selectable <text>', { skip: SKIP }, 
 
 // ── the property a snapshot suite depends on ─────────────────────────────────
 
-test('emission is deterministic — the same markup exports byte-identical SVG',
+test('emission is deterministic - the same markup exports byte-identical SVG',
   { skip: SKIP }, async () => {
     // Item 1's plan is to pin these formats as exact snapshots before splitting
     // export.ts. That is only sound if the output is stable; this is the check
@@ -279,7 +279,7 @@ test('emission is deterministic — the same markup exports byte-identical SVG',
     // leaking into the bytes.
     const a = await render(OUTFIT('Same'));
     const b = await render(OUTFIT('Same'));
-    assert.equal(a, b, 'two identical renders diverged — the output is not snapshot-safe');
+    assert.equal(a, b, 'two identical renders diverged - the output is not snapshot-safe');
   });
 
 // ── tiled conic backgrounds (the transparency checkerboard) ──────────────────
@@ -364,7 +364,7 @@ test('a HARD-STOPPED conic emits one EXACT sector per band, not a sampled fan',
       `<div style="width:200px;height:120px;background:` +
       `repeating-conic-gradient(rgb(255,0,0) 0% 25%, rgb(0,0,255) 0% 50%)"></div>`);
     const paths = svg.match(/<path\b[^>]*>/g) ?? [];
-    assert.equal(paths.length, 4, 'two bands x two periods around the circle — exact, not sampled');
+    assert.equal(paths.length, 4, 'two bands x two periods around the circle - exact, not sampled');
     assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
     // Both colours survive, and neither is a blend of the two (which is what a fan
     // sampling across a hard boundary would produce).
@@ -520,7 +520,7 @@ test('text inside a SCALED element exports at the size the browser paints it',
     assert.ok(r.inked > 0, 'the run was outlined at all');
     const ratio = r.inked / r.painted;
     assert.ok(ratio > 0.9 && ratio < 1.1,
-      `emitted ink ${r.inked.toFixed(1)}px vs painted ${r.painted.toFixed(1)}px (ratio ${ratio.toFixed(3)}) — ` +
+      `emitted ink ${r.inked.toFixed(1)}px vs painted ${r.painted.toFixed(1)}px (ratio ${ratio.toFixed(3)}) - ` +
       'a ratio near 1/scale means the computed font-size was used without the ancestor scale');
   });
 

@@ -295,7 +295,7 @@ function channelHub(): { open(): CeremonyChannelLike; posts: unknown[] } {
 // plus the one property that makes the offer safe to show to a stranger: it says nothing
 // about the token in the link.
 
-test('#/join: a FRESH profile joins straight away — on by default means no card at all', async () => {
+test('#/join: a FRESH profile joins straight away - on by default means no card at all', async () => {
   // The arrival the 2026-08-10 flip is for. No mirror entry for the flag, no profile
   // record, no `flagOn` override: the route's REAL read resolves a missing value to the
   // built-in default, and the reader goes to the ceremony holding the invite they clicked.
@@ -537,7 +537,7 @@ test('#/join: Esc is the same answer as "Not now", not a quieter one', async () 
   assert.equal(el.textContent, 'THE NEXT VIEW');
 });
 
-test('#/join: the gate is not an oracle — a mangled invite gets the SAME card as a good one', async () => {
+test('#/join: the gate is not an oracle - a mangled invite gets the SAME card as a good one', async () => {
   // The ordering property section 6.3 asks for. If the flag-off screen varied with the token,
   // anyone could learn which blobs this build considers valid without ever turning the
   // feature on, and a reader would be told about a stranger's link before being asked
@@ -868,7 +868,7 @@ test('#/join: navigating away closes the dialog without repainting a view being 
   await settle();
   (el as RoutedView)._cleanup?.();
   assert.equal(openDialogs.at(-1)!.el.isConnected, false, 'the dialog is gone with the view');
-  assert.notEqual(bodyOf(el), STRINGS.joinDone, 'the router is leaving — the page has nothing to say');
+  assert.notEqual(bodyOf(el), STRINGS.joinDone, 'the router is leaving - the page has nothing to say');
 });
 
 test('#/join: a route torn down mid-mount opens nothing and keeps the next view\'s teardown', async () => {
@@ -1166,23 +1166,23 @@ test('the route constants, the router source and this module agree on both paths
  * `#/join` through `catalogReady` first (the `else` branch) is what makes the probe's
  * answer trustworthy, so it must never join the skip-ahead list.
  */
-test('main.ts\'s fastPath skip-ahead excludes #/join — the tool probe needs the synced catalog first', () => {
+test('main.ts\'s fastPath skip-ahead excludes #/join - the tool probe needs the synced catalog first', () => {
   const main = readFileSync(fileURLToPath(new URL('../main.ts', import.meta.url)), 'utf8');
   const at = main.indexOf('const fastPath =');
-  assert.notEqual(at, -1, 'main.ts no longer declares `const fastPath` — update this guard alongside it');
+  assert.notEqual(at, -1, 'main.ts no longer declares `const fastPath` - update this guard alongside it');
   const end = main.indexOf(';', at);
   assert.notEqual(end, -1, 'could not find the end of the fastPath declaration');
   const body = main.slice(at, end);
   assert.equal(
     /routeName === 'join'/.test(body),
     false,
-    "'join' must not appear in main.ts's fastPath expression — #/join needs catalogReady " +
+    "'join' must not appear in main.ts's fastPath expression - #/join needs catalogReady " +
     'awaited first (see the comment above this test)',
   );
   // A floor so a rewritten expression that dropped both real arms could not pass
   // this test vacuously by matching nothing at all.
-  assert.match(body, /routeName === 'gallery'/, 'the fastPath scan no longer sees its gallery arm — has it moved?');
-  assert.match(body, /routeName === 'dashboard'/, 'the fastPath scan no longer sees its dashboard arm — has it moved?');
+  assert.match(body, /routeName === 'gallery'/, 'the fastPath scan no longer sees its gallery arm - has it moved?');
+  assert.match(body, /routeName === 'dashboard'/, 'the fastPath scan no longer sees its dashboard arm - has it moved?');
 });
 
 // ── The reply handoff (section 11.25) ────────────────────────────────────────────────
@@ -1452,7 +1452,7 @@ test('#/join-reply: the gates, each with its own sentence', async () => {
 test("#/join-reply also answers to the plan's `sig` spelling", async () => {
   const el = view();
   await mountJoinReplyRoute(el, `sig=${answerToken()}`, { flagOn: () => true, channel: null });
-  assert.equal(titleOf(el), STRINGS.replyNoWindowTitle, 'it decoded — it just found nobody home');
+  assert.equal(titleOf(el), STRINGS.replyNoWindowTitle, 'it decoded - it just found nobody home');
 });
 
 test('delivery helpers refuse rather than half-work when there is no field to fill', () => {
@@ -1642,7 +1642,7 @@ test('STRINGS: the gate copy is ten distinct keys, and each one is a translator\
   assert.equal(new Set(values).size, values.length, 'two gate screens are sharing one catalog key');
   for (const [name, value] of Object.entries(gate)) {
     assert.ok(value.trim().length > 0, `${name} is empty`);
-    assert.equal(/[—–]/.test(value), false, `${name} carries a dash the locale wave must not fan out`);
+    assert.equal(/[-–]/.test(value), false, `${name} carries a dash the locale wave must not fan out`);
     assert.equal(value.includes('{'), false, `${name} has a placeholder nothing fills`);
   }
 

@@ -142,7 +142,7 @@ export async function saveAudioCover(
   // and the field's absence keeps meaning "never used this".
   if (Object.keys(rec).length) profile.audioCovers = rec;
   else delete profile.audioCovers;
-  try { await host.profile.set(profile); } catch { /* storage off / quota — non-fatal */ }
+  try { await host.profile.set(profile); } catch { /* storage off / quota - non-fatal */ }
 }
 
 /**

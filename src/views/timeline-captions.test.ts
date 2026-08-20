@@ -56,10 +56,10 @@ test('clipIn and speed compose exactly as trim arithmetic says: t = start + (m -
 test('cues wholly outside the visible window are dropped, straddlers are clamped to it', () => {
   const src = { start: 10, dur: 4, clipIn: 2, speed: 1 };   // shows media 2..6
   const out = cueSpansOnTimeline([
-    cue(0, 1.5),      // entirely before the trim-in — gone
-    cue(1, 3),        // straddles the in edge — clamped to the box start
-    cue(5, 8),        // straddles the out edge — clamped to the box end
-    cue(7, 9),        // entirely past the end — gone
+    cue(0, 1.5),      // entirely before the trim-in - gone
+    cue(1, 3),        // straddles the in edge - clamped to the box start
+    cue(5, 8),        // straddles the out edge - clamped to the box end
+    cue(7, 9),        // entirely past the end - gone
   ], src);
   assert.deepEqual(out, [
     { start: 10, end: 11, text: 'hello world' },

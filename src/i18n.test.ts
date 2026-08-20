@@ -49,7 +49,7 @@ test('t() leaves numeric params alone (escaping is a no-op there)', () => {
   assert.equal(t('{n} items', { n: 12 }), '12 items');
 });
 
-test('tRaw() does NOT escape params — the text-sink / markup escape hatch', () => {
+test('tRaw() does NOT escape params - the text-sink / markup escape hatch', () => {
   assert.equal(tRaw('Hi {who}', { who: `O'Brien` }), `Hi O'Brien`);
   assert.equal(tRaw('go {link}', { link: '<a href="#">x</a>' }), 'go <a href="#">x</a>');
 });

@@ -57,7 +57,7 @@ test('a spot-locked swatch passes its SpotColor through untouched', () => {
   assert.deepEqual(entry.spot, spot);
 });
 
-test('a finish rides along with the spot — this layer copies, it does not curate', () => {
+test('a finish rides along with the spot - this layer copies, it does not curate', () => {
   // toPaletteEntry passes the SpotColor by reference, so a finish reaches the
   // palette for free. Pinned because the PDF layer downstream still flattens a
   // spot to name+CMYK, and the next slice moves that boundary, not this one.

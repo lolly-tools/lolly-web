@@ -681,7 +681,7 @@ test('the replay goes to the new subscriber alone and cannot double-fire a trans
   assert.equal(r.ceremonyEvents.length, early);
 });
 
-test('the peer op-version replays too — an undeclared one stays silence, not a gap', async () => {
+test('the peer op-version replays too - an undeclared one stays silence, not a gap', async () => {
   const r = rig('acceptor');
   const applied = await r.transport.effects.createAnswer(await mintInvite());
   assert.equal(applied.ok, true);
@@ -727,7 +727,7 @@ test('a closed transport replays nothing and keeps no listener', async () => {
   off();
 });
 
-test('the ops lane opening is what sources `ready` — once, and after the hello', async () => {
+test('the ops lane opening is what sources `ready` - once, and after the hello', async () => {
   const r = rig('inviter');
   const offer = await r.transport.effects.createOffer({ attempt: 0 });
   assert.equal(offer.ok, true);
@@ -1149,7 +1149,7 @@ test('the plate material is both fingerprints, or nothing at all', async () => {
   assert.equal(
     r.transport.effects.plateMaterial(),
     null,
-    'half a pair derives nothing — a plate over one fingerprint would be a confident number about nothing',
+    'half a pair derives nothing - a plate over one fingerprint would be a confident number about nothing',
   );
 
   const applied = await r.transport.effects.applyRemote({ signal: answerToken(2, 1) });
@@ -1168,7 +1168,7 @@ test('the acceptor has both fingerprints from the single call that answers', asy
   const answer = await r.transport.effects.createAnswer(await mintInvite());
   assert.equal(answer.ok, true);
   const pair = r.transport.effects.plateMaterial();
-  assert.ok(pair, 'createAnswer decodes the peer blob and mints our own — both, in one call');
+  assert.ok(pair, 'createAnswer decodes the peer blob and mints our own - both, in one call');
   // The remote is the INVITE's fingerprint (harness salt 7 → script salt 700), and the
   // local is what this rig's own answer SDP carries.
   assert.deepEqual([...pair.remote], [...material(2, 700).fingerprint.bytes]);

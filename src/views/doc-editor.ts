@@ -133,11 +133,11 @@ const STARTER = {
     { type: 'paragraph', content: [
       { type: 'text', text: 'Welcome to ' },
       { type: 'text', marks: [{ type: 'bold' }], text: 'Doc Studio' },
-      { type: 'text', text: ' — a real word processor. Select and delete across anything, and insert tables, lists and images inline.' },
+      { type: 'text', text: ' - a real word processor. Select and delete across anything, and insert tables, lists and images inline.' },
     ] },
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Write the way you think' }] },
     { type: 'bulletList', content: [
-      { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Paste rich text — bold, italics, lists and tables keep their shape' }] }] },
+      { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Paste rich text - bold, italics, lists and tables keep their shape' }] }] },
       { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Insert a Lolly render (a QR code, a chart, a map) inline' }] }] },
       { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Headings 1 to 4, SUSE or SUSE Mono, export to PDF' }] }] },
     ] },

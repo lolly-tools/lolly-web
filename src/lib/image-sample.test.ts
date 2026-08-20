@@ -81,7 +81,7 @@ test('depthHint: 16-bit PNG IHDR reads byte 24 of the datastream', async () => {
   assert.deepEqual(await depthHint(pngHead(16)), { bitsPerChannel: 16, source: 'png' });
 });
 
-test('depthHint: 8-bit PNG is the negative control — never reported deep', async () => {
+test('depthHint: 8-bit PNG is the negative control - never reported deep', async () => {
   assert.deepEqual(await depthHint(pngHead(8)), { bitsPerChannel: 8, source: 'png' });
 });
 

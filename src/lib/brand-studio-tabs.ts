@@ -121,13 +121,13 @@ const isRecObj = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('More tokens'), t('The rest of the system — spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow your colours.'))}
+    ${panelHead(t('More tokens'), t('The rest of the system - spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow your colours.'))}
     <div class="be-tok-list" data-tok-list></div>
     <form class="be-tok-add" data-tok-add>
       <select class="field-select field-select--auto field-select--sm be-tok-add-kind" data-tok-add-kind aria-label="${escape(t('Token type'))}">
         ${TOKEN_KINDS.map(k => `<option value="${k.id}">${escape(t(k.label))}</option>`).join('')}
       </select>
-      <input type="text" class="be-tok-add-name" data-tok-add-name placeholder="${escape(t('Name it — Gutter, Card shadow…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Token name'))}">
+      <input type="text" class="be-tok-add-name" data-tok-add-name placeholder="${escape(t('Name it - Gutter, Card shadow…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Token name'))}">
       <button type="submit" class="be-btn">${t('+ Add token')}</button>
     </form>
     <p class="be-err" data-tok-err hidden></p>`;
@@ -160,7 +160,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const render = (): void => {
     const all = listStudioTokens(ctx.doc()).filter(t => t.kind !== 'gradient');
     if (!all.length) {
-      list.innerHTML = `<p class="be-tok-empty">${t('No extra tokens yet — most brands start with a spacing unit and a card shadow.')}</p>`;
+      list.innerHTML = `<p class="be-tok-empty">${t('No extra tokens yet - most brands start with a spacing unit and a card shadow.')}</p>`;
       return;
     }
     const byKind = new Map<StudioKind, StudioToken[]>();
@@ -207,7 +207,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
     } else {
       ok = setStudioTokenValue(ctx.doc(), path, el.value);
     }
-    if (!ok) { showErr(t(kind === 'dimension' ? "Couldn't read that value — use a CSS length like 8px or 0.5rem." : "Couldn't read that value — check it and try again.")); return; }
+    if (!ok) { showErr(t(kind === 'dimension' ? "Couldn't read that value - use a CSS length like 8px or 0.5rem." : "Couldn't read that value - check it and try again.")); return; }
     showErr('');
     ctx.persist();
     ctx.notify();
@@ -273,7 +273,7 @@ const GRAD_STOPS_MAX = 8;
 
 export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('Gradients'), t("Optional colour tokens — blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients."))}
+    ${panelHead(t('Gradients'), t("Optional colour tokens - blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients."))}
     <details class="be-subst-details be-grads-details" data-be-grads-details>
       <summary><span class="be-subst-details-label">${t('Your gradients')}</span><span class="be-subst-chips"><span class="be-ps-chip" data-grad-count></span></span></summary>
       <div class="be-grad-list" data-grad-list></div>
@@ -318,7 +318,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     const p = pathAttr(tok);
     const isRef = isAlias(s.color);
     const swName = isRef ? ctx.paletteSwatches().find(w => w.ref === s.color)?.label ?? s.color : s.color;
-    const label = tRaw('{name} stop {n} — {swatch}', { name: tok.name, n: i + 1, swatch: swName });
+    const label = tRaw('{name} stop {n} - {swatch}', { name: tok.name, n: i + 1, swatch: swName });
     return `<span class="be-grad-stopwrap">
         <button type="button" class="be-grad-stop-chip${isRef ? ' is-ref' : ''}" data-grad-stop="${i}" data-grad-path="${p}"
           style="--sw:${escape(stopCss(s))}" title="${escape(swName)}" aria-label="${escape(label)}" aria-haspopup="dialog"></button>
@@ -614,7 +614,7 @@ export interface CataloguePanelCtx { host: HostV1; notify: () => void }
 
 export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('Catalogue'), tRaw("The files your brand keeps — drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
+    ${panelHead(t('Catalogue'), tRaw("The files your brand keeps - drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
     <div data-be-cat-dropzone></div>
     <div class="be-cat-groups" data-be-cat-groups aria-live="polite"></div>`;
 
@@ -628,7 +628,7 @@ export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx):
     const uploads = refs.filter(r => !INTERNAL_ID.test(r.id));
     if (!mount.isConnected) return;
     if (!uploads.length) {
-      groupsEl.innerHTML = `<p class="be-cat-empty">${t('Nothing yet — everything you add stays on this device.')}</p>`;
+      groupsEl.innerHTML = `<p class="be-cat-empty">${t('Nothing yet - everything you add stays on this device.')}</p>`;
       return;
     }
     const byBucket = new Map<string, string[]>();

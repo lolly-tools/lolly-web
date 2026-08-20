@@ -46,7 +46,7 @@ const FIELDS = [
   { text: 'shrink a pdf on-device', weight: 1 }, // e.g. description
 ];
 
-test('scoreHaystack: AND semantics — every token must hit, else 0', () => {
+test('scoreHaystack: AND semantics - every token must hit, else 0', () => {
   assert.ok(scoreHaystack(FIELDS, tokenize('compress pdf')) > 0);
   assert.equal(scoreHaystack(FIELDS, tokenize('compress svg')), 0);
 });

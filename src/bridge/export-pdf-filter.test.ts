@@ -164,7 +164,7 @@ test('blur, shadow:content and shadow:depth each reach the PDF as an embedded im
     }
   });
 
-test('the same filters stay VECTOR in SVG — the PDF cap must not leak across walkers',
+test('the same filters stay VECTOR in SVG - the PDF cap must not leak across walkers',
   { skip: SKIP }, async () => {
     const on = await renderBoth(true);
 

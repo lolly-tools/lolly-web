@@ -491,7 +491,7 @@ export function createExportAPI(host: WebHost) {
           if (de === 'woff' && (k === 'ttf' || k === 'otf')) conv = sfntToWoff(bytes);
           else if ((de === 'ttf' || de === 'otf') && k === 'woff') conv = woffToSfnt(bytes);
           if (conv) out = new Blob([conv as BlobPart], { type: `font/${de}` });
-        } catch { /* not a convertible font — deliver the bytes as-is */ }
+        } catch { /* not a convertible font - deliver the bytes as-is */ }
       }
       await this.download(out, name);
     },
@@ -575,7 +575,7 @@ async function imprintRasterBytes(bytes: Uint8Array, format: string, opts: { dur
         const { embedLollyDurable } = await import('../lib/trustmark-embed.ts');
         const marked = await embedLollyDurable(id.data, canvas.width, canvas.height, {});
         if (marked) { id.data.set(marked); ctx.putImageData(id, 0, 0); }
-      } catch { /* durable pass failed — keep the pixel Imprint */ }
+      } catch { /* durable pass failed - keep the pixel Imprint */ }
     }
     const outBlob = await new Promise<Blob | null>((res) =>
       canvas.toBlob((b) => res(b), mime, f === 'jpeg' || f === 'jpg' ? 0.92 : undefined));
@@ -926,7 +926,7 @@ async function deepHdrPng(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi:
       meta: opts.meta,
       icc: pqBt2020IccProfile(),
       imprint: !!opts.imprint,
-      imprintStrength: LOSSLESS_STRENGTH, // PNG is lossless — the gentler mark
+      imprintStrength: LOSSLESS_STRENGTH, // PNG is lossless - the gentler mark
       ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
       ...(opts.durable
         ? {
@@ -939,7 +939,7 @@ async function deepHdrPng(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi:
       log: (level, msg) => _host?.log?.(level, msg),
     });
   } catch (err) {
-    _host?.log?.('warn', `png: 16-bit HDR encode unavailable (${(err as any)?.message || err}) — falling back to the 8-bit PQ path`);
+    _host?.log?.('warn', `png: 16-bit HDR encode unavailable (${(err as any)?.message || err}) - falling back to the 8-bit PQ path`);
     return null;
   }
 }
@@ -997,7 +997,7 @@ async function gainMapJpeg(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi
     });
     return res.bytes;
   } catch (err) {
-    _host?.log?.('warn', `jpeg: gain-map HDR encode unavailable (${(err as any)?.message || err}) — falling back to the 8-bit PQ path`);
+    _host?.log?.('warn', `jpeg: gain-map HDR encode unavailable (${(err as any)?.message || err}) - falling back to the 8-bit PQ path`);
     return null;
   }
 }
@@ -1901,7 +1901,7 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
       const r = await textApi.toPath({ text: raw, fontUrl: vf.url, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf.variations, fallbackFonts: vf.fallbacks });
       d = r.d; adv = r.advanceWidth || 0; notdef = r.notdef ?? 0;
     } catch (e) {
-      _host?.log?.('warn', `svg: SVG-text outline failed, keeping <text> — ${(e as Error).message}`);
+      _host?.log?.('warn', `svg: SVG-text outline failed, keeping <text> - ${(e as Error).message}`);
     }
     if (!d || notdef) { bakeFamily(); continue; }
 
@@ -2071,7 +2071,7 @@ async function renderDxf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   });
   const { text, droppedImages } = emitDxf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
   if (droppedImages > 0) {
-    _host?.log?.('warn', `dxf: dropped ${droppedImages} rasterised region${droppedImages > 1 ? 's' : ''} (DXF is line-art only — use SVG/PDF to keep photographic or filtered content).`);
+    _host?.log?.('warn', `dxf: dropped ${droppedImages} rasterised region${droppedImages > 1 ? 's' : ''} (DXF is line-art only - use SVG/PDF to keep photographic or filtered content).`);
   }
   return new Blob([text], { type: 'image/vnd.dxf' });
 }
@@ -2462,7 +2462,7 @@ async function vectorTwinEl(el: HTMLCanvasElement, mintPrefix: () => string): Pr
     namespaceSvgRefs(root, mintPrefix());
     return root;
   } catch (e) {
-    _host?.log?.('warn', `svg: <canvas> vector twin failed, falling back to raster — ${(e as Error).message}`);
+    _host?.log?.('warn', `svg: <canvas> vector twin failed, falling back to raster - ${(e as Error).message}`);
     return null;
   }
 }
@@ -3385,7 +3385,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         g.appendChild(bd);
         bfHandled = true;
       } else {
-        _host?.log?.('warn', `svg: backdrop-filter blur skipped on <${tag}> — ${backdropNodes} nodes behind it; the panel rasterises instead`);
+        _host?.log?.('warn', `svg: backdrop-filter blur skipped on <${tag}> - ${backdropNodes} nodes behind it; the panel rasterises instead`);
       }
     } else if (bfRaw && bfRaw !== 'none') {
       // Rotated panel, an empty root, or a filter chain we refuse to fake. Say so at
@@ -4173,7 +4173,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           contentG.appendChild(im);
         }
       } catch (e) {
-        _host?.log?.('warn', `svg: <canvas> could not be read (tainted?) — ${(e as Error).message}`);
+        _host?.log?.('warn', `svg: <canvas> could not be read (tainted?) - ${(e as Error).message}`);
       }
     }
 
@@ -4416,7 +4416,7 @@ async function emitInlineTextSvg(
               return;
             }
           } catch (e) {
-            _host?.log?.('warn', `svg: text-to-path failed, using <text> — ${(e as Error).message}`);
+            _host?.log?.('warn', `svg: text-to-path failed, using <text> - ${(e as Error).message}`);
           }
         }
         const t = document.createElementNS(NS, 'text');
@@ -4779,7 +4779,7 @@ async function svgPseudoContent(
           parentG_.appendChild(p);
           placed = true;
         }
-      } catch (e) { _host?.log?.('warn', `svg: pseudo text-to-path failed — ${(e as Error).message}`); }
+      } catch (e) { _host?.log?.('warn', `svg: pseudo text-to-path failed - ${(e as Error).message}`); }
     }
     if (!placed) {
       const t = document.createElementNS(NS, 'text');
@@ -5310,7 +5310,7 @@ export async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> 
       // jsPDF encryption and pdf-lib post-processing are mutually exclusive:
       // the locked blob (only produced when there's no print geometry) ships
       // as-is, without the PDF/X-4 finishing pass.
-      _host?.log?.('info', 'pdf: password-locked export — skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
+      _host?.log?.('info', 'pdf: password-locked export - skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
       blob = artBlob;
     } else {
       // RGB PDF: marks are black; page boxes declare trim/bleed for the RIP;
@@ -5402,7 +5402,7 @@ function c2paRights(meta: ExportMeta | null | undefined): string | undefined {
 // file - a credential failure must never fail the export.
 async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimensions?: string): Promise<Blob> {
   if ((opts.password || opts.strongPassword) && (format === 'pdf' || format === 'pdf-cmyk')) {
-    _host?.log?.('info', 'pdf: password-locked export — skipping Content Credentials (an encrypted document cannot take the C2PA update)');
+    _host?.log?.('info', 'pdf: password-locked export - skipping Content Credentials (an encrypted document cannot take the C2PA update)');
     return blob;
   }
   try {
@@ -5457,7 +5457,7 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       days,
     });
   } catch (err) {
-    _host?.log?.('warn', `${format}: Content Credentials not attached — ${(err as any)?.message || err}`);
+    _host?.log?.('warn', `${format}: Content Credentials not attached - ${(err as any)?.message || err}`);
     return blob;
   }
 }
@@ -5545,7 +5545,7 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
       ingredients: o.ingredients,
     }, host as WebHost);
   } catch (err) {
-    host.log?.('warn', `${format}: Content Credentials not attached — ${(err as any)?.message || err}`);
+    host.log?.('warn', `${format}: Content Credentials not attached - ${(err as any)?.message || err}`);
     return blob;
   }
 }
@@ -5698,7 +5698,7 @@ export async function stampCaptureClip(host: HostV1, blob: Blob, format: Capture
     const ex = extractC2paStore(new Uint8Array(await stamped.arrayBuffer()));
     return { blob: stamped, credential: ex ? { store: ex.store, format: ex.format } : null };
   } catch (err) {
-    host.log?.('warn', `capture clip: Content Credentials not attached — ${(err as any)?.message || err}`);
+    host.log?.('warn', `capture clip: Content Credentials not attached - ${(err as any)?.message || err}`);
     return { blob, credential: null };
   }
 }
@@ -5775,7 +5775,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   if (opts.password && !hasGeo) {
     // jsPDF encryption and pdf-lib post-processing are mutually exclusive - a
     // locked multi-page document ships without the PDF/X-4 finishing pass.
-    _host?.log?.('info', 'pdf: password-locked export — skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
+    _host?.log?.('info', 'pdf: password-locked export - skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
     return blob;
   }
   // Per-page marks + boxes ride the pdf-lib finishing pass (each page's own geo).
@@ -6208,7 +6208,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       let penY = svgLen(el.getAttribute('y'), vbH);
       const textAnchor = el.getAttribute('text-anchor') ?? 'start';
       for (const n of nodes) {
-        if (n.nodeType === 3) {                                   // bare text node — flows inline
+        if (n.nodeType === 3) {                                   // bare text node - flows inline
           if ((n.textContent ?? '').trim()) penX += await drawRun(el, n.textContent, penX, penY, 'start');
         } else if (n.nodeType === 1 && (n as any).tagName?.toLowerCase() === 'tspan') {
           const ts: any = n;
@@ -6669,7 +6669,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
     imprintEmbedCanvas(canvas, imprint);
     return canvas.toDataURL('image/png');
   } catch (e) {
-    _host?.log?.('warn', `vector export: node rasterise fallback failed — ${(e as Error).message}`);
+    _host?.log?.('warn', `vector export: node rasterise fallback failed - ${(e as Error).message}`);
     return null;
   } finally {
     restore();
@@ -6761,7 +6761,7 @@ export async function rasterizePosedNodeToDataUrl(
       w: aabb.width + 2 * padCss, h: aabb.height + 2 * padCss,
     };
   } catch (e) {
-    _host?.log?.('warn', `vector export: posed node rasterise failed — ${(e as Error).message}`);
+    _host?.log?.('warn', `vector export: posed node rasterise failed - ${(e as Error).message}`);
     return null;
   } finally {
     restore();
@@ -7206,7 +7206,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             if (hasRadius || spills) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, draw);
             else draw();
           }
-        } catch { /* skip the bg image — the box's own content still renders vector */ }
+        } catch { /* skip the bg image - the box's own content still renders vector */ }
       } else if (bgImg && bgImg !== 'none' && !solid) {
         // a non-url, non-gradient bg (e.g. a lone unresolved value) → the old midpoint solid
         const mid = sampleGradientMidpoint(bgImg);
@@ -7608,7 +7608,7 @@ async function renderInlineContent(
                   drawn = true;
                 }
               } catch (e) {
-                _host?.log?.('warn', `pdf: text-to-path failed, using embedded text — ${(e as Error).message}`);
+                _host?.log?.('warn', `pdf: text-to-path failed, using embedded text - ${(e as Error).message}`);
               }
             }
             if (!drawn) pdf.text(shown, x, baselinePt, { baseline: 'alphabetic' });
@@ -7687,7 +7687,7 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
           pdf.fill();
           drawn = true;
         }
-      } catch (e) { _host?.log?.('warn', `pdf: pseudo text-to-path failed — ${(e as Error).message}`); }
+      } catch (e) { _host?.log?.('warn', `pdf: pseudo text-to-path failed - ${(e as Error).message}`); }
     }
     if (!drawn) {
       await applyPdfTextStyle(pdf, ds.ps, cssToPt, registeredFonts, embedUrl);
@@ -8370,7 +8370,7 @@ function snapshotMotion(node: Element): () => void {
       const prevDisplay = video.style.display;
       video.style.display = 'none';                     // keep only the still in the serialised tree
       swaps.push({ video, still, prevDisplay });
-    } catch { /* tainted or undecodable — leave the video as-is rather than throw */ }
+    } catch { /* tainted or undecodable - leave the video as-is rather than throw */ }
   }
   return () => {
     for (const { video, still, prevDisplay } of swaps) {
@@ -9778,7 +9778,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
       const bodyGain = actx.createGain();
       bodyGain.gain.value = 1;
       bodySrc.connect(bodyGain).connect(dest);
-    } catch { /* element already tapped / unsupported — footage plays silent */ }
+    } catch { /* element already tapped / unsupported - footage plays silent */ }
     if (opts.audio?.url) {
       try {
         const bytes = await (await fetch(opts.audio.url)).arrayBuffer();
@@ -10025,7 +10025,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
     const hintMs = Number(bodyVideo?.dataset.clipMs);
     const hinted = Number.isFinite(hintMs) && hintMs > 0;
     durSec = hinted ? hintMs / 1000 : 6;
-    _host?.log?.('warn', `record: clip duration unresolved — using ${hinted ? `the measured ${Math.round(hintMs)}ms take` : 'a 6s fallback'} for the body.`);
+    _host?.log?.('warn', `record: clip duration unresolved - using ${hinted ? `the measured ${Math.round(hintMs)}ms take` : 'a 6s fallback'} for the body.`);
   }
   const bodyMs = Math.min(durSec * 1000, TT_MAX_BODY_MS);
   const totalMs = introMs + bodyMs + outroMs;
@@ -10575,7 +10575,7 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
 // which is required by dom-to-image-more and captureStream-based video capture.
 function addWatermarkOverlay(node: HTMLElement): () => void {
   const stamp = document.createElement('div');
-  stamp.textContent = 'EXPERIMENTAL — NOT BRAND APPROVED';
+  stamp.textContent = 'EXPERIMENTAL - NOT BRAND APPROVED';
   Object.assign(stamp.style, {
     position: 'absolute',
     bottom: '8px',

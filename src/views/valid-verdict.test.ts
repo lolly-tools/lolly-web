@@ -72,7 +72,7 @@ test('resolveState: trusted + delivered → STATE_COPY.delivered', () => {
   assert.equal(state, STATE_COPY.delivered);
 });
 
-test('resolveState: madeWithLolly outranks trusted AND delivered — the headline always wins', () => {
+test('resolveState: madeWithLolly outranks trusted AND delivered - the headline always wins', () => {
   const { state } = resolveState(baseReport({
     state: 'valid', trusted: true, delivered: true, madeWithLolly: true,
   }));
@@ -141,7 +141,7 @@ test('stateTone: maps each STATE_COPY tier to its badge tone', () => {
 
 // ── scorecardModel ─────────────────────────────────────────────────────────
 
-test('scorecardModel: every pip is "na" on an empty/not-found report — nothing hard-codes a pass', () => {
+test('scorecardModel: every pip is "na" on an empty/not-found report - nothing hard-codes a pass', () => {
   const pips = scorecardModel(baseReport({ found: false, checks: [] }));
   const byLabel = (label: string) => pips.find((p) => p.label === label);
   assert.equal(byLabel('Manifest found')!.status, 'na');
@@ -173,7 +173,7 @@ test('scorecardModel: pip states derive from the actual check rows', () => {
   assert.equal(byLabel('Signer identity (CA-verified)').status, 'pass');
 });
 
-test('scorecardModel: a real failure reports "fail", not "na" — and the always-present untrusted marker never counts as one', () => {
+test('scorecardModel: a real failure reports "fail", not "na" - and the always-present untrusted marker never counts as one', () => {
   const report = baseReport({
     checks: [
       check('signingCredential.untrusted', false), // the designed posture, not damage
@@ -290,7 +290,7 @@ test('verify ?src= accepts same-origin paths', () => {
 
 test('verify ?src= refuses anything that can name another host', () => {
   for (const bad of [
-    '//evil.example/x.png',        // protocol-relative — a host, not a path
+    '//evil.example/x.png',        // protocol-relative - a host, not a path
     'https://evil.example/x.png',
     'http://evil.example/x.png',
     'data:image/png;base64,AAAA',

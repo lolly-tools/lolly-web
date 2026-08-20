@@ -531,7 +531,7 @@ async function clearCacheDirs(cacheName: string, prefixes: string[]): Promise<vo
       const path = new URL(req.url).pathname;
       if (prefixes.some(p => path.startsWith(p))) await cache.delete(req);
     }
-  } catch { /* bucket sealed — nothing to clear */ }
+  } catch { /* bucket sealed - nothing to clear */ }
 }
 
 /** Delete the speech caches - removePart's cache half, exported for tests.
@@ -572,7 +572,7 @@ async function cacheDirBytes(cacheName: string, prefixes?: string[]): Promise<{ 
       const stamped = resp.headers.get(SIZE_HEADER) ?? resp.headers.get('content-length');
       bytes += stamped ? Number(stamped) : (await resp.blob()).size;
     }
-  } catch { /* bucket sealed (incognito iframe) — count nothing */ }
+  } catch { /* bucket sealed (incognito iframe) - count nothing */ }
   return { bytes, files };
 }
 
@@ -798,7 +798,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
         const store = id === 'upscale' ? UPSCALE_MODEL_STORE : id === 'matte' ? MATTE_MODEL_STORE : OCR_MODEL_STORE;
         await db.clear(store).catch(() => {});
       }
-    } catch { /* stores absent — nothing to clear */ }
+    } catch { /* stores absent - nothing to clear */ }
   }
   await forgetPart(id);
 }

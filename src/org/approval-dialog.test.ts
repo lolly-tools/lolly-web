@@ -178,5 +178,5 @@ test('no bound chain → friendly notice, no approvers fetch', async () => {
   const dlg = document.querySelector('dialog.approval-dialog')!;
   assert.ok(dlg, 'a notice dialog is shown');
   assert.match(dlg.textContent || '', /isn.t set up/i);
-  assert.equal(dlg.querySelector('[data-act="submit"]'), null, 'notice has no submit — nothing to file');
+  assert.equal(dlg.querySelector('[data-act="submit"]'), null, 'notice has no submit - nothing to file');
 });

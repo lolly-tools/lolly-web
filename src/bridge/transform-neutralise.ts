@@ -226,7 +226,7 @@ export function neutraliseTransform(
   if (log && !guard.warned) {
     guard.warned = true;
     log(`transform: a running animation or !important rule on <${el.tagName?.toLowerCase?.() ?? '?'}>`
-      + ' could not be neutralised for the capture — that element is exported from its'
+      + ' could not be neutralised for the capture - that element is exported from its'
       + ' transformed bounding box instead of being walked untransformed');
   }
   return null;

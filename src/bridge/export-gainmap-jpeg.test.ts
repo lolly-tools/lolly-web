@@ -131,7 +131,7 @@ test('ONE rasterisation: base and map are the same size, and the map is grey', a
   const [base, map] = calls;
   assert.equal(map!.width, base!.width);
   assert.equal(map!.height, base!.height);
-  assert.equal(map!.rgba.length, base!.rgba.length, 'pixel-aligned by construction — no second render');
+  assert.equal(map!.rgba.length, base!.rgba.length, 'pixel-aligned by construction - no second render');
   for (let i = 0; i < map!.rgba.length; i += 4) {
     assert.equal(map!.rgba[i], map!.rgba[i + 1]);
     assert.equal(map!.rgba[i], map!.rgba[i + 2]);
@@ -264,7 +264,7 @@ test('DPI, EXIF and the sRGB profile are stamped on the BASE image', async () =>
   const { primary, map } = splitFile(res.bytes);
   assert.ok(findJpegSegment(primary, 0xe1, JPEG_APP_IDS.EXIF), 'EXIF on the primary');
   assert.ok(findJpegSegment(primary, 0xe2, JPEG_APP_IDS.ICC), 'ICC on the primary');
-  assert.equal(findJpegSegment(map, 0xe2, JPEG_APP_IDS.ICC), null, 'the gain map is data, not a picture — no profile');
+  assert.equal(findJpegSegment(map, 0xe2, JPEG_APP_IDS.ICC), null, 'the gain map is data, not a picture - no profile');
   // MPF must come BEFORE the ICC chunks, or its offsets would be stale.
   const mpf = findJpegSegment(primary, 0xe2, 'MPF')!;
   const iccSeg = findJpegSegment(primary, 0xe2, JPEG_APP_IDS.ICC)!;

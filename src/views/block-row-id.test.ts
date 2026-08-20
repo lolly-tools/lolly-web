@@ -34,10 +34,10 @@ const SRC = readFileSync(resolve(import.meta.dirname, 'tool-inputs.ts'), 'utf8')
 const TOOL_SRC = readFileSync(resolve(import.meta.dirname, 'tool.ts'), 'utf8');
 const CANVAS_SRC = readFileSync(resolve(import.meta.dirname, 'free-canvas.ts'), 'utf8');
 
-test('blockFieldDefault is called only by newBlockRow — no hand-rolled row anywhere', () => {
+test('blockFieldDefault is called only by newBlockRow - no hand-rolled row anywhere', () => {
   const calls = SRC.match(/(?<!function )blockFieldDefault\(/g) ?? [];
   assert.equal(calls.length, 1,
-    'a blocks row is built ONLY by newBlockRow (which is the only caller of blockFieldDefault) — '
+    'a blocks row is built ONLY by newBlockRow (which is the only caller of blockFieldDefault) - '
     + 'a new creation site must call newBlockRow so the row is born with its stable id');
   assert.match(SRC, /function newBlockRow\([^)]*\)[\s\S]{0,400}?blockFieldDefault\(/,
     'and that one call is inside newBlockRow');
@@ -47,7 +47,7 @@ test('a new row gets its id from the ONE shared rowIdField', () => {
   assert.match(SRC, /row\[rowIdField\(inp\)\] = ulid\(\);/,
     'newBlockRow stamps the id field this input keys on');
   assert.match(SRC, /import \{[^}]*\browIdField\b[^}]*\} from '\.\.\/lib\/row-id\.ts';/,
-    'and takes that field name from lib/row-id.ts — a second local copy could drift, '
+    'and takes that field name from lib/row-id.ts - a second local copy could drift, '
     + 'and a row minted under one name but addressed under another resolves to nothing');
   assert.equal(/function rowIdField\(/.test(SRC), false, 'no local re-definition');
 });
@@ -56,7 +56,7 @@ test('the legacy migration runs at MOUNT, never from the panel renderer (/multi 
   // renderInputs is also driven by /multi's fan-out runtime (lead session's model,
   // writes fanned to every sibling), so a migration there is silent data loss.
   assert.equal(/\b(ensureRowIds|migrateBlockRowIds)\(/.test(SRC), false,
-    'tool-inputs.ts must not migrate rows — see this file\'s header');
+    'tool-inputs.ts must not migrate rows - see this file\'s header');
   assert.match(TOOL_SRC, /import \{[^}]*\bmigrateBlockRowIds\b[^}]*\} from '\.\.\/lib\/row-id\.ts';/);
   assert.match(TOOL_SRC, /void migrateBlockRowIds\(runtime\);/,
     'mountTool owns the migration for the one session it mounted');

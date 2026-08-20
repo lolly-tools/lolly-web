@@ -332,7 +332,7 @@ test('Frames is shown for a sequence on a still format, defaulting to 1', () => 
   assert.equal(h.framesRow()!.style.display, 'flex');
   assert.equal(h.framesInput()!.value, '1', 'the default is the playhead frame');
   assert.equal(h.framesInput()!.min, '1');
-  assert.equal(h.framesInput()!.max, '64', 'bounded — a contact sheet is for human review');
+  assert.equal(h.framesInput()!.max, '64', 'bounded - a contact sheet is for human review');
 });
 
 test('Frames appears and disappears across a format switch', () => {
@@ -356,7 +356,7 @@ test('Frames appears when a plain canvas BECOMES a timed composition, and goes w
   assert.equal(h.framesRow()!.style.display, 'flex', 'the same observer that re-seeds Duration');
   stage.remove();
   await settle();
-  assert.equal(h.framesRow(), null, 'every clip deleted — no contact sheet either');
+  assert.equal(h.framesRow(), null, 'every clip deleted - no contact sheet either');
 });
 
 test('the Frames value reaches the export opts as opts.cuts', async () => {
@@ -383,7 +383,7 @@ test('the default sequence export asks for a single frame', async () => {
   const h = mount({ seqMs: 6000, ...STILL });
   h.download();
   await settle();
-  assert.equal(h.downloads()[0]!.opts.cuts, 1, 'the playhead frame — the untouched default path');
+  assert.equal(h.downloads()[0]!.opts.cuts, 1, 'the playhead frame - the untouched default path');
 });
 
 test('cuts never reaches the opts for a motion format or a non-sequence tool', async () => {
@@ -449,7 +449,7 @@ test('a still export still runs behind the shutter', async () => {
     'png keeps the behaviour it always had');
 });
 
-test('a LIVE take bypasses exportUnscaled entirely — the shutter would be filmed', async () => {
+test('a LIVE take bypasses exportUnscaled entirely - the shutter would be filmed', async () => {
   const h = mount({ seqMs: null, formats: ['webm', 'png'] });
   h.setFormat('webm');
   const live = h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement | null;
@@ -570,7 +570,7 @@ test('editor: a wider export size makes the artboard that exact size (no clamp)'
   wField.value = '1920';
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   assert.equal(canvas.style.width, '1920px', 'the artboard takes the true export width');
-  assert.equal(canvas.style.height, '1080px', 'the untouched height stays put — no aspect distortion');
+  assert.equal(canvas.style.height, '1080px', 'the untouched height stays put - no aspect distortion');
 });
 
 test('preview tool: the same change is CLAMPED to the native render size', () => {
@@ -582,7 +582,7 @@ test('preview tool: the same change is CLAMPED to the native render size', () =>
   assert.equal(canvas.style.height, '608px', 'the thumbnail keeps the requested aspect, scaled down');
 });
 
-test('fixed-canvas editor (Org Chart): artboard stays native-locked — keeps the clamp', () => {
+test('fixed-canvas editor (Org Chart): artboard stays native-locked - keeps the clamp', () => {
   // canvas.fixedCanvas keeps connector geometry 1:1 with box coords, so the artboard must
   // NOT grow to the export size even though it is layout:'editor'. Same clamp as a preview.
   const { canvas, wField } = mountDims('editor', {}, [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }]);
@@ -591,7 +591,7 @@ test('fixed-canvas editor (Org Chart): artboard stays native-locked — keeps th
   assert.equal(canvas.style.width, '1080px', 'a fixed-canvas editor is clamped, not resized to the export width');
 });
 
-test('carousel editor (render.pages): the page strip owns the size — no 1:1 resize', () => {
+test('carousel editor (render.pages): the page strip owns the size - no 1:1 resize', () => {
   // A carousel editor sets render.pages; the canvas is the page strip, owned by syncStrip.
   // (Real carousel tools also set render.dims:false so the fields are hidden; here we prove
   // the sizing branch alone excludes them.) It must take the clamp, not the artboard path.
@@ -724,7 +724,7 @@ test('render.paged (multi-page-pdf / doc-studio) is NOT admitted to the still fa
   const h = mountPaged({ pages: 4, render: { layout: 'document', paged: true }, inputs: [] });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 0, 'render.paged stays a single whole-canvas file — never per-page stills');
+  assert.equal(h.pageExports().length, 0, 'render.paged stays a single whole-canvas file - never per-page stills');
 });
 
 test('carousel-maker (render.pages) keeps fanning out unchanged', async () => {
@@ -808,7 +808,7 @@ function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDef
 
 test('an everyday PDF starts with the print card OFF and exports no bleed and no marks', async () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' } });
-  assert.ok(h.card(), 'the card is still OFFERED for pdf — capability is not the question');
+  assert.ok(h.card(), 'the card is still OFFERED for pdf - capability is not the question');
   assert.equal(h.enable()!.checked, false, 'but its master toggle starts off');
   h.download();
   await settle();
@@ -832,7 +832,7 @@ test('SVG starts with the print card OFF and exports no bleed and no marks', asy
   }
 });
 
-test('a separating press format still defaults the card ON — PDF/X behaviour unchanged', async () => {
+test('a separating press format still defaults the card ON - PDF/X behaviour unchanged', async () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf-cmyk' } });
   assert.equal(h.enable()!.checked, true, 'Print PDF is print intent by definition');
   h.download();
@@ -856,7 +856,7 @@ test('format switches re-apply the intent default in both directions', () => {
   assert.equal(h.enable()!.checked, false, 'svg: back off');
 });
 
-test('a manual toggle is an explicit request — it exports marks and survives format switches', async () => {
+test('a manual toggle is an explicit request - it exports marks and survives format switches', async () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' } });
   h.toggleEnable(true);
   h.setFormat('svg');
@@ -892,13 +892,13 @@ test('physical units + dpi are NOT print intent', () => {
   assert.equal(s.enable()!.checked, false);
 });
 
-test('a manifest declaring render.printMarks: true IS print intent — the card defaults on', () => {
+test('a manifest declaring render.printMarks: true IS print intent - the card defaults on', () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' }, printMarks: true });
   assert.equal(h.enable()!.checked, true, 'declared intent covers the RGB print-capable formats too');
   h.setFormat('svg');
   assert.equal(h.enable()!.checked, true);
   h.setFormat('png');
-  assert.equal(h.enable()!.checked, false, 'png cannot carry marks — never on');
+  assert.equal(h.enable()!.checked, false, 'png cannot carry marks - never on');
 });
 
 test('render.printMarks: false still hides the card entirely', () => {
@@ -946,7 +946,7 @@ test('?s=<frame id> addresses a slide wherever it sits (reorder-proof)', async (
   assert.deepEqual(h.pageIds(), ['thanks']);
 });
 
-test('?s=2.3 — the build suffix still exports that whole slide (builds are presenter-only)', async () => {
+test('?s=2.3 - the build suffix still exports that whole slide (builds are presenter-only)', async () => {
   const h = mountPaged({
     pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
     exportDefaults: { format: 'png', slide: '2.3' },
@@ -956,7 +956,7 @@ test('?s=2.3 — the build suffix still exports that whole slide (builds are pre
   assert.deepEqual(h.pageIds(), ['pricing']);
 });
 
-test('an ?s= that names nothing exports the WHOLE deck — never a silent slide 1', async () => {
+test('an ?s= that names nothing exports the WHOLE deck - never a silent slide 1', async () => {
   for (const bad of ['9', '0', 'nope']) {
     const h = mountPaged({
       pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
@@ -964,7 +964,7 @@ test('an ?s= that names nothing exports the WHOLE deck — never a silent slide 
     });
     h.download();
     await settle();
-    assert.deepEqual(h.pageIds(), SLIDE_IDS, `?s=${bad} names no slide — the deck exports whole`);
+    assert.deepEqual(h.pageIds(), SLIDE_IDS, `?s=${bad} names no slide - the deck exports whole`);
   }
 });
 

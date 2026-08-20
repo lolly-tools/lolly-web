@@ -1045,7 +1045,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
         family: facts.family ?? file.name.replace(/\.[a-z0-9]+$/i, ''),
         label: file.name,
         bytes,
-        chips: chipsFromFacts(facts, tRaw), // chipsHtml escapes them — see its note
+        chips: chipsFromFacts(facts, tRaw), // chipsHtml escapes them - see its note
         provenance: file.name,
       });
     }

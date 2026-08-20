@@ -147,7 +147,7 @@ export function registerExtension(ext: WebExtension, channel: ExtensionChannel):
   }
   if (ext.contract && !satisfiesRange(EXTENSION_CONTRACT_VERSION, ext.contract)) {
     console.warn(
-      `extensions: "${ext.id}" needs contract ${ext.contract}, have ${EXTENSION_CONTRACT_VERSION} — refusing`,
+      `extensions: "${ext.id}" needs contract ${ext.contract}, have ${EXTENSION_CONTRACT_VERSION} - refusing`,
     );
     return () => {};
   }

@@ -148,7 +148,7 @@ export function createTray(host: HostV1): Tray {
           existing.state = 'pending';
           added++;
         }
-        // already pending or added — a genuine duplicate, nothing to do.
+        // already pending or added - a genuine duplicate, nothing to do.
       }
       await persist();
       notify();

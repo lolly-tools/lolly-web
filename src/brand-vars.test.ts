@@ -143,7 +143,7 @@ test('highContrastAccent lifts any hue over the target Lc while holding hue and 
   // black or white - under even APCA's large-text floor.
   assert.ok(apcaLcAbs('#08211d', '#30ba78') < 60);
   const cases: Array<[string, string | null]> = [
-    ['#30ba78', '#08211d'],  // SUSE Jungle — dark/brand accent
+    ['#30ba78', '#08211d'],  // SUSE Jungle - dark/brand accent
     ['#a678ff', '#1c1c22'],  // light purple on dark ink
     ['#00b8d4', '#ffffff'],  // cyan
     ['#eab308', '#000000'],  // amber, already black-inked

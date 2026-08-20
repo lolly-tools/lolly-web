@@ -54,7 +54,7 @@ function walkFrom(routeName: string, title: string, href: string, arriveAt = '/t
   dom.reconfigure({ url: `http://localhost${arriveAt}` });
 }
 
-test('a direct visit — no previous view — falls back to Home → the gallery', () => {
+test('a direct visit - no previous view - falls back to Home → the gallery', () => {
   clearStored();
   const target = resolveBackTarget();
   assert.equal(target.label, 'Home');
@@ -77,9 +77,9 @@ test('the fallback escapes a /t/<id> tool URL rather than resolving back into it
 test('an in-app arrival wears the previous view’s name and returns there', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('projects', 'Campaign assets — Lolly', '/#/p/abc');
+  walkFrom('projects', 'Campaign assets - Lolly', '/#/p/abc');
   const target = resolveBackTarget();
-  assert.equal(target.label, 'Campaign assets', 'the " — Lolly" suffix is stripped');
+  assert.equal(target.label, 'Campaign assets', 'the " - Lolly" suffix is stripped');
   assert.equal(target.href, '/#/p/abc');
   assert.equal(target.useHistory, true, 'a real history entry sits behind us');
 });
@@ -93,7 +93,7 @@ test('the gallery is named "Home" rather than the bare product name', () => {
 test('a pinned target (the tool view’s launch folder) keeps its href', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('projects', 'Campaign assets — Lolly', '/#/p/abc');
+  walkFrom('projects', 'Campaign assets - Lolly', '/#/p/abc');
 
   // Previous view IS the pinned folder → it wears the folder's name and still
   // goes back through history.
@@ -114,7 +114,7 @@ test('a back target that IS the current view escapes to Home instead of looping'
   withHistoryEntry();
   // Arrive at /#/catalog with /#/catalog ALSO recorded as the previous view - the
   // self-loop a direct entry can produce. Back to yourself is not a back.
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog', '/#/catalog');
   const target = resolveBackTarget();
   assert.equal(target.href, '/#/', 'escapes to Home rather than pointing at the current view');
   assert.equal(target.label, 'Home');
@@ -132,7 +132,7 @@ test('the home escape renders a house icon in the markup, not the back arrow', (
   clearStored();
   // Force the self-loop (arrive where the prev points) so the target is Home
   // regardless of any prev left in memory by an earlier test.
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog', '/#/catalog');
   const html = backPillHtml();
   assert.match(html, /href="\/#\/"/, 'points at Home');
   // The Lucide "house" path (icons.ts "home") starts with this distinctive
@@ -144,7 +144,7 @@ test('the home escape renders a house icon in the markup, not the back arrow', (
 test('markup carries a real href and the resolved mode', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog');
   const html = backPillHtml();
   assert.match(html, /href="\/#\/catalog"/);
   assert.match(html, /data-back-pill="history"/);
@@ -156,7 +156,7 @@ test('markup carries a real href and the resolved mode', () => {
 test('iconOnly drops the label but keeps the destination in the accessible name', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('projects', 'Campaign assets — Lolly', '/#/p/abc');
+  walkFrom('projects', 'Campaign assets - Lolly', '/#/p/abc');
   const html = backPillHtml({ class: 'me-back', iconOnly: true });
   assert.match(html, /aria-label="Back to Campaign assets"/);
   assert.doesNotMatch(html, /back-pill-label/);
@@ -165,7 +165,7 @@ test('iconOnly drops the label but keeps the destination in the accessible name'
 test('a history-mode click pops the entry instead of pushing a new one', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog');
   const root = document.getElementById('view')!;
   root.innerHTML = backPillHtml();
 
@@ -182,7 +182,7 @@ test('a history-mode click pops the entry instead of pushing a new one', () => {
 test('a modified click is left to the browser, so "open in new tab" still works', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog');
   const root = document.getElementById('view')!;
   root.innerHTML = backPillHtml();
 
@@ -199,7 +199,7 @@ test('a modified click is left to the browser, so "open in new tab" still works'
 test('an intercepting view owns the click until it calls go()', () => {
   clearStored();
   withHistoryEntry();
-  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog');
+  walkFrom('catalog', 'Catalog - Lolly', '/#/catalog');
   const root = document.getElementById('view')!;
   root.innerHTML = backPillHtml();
 
@@ -211,7 +211,7 @@ test('an intercepting view owns the click until it calls go()', () => {
   const pill = root.querySelector<HTMLElement>('[data-back-pill]')!;
   pill.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
-  assert.equal(backCalls, 0, 'the unsaved-work dialog is up — nothing has navigated yet');
+  assert.equal(backCalls, 0, 'the unsaved-work dialog is up - nothing has navigated yet');
   assert.equal(typeof release, 'function');
   release!();
   assert.equal(backCalls, 1, 'the dialog’s "leave" runs the pill’s own navigation');

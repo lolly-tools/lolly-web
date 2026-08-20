@@ -81,7 +81,7 @@ export function formatListenEstimate(seconds: number): string {
 const auditionUrls = new Map<string, Promise<string>>();
 
 export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHost): Promise<void> {
-  document.title = tRaw('{name} — Lolly', { name: t('Script audio') });
+  document.title = tRaw('{name} - Lolly', { name: t('Script audio') });
   const speech = host.speech;
 
   // A deep link onto a shell without the speech bridge: say so, plainly.

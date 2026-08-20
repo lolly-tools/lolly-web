@@ -265,7 +265,7 @@ test('a click where ONLY hidden boxes exist selects nothing', async () => {
 
 // ── RETENTION: the playhead moving away from a selection ──────────────────────
 
-test('a selection the playhead leaves loses its chrome — no outline, no handles, no bar', async () => {
+test('a selection the playhead leaves loses its chrome - no outline, no handles, no bar', async () => {
   const f = mount(SCENES());
   await settle();
   f.setOff('scene1');                        // playhead inside scene2's window
@@ -278,7 +278,7 @@ test('a selection the playhead leaves loses its chrome — no outline, no handle
   f.tlTime();
   assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 0, 'the outline came down');
   assert.equal(f.stageEl.querySelectorAll('.fc-handle').length, 0,
-    'and every resize/rotate handle with it — a handle is the one drag entry that skips the hit-test');
+    'and every resize/rotate handle with it - a handle is the one drag entry that skips the hit-test');
   assert.equal((f.stageEl.querySelector('.fc-ctxbar') as HTMLElement).hidden, true, 'and the object bar');
 
   // Coming back restores it: this is a suppression, never a deselection.
@@ -305,11 +305,11 @@ test('the off-playhead banner offers a way back, and it seeks to the box’s OWN
   f.stageEl.addEventListener('fc-seek', (e) => { seeks.push(Number((e as CustomEvent).detail?.atMs)); });
   (banner.querySelector('.fc-offplayhead-go') as HTMLElement)
     .dispatchEvent(new W.MouseEvent('click', { bubbles: true, cancelable: true }));
-  assert.deepEqual(seeks, [2000], 'scene2’s authored start, in ms — a field read, not arithmetic');
+  assert.deepEqual(seeks, [2000], 'scene2’s authored start, in ms - a field read, not arithmetic');
   f.destroy();
 });
 
-test('during PLAYBACK the banner stays down — scenes leaving the frame is the point', async () => {
+test('during PLAYBACK the banner stays down - scenes leaving the frame is the point', async () => {
   const f = mount(SCENES());
   await settle();
   f.setOff('scene1');
@@ -327,7 +327,7 @@ test('during PLAYBACK the banner stays down — scenes leaving the frame is the 
 
 // ── KEYBOARD: the third enforcement point ────────────────────────────────────
 
-test('an off-playhead selection refuses every mutating key — the model does not move', async () => {
+test('an off-playhead selection refuses every mutating key - the model does not move', async () => {
   const f = mount(SCENES());
   await settle();
   f.setOff('scene1');
@@ -341,7 +341,7 @@ test('an off-playhead selection refuses every mutating key — the model does no
   press('Delete');
   press('Backspace');
   assert.equal(JSON.stringify(f.boxes()), before,
-    'nothing was nudged and nothing was deleted — a full round trip, no spies');
+    'nothing was nudged and nothing was deleted - a full round trip, no spies');
 
   // And the way out is never blocked: bring the playhead back, and the same key lands.
   f.setOff('scene1');
@@ -351,7 +351,7 @@ test('an off-playhead selection refuses every mutating key — the model does no
   f.destroy();
 });
 
-test('Escape still deselects an off-playhead selection — the escape route is not gated', async () => {
+test('Escape still deselects an off-playhead selection - the escape route is not gated', async () => {
   const f = mount(SCENES());
   await settle();
   f.setOff('scene1');
@@ -403,7 +403,7 @@ test('a painted ghost sits outside the canvas entirely and adds no hit-testable 
 
   const layer = f.stageEl.querySelector('.onion-layer') as HTMLElement;
   assert.ok(layer, 'the ghost layer mounted off the tl-time detail');
-  assert.equal(f.canvasEl.contains(layer), false, 'never inside #tool-canvas — exports cannot see it');
+  assert.equal(f.canvasEl.contains(layer), false, 'never inside #tool-canvas - exports cannot see it');
   assert.ok(layer.hasAttribute('data-export-hide'));
   assert.equal(f.stageEl.querySelectorAll('.onion-ghost').length, 1, 'one ghost, for the next scene');
   assert.equal(f.canvasEl.querySelectorAll('.lolly-box').length, boxesBefore,
@@ -455,7 +455,7 @@ test('an untimed tool never mounts the ghost layer, whatever lands on the stage'
   f.destroy();
 });
 
-test('a CAMERA is never acquired from the canvas — no click, no marquee (plans/104 section 5.4)', () => {
+test('a CAMERA is never acquired from the canvas - no click, no marquee (plans/104 section 5.4)', () => {
   // A camera paints nothing and is minted with no geometry, so a zero-size marker at
   // the origin would be caught by any marquee crossing it and dragged about as if it
   // were artwork. The exclusion rides the SAME acquisition gate the seq-hidden rule

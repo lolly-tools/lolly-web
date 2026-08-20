@@ -240,7 +240,7 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       const err = new Error(
-        'Local database is locked — another Lolly tab or window may be open. ' +
+        'Local database is locked - another Lolly tab or window may be open. ' +
         'Close other Lolly/localhost tabs (or fully restart your browser) and reload.'
       );
       // Tag recoverability so boot() can offer a retry. A blocked open clears as

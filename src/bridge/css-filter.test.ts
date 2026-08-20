@@ -28,7 +28,7 @@ test('none and empty produce no primitives', () => {
   assert.deepEqual(parseCssFilter(''), []);
 });
 
-test('blur maps 1:1 — CSS blur(N) is stdDeviation N', () => {
+test('blur maps 1:1 - CSS blur(N) is stdDeviation N', () => {
   // Deliberately different from backdrop-filter and box-shadow, which are N/2. The
   // three conventions are the easiest thing in this area to get wrong.
   assert.deepEqual(only('blur(6px)'), { kind: 'blur', stdDeviation: 6 });
@@ -87,7 +87,7 @@ test('hue-rotate accepts deg, rad and turn', () => {
   assert.equal(Math.round((only('hue-rotate(3.14159rad)') as { deg: number }).deg), 180);
 });
 
-test('a chain keeps its order — filters are not commutative', () => {
+test('a chain keeps its order - filters are not commutative', () => {
   const p = parseCssFilter('grayscale(1) blur(2px) brightness(1.2)');
   assert.ok(p);
   assert.deepEqual(p.map(x => x.kind), ['colorMatrix', 'blur', 'componentTransfer']);

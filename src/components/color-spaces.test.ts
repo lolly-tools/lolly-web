@@ -182,7 +182,7 @@ test('a ring on a two-stop channel has real WIDTH and lands where the tier chang
       const width = band.to - band.from;
       assert.ok(covered / width > 0.85,
         `${mode}/${chName}: tier ${band.tier} over ${band.from.toFixed(3)}–${band.to.toFixed(3)} is ` +
-        `${(100 * covered / width).toFixed(0)}% painted — ${JSON.stringify(runs.map(r => [r.tier, r.from, r.to]))}`);
+        `${(100 * covered / width).toFixed(0)}% painted - ${JSON.stringify(runs.map(r => [r.tier, r.from, r.to]))}`);
     }
   }
 });
@@ -268,7 +268,7 @@ test('the HSL tab states a saturation hsl() can actually reproduce', () => {
   // …so retyping the field's own text lands on the colour that text describes.
   const back = spaceParse(hsl, shown)!;
   assert.ok(srgbDelta(back, spaceParse(hsl, spaceText(hsl, back))!) < 1e-9,
-    "the HSL tab's text must be a fixed point — retyping it must not move the colour");
+    "the HSL tab's text must be a fixed point - retyping it must not move the colour");
   // An in-gamut colour is untouched by the clamp and round-trips exactly.
   assert.equal(colorToHexString(spaceParse(hsl, spaceText(hsl, parseColor('#30ba78')!))!), '#30ba78');
 });

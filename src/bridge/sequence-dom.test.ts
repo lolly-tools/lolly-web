@@ -132,12 +132,12 @@ test('making a borrowed box ACTIVE revokes the lease and un-parks it', () => {
   applySequenceTime(root, 200);                  // the user scrubs onto a, mid-shot
   assert.equal(off(a), false, 'the live scene is not hidden');
   assert.equal(a.classList.contains(SHOT_CLASS), false,
-    'and not parked 200vw off the viewport either — this was the black stage');
+    'and not parked 200vw off the viewport either - this was the black stage');
   assert.equal(a.hasAttribute(BORROW_ATTR), false, 'the lease is revoked, so the restore stands down');
   restoreSequenceTime(root);
 });
 
-test('an INACTIVE box keeps what the shot borrowed — re-hiding it would photograph the blank', () => {
+test('an INACTIVE box keeps what the shot borrowed - re-hiding it would photograph the blank', () => {
   const root = stage();
   const a = box(root, 'a');
 
@@ -260,12 +260,12 @@ test('driveSequenceTime advances the playhead over wall-clock time', () => {
   const d = driveSequenceTime(root, { durationMs: 2000, fps: 10, now: clock.now, schedule: clock.schedule });
 
   d.start();
-  assert.equal(off(a), false, 'frame 0 is applied synchronously on start — no blank first frame');
+  assert.equal(off(a), false, 'frame 0 is applied synchronously on start - no blank first frame');
   assert.equal(off(b), true);
 
   clock.advance(1200);
   assert.equal(off(a), true, 'a has ended by t=1200');
-  assert.equal(off(b), false, 'b is on screen — the DOM really moved without anyone scrubbing');
+  assert.equal(off(b), false, 'b is on screen - the DOM really moved without anyone scrubbing');
 
   // Past the end the last frame is HELD (a recorder may still be rolling); the loop
   // stops rather than spinning.
@@ -341,7 +341,7 @@ test('a junk ease falls back to the preset\'s own curve rather than throwing', (
   }
 });
 
-test('the ease reaches the driver too — a live take is eased like the preview', () => {
+test('the ease reaches the driver too - a live take is eased like the preview', () => {
   const clock = fakeClock();
   const runAt = (ease: string | null): string => {
     const root = easedStage(ease);

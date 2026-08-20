@@ -84,7 +84,7 @@ test('ensureRowIds gives an id to rows that lack one, and only to those', () => 
   assert.equal(next[1]!.label, 'b', 'the rest of the row is untouched');
 });
 
-test('ensureRowIds is idempotent — a legacy row is id\'d exactly once', () => {
+test('ensureRowIds is idempotent - a legacy row is id\'d exactly once', () => {
   const rows: Row[] = [{ label: 'a' }, { label: 'b' }];
   const first = ensureRowIds(rows);
   const ids = first.map(r => r[ROW_ID_FIELD]);
@@ -173,7 +173,7 @@ test('migrateBlockRowIds ids every blocks input once, in ONE patch, and never tw
   assert.equal(boxes[1]![ROW_ID_FIELD], undefined);
 
   await migrateBlockRowIds(rt);
-  assert.equal(rt.patches.length, 1, 'a second mount finds nothing to do — no write at all');
+  assert.equal(rt.patches.length, 1, 'a second mount finds nothing to do - no write at all');
 });
 
 test('migrateBlockRowIds writes nothing when there is nothing to migrate', async () => {

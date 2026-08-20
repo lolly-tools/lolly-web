@@ -65,7 +65,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
   const templateCard = showTemplates ? `
     <section class="save-card" data-card="template">
       <h3 class="save-card-title">${escape(t('Save as a template'))}</h3>
-      <p class="save-card-desc">${escape(t('A reusable starting point for'))} ${escape(deps.toolName)} — ${escape(t('shown when you start it from a template.'))}</p>
+      <p class="save-card-desc">${escape(t('A reusable starting point for'))} ${escape(deps.toolName)} - ${escape(t('shown when you start it from a template.'))}</p>
       <div class="save-card-row">
         <input type="text" class="save-input" data-tpl-name maxlength="80" placeholder="${escape(t('Template name'))}" aria-label="${escape(t('Template name'))}">
         <button type="button" class="btn" data-act="save-template">${escape(t('Save template'))}</button>
@@ -224,7 +224,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
           folderId = (await deps.createFolder(name)).id;
         }
         const ok = await deps.saveToLibrary(folderId);
-        if (!ok) throw new Error(t('Save failed — please try again.'));
+        if (!ok) throw new Error(t('Save failed - please try again.'));
         announce(t('Saved'));
         modal.close();
       });

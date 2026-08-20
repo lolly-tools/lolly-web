@@ -69,7 +69,7 @@ test('a11y.css carries the app-wide `[hidden] { display: none !important }`', ()
   );
 });
 
-test('the `[hidden]` rule keeps its (0,1,0) specificity — not wrapped in :where()', () => {
+test('the `[hidden]` rule keeps its (0,1,0) specificity - not wrapped in :where()', () => {
   const body = stripComments(A11Y);
   assert.ok(
     !/:where\(\s*\[hidden\]\s*\)/.test(body),
@@ -91,14 +91,14 @@ test('a11y is still the last-declared cascade layer, and a11y.css is imported in
   );
   assert.match(
     APP, /@import\s+'\.\/parts\/a11y\.css'\s+layer\(a11y\)/,
-    "parts/a11y.css must stay imported as `layer(a11y)` — an unlayered or " +
+    "parts/a11y.css must stay imported as `layer(a11y)` - an unlayered or " +
     'differently-layered import moves the `[hidden]` fix out of the top layer.',
   );
 });
 
 test('no stylesheet asks a `[hidden]` element to keep a display (the fix would break it)', () => {
   const files = [...walkCss(SRC_DIR), ...walkCss(join(REPO, 'tools'))];
-  assert.ok(files.length > 20, `only ${files.length} stylesheets found — the walk is broken`);
+  assert.ok(files.length > 20, `only ${files.length} stylesheets found - the walk is broken`);
 
   const offenders: string[] = [];
   for (const f of files) {
@@ -112,7 +112,7 @@ test('no stylesheet asks a `[hidden]` element to keep a display (the fix would b
         const value = d[1] ?? '';
         if (/^\s*none\s*$/.test(value)) continue;
         const line = body.slice(0, m.index).split('\n').length;
-        offenders.push(`${relative(REPO, f).split(sep).join('/')}:${line} — ${sel.trim()} { display: ${value.trim()} }`);
+        offenders.push(`${relative(REPO, f).split(sep).join('/')}:${line} - ${sel.trim()} { display: ${value.trim()} }`);
       }
     }
   }
@@ -121,7 +121,7 @@ test('no stylesheet asks a `[hidden]` element to keep a display (the fix would b
     'A rule wants a `[hidden]` element to keep a `display`, which the app-wide ' +
     '`[hidden] { display: none !important }` in parts/a11y.css now makes ' +
     'impossible. `hidden` means "not rendered and not in the accessibility ' +
-    'tree" — use a class or a data-attribute for a flag that must stay laid out:\n  ' +
+    'tree" - use a class or a data-attribute for a flag that must stay laid out:\n  ' +
     offenders.join('\n  '),
   );
 
@@ -132,7 +132,7 @@ test('no stylesheet asks a `[hidden]` element to keep a display (the fix would b
   assert.deepEqual(
     untilFound.map(f => relative(REPO, f).split(sep).join('/')), [],
     '`hidden="until-found"` needs find-in-page to reveal the subtree, which relies ' +
-    'on `content-visibility: hidden` — the `display: none !important` in ' +
+    'on `content-visibility: hidden` - the `display: none !important` in ' +
     'parts/a11y.css defeats it. Exempt it there with ' +
     '`[hidden="until-found"] { content-visibility: hidden; display: revert !important }` ' +
     'before shipping this.',

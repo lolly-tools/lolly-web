@@ -74,7 +74,7 @@ test('but the RAMP never crosses hue families', () => {
   }
 });
 
-test('a field hero is mid-toned — never near-white or near-black', () => {
+test('a field hero is mid-toned - never near-white or near-black', () => {
   // Chroma alone picks the dark brick over Persimmon; a linear lightness bonus then
   // over-corrects to Mint. Both were real, and both look wrong as a field.
   for (const sc of deriveVizSchemes(SUSE, SUSE_NAMES, '#30ba78')) {

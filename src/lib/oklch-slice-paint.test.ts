@@ -143,7 +143,7 @@ test('on a P3 display all three settings name display-p3, and the pixels prove i
   assert.deepEqual(Array.from(rec.written[0] as Uint8ClampedArray), Array.from(expected('display-p3')));
 });
 
-test('a rec2020 display is still painted display-p3 — the widest a canvas takes', () => {
+test('a rec2020 display is still painted display-p3 - the widest a canvas takes', () => {
   fresh('rec2020');
   const { root, rec } = mountChart('display-p3');
   paintSliceChart(root, STATE);

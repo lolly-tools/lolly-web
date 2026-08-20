@@ -4211,10 +4211,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // ?boxes= URL. Both render EMPTY - a 0 would claim the box starts at the top of
       // the sequence, which is a different (and authored) state.
       const hint = t('Type a time to place this on the timeline');
-      const untimedStart = numField(null, 0.1, 0, (v) => promote(id, { start: v }), '—');
+      const untimedStart = numField(null, 0.1, 0, (v) => promote(id, { start: v }), '-');
       untimedStart.title = hint;
       timeG.body.appendChild(row(t('Start'), untimedStart));
-      const untimedLen = numField(null, 0.1, MIN_DUR, (v) => promote(id, { dur: v }), '—');
+      const untimedLen = numField(null, 0.1, MIN_DUR, (v) => promote(id, { dur: v }), '-');
       untimedLen.title = hint;
       timeG.body.appendChild(row(t('Length'), untimedLen));
       timeG.setSummary([t('Always on')]);
@@ -5793,7 +5793,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         dimensions: `${canvas.width}×${canvas.height}`,
       });
     } catch (e) {
-      host.log?.('warn', `Export frame: provenance stamp failed — ${e instanceof Error ? e.message : String(e)}`);
+      host.log?.('warn', `Export frame: provenance stamp failed - ${e instanceof Error ? e.message : String(e)}`);
     }
 
     const now = Date.now();
@@ -5805,7 +5805,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         meta: { name: filename, bytes: blob.size },
       });
     } catch (e) {
-      host.log?.('warn', `Export frame: save failed — ${e instanceof Error ? e.message : String(e)}`);
+      host.log?.('warn', `Export frame: save failed - ${e instanceof Error ? e.message : String(e)}`);
     }
     await host.export?.download?.(blob, filename);
     announce(t('Frame exported'));
@@ -6521,7 +6521,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     let blob: Blob | null = null;
     try { blob = session ? await session.stop() : null; }
-    catch (err) { host.log?.('warn', `timeline voiceover: stop failed — ${String(err)}`); }
+    catch (err) { host.log?.('warn', `timeline voiceover: stop failed - ${String(err)}`); }
 
     // Picture and sound go back to how we found them BEFORE the storage round-trip, so
     // a slow upload never leaves the composition muted and the playhead running.
@@ -6541,7 +6541,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // test picker.ts's upload handler uses.
       const coded = (err as { code?: unknown; message?: string } | null);
       setNote(coded?.code && coded.message ? coded.message : t('The take could not be saved.'));
-      host.log?.('warn', `timeline voiceover: save failed — ${String(err)}`);
+      host.log?.('warn', `timeline voiceover: save failed - ${String(err)}`);
     } finally {
       // The progress note is transient state, not a result: clear it unless something
       // downstream replaced it with a real message.
@@ -6656,7 +6656,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const ms = Number((ref.meta as Record<string, unknown> | undefined)?.durationMs);
       insertAudioBoxAt(ref, Number.isFinite(ms) && ms > 0 ? ms / 1000 : DEFAULT_CLIP_S, atSec);
     } catch (err) {
-      host.log?.('warn', `timeline scripted voiceover failed — ${String(err)}`);
+      host.log?.('warn', `timeline scripted voiceover failed - ${String(err)}`);
     } finally {
       scriptBusy = false;
       scriptBtn.disabled = false;
@@ -6802,7 +6802,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // The panel places the captions when it is still here; the job announces
         // where the transcript went when it is not (applySubtitles says which).
         onComplete: (words) => applySubtitles(id, words),
-        onError: (err) => { host.log?.('warn', `timeline subtitles: transcription failed — ${String(err)}`); },
+        onError: (err) => { host.log?.('warn', `timeline subtitles: transcription failed - ${String(err)}`); },
         onSettled: () => endSubtitles(id),
       });
       modal.close();
@@ -6891,7 +6891,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       openTranscribeSheet(id, src, assetId);
       handedOver = true;    // the sheet, then the job, owns the guard from here
     } catch (err) {
-      host.log?.('warn', `timeline subtitles failed — ${String(err)}`);
+      host.log?.('warn', `timeline subtitles failed - ${String(err)}`);
     } finally {
       if (!handedOver) endSubtitles(id);
     }

@@ -804,13 +804,13 @@ async function mixSequenceAudio(
     if (L.mute) continue;
     if (L.durMs <= 0) continue;
     if (L.speed !== 1) {
-      log('warn', `sequence audio: a clip at ${Math.round(L.startMs)}ms plays at ${L.speed}× — muted (v1 does not time-stretch audio).`);
+      log('warn', `sequence audio: a clip at ${Math.round(L.startMs)}ms plays at ${L.speed}× - muted (v1 does not time-stretch audio).`);
       continue;
     }
     const url = mediaSrc(L);
     if (!url) {
       if (L.kind === 'audio') {
-        log('warn', `sequence audio: the audio box at ${Math.round(L.startMs)}ms has no source — it will be silent.`);
+        log('warn', `sequence audio: the audio box at ${Math.round(L.startMs)}ms has no source - it will be silent.`);
       }
       continue;
     }
@@ -818,7 +818,7 @@ async function mixSequenceAudio(
     try {
       clip = await createClipAudio(url, { log });
     } catch (err) {
-      log('warn', `sequence audio: ${toCodedError(err).message} — clip will be silent`);
+      log('warn', `sequence audio: ${toCodedError(err).message} - clip will be silent`);
       continue;
     }
     if (!clip) {
@@ -830,7 +830,7 @@ async function mixSequenceAudio(
       // an unregistered container (Ogg/Opus and MP3 - i.e. the entire shipped
       // music catalog) produced a silent export with nothing in the log at all.
       if (L.kind === 'audio') {
-        log('warn', `sequence audio: could not decode the audio box at ${Math.round(L.startMs)}ms (${url.slice(0, 120)}) — it will be silent. If this is an unusual container, re-encode it as mp3, m4a, ogg, wav or flac.`);
+        log('warn', `sequence audio: could not decode the audio box at ${Math.round(L.startMs)}ms (${url.slice(0, 120)}) - it will be silent. If this is an unusual container, re-encode it as mp3, m4a, ogg, wav or flac.`);
       }
       continue;
     }
@@ -864,7 +864,7 @@ async function mixSequenceAudio(
       node.start(Math.max(0, L.startMs / 1000));
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });
     } catch (err) {
-      log('warn', `sequence audio: ${toCodedError(err).message} — clip will be silent`);
+      log('warn', `sequence audio: ${toCodedError(err).message} - clip will be silent`);
     } finally {
       await clip.dispose().catch(() => { /* already released */ });
     }
@@ -1132,7 +1132,7 @@ async function renderSequenceAuthored(
   const S = outW / nativeW;
   const targetH = Math.max(2, Math.round(nativeH * S) & ~1);
   if (Number.isFinite(wantH) && wantH > 0 && Math.abs(wantH - targetH) > 2) {
-    log('warn', `sequence: exporting ${outW}x${targetH} — a sequence keeps the stage's aspect ratio, so the requested height (${Math.round(wantH)}) is derived from the width.`);
+    log('warn', `sequence: exporting ${outW}x${targetH} - a sequence keeps the stage's aspect ratio, so the requested height (${Math.round(wantH)}) is derived from the width.`);
   }
 
   const fps = format === 'gif' ? GIF_FPS : Math.max(1, Math.round(opts.fps ?? 30));
@@ -1147,7 +1147,7 @@ async function renderSequenceAuthored(
   const bitrate = videoBitrate(outW, targetH, fps);
   const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, bitrate) : null;
   if (streaming && !pick) {
-    log('warn', 'sequence: WebCodecs encode unavailable — falling back to a real-time MediaRecorder replay (correct, but as slow as the clip is long).');
+    log('warn', 'sequence: WebCodecs encode unavailable - falling back to a real-time MediaRecorder replay (correct, but as slow as the clip is long).');
   }
 
   let frameCount = grid.length;
@@ -1177,7 +1177,7 @@ async function renderSequenceAuthored(
   for (const j of junctions) {
     const a = stage.layers.find((l) => l.idx === j.aIdx);
     if (a && a.exitMs > j.ms) {
-      log('info', `sequence: the crossfade at ${Math.round(a.startMs + a.durMs)}ms runs ${j.ms}ms — the shorter of the two clips' fade lengths (this clip authored ${a.exitMs}ms). Match the two fade lengths to get the longer dissolve.`);
+      log('info', `sequence: the crossfade at ${Math.round(a.startMs + a.durMs)}ms runs ${j.ms}ms - the shorter of the two clips' fade lengths (this clip authored ${a.exitMs}ms). Match the two fade lengths to get the longer dissolve.`);
     }
   }
   // Activity windows for the OVERLAP BUDGET only - the executor derives its own
@@ -1251,7 +1251,7 @@ async function renderSequenceAuthored(
   // ran above, one container-level C2PA over its results) is identical.
   const useGl = !!tilt && glSequenceRenderEnabled() && supportsGlSequenceRender();
   if (tilt && !useGl) {
-    log('info', `sequence: TILT export — the camera authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);
+    log('info', `sequence: TILT export - the camera authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);
     return await renderTiltCapture(tilt);
   }
   if (useGl) {
@@ -1335,7 +1335,7 @@ async function renderSequenceAuthored(
     })
     : null;
   const bgPad = bgBudget ? (bgBudget.padOf.get(-1) ?? 0) : 0;
-  if (bgBudget?.warning) log('warn', `sequence: the camera's background overscan was trimmed — ${bgBudget.warning}`);
+  if (bgBudget?.warning) log('warn', `sequence: the camera's background overscan was trimmed - ${bgBudget.warning}`);
 
   const wire: SeqJobLayer[] = [];
   const plates: SeqJob['plates'] = [];
@@ -1539,7 +1539,7 @@ async function renderSequenceAuthored(
 
     // ── which thread executes ─────────────────────────────────────────────
     if (pick && supportsWorkerSequenceRender()) {
-      log('info', `sequence: worker offload — ${hybrid
+      log('info', `sequence: worker offload - ${hybrid
         ? `HYBRID (${liveBoxes.size} lottie layer(s) rastered on the main thread, one request in flight)`
         : 'fully worker-side (decode, composite, encode and mux all off the main thread)'}`);
       try {
@@ -1556,7 +1556,7 @@ async function renderSequenceAuthored(
         // failing, and the in-thread path is the honest fallback: the plates are
         // still canvases, so the retry costs no re-rasterisation.
         if (err instanceof SequenceError) throw err;
-        log('warn', `sequence: worker offload unavailable (${(err as { message?: string })?.message ?? err}) — rendering in-thread.`);
+        log('warn', `sequence: worker offload unavailable (${(err as { message?: string })?.message ?? err}) - rendering in-thread.`);
       }
     }
 
@@ -1654,7 +1654,7 @@ async function renderSequenceAuthored(
       // WebGL2 vanished between the probe and here (a lost context, a refused
       // allocation). The correct-but-slow capture tier is the honest fallback; the video
       // refusal already ran, so `renderTiltCapture` cannot meet a `<video>` it can't shoot.
-      log('warn', 'sequence: the GPU compositor could not be created — falling back to the P2a capture tier.');
+      log('warn', 'sequence: the GPU compositor could not be created - falling back to the P2a capture tier.');
       return await renderTiltCapture(tilt as { ch: 'rx' | 'ry'; deg: number; atMs: number | null });
     }
 
@@ -1682,9 +1682,9 @@ async function renderSequenceAuthored(
           width: outW, height: targetH, fps, bitrate,
           audio: audioPick ? { ...audioPick, channels: [] } : null,
         });
-        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) — WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
+        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
       } else {
-        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) — ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
+        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
       }
 
       for (let i = 0; i < job.frameCount; i++) {
@@ -1845,7 +1845,7 @@ async function renderSequenceAuthored(
     if (videos.length > 0) {
       throw sequenceError(
         'SEQ_TILT_UNSUPPORTED',
-        `tilt export of video needs the GPU compositor. This scene tilts the camera (${trigger.ch} ${Math.round(trigger.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}, and a tilted frame is captured off the live page — which cannot photograph a playing video. Remove the tilt to export it now, or replace the video clip with a still.`,
+        `tilt export of video needs the GPU compositor. This scene tilts the camera (${trigger.ch} ${Math.round(trigger.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}, and a tilted frame is captured off the live page - which cannot photograph a playing video. Remove the tilt to export it now, or replace the video clip with a still.`,
       );
     }
     const resumeThumbs = suspendNodeRasters();
@@ -1884,7 +1884,7 @@ async function renderSequenceAuthored(
             audio: audioPick ? { ...audioPick, channels: [] } : null,
           });
         }
-        log('info', `sequence: tilt capture — ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
+        log('info', `sequence: tilt capture - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
         for (let i = 0; i < frameCount; i++) {
           const t = usedGrid[i] as number;
           session.apply(t);

@@ -181,7 +181,7 @@ test('setStudioTokenValue: rotation wraps to -360..360 keeping its sign', () => 
   setStudioTokenValue(doc, p, 450);
   assert.equal(leafAt(doc, p)!.$value, 90);
   setStudioTokenValue(doc, p, -450);
-  assert.equal(leafAt(doc, p)!.$value, -90, 'negative stays negative — never clamped positive');
+  assert.equal(leafAt(doc, p)!.$value, -90, 'negative stays negative - never clamped positive');
   setStudioTokenValue(doc, p, 360);
   assert.equal(leafAt(doc, p)!.$value, 360, 'a full turn passes through');
   setStudioTokenValue(doc, p, -720);

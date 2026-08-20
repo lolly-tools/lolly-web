@@ -123,7 +123,7 @@ test('every abandoned mount releases the origin before it returns', () => {
   const releases = [...zone.matchAll(/releaseTeamSessionOrigin\(\)/g)].map(m => m.index as number);
 
   assert.ok(returns.length > 0,
-    'the scan found no early return at all — the anchors have moved and this test is '
+    'the scan found no early return at all - the anchors have moved and this test is '
     + 'measuring nothing');
 
   // One release per exit, in order: between each `return` and the one before it there
@@ -134,7 +134,7 @@ test('every abandoned mount releases the origin before it returns', () => {
     assert.ok(
       releases.some(r => r > previous && r < at),
       `the early return ${line} line(s) into mountTool abandons the mount without calling `
-      + 'releaseTeamSessionOrigin() — the origin it consumed would outlive it, and the next '
+      + 'releaseTeamSessionOrigin() - the origin it consumed would outlive it, and the next '
       + 'Share dialog over a LOCAL session of this tool would key a work collab on the team '
       + 'session id it inherited (org/team-session-origin.ts, rule 3)',
     );
@@ -152,7 +152,7 @@ test('the teardown hook still releases, so a mount that DID happen gives it up t
 test('the origin is read through the tool-id-checked accessor and released nowhere else', () => {
   // `active` is module state; a second writer would be a second place to forget.
   assert.equal([...CODE.matchAll(/consumeTeamSessionOrigin\(/g)].length, 1,
-    'one consume per mount — a second would spend a stash the first already took');
+    'one consume per mount - a second would spend a stash the first already took');
   assert.equal(/activeTeamSessionOrigin\(/.test(CODE), false,
     'the tool view never reads the origin: `org/collab-share.ts` is the only reader, and it '
     + 'names the tool it is asking about');
@@ -171,7 +171,7 @@ test('a mount that is abandoned leaves NOTHING for a later Share dialog to read'
   releaseTeamSessionOrigin();
 
   assert.equal(activeTeamSessionOrigin('url-shot'), null,
-    'the Share dialog over a LOCAL url-shot session must find no origin at all — an id that '
+    'the Share dialog over a LOCAL url-shot session must find no origin at all - an id that '
     + 'is present and wrong is worse than the honest refusal a missing one produces');
 
   _clearTeamSessionOriginForTests();

@@ -152,8 +152,8 @@ function dotHtml(d: SliceDot, plane: SlicePlane, fixed: number, cMax: number): s
   const off = sliceOffPlane(plane, o, fixed, cMax);
   const fixedCh = CHANNEL_NAME[SLICE_AXES[plane].fixed].toLowerCase();
   const aria = off > 0.02
-    ? `${d.label} ${d.hex} — off this slice (different ${fixedCh}); drag to recolour, click to bring the slice to it`
-    : `${d.label} ${d.hex} — drag to recolour, click to edit`;
+    ? `${d.label} ${d.hex} - off this slice (different ${fixedCh}); drag to recolour, click to bring the slice to it`
+    : `${d.label} ${d.hex} - drag to recolour, click to edit`;
   return `<button type="button" class="okls-dot${o.l > 0.82 ? ' is-light' : ''}"
     style="left:${(p.x * 100).toFixed(3)}%;top:${(p.y * 100).toFixed(3)}%;--dot:${escapeHtml(d.hex)};--off:${off.toFixed(3)}"
     data-okls-idx="${d.idx}" data-hex="${escapeHtml(d.hex.toUpperCase())}"
@@ -221,7 +221,7 @@ function legendHtml(limit: GamutLimit): string {
   // put it down - so the clause is dropped rather than restated.
   const builtin = typeof limit === 'string';
   keys.push(`<span class="okls-key okls-key--none">past ${escapeHtml(limitTitle(limit))}`
-    + `${builtin ? ' — no display' : ''}</span>`);
+    + `${builtin ? ' - no display' : ''}</span>`);
   return keys.join('');
 }
 

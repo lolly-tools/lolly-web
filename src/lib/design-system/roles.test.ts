@@ -95,7 +95,7 @@ test('readRoles: light and dark are read independently', () => {
   const light = readRoles(doc, 'light', resolverFor(doc, 'light'));
   const dark = readRoles(doc, 'dark', resolverFor(doc, 'dark'));
   assert.notEqual(light.surface.hex, dark.surface.hex,
-    'the two themes must not report the same surface — the theme argument is being ignored');
+    'the two themes must not report the same surface - the theme argument is being ignored');
 });
 
 test('readRoles: an import with no semantic group reports every role unset', () => {
@@ -227,7 +227,7 @@ test('a layered document with no semantic set yet takes the last COLOUR set in t
     'a set of spacing tokens is no place for a colour role');
 });
 
-test('a `base` group with no $metadata is FLAT — the engine decides, not the name', () => {
+test('a `base` group with no $metadata is FLAT - the engine decides, not the name', () => {
   // The mirror image of the layered case above. `base` here is an ordinary
   // group in a hand-written document, not a token SET: no $metadata, no
   // $themes, so createTokenSet reads the whole file flat. Recognising the name
@@ -256,7 +256,7 @@ test('assignRole: only the named role moves', () => {
   assert.notEqual(JSON.stringify(semanticAt(doc, 'light')), before, 'primary should have changed');
   for (const [k, json] of others) {
     assert.equal(JSON.stringify(semanticAt(doc, 'light')[k]), json,
-      `${k} must be left alone — this module does not re-derive the contrast-enforced set`);
+      `${k} must be left alone - this module does not re-derive the contrast-enforced set`);
   }
 });
 

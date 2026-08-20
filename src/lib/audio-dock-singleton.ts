@@ -44,7 +44,7 @@ const PLACEMENT_KEY = 'lolly:neuro-dock-placement';
  *  AFTER the package's DOCK_CSS so these win specificity ties. */
 const APP_CSS = `
 /* Sits ABOVE the fixed bottom cluster (search bar + footer nav, ~5.5rem) so it never
-   covers the footer's "Valid" / info-site links — overrides the package's 1rem. */
+   covers the footer's "Valid" / info-site links - overrides the package's 1rem. */
 .audio-dock.neuro-managed { bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); z-index: 9002; }
 .audio-dock.neuro-managed.is-hidden { display: none; }
 @keyframes neuro-dock-in { from { transform: translateY(28px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }

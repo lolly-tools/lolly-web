@@ -132,7 +132,7 @@ export async function embedFonts(svg: string, warnings: string[]): Promise<strin
       .find((r) => r.rules.length);
     if (!rules) {
       if (!/^(sans-serif|serif|monospace|system-ui)$/i.test(pdfFamily)) {
-        warnings.push(`no loaded @font-face for "${pdfFamily}" — falls back to sans-serif`);
+        warnings.push(`no loaded @font-face for "${pdfFamily}" - falls back to sans-serif`);
       }
       continue;
     }
@@ -236,7 +236,7 @@ function matchRaster(rasters: DomRaster[], rect: { x: number; y: number; w: numb
  * fallback (font unresolved, or any glyph uncovered by the whole fallback chain).
  */
 export function makeTextOutliner(warnings: string[], textApi?: TextApi): (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null> {
-  if (!textApi?.toPath) { warnings.push('no text shaper — text kept as <text>'); return async () => null; }
+  if (!textApi?.toPath) { warnings.push('no text shaper - text kept as <text>'); return async () => null; }
 
   const fontCache = new Map<string, VectorFont | null>();
   const resolveFont = async (family: string, weight: string | number, text: string): Promise<VectorFont | null> => {

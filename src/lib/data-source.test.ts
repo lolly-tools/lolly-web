@@ -25,9 +25,9 @@ test('rowsToCsv: RFC-4180 quoting (commas, quotes, newlines), header on row 0', 
 });
 
 test('fileBytesToFieldText: a plain text file decodes as UTF-8', async () => {
-  const bytes = new TextEncoder().encode('# Boilerplate\n\nHello — world.');
+  const bytes = new TextEncoder().encode('# Boilerplate\n\nHello - world.');
   const text = await fileBytesToFieldText(bytes, 'note.md');
-  assert.equal(text, '# Boilerplate\n\nHello — world.');
+  assert.equal(text, '# Boilerplate\n\nHello - world.');
 });
 
 test('fileBytesToFieldText: an .xlsx is unzipped to CSV (first sheet)', async () => {

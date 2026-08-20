@@ -44,7 +44,7 @@ test('two different sources get different prefixes; the same source is stable', 
   namespaceInlinedSvgIds(a2, 'a.svg');
   namespaceInlinedSvgIds(b, 'b.svg');
   const idOf = (s: Element): string => s.querySelector('clipPath')!.getAttribute('id')!;
-  assert.equal(idOf(a1), idOf(a2), 'same source, same prefix — repeat exports stay byte-identical');
+  assert.equal(idOf(a1), idOf(a2), 'same source, same prefix - repeat exports stay byte-identical');
   assert.notEqual(idOf(a1), idOf(b), 'different sources cannot collide');
 });
 

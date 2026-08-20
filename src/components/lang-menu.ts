@@ -107,7 +107,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     const applySort = (next: 'speakers' | 'az'): void => {
       if (next === sort) return;
       sort = next;
-      try { localStorage.setItem('langSort', next); } catch { /* storage denied — session-only */ }
+      try { localStorage.setItem('langSort', next); } catch { /* storage denied - session-only */ }
       // Re-render only the list; re-establish the roving tabindex without
       // stealing focus from the clicked sort tab. (The tabs' own aria-selected/
       // tabindex state is applied by wireTabs before this fires.)
@@ -153,7 +153,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
 
     return checked;
     // The popover root is a plain group: role="menu" lives on .lang-menu-list,
-    // because a menu may only own menuitem* children — the sort tablist above
+    // because a menu may only own menuitem* children - the sort tablist above
     // the list would be an invalid (and SR-invisible) child of the menu itself.
   }, { className: 'lang-menu', role: 'group', ariaLabel: escape(t('Language')), position });
 

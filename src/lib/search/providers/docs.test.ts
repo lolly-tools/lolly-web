@@ -149,7 +149,7 @@ test('locale base path: a non-English session fetches under /info/<lang>/ but li
   }
 });
 
-test('failure resolves [] forever — one fetch, no retry storm, nothing thrown', async () => {
+test('failure resolves [] forever - one fetch, no retry storm, nothing thrown', async () => {
   fetchImpl = async () => { throw new Error('offline'); };
   fetchCalls.length = 0;
   const provider = createDocsProvider();

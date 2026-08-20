@@ -266,7 +266,7 @@ function renameTable(src: ArrayBuffer, from: string, to: string): ArrayBuffer {
     for (let c = 0; c < 4; c++) v.setUint8(off + c, to.charCodeAt(c));
     return out;
   }
-  throw new Error(`fixture has no ${from} table — renameTable would silently do nothing`);
+  throw new Error(`fixture has no ${from} table - renameTable would silently do nothing`);
 }
 
 test('variableWeightRange reads the whole wght axis off a real variable font', () => {

@@ -157,7 +157,7 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
     if (t.closest('[data-floatp-close]')) { close(); return; }
     if (t.closest('[data-floatp-full]')) {
       if (doc.fullscreenElement === root) void doc.exitFullscreen?.().catch(() => { /* denied */ });
-      else void root.requestFullscreen?.().catch(() => { /* denied — stays windowed */ });
+      else void root.requestFullscreen?.().catch(() => { /* denied - stays windowed */ });
     }
   });
   on(slot, 'click', (e: MouseEvent) => {

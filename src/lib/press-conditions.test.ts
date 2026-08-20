@@ -69,7 +69,7 @@ test('a profile built from other characterization data is not claimed as exact',
   assert.equal(exact.fogra39, true, 'FOGRA39 profile is built from FOGRA39');
   assert.equal(exact.fogra51, true, 'FOGRA51 profile is built from FOGRA51');
   assert.equal(exact.gracol, true, 'CGATS TR 006 profile is built from CGATS TR006');
-  assert.equal(exact.swop, false, 'CGATS TR 001 has no registered profile — TR003 is not it');
+  assert.equal(exact.swop, false, 'CGATS TR 001 has no registered profile - TR003 is not it');
 });
 
 test('every condition names a filename to look for on the machine', () => {

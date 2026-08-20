@@ -842,7 +842,7 @@ test('context menu: empty-canvas opens with selection ops disabled; Escape close
 
 // ── review-fix regressions ───────────────────────────────────────────────────────
 
-test('fix: selection resets on slide navigation — never mutates the wrong slide', () => {
+test('fix: selection resets on slide navigation - never mutates the wrong slide', () => {
   const { stageEl, val } = mountFixture([
     { mode: 'freeform', boxes: [{ id: 'a', kind: 'text', text: 'A', x: 100, y: 100, w: 200, h: 200 }] },
     { mode: 'freeform', boxes: [
@@ -1041,7 +1041,7 @@ test('pptxDeckToSlides: pic resolves through getMediaUrl; null → placeholder c
   assert.equal(card!.kind, 'box');
   assert.ok(card!.fill, 'placeholder carries a light fill');
   assert.equal(label!.kind, 'text');
-  assert.equal(label!.text, 'Image placeholder — could not be imported');
+  assert.equal(label!.text, 'Image placeholder - could not be imported');
   assert.ok(label!.x > card!.x && label!.y > card!.y && label!.w < card!.w, 'label sits inside the card');
   assert.equal(boxesOf(pptxDeckToSlides(deck)[0]!)[0]!.kind, 'box');   // no resolver at all
 });
@@ -1104,7 +1104,7 @@ test('pptxDeckToSlides: unknown → placeholder card + a label inside it', () =>
   assert.equal(card!.kind, 'box');
   assert.ok(card!.fill, 'card carries a light fill');
   assert.equal(label!.kind, 'text');
-  assert.equal(label!.text, 'Chart / SmartArt placeholder — not editable');
+  assert.equal(label!.text, 'Chart / SmartArt placeholder - not editable');
   assert.ok(label!.x > card!.x && label!.y > card!.y && label!.w < card!.w, 'label sits inside the card');
 });
 

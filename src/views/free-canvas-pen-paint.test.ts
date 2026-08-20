@@ -87,7 +87,7 @@ test('resolveDrawnInk turns the preview’s own computed colour into a storable 
   assert.equal(resolveDrawnInk('rgb(48, 186, 120)'), '#30ba78');
   assert.equal(resolveDrawnInk('#30BA78'), '#30ba78');
   assert.equal(resolveDrawnInk('oklch(0.7 0.15 160)').startsWith('#'), true,
-    'a modern colour resolves too — the walkers see these for real');
+    'a modern colour resolves too - the walkers see these for real');
   // The preview is translucent chrome; the committed shape is artwork.
   assert.equal(resolveDrawnInk('rgba(48, 186, 120, 0.6)'), '#30ba78', 'alpha is dropped');
   // Unreadable: no stylesheet applied, a detached layer. A shape in the wrong colour still

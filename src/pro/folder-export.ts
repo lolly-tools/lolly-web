@@ -130,7 +130,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
   // `folders` (the full list) lets rowsForFolder recurse into sub-folders so a nested
   // tree exports under nested zip paths; omit it and only this folder's own sessions go.
   const rows = await rowsForFolder(host, folder, folders);
-  if (rows.length === 0) throw new Error('Nothing to export — this folder has no renderable sessions.');
+  if (rows.length === 0) throw new Error('Nothing to export - this folder has no renderable sessions.');
 
   // `srcIndex` rides along from here on: planBatch COMPACTS, so an index taken after it
   // no longer names the row the user assembled. Source space here is rowsForFolder's
@@ -143,7 +143,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
   const { check, runFindings } = await createBatchRowCheck(rows as BatchRow[], host, { format, unit, dpi });
   const plan = await planBatch<Finding>(rows as BatchRow[], { check });
   const { renderable, skipped, srcIndex, findings } = plan;
-  if (renderable.length === 0) throw new Error('Nothing to export — none of these sessions can be rendered.');
+  if (renderable.length === 0) throw new Error('Nothing to export - none of these sessions can be rendered.');
 
   return runBatchWithProgress(host, renderable, {
     mount, job,

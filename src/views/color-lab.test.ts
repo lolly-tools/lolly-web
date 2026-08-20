@@ -730,7 +730,7 @@ test('the out-of-bounds diamond carries an upright exclamation mark', () => {
     const base = new RegExp(`\\.gsl-input::${thumb} \\{([^}]*)\\}`).exec(css);
     assert.ok(base, `the base ${thumb} rule moved`);
     assert.match(base![1]!, /transform:\s*rotate\(45deg\)/,
-      `${thumb} must still rotate 45deg — the glyph's -45deg counter-rotation assumes it`);
+      `${thumb} must still rotate 45deg - the glyph's -45deg counter-rotation assumes it`);
 
     const out = new RegExp(`\\.gsl\\.is-out \\.gsl-input::${thumb} \\{([^}]*)\\}`).exec(css);
     assert.ok(out, `the is-out ${thumb} rule moved`);
@@ -743,7 +743,7 @@ test('the out-of-bounds diamond carries an upright exclamation mark', () => {
   assert.ok(glyph, 'the --gsl-bang glyph moved');
   const svg = decodeURIComponent(glyph![1]!.replace(/^data:image\/svg\+xml,/, ''));
   assert.match(svg, /rotate\(-45 6 6\)/, 'the glyph is counter-rotated about the viewBox centre');
-  assert.match(svg, /<rect[^>]*\/>[\s\S]*<circle[^>]*\/>/, 'a bar over a dot — an exclamation mark');
+  assert.match(svg, /<rect[^>]*\/>[\s\S]*<circle[^>]*\/>/, 'a bar over a dot - an exclamation mark');
   // Sized to the diamond's UPRIGHT inscribed square, so the mark cannot overrun the
   // rotated corners. Both lengths are custom properties now - a coarse pointer scales
   // the whole slider up - so what has to hold is the RATIO between their defaults
@@ -846,7 +846,7 @@ test('the theme toggle rides the top-right chrome, icon-only, and cycles', async
   assert.ok($('.lab-back .back-pill, .lab-back [data-back-pill]'), 'the back pill shares the row');
   const btn = chrome.querySelector('button')!;
   assert.ok(btn, 'the toggle is mounted');
-  assert.ok(btn.querySelector('svg'), 'icon-only — a glyph, not a label');
+  assert.ok(btn.querySelector('svg'), 'icon-only - a glyph, not a label');
   assert.equal((btn.textContent ?? '').trim(), '', 'no text beside the glyph');
   // The theme name rides the accessible name instead, since the glyph carries it visually.
   assert.match(btn.getAttribute('aria-label') ?? '', /theme/i);
@@ -860,7 +860,7 @@ test('the theme toggle rides the top-right chrome, icon-only, and cycles', async
     'and the glyph shows the theme now in force');
 });
 
-test('the third surface’s picker survives its own change — the card is scored, not rebuilt', async () => {
+test('the third surface’s picker survives its own change - the card is scored, not rebuilt', async () => {
   // The bug this pins, reported from the browser: "the sliders on the your surface
   // card disappear when clicked, they won't drag". `onChange` re-rendered the card
   // with innerHTML, which destroyed the live popover on its own FIRST input event - 
@@ -1401,7 +1401,7 @@ test('the blend styles explain themselves on a phone, and the clamp marker does 
     assert.equal(p.hasAttribute('title'), false, `${p.dataset.val}: no hover-only title`);
     // The bubble is presentation only, so the reason has to reach a screen reader
     // by another route.
-    assert.match(p.getAttribute('aria-label') ?? '', /—/);
+    assert.match(p.getAttribute('aria-label') ?? '', /-/);
   }
   const clamp = view.querySelector<HTMLElement>('.lab-note-fit span');
   assert.ok(clamp, 'a P3 red clamps somewhere');
@@ -1443,7 +1443,7 @@ test('the report never lays out two rules for one grid, and holds the touch cont
   const swAlt = /\.lab-sw-alt\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
   assert.ok(swAlt.includes('overflow-wrap'), '.lab-sw-alt still wraps as a last resort');
   assert.doesNotMatch(swAlt, /white-space\s*:\s*nowrap/,
-    'nothing may re-add a nowrap that defeats it — that is the sideways scroll');
+    'nothing may re-add a nowrap that defeats it - that is the sideways scroll');
 
   const solid = /\.lab-solid\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
   assert.match(solid, /touch-action\s*:\s*pan-y/,
@@ -1464,7 +1464,7 @@ test('"This screen" hydrates from the same device probe the Dashboard uses', asy
   await mount();
   const sec = $('[data-lab-device]') as HTMLElement;
   assert.ok(sec, 'the section is in the markup');
-  assert.equal(sec.hidden, true, 'and starts hidden — nothing is claimed before the probe answers');
+  assert.equal(sec.hidden, true, 'and starts hidden - nothing is claimed before the probe answers');
 
   // The probe is async (UA hints + storage estimate); let its continuation run.
   await new Promise((r) => setTimeout(r, 0));
@@ -1473,7 +1473,7 @@ test('"This screen" hydrates from the same device probe the Dashboard uses', asy
   const cards = sec.querySelectorAll('.plat-client-card');
   assert.ok(cards.length >= 1, 'at least the Display card rendered');
   const rows = [...sec.querySelectorAll('.plat-kv dt')].map((d) => (d.textContent ?? '').trim());
-  assert.ok(rows.includes('Colour gamut'), 'the gamut row is present — the fact the charts depend on');
+  assert.ok(rows.includes('Colour gamut'), 'the gamut row is present - the fact the charts depend on');
   // Live rows exist here, so the disposer must be chained onto the view's cleanup.
   assert.ok(sec.querySelector('[data-live]'), 'the Display card carries live rows');
 
@@ -1498,7 +1498,7 @@ test('swatchGamutState: an in-gamut colour is unclipped, ΔE 0, hex == oklchToHe
   const mid = describeColor('#3366cc')!.oklch;
   const s = swatchGamutState(mid, 'srgb');
   assert.equal(s.outOfGamut, false);
-  assert.equal(s.deltaE, 0, 'no clip, so exactly zero — never a round-trip epsilon');
+  assert.equal(s.deltaE, 0, 'no clip, so exactly zero - never a round-trip epsilon');
   assert.equal(s.clippedHex, oklchToHex(mid), 'the clip is identity, so the hex is the plain render');
 });
 
@@ -1524,7 +1524,7 @@ test('swatchGamutState: membership is by inGamut, not by area ordering (P3 ⊄ R
   const p3red = describeColor('color(display-p3 1 0 0)')!.oklch;
   assert.equal(swatchGamutState(p3red, 'p3').outOfGamut, false, 'inside Display-P3');
   assert.equal(swatchGamutState(p3red, 'rec2020').outOfGamut, true,
-    'outside Rec.2020 despite it being the wider gamut — proves it is not an ordering');
+    'outside Rec.2020 despite it being the wider gamut - proves it is not an ordering');
 });
 
 test('the brand rail badges an out-of-gamut swatch and clears it when the target widens', async () => {
@@ -1577,7 +1577,7 @@ test('contrastMatrix: each cell is apcaContrast(row=text, col=bg), signed', () =
   assert.equal(m[2]![0]!.band, apcaUse(apcaContrast('#c0392b', '#ffffff')));
 });
 
-test('contrastMatrix: the diagonal — a colour on itself — is ~0', () => {
+test('contrastMatrix: the diagonal - a colour on itself - is ~0', () => {
   const m = contrastMatrix(['#ffffff', '#000000', '#3366cc', '#c0392b']);
   for (let i = 0; i < 4; i++) {
     assert.ok(Math.abs(m[i]![i]!.lc) < 1e-9, `diagonal cell ${i} is ~0, got ${m[i]![i]!.lc}`);

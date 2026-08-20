@@ -134,7 +134,7 @@ const SUSE_FULL = [
   '#8e2810', '#bd3314', '#fe7c3f', '#192072', '#2453ff',
 ];
 
-test('the ramp stays in ONE hue family — never interpolates green to blue through pink', () => {
+test('the ramp stays in ONE hue family - never interpolates green to blue through pink', () => {
   // The original bug: a perceptual ramp across the whole SUSE palette passes through
   // pink, so the visualizer read as nothing like the brand.
   const p = buildVizPalette(SUSE_FULL, '#30ba78');

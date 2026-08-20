@@ -167,10 +167,10 @@ export async function importLayeredFileAsSeed(
   if (doc.layers.some((l) => l.isGroup)) {
     const chosen = await choiceDialog({
       title: t('How should the layer folders come in?'),
-      message: tRaw('“{name}” has grouped layers. Lolly keeps the list flat either way — groups can ride along as a label on each layer.', { name: file.name }),
+      message: tRaw('“{name}” has grouped layers. Lolly keeps the list flat either way - groups can ride along as a label on each layer.', { name: file.name }),
       choices: [
         { id: 'grouped', label: t('Keep group labels'), primary: true },
-        { id: 'flat', label: t('Flatten — layers only') },
+        { id: 'flat', label: t('Flatten - layers only') },
       ],
       tag: 'psd-import',
     });

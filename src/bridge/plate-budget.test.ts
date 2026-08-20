@@ -185,7 +185,7 @@ test('the pad is priced: a padded plate is a bigger plate', () => {
   const bare = planPlateBudget({ layers: [layer({ maxEff: 2 })], scale: 1, worker: false, budgetBytes: 4096 * MB });
   const padded = planPlateBudget({ layers: [layer({ maxEff: 2, pad: 60 })], scale: 1, worker: false, budgetBytes: 4096 * MB });
   assert.ok(padded.wantedBytes > bare.wantedBytes,
-    `${padded.wantedBytes} vs ${bare.wantedBytes} — the spill margin costs memory`);
+    `${padded.wantedBytes} vs ${bare.wantedBytes} - the spill margin costs memory`);
 });
 
 test('the PAD is capped on its own account, because eff floors at 1 and lambda only scales eff', () => {

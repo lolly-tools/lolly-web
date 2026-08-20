@@ -23,7 +23,7 @@ import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
 export const TTS_MODEL = 'kokoro-82m-q8';
 
 /** The human-readable AI declaration carried in ICMT and the created action. */
-export const TTS_DECLARATION = 'Speech synthesized on-device from a typed script — the voice is AI-generated, not a real person';
+export const TTS_DECLARATION = 'Speech synthesized on-device from a typed script - the voice is AI-generated, not a real person';
 
 /** The exact inputs that produced a clip - enough to rebuild its credential. */
 export interface TtsRecipe {
@@ -144,7 +144,7 @@ export async function buildTtsCredential(host: HostV1, args: TtsProvenanceArgs):
     });
     return { store, format: 'wav' };
   } catch (err) {
-    host.log?.('warn', `tts provenance: Content Credential not attached — ${(err as Error)?.message || err}`);
+    host.log?.('warn', `tts provenance: Content Credential not attached - ${(err as Error)?.message || err}`);
     return null;
   }
 }
@@ -184,7 +184,7 @@ export async function embedTtsProvenance(host: HostV1, args: TtsProvenanceArgs):
     if (!ex) throw new Error('embedded credential did not read back');
     return { blob: new Blob([embedded as BlobPart], { type: 'audio/wav' }), store: ex.store };
   } catch (err) {
-    host.log?.('warn', `tts provenance: in-file credential not embedded — ${(err as Error)?.message || err}`);
+    host.log?.('warn', `tts provenance: in-file credential not embedded - ${(err as Error)?.message || err}`);
     return null;
   }
 }
@@ -212,7 +212,7 @@ export async function healTtsProvenance(host: TtsHealHost, ref: AssetRef, bytes:
   try {
     await host.assets._restampUserAsset(ref.id, { blob: embedded.blob, credential: embedded.store, credentialFormat: 'wav' });
   } catch (err) {
-    host.log?.('warn', `tts provenance: heal write failed — ${(err as Error)?.message || err}`);
+    host.log?.('warn', `tts provenance: heal write failed - ${(err as Error)?.message || err}`);
     return null;
   }
   return embedded.blob;

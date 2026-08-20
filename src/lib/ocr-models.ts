@@ -130,7 +130,7 @@ export const OCR_MODELS: OcrModelInfo[] = [
     // The multilingual mobile recogniser: an 18,383-glyph dictionary spanning Latin,
     // CJK and more. A representative subset is listed; the model reads well beyond it.
     languages: ['en', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru', 'it'],
-    note: 'Reads printed and on-screen text — Latin, CJK and many more scripts.',
+    note: 'Reads printed and on-screen text - Latin, CJK and many more scripts.',
   },
 ];
 

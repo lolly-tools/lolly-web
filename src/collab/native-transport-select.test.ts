@@ -70,7 +70,7 @@ test('minting via link never yields native, even on tauri prefer-lan', () => {
   assert.equal(pick({ localPlatform: 'tauri', origin: 'link', webrtcAvailable: false, pref: 'auto' }), 'none');
 });
 
-test('absent origin defaults to link (never native) — the conservative default', () => {
+test('absent origin defaults to link (never native) - the conservative default', () => {
   assert.equal(pick({ localPlatform: 'tauri', webrtcAvailable: false, pref: 'prefer-lan' }), 'none');
   assert.equal(pick({ localPlatform: 'tauri', webrtcAvailable: true, pref: 'auto' }), 'rtc');
 });

@@ -53,7 +53,7 @@ test('doc() is null until load(), then mirrors the head document', async () => {
   assert.deepStrictEqual(state.doc(), DOC);
 });
 
-test('doc() hands back a copy — mutating it does not move the head', async () => {
+test('doc() hands back a copy - mutating it does not move the head', async () => {
   const { host, current } = fakeHost();
   const state = createStudioState(host);
   await state.load();

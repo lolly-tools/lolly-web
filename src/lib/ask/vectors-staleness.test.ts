@@ -104,17 +104,17 @@ test('committed ask-vectors match the docs corpus on disk', { skip: SKIP }, () =
   assert.equal(
     meta.count,
     index.length,
-    `ask-vectors.json says ${meta.count} vectors but the index has ${index.length} records — re-run node scripts/build-ask-vectors.ts`,
+    `ask-vectors.json says ${meta.count} vectors but the index has ${index.length} records - re-run node scripts/build-ask-vectors.ts`,
   );
   assert.equal(
     meta.recordsHash,
     sha256Hex(JSON.stringify(index.map((r) => [r.p, r.a]))),
-    'the index page/anchor order moved, so vector row i no longer names record i — re-run node scripts/build-ask-vectors.ts',
+    'the index page/anchor order moved, so vector row i no longer names record i - re-run node scripts/build-ask-vectors.ts',
   );
   assert.equal(
     meta.corpusHash,
     sha256Hex(JSON.stringify(texts)),
-    'the docs corpus changed since the vectors were built — re-run node scripts/build-ask-vectors.ts',
+    'the docs corpus changed since the vectors were built - re-run node scripts/build-ask-vectors.ts',
   );
 });
 

@@ -152,7 +152,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const illoModels = staged(ANIME_MODEL, XPLUS_MODEL, GENERAL_MODEL);
     if (illoModels.length) intents.push({
       value: 'illustration', label: t('Illustration'), models: illoModels,
-      ...(has(ANIME_MODEL) ? {} : { note: t('Using the general model for now — a line-art model is on the way.') }),
+      ...(has(ANIME_MODEL) ? {} : { note: t('Using the general model for now - a line-art model is on the way.') }),
     });
     intents.push({ value: 'pixel', label: t('Pixel art'), algorithm: 'nearest' });
     const textModels = staged(GENERAL_MODEL, XPLUS_MODEL);
@@ -349,14 +349,14 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const paintConsent = async (): Promise<void> => {
       if (currentIntent().algorithm) {
         consentEl.hidden = false;
-        consentEl.textContent = t('No download — this runs instantly on-device.');
+        consentEl.textContent = t('No download - this runs instantly on-device.');
         return;
       }
       const id = currentModel();
       try {
         if (await upscale.cached(id)) {
           consentEl.hidden = false;
-          consentEl.textContent = t('This model is already downloaded — it runs on-device and your image is never uploaded.');
+          consentEl.textContent = t('This model is already downloaded - it runs on-device and your image is never uploaded.');
         } else {
           consentEl.hidden = false;
           consentEl.textContent = t('The first run downloads a {size} model once. It runs on-device and your image is never uploaded.', { size: fmtBytes(upscale.modelBytes(id)) });
@@ -483,7 +483,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       sourceEl.hidden = false;
       const info = modelOf(currentModel());
       const native = Math.max(frame.width, frame.height) * info.scale;
-      sourceEl.textContent = tRaw('{name} — {w}×{h}px', { name, w: frame.width, h: frame.height });
+      sourceEl.textContent = tRaw('{name} - {w}×{h}px', { name, w: frame.width, h: frame.height });
       edgeInput.max = String(native);
       edgeInput.value = String(native);
       controlsEl.hidden = false;

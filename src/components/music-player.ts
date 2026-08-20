@@ -69,7 +69,7 @@ const CSS = `
 .neuro-tbtn.neuro-mode { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; }
 .neuro-tbtn.neuro-mode:active { transform: translateY(-50%) scale(.9); }
 .neuro-tbtn.neuro-mode.is-active { color: hsl(var(--primary)); }
-/* searchable track picker — a flex item in the dock header row (grip · picker · min · close) */
+/* searchable track picker - a flex item in the dock header row (grip · picker · min · close) */
 .neuro-picker { flex: 1; min-width: 0; }
 .neuro-picker-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; text-align: left; }
 .neuro-picker-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
@@ -84,7 +84,7 @@ const CSS = `
 /* As tall as fits above the bottom-docked player without clipping the viewport top
    (the panel opens upward): grows with screen height but never dominates it. Low
    floor (120px) so it genuinely SHRINKS on short viewports, and a 52vh cap so it
-   never runs too tall — it always scrolls the overflow. */
+   never runs too tall - it always scrolls the overflow. */
 .neuro-list { list-style: none; margin: 0; padding: 0; max-height: clamp(120px, calc(100vh - 360px), 52vh); overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .neuro-cat { list-style: none; }
 .neuro-cat[hidden] { display: none; }
@@ -121,7 +121,7 @@ html[data-a11y-motion="reduce"] .neuro-cat-caret { transition: none; }
 .neuro-atmo-head:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .neuro-atmo-caret { display: inline-flex; transition: transform .15s ease; transform: rotate(-90deg); }
 .neuro-atmo[data-open="true"] .neuro-atmo-caret { transform: none; }
-/* Count of layers currently turned up — the only cue that something is sounding
+/* Count of layers currently turned up - the only cue that something is sounding
    while the section is folded away. */
 .neuro-atmo-count { margin-left: auto; font-size: .7rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: hsl(var(--primary)); }
 .neuro-atmo-count[hidden] { display: none; }
@@ -147,7 +147,7 @@ html[data-a11y-motion="reduce"] :is(.neuro-atmo-caret, .neuro-atmo-icon) { trans
 .neuro-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol span { flex: 0 0 3.4em; }
 .neuro-vol input[type="range"] { flex: 1; }
-/* The Internet Radio info tooltip — a real, INTERACTIVE tooltip (the SomaFM link
+/* The Internet Radio info tooltip - a real, INTERACTIVE tooltip (the SomaFM link
    inside is clickable), portalled to <body> as position:fixed so the scrolling
    track list can't clip it. Hidden = opacity 0 + pointer-events none (never a
    display:none, so it can fade and be measured for positioning). */
@@ -179,7 +179,7 @@ const WARN = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke
 // scrolling track list never clips it, pointer-events:auto (with a short close
 // delay + its own hover keep-alive) so the link is actually clickable.
 const WARN_TIP_HTML: Record<string, string> = {
-  radio: `Internet radio streams via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> — free &amp; listener-supported. Needs an internet connection.`,
+  radio: `Internet radio streams via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> - free &amp; listener-supported. Needs an internet connection.`,
 };
 let warnTip: HTMLElement | null = null;
 let warnTipTimer: ReturnType<typeof setTimeout> | undefined;
@@ -228,7 +228,7 @@ const CATEGORY_META: Record<string, { label: string; icon: string; warn?: string
   lolly: { label: 'Lolly Sings', icon: '🍭' },
   ambient: { label: 'Ambient', icon: '🌊' },
   beats: { label: 'Beats', icon: '🥁' },
-  radio: { label: 'Internet Radio', icon: '📻', warn: 'Internet radio, via SomaFM — needs an internet connection' },
+  radio: { label: 'Internet Radio', icon: '📻', warn: 'Internet radio, via SomaFM - needs an internet connection' },
 };
 
 /** Friendly mood label from a track's tags (for the now-playing + list chips). */
@@ -276,7 +276,7 @@ export function trackPickerHtml(): string {
         <div class="neuro-picker-panel" data-mp-panel hidden>
           <!-- Search sits UNDER the list: the panel is bottom-anchored (it opens upward
                from the docked player), so results shrinking only moves the panel's TOP
-               edge — the search box stays put instead of jumping as you type. -->
+               edge - the search box stays put instead of jumping as you type. -->
           <ul class="neuro-list" data-mp-list aria-label="Tracks"><li class="neuro-empty">Loading…</li></ul>
           <input type="search" class="neuro-search" data-mp-search placeholder="Search tracks…" aria-label="Search tracks">
         </div>
@@ -359,7 +359,7 @@ export function musicPlayerBodyHtml(opts: MusicPlayerBodyOptions = {}): string {
         ${modeButtonHtml()}
       </div>
       ${volume ? `<label class="neuro-vol"><span>Music</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>` : ''}
-      ${effects ? `<label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>` : ''}
+      ${effects ? `<label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume - how much of the UI you hear"></label>` : ''}
       ${atmosphere ? atmosphereHtml() : ''}
     </div>`;
 }

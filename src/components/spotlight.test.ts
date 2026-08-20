@@ -123,7 +123,7 @@ test('titles and subtitles render as plain text (escaped at the sink)', async ()
   clearSearchBar();
 });
 
-test('a hit with a script-bearing href is dropped, not painted — escaping is not scheme validation', async () => {
+test('a hit with a script-bearing href is dropped, not painted - escaping is not scheme validation', async () => {
   resetProviders();
   navigations.length = 0;
   tabs.length = 0;
@@ -187,7 +187,7 @@ test('overlay-only route (projects): the own group hoists first', async () => {
   clearSearchBar();
 });
 
-test('caps: 8 for the own group on an overlay route, 5 for the rest — and the provider is asked for exactly that', async () => {
+test('caps: 8 for the own group on an overlay route, 5 for the rest - and the provider is asked for exactly that', async () => {
   resetProviders();
   const settingsLimits: number[] = [];
   const toolsLimits: number[] = [];
@@ -280,7 +280,7 @@ test('Enter with no active row activates the FIRST row', async () => {
   clearSearchBar();
 });
 
-test('a see-all activation navigates plainly — no lolly:remount even on #/p (the route signature carries ?q=)', async () => {
+test('a see-all activation navigates plainly - no lolly:remount even on #/p (the route signature carries ?q=)', async () => {
   resetProviders();
   registerProvider(fakeProvider('projects', 1));
   applySearchBarRoute('search', 'profile');
@@ -313,7 +313,7 @@ test('routeSignature carries the projects ?q= param (static pin of the main.ts c
   assert.ok(/key === 'folderId'[\s\S]{0,700}get\('q'\)/.test(mainSrc), 'folderId signature branch reads the q param');
 });
 
-test('a slow superseded response is discarded — the newer query keeps the panel', async () => {
+test('a slow superseded response is discarded - the newer query keeps the panel', async () => {
   resetProviders();
   const resolvers: Array<(hits: SearchHit[]) => void> = [];
   registerProvider({

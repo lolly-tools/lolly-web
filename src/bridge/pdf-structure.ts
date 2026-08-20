@@ -512,9 +512,9 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
     const files = collectAttachments(ctx, doc, pages);
     if (files.length) {
       const shown = files.map((f) => (f.bytes ? `${f.name} (${bytesLabel(f.bytes)})` : f.name));
-      add('Attachments', `${count(files.length, 'embedded file')} — ${list(shown)}`, 'warn');
+      add('Attachments', `${count(files.length, 'embedded file')} - ${list(shown)}`, 'warn');
     }
-  } catch { /* unwalkable name tree — report nothing rather than fail the panel */ }
+  } catch { /* unwalkable name tree - report nothing rather than fail the panel */ }
 
   // ── behaviour ───────────────────────────────────────────────────────────────
   let fields: FormField[] = [];
@@ -527,10 +527,10 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
     if (scripts.length) {
       // The first script's opening line is usually enough to tell a form
       // calculation from something that reaches for the network.
-      add('JavaScript', `${count(scripts.length, 'script')} — runs when the document is opened or used · ${clip(scripts[0]!, 160)}`, 'warn');
+      add('JavaScript', `${count(scripts.length, 'script')} - runs when the document is opened or used · ${clip(scripts[0]!, 160)}`, 'warn');
     }
     if (act.launches.length) {
-      add('Launch actions', `${count(act.launches.length, 'action')} that opens an external program or file — ${list(uniq(act.launches))}`, 'warn');
+      add('Launch actions', `${count(act.launches.length, 'action')} that opens an external program or file - ${list(uniq(act.launches))}`, 'warn');
     }
     if (act.submits.length) {
       add('Form submission', `Sends filled values to ${list(uniq(act.submits))}`, 'warn');
@@ -544,7 +544,7 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
       const hosts = uniq(urls.map((u) => { try { return new URL(u).host; } catch { return ''; } }));
       add('Links', hosts.length
         ? `${count(urls.length, 'outbound link')} to ${list(hosts)}`
-        : `${count(urls.length, 'outbound link')} — ${list(urls)}`);
+        : `${count(urls.length, 'outbound link')} - ${list(urls)}`);
     }
   } catch { /* malformed action graph */ }
 
@@ -552,16 +552,16 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
   try {
     const filled = fields.filter((f) => f.type !== 'Sig' && f.value);
     if (filled.length) {
-      add('Form values', `${count(filled.length, 'filled field')} — ${list(filled.map((f) => `${f.name || '(unnamed)'}: ${f.value}`))}`, 'warn');
+      add('Form values', `${count(filled.length, 'filled field')} - ${list(filled.map((f) => `${f.name || '(unnamed)'}: ${f.value}`))}`, 'warn');
     }
     const signatures = fields.filter((f) => f.type === 'Sig' && f.dict.get(PDFName.of('V')) != null);
     if (signatures.length) {
       // A signature is evidence, not a leak - but it also means any re-save
       // (including our own strip/compress) invalidates it, so say it plainly.
-      add('Digital signature', `${count(signatures.length, 'signed field')} — re-saving this file invalidates it`);
+      add('Digital signature', `${count(signatures.length, 'signed field')} - re-saving this file invalidates it`);
     }
     if (get(ctx, doc.catalog.get(PDFName.of('AcroForm')), 'XFA')) {
-      add('XFA form', 'Carries an XFA form definition — an XML form layer beyond the visible page');
+      add('XFA form', 'Carries an XFA form definition - an XML form layer beyond the visible page');
     }
   } catch { /* malformed field values */ }
 
@@ -583,9 +583,9 @@ export function scanPdfStructure(doc: PDFDocument): PdfFinding[] {
   try {
     const { names, hidden } = collectLayers(ctx, doc);
     if (hidden.length) {
-      add('Hidden layers', `${count(hidden.length, 'layer')} present but switched off — ${list(hidden)}`, 'warn');
+      add('Hidden layers', `${count(hidden.length, 'layer')} present but switched off - ${list(hidden)}`, 'warn');
     } else if (names.length) {
-      add('Layers', `${count(names.length, 'layer')} — ${list(names)}`);
+      add('Layers', `${count(names.length, 'layer')} - ${list(names)}`);
     }
   } catch { /* malformed OCProperties */ }
 

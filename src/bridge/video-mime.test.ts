@@ -73,7 +73,7 @@ test('videoFramePlan: clipSec always equals frameCount/fps (the invariant both c
   }
 });
 
-test('videoFramePlan: a 90s narration keeps all 90 seconds — the frame rate gives way, not the tail', () => {
+test('videoFramePlan: a 90s narration keeps all 90 seconds - the frame rate gives way, not the tail', () => {
   // 90 s at 24 fps wants 2160 frames. The audio-driven ceiling is 1800 (600 × 3).
   const p = videoFramePlan(90, 24, 1800);
   assert.equal(p.truncated, false, 'a narration must not be silently cut short');
@@ -81,7 +81,7 @@ test('videoFramePlan: a 90s narration keeps all 90 seconds — the frame rate gi
   assert.ok(p.fps < 24 && p.fps >= FPS_FLOOR, `expected a reduced frame rate, got ${p.fps}`);
 });
 
-test('videoFramePlan: the old bug — a capped clip is never time-compressed', () => {
+test('videoFramePlan: the old bug - a capped clip is never time-compressed', () => {
   // Precisely the failing case: 90 s requested, the SILENT (unraised) 600-frame cap.
   const p = videoFramePlan(90, 24, 600);
   // Before the fix this produced 600 frames at 24 fps = 25 s of video, while the tool

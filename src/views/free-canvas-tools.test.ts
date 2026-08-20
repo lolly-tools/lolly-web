@@ -313,7 +313,7 @@ test('clicking Pointer mid-draw FINISHES the path (a tool switch commits, unlike
   f.destroy();
 });
 
-test('clicking Pointer after ONE node discards it — a single click is a mis-click', () => {
+test('clicking Pointer after ONE node discards it - a single click is a mis-click', () => {
   const f = mount([plainBox('a', 700, 700)]);
   const before = structuredClone(f.boxes());
   enter(f, 'pen');
@@ -414,7 +414,7 @@ test('Escape mid-draw cancels the path but stays in pen mode; a second Escape le
   for (const [x, y] of [[100, 100], [200, 160], [300, 100]] as Array<[number, number]>) place(f, x, y);
   key('Escape');
   frames();
-  assert.deepEqual(f.boxes(), before, 'Escape committed nothing — this is the half that must NOT commit');
+  assert.deepEqual(f.boxes(), before, 'Escape committed nothing - this is the half that must NOT commit');
   assertMode(f, 'pen', 'the tool is still the pen, ready for the next path');
   key('Escape');
   frames();
@@ -488,7 +488,7 @@ test('the active state survives a model sync and a pan/zoom, without rebuilding 
   f.stageEl.dispatchEvent(new W.MouseEvent('pointermove', { bubbles: true, clientX: 10, clientY: 10 }));
   f.stageEl.dispatchEvent(new dom.window.Event('wheel', { bubbles: true }));
   frames(4);
-  assert.equal(btn(f, 'fc-btn-pointer'), pointer, 'the Pointer button is the SAME element — no rebuild per frame');
+  assert.equal(btn(f, 'fc-btn-pointer'), pointer, 'the Pointer button is the SAME element - no rebuild per frame');
   assert.equal(btn(f, 'fc-btn-pen'), pen, 'nor is the Pen button');
   assertMode(f, 'pen', 'and the mode still reads as pen');
   f.destroy();
@@ -527,7 +527,7 @@ test('the Line tool draws a PATH BOX, not a connector edge', () => {
   enter(f, 'line');
   const before = f.commits();
   place(f, 120, 140, { drag: [420, 300] });
-  assert.equal(f.commits() - before, 1, 'one drag, one commit — one undo step');
+  assert.equal(f.commits() - before, 1, 'one drag, one commit - one undo step');
   assert.equal(f.edges().length, 0, 'the connectors input is not written to at all');
   const made = f.boxes().filter((b) => b.kind === 'path');
   assert.equal(made.length, 1, 'exactly one path box');
@@ -551,7 +551,7 @@ test('a line carries the decoration fields: an end arrowhead and two empty bindi
   f.destroy();
 });
 
-test('a Line tap (no drag) commits nothing — a mis-click leaves no invisible box', () => {
+test('a Line tap (no drag) commits nothing - a mis-click leaves no invisible box', () => {
   const f = mount([plainBox('a', 700, 700)]);
   const before = structuredClone(f.boxes());
   enter(f, 'line');

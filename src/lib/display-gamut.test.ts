@@ -66,7 +66,7 @@ test('the claim is the widest keyword that matches', () => {
   assert.equal(displayGamutClaim(), 'unknown');
 });
 
-test('the anchor is only ever srgb or display-p3 — a rec2020 claim CLAMPS', () => {
+test('the anchor is only ever srgb or display-p3 - a rec2020 claim CLAMPS', () => {
   installMatchMedia('srgb');
   assert.equal(displayAnchor(), 'srgb');
   installMatchMedia('p3');
@@ -149,7 +149,7 @@ test('acquire2d asks for the display space and reports the space granted', () =>
   assert.equal(displayAnchor(), 'display-p3', 'a granted request does not latch anything');
 });
 
-test('acquire2d collapses to srgb — and latches — when the option is ignored', () => {
+test('acquire2d collapses to srgb - and latches - when the option is ignored', () => {
   installMatchMedia('p3');
   const ignored = fakeCanvas('srgb');
   assert.equal(acquire2d(ignored.canvas)?.encode, 'srgb');

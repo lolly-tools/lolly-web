@@ -77,7 +77,7 @@ const SINGLE_PLAYER = OUTSIDE.split('\n').filter(l => !/^\s*import\b/.test(l)).j
 
 test('the presence stack is acquired exactly once, and that is the only entry point', () => {
   assert.equal([...CODE.matchAll(/acquireCollabSession\(/g)].length, 1,
-    'one acquisition per mount — a second would be a second session');
+    'one acquisition per mount - a second would be a second session');
   assert.match(
     CODE,
     /const collabHandle = acquireCollabSession\(tool\.manifest\.id, slot \?\? null\);/,
@@ -91,7 +91,7 @@ test('the presence stack is acquired exactly once, and that is the only entry po
 
 test('the presence chunk is reached ONLY by a lazy import, inside the guard', () => {
   assert.match(BLOCK, /await import\('\.\/tool-collab\.ts'\)/,
-    'a static import would ride the tool chunk into every single-player mount — '
+    'a static import would ride the tool chunk into every single-player mount - '
     + 'collab-pill.ts\'s own rule is that a collab costs a single-player build nothing');
   assert.equal(/^\s*import \{[^}]*\} from '\.\/tool-collab\.ts';/m.test(CODE), false,
     'no VALUE import of the composition at the top of the file');
@@ -123,7 +123,7 @@ test('nothing but the seam is statically imported from the collab stack', () => 
       '../lib/collab-live-mount.ts',
     ],
     'the op plumbing (already there), the registry, and the mount hand-offs (already on '
-    + 'the boot path) — the pill, rings, cursors and session must stay behind the '
+    + 'the boot path) - the pill, rings, cursors and session must stay behind the '
     + 'dynamic import',
   );
 });
@@ -152,7 +152,7 @@ test('both re-anchor hooks are optional calls on a holder that stays null', () =
   const optional = [...CODE.matchAll(/collabReanchor\?\.\(\)/g)].length;
   assert.equal(optional, 2, 'exactly two hooks: the paint and the stage resize');
   assert.equal(/collabReanchor\(\)/.test(CODE), false,
-    'never called unguarded — the holder is null on every single-player mount');
+    'never called unguarded - the holder is null on every single-player mount');
 });
 
 test('teardown runs from _cleanup, before the op plumbing detaches', () => {
@@ -170,7 +170,7 @@ test('a navigation DURING the import cannot leak a live transport', () => {
   // an abort is torn straight back down instead of taking over a dead view.
   assert.ok(
     BLOCK.indexOf('collabTeardown = () => {') < BLOCK.indexOf('await import('),
-    'the teardown holder is armed BEFORE the first await — otherwise _cleanup finds '
+    'the teardown holder is armed BEFORE the first await - otherwise _cleanup finds '
     + 'nothing to call and the presence heartbeat runs on in a detached tree',
   );
   assert.match(BLOCK, /aborted = true;/);
@@ -190,7 +190,7 @@ test('a presence stack that fails to load costs the collab, never the tool', () 
 
 test('one transport per mount: the session takes over the op plumbing', () => {
   assert.match(BLOCK, /collab\?\.detach\(\);/,
-    'the bare plumbing detaches — two attachments over one adapter would emit every edit twice');
+    'the bare plumbing detaches - two attachments over one adapter would emit every edit twice');
   assert.ok(
     BLOCK.indexOf('collab?.detach()') < BLOCK.indexOf('await import('),
     'and it detaches BEFORE the session attaches its own',
@@ -208,7 +208,7 @@ test('the composition is handed the stage to mount in and the canvas to measure'
   assert.match(BLOCK, /toolManifest: tool\.manifest,/);
   assert.match(BLOCK, /^\s*host,$/m, 'the mount packs an outgoing beam from THIS mount\'s host');
   assert.match(BLOCK, /^\s*libraryHost,$/m,
-    'and lands a received one in the un-swapped library (section 6.4) — without this an acceptor '
+    'and lands a received one in the un-swapped library (section 6.4) - without this an acceptor '
     + 'kept the assets and lost the session they belong to, while the toast said both landed');
   assert.match(BLOCK, /exportSettings: \(\) => actionsApi\?\.sessionState\?\.\(\) \?\? null,/,
     'the `__export_*` markers live in the export bar\'s DOM and nowhere else, so a beamed '
@@ -234,6 +234,6 @@ test('the library host is captured BEFORE the acceptor swap, and used by nothing
   // Exactly two mentions: the capture and the hand-off to the composition. Any third
   // would be a save path routing around the interception the swap exists to be.
   assert.equal([...CODE.matchAll(/\blibraryHost\b/g)].length, 2,
-    'the un-swapped bridge is for the beam\'s INGEST and nothing else — every other save '
+    'the un-swapped bridge is for the beam\'s INGEST and nothing else - every other save '
     + 'in this view must go through `host`, which is what section 11.17 intercepts');
 });

@@ -134,7 +134,7 @@ test('a modern colour survives a PDF gradient stop', () => {
   assert.deepEqual(gradStopToRgb('navy', 0, 2), [0, 0, 128]);
 });
 
-test('unreadable input is still null everywhere — null must never mean black', () => {
+test('unreadable input is still null everywhere - null must never mean black', () => {
   for (const css of ['', 'garbage', 'rgb(', 'color(bogus 1 1 1)', 'color-mix(in oklab, red, blue)']) {
     assert.equal(parseCssColor(css), null, `export-css: ${css}`);
     assert.equal(parseSvgColor(css), null, `pdf: ${css}`);

@@ -633,7 +633,7 @@ export function pptxDeckToSlides(deck: PptxDeckRead, getMediaUrl?: (path: string
       boxes.push({
         kind: 'text', text: label,
         x: geo.x + pad, y: geo.y + pad, w: Math.max(1, geo.w - 2 * pad), h: Math.max(1, geo.h - 2 * pad),
-        rot: geo.rot, fontSize: npt(12), color: '#172029',   // explicit dark ink — the card is light
+        rot: geo.rot, fontSize: npt(12), color: '#172029',   // explicit dark ink - the card is light
       });
     };
     for (const node of sl.nodes) {
@@ -660,7 +660,7 @@ export function pptxDeckToSlides(deck: PptxDeckRead, getMediaUrl?: (path: string
       } else if (node.type === 'pic') {
         const src = node.media ? getMediaUrl?.(node.media) ?? null : null;
         if (src) boxes.push({ kind: 'image', ...geo, src });
-        else placeholder(geo, 'Image placeholder — could not be imported');
+        else placeholder(geo, 'Image placeholder - could not be imported');
       } else if (node.type === 'table') {
         if (!node.rows.length) continue;
         const row = (cells: string[]): string => '| ' + cells.map(tableCell).join(' | ') + ' |';
@@ -669,7 +669,7 @@ export function pptxDeckToSlides(deck: PptxDeckRead, getMediaUrl?: (path: string
           text: [row(node.rows[0]!), '| ' + node.rows[0]!.map(() => '---').join(' | ') + ' |', ...node.rows.slice(1).map(row)].join('\n'),
         });
       } else {
-        placeholder(geo, 'Chart / SmartArt placeholder — not editable');
+        placeholder(geo, 'Chart / SmartArt placeholder - not editable');
       }
     }
     boxes.length = Math.min(boxes.length, MAX_BOXES);   // a placeholder pair can land one over
@@ -1264,7 +1264,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
           const p = doc.caretPositionFromPoint?.(at.x, at.y);
           if (p && region.contains(p.offsetNode)) { range.setStart(p.offsetNode, p.offset); placed = true; }
         }
-      } catch { /* unsupported — fall through to the end */ }
+      } catch { /* unsupported - fall through to the end */ }
     }
     if (!placed) range.selectNodeContents(region);
     range.collapse(placed);   // caret point → collapse to it; fallback → END, never select-all
@@ -1618,8 +1618,8 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       const clr = document.createElement('button');
       clr.type = 'button'; clr.className = 'deck-free__clear';
       clr.textContent = '×';
-      clr.title = 'Clear — inherit the slide';
-      clr.setAttribute('aria-label', 'Clear colour — inherit the slide');
+      clr.title = 'Clear - inherit the slide';
+      clr.setAttribute('aria-label', 'Clear colour - inherit the slide');
       clr.disabled = !value;
       clr.addEventListener('click', onClear);
       wrap.append(host, clr);
@@ -1839,7 +1839,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const w = Math.round(nw * 0.4), h = Math.round(nh * 0.2);
     const seed: Record<string, unknown> = { kind, x: Math.round((nw - w) / 2), y: Math.round((nh - h) / 2), w, h };
     if (kind === 'text') { seed.text = 'Text'; seed.fit = true; }   // shrink-to-fit on by default
-    // A rectangle carrying a radius IS the rounded shape (see ShapeUi) — no `round` needed.
+    // A rectangle carrying a radius IS the rounded shape (see ShapeUi) - no `round` needed.
     else if (kind === 'box') { seed.shape = 'rect'; seed.radius = Math.round(nw * 0.02); seed.fill = '#cfd8dc'; }
     boxes.push(coerceBox(seed));
     const at = boxes.length - 1;
@@ -2469,7 +2469,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     loadPop.setAttribute('aria-label', 'Load a deck');
     loadPop.innerHTML =
       '<div class="deck-load__hd">Load a deck</div>' +
-      '<p class="deck-load__hint">Paste, <strong>upload</strong>, or <strong>drop a file</strong> — Markdown (slides split by <code>---</code>), JSON (an array of slides), a <strong>pptxgenjs</strong> script, or a PowerPoint <strong>.pptx</strong> (re-themed to your brand).</p>';
+      '<p class="deck-load__hint">Paste, <strong>upload</strong>, or <strong>drop a file</strong> - Markdown (slides split by <code>---</code>), JSON (an array of slides), a <strong>pptxgenjs</strong> script, or a PowerPoint <strong>.pptx</strong> (re-themed to your brand).</p>';
     const ta = document.createElement('textarea');
     ta.className = 'deck-load__ta';
     ta.setAttribute('aria-label', 'Deck Markdown or JSON');
@@ -2500,7 +2500,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       setActive(0);
       if (total > MAX_SLIDES) {
         // informational, not an error - the popover stays open so the note is readable
-        showNote('Loaded the first ' + MAX_SLIDES + ' slides — the deck has ' + total + '.');
+        showNote('Loaded the first ' + MAX_SLIDES + ' slides - the deck has ' + total + '.');
       } else {
         closeLoad();
       }
@@ -2554,7 +2554,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       if (!text) { closeLoad(); return; }
       let slides: Slide[];
       try { slides = parseDeck(text); }
-      catch (e) { showErr('Could not parse that — check the Markdown / JSON / pptxgenjs. ' + (e as Error).message); return; }
+      catch (e) { showErr('Could not parse that - check the Markdown / JSON / pptxgenjs. ' + (e as Error).message); return; }
       if (!slides.length) { showErr('No slides found in that input.'); return; }
       // A pptxgenjs import arrives with its own colours - re-theme them to the brand palette.
       if (isPptxGenSource(text)) { try { slides = await brandifyDeck(slides); } catch { /* keep the imported colours */ } }

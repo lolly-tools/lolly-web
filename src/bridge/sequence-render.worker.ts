@@ -1007,7 +1007,7 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     // not keep its filtered picture re-rendered it every frame, which is slower by a
     // lot and identical to the pixel - worth one line, never more than one.
     if (fxBudget.refused > 0) {
-      log('warn', `sequence: ${fxBudget.refused} depth layer(s) did not fit the ${Math.round(fxBudget.remaining / (1024 * 1024))}MB remaining of the cached-shadow allowance — those layers re-rendered their filter on every frame. Output is unchanged; the export was slower.`);
+      log('warn', `sequence: ${fxBudget.refused} depth layer(s) did not fit the ${Math.round(fxBudget.remaining / (1024 * 1024))}MB remaining of the cached-shadow allowance - those layers re-rendered their filter on every frame. Output is unchanged; the export was slower.`);
     }
     // Give the cached fx plates back BEFORE the pool is dropped - they came out of it,
     // and a render that has finished has no next frame to hold them for.
@@ -1170,7 +1170,7 @@ function reconcileProviders(
     const s = r.provider?.stats() ?? r.lastStats;
     if (!s) continue;
     if (!s.requests) {
-      log('info', 'sequence: a clip was never asked for a frame (invisible or zero-size) — nothing to reconcile.');
+      log('info', 'sequence: a clip was never asked for a frame (invisible or zero-size) - nothing to reconcile.');
       continue;
     }
     const srcFps = fps / (Number.isFinite(L.speed) && L.speed > 0 ? L.speed : 1);
@@ -1191,7 +1191,7 @@ function reconcileProviders(
       sourceFrameSec: s.sourceFrameSec,
     });
     if (!check.ok) {
-      throw sequenceError('SEQ_TRUNCATED', `a clip decoded ${check.shortfallSec.toFixed(2)}s short of its ${expected.toFixed(2)}s span — the source file looks truncated`);
+      throw sequenceError('SEQ_TRUNCATED', `a clip decoded ${check.shortfallSec.toFixed(2)}s short of its ${expected.toFixed(2)}s span - the source file looks truncated`);
     }
     log('info', `sequence: clip answered ${s.decoded}/${s.requests} requests (${s.missed} missed, ${s.unreachable} past its end, ${s.randomAccess ? 'random access' : 'primed'})`);
   }

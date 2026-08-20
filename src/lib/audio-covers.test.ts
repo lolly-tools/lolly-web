@@ -37,7 +37,7 @@ test('an unreadable stored value degrades to the generated look, never to an err
 
 // ─── structure frozen, colour re-resolves ────────────────────────────────────
 
-test('a cover FREEZES the shape — a rebrand must not turn a blob into a ring', () => {
+test('a cover FREEZES the shape - a rebrand must not turn a blob into a ring', () => {
   const covers = new Map([[ID, { shape: 'blob' as const, colour: 1 }]]);
   // Two completely different brand pools = a rebrand.
   const a = resolveAudioLook(ID, POOL, covers);
@@ -57,7 +57,7 @@ test('a pinned index the current pool cannot satisfy falls back rather than blan
   const covers = new Map([[ID, { shape: 'wave' as const, colour: 7 }]]);
   const got = resolveAudioLook(ID, POOL, covers);
   assert.equal(got.shape, 'wave', 'the shape still holds');
-  assert.ok(got.ink, 'and it still paints — a smaller palette is not a reason to blank a cover');
+  assert.ok(got.ink, 'and it still paints - a smaller palette is not a reason to blank a cover');
   // The choice is not destroyed: a pool that grows back makes it work again.
   assert.equal(resolveAudioLook(ID, [...POOL, 'a', 'b', 'c', '#123456'], covers).ink!.hex, '#123456');
 });
@@ -86,7 +86,7 @@ test('covers for OTHER assets never leak onto this one', () => {
 
 // ─── storage ─────────────────────────────────────────────────────────────────
 
-test('saving and clearing — reverting is as easy as setting', async () => {
+test('saving and clearing - reverting is as easy as setting', async () => {
   const { saved, host } = fakeHost();
   const profile: Profile = {};
   await saveAudioCover(host, profile, ID, { shape: 'blob', colour: 1 });
@@ -107,7 +107,7 @@ test('one asset’s cover does not disturb another’s', async () => {
   assert.deepEqual(profile.audioCovers, { 'lolly/songs/drift': 'ring:0' });
 });
 
-test('a failed profile write is non-fatal — the choice just does not survive a reload', async () => {
+test('a failed profile write is non-fatal - the choice just does not survive a reload', async () => {
   const host = { profile: { set: async () => { throw new Error('quota'); } } } as never;
   const profile: Profile = {};
   await assert.doesNotReject(() => saveAudioCover(host, profile, ID, { shape: 'blob' }));

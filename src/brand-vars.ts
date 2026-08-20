@@ -147,7 +147,7 @@ async function applyBrandFonts(host: { tokens?: BrandTokens }): Promise<void> {
   try {
     if (Object.keys(applied).length) localStorage.setItem(FONT_CACHE_KEY, JSON.stringify(applied));
     else localStorage.removeItem(FONT_CACHE_KEY);
-  } catch { /* storage unavailable — pre-boot restore just won't happen */ }
+  } catch { /* storage unavailable - pre-boot restore just won't happen */ }
 }
 
 // ── Brand shape (corner radius) ──────────────────────────────────────────────
@@ -795,7 +795,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
     const hslHue = primary ? hexHslHue(primary) : null;
     if (hslHue == null) applyBrandLogo(null);
     else void tintLogo(hslHue).then(applyBrandLogo).catch(() => applyBrandLogo(null));
-  } catch { /* cosmetic only — never break boot */ }
+  } catch { /* cosmetic only - never break boot */ }
 }
 
 /**
@@ -828,6 +828,6 @@ export async function applyBrandVars(el: HTMLElement, host: BrandVarsHost): Prom
         : colorToHex(value);
       if (css) el.style.setProperty(cssVar, css);
       else el.style.removeProperty(cssVar);
-    } catch { /* cosmetic only — never break mounting */ }
+    } catch { /* cosmetic only - never break mounting */ }
   }));
 }

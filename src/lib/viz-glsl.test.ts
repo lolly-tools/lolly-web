@@ -87,7 +87,7 @@ test('every shader has a shader_body block with balanced braces and parens', () 
   }
 });
 
-test('every shader assigns ret — that is its only output', () => {
+test('every shader assigns ret - that is its only output', () => {
   for (const [name, src] of ALL) {
     const body = src.slice(src.indexOf('shader_body'));
     assert.match(body, /\bret\s*=/, `${name} never assigns ret`);

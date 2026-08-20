@@ -253,7 +253,7 @@ export function createMediaAPI(): WebMediaAPI {
         // exactly how the frozen-rotation bug hid.
         if (!commitWarnedOnce) {
           commitWarnedOnce = true;
-          console.warn('media: commitStyles failed on an animated target (typically transform on an SVG element) — using computed-style transform stamping instead', e);
+          console.warn('media: commitStyles failed on an animated target (typically transform on an SVG element) - using computed-style transform stamping instead', e);
         }
       }
     }

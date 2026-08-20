@@ -522,7 +522,7 @@ export async function mdToDocxBlob(text: string, title: string): Promise<Blob> {
         ps.push(`<w:p><w:pPr><w:ind w:left="360"/></w:pPr>${docxRuns(b.runs, { italic: true })}</w:p>`);
         break;
       case 'rule':
-        ps.push(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${docxRun('———', {})}</w:p>`);
+        ps.push(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${docxRun('---', {})}</w:p>`);
         break;
     }
   });
@@ -629,7 +629,7 @@ export async function mdToOdtBlob(text: string, title: string): Promise<Blob> {
         body.push(`<text:p text:style-name="QT">${odtSpans(b.runs)}</text:p>`);
         break;
       case 'rule':
-        body.push('<text:p text:style-name="RC">———</text:p>');
+        body.push('<text:p text:style-name="RC">---</text:p>');
         break;
     }
   });

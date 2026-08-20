@@ -269,7 +269,7 @@ export async function createBridge(): Promise<WebHost> {
   const lazySubscribe = <T>(load: () => Promise<T>, attach: (impl: T) => () => void): (() => void) => {
     let off: (() => void) | null = null;
     let cancelled = false;
-    void load().then((impl) => { if (!cancelled) off = attach(impl); }).catch(() => { /* impl unavailable — no frames, as before */ });
+    void load().then((impl) => { if (!cancelled) off = attach(impl); }).catch(() => { /* impl unavailable - no frames, as before */ });
     return () => { cancelled = true; off?.(); off = null; };
   };
   type WebMediaImpl = ReturnType<typeof import('./media.ts')['createMediaAPI']>;

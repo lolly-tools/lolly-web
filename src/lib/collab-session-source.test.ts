@@ -54,7 +54,7 @@ test('dormant by default: no source, and acquiring returns null', () => {
   assert.equal(acquireCollabSession('qr-code', null), null);
 });
 
-test('acquiring while dormant allocates NOTHING — the solo cost is one null check', () => {
+test('acquiring while dormant allocates NOTHING - the solo cost is one null check', () => {
   _clearCollabSessionSourceForTests();
   // The dormant path must not build the context object it would pass a factory.
   // Proven by construction rather than by reading the source: a factory registered

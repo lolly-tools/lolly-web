@@ -876,7 +876,7 @@ test('the whole ceremony runs: invite → probe → answer → connected, on bot
   // MEASURED: one frame each on the ops lane so far, and it is the hello.
   assert.equal(c.ab.sent, 1, 'the host wrote exactly one ops frame: the hello');
   assert.equal(c.ba.sent, 1, 'and so did the guest');
-  assert.equal(c.a.inbound.length, 0, 'no ops yet — a hello is not an op');
+  assert.equal(c.a.inbound.length, 0, 'no ops yet - a hello is not an op');
   assert.equal(c.b.inbound.length, 0);
 
   c.close();
@@ -1199,7 +1199,7 @@ test(
     c.injectOpsAtB(flood(1000, 150));
     await c.settle();
     assert.equal(c.b.abuse.length, 0, 'the first 150 are within the ceiling');
-    assert.equal(c.b.values().title, 'flood-1149', 'and they landed — this is not a wholesale refusal');
+    assert.equal(c.b.values().title, 'flood-1149', 'and they landed - this is not a wholesale refusal');
 
     c.injectOpsAtB(flood(2000, 150));
     await c.settle();
@@ -1248,7 +1248,7 @@ test('a dropped op frame is repaired by the 20 s dirty state exchange', async ()
   assert.equal(c.ab.dropped, 1, 'exactly one frame went missing');
   assert.equal(c.ab.delivered, framesBefore, 'and none arrived in its place');
   assert.equal(c.a.values().count, 5, 'the host made the edit');
-  assert.equal(c.b.values().count, 1, 'the guest never heard about it — the pair has DIVERGED');
+  assert.equal(c.b.values().count, 1, 'the guest never heard about it - the pair has DIVERGED');
   assert.notEqual(
     serializeDoc(c.a.handle.docState()), serializeDoc(c.b.handle.docState()),
     'and the documents say so, which is what the backstop is for',
@@ -1271,14 +1271,14 @@ test('a dropped op frame is repaired by the 20 s dirty state exchange', async ()
   assert.equal(c.ab.delivered, framesBefore + 1, 'the repair cost exactly one frame');
   assert.equal(
     c.b.inbound.length, inboundBefore + 1,
-    'and exactly one op — a restatement of what a peer already holds changes nothing',
+    'and exactly one op - a restatement of what a peer already holds changes nothing',
   );
 
   // The flag is dirty-gated: a second 20 s with nothing new to say is silent.
   const afterRepair = c.ab.delivered;
   c.clock.advance(BACKSTOP_INTERVAL_MS);
   await c.settle();
-  assert.equal(c.ab.delivered, afterRepair, 'a clean side exchanges nothing (section 6.2 — "only when dirty")');
+  assert.equal(c.ab.delivered, afterRepair, 'a clean side exchanges nothing (section 6.2 - "only when dirty")');
 
   c.close();
 });

@@ -76,7 +76,7 @@ const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 
 // ── shadow DOM ────────────────────────────────────────────────────────────────
 
-test('shadow-root content is walked — it used to be invisible entirely', { skip: SKIP }, async () => {
+test('shadow-root content is walked - it used to be invisible entirely', { skip: SKIP }, async () => {
   const svg = await render(root(`<div id="host"></div>`), `
     const sr = document.getElementById('host').attachShadow({ mode: 'open' });
     sr.innerHTML = '<div style="width:80px;height:30px;background:rgb(3,4,5)">Inside</div>';
@@ -137,7 +137,7 @@ test('a blur filter gets a filter region big enough to hold the spread', { skip:
   assert.ok(m);
   assert.match(m[1]!, /filterUnits="userSpaceOnUse"/);
   const w = Number.parseFloat(/width="([\d.]+)"/.exec(m[1]!)![1]!);
-  assert.ok(w >= 50 + 6 * 10, `region ${w} is too tight for a 10px blur — the edges would be clipped`);
+  assert.ok(w >= 50 + 6 * 10, `region ${w} is too tight for a 10px blur - the edges would be clipped`);
 });
 
 test('a drop-shadow-only filter adds no SVG filter, since it is drawn as geometry',
@@ -205,7 +205,7 @@ test('a replaced element inside a plain-inline wrapper is not dropped', { skip: 
     'the image must be emitted even though its wrapper has no box of its own');
 });
 
-test('cover still fills the box — the case the old behaviour got right', { skip: SKIP }, async () => {
+test('cover still fills the box - the case the old behaviour got right', { skip: SKIP }, async () => {
   const svg = await render(root(
     `<div style="width:200px;height:100px;background:url('${PNG20x10}') no-repeat center / cover"></div>`));
   // 20:10 image in a 200:100 box: cover is an exact fit either way.

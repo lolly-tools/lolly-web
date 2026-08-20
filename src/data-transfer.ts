@@ -183,7 +183,7 @@ function backupReadme(
     "A portable backup of everything you've made in Lolly on one device.",
     'Open Lolly on another device, go to Profile → Storage → “Import data…”',
     'and choose this .zip to pick up exactly where you left off.',
-    'Everything stayed on your devices — nothing was uploaded.',
+    'Everything stayed on your devices - nothing was uploaded.',
     '',
     '',
     "[ What's inside ]",
@@ -385,7 +385,7 @@ export async function importBackup(
     maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
     maxTotalBytes: MAX_RESTORE_TOTAL_BYTES,
     tooLarge: name => `That backup expands too large to restore (${name}).`,
-    invalid: "That file isn't a valid backup — it couldn't be unzipped.",
+    invalid: "That file isn't a valid backup - it couldn't be unzipped.",
   });
 
   const manifest = readJson(files, 'manifest.json');

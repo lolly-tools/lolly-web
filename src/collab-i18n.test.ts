@@ -97,9 +97,9 @@ const catalogs = readdirSync(COLLAB_LOCALES)
 
 test('sanity: every collab STRINGS map was found and is non-empty', () => {
   for (const m of MODULES) {
-    assert.ok(leaves(m.strings).length > 0, `${m.rel} exports an empty STRINGS map — this file would pass vacuously`);
+    assert.ok(leaves(m.strings).length > 0, `${m.rel} exports an empty STRINGS map - this file would pass vacuously`);
   }
-  assert.ok(ALL_KEYS.length > 150, `only ${ALL_KEYS.length} collab keys — a map moved or was renamed`);
+  assert.ok(ALL_KEYS.length > 150, `only ${ALL_KEYS.length} collab keys - a map moved or was renamed`);
 });
 
 test('the collab namespace has a catalog for every non-English locale', () => {
@@ -120,7 +120,7 @@ test('every string the collab surface can render is a key in all 26 catalogs', (
   assert.deepEqual(
     missing.slice(0, 20),
     [],
-    `${missing.length} collab string(s) have no catalog entry — regenerate with\n`
+    `${missing.length} collab string(s) have no catalog entry - regenerate with\n`
     + '  npm run translate -- --corpus collab --export-pending   (then --import)\n'
     + missing.slice(0, 20).join('\n'),
   );
@@ -139,7 +139,7 @@ test('no catalog carries a key the modules no longer render', () => {
   assert.deepEqual(orphans.slice(0, 20), [], `${orphans.length} orphaned catalog key(s):\n${orphans.slice(0, 20).join('\n')}`);
 });
 
-test('no catalog entry is empty — a half-filled translation must never render blank', () => {
+test('no catalog entry is empty - a half-filled translation must never render blank', () => {
   const blanks: string[] = [];
   for (const { lang, path } of catalogs) {
     const cat = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
@@ -187,7 +187,7 @@ test('no collab catalog is a wholesale English echo of its own keys', () => {
     const cat = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
     const { graded, echoed } = echoStats(cat, SUBSTANTIAL);
     if (graded >= 50 && echoed > graded * 0.25) {
-      problems.push(`${lang}: ${echoed}/${graded} long strings are identical to English — this catalog was never translated`);
+      problems.push(`${lang}: ${echoed}/${graded} long strings are identical to English - this catalog was never translated`);
     }
   }
   assert.deepEqual(problems, [], `\n${problems.join('\n')}\n`);
@@ -211,7 +211,7 @@ const IDENTICAL_OK: ReadonlySet<string> = new Set([
   'Name',           // de/nl spell it identically
   'Invitee',        // fr loanword, unchanged in en
   'Invitee {n}',    // the same word plus a number
-  'Lolly',          // glossary.neverTranslate — a product name
+  'Lolly',          // glossary.neverTranslate - a product name
   'OK',             // universal
   'QR',             // universal
   'beta',           // universal
@@ -249,13 +249,13 @@ test('no collab catalog is an English echo end to end', () => {
     // below stops meaning anything.
     assert.ok(
       graded >= Object.keys(cat).length * 0.9,
-      `${lang}: IDENTICAL_OK excuses ${Object.keys(cat).length - graded} of ${Object.keys(cat).length} strings — `
+      `${lang}: IDENTICAL_OK excuses ${Object.keys(cat).length - graded} of ${Object.keys(cat).length} strings - `
       + 'the allowlist is meant to name a handful of loanwords, not to shrink the sample',
     );
     if (echoed > graded * 0.9) {
       problems.push(
         `${lang}: ${echoed}/${graded} values are byte-identical to their English key `
-        + '— this catalog is the pipeline\'s English fallback, not a translation',
+        + '- this catalog is the pipeline\'s English fallback, not a translation',
       );
     }
   }
@@ -288,7 +288,7 @@ test('the echo guards fail a wholly-English catalog and clear a translated one',
   const translated = Object.fromEntries(keys.map((k) => [k, IDENTICAL_OK.has(k) ? k : `«${k}»`]));
 
   const eSub = echoStats(untranslated, SUBSTANTIAL);
-  assert.ok(eSub.graded >= 50, `only ${eSub.graded} substantial strings — the first guard would not even run`);
+  assert.ok(eSub.graded >= 50, `only ${eSub.graded} substantial strings - the first guard would not even run`);
   assert.ok(eSub.echoed > eSub.graded * 0.25, 'the substantial-sample guard no longer fires on an all-English catalog');
 
   const eAll = echoStats(untranslated, GRADEABLE);
@@ -299,7 +299,7 @@ test('the echo guards fail a wholly-English catalog and clear a translated one',
   const tSub = echoStats(translated, SUBSTANTIAL);
   assert.ok(!(tSub.graded >= 50 && tSub.echoed > tSub.graded * 0.25), 'the substantial-sample guard flags a translated catalog');
   const tAll = echoStats(translated, GRADEABLE);
-  assert.equal(tAll.echoed, 0, 'a translated catalog still reads as echoed — the comparison is wrong');
+  assert.equal(tAll.echoed, 0, 'a translated catalog still reads as echoed - the comparison is wrong');
 });
 
 test('every placeholder survives into every collab translation', () => {
@@ -321,7 +321,7 @@ test('every placeholder survives into every collab translation', () => {
       }
     }
   }
-  assert.ok(checked >= 26, `only ${checked} placeholder-bearing collab strings seen — the scan is not finding them`);
+  assert.ok(checked >= 26, `only ${checked} placeholder-bearing collab strings seen - the scan is not finding them`);
   assert.deepEqual(problems.slice(0, 20), [], problems.join('\n'));
 });
 
@@ -399,7 +399,7 @@ test('every STRINGS reference in the collab modules is inside a t()/tRaw() call'
   for (const { rel } of MODULES) {
     const src = readFileSync(join(HERE, rel), 'utf8');
     const start = src.indexOf('export const STRINGS');
-    assert.ok(start > 0, `${rel}: STRINGS moved or was renamed — this guard would pass vacuously`);
+    assert.ok(start > 0, `${rel}: STRINGS moved or was renamed - this guard would pass vacuously`);
     // Blank the map itself: its keys are declarations, not references.
     const mapEnd = src.indexOf('\n};', start) >= 0 ? src.indexOf('\n};', start) : src.indexOf('\n} as const;', start);
     assert.ok(mapEnd > start, `${rel}: the STRINGS map no longer ends at column 0`);
@@ -419,7 +419,7 @@ test('every STRINGS reference in the collab modules is inside a t()/tRaw() call'
       }
     }
   }
-  assert.ok(checked > 100, `only ${checked} STRINGS references scanned — the walk has rotted`);
+  assert.ok(checked > 100, `only ${checked} STRINGS references scanned - the walk has rotted`);
   assert.deepEqual(
     bare,
     [],
@@ -463,7 +463,7 @@ test('every STRINGS map in the web shell is a corpus source or a documented exce
   };
   for (const root of roots) walk(root);
 
-  assert.ok(found.length >= MODULES.length, `only ${found.length} STRINGS maps found — the walk has rotted`);
+  assert.ok(found.length >= MODULES.length, `only ${found.length} STRINGS maps found - the walk has rotted`);
   const known = new Set([...MODULES.map((m) => m.rel), ...Object.keys(NOT_A_CORPUS_SOURCE)]);
   const unaccounted = found.filter((rel) => !known.has(rel));
   assert.deepEqual(
@@ -562,13 +562,13 @@ test('the session-tile badge copy is listed for the spa corpus', () => {
   const extra = JSON.parse(readFileSync(EXTRA_KEYS, 'utf8')) as string[];
   const src = readFileSync(join(HERE, 'lib/collab-tile-state.ts'), 'utf8');
   const literals = [...src.matchAll(/(?<![\w$.])tRaw\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]!);
-  assert.ok(literals.length >= 4, `only ${literals.length} literal tRaw() sources in collab-tile-state.ts — the badge copy moved`);
+  assert.ok(literals.length >= 4, `only ${literals.length} literal tRaw() sources in collab-tile-state.ts - the badge copy moved`);
   const unlisted = literals.filter((s) => !extra.includes(s));
   assert.deepEqual(
     unlisted,
     [],
     'a tRaw() literal in collab-tile-state.ts that extractSpaKeys cannot see and '
-    + `extra-keys.spa.json does not list — it will be dropped by the next spa run:\n${unlisted.join('\n')}`,
+    + `extra-keys.spa.json does not list - it will be dropped by the next spa run:\n${unlisted.join('\n')}`,
   );
   // And NOT in the lazy namespace: a tile paints with no await to load one from.
   const known = new Set(ALL_KEYS);

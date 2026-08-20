@@ -120,7 +120,7 @@ test('a context that stores the filter and ignores it is NOT supported', () => {
   assert.equal(ctx.filter, 'blur(2px)');
 });
 
-test('a context with NO filter property is not supported — and assignment lies', () => {
+test('a context with NO filter property is not supported - and assignment lies', () => {
   // Measured behavior of WebKit 26.5 / Safari 26 (2026-08-11): `filter` is on neither the
   // context nor CanvasRenderingContext2D.prototype, yet `ctx.filter = 'blur(2px)'`
   // succeeds as a plain expando and reads back verbatim. An assign-and-read-back
@@ -141,7 +141,7 @@ test('a readback that throws is not supported', () => {
   assert.equal(probeCanvasFilter(new StubCtx({ blurs: true, readThrows: true })), false);
 });
 
-test('a dirty control pass is not supported — spread must be ATTRIBUTABLE', () => {
+test('a dirty control pass is not supported - spread must be ATTRIBUTABLE', () => {
   // This stub spreads ink with the filter set to 'none' too, so ink at the sample
   // pixel says nothing about the filter. The probe refuses rather than claiming a
   // support it did not observe - false only ever costs the caller the slower lane.

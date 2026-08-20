@@ -105,10 +105,10 @@ test('ingest stores a profile as a user asset under its content digest', async (
   assert.equal(rec.type, 'profile');
   assert.equal(rec.format, 'icc');
   assert.equal(rec.meta?.channels, 4);
-  assert.deepEqual(rec.meta?.intents, entry.intents, 'the row renders from meta alone — no re-parse to draw it');
+  assert.deepEqual(rec.meta?.intents, entry.intents, 'the row renders from meta alone - no re-parse to draw it');
 });
 
-test('the stored digest is the one iccGamutSource mints — a shared link matches by construction', async () => {
+test('the stored digest is the one iccGamutSource mints - a shared link matches by construction', async () => {
   _resetProfileCache();
   const host = fakeHost();
   const bytes = pressBytes();
@@ -137,7 +137,7 @@ test('different bytes are different profiles', async () => {
   assert.equal(host.store.size, 2);
 });
 
-test('an RGB display profile mounts — it is a comparison target with no ink', async () => {
+test('an RGB display profile mounts - it is a comparison target with no ink', async () => {
   _resetProfileCache();
   const host = fakeHost();
   const entry = ok(await ingestProfile(host, asFile(displayBytes(), 'monitor.icc')));
@@ -253,7 +253,7 @@ test('activating mounts a picker tab and answers gamut questions', async () => {
   const src = await activateProfile(host, entry.digest, 'relative');
   assert.ok(src, 'a stored profile must mount');
   assert.equal(src!.id, `icc:${entry.digest}:relative`);
-  assert.ok(getColorSpace(src!.id), 'mounting registers the space — the picker tab needs no enum edit');
+  assert.ok(getColorSpace(src!.id), 'mounting registers the space - the picker tab needs no enum edit');
   assert.equal(sourceFor(entry.digest)!.id, src!.id);
   assert.equal(sourceForLimit(src!.id)!.id, src!.id);
   assert.equal(typeof src!.contains(0.5, 0.05, 30), 'boolean');
@@ -327,7 +327,7 @@ test('a link heals the moment the matching file is added', async () => {
   assert.equal(await activateProfileLimit(host, link), null);
   ok(await ingestProfile(host, asFile(bytes)));
   const src = await activateProfileLimit(host, link);
-  assert.ok(src, 'the same bytes anywhere produce the same id — that is what content addressing buys');
+  assert.ok(src, 'the same bytes anywhere produce the same id - that is what content addressing buys');
   assert.equal(src!.id, link);
   _resetProfileCache();
 });
@@ -340,7 +340,7 @@ test('a stored row whose bytes will not parse mounts nothing', async () => {
     blob: new Blob([new Uint8Array(64) as unknown as BlobPart]),
     meta: { name: 'corrupt.icc', addedAt: 1 },
   });
-  assert.equal((await listProfiles(host)).length, 1, 'the row still lists — it is the user’s file');
+  assert.equal((await listProfiles(host)).length, 1, 'the row still lists - it is the user’s file');
   assert.equal(await activateProfile(host, '0123456789abcdef'), null);
 });
 

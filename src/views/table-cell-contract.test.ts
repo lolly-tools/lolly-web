@@ -69,7 +69,7 @@ function couldHitTableCell(sel: string): boolean {
 test('every .input-row textarea/input rule excludes .table-cell', () => {
   const found = selectors(readFileSync(CSS_PATH, 'utf8')).filter(couldHitTableCell);
   assert.deepEqual(found, [],
-    `these .input-row field rules would also style table cells — add :not(.table-cell):\n  ${found.join('\n  ')}`);
+    `these .input-row field rules would also style table cells - add :not(.table-cell):\n  ${found.join('\n  ')}`);
 });
 
 test('the .table-cell recipe still states the declarations it is protecting', () => {

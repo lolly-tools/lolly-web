@@ -212,7 +212,7 @@ export function canRun(src: { width: number; height: number }, opts: MatteOpts =
     const peak = src.width * src.height * 4 + outW * outH * 4 + edge * edge * 3 * 4 + edge * edge * 4;
     const budget = deviceMemoryGb() * 1024 * 1024 * 1024 * 0.25;
     if (peak > budget) {
-      return { ok: false, reason: 'memory', message: 'Not enough memory for an image this size — try a smaller export size.',
+      return { ok: false, reason: 'memory', message: 'Not enough memory for an image this size - try a smaller export size.',
         suggestedMaxEdge: Math.max(512, Math.floor(cap * 0.7)) };
     }
     return { ok: true };

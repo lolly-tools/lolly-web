@@ -200,7 +200,7 @@ test('the menu entry is always THERE on an image tool, and disabled off an SVG',
     rightClick(f, 200, 200);
     const rows = menuRows(f);
     const lift = rows.get('Lift layers');
-    assert.ok(lift, 'a raster selection still shows the entry — a menu that changes '
+    assert.ok(lift, 'a raster selection still shows the entry - a menu that changes '
       + 'height between right-clicks teaches nothing, and the entry is the discovery');
     assert.equal(lift!.disabled, true, 'but it cannot run on a photograph');
   } finally { f.destroy(); }
@@ -230,7 +230,7 @@ test('a Lottie is not liftable, and neither is a multi-selection', () => {
   try {
     rightClick(f, 200, 200);
     assert.equal(menuRows(f).get('Lift layers')!.disabled, true,
-      'a Lottie is vector, but its layers are JSON — the enumerator would refuse it anyway');
+      'a Lottie is vector, but its layers are JSON - the enumerator would refuse it anyway');
   } finally { f.destroy(); }
 
   const g = mount([box({ image: svgRef() }), box({ id: 'b', x: 600, image: svgRef() })]);
@@ -241,11 +241,11 @@ test('a Lottie is not liftable, and neither is a multi-selection', () => {
     g.canvasEl.dispatchEvent(pointerEvent('pointerup', 950, 500));
     rightClick(g, 200, 200);
     assert.equal(menuRows(g).get('Lift layers')!.disabled, true,
-      'two stacks at once has no defined ordering — one box, one lift');
+      'two stacks at once has no defined ordering - one box, one lift');
   } finally { g.destroy(); }
 });
 
-test('a tool with NO image field never offers it — progressive capability, not a branch', () => {
+test('a tool with NO image field never offers it - progressive capability, not a branch', () => {
   const cfg = canvasCfg();
   delete cfg.imageField;
   const f = mount([box()], cfg);
@@ -256,7 +256,7 @@ test('a tool with NO image field never offers it — progressive capability, not
   } finally { f.destroy(); }
 });
 
-test('the More panel carries it too — and only when this selection can be lifted', () => {
+test('the More panel carries it too - and only when this selection can be lifted', () => {
   const f = mount([box({ image: svgRef() })]);
   try {
     f.canvasEl.dispatchEvent(pointerEvent('pointerdown', 200, 200));
@@ -300,11 +300,11 @@ test('the reading state is a STATE: busy while it works, one live line, focus ke
     rightClick(f, 200, 200);
     click(menuRows(f).get('Lift layers')!);
     const p = f.stageEl.querySelector<HTMLElement>('.fc-lift-panel')!;
-    assert.ok(p, 'the panel is up immediately — the read is what takes time, not the panel');
+    assert.ok(p, 'the panel is up immediately - the read is what takes time, not the panel');
     assert.equal(p.getAttribute('aria-busy'), 'true', 'and it says it is working');
     assert.equal(dom.window.document.activeElement, p,
       'focus goes IN on the gesture that opened it, so the dialog’s name and its '
-      + 'reading sentence are what gets read — and every later move is within it');
+      + 'reading sentence are what gets read - and every later move is within it');
     const msg = p.querySelector<HTMLElement>('[data-lift-msg]')!;
     assert.equal(msg.getAttribute('role'), 'status');
     assert.equal(msg.getAttribute('aria-live'), 'polite');
@@ -313,7 +313,7 @@ test('the reading state is a STATE: busy while it works, one live line, focus ke
     await settle();
     assert.equal(p.getAttribute('aria-busy'), null, 'the work is over, so the state is too');
     assert.equal(p.querySelector('[data-lift-msg]'), msg,
-      'the SAME node — the outcome is a change to a mounted live region, not a new '
+      'the SAME node - the outcome is a change to a mounted live region, not a new '
       + 'region announced to nobody');
     assert.match(msg.textContent || '', /3 layers found/);
     assert.equal(dom.window.document.activeElement, p.querySelector('[data-lift-yes]'),
@@ -341,7 +341,7 @@ test('a user who walks away while it reads keeps their focus', async () => {
   } finally { elsewhere.remove(); f.destroy(); }
 });
 
-test('the dialog states the count, lists every layer, and asks — it does not act', async () => {
+test('the dialog states the count, lists every layer, and asks - it does not act', async () => {
   (globalThis as Record<string, unknown>).__liftSvg = ART;
   uploads.length = 0;
   const f = mount([box({ image: svgRef() })]);
@@ -363,7 +363,7 @@ test('the dialog states the count, lists every layer, and asks — it does not a
   } finally { f.destroy(); }
 });
 
-test('confirming writes the model exactly ONCE — the whole lift is one undo step', async () => {
+test('confirming writes the model exactly ONCE - the whole lift is one undo step', async () => {
   (globalThis as Record<string, unknown>).__liftSvg = ART;
   uploads.length = 0;
   const f = mount([box({ image: svgRef(), bg: '#ff0000', text: 'Caption' }), box({ id: 'z', x: 700 })]);
@@ -377,7 +377,7 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
       'ONE commit: one ⌘Z puts the original box back, whatever N was');
     const rows = f.boxes() as Array<Record<string, unknown>>;
     assert.equal(rows.length, 4, 'three lifted rows replaced the one source, plus the untouched box');
-    assert.equal(rows[3]!.id, 'z', 'and the lift kept its place in the array — array order IS z-order');
+    assert.equal(rows[3]!.id, 'z', 'and the lift kept its place in the array - array order IS z-order');
 
     const lifted = rows.slice(0, 3);
     // P3.2's eff-band ladder, not a fixed 40 px step: three layers get three full
@@ -394,7 +394,7 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
     // says so before the documents are derived, so the documents are uncropped too
     // (asserted below: every one still carries the source's own viewBox).
     for (const r of lifted) {
-      assert.equal(r.x, 100, 'same geometry — the derived documents are in ROOT coordinates');
+      assert.equal(r.x, 100, 'same geometry - the derived documents are in ROOT coordinates');
       assert.equal(r.y, 100);
       assert.equal(r.w, 400);
       assert.equal(r.h, 300);
@@ -422,7 +422,7 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
   } finally { f.destroy(); }
 });
 
-test('a plain image box lifts into CONTENT-SIZED rows — the shadow follows the ink', async () => {
+test('a plain image box lifts into CONTENT-SIZED rows - the shadow follows the ink', async () => {
   (globalThis as Record<string, unknown>).__liftSvg = ART;
   uploads.length = 0;
   // No background, no caption: nothing else rides on the bottom or top row, so the
@@ -443,7 +443,7 @@ test('a plain image box lifts into CONTENT-SIZED rows — the shadow follows the
       [lifted[1]!.x, lifted[1]!.y, lifted[1]!.w, lifted[1]!.h], [192, 277, 201, 66],
       'the row is its own ink, mapped through the source box',
     );
-    assert.equal(lifted[1]!.fit, 'fill', 'a cropped row stretches its crop over its rect — an identity');
+    assert.equal(lifted[1]!.fit, 'fill', 'a cropped row stretches its crop over its rect - an identity');
     for (const r of lifted) {
       assert.ok(
         Number(r.x) >= 100 && Number(r.y) >= 100
@@ -483,7 +483,7 @@ test('a single-layer drawing is refused in words, with nothing to confirm', asyn
     assert.equal(p.querySelector('[data-lift-yes]'), null, 'there is nothing to say yes to');
     assert.ok(p.querySelector('[data-lift-close]'), 'just a way out');
     assert.match(p.textContent || '', /single layer|nothing to lift/i,
-      'and the reason, in words — lifting one layer adds a box and a group for no gain');
+      'and the reason, in words - lifting one layer adds a box and a group for no gain');
     assert.equal(uploads.length, 0);
   } finally { f.destroy(); }
 });

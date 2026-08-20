@@ -112,7 +112,7 @@ function turnHtml(turn: AskTurn): string {
 }
 
 export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: string): Promise<void> {
-  document.title = tRaw('{name} — Lolly', { name: t('Ask Lolly') });
+  document.title = tRaw('{name} - Lolly', { name: t('Ask Lolly') });
 
   // Ensure the spotlight providers are registered - the overlay registers them
   // lazily on its first query, which may not have happened if the user came

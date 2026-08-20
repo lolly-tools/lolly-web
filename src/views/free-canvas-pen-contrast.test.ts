@@ -40,7 +40,7 @@ test('the path preview keeps a halo, not a bare --primary stroke', () => {
     'the preview <path> is stroked in currentColor only, so its halo must come from the layer filter');
   assert.match(r, /--pen-casing/, 'the halo must include the light casing');
   assert.equal((r.match(/drop-shadow\(/g) ?? []).length, 2,
-    'the halo must be a PAIR (light casing then dark edge) — one tone alone fails on the backdrop that matches it');
+    'the halo must be a PAIR (light casing then dark edge) - one tone alone fails on the backdrop that matches it');
   // The rejected alternative. If someone reaches for it later it should be a deliberate
   // decision with the trade-offs re-argued, not a silent swap.
   assert.doesNotMatch(r, /mix-blend-mode/,
@@ -63,7 +63,7 @@ test('the arms are cased on both sides and are no longer a 60% hairline', () => 
   assert.match(r, /box-shadow:[^;]*var\(--pen-casing\)/, 'the arm needs the light casing');
   assert.match(r, /box-shadow:[^;]*rgba\(0,\s*0,\s*0/, 'the arm needs the dark edge beyond the casing');
   assert.doesNotMatch(r, /background:\s*hsl\(var\(--primary\)\s*\/\s*0\.6\)/,
-    'the arm ink must not go back to 60% — it was the least visible mark in the editor');
+    'the arm ink must not go back to 60% - it was the least visible mark in the editor');
 });
 
 test('the continuity vocabulary survives the halo', () => {
