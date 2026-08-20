@@ -7,6 +7,10 @@
   "Scan a code": "Code scannen",
   "Nothing was scanned. Paste the text instead.": "Er is niets gescand. Plak de tekst in plaats daarvan.",
   "The camera could not be used. Paste the text instead.": "De camera kon niet worden gebruikt. Plak de tekst in plaats daarvan.",
+  "Tap to enlarge for scanning": "Tik om te vergroten voor het scannen",
+  "Enlarge {label} for scanning": "{label} vergroten voor het scannen",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Houd een ander apparaat hier om het te scannen. Tik ergens of druk op Escape om te sluiten.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Deze link is te lang om te scannen. Kopieer hem in plaats daarvan, of gebruik het tabblad Code.",
   "Your name in this collab": "Je naam in deze samenwerking",
   "Name": "Naam",
   "Leave this empty to show up as {fallback}.": "Laat dit leeg om te verschijnen als {fallback}.",
@@ -220,9 +224,5 @@
   "Couldn't save the transfer.": "Kon de overdracht niet opslaan.",
   "Couldn't read the transfer back.": "Kon de overdracht niet teruglezen.",
   "Part of the transfer is missing.": "Een deel van de overdracht ontbreekt.",
-  "The transfer was cancelled.": "De overdracht is geannuleerd.",
-  "Tap to enlarge for scanning": "Tik om te vergroten voor scannen",
-  "Enlarge {label} for scanning": "{label} vergroten om te scannen",
-  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Richt een ander apparaat hierop om het te scannen. Tik ergens of druk op Esc om te sluiten.",
-  "This link is too long to scan. Copy it instead, or use the Code tab.": "Deze link is te lang om te scannen. Kopieer hem, of gebruik het tabblad Code."
+  "The transfer was cancelled.": "De overdracht is geannuleerd."
 }

@@ -7,6 +7,10 @@
   "Scan a code": "Naskenovat kód",
   "Nothing was scanned. Paste the text instead.": "Nic se nenaskenovalo. Vložte místo toho text.",
   "The camera could not be used. Paste the text instead.": "Kameru nelze použít. Vložte místo toho text.",
+  "Tap to enlarge for scanning": "Klepnutím zvětšíš pro skenování",
+  "Enlarge {label} for scanning": "Zvětšit {label} pro skenování",
+  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Namiř sem jiné zařízení a naskenuj to. Zavřeš klepnutím kamkoli nebo klávesou Escape.",
+  "This link is too long to scan. Copy it instead, or use the Code tab.": "Tento odkaz je na naskenování příliš dlouhý. Zkopíruj ho, nebo použij záložku Code.",
   "Your name in this collab": "Vaše jméno v této spolupráci",
   "Name": "Jméno",
   "Leave this empty to show up as {fallback}.": "Nechte prázdné, chcete-li se zobrazovat jako {fallback}.",
@@ -220,9 +224,5 @@
   "Couldn't save the transfer.": "Přenos se nepodařilo uložit.",
   "Couldn't read the transfer back.": "Přenos se nepodařilo znovu načíst.",
   "Part of the transfer is missing.": "Část přenosu chybí.",
-  "The transfer was cancelled.": "Přenos byl zrušen.",
-  "Tap to enlarge for scanning": "Klepnutím zvětšíte pro skenování",
-  "Enlarge {label} for scanning": "Zvětšit {label} pro skenování",
-  "Point another device here to scan it. Tap anywhere or press Escape to close.": "Namiřte sem jiné zařízení a naskenujte to. Zavřete klepnutím kamkoli nebo klávesou Esc.",
-  "This link is too long to scan. Copy it instead, or use the Code tab.": "Tento odkaz je příliš dlouhý na naskenování. Zkopírujte jej, nebo použijte kartu Kód."
+  "The transfer was cancelled.": "Přenos byl zrušen."
 }
