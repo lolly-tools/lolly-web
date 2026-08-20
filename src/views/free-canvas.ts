@@ -581,11 +581,10 @@ const SVG = {
   anim: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/>',
   // Video add-kind - a film clap/frame with a play triangle (a fatter play than `anim`).
   video: '<rect x="2" y="5" width="15" height="14" rx="2.5"/><path d="M17 9l5-3v12l-5-3z"/><path d="M7 9.5l4 2.5-4 2.5z"/>',
-  // Timeline rail toggle - three staggered clip bars with the playhead crossing them,
-  // i.e. a picture of the panel it opens. The old glyph (one bar over a tick ruler) read
-  // as a comb/toaster at rail size: a ruler alone says "measure", not "clips over time",
-  // and nothing in it carried the playhead. Staggered bars are the part people recognise.
-  timeline: '<rect x="2.5" y="2.5" width="10" height="5" rx="1.8"/><rect x="7" y="9.5" width="14" height="5" rx="1.8"/><rect x="4" y="16.5" width="9" height="5" rx="1.8"/><path d="M9.5 1v22"/>',
+  // Timeline rail toggle - a plus feeding three forward chevrons: add a moment, then run
+  // it forward over time (Andy's chosen metaphor, 2026-08-20). Replaced the staggered clip
+  // bars, which read as a comb/toaster at rail size.
+  timeline: '<path d="M4 9v6"/><path d="M1 12h6"/><path d="M9 6.5l5 5.5-5 5.5"/><path d="M13 6.5l5 5.5-5 5.5"/><path d="M17 6.5l5 5.5-5 5.5"/>',
   // Sequence add-kinds: a clip (film strip), a sound (level bars), a nested Lolly tool (spark).
   clipKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14"/><path d="M16 5v14"/>',
   audioKind: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 11v2"/>',
@@ -597,7 +596,9 @@ const SVG = {
   // Primary editor-rail action glyphs (Export / Save / Share; Copy reuses `dup`).
   exportUp: '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>',
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 14 8"/>',
-  shareLink: '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+  // Generic share glyph (three linked nodes) - the action is broader than a link now:
+  // a .lolly file or a private collab, not just a URL.
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
   // Shape glyphs for the segmented shape control.
   shRect: '<rect x="4" y="6" width="16" height="12"/>',
   shRounded: '<rect x="4" y="6" width="16" height="12" rx="4.5"/>',
@@ -665,8 +666,10 @@ const SVG = {
   // pen, which reads as "write/draw freehand" - the one thing this mode does not do;
   // the anchor circle is what says "click to place points" at a glance.
   pen: '<path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
-  // Edit nodes - a curve with its knots exposed, which is what the mode shows.
-  nodes: '<path d="M4 18C4 9 12 15 12 9s8 0 8-3"/><rect x="2" y="16" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="10" y="7" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="18" y="4" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/>',
+  // Edit points - a bezier-pen metaphor: three filled anchor squares on a straight path
+  // run, with a curved handle joining two hollow control points below (Andy's chosen
+  // metaphor, 2026-08-20).
+  nodes: '<path d="M4 5h16"/><rect x="2" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><rect x="10" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><rect x="18" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><path d="M5 18C5 11 19 11 19 18"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/>',
   // Continuity - the same node with the same two arms, changing only how they relate:
   // hinged (corner), collinear (smooth), collinear and equal (symmetric).
   contCorner: '<path d="M5 19 12 12l7 3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>',
@@ -2556,6 +2559,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (actions) {
         items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
         if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
+        // Copy + Share ride directly under Save with NO divider - the on-device outputs of
+        // the same "you've made something, now get it out" moment. "Share" reads plainly now
+        // that the target can be a .lolly file or a private collab, not just a URL.
+        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), key: 'copy', run: () => actions.copy() });
+        items.push({ label: t('Share'), icon: icon(SVG.share), key: 'share', run: () => actions.share() });
       }
       if (history) {
         if (items.length) items.push({ sep: true });
@@ -2566,11 +2574,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (items.length) items.push({ sep: true });
         if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(lollyBtn!) });
         else items.push({ label: t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
-      }
-      if (actions) {
-        items.push({ sep: true });
-        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), key: 'copy', run: () => actions.copy() });
-        items.push({ label: t('Copy a shareable link'), icon: icon(SVG.shareLink), key: 'share', run: () => actions.share() });
       }
       if (info || importCfg) {
         if (items.length) items.push({ sep: true });
@@ -2658,8 +2661,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // arrowhead on by default; it lives beside the Pen because it is the SAME primitive
       // drawn a different way, and it is opt-in on `pathField` for the same reason the pen
       // is: a tool with nowhere to store an authored path cannot hold a line either.
-      modeBtns.line = toolBtn(t('Line — drag to draw a line or arrow'), SVG.line,
-        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line');
+      // Auto-arrange now rides a HOLD (or right-click) of the Line tool, when the boxes can
+      // be joined (opt-in via bindings): lines are what create those bindings, so their tool
+      // is the natural home for tidying the graph they make. Mirrors the pen's hold-for-spline.
+      modeBtns.line = toolBtn(
+        hasBindCfg
+          ? t('Line — drag to draw a line or arrow. Hold to auto-arrange the connected cards')
+          : t('Line — drag to draw a line or arrow'),
+        SVG.line,
+        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line',
+        hasBindCfg
+          ? (b) => spawnPopover(b, [{ label: t('Auto-arrange the connected cards'), icon: icon(SVG.tidy), run: () => autoLayout() }])
+          : undefined,
+      );
     }
     // Timeline (opt-in via the canvas time-model fields - a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
@@ -2676,12 +2690,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolBtn(t('Artboards'), SVG.frame,
         (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
     }
-    // Auto-arrange, for a tool whose boxes can be JOINED (opt-in via canvas.bindStartField).
-    // It used to hang off `canvas.connect`, the edge input; the graph it walks is now the
-    // bindings on the path boxes themselves, so the button follows the bindings.
-    if (hasBindCfg) {
-      toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
-    }
+    // (Auto-arrange no longer has a standalone rail button - it moved to a HOLD / right-click
+    // of the Line tool above, since the line tool is what creates the bindings it lays out.)
     // One "Arrange" menu - align + distribute + stacking order + group + clip
     // (previously two separate rail buttons). Every one of those acts ON a selection,
     // so the button only appears once there is one (syncArrangeUI, from the same
@@ -5529,27 +5539,38 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Cut the background out of the single selected image box on-device (host.matte)
-  // and drop the cutout back over the selection - the exact tail of pickImage, so
-  // the result is an ordinary image ref with alpha, its original preserved as a
-  // C2PA ingredient. Lazy chunk (matte-dialog.ts) like askLollyIntent above.
+  // and drop the cutout back over that box - the exact tail of pickImage, so the
+  // result is an ordinary image ref with alpha, its original preserved as a C2PA
+  // ingredient. Lazy chunk (matte-dialog.ts) like askLollyIntent above.
+  //
+  // The run is a BACKGROUND job (WP-F): the dialog closes at once and the cutout
+  // arrives minutes later, by which time the selection may be somewhere else
+  // entirely. So the swap is pinned to the BOX'S OWN ID (plan 100 section 3), never
+  // the live selection, and simply doesn't happen if that box is gone - the cutout
+  // is a saved asset either way, so nothing is lost.
   async function removeBackgroundOnSelection(): Promise<void> {
-    if (!cfg.imageField) return;
+    const imageField = cfg.imageField;
+    if (!imageField) return;
     const boxes0 = getBoxes();
     const idxs = selIndices(boxes0);
     if (idxs.length !== 1) return;
-    const box = boxes0[idxs[0]!]!;
-    const cur = box[cfg.imageField] as { id?: string; url?: string; meta?: { name?: string } } | undefined;
+    const at0 = idxs[0]!;
+    const box = boxes0[at0]!;
+    const cur = box[imageField] as { id?: string; url?: string; meta?: { name?: string } } | undefined;
     if (!cur || (!cur.id && !cur.url)) return; // no image to cut out
+    const boxId = idOf(box, at0);
     try {
       const { openMatteDialog } = await import('./matte-dialog.ts');
-      const cutout = await openMatteDialog(host as unknown as MatteHost, {
+      await openMatteDialog(host as unknown as MatteHost, {
         source: cur as unknown as MatteSource,
         sourceName: cur.meta?.name,
+        onComplete: (cutout) => {
+          const boxes = getBoxes();
+          const at = indexOfId(boxes, boxId);
+          if (at < 0) return; // that box is gone - leave the canvas alone
+          commit(boxes.map((b, i) => (i === at ? { ...b, [imageField]: cutout } : b)));
+        },
       });
-      if (!cutout) return;
-      const boxes = getBoxes();
-      const sel = new Set(selIndices(boxes));
-      commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: cutout } : b)));
     } catch { /* cancelled or unavailable */ }
   }
 
@@ -6890,7 +6911,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The first node of an OPEN draft is the one a click closes on, so it reads as a
       // target rather than as another placed point.
       el.classList.toggle('is-close-target', !!penDraft && i === 0 && pts.length >= 3);
-      // plan 96 P3 - an ATTACHED end reads as filled, so "this line is pinned to that box"
+      // plan 96 P3 - an ATTACHED end reads as filled, so a pinned-to-a-box endpoint
       // is visible without dragging it to find out. Only the two ends can carry one.
       const end = penEdit ? (i === 0 ? 'start' : i === pts.length - 1 ? 'end' : null) : null;
       el.classList.toggle('is-bound', !!end && !!penEditBox() && bindOf(penEditBox()!, end) !== '');
@@ -7148,7 +7169,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /**
    * What the Line tool adds to a path box beyond the pen's own seeding.
    *
-   * An arrowhead at the END and nothing at the start: someone reaching for a line tool on a
+   * An OPEN arrowhead at the END and nothing at the start: someone reaching for a line tool on a
    * layout canvas is nearly always pointing at something, and an undecorated straight
    * segment is what the pen already gives. The head is a normal field, so the stroke panel
    * takes it straight back off.
@@ -7157,7 +7178,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * the same structure of row as one bound in P3 - the field exists, it just names no box.
    */
   const lineBoxSeed = (): Box => ({
-    ...(hasHeadCfg ? { [cfg.headStartField]: 'none', [cfg.headEndField]: 'triangle' } : {}),
+    ...(hasHeadCfg ? { [cfg.headStartField]: 'none', [cfg.headEndField]: 'open' } : {}),
     ...(hasBindCfg ? { [cfg.bindStartField]: '', [cfg.bindEndField]: '' } : {}),
   });
 
@@ -9295,7 +9316,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function drawLineRubber(from: Point, to: Point): void {
     const col = cAttr(drawnInkHex());
     const w = lineDraftWidth();
-    const head = 'triangle';                      // lineBoxSeed's default headEnd
+    const head = 'open';                          // lineBoxSeed's default headEnd
     const headSize = Math.max(9, w * 4);
     const dirL = Math.hypot(to.x - from.x, to.y - from.y) || 1;
     const ux = (to.x - from.x) / dirL, uy = (to.y - from.y) / dirL;

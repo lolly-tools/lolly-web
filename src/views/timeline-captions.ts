@@ -91,14 +91,12 @@ export function cueSpansOnTimeline(cues: readonly CaptionCue[], src: CueSourceTi
 }
 
 /**
- * The word timings off an asset's `meta.tts` block, shape-validated - the
- * record is model data that crossed a storage boundary, so nothing about it is
- * trusted. Returns null when there is nothing usable, which is the caller's
- * cue to fall through to transcription.
+ * Validate a word-timing list that crossed a storage boundary, distrusting
+ * everything about it. THE one validator: both meta rungs of the timing ladder
+ * read through it, so a TTS alignment and a Whisper transcript can never be
+ * sanitised by two drifting sets of rules. Null when nothing usable survives.
  */
-export function ttsWordsOf(meta: unknown): SpeechWordTiming[] | null {
-  const tts = (meta as { tts?: unknown } | null | undefined)?.tts;
-  const words = (tts as { words?: unknown } | null | undefined)?.words;
+export function wordTimingsOf(words: unknown): SpeechWordTiming[] | null {
   if (!Array.isArray(words) || !words.length) return null;
   const out: SpeechWordTiming[] = [];
   for (const w of words) {
@@ -109,4 +107,46 @@ export function ttsWordsOf(meta: unknown): SpeechWordTiming[] | null {
     out.push({ text, start, end });
   }
   return out.length ? out : null;
+}
+
+/**
+ * The word timings off an asset's `meta.tts` block, shape-validated - the
+ * record is model data that crossed a storage boundary, so nothing about it is
+ * trusted. Returns null when there is nothing usable, which is the caller's
+ * cue to fall through to the transcript rung, then to transcription.
+ */
+export function ttsWordsOf(meta: unknown): SpeechWordTiming[] | null {
+  const tts = (meta as { tts?: unknown } | null | undefined)?.tts;
+  return wordTimingsOf((tts as { words?: unknown } | null | undefined)?.words);
+}
+
+/**
+ * The asset-meta key a FINISHED TRANSCRIPTION is filed under by
+ * lib/stt-job.ts, so a re-run reads minutes of on-device inference back off the
+ * record instead of paying for them twice.
+ *
+ * Deliberately NOT `meta.tts`: that block is the proof a clip was SYNTHESISED by
+ * Lolly (lib/tts-provenance.ts heals audio from it, and the Gen AI disclosure
+ * rides on it), and a transcript of a recording somebody made is the opposite
+ * claim. Two different facts, two different keys.
+ */
+export const TRANSCRIPT_META_KEY = 'transcript';
+
+/** The note written under {@link TRANSCRIPT_META_KEY}. */
+export interface TranscriptNote {
+  words: SpeechWordTiming[];
+  /** When it was made, ms epoch. */
+  at: number;
+  /** What produced it - never an assertion that a person typed it. */
+  engine: 'whisper';
+}
+
+/**
+ * The word timings off an asset's persisted `meta.transcript`, shape-validated,
+ * or null when there is nothing usable. The ladder rung that makes a second
+ * "Generate subtitles" on the same clip instant.
+ */
+export function transcriptWordsOf(meta: unknown): SpeechWordTiming[] | null {
+  const note = (meta as Record<string, unknown> | null | undefined)?.[TRANSCRIPT_META_KEY];
+  return wordTimingsOf((note as { words?: unknown } | null | undefined)?.words);
 }

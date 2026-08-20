@@ -27,12 +27,19 @@ import type { DecodedPcm, ExtractAudioAssetRecordInput } from './extract-audio.t
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://lolly.tools/' });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
+// jsdom ships no showModal/close on <dialog> - stub them to the minimum mountModal
+// needs (an `open` attribute it toggles, then removes the node on close), the same
+// way lib/save-dialog.test.ts does.
+const Dlg = dom.window.HTMLDialogElement.prototype as unknown as { showModal(): void; close(): void };
+Dlg.showModal = function (this: HTMLElement) { this.setAttribute('open', ''); };
+Dlg.close = function (this: HTMLElement) { this.removeAttribute('open'); };
 
 const {
   EXTRACT_AUDIO_MAX_BYTES, EXTRACT_AUDIO_MAX_SECONDS,
   extractAudioSizeRefusal, extractAudioDurationRefusal, extractAudioIds,
-  extractAudioBlob, extractAudioToAsset,
+  extractAudioBlob, extractAudioToAsset, startExtractAudioJob, openExtractAudioDialog,
 } = await import('./extract-audio.ts');
+const { __resetJobsForTest, jobsSnapshot, cancelJob } = await import('./jobs.ts');
 
 // ── caps ──────────────────────────────────────────────────────────────────────
 
@@ -214,6 +221,168 @@ test('extractAudioToAsset: refuses from the source SIZE before reading it into m
   );
   assert.equal(read, false, 'refused before reading the source into memory');
   assert.equal(store.length, 0);
+});
+
+// ── cancellation: what it REALLY does (WP-F) ─────────────────────────────────
+//
+// There is no abortable decoder here. `decodeAudioData` and the WebCodecs
+// AudioEncoder both run to completion once started, so the honest contract is:
+// the source FETCH is aborted outright, and past that the pipeline is
+// COOPERATIVE - it checks between stages and stops before anything is written.
+// These pin that contract so nobody later "fixes" it into a promise it can't keep.
+
+test('cancel aborts the source FETCH - the one stage that can really be interrupted', async () => {
+  const { host } = makeHost();
+  const seen: Array<AbortSignal | undefined> = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    seen.push(init?.signal ?? undefined);
+    return {
+      ok: true,
+      headers: { get: () => null },
+      async arrayBuffer() { return new ArrayBuffer(4); },
+    } as unknown as Response;
+  }) as typeof fetch;
+  try {
+    const ctl = new AbortController();
+    await extractAudioToAsset(host as never, {
+      source: 'https://lolly.tools/clip.mp4', sourceName: 'clip.mp4', format: 'wav', deps: { decode: decode3 },
+    }, { signal: ctl.signal });
+    assert.ok(seen.length >= 2, 'the size HEAD and the body GET both went out');
+    for (const s of seen) assert.ok(s, 'every fetch this pipeline makes carries the signal');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('a cancel during the decode does NOT stop the decode - but nothing is saved', async () => {
+  const { host, store } = makeHost();
+  let cancelled = false;
+  let decodeFinished = false;
+  // The real shape: decodeAudioData cannot be interrupted, so the decode runs to
+  // completion and the cancel is only observed on the far side of it.
+  const decode = async (): Promise<DecodedPcm> => {
+    cancelled = true;                       // the user hits ✕ while the decode is in flight
+    await Promise.resolve();
+    decodeFinished = true;
+    return { channels: [Float32Array.from([0, 0.5, -0.5])], sampleRate: 48000 };
+  };
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  await assert.rejects(
+    () => extractAudioToAsset(host as never, { source: src, sourceName: 'clip.mp4', format: 'wav', deps: { decode } },
+      { isCancelled: () => cancelled }),
+    (e: Error) => e.name === 'AbortError',
+    'a cancel surfaces as an AbortError, not as a failure',
+  );
+  assert.equal(decodeFinished, true, 'honest: the decode already in flight still finished');
+  assert.equal(store.length, 0, 'but NOTHING was written - no stamp, no asset, no catalog entry');
+});
+
+test('a cancel that lands after the encode still writes nothing', async () => {
+  const { host, store } = makeHost();
+  let cancelled = false;
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  await assert.rejects(
+    () => extractAudioToAsset(host as never, {
+      source: src, sourceName: 'clip.mp4', format: 'opus',
+      deps: { decode: decode3, encodeOpusPcm: async () => { cancelled = true; return new Blob([new Uint8Array(3)]); } },
+    }, { isCancelled: () => cancelled }),
+    (e: Error) => e.name === 'AbortError',
+  );
+  assert.equal(store.length, 0, 'the last check sits immediately before the save, so a late cancel still lands');
+});
+
+test('every stage reports the INDETERMINATE form - no invented percentages', async () => {
+  const { host } = makeHost();
+  const notes: Array<[number, number, string | undefined]> = [];
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  await extractAudioToAsset(host as never, { source: src, sourceName: 'clip.mp4', format: 'wav', deps: { decode: decode3 } },
+    { onProgress: (d, t, n) => { notes.push([d, t, n]); } });
+  // decodeAudioData resolves once with nothing in between, and the WebCodecs encoder
+  // exposes no completion count - so a bar would be a lie and the toast pulses instead.
+  for (const [done, total] of notes) {
+    assert.equal(done, 0);
+    assert.equal(total, 0, 'total <= 0 is lib/jobs.ts\'s indeterminate contract');
+  }
+  assert.deepEqual(notes.map((n) => n[2]),
+    ['Reading the video…', 'Decoding the sound track…', 'Encoding the audio…', 'Saving…'],
+    'the user is told which stage is running, in order');
+});
+
+// ── the job wrapper ──────────────────────────────────────────────────────────
+
+test('startExtractAudioJob registers a cancellable heavy job and hands back the saved ref', async () => {
+  __resetJobsForTest();
+  const { host, store } = makeHost();
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  let landed = false;
+  const job = startExtractAudioJob(host as never, {
+    source: src, sourceName: 'clip.mp4', format: 'wav', deps: { decode: decode3 },
+  }, { onComplete: () => { landed = true; } });
+
+  const listed = jobsSnapshot().find((j) => j.id === job.id)!;
+  assert.equal(listed.title, 'Extracting audio', 'the toast names the operation');
+  assert.equal(listed.heavy, true, 'a whole-file decode claims the single heavy slot');
+  assert.equal(listed.cancellable, true, 'so the toast shows its ✕');
+
+  for (let i = 0; i < 50 && jobsSnapshot().find((j) => j.id === job.id)!.status !== 'done'; i++) {
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+  assert.equal(jobsSnapshot().find((j) => j.id === job.id)!.status, 'done');
+  assert.equal(store.length, 1, 'the asset landed');
+  assert.equal(landed, true, 'onComplete fired with the saved audio');
+  __resetJobsForTest();
+});
+
+test('cancelling the job saves nothing and is not reported as a failure', async () => {
+  __resetJobsForTest();
+  const { host, store } = makeHost();
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  let failed = false;
+  let completed = false;
+  // A decode that never settles until the job is cancelled out from under it.
+  const decode = (): Promise<DecodedPcm> => new Promise(() => {});
+  const job = startExtractAudioJob(host as never, {
+    source: src, sourceName: 'clip.mp4', format: 'wav', deps: { decode },
+  }, { onComplete: () => { completed = true; }, onError: () => { failed = true; } });
+
+  await job.started;
+  cancelJob(job.id);
+  for (let i = 0; i < 20; i++) await new Promise<void>((r) => setTimeout(r, 0));
+
+  assert.equal(jobsSnapshot().find((j) => j.id === job.id)!.status, 'cancelled');
+  assert.equal(store.length, 0);
+  assert.equal(completed, false);
+  assert.equal(failed, false, 'a cancel is not a failure - no error toast, no onError');
+  __resetJobsForTest();
+});
+
+// ── the dialog hands off (it no longer sits and waits) ───────────────────────
+
+test('Go ENQUEUES a job and CLOSES the dialog - it never waits on the extraction', async () => {
+  __resetJobsForTest();
+  const { host } = makeHost();
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  let resolved = false;
+  const closed = openExtractAudioDialog(host as never, { source: src, sourceName: 'clip.mp4' })
+    .then(() => { resolved = true; });
+
+  const dlg = document.querySelector<HTMLDialogElement>('dialog.extract-audio-modal')!;
+  assert.ok(dlg, 'the dialog mounted');
+  dlg.querySelector<HTMLButtonElement>('[data-act="go"]')!.click();
+
+  // The job is registered SYNCHRONOUSLY on the click - nothing here awaits a decode.
+  const listed = jobsSnapshot().find((j) => j.title === 'Extracting audio');
+  assert.ok(listed, 'the click enqueued the background job');
+  assert.equal(resolved, false, 'and the dialog is mid hand-off, not resolved on a saved asset');
+  assert.ok(dlg.querySelector('[data-status]')!.textContent!.includes('background'),
+    'the hand-off message says where the work went');
+
+  await new Promise<void>((r) => setTimeout(r, 1100));   // the 900ms hand-off window
+  await closed;
+  assert.equal(resolved, true, 'the dialog resolved on CLOSING, never on a result');
+  assert.equal(document.querySelector('dialog.extract-audio-modal'), null, 'and it is gone from the DOM');
+  __resetJobsForTest();
 });
 
 // ── contract: the catalog action is video-only ────────────────────────────────

@@ -18,6 +18,7 @@
 
 import { EMBED_MODEL_ID, EMBED_MODEL_BYTES } from './embed.ts';
 import { ORT_HF_BASE } from '../ort-hf-base.ts';
+import { MODELS_BASE } from '../models-base.ts';
 
 export interface EmbedWorkerRequest {
   id: number;
@@ -58,7 +59,9 @@ function ensureRuntime(id: number): Promise<ExtractorFn> {
     // (the speech workers' exact block).
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
-    env.localModelPath = '/models/';
+    // MODELS_BASE is '' on the web build (→ same-origin '/models/', unchanged); the
+    // desktop shell bakes https://lolly.tools so the embed model pulls from there.
+    env.localModelPath = `${MODELS_BASE}/models/`;
     if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.wasmPaths = ORT_HF_BASE;
 
     const loadedByFile = new Map<string, number>();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Projects | Tools | Utilities | Catalog switch shown atop the gallery, the
+ * The Tools | Utilities | Catalog | Projects switch shown atop the gallery, the
  * utilities view, the projects view and the catalog view. Two coordinated forms:
  *
  * - Native links (`viewToggle()`, rendered by every listing view's topbar):
@@ -57,8 +57,10 @@ export const VIEW_TOGGLE_HREFS: Record<ViewToggleKey, string> = {
   catalog: '#/c',
 };
 
-// Tab order: Projects leads, then Tools, Utilities, Catalog.
-const KEYS: readonly ViewToggleKey[] = ['projects', 'tools', 'utilities', 'catalog'];
+// Tab order maps the journey start-to-end: Tools (discovery) leads, Projects
+// (the major work) closes; Utilities and Catalog sit between. Logical order,
+// so RTL locales mirror it for free.
+const KEYS: readonly ViewToggleKey[] = ['tools', 'utilities', 'catalog', 'projects'];
 
 const LABELS: Record<ViewToggleKey, string> = {
   tools: 'Tools',

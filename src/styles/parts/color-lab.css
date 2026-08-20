@@ -23,8 +23,9 @@
   gap: 2.25rem;
 }
 
-/* The page furniture row: back pill on the left, theme capsule on the right.
-   STICKY, not fixed — and that is a fix, not a preference.
+/* The page furniture row: back pill on the left, with the Home + theme capsule
+   packed right beside it (Home immediately to the right of Back, like every other
+   view). STICKY, not fixed — and that is a fix, not a preference.
 
    Both used to be out of flow (.tools-home.home-full is `position: fixed` in
    tool.css; the capsule matched it) over a `.lab-back` that reserved 2rem. Out of
@@ -48,7 +49,7 @@
   align-self: stretch;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.75rem;
   min-height: 2.25rem;
   /* Bled to the page's own padding so the opaque strip reaches the edges and no

@@ -425,3 +425,101 @@ test('section 5.5 the blur scratches are priced against the plate budget (P1 obl
   });
   assert.equal(greedy.reservedBytes, 32 << 20);
 });
+
+// ── the ingredient gather (plans/130) ───────────────────────────────────────
+//
+// The renderer cannot be run here, so what these pin is WHERE the gather sits and
+// WHAT it is allowed to see. Its own behaviour - resolution order, the scan cap,
+// the dedupe, the never-throws guarantee - is run for real against a signed
+// fixture in sequence-ingredients.test.ts.
+
+test('contract: the gather runs before every exit, not beside one', () => {
+  // renderSequenceAuthored has five exits and the tilt capture tier takes the
+  // earliest of them, before a single plate is photographed. There is no late point
+  // common to all five, so anchoring the gather anywhere but the top covers one
+  // path and silently drops the rest.
+  const src = strip(read('./sequence-render.ts'));
+  const call = 'await gatherStageIngredients(stage.layers, opts, host)';
+  const gatherAt = src.lastIndexOf(call);
+  assert.ok(gatherAt > 0, 'renderSequenceAuthored must gather its sources');
+  for (const [what, exit] of [
+    ['the tilt capture tier', 'return await renderTiltCapture(tilt)'],
+    ['the GL composite', 'return await renderGlComposite('],
+    ['the thread selection', 'supportsWorkerSequenceRender()'],
+    ['the in-thread executor', 'return await renderInThread('],
+  ] as Array<[string, string]>) {
+    const at = src.indexOf(exit);
+    assert.ok(at > 0, `${what} still exists`);
+    assert.ok(gatherAt < at, `the gather must precede ${what}`);
+  }
+  // …and it is the FIRST thing after the stage guard, so nothing between the parse
+  // and it can decide not to reach it.
+  assert.match(src.slice(src.indexOf('async function renderSequenceAuthored'), gatherAt),
+    /MAX_SEQUENCE_MS[\s\S]*$/, 'the gather sits immediately after the length ceiling');
+});
+
+test('contract: the audio-only export gathers the same sources', () => {
+  // wav/mp3/m4a/opus leave through sequenceAudioPcm, not renderSequence, and are
+  // stamped by the same renderFormat tail. Threading ingredients only through the
+  // video path would credit the film and orphan its soundtrack.
+  const src = strip(read('./sequence-render.ts'));
+  const call = 'await gatherStageIngredients(stage.layers, opts, host)';
+  assert.equal(src.split(call).length - 1, 2, 'both entry points gather, and only those two');
+  const audioAt = src.indexOf('export async function sequenceAudioPcm');
+  const firstGather = src.indexOf(call);
+  assert.ok(audioAt > 0 && firstGather > audioAt && firstGather < src.indexOf('async function renderSequenceAuthored'),
+    'the audio-only path gathers inside its own body');
+});
+
+test('contract: the gather sees every media box, not the mixer\'s or the worker\'s list', () => {
+  // mixSequenceAudio skips muted, zero-length and speed-shifted clips - those still
+  // put picture on the screen. The worker's `clips` holds only video layers visible
+  // in the used grid - that drops every audio box, which is what this exists for.
+  const src = strip(read('./sequence-render.ts'));
+  const at = src.indexOf('async function gatherStageIngredients');
+  assert.ok(at > 0, 'the helper exists');
+  const body = src.slice(at, src.indexOf('\n}\n', at));
+  assert.match(body, /L\.kind !== 'video' && L\.kind !== 'audio'/, 'both media kinds, and no other filter');
+  for (const skip of ['L.mute', 'w.first', 'durMs', 'speed']) {
+    assert.ok(!body.includes(skip), `the mixer's ${skip} skip must not become the ingredient filter`);
+  }
+  // The export bar's music bed is not a stage layer, so it is added by hand or it
+  // travels uncredited.
+  assert.match(body, /opts\.audio\?\.url/, 'the bed is a source');
+  assert.match(body, /opts\.audio\?\.mix\?\.url/, 'and so is the mix-in track under it');
+  // Gated on the stamp being wanted, and on nothing about the output format: gif
+  // and apng sequences are stampable containers too.
+  assert.match(body, /if \(!opts\.c2pa \|\| !opts\._ingredientSink\) return;/, 'one guard, the stamp itself');
+  assert.ok(!/format/.test(body), 'the gather must not be gated on the output container');
+  // The policy lives next door, where it can actually be tested.
+  assert.match(src, /import \{ gatherSequenceIngredients, type SequenceIngredientSource \} from '\.\/sequence-ingredients\.ts';/,
+    'the gather itself comes from sequence-ingredients.ts');
+  assert.match(body, /gatherSequenceIngredients\(sources, opts\._ingredientSink,/, 'and writes into the sink renderFormat reads');
+});
+
+test('contract: SeqHost offers the credential lookup, optionally', () => {
+  // A rendered document keeps no asset ids, so the id has to come back out of the
+  // asset bridge's object-URL cache - and for an upload that lookup is the ONLY
+  // route to its credential, since ingest re-encoded the pixels. Optional because
+  // the host handed in is frequently null; its absence costs the byte-scan
+  // fallback, never the export.
+  const src = strip(read('./sequence-render.ts'));
+  const iface = src.slice(src.indexOf('export interface SeqHost'), src.indexOf('// ── policy constants'));
+  assert.match(iface, /assets\?: \{/, 'the surface is optional');
+  assert.match(iface, /credential\?\(id: string\): Promise<\{ store: Uint8Array; format: string \} \| null>/,
+    'and matches the AssetsAPI method it is typed down from');
+  assert.match(src, /import \{ assetIdForUrl, MAX_CREDENTIAL_SCAN_BYTES \} from '\.\/assets\.ts';/,
+    'the url→id reverse lookup and the scan cap both come from the asset bridge');
+  assert.match(strip(read('./assets.ts')), /export function assetIdForUrl\(url: string\): string \| null/,
+    'which is where that reverse lookup is owned');
+});
+
+test('contract: renderFormat folds the sink into the stamp after the render returns', () => {
+  // The whole reason the gather can sit at the top of the renderer and still reach
+  // the credential: `opts` is the same object, and the fold happens after dispatch.
+  const exp = strip(read('./export.ts'));
+  const dispatchAt = exp.indexOf('const blob = await renderFormatDispatch(node, format, opts);');
+  const foldAt = exp.indexOf('opts._ingredientSink.filter((i) => !have.has(i.activeLabel))');
+  assert.ok(dispatchAt > 0 && foldAt > dispatchAt, 'the sink is read after the render, not before');
+  assert.match(exp, /if \(opts\.c2pa\) opts\._ingredientSink \?\?= \[\];/, 'and created before it, under c2pa only');
+});

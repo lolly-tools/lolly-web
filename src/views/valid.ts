@@ -33,13 +33,18 @@ import { escape } from '../utils.ts';
 // the change-history `section` builder) that would otherwise shadow the import.
 import { icon as glyph, type IconName } from '../lib/icons.ts';
 import { t, tRaw } from '../i18n.ts';
+// The WP-F async-job foundation: the watermark work is heavy and long, so it runs
+// as a registered job with the global toast owning progress and cancel, rather
+// than as an in-view bar that dies with the view. See the deep-scan job section below.
+import { startJob, type JobHandle } from '../lib/jobs.ts';
+import { announce } from '../a11y.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 // The pure verdict/scorecard model - no DOM, no CSS import, so it's importable (and
 // tested) standalone. See valid-verdict.ts's header for why this lives apart from the
@@ -333,11 +338,16 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
       : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
   const aiDecl = report.aiGenerated ? t('Content Credential declares AI-generated content')
     : meta?.ai ? t('Embedded metadata declares AI-generated content') : null;
+  // The fingerprint tier gets its own softer chip ("AI?"): the container merely
+  // matches an AI pipeline's packaging - nothing in the file declares anything.
+  const aiHint = !aiDecl && meta?.producer?.signature === 'ai-download'
+    ? tRaw('Container matches {vendor}’s AI delivery packaging — a maker fingerprint, not a declaration', { vendor: meta.producer.vendor }) : null;
   const { origin, makerHint } = deriveAi(report, meta);
   const isVideo = PREVIEW_VID.has((report.format || fileName.split('.').pop() || '').toLowerCase());
   return `
     ${lead}
     ${aiDecl ? `<span class="valid-item-ai" title="${escape(aiDecl)}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
+    ${aiHint ? `<span class="valid-item-ai is-likely" title="${escape(aiHint)}">${svgIcon('aiSpark')}<span>${t('AI?')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${formatChip(report.format)}</span>
     ${who ? `<span class="valid-item-signer" title="${escape(tRaw('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report, watermark, [...extraPips(origin, makerHint, isVideo, meta), ...(sealPip(seal) ? [sealPip(seal)!] : [])])}
@@ -436,7 +446,14 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
 // Meta AI write alongside their invisible pixel watermarks. Either way the
 // banner also points at the invisible-watermark layer (SynthID, Video Seal…)
 // that we canNOT read on-device - declared honestly instead of over-claimed.
-interface AiOrigin { kind: 'generated' | 'composite'; via: 'credential' | 'metadata'; credit?: string }
+interface AiOrigin {
+  kind: 'generated' | 'composite';
+  via: 'credential' | 'metadata' | 'fingerprint';
+  credit?: string;
+  /** fingerprint only: the engine's detection constants for the copy params. */
+  vendor?: string;
+  products?: string;
+}
 const AI_FLAG_COPY = {
   credential: {
     generated: {
@@ -458,30 +475,53 @@ const AI_FLAG_COPY = {
       sub: 'This file’s embedded metadata declares AI-generated elements were composited in — a tag written by the editing tool, and easily stripped.',
     },
   },
+  // The weakest of the three claims, worded to match: nothing in the file SAYS
+  // it is AI-made. Its container carries the same maker markers the vendor's
+  // AI products write on the files they deliver - a pipeline fingerprint that
+  // other services from the same vendor can also leave.
+  // {vendor}/{products} come from the engine's own detection table (literal
+  // constants like "Google" / "Gemini or Veo"), never from file bytes.
+  fingerprint: {
+    generated: {
+      title: 'Likely AI-generated',
+      sub: 'This file carries no credential and no AI declaration, but its container matches the packaging {vendor}’s AI tools write on the files they deliver — most likely {products}. That is a fingerprint of the maker’s pipeline, not a statement by it: other {vendor} services can package a file the same way.',
+    },
+    composite: {
+      title: 'Likely AI-generated',
+      sub: 'This file carries no credential and no AI declaration, but its container matches the packaging {vendor}’s AI tools write on the files they deliver — most likely {products}. That is a fingerprint of the maker’s pipeline, not a statement by it: other {vendor} services can package a file the same way.',
+    },
+  },
 };
 // Matches the makers whose AI output carries Google's SynthID pixel watermark
 // (Gemini/Imagen/Veo - and "Nano Banana", Gemini's image-model brand).
 const SYNTHID_MAKERS = /google|gemini|imagen|veo|nano.?banana/i;
-function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
+function aiFlagHtml(origin: AiOrigin | undefined, makerHint = '', isAudio = false): string {
   if (!origin) return '';
   const c = AI_FLAG_COPY[origin.via][origin.kind];
+  const likely = origin.via === 'fingerprint';
+  // The fingerprint sub is parameterised on the engine's own detection
+  // constants ("Google" / "Gemini or Veo") - t() escapes its params and returns
+  // markup-ready text, so it is injected as-is; the static subs keep escape().
+  const sub = likely ? t(c.sub, { vendor: origin.vendor ?? '', products: origin.products ?? '' }) : escape(t(c.sub));
   // The invisible-watermark layer: Google (and partners) stamp SynthID into the
-  // pixels themselves. We can't read it on-device, so we just share what's likely
-  // - we don't route users to a maker's proprietary detector or make excuses for
-  // what we can't do.
+  // signal itself - pixels for stills/video, the waveform for audio. We can't
+  // read it on-device, so we just share what's likely - we don't route users to
+  // a maker's proprietary detector or make excuses for what we can't do.
   const note = SYNTHID_MAKERS.test(`${origin.credit ?? ''} ${makerHint}`)
-    ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped.')
+    ? (isAudio
+      ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the audio signal itself, so this file very likely carries one — it survives re-encoding and metadata stripping.')
+      : t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped.'))
     : t('Large AI generators also typically stamp an invisible watermark into the pixels themselves (Google’s SynthID — also adopted by OpenAI — or Meta’s Video Seal), which survives metadata stripping.');
   return `
-    <div class="valid-ai-flag" role="alert">
+    <div class="valid-ai-flag${likely ? ' valid-ai-flag--likely' : ''}" role="alert">
       <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
       <span class="valid-ai-flag-text">
         <strong>${escape(t(c.title))}</strong>
-        <span>${escape(t(c.sub))}</span>
+        <span>${sub}</span>
         ${origin.credit ? `<span class="valid-ai-flag-credit">“${escape(origin.credit)}”</span>` : ''}
         <span class="valid-ai-flag-note">${note}</span>
       </span>
-      <span class="valid-ai-flag-tag" aria-hidden="true">${t('AI')}</span>
+      <span class="valid-ai-flag-tag" aria-hidden="true">${likely ? t('AI?') : t('AI')}</span>
     </div>`;
 }
 
@@ -969,7 +1009,7 @@ function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
 // See plans/31-watermark-detectors.md. The two neural decoders (lib/trustmark.ts,
 // lib/contentseal.ts) each pull in onnxruntime-web + a model and must NEVER load
 // on the default verify path - they're lazily dynamic-imported. The scan runs
-// AUTOMATICALLY (scanOne/scanAllDecodable in mountValid) once the models are
+// AUTOMATICALLY (scanOne/startBatchScan in mountValid) once the models are
 // on-device; the one-time ~90 MB download is offered once per batch via the
 // header banner (deepScanBannerHtml → enableDeepScan), so a single consent
 // serves every file. Reuses the Lolly Imprint's `.valid-wm` styling for the
@@ -1076,6 +1116,172 @@ function deepScanBannerHtml(count: number): string {
     </div>`;
 }
 
+// ── The watermark work as BACKGROUND JOBS (plans/124 section 9, WP-F) ────────
+//
+// Three runs on this page are heavy and long: the one-time ~90 MB detector
+// download plus a scan of the whole batch (the banner's Enable), the passive
+// scan of every decodable file once the models are on-device, and the opt-in
+// Tier-2 Imprint grid search. Each used to live entirely inside the view - an
+// in-banner bar or a button label, no way to stop it, and navigating away left
+// it writing into a detached DOM with nobody watching the progress.
+//
+// They are WP-F jobs now (lib/jobs.ts): the global toast owns the bar and the ✕,
+// one heavy job runs at a time, the work outlives the view, and a re-entered
+// /verify showing the SAME files joins the running job instead of starting a
+// second scan of them.
+//
+// WHAT CANCEL CAN HONESTLY DO HERE. Nothing downstream takes an AbortSignal:
+// lib/trustmark.ts and lib/contentseal.ts expose only `cacheOnly`, the model
+// fetcher they share (lib/ort.ts) takes no signal, and the engine's
+// detectWatermarkSearch has no abort seam. So cancel is COOPERATIVE and lands
+// BETWEEN stages - the download in flight completes, the file being scanned
+// completes, and nothing after it starts. Anything a cancelled run had already
+// computed is dropped and never painted. That is the whole promise: the ✕ stops
+// the queue, it does not kill a wasm inference mid-run.
+
+/** The slice of a JobHandle a scan driver needs, so the drivers test against a
+ *  plain object with no registry, no toast and no DOM. */
+export interface ScanJobSink {
+  readonly cancelled: boolean;
+  progress(done: number, total: number, note?: string): void;
+}
+
+/** What a finished (or cancelled) scan run reports back. */
+export interface ScanRunResult {
+  scanned: number;
+  positives: number;
+  cancelled: boolean;
+}
+
+/**
+ * A stable identity for one dropped batch, so a re-entered view can recognise
+ * that the files on screen are already being scanned. Name + size + last-modified
+ * is what tells two drops apart without holding on to the File objects. `suffix`
+ * narrows the key to one run within the batch (the per-file Imprint search).
+ */
+export function batchKey(files: readonly File[], suffix = ''): string {
+  const body = files.map((f) => `${f.name}:${f.size}:${f.lastModified || 0}`).join('|');
+  return suffix ? `${body}#${suffix}` : body;
+}
+
+// Module scope, NOT the mountValid closure - that is the point. A job started by
+// one mount has to be findable by the next one, which is what stops a re-entered
+// view double-starting the same scan. An entry lives exactly as long as its run.
+const liveScanJobs = new Map<string, JobHandle>();
+
+/** Is a scan for this batch key still running? The double-start guard, and the
+ *  honest answer a re-entered view gives instead of starting a second scan. */
+export function scanJobActive(key: string): boolean {
+  return liveScanJobs.has(key);
+}
+
+/**
+ * Visit `indexes` in order, reporting i-of-N and stopping BETWEEN files on cancel.
+ *
+ * `scanOne` resolves how many POSITIVE detections that file surfaced - 0 for a
+ * clean file, an uninstalled model, or one the browser could not decode. Absence
+ * is never a verdict (plans/31-watermark-detectors.md), so a zero stays silent in
+ * the report; only the toast ever says a scan happened at all.
+ */
+export async function runScanBatch(
+  sink: ScanJobSink,
+  indexes: readonly number[],
+  scanOne: (index: number) => Promise<number>,
+): Promise<ScanRunResult> {
+  const total = indexes.length;
+  let scanned = 0;
+  let positives = 0;
+  for (const index of indexes) {
+    if (sink.cancelled) return { scanned, positives, cancelled: true };
+    sink.progress(scanned, total, t('Checking image {n} of {total}…', { n: scanned + 1, total }));
+    positives += await scanOne(index);
+    scanned++;
+  }
+  sink.progress(scanned, total);
+  return { scanned, positives, cancelled: sink.cancelled };
+}
+
+/**
+ * The finished-scan announcement, and the reason it is its own job.
+ *
+ * The toast renders a job's TITLE and a status word on a done row - never its
+ * progress note (lib/job-toast.ts) - so a title fixed at start-time cannot carry
+ * a count that is only known at the end. A second, instant, LIGHT job whose title
+ * IS the answer is the one channel that survives the view being torn down. Light,
+ * so it never occupies the serial heavy slot, and not cancellable, because there
+ * is nothing left to cancel.
+ *
+ * Silent on zero, exactly like the report: "no watermark found" is not a verdict
+ * this page states.
+ */
+export function announceScanResult(positives: number, title?: (n: number) => string): void {
+  if (positives <= 0) return;
+  const text = title ? title(positives) : t('{n} invisible watermark(s) found', { n: positives });
+  startJob({ title: text, heavy: false }).finish(positives);
+}
+
+export interface ScanJobHooks {
+  /** Mirrors every progress call so a still-mounted view can paint a compact
+   *  status of its own. The toast is the survivor; this is the convenience copy. */
+  onProgress?: (done: number, total: number, note?: string) => void;
+  /** Fires once the run settles, cancelled or not. Never fires on a throw. */
+  onDone?: (result: ScanRunResult) => void;
+  onError?: (err: unknown) => void;
+  /** Overrides the completion announcement's wording. Return null for silence. */
+  announce?: (positives: number) => string;
+}
+
+/**
+ * Register one scan run as a heavy job, guarded against double-starting the same
+ * batch. Returns the handle, or null when a run for `key` is already live - the
+ * caller then says so rather than queueing a duplicate.
+ *
+ * The work function receives a sink, not the raw handle, so every progress call
+ * reaches both the toast and the caller's own compact status in one place.
+ */
+export function startScanJob(
+  key: string,
+  title: string,
+  work: (sink: ScanJobSink) => Promise<ScanRunResult>,
+  hooks: ScanJobHooks = {},
+): JobHandle | null {
+  if (liveScanJobs.has(key)) return null;
+  // A no-op callback is what makes the toast show its ✕ at all; the actual stop is
+  // cooperative, polled by the drivers between stages (see the section header).
+  const job = startJob({ title, cancel: () => { /* cooperative - the drivers poll job.cancelled */ } });
+  liveScanJobs.set(key, job);
+  const sink: ScanJobSink = {
+    get cancelled(): boolean { return job.cancelled; },
+    progress(done, total, note): void {
+      job.progress(done, total, note);
+      hooks.onProgress?.(done, total, note);
+    },
+  };
+  void (async (): Promise<void> => {
+    try {
+      await job.started;
+      if (job.cancelled) { hooks.onDone?.({ scanned: 0, positives: 0, cancelled: true }); return; }
+      const result = await work(sink);
+      if (job.cancelled || result.cancelled) { hooks.onDone?.({ ...result, cancelled: true }); return; }
+      job.finish(result);
+      announceScanResult(result.positives, hooks.announce);
+      hooks.onDone?.(result);
+    } catch (err) {
+      if (!job.cancelled) job.fail(err);
+      hooks.onError?.(err);
+    } finally {
+      liveScanJobs.delete(key);
+    }
+  })();
+  return job;
+}
+
+/** Test-only: forget every live scan-job registration, so one test's guard can
+ *  never leak into the next. Mirrors lib/jobs.ts's __resetJobsForTest. */
+export function __resetScanJobsForTest(): void {
+  liveScanJobs.clear();
+}
+
 // ── AI declaration + third-party watermark pip ──────────────────────────────
 // The AI declaration, from either source: the signed credential wins (stronger
 // claim), else the bare IPTC tag in the file's embedded metadata (meta.ai).
@@ -1087,7 +1293,11 @@ function deriveAi(report: VerifyReport, meta: FileMetadata | undefined): { origi
     ? { kind: report.aiGenerated.kind, via: 'credential' }
     : meta?.ai
       ? { kind: meta.ai.kind, via: 'metadata', credit: meta.ai.credit }
-      : undefined;
+      : meta?.producer?.signature === 'ai-download'
+        // The container matches an AI pipeline's delivery packaging (engine
+        // file-metadata.ts, `producer`) - the weakest tier, shown as "likely".
+        ? { kind: 'generated', via: 'fingerprint', vendor: meta.producer.vendor, products: meta.producer.hint, credit: meta.producer.markers.join(' · ') }
+        : undefined;
   if (!origin) return { origin, makerHint: '' };
   const gen = report.claim?.generatorInfo?.name != null ? String(report.claim.generatorInfo.name)
     : typeof report.claim?.claimGenerator === 'string' ? report.claim.claimGenerator : '';
@@ -1281,10 +1491,14 @@ function checksHtml(report: VerifyReport): string {
 // pasted HTML document or an armoured source file has, and rendering it as
 // MARKUP (in an iframe, say) would be showing the reader a browser's
 // interpretation of an unverified document rather than its bytes.
-type PreviewKind = 'image' | 'video' | 'pdf' | 'text' | 'none';
+type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'none';
 interface Preview { url?: string; kind: PreviewKind; format: string; name: string; snippet?: { body: string; more: boolean }; }
 const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif']);
 const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
+// Audio-only formats get an <audio> player. The m4a/opus entries matter twice
+// over: an .m4a SNIFFS as 'mp4' (same BMFF container), so only its extension
+// says "this is audio, not a black video box".
+const PREVIEW_AUD = new Set(['mp3', 'wav', 'ogg', 'opus', 'm4a']);
 // Raster formats a <canvas> can decode to RGBA - shared by the Lolly-Imprint/
 // LSB pixel pass (mountValid's pixelChecks) AND the TrustMark deep-scan
 // button's gating (deepScanBlock below), so both agree on what's checkable.
@@ -1306,7 +1520,9 @@ const PREVIEW_TEXT = new Set(['html', 'code', 'text']);
 const TEXT_EXT = new Set(['md', 'markdown', 'txt', 'text']);
 export function previewKind(format: string | null, name: string): PreviewKind {
   const f = (format || name.split('.').pop() || '').toLowerCase();
+  const ext = (name.split('.').pop() || '').toLowerCase();
   if (PREVIEW_IMG.has(f)) return 'image';
+  if (PREVIEW_AUD.has(f) || PREVIEW_AUD.has(ext)) return 'audio';
   if (PREVIEW_VID.has(f)) return 'video';
   if (f === 'pdf') return 'pdf';
   // The sniffed C2PA text carriers, OR a plain-text extension when nothing was sniffed.
@@ -1320,6 +1536,8 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
     return `<figure class="${cls}"><img src="${escape(p.url)}" alt="${escape(tRaw('Preview of {name}', { name: p.name }))}" decoding="async"></figure>`;
   if (p.kind === 'video' && p.url)
     return `<figure class="${cls}"><video src="${escape(p.url)}#t=0.1" preload="metadata" playsinline muted${size === 'lg' ? ' controls' : ''}></video></figure>`;
+  if (p.kind === 'audio' && p.url)
+    return `<figure class="${cls}"><audio src="${escape(p.url)}" preload="metadata" controls></audio></figure>`;
   if (p.kind === 'pdf' && p.url && size === 'lg')
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
   // SECURITY: the payload reaches the page as ESCAPED text inside a <pre> and
@@ -1501,7 +1719,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         ${report.found || watermark?.present || pips.length ? scorecardHtml(report, watermark, pips) : ''}
       </div>
       ${deepScanBlock(fileIndex, report.format, fileName)}
-      ${aiFlagHtml(aiOrigin, makerHint)}
+      ${aiFlagHtml(aiOrigin, makerHint, preview?.kind === 'audio')}
       ${aiDisclosureHtml(report, identity)}
       ${textSignalsHtml(textSignals)}
       ${(ocrReady && preview?.kind === 'image') || report.format === 'pdf' ? `<div class="valid-tsig-ocr">
@@ -1702,8 +1920,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   const ocrReady = host.ocr?.isAvailable() === true && (host.ocr?.models().length ?? 0) > 0;
 
   viewEl.innerHTML = `
-    ${backPillHtml()}
-    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
+    ${backHomeHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout valid-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Verify')}</h1>
@@ -1746,6 +1964,18 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   const input = drop.querySelector<HTMLInputElement>('input[type="file"]')!;
   const reportEl = viewEl.querySelector<HTMLElement>('[data-report]')!;
   wireMasonry(viewEl, reportEl);
+
+  // The view's own liveness. A watermark job outlives this view by design (WP-F),
+  // and every paint it can do asks this first: a detection that lands after the
+  // user navigated away is counted and dropped, never written into a detached DOM.
+  // CHAINED onto `_cleanup`, not assigned - another mount may already own one (see
+  // the paste listener's chain further down).
+  let viewAlive = true;
+  {
+    const el = viewEl as HTMLElement & { _cleanup?: () => void };
+    const prev = el._cleanup;
+    el._cleanup = () => { prev?.(); viewAlive = false; };
+  }
 
   // Verify one file's bytes, returning its C2PA report, its embedded metadata
   // (EXIF/XMP/… - PDF via the shell's pdf bridge, everything else on the engine),
@@ -2077,32 +2307,61 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
   }
 
+  /**
+   * The per-file deep-scan slot to paint into, or null when there is nothing to
+   * paint into any more: the view was torn down, or a different batch is on
+   * screen. Resolved at PAINT time and never captured, so a job that outlives its
+   * view counts its hits and writes into a detached DOM exactly never.
+   *
+   * The trade that falls out of it: leave mid-scan and come back to the same files
+   * and the pips will not appear, because the run that owns them belongs to the
+   * mount you left (and the no-double-start guard rightly refuses a second scan of
+   * the same batch). The toast's completion count is what tells you the answer in
+   * that case - which is exactly why that announcement exists.
+   */
+  function livePaintTarget(fileIndex: number, key: string): { block: HTMLElement; result: HTMLElement } | null {
+    if (!viewAlive || batchKey(activeFiles) !== key) return null;
+    const block = reportEl.querySelector<HTMLElement>(`[data-deepscan-block="${fileIndex}"]`);
+    const result = block?.querySelector<HTMLElement>(`[data-deepscan-result="${fileIndex}"]`);
+    return block?.isConnected && result ? { block, result } : null;
+  }
+
   // Passive per-file scan: decode the file's pixels ONCE, run BOTH detectors
-  // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads - 
+  // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads -
   // that's the header banner's one-time job), and - ONLY on a positive
   // detection - inject that maker's green/amber pip + note. Absence is never
   // shown as a verdict (per plans/31-watermark-detectors.md): a negative or
-  // not-installed scan stays silent. Runs at most once per file per batch.
-  const scannedIndexes = new Set<number>();
-  async function scanOne(fileIndex: number): Promise<void> {
-    if (scannedIndexes.has(fileIndex)) return;
-    const file = activeFiles[fileIndex];
-    const block = reportEl.querySelector<HTMLElement>(`[data-deepscan-block="${fileIndex}"]`);
-    const resultEl = block?.querySelector<HTMLElement>(`[data-deepscan-result="${fileIndex}"]`);
-    if (!file || !block || !resultEl) return;
-    scannedIndexes.add(fileIndex);
+  // not-installed scan stays silent, and the count it returns is what the job's
+  // completion announcement is built from. Runs at most once per file per batch.
+  //
+  // Keyed by BATCH, not by bare index: a job outlives the drop it started from, so
+  // a plain index set would let a still-running old scan mark a newly dropped
+  // file's slot as already done.
+  const scannedKeys = new Set<string>();
+  async function scanOne(fileIndex: number, batch: readonly File[], key: string): Promise<number> {
+    const mark = `${key}#${fileIndex}`;
+    const file = batch[fileIndex];
+    if (!file || scannedKeys.has(mark)) return 0;
+    scannedKeys.add(mark);
+    let found = 0;
     try {
       const [pixels, { detectTrustmark }, { detectContentSeal }] = await Promise.all([
         decodeToRgba(file),
         import('../lib/trustmark.ts'),
         import('../lib/contentseal.ts'),
       ]);
-      if (!pixels) return;
+      if (!pixels) return 0;
       const [tm, cs] = await Promise.all([
         detectTrustmark(pixels.data, pixels.width, pixels.height, { cacheOnly: true }),
         detectContentSeal(pixels.data, pixels.width, pixels.height, { cacheOnly: true }),
       ]);
-      let shown = false;
+      // Count first, paint second: a hit is a hit whether or not anyone is still
+      // looking at the report it belongs to.
+      if (tm.status === 'detected') found++;
+      if (cs.status === 'detected') found++;
+      const target = found ? livePaintTarget(fileIndex, key) : null;
+      if (!target) return found;
+      const { block, result: resultEl } = target;
       if (tm.status === 'detected') {
         // A Lolly-owned durable id is the more specific answer - show it INSTEAD
         // of the generic TrustMark pip; otherwise fall back to the neutral one.
@@ -2113,29 +2372,144 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
           injectDeepScanPip(block, trustmarkPip());
           resultEl.insertAdjacentHTML('beforeend', trustmarkNoteHtml(tm.payloadHex ?? '', tm.schema ?? ''));
         }
-        shown = true;
       }
       if (cs.status === 'detected') {
         injectDeepScanPip(block, contentSealPip());
         resultEl.insertAdjacentHTML('beforeend', contentSealNoteHtml(cs.messageHex ?? ''));
-        shown = true;
       }
-      if (shown) { block.hidden = false; const p = block.closest<HTMLElement>('.valid-panels'); if (p) layoutMasonry(p); }
+      block.hidden = false;
+      const p = block.closest<HTMLElement>('.valid-panels');
+      if (p) layoutMasonry(p);
     } catch (err) {
       // Passive + best-effort: never surface a failure inline (models may just
-      // not be cached). scannedIndexes stays set so it isn't retried on a
+      // not be cached). scannedKeys stays set so it isn't retried on a
       // re-expand; the header banner is the path to (re)enable.
       host.log('warn', 'valid: passive deep scan failed', { error: (err as Error)?.message });
     }
+    return found;
   }
 
-  // Scan every decodable raster in the current batch (cacheOnly). Sequential so a
-  // large drop doesn't fire N decodes + inferences at once; pips pop in as each
-  // completes. Files already scanned (scannedIndexes) are skipped.
-  async function scanAllDecodable(): Promise<void> {
-    for (let i = 0; i < activeFiles.length; i++) {
-      if (isDeepScannable(null, activeFiles[i]!.name)) await scanOne(i);
+  /** The indexes in the current batch whose pixels a browser decode can read. */
+  function decodableIndexes(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < activeFiles.length; i++) if (isDeepScannable(null, activeFiles[i]!.name)) out.push(i);
+    return out;
+  }
+
+  /**
+   * The header banner's compact status. The JOB owns the run now - this is the
+   * convenience mirror for whoever is still looking at the report, and it goes
+   * quiet the moment the banner leaves the document. That `isConnected` check is
+   * the detached-DOM write this conversion removes.
+   */
+  function paintBanner(banner: HTMLElement | null, done: number, total: number, note?: string): void {
+    if (!banner?.isConnected) return;
+    const msg = banner.querySelector<HTMLElement>('[data-deepscan-banner-msg]');
+    const bar = banner.querySelector<HTMLElement>('[data-deepscan-progress]');
+    const fill = banner.querySelector<HTMLElement>('[data-deepscan-progress-fill]');
+    if (msg && note) msg.textContent = note;
+    if (!bar || !fill) return;
+    bar.removeAttribute('hidden');
+    if (total > 0) {
+      bar.classList.remove('is-indeterminate');
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', String(total));
+      bar.setAttribute('aria-valuenow', String(Math.min(done, total)));
+      fill.style.width = `${Math.min(100, (done / total) * 100)}%`;
+    } else {
+      bar.classList.add('is-indeterminate');
+      bar.removeAttribute('aria-valuenow');
+      bar.removeAttribute('aria-valuemax');
     }
+  }
+
+  /**
+   * The one-time detector download, run as the scan job's FIRST stage so the
+   * ~90 MB and the pass over the files share a single bar. Resolves false when
+   * TrustMark could not be made ready (the run then ends before any file is
+   * touched); Content Seal is best-effort, as it usually isn't vendored at all.
+   *
+   * `startedX` distinguishes "never fetched" (a 404 that fires before a single
+   * onProgress call - the common Content Seal case) from "fetching, size unknown",
+   * so a model that simply isn't there can't drag the whole bar indeterminate.
+   *
+   * No AbortSignal reaches the fetch (lib/ort.ts's fetcher takes none), so a
+   * cancel here lands between the two downloads and before the scan.
+   */
+  async function downloadDetectors(sink: ScanJobSink): Promise<boolean> {
+    let loadedTm = 0, totalTm: number | null = null, startedTm = false;
+    let loadedCs = 0, totalCs: number | null = null, startedCs = false;
+    const report = (): void => {
+      const loaded = loadedTm + loadedCs;
+      const totalKnown = (!startedTm || totalTm != null) && (!startedCs || totalCs != null);
+      const total = totalKnown ? (totalTm ?? 0) + (totalCs ?? 0) : 0;
+      sink.progress(loaded, total, total > 0
+        ? t('Downloading the detector… {loaded} of {total}', { loaded: formatMb(loaded), total: formatMb(total) })
+        : t('Downloading the detector… {loaded} so far', { loaded: formatMb(loaded) }));
+    };
+
+    const [{ prefetchTrustmarkModels }, { prefetchContentSealModel }] = await Promise.all([
+      import('../lib/trustmark.ts'),
+      import('../lib/contentseal.ts'),
+    ]);
+    sink.progress(0, 0, t('Downloading the detector (~90 MB, once)…'));
+    const ok = await prefetchTrustmarkModels({
+      onProgress: (p) => { startedTm = true; loadedTm = p.loaded; totalTm = p.total; report(); },
+    });
+    if (!ok || sink.cancelled) return false;
+    await prefetchContentSealModel({
+      onProgress: (p) => { startedCs = true; loadedCs = p.loaded; totalCs = p.total; report(); },
+    }).catch(() => false); // best-effort; usually absent
+    return true;
+  }
+
+  /**
+   * Register the whole batch's scan as ONE heavy job: optional detector download,
+   * then every decodable file in order with i-of-N progress. Returns null when
+   * there is nothing to scan, or when a scan of exactly these files is already
+   * running - the no-double-start guard a re-entered view relies on.
+   *
+   * The batch is captured by value, so the run keeps scanning the files it was
+   * started for even if a new drop replaces them on screen (those results are
+   * counted and simply not painted; see livePaintTarget).
+   */
+  function startBatchScan(opts: { download?: boolean; banner?: HTMLElement | null } = {}): JobHandle | null {
+    const indexes = decodableIndexes();
+    if (!indexes.length) return null;
+    const batch = activeFiles.slice();
+    const key = batchKey(batch);
+    const banner = opts.banner ?? null;
+    return startScanJob(key, t('Checking for invisible watermarks'), async (sink) => {
+      if (opts.download) {
+        const ready = await downloadDetectors(sink);
+        // Cancel is checked FIRST: a stopped download is the user's own doing and
+        // must not surface as "couldn't download", which is what the throw below says.
+        if (sink.cancelled) return { scanned: 0, positives: 0, cancelled: true };
+        if (!ready) throw new Error(t('Couldn’t download the watermark detector. Check your connection and try again.'));
+        // Consent given and spent: the toast carries the scan from here.
+        if (banner?.isConnected) banner.remove();
+      }
+      return runScanBatch(sink, indexes, (i) => scanOne(i, batch, key));
+    }, {
+      onProgress: (done, total, note) => paintBanner(banner, done, total, note),
+      onError: () => {
+        if (!banner?.isConnected) return;
+        const msg = banner.querySelector<HTMLElement>('[data-deepscan-banner-msg]');
+        const bar = banner.querySelector<HTMLElement>('[data-deepscan-progress]');
+        const enableBtn = banner.querySelector<HTMLButtonElement>('[data-deep-scan-enable]');
+        if (msg) msg.textContent = t('Couldn’t download the watermark detector. Check your connection and try again.');
+        bar?.setAttribute('hidden', '');
+        if (enableBtn) enableBtn.disabled = false;
+      },
+      onDone: (r) => {
+        // A cancel puts the banner back the way it was, so Enable stays available.
+        if (!r.cancelled || !banner?.isConnected) return;
+        const bar = banner.querySelector<HTMLElement>('[data-deepscan-progress]');
+        const enableBtn = banner.querySelector<HTMLButtonElement>('[data-deep-scan-enable]');
+        bar?.setAttribute('hidden', '');
+        if (enableBtn) enableBtn.disabled = false;
+      },
+    });
   }
 
   // Opt-in Tier-2 "resized Imprint" search (imprintRescanBlock's button). Re-decode
@@ -2143,37 +2517,76 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // inject the standard Lolly-Imprint pip + note in place (injectDeepScanPip, same
   // DOM-mutation path as the deep-scan pips, so scroll/masonry/open-state survive).
   // A miss updates the button quietly; absence never reads as "not made with Lolly".
-  async function rescanImprint(btn: HTMLButtonElement): Promise<void> {
+  //
+  // A WP-F job like the batch scan (see the deep-scan job section): several hundred
+  // correlations over a re-decoded image is long enough to deserve the toast's bar
+  // rather than a frozen button label, and it survives leaving the page. Its cancel
+  // is the honest one available here - the engine's grid search takes no signal, so
+  // ✕ stops the run before the decode or between the decode and the search, and
+  // always discards whatever came back; a search already inside the grid keeps
+  // burning its (bounded, budgeted) hypotheses until it returns.
+  function rescanImprint(btn: HTMLButtonElement): void {
     const fileIndex = Number(btn.dataset.imprintRescan);
-    const file = activeFiles[fileIndex];
-    const block = reportEl.querySelector<HTMLElement>(`[data-imprint-rescan-block="${fileIndex}"]`);
-    const resultEl = block?.querySelector<HTMLElement>(`[data-imprint-rescan-result="${fileIndex}"]`);
-    if (!file || !block || !resultEl) return;
+    const batch = activeFiles.slice();
+    const file = batch[fileIndex];
+    if (!file) return;
+    const key = batchKey(batch, `imprint:${fileIndex}`);
     const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = t('Searching the pixels…');
-    try {
+    // Same late resolution as livePaintTarget: never captured, so a result landing
+    // after a teardown or a new drop is dropped rather than written to a dead DOM.
+    const liveBtn = (): HTMLButtonElement | null =>
+      (viewAlive && batchKey(activeFiles) === batchKey(batch) && btn.isConnected) ? btn : null;
+
+    const job = startScanJob(key, t('Searching for a resized Imprint'), async (sink) => {
       const pixels = await decodeToRgba(file);
-      if (!pixels) { btn.textContent = t('Couldn’t read this image.'); return; }
+      if (!pixels) {
+        const b = liveBtn();
+        if (b) b.textContent = t('Couldn’t read this image.');
+        return { scanned: 1, positives: 0, cancelled: false };
+      }
+      if (sink.cancelled) return { scanned: 0, positives: 0, cancelled: true };
+      sink.progress(0, 0, t('Searching the pixels…'));
       const found = await detectWatermarkSearch(pixels.data, { width: pixels.width, height: pixels.height }, { tier: 2 });
+      if (sink.cancelled) return { scanned: 1, positives: 0, cancelled: true };
       if (found.present) {
         host.log('debug', 'valid: tier-2 imprint search recovered mark', {
           scale: found.scale, offsetX: found.offsetX, offsetY: found.offsetY,
           hypothesesTried: found.hypothesesTried, score: +found.score.toFixed(4),
         });
-        injectDeepScanPip(btn, lollyImprintPip());
-        block.outerHTML = watermarkNote({ present: true, score: found.score });
-        reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
-      } else {
-        btn.textContent = t('No resized Imprint found');
-        resultEl.insertAdjacentHTML('beforeend',
-          `<span class="valid-wm-rescan-miss">${t('This image carries no recoverable Lolly Imprint. That doesn’t rule out a Lolly origin — an aggressive downscale erases the Imprint entirely.')}</span>`);
       }
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = original;
-      host.log('warn', 'valid: tier-2 imprint search failed', { error: (err as Error)?.message });
-    }
+      const b = liveBtn();
+      const block = b ? reportEl.querySelector<HTMLElement>(`[data-imprint-rescan-block="${fileIndex}"]`) : null;
+      const resultEl = block?.querySelector<HTMLElement>(`[data-imprint-rescan-result="${fileIndex}"]`);
+      if (b && block && resultEl) {
+        if (found.present) {
+          injectDeepScanPip(b, lollyImprintPip());
+          block.outerHTML = watermarkNote({ present: true, score: found.score });
+          reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
+        } else {
+          b.textContent = t('No resized Imprint found');
+          resultEl.insertAdjacentHTML('beforeend',
+            `<span class="valid-wm-rescan-miss">${t('This image carries no recoverable Lolly Imprint. That doesn’t rule out a Lolly origin — an aggressive downscale erases the Imprint entirely.')}</span>`);
+        }
+      }
+      return { scanned: 1, positives: found.present ? 1 : 0, cancelled: false };
+    }, {
+      // The Imprint is Lolly's own mark, so it gets its own wording rather than the
+      // generic third-party-watermark count.
+      announce: () => t('Resized Lolly Imprint recovered'),
+      onDone: (r) => {
+        // A cancelled run hands the button back; a completed one already said its piece.
+        const b = r.cancelled ? liveBtn() : null;
+        if (b) { b.disabled = false; b.textContent = original; }
+      },
+      onError: (err) => {
+        const b = liveBtn();
+        if (b) { b.disabled = false; b.textContent = original; }
+        host.log('warn', 'valid: tier-2 imprint search failed', { error: (err as Error)?.message });
+      },
+    });
+    if (!job) return;   // this exact search is already running - don't start a second
+    btn.disabled = true;
+    btn.textContent = t('Searching the pixels…');
   }
 
   /** `bytes` → "12.3 MB", for the download-progress label. Low-bandwidth by
@@ -2183,69 +2596,29 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   }
 
   // The header banner's one-time "Enable" - download the detectors ONCE (network
-  // allowed) so the whole batch benefits, then scan everything from cache.
-  async function enableDeepScan(btn: HTMLButtonElement): Promise<void> {
+  // allowed) so the whole batch benefits, then scan everything from cache. Both
+  // stages are ONE background job now: the banner keeps a compact status while it
+  // is on screen, but the toast is what survives leaving the page, and the ✕ there
+  // is the only way to stop the run (there was none before).
+  function enableDeepScan(btn: HTMLButtonElement): void {
     const banner = btn.closest<HTMLElement>('[data-deepscan-banner]');
     const msg = banner?.querySelector<HTMLElement>('[data-deepscan-banner-msg]');
-    const bar = banner?.querySelector<HTMLElement>('[data-deepscan-progress]');
-    const fill = banner?.querySelector<HTMLElement>('[data-deepscan-progress-fill]');
+    const job = startBatchScan({ download: true, banner });
+    if (!job) {
+      // Either a scan of exactly these files is already queued or running (a
+      // re-entered view, or a second click), or the batch holds nothing a pixel
+      // decode can read. Say which, rather than starting a duplicate.
+      btn.disabled = true;
+      if (msg) {
+        msg.textContent = scanJobActive(batchKey(activeFiles))
+          ? t('Already checking these images. See the progress toast.')
+          : t('There is nothing here to scan for watermarks.');
+      }
+      return;
+    }
     btn.disabled = true;
     if (msg) msg.textContent = t('Downloading the detector (~90 MB, once)…');
-    bar?.removeAttribute('hidden');
-    bar?.classList.add('is-indeterminate');
-
-    // Combines BOTH downloads (TrustMark's ~90 MB decoders + Content Seal's
-    // usually-absent extractor) into one running bar. `startedX` distinguishes
-    // "never fetched" (a 404 that fires before a single onProgress call - the
-    // common Content Seal case) from "fetching, size unknown", so a model that
-    // simply isn't vendored can't drag the whole bar into indeterminate.
-    let loadedTm = 0, totalTm: number | null = null, startedTm = false;
-    let loadedCs = 0, totalCs: number | null = null, startedCs = false;
-    const render = (): void => {
-      if (!bar || !fill) return;
-      const loaded = loadedTm + loadedCs;
-      const totalKnown = (!startedTm || totalTm != null) && (!startedCs || totalCs != null);
-      const total = totalKnown ? (totalTm ?? 0) + (totalCs ?? 0) : null;
-      if (total != null && total > 0) {
-        bar.classList.remove('is-indeterminate');
-        bar.setAttribute('aria-valuemin', '0');
-        bar.setAttribute('aria-valuemax', String(total));
-        bar.setAttribute('aria-valuenow', String(Math.min(loaded, total)));
-        fill.style.width = `${Math.min(100, (loaded / total) * 100)}%`;
-        if (msg) msg.textContent = t('Downloading the detector… {loaded} of {total}', { loaded: formatMb(loaded), total: formatMb(total) });
-      } else {
-        bar.classList.add('is-indeterminate');
-        bar.removeAttribute('aria-valuenow');
-        bar.removeAttribute('aria-valuemax');
-        if (msg) msg.textContent = t('Downloading the detector… {loaded} so far', { loaded: formatMb(loaded) });
-      }
-    };
-
-    try {
-      const [{ prefetchTrustmarkModels }, { prefetchContentSealModel }] = await Promise.all([
-        import('../lib/trustmark.ts'),
-        import('../lib/contentseal.ts'),
-      ]);
-      const ok = await prefetchTrustmarkModels({
-        onProgress: (p) => { startedTm = true; loadedTm = p.loaded; totalTm = p.total; render(); },
-      });
-      await prefetchContentSealModel({
-        onProgress: (p) => { startedCs = true; loadedCs = p.loaded; totalCs = p.total; render(); },
-      }).catch(() => false); // best-effort; usually absent
-      if (!ok) {
-        if (msg) msg.textContent = t('Couldn’t download the watermark detector. Check your connection and try again.');
-        bar?.setAttribute('hidden', '');
-        btn.disabled = false;
-        return;
-      }
-      banner?.remove();
-      await scanAllDecodable();
-    } catch (err) {
-      if (msg) msg.textContent = t('Couldn’t enable deep scanning in this browser.');
-      bar?.setAttribute('hidden', '');
-      btn.disabled = false;
-      host.log('warn', 'valid: enable deep scan failed', { error: (err as Error)?.message });
-    }
+    paintBanner(banner ?? null, 0, 0);
   }
 
   // After a batch renders: if the detector models are already on-device, scan
@@ -2260,7 +2633,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const { trustmarkModelsReady } = await import('../lib/trustmark.ts');
       ready = await trustmarkModelsReady();
     } catch { ready = false; }
-    if (ready) { void scanAllDecodable(); return; }
+    // One heavy job for the whole batch. It was completely silent before - a minute
+    // of invisible CPU on a big drop; the toast now says a scan is running and how
+    // far it has got, while the REPORT keeps its silent-on-negative rule and still
+    // shows nothing but positives.
+    if (ready) { startBatchScan(); return; }
     const decodableCount = activeFiles.filter((f) => isDeepScannable(null, f.name)).length;
     reportEl.insertAdjacentHTML('afterbegin', deepScanBannerHtml(decodableCount));
   }
@@ -2418,7 +2795,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     activePasted = list.length === 1 && pendingPasted;
     pendingSourceUrl = null;
     pendingPasted = false;
-    scannedIndexes.clear(); // fresh batch - allow each file to be scanned again
+    scannedKeys.clear(); // fresh batch - allow each file to be scanned again
     reportEl.hidden = false;
 
     // One file reads exactly as before - the full report inline, no collapse chrome.
@@ -2876,6 +3253,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // Image → OCR → the same text-signals read the text path does, but source:'ocr'
   // (so only writing-style tells apply; the panel says the byte-level layer is gone).
+  //
+  // The READ is a WP-F background job (lib/ocr-job.ts): wasm inference over a whole
+  // page, plus a first-run model download, belongs on the serial heavy queue where
+  // the toast owns its progress and its cancel - not on a button the user has to sit
+  // and watch. The pixels are decoded HERE, while this card is on screen; everything
+  // after that can outlive it, so every paint below is guarded on the result element
+  // still being in the document. When it is, the rendering is byte-identical to the
+  // blocking version; when it is not, the outcome is announced instead of written to
+  // a detached node.
   async function readImageText(btn: HTMLButtonElement): Promise<void> {
     if (btn.dataset.readKind === 'pdf') return readDocumentText(btn);
     const scope = btn.closest('.valid-item-body') ?? reportEl;
@@ -2887,59 +3273,90 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     const orig = span?.textContent ?? '';
     btn.disabled = true;
     if (span) span.textContent = t('Reading…');
+    /** Is the card that started this read still in the document? A new drop
+     *  repaints the report, which detaches everything captured above. */
+    const alive = (): boolean => resultEl.isConnected;
+    const restore = (): void => {
+      if (!btn.isConnected) return;
+      btn.disabled = false;
+      if (span) span.textContent = orig;
+    };
+    const readFailed = (): void => {
+      if (alive()) {
+        resultEl.textContent = t('The text in this image could not be read.');
+        resultEl.hidden = false;
+      } else announce(t('The text in this image could not be read.'));
+    };
+
+    let frame: { width: number; height: number; data: Uint8ClampedArray };
+    let nW = 0, nH = 0;
     try {
       const bmp = await createImageBitmap(await (await fetch(src)).blob());
-      const nW = bmp.width, nH = bmp.height;
+      nW = bmp.width; nH = bmp.height;
       const canvas = document.createElement('canvas');
       canvas.width = nW; canvas.height = nH;
       const cx = canvas.getContext('2d');
       if (!cx) throw new Error('no 2d context');
       cx.drawImage(bmp, 0, 0);
-      const frame = { width: nW, height: nH, data: cx.getImageData(0, 0, nW, nH).data };
+      frame = { width: nW, height: nH, data: cx.getImageData(0, 0, nW, nH).data };
       bmp.close?.();
-      const result = await host.ocr.run(frame);
-      if (!result.text.trim()) { resultEl.textContent = t('No readable text was found in this image.'); resultEl.hidden = false; return; }
-      const panel = analyzeVerifyText(result.text, 'ocr');
-      resultEl.innerHTML = textSignalsHtml(panel);
-      resultEl.hidden = false;
-      btn.hidden = true; // one read is enough - the result now shows the extracted text
-      // Overlay the flagged line boxes ON the image - what comms professionals want:
-      // exactly which words on the page tripped a signal. Pinned to the <img>'s box so
-      // natural-coord rects (preserveAspectRatio="none") map to the displayed pixels.
-      if (img?.parentElement) {
-        img.parentElement.style.position = 'relative';
-        // Retire any previous overlay WITH its observer - a dangling one would keep
-        // re-pinning an element that is no longer in the document.
-        const prev = img.parentElement.querySelector<OcrOverlayEl>('.valid-ocr-overlay');
-        prev?._ocrUnpin?.();
-        prev?.remove();
-        const svg = buildOverlaySvg(result.lines, panel.marks, nW, nH) as OcrOverlayEl;
-        svg.style.position = 'absolute';
-        svg.style.pointerEvents = 'none';
-        // Pin the overlay to the <img>'s CURRENT box - and keep it pinned: a one-time
-        // pixel snapshot drifts on any window resize or reflow, so the same pin re-runs
-        // from a ResizeObserver on the image (and on a late 'load', should the image
-        // swap sources under the overlay).
-        const pin = (): void => {
-          svg.style.left = `${img.offsetLeft}px`;
-          svg.style.top = `${img.offsetTop}px`;
-          svg.style.width = `${img.offsetWidth}px`;
-          svg.style.height = `${img.offsetHeight}px`;
-        };
-        pin();
-        const ro = new ResizeObserver(pin);
-        ro.observe(img);
-        img.addEventListener('load', pin);
-        svg._ocrUnpin = () => { ro.disconnect(); img.removeEventListener('load', pin); };
-        img.parentElement.appendChild(svg);
-      }
     } catch {
-      resultEl.textContent = t('The text in this image could not be read.');
-      resultEl.hidden = false;
-    } finally {
-      btn.disabled = false;
-      if (span) span.textContent = orig;
+      readFailed();
+      restore();
+      return;
     }
+
+    const { startOcrJob } = await import('../lib/ocr-job.ts');
+    startOcrJob(host, { frame }, {
+      onComplete: (result) => {
+        if (!result.text.trim()) {
+          if (alive()) { resultEl.textContent = t('No readable text was found in this image.'); resultEl.hidden = false; }
+          else announce(t('No readable text was found in this image.'));
+          return;
+        }
+        const panel = analyzeVerifyText(result.text, 'ocr');
+        if (!alive()) {
+          // Nothing left to paint into - this report was replaced while the read ran.
+          announce(t('The text was read, but this report has moved on. Check the file again to see it.'));
+          return;
+        }
+        resultEl.innerHTML = textSignalsHtml(panel);
+        resultEl.hidden = false;
+        btn.hidden = true; // one read is enough - the result now shows the extracted text
+        // Overlay the flagged line boxes ON the image - what comms professionals want:
+        // exactly which words on the page tripped a signal. Pinned to the <img>'s box so
+        // natural-coord rects (preserveAspectRatio="none") map to the displayed pixels.
+        if (img?.isConnected && img.parentElement) {
+          img.parentElement.style.position = 'relative';
+          // Retire any previous overlay WITH its observer - a dangling one would keep
+          // re-pinning an element that is no longer in the document.
+          const prev = img.parentElement.querySelector<OcrOverlayEl>('.valid-ocr-overlay');
+          prev?._ocrUnpin?.();
+          prev?.remove();
+          const svg = buildOverlaySvg(result.lines, panel.marks, nW, nH) as OcrOverlayEl;
+          svg.style.position = 'absolute';
+          svg.style.pointerEvents = 'none';
+          // Pin the overlay to the <img>'s CURRENT box - and keep it pinned: a one-time
+          // pixel snapshot drifts on any window resize or reflow, so the same pin re-runs
+          // from a ResizeObserver on the image (and on a late 'load', should the image
+          // swap sources under the overlay).
+          const pin = (): void => {
+            svg.style.left = `${img.offsetLeft}px`;
+            svg.style.top = `${img.offsetTop}px`;
+            svg.style.width = `${img.offsetWidth}px`;
+            svg.style.height = `${img.offsetHeight}px`;
+          };
+          pin();
+          const ro = new ResizeObserver(pin);
+          ro.observe(img);
+          img.addEventListener('load', pin);
+          svg._ocrUnpin = () => { ro.disconnect(); img.removeEventListener('load', pin); };
+          img.parentElement.appendChild(svg);
+        }
+      },
+      onError: () => readFailed(),
+      onSettled: restore,   // includes a cancel from the toast
+    });
   }
 
   reportEl.addEventListener('click', (e) => {
@@ -2952,9 +3369,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     const rec = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-recreate]');
     if (rec) { e.preventDefault(); void recreateFromDigest(rec); }
     const enable = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-deep-scan-enable]');
-    if (enable) void enableDeepScan(enable);
+    if (enable) enableDeepScan(enable);
     const rescan = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-imprint-rescan]');
-    if (rescan) void rescanImprint(rescan);
+    if (rescan) rescanImprint(rescan);
     const view = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-view]');
     if (view) void viewPayload(view);
     const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-download]');

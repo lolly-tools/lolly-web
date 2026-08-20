@@ -57,6 +57,19 @@
   align-self: flex-start;
   width: fit-content;
 }
+/* Back pill + always-home FAB as ONE in-flow row. The studio's back pill sits in
+   flow (not pinned — see .start-back), so its Home twin rides right beside it here
+   rather than in the top-right cluster, matching every other view's back+home pair.
+   align-self keeps the row content-width when .start becomes a flex column (≥1100px);
+   the row owns the bottom gap so the pill inside it drops its own. */
+.start-back-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  margin-bottom: 10px;
+}
+.start-back-row .start-back { margin-bottom: 0; }
 /* The always-home FAB that twins the language FAB in this view's top-right
    cluster is shared chrome now — its box + glass live in topbar.css/.home-fab
    (components/home-fab.ts), so nothing about it is styled here. */

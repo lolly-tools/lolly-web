@@ -164,7 +164,11 @@ const OBJECT_URL_CACHE = new Map<string, string>(); // key → blob URL, kept al
 // small (no pixels); nulls dominate, so the map stays tiny.
 const CREDENTIAL_CACHE = new Map<string, { store: Uint8Array; format: string } | null>();
 // Skip credential-scanning anything enormous - same cap as upload ingest.
-const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024;
+// Exported because it is a POLICY, not a local detail: any other caller that
+// fetches a whole asset just to look for a manifest (the sequence export's
+// ingredient gather) has to stop at the same size, or a timeline of four
+// half-gigabyte clips pays a cost this cap exists to refuse.
+export const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024;
 
 // Parsed theme list from the catalog's icon-themes palette asset (a palette-type
 // asset tagged "icon-themes"). Cached per session; reset when the catalog syncs.
@@ -530,6 +534,27 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // stale verdict from the previous image must not survive onto the new bytes - drop it and
       // let the flag recompute from the new record's own credential below.
       AI_KIND_MEMO.delete(record.id);
+      // Capture the incoming bytes' Content Credentials, unless the caller already
+      // did. `credential(id)` reads `rec.credential` and nothing else - there is no
+      // byte-scan behind it, because an upload's stored pixels were re-encoded and
+      // no longer carry the store - so a record written without that field has no
+      // provenance at all the moment anything asks. Two writers did exactly that: a
+      // video job's output, which is stamped INTO the bytes it then uploads, and the
+      // audio/MIDI/Lottie uploads the picker's own extraction skips (a credentialed
+      // voice or music file, synthetic-audio disclosure included). This is the bridge
+      // boundary, the one place every writer passes, so it is where the capture
+      // belongs. A caller that already extracted wins: the picker can fall back to
+      // the ORIGINAL file's manifest when a re-encode dropped it, and these bytes
+      // cannot show that. The cost is one extra read of an upload the picker already
+      // scanned and found clean - bounded by the same cap the rest of the shell
+      // refuses to scan past, and cheap against losing a credential. Never fatal.
+      if (!record.credential && record.blob && record.blob.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+        try {
+          const { extractC2paStore } = await loadC2paVerify();
+          const ex = extractC2paStore(new Uint8Array(await record.blob.arrayBuffer()));
+          if (ex) { record.credential = ex.store; record.credentialFormat = ex.format; }
+        } catch { /* unreadable bytes are not a reason to refuse the write */ }
+      }
       // Compute the AI-provenance flag once, at ingest, from the captured credential.
       if (record.aiGenerated === undefined && record.credential && record.credentialFormat) {
         const kind = detectAiGenerated(record, await loadC2paVerify());
@@ -994,6 +1019,40 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
   };
   return api;
+}
+
+/**
+ * The asset id a resolved media URL came from, or null if nothing here minted it.
+ *
+ * THE ONE REVERSE DIRECTION THIS BRIDGE CAN ANSWER, and it exists because a
+ * rendered document keeps no ids: a design's `<video src>` and `[data-audio-src]`
+ * carry a URL and nothing else, so an export walking the DOM has no way back to the
+ * record a clip came from. `toAssetRef` is the single place a stored blob becomes a
+ * URL, and it keys the cache by `<source>:<id>:<format>:<version>` (plus a bake
+ * suffix for themed/treated library derivatives) - so the id is already written
+ * down, just the wrong way round for this caller.
+ *
+ * Why it matters beyond convenience: `credential()` above is the ONLY place a user
+ * upload's Content Credentials still live. Ingest re-encodes the pixels, so the
+ * C2PA store was moved beside the record; scanning the bytes that URL serves finds
+ * nothing. Without an id there is no credential to preserve.
+ *
+ * A linear scan on purpose. The cache holds the URLs one session has resolved -
+ * tens, not thousands - and the callers are export paths that are about to spend
+ * seconds encoding video. A second map maintained in parallel would have to be
+ * evicted in lockstep with this one, and a stale entry there would mean claiming
+ * the wrong asset's provenance.
+ */
+export function assetIdForUrl(url: string): string | null {
+  if (!url) return null;
+  for (const [key, cached] of OBJECT_URL_CACHE) {
+    if (cached !== url) continue;
+    // Ids are path-like (`user/…`, `suse/logo/primary`) and never carry a colon,
+    // so the second segment is the whole id whatever bake suffix follows it.
+    const parts = key.split(':');
+    if ((parts[0] === 'user' || parts[0] === 'library') && parts[1]) return parts[1];
+  }
+  return null;
 }
 
 /** Revoke + drop a single object-URL cache entry, if present. */

@@ -11,10 +11,19 @@
  * the device. The heavy run is driven from THIS explicit, cancellable affordance,
  * never a tool hook (hooks are time-boxed and their late results discarded).
  *
+ * RUN STARTS A BACKGROUND JOB AND CLOSES (plans/124 WP-F, the video-job shape).
+ * The dialog owns validation, consent, feasibility and the decode; Run hands the
+ * decoded frame to lib/upscale-job.ts's `startUpscaleJob` and dismisses itself.
+ * From there the global toast (lib/job-toast.ts) owns progress and cancellation,
+ * and the work survives navigating away - so there is no in-dialog progress bar
+ * and no modal waiting on a model. `onComplete` fires with the saved AssetRef,
+ * which is how a caller treats the result as a pick or refreshes its view.
+ *
  * The saved record carries `aiGenerated: 'partial'` so the Gen AI pill surfaces
- * on the tile (bridge/assets.ts), plus `meta.aiUpscale = { model, version }` - 
+ * on the tile (bridge/assets.ts), plus `meta.aiUpscale = { model, version }` -
  * the signal the engine runtime reads to stamp the C2PA composite disclosure
  * ("AI-upscaled with <model> <version>", see host-v1's ExportOpts.c2paAiUpscale).
+ * That whole save tail, provenance included, lives in lib/upscale-job.ts now.
  */
 
 import '../styles/upscale.css';   // async CSS chunk (lazy dialog - not on the landing)
@@ -23,37 +32,15 @@ import { fmtBytes } from '../lib/format.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { icon } from '../lib/icons.ts';
 import { UPSCALE_DENOISE_STAGED } from '../lib/upscale-models.ts';
+import { startUpscaleJob, type UpscaleJobHost, type UpscaleJobRequest } from '../lib/upscale-job.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
-import { extractC2paStore, prepareC2paIngredientFromStore, COMPOSITE_SOURCE_TYPE } from '@lolly/engine';
-import type {
-  AssetRef, HostV1, UpscaleFrame, UpscaleModelId, UpscaleProgress,
-} from '@lolly-tools/core/host-v1';
+import type { AssetRef, UpscaleFrame, UpscaleModelId } from '@lolly-tools/core/host-v1';
 
-/** The user-asset record this dialog writes (mirrors bridge/assets.ts's
- *  non-exported UserAssetRecord for the fields we set - same pattern as the
- *  picker's UserAssetRecordInput and script-audio's TtsAssetRecordInput, plus
- *  the `aiGenerated` disclosure field). */
-export interface UpscaleAssetRecordInput {
-  id: string;
-  type: AssetRef['type'];
-  format: string;
-  blob?: Blob;
-  version?: string;
-  width?: number;
-  height?: number;
-  meta?: Record<string, unknown>;
-  aiGenerated?: 'full' | 'partial';
-}
-
-/** The web host surface this dialog touches: HostV1 (for `upscale`, `log`) plus
- *  the web-only upload helper. The picker's PickerHost satisfies it structurally,
- *  so the call site passes what it already holds. */
-export interface UpscaleHost extends HostV1 {
-  assets: HostV1['assets'] & {
-    _uploadUserAsset(record: UpscaleAssetRecordInput): Promise<void>;
-  };
-}
+/** The web host surface this dialog touches - the job's host (HostV1 plus the
+ *  web-only upload helper), under the name its call sites already import. The
+ *  picker's PickerHost satisfies it structurally. */
+export type UpscaleHost = UpscaleJobHost;
 
 /** What the dialog can start from: a placed/library asset, raw bytes, or a URL.
  *  When absent the dialog shows its own "choose an image" step first. */
@@ -64,6 +51,8 @@ export interface UpscaleDialogOpts {
   source?: UpscaleSource;
   /** A display name for the source (drives the saved asset's name). */
   sourceName?: string;
+  /** Fires with the saved AssetRef when the background job completes. */
+  onComplete?: (ref: AssetRef) => void;
 }
 
 /** The general (WDN-pair) model is the only one that takes a denoise strength. */
@@ -83,25 +72,6 @@ interface UpscaleIntent {
   models?: UpscaleModelId[];
   algorithm?: 'nearest';
   note?: string;
-}
-
-/** Nearest-neighbour integer scale via canvas - the crisp, no-download, no-blur path
- *  for pixel art (a neural upscaler would smooth away the hard edges). Pure: source
- *  frame → a scale×-larger frame, imageSmoothingEnabled off so pixels stay square. */
-function pixelNearest(frame: UpscaleFrame, scale: number): UpscaleFrame {
-  const src = document.createElement('canvas');
-  src.width = frame.width; src.height = frame.height;
-  const sctx = src.getContext('2d');
-  if (!sctx) throw new Error('no 2d context');
-  sctx.putImageData(new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height), 0, 0);
-  const outW = frame.width * scale, outH = frame.height * scale;
-  const out = document.createElement('canvas');
-  out.width = outW; out.height = outH;
-  const octx = out.getContext('2d');
-  if (!octx) throw new Error('no 2d context');
-  octx.imageSmoothingEnabled = false;
-  octx.drawImage(src, 0, 0, outW, outH);
-  return { width: outW, height: outH, data: octx.getImageData(0, 0, outW, outH).data };
 }
 
 /** Resolve any source shape to a blob + a best-effort display name. */
@@ -143,46 +113,22 @@ export async function sourceToFrame(source: UpscaleSource, fallbackName?: string
   }
 }
 
-/** A larger RGBA frame back to a PNG blob (putImageData → toBlob). */
-export function frameToPngBlob(frame: UpscaleFrame): Promise<Blob> {
-  const canvas = document.createElement('canvas');
-  canvas.width = frame.width;
-  canvas.height = frame.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return Promise.reject(new Error('no 2d context'));
-  // Build the ImageData from the canvas (its buffer is a plain ArrayBuffer) and
-  // copy the frame's pixels in - the frame's Uint8ClampedArray may be backed by a
-  // SharedArrayBuffer (Worker transfer), which the ImageData constructor rejects.
-  const img = ctx.createImageData(frame.width, frame.height);
-  img.data.set(frame.data);
-  ctx.putImageData(img, 0, 0);
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png');
-  });
-}
-
-/** A file-safe id + a display name from the source name. */
-function upscaleAssetIds(sourceName: string, now: number): { id: string; name: string } {
-  const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
-  const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  return { id: `user/upscaled/${now}-${slug || 'image'}`, name: tRaw('Upscaled {name}', { name: base || t('image') }) };
-}
-
 /**
- * Open the Upscale dialog. Resolves the saved asset's AssetRef, or null on cancel.
- * Callers gate on `host.upscale?.isAvailable()` before offering the affordance;
- * this also bails (resolving null) when the bridge is absent, so a stale button
- * can never strand the user in a dead dialog.
+ * Open the Upscale dialog. Resolves when the dialog CLOSES - the run itself is a
+ * background job (`opts.onComplete` carries its saved AssetRef), so this never
+ * waits on the model. Callers gate on `host.upscale?.isAvailable()` before
+ * offering the affordance; this also bails (resolving at once) when the bridge is
+ * absent, so a stale button can never strand the user in a dead dialog.
  */
-export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {}): Promise<AssetRef | null> {
+export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {}): Promise<void> {
   const upscale = host.upscale;
-  if (!upscale?.isAvailable()) return Promise.resolve(null);
+  if (!upscale?.isAvailable()) return Promise.resolve();
   const models = upscale.models();
-  if (models.length === 0) return Promise.resolve(null);
+  if (models.length === 0) return Promise.resolve();
 
   return new Promise((resolve) => {
     let trap: FocusTrap | undefined;
-    let abort: AbortController | null = null;
+    let settled = false;
     // The decoded source frame + its name, once a source is loaded. srcBytes is the
     // source's original file bytes, kept for the Content Credential scan at save.
     let srcFrame: UpscaleFrame | null = null;
@@ -262,9 +208,6 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
           <p class="upscale-warning" data-warning role="note" hidden></p>
           <p class="upscale-consent" data-consent hidden></p>
           <div class="upscale-feasibility" data-feasibility role="alert" hidden></div>
-          <div class="upscale-progress" data-progress role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${escapeHtml(t('Upscaling'))}" hidden>
-            <div class="upscale-progress-fill" data-progress-fill></div>
-          </div>
           <div class="upscale-status" data-status aria-live="polite" hidden></div>
         </div>
         <footer class="upscale-actions">
@@ -292,33 +235,34 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const denoiseOut   = overlay.querySelector<HTMLElement>('[data-denoise-out]')!;
     const consentEl  = overlay.querySelector<HTMLElement>('[data-consent]')!;
     const feasEl     = overlay.querySelector<HTMLElement>('[data-feasibility]')!;
-    const progressEl = overlay.querySelector<HTMLElement>('[data-progress]')!;
-    const fillEl     = overlay.querySelector<HTMLElement>('[data-progress-fill]')!;
     const statusEl   = overlay.querySelector<HTMLElement>('[data-status]')!;
     const runBtn     = overlay.querySelector<HTMLButtonElement>('[data-run]')!;
     const opener     = document.activeElement;
 
     intentSel.value = defaultIntent;
 
-    const cleanup = (): void => {
-      abort?.abort();
-      abort = null;
+    // Closing tears the sheet down but NEVER touches a job Run started: the toast owns
+    // it from there (cancel included). Guarded so the enqueue-then-close timer and a
+    // user Escape can't both run the teardown.
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
       trap?.release();
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('paste', onPaste);
       NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
+      resolve();
     };
-    const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
     document.addEventListener('keydown', onKey);
-    // A route change cancels the sheet like Escape/backdrop - any in-flight run aborts.
-    const onNav = (): void => done(null);
+    // A route change closes the sheet like Escape/backdrop.
+    const onNav = (): void => done();
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
-    overlay.querySelector('.upscale-backdrop')?.addEventListener('click', () => done(null));
-    overlay.querySelector('.upscale-close')?.addEventListener('click', () => done(null));
-    overlay.querySelector('.upscale-cancel')?.addEventListener('click', () => done(null));
+    overlay.querySelector('.upscale-backdrop')?.addEventListener('click', () => done());
+    overlay.querySelector('.upscale-close')?.addEventListener('click', () => done());
+    overlay.querySelector('.upscale-cancel')?.addEventListener('click', () => done());
     // Contain focus over whatever opened this (the picker is itself modal; nested
     // traps stack - this inerts the surface beneath while the sheet is open).
     trap = trapFocus(overlay);
@@ -599,7 +543,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       else showStatus(t("That doesn't look like an image. Try a PNG or JPG."), true);
     });
     // Paste while the choose step is up (no source adopted yet) - a screenshot or a
-    // copied image lands straight in. Bound to the document; removed in cleanup.
+    // copied image lands straight in. Bound to the document; removed when the sheet closes.
     const onPaste = (e: ClipboardEvent): void => {
       if (srcFrame || chooseEl.hidden) return;
       const file = firstImageFile(e.clipboardData);
@@ -607,133 +551,34 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     };
     document.addEventListener('paste', onPaste);
 
-    runBtn.addEventListener('click', async () => {
+    // Run ENQUEUES and closes. Everything the job needs is settled by now - the
+    // decoded frame, the source's own bytes (its credential travels as an ingredient)
+    // and the controls' opts - so the sheet has nothing left to wait for. Cancellation
+    // lives on the toast from here, which is why this handler starts no AbortController.
+    runBtn.addEventListener('click', () => {
       if (!srcFrame || !feasible) return;
       hideStatus();
       runBtn.disabled = true;
-      progressEl.hidden = false;
-      abort = new AbortController();
-      const paint = (p: UpscaleProgress): void => {
-        // Both phases feed the one bar: download (loaded/total) and inference
-        // (tile/tiles); an unknowable fraction pulses the track.
-        const frac = p.fraction ?? (
-          p.phase === 'download'
-            ? (p.total ? (p.loaded ?? 0) / p.total : null)
-            : (p.tiles ? (p.tile ?? 0) / p.tiles : null));
-        progressEl.classList.toggle('upscale-progress-indeterminate', frac == null);
-        const pct = frac == null ? 0 : Math.round(Math.min(1, Math.max(0, frac)) * 100);
-        fillEl.style.width = frac == null ? '100%' : `${pct}%`;
-        progressEl.setAttribute('aria-valuenow', String(pct));
-        showStatus(p.phase === 'download'
-          ? t('Downloading the model…')
-          : p.tiles ? t('Upscaling… tile {n} of {total}', { n: (p.tile ?? 0) + 1, total: p.tiles })
-                    : t('Upscaling…'));
+      const it = currentIntent();
+      const req: UpscaleJobRequest = {
+        frame: srcFrame,
+        // The credential's title is the DECODED source's own name; the saved asset's
+        // id/name prefer the caller's display name where it gave one. Unchanged from
+        // the modal-blocking version.
+        sourceName: srcName,
+        saveName: opts.sourceName ?? srcName,
+        ...(srcBytes ? { sourceBytes: srcBytes } : {}),
+        ...(it.algorithm === 'nearest'
+          ? { pixel: { scale: Number(pixelScaleSel.value) || 4 } }
+          : { model: readOpts() }),
       };
-      try {
-        const it = currentIntent();
-        let out: UpscaleFrame;
-        // How to disclose THIS transform in the saved copy's credential, and whether
-        // it counts as a Gen-AI edit. The two paths differ in kind, so their provenance
-        // does too - this is the whole reason pixel art is a separate branch.
-        let editAction: { action: string; digitalSourceType?: string; description: string };
-        let ai = false;
-        let aiUpscaleMeta: { model: UpscaleModelId; version: string } | undefined;
-
-        if (it.algorithm === 'nearest') {
-          // Pixel art: a LOCAL, deterministic nearest-neighbour integer scale. No model
-          // invents anything, so it is disclosed as a plain edit - NEVER a genAI
-          // credential or the Gen-AI pill (that would over-claim on a lossless resize).
-          const scale = Math.max(2, Math.round(Number(pixelScaleSel.value) || 4));
-          progressEl.classList.add('upscale-progress-indeterminate');
-          fillEl.style.width = '100%';
-          progressEl.setAttribute('aria-valuenow', '0');
-          showStatus(t('Scaling…'));
-          out = pixelNearest(srcFrame, scale);
-          editAction = { action: 'c2pa.edited', description: `Scaled ${scale}× (nearest-neighbour, pixel art)` };
-        } else {
-          // Model path: run() TRANSFERS (neuters) the frame's buffer to the worker, so
-          // hand it a FRESH COPY and keep srcFrame intact - otherwise a retry after a
-          // failed run would post a detached, empty buffer and fail.
-          const o = readOpts();
-          const runFrame = { width: srcFrame.width, height: srcFrame.height, data: new Uint8ClampedArray(srcFrame.data) };
-          out = await upscale.run(runFrame, { ...o, signal: abort.signal, onProgress: paint });
-          const info = modelOf(o.model);
-          // A super-resolver INVENTS high-frequency detail from a trained model, so the
-          // honest IPTC digitalSourceType is compositeWithTrainedAlgorithmicMedia (a
-          // real image with model-inferred pixels), which aiKind reads back as 'partial'.
-          editAction = {
-            action: 'c2pa.edited',
-            digitalSourceType: COMPOSITE_SOURCE_TYPE,
-            description: `Upscaled ${info.scale}× with ${info.name} ${info.version} (on-device)`,
-          };
-          ai = true;
-          aiUpscaleMeta = { model: o.model, version: info.version };
-        }
-        if (!overlay.isConnected) return;
-        showStatus(t('Saving…'));
-        const rawBlob = await frameToPngBlob(out);
-        const now = Date.now();
-        const { id, name } = upscaleAssetIds(opts.sourceName ?? srcName, now);
-
-        // Stamp the copy's own bytes so its embedded Content Credential discloses the
-        // transform (not only the catalog listing). The source's own credential (e.g.
-        // an AI image's) is preserved as an ingredient rather than erased. Never throws
-        // (stampDerivedC2pa is try/catch internally); a failed re-sign still ships.
-        let blob = rawBlob;
-        try {
-          const { stampDerivedC2pa } = await import('../bridge/export.ts');
-          const ex = srcBytes ? extractC2paStore(srcBytes) : null;
-          const ingredient = ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
-          blob = await stampDerivedC2pa(host, rawBlob, 'png', {
-            title: srcName,
-            tool: 'Upscale',
-            actions: [editAction],
-            ...(ingredient ? { ingredients: [ingredient] } : {}),
-            dimensions: `${out.width}×${out.height}`,
-          });
-        } catch (e) {
-          host.log('warn', 'Upscale provenance stamp failed', { error: String(e) });
-        }
-
-        const record: UpscaleAssetRecordInput = {
-          id,
-          type: 'raster',
-          format: 'png',
-          blob,
-          width: out.width,
-          height: out.height,
-          version: '1.0.0',
-          // Gen-AI pill (bridge/assets.ts) only for the model path; the embedded
-          // credential above carries the same disclosure into the file's own bytes.
-          ...(ai ? { aiGenerated: 'partial' as const } : {}),
-          meta: {
-            name,
-            bytes: blob.size,
-            // The C2PA composite-disclosure signal the engine runtime reads
-            // (ExportOpts.c2paAiUpscale): "AI-upscaled with <model> <version>".
-            ...(aiUpscaleMeta ? { aiUpscale: aiUpscaleMeta } : {}),
-          },
-        };
-        await host.assets._uploadUserAsset(record);
-        done(await host.assets.get(id));
-      } catch (e) {
-        if (!overlay.isConnected) return;
-        // Cancel is not a failure. Anything else degrades to an honest message,
-        // never a stuck spinner.
-        if ((e as Error | null)?.name !== 'AbortError') {
-          host.log('error', 'Upscale run failed', { error: String(e) });
-          // Surface the runtime's OWN cause-specific message (e.g. "the model isn't
-          // available yet"): "try a smaller target size" is wrong advice for a
-          // download/decode fault, and only right for a genuine memory failure.
-          const msg = (e as Error | null)?.message?.trim();
-          showStatus(msg || t("Couldn't upscale the image. Try a smaller target size."), true);
-        } else {
-          hideStatus();
-        }
-      } finally {
-        abort = null;
-        if (overlay.isConnected) { runBtn.disabled = !feasible; progressEl.hidden = true; progressEl.classList.remove('upscale-progress-indeterminate'); }
-      }
+      startUpscaleJob(host, req, {
+        onComplete: (ref) => opts.onComplete?.(ref),
+        onError: (err) => host.log('error', 'Upscale run failed', { error: String(err) }),
+      });
+      showStatus(t('Working in the background. It will appear in your catalog when it’s done.'));
+      // Let the message land, then close: the toast takes it from here.
+      setTimeout(done, 900);
     });
 
     // Kick off: pre-loaded source, or the choose step.

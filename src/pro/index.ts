@@ -31,7 +31,7 @@ import { colorFieldHtml, wireColorField, type ColorFieldValue } from '../compone
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { mountModal } from '../components/modal.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { askExportLock } from '../lib/export-lock.ts';
@@ -43,7 +43,8 @@ import { icon } from '../lib/icons.ts';
 import { saveBlob } from './zip.ts';
 import { batchToCsv, csvToBatch, parseClipboardGrid, coerceCell } from './io.ts';
 import { createSessionStore, rowsFromSnapshot, snapshotFromState } from './sessions.ts';
-import { runBatchWithProgress, isBatchRunActive } from './run-overlay.ts';
+import { runBatchWithProgress } from './run-overlay.ts';
+import { startBatchExport, isBatchRunActive } from '../lib/batch-job.ts';
 import { rowsForFolder, rowsFromRefs } from './folder-rows.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { Unit } from '../../../../engine/src/units.ts';
@@ -1580,7 +1581,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     // sharing the offscreen stage and the same progress mount is the failure mode the
     // overlay's lock exists for - so ask the overlay too, not just ourselves.
     if (isBatchRunActive()) {
-      showProgress(`<p class="pro-progress-msg">An export is still running — this will be ready when it finishes.</p>`);
+      showProgress(`<p class="pro-progress-msg">${escape(t('An export is still running. Start this one when it finishes.'))}</p>`);
       return;
     }
     closeBulkPopover();
@@ -1613,10 +1614,6 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const { ok, strongPassword, zipLock } = await askExportLock(`${renderable.length} file${renderable.length === 1 ? '' : 's'}`, true);
     if (!ok) return;                          // cancelled
 
-    state.running = true;
-    state.cancelRequested = false;
-    renderGrid();
-
     // Author details ride into the zip manifest only when the user has opted in
     // (Profile → "Use my details"); otherwise the [ Author Information ] block is
     // dropped. The CSV is the exact settings that produced these files - 
@@ -1627,38 +1624,59 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const author = profile?.useDetails ? profile : null;
     const csv = batchToCsv(renderable as unknown as Parameters<typeof batchToCsv>[0], { unit: state.unit, dpi: state.dpi });
 
-    await runBatchWithProgress(host, renderable, {
-      mount: progressEl,
-      format: state.format,
-      // Toolbar defaults; each row may override via its own unit/dpi (batch.js).
-      unit: state.unit,
-      dpi: state.dpi,
-      // Run-level print settings, same precedence: a row carrying its own bleed /
-      // marks / press profile keeps it (batch.ts resolvePrintSettings). Passed
-      // unconditionally because runBatch GATES them on each row's resolved format
-      // (batch.ts printSettingsFor) - the Print button hides when the format leaves
-      // print but deliberately does not clear these, and an ungated merge signed a
-      // C2PA claim about bleed and marks onto rasters that rendered neither.
-      profile: state.profile || undefined,
-      bleed: state.bleed || undefined,
-      marks: state.marks || undefined,
-      zipBaseName: zipBase,
-      srcIndex,
-      // Per-row preflight findings, keyed by queue position. Skipped rows have no
-      // queue position, so theirs travel by identity in `skippedFindings`, and the
-      // run-invariant ones ride `runFindings` - three channels, none of them able to
-      // stand in for another.
-      notes: notesFromFindings(findings, renderable.length),
-      skippedFindings: skippedFindings(plan),
-      runFindings,
-      author,
-      csv,
-      skipped,
-      // Re-enable the grid as soon as the renders finish, before the zip builds.
-      onRendered: () => { state.running = false; renderGrid(); },
-      onBatchRendered: opts.onBatchRendered,
-      announce: srAnnounce,
-      strongPassword, zipLock,
+    // The run is a WP-F background job (lib/batch-job.ts): it survives navigating away
+    // from the grid, the global toast owns its progress and cancel, and the run lock it
+    // holds is released by the JOB ending - not by this view's `_cleanup`, which used to
+    // leave the lock stuck on and refuse every later run with no way to clear it.
+    startBatchExport(tRaw('Rendering {n} files', { n: renderable.length }), async (job) => {
+      // The grid is disabled from the moment the run's TURN comes, not from the moment
+      // it is queued: a job cancelled while still waiting behind another one never calls
+      // this back, and a `running` flag set outside it would strand the grid disabled.
+      state.running = true;
+      state.cancelRequested = false;
+      renderGrid();
+      try {
+        return await runBatchWithProgress(host, renderable, {
+          job,
+          mount: progressEl,
+          format: state.format,
+          // Toolbar defaults; each row may override via its own unit/dpi (batch.js).
+          unit: state.unit,
+          dpi: state.dpi,
+          // Run-level print settings, same precedence: a row carrying its own bleed /
+          // marks / press profile keeps it (batch.ts resolvePrintSettings). Passed
+          // unconditionally because runBatch GATES them on each row's resolved format
+          // (batch.ts printSettingsFor) - the Print button hides when the format leaves
+          // print but deliberately does not clear these, and an ungated merge signed a
+          // C2PA claim about bleed and marks onto rasters that rendered neither.
+          profile: state.profile || undefined,
+          bleed: state.bleed || undefined,
+          marks: state.marks || undefined,
+          zipBaseName: zipBase,
+          srcIndex,
+          // Per-row preflight findings, keyed by queue position. Skipped rows have no
+          // queue position, so theirs travel by identity in `skippedFindings`, and the
+          // run-invariant ones ride `runFindings` - three channels, none of them able to
+          // stand in for another.
+          notes: notesFromFindings(findings, renderable.length),
+          skippedFindings: skippedFindings(plan),
+          runFindings,
+          author,
+          csv,
+          skipped,
+          // Re-enable the grid as soon as the renders finish, before the zip builds.
+          onRendered: () => { state.running = false; renderGrid(); },
+          onBatchRendered: opts.onBatchRendered,
+          announce: srAnnounce,
+          strongPassword, zipLock,
+        });
+      } catch (err) {
+        // The grid's own recovery still runs (clear `running`, say what happened in the
+        // docked panel); rethrowing hands the SAME failure to the job, which is the only
+        // surface left once this view is gone.
+        reportFatal(err);
+        throw err;
+      }
     });
   }
 

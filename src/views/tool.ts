@@ -1240,6 +1240,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             <div id="tool-inputs" class="tool-inputs"></div>
             ${hasInputs ? `
               <div class="sidebar-utils" id="sidebar-utils">
+                ${toolId === 'darkroom' && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined' && typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined' ? `<button type="button" id="grade-video-btn" class="clear-inputs-btn" title="${escape(t('Apply this look to a video from your library — runs on-device as a background job'))}">${t('Grade a video…')}</button>` : ''}
                 <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="${escape(t('Reset all inputs to defaults'))}">${t('Clear changes')}</button>
               </div>
             ` : ''}
@@ -2626,6 +2627,85 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         announce: (m) => announce(m),
         t,
       });
+    });
+  }
+
+  // Darkroom's "Grade a video…" (plans/130): the tool authors the look and publishes
+  // it as the `videoLook` hook extra (a baked .cube, key-guarded); the shell owns the
+  // video pipeline. This button joins them - pick a video, hand the baked look plus
+  // the tool's own texture params to the background grade job. The toast owns
+  // progress; darkroom itself never decodes video.
+  const gradeVideoBtn = viewEl.querySelector<HTMLButtonElement>('#grade-video-btn');
+  if (gradeVideoBtn) {
+    gradeVideoBtn.addEventListener('click', async () => {
+      if (gradeVideoBtn.dataset.busy) return;
+      gradeVideoBtn.dataset.busy = '1';
+      try {
+        const picked = await host.assets.pick({ type: 'video', title: t('Grade a video') });
+        if (!picked) return;
+        let cube = '';
+        try {
+          const look = JSON.parse(runtime.getHydratedText('{{videoLook}}')) as { v?: number; on?: number; cube?: string };
+          // The envelope's `on` flag is the tool's own colour-identity test: an
+          // untouched darkroom publishes an identity cube, and grading a clip
+          // through it would re-encode for nothing AND stamp a colour-grade
+          // credential the pixels don't earn. Only an active look counts.
+          if (look?.v === 1 && look.on === 1 && typeof look.cube === 'string') cube = look.cube;
+        } catch { /* no look authored yet - texture params may still make a grade */ }
+        const num = (id: string, dflt: number): number => {
+          const v = Number(runtime.getModel().find((i) => i.id === id)?.value);
+          return Number.isFinite(v) ? v : dflt;
+        };
+        const grain = Math.min(1, Math.max(0, num('grain', 0) / 100));
+        const vignette = Math.min(1, Math.max(0, num('vignette', 0) / 100));
+        if (!cube && grain === 0 && vignette === 0) {
+          announce(t('Adjust the look first — this would output the video unchanged.'));
+          return;
+        }
+        const { runVideoJobAsJob, videoJobRefusal } = await import('../lib/video-jobs.ts');
+        // A metadata-only probe so the caps refuse BEFORE a doomed decode starts -
+        // the same check the catalog's inline mode shows next to Apply.
+        const meta = await new Promise<{ w: number; h: number; durationSec: number } | null>((resolve) => {
+          const v = document.createElement('video');
+          v.preload = 'metadata';
+          v.muted = true;
+          v.onloadedmetadata = () => resolve({ w: v.videoWidth, h: v.videoHeight, durationSec: Number.isFinite(v.duration) ? v.duration : 0 });
+          v.onerror = () => resolve(null);
+          v.src = picked.url;
+        });
+        if (!meta) { announce(t("Couldn't read this video.")); return; }
+        const refusal = videoJobRefusal('grade', {
+          longEdge: Math.max(meta.w, meta.h),
+          durationSec: meta.durationSec,
+          bytes: Number(picked.meta?.bytes ?? 0),
+        });
+        if (refusal) { announce(refusal); return; }
+        const sourceName = String(picked.meta?.name ?? picked.id);
+        runVideoJobAsJob(host as unknown as import('../lib/video-jobs.ts').VideoJobHost, {
+          op: 'grade',
+          source: picked,
+          sourceName,
+          grade: {
+            cubeText: cube,
+            lutLabel: t('Darkroom look'),
+            lutIntensity: 1, // the baked cube already carries the LUT at its authored strength
+            grain,
+            grainSize: Math.min(4, Math.max(1, num('grainSize', 1.6))),
+            vignette,
+            seed: Math.round(num('seed', 7)),
+            fps: 0, // source fps - a colour edit must not re-time the clip
+            bitrate: 8_000_000,
+          },
+          ...(picked.meta?.aiGenerated === 'full' || picked.meta?.aiGenerated === 'partial'
+            ? { aiGeneratedSource: picked.meta.aiGenerated as 'full' | 'partial' } : {}),
+        }, {
+          onComplete: () => announce(t('Graded video saved to your uploads.')),
+          onError: (err) => host.log('error', 'Video grade failed', { id: picked.id, error: String(err) }),
+        });
+        announce(t('Grading in the background — watch the progress toast.'));
+      } finally {
+        delete gradeVideoBtn.dataset.busy;
+      }
     });
   }
 

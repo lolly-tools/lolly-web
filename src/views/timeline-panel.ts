@@ -95,7 +95,11 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 // Engine-owned cue grouping (the analysePcm precedent): captions grouped here
 // break at the same words a headless render would break at.
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
-import { captionGroup, cueSpansOnTimeline, isCaptionGroup, ttsWordsOf } from './timeline-captions.ts';
+import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
+// The transcription rung as a background job (plans/124 section 9, WP-F): the
+// consent sheet enqueues and closes, the global toast owns progress and cancel,
+// and a finished transcript outlives the panel.
+import { startTranscribeJob, stashedTranscript } from '../lib/stt-job.ts';
 import { fmtBytes } from '../lib/format.ts';
 import type { AssetRef, AudioLevel, HostV1, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
 import type { VideoJobHost } from '../lib/video-jobs.ts';
@@ -154,6 +158,10 @@ export interface TimelineHost {
       height?: number;
       meta?: Record<string, unknown>;
     }): Promise<void>;
+    /** The meta-only ANNOTATION write (bridge/assets.ts) - how a finished
+     *  transcription is filed onto the clip's own record, so a second
+     *  "Generate subtitles" reads it back instead of inferring again. */
+    _updateUserAssetMeta?(id: string, meta: Record<string, unknown>, patch?: { aiGenerated?: 'full' | 'partial' }): Promise<void>;
   };
   /** "Export frame"'s second half: the same PNG bytes, offered as a plain download. */
   export?: {
@@ -6236,7 +6244,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /** The asset ref a box carries, if any. */
-  function refOf(id: string): { id?: unknown; source?: unknown; type?: unknown } | null {
+  function refOf(id: string): { id?: unknown; source?: unknown; type?: unknown; meta?: unknown } | null {
     const rows = getBoxes();
     const i = indexOfId(rows, cfg, id);
     if (i < 0) return null;
@@ -6658,193 +6666,234 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // ── generated subtitles (plans/41-tts-stt-programme.md section 5) ─────────────────────
   //
   // Timing-source ladder, best first: the asset's own `meta.tts.words` (a TTS
-  // clip aligns itself - exact by construction, no download, no wait), else
+  // clip aligns itself - exact by construction, no download, no wait), then a
+  // transcript an earlier run already paid for (`meta.transcript` on the clip's
+  // own record, or this session's in-memory stash - both lib/stt-job.ts), else
   // on-device Whisper via `host.speech.transcribe` (v1.99, its own one-time
-  // model download behind its own consent sheet). Neither → the menu item is
-  // simply absent. Words become cues through the ENGINE's grouper and cues
-  // become ordinary overlay text boxes - editable, trimmable, deletable like
-  // anything else on the timeline, never a burned-in afterthought. The whole
-  // set carries `group = captions:<source id>`, which is what lets a re-run
-  // REPLACE the previous set (idempotent, never duplicating) and what the
+  // model download behind its own consent sheet). No rung reachable → the menu
+  // item is simply absent. Words become cues through the ENGINE's grouper and
+  // cues become ordinary overlay text boxes - editable, trimmable, deletable
+  // like anything else on the timeline, never a burned-in afterthought. The
+  // whole set carries `group = captions:<source id>`, which is what lets a
+  // re-run REPLACE the previous set (idempotent, never duplicating) and what the
   // panel's lane collapse reads to keep 200 cues off 200 lane rows.
+  //
+  // The Whisper rung is a BACKGROUND JOB (lib/stt-job.ts, the WP-F pattern): the
+  // sheet takes consent and CLOSES, the global toast owns progress and cancel,
+  // and the caption boxes land here when it finishes. A transcript that finishes
+  // with the panel gone is stashed and written onto the clip's own record rather
+  // than thrown away - see openTranscribeSheet and applySubtitles.
 
   /** The manifest's text add-kind - the seed a caption cue is born from. */
   const textKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'text');
 
-  /** A subtitles run is one job; a second request while one is in flight is noise. */
-  let subtitleBusyId = '';
+  /**
+   * Boxes with a subtitles run in flight: a consent sheet open, or a
+   * transcription job queued/running. A second request for the SAME clip is
+   * noise; a DIFFERENT clip may start its own, and lib/jobs.ts's serial heavy
+   * queue is what keeps two wasm runs from fighting over the address space.
+   */
+  const subtitlesPending = new Set<string>();
+  const endSubtitles = (id: string): void => { subtitlesPending.delete(id); };
 
   /**
    * Whether Generate subtitles can be OFFERED for this box: the tool must have a
    * text vocabulary, a group field to own the set with, audio to read - and at
    * least one rung of the timing ladder must be reachable. Sync, because the
    * context menu renders synchronously: the stored ref's meta answers the TTS
-   * rung without a round-trip, and the transcription rung is a sync probe.
+   * and transcript rungs without a round-trip, the stash is a map lookup, and
+   * the transcription rung is a sync probe.
    */
   function canGenerateSubtitles(id: string): boolean {
     if (!cfg.groupField || !opts.textField || !textKind()) return false;
-    const kind = mediaOf(id).kind;
-    if (kind !== 'audio' && kind !== 'video') return false;
+    const media = mediaOf(id);
+    if (media.kind !== 'audio' && media.kind !== 'video') return false;
     const ref = refOf(id);
-    if (ttsWordsOf((ref as { meta?: unknown } | null)?.meta)) return true;
+    if (ttsWordsOf(ref?.meta) || transcriptWordsOf(ref?.meta)) return true;
+    if (stashedTranscript(typeof ref?.id === 'string' ? ref.id : '', media.url || '')) return true;
     try { return host.speech?.transcribeAvailable?.() === true; } catch { return false; }
   }
 
   /**
-   * The consent + progress sheet for the transcription rung. Resolves the
-   * transcript's word timings, or null on cancel; a failure surfaces in the
-   * sheet itself (the caller has nothing to add) and resolves null too.
-   * Escape/backdrop abort the run - every exit path aborts and resolves once.
+   * Walk the INSTANT rungs of the ladder for one box - the ones that cost
+   * nothing - and, when none of them answers, report the source a transcription
+   * would read plus the asset id its result should be filed against.
    */
-  function transcribeSheet(src: AssetRef | string): Promise<SpeechWordTiming[] | null> {
-    const sp = host.speech;
-    if (!sp) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      let abort: AbortController | null = null;
-      let words: SpeechWordTiming[] | null = null;
-      let bytes = 0;
-      try { bytes = sp.transcribeModelBytes(); } catch { /* consent line just omits the size */ }
-      const html = `<form method="dialog" class="tl-junction tl-stt">
-        <h2 class="tl-junction-title">${t('Generate subtitles')}</h2>
-        <p class="tl-stt-note" data-stt-note>${t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.')}</p>
-        <p class="tl-stt-note tl-stt-note-dl" data-stt-dl hidden></p>
-        <div class="tl-stt-progress" data-stt-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="tl-stt-fill" data-stt-fill></span></div>
-        <div class="tl-junction-actions">
-          <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
-          <button type="button" class="btn btn--primary" data-act="go">${t('Generate')}</button>
-        </div>
-      </form>`;
-      const modal = mountModal<void>(html, {
-        className: 'modal tl-junction-modal',
-        ariaLabel: t('Generate subtitles'),
-        initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
-        // However it closed - Escape, backdrop, cancel, or done - settle exactly once.
-        onClose: () => { abort?.abort(); resolve(words); },
-      });
-      const note = modal.el.querySelector<HTMLElement>('[data-stt-note]');
-      const dlNote = modal.el.querySelector<HTMLElement>('[data-stt-dl]');
-      const progress = modal.el.querySelector<HTMLElement>('[data-stt-progress]');
-      const fill = modal.el.querySelector<HTMLElement>('[data-stt-fill]');
-      const goBtn = modal.el.querySelector<HTMLButtonElement>('[data-act="go"]');
-      // The one-time download is the consent-worthy part, so say so up front - 
-      // but only when it is actually owed (the probe is async, the line arrives).
-      void sp.transcribeCached?.().then((cached) => {
-        if (!cached && dlNote) {
-          dlNote.textContent = bytes > 0
-            ? t('The first run downloads the speech model once ({size}). It stays on this device.', { size: fmtBytes(bytes) })
-            : t('The first run downloads the speech model once. It stays on this device.');
-          dlNote.hidden = false;
-        }
-      }).catch(() => { /* the probe failing just means no size line */ });
-      goBtn?.addEventListener('click', async () => {
-        if (abort) return;
-        abort = new AbortController();
-        goBtn.disabled = true;
-        if (note) note.textContent = t('Listening to the clip…');
-        if (progress) progress.hidden = false;
-        try {
-          const transcript = await sp.transcribe(src, {
-            signal: abort.signal,
-            onProgress: (p) => {
-              if (note && p.phase === 'download') note.textContent = t('Downloading the speech model…');
-              const fraction = p.fraction ?? (p.total ? (p.loaded ?? 0) / p.total : undefined);
-              if (progress) progress.classList.toggle('tl-stt-progress-indeterminate', fraction == null);
-              const pct = fraction == null ? 0 : Math.round(clamp(fraction, 0, 1) * 100);
-              if (fill) fill.style.width = fraction == null ? '100%' : `${pct}%`;
-              progress?.setAttribute('aria-valuenow', String(pct));
-            },
-          });
-          words = transcript.words.length ? transcript.words : null;
-          modal.close();
-        } catch (err) {
-          if (abort.signal.aborted) return;   // the cancel path already owns the close
-          host.log?.('warn', `timeline subtitles: transcription failed — ${String(err)}`);
-          abort = null;
-          goBtn.disabled = false;
-          if (progress) progress.hidden = true;
-          if (note) note.textContent = t('That didn’t work. Check the clip has audio and try again.');
-        }
-      });
-      modal.el.querySelector<HTMLElement>('[data-act="cancel"]')?.addEventListener('click', () => modal.close());
-    });
-  }
-
-  /** Walk the timing ladder for one box's asset: stored meta, live meta, Whisper. */
-  async function wordsForBox(id: string): Promise<SpeechWordTiming[] | null> {
+  async function subtitleSource(
+    id: string,
+  ): Promise<{ words: SpeechWordTiming[] | null; src: AssetRef | string | null; assetId: string }> {
     const ref = refOf(id);
-    const stored = ttsWordsOf((ref as { meta?: unknown } | null)?.meta);
-    if (stored) return stored;
-    // The model may persist a slim ref; the store still holds the full record.
     const refId = typeof ref?.id === 'string' ? ref.id : '';
+    const url = mediaOf(id).url || '';
+    const stored = ttsWordsOf(ref?.meta) ?? transcriptWordsOf(ref?.meta);
+    if (stored) return { words: stored, src: null, assetId: refId };
+    // The model may persist a slim ref; the store still holds the full record.
     let live: AssetRef | null = null;
     if (refId && host.assets?.get) {
       try { live = await host.assets.get(refId); } catch { /* fall through to Whisper */ }
-      const fromStore = ttsWordsOf(live?.meta);
-      if (fromStore) return fromStore;
+      const fromStore = ttsWordsOf(live?.meta) ?? transcriptWordsOf(live?.meta);
+      if (fromStore) return { words: fromStore, src: null, assetId: refId };
     }
-    let sttOk = false;
-    try { sttOk = host.speech?.transcribeAvailable?.() === true; } catch { /* stays false */ }
-    if (!sttOk) return null;
+    // This session's stash: a run that finished with nobody watching, on a source
+    // with no user-asset record of its own to annotate (a catalog clip, a URL).
+    const stashed = stashedTranscript(refId, url);
+    if (stashed) return { words: stashed, src: null, assetId: refId };
     // Freshest source wins: a live ref (fresh object URL), else the stored ref,
     // else the URL the canvas is already playing. All three are AudioSources.
-    const src: AssetRef | string | null = live ?? (ref as AssetRef | null) ?? (mediaOf(id).url || null);
-    return src ? transcribeSheet(src) : null;
+    const src: AssetRef | string | null = live ?? (ref as AssetRef | null) ?? (url || null);
+    return { words: null, src, assetId: refId };
   }
 
   /**
-   * Generate (or REgenerate) the caption set for one audio/video box. One commit:
-   * the previous `captions:<id>` group goes and the new cues land in its place - 
-   * run it twice and you have one set, not two.
+   * The consent sheet for the transcription rung: what the run does, what it
+   * downloads once, and one Go. Go ENQUEUES the background job and closes.
+   *
+   * Closing this sheet ABORTS NOTHING, and that is the whole point of the
+   * conversion. Before Go there is nothing to abort; after Go the run belongs to
+   * the job, whose ✕ in the global toast is the one honest cancel. The version
+   * this replaced aborted on every exit path, so an Escape - or a stray backdrop
+   * click - destroyed a ~77 MB one-time model download and every minute of
+   * inference behind it.
    */
-  async function generateSubtitles(id: string): Promise<void> {
+  function openTranscribeSheet(id: string, src: AssetRef | string, assetId: string): void {
+    const sp = host.speech;
+    if (!sp) { endSubtitles(id); return; }
+    let enqueued = false;
+    let bytes = 0;
+    try { bytes = sp.transcribeModelBytes(); } catch { /* consent line just omits the size */ }
+    const html = `<form method="dialog" class="tl-junction tl-stt">
+      <h2 class="tl-junction-title">${t('Generate subtitles')}</h2>
+      <p class="tl-stt-note">${t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.')}</p>
+      <p class="tl-stt-note tl-stt-note-dl" data-stt-dl hidden></p>
+      <p class="tl-stt-note">${t('It runs in the background, so you can close this and keep working.')}</p>
+      <div class="tl-junction-actions">
+        <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
+        <button type="button" class="btn btn--primary" data-act="go">${t('Generate')}</button>
+      </div>
+    </form>`;
+    const modal = mountModal<void>(html, {
+      className: 'modal tl-junction-modal',
+      ariaLabel: t('Generate subtitles'),
+      initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
+      // Only the not-yet-enqueued close releases the guard; once the job exists it
+      // owns the release, through onSettled.
+      onClose: () => { if (!enqueued) endSubtitles(id); },
+    });
+    const dlNote = modal.el.querySelector<HTMLElement>('[data-stt-dl]');
+    const goBtn = modal.el.querySelector<HTMLButtonElement>('[data-act="go"]');
+    // The one-time download is the consent-worthy part, so say so up front -
+    // but only when it is actually owed (the probe is async, the line arrives).
+    void sp.transcribeCached?.().then((cached) => {
+      if (!cached && dlNote) {
+        dlNote.textContent = bytes > 0
+          ? t('The first run downloads the speech model once ({size}). It stays on this device.', { size: fmtBytes(bytes) })
+          : t('The first run downloads the speech model once. It stays on this device.');
+        dlNote.hidden = false;
+      }
+    }).catch(() => { /* the probe failing just means no size line */ });
+    goBtn?.addEventListener('click', () => {
+      if (enqueued) return;
+      enqueued = true;
+      startTranscribeJob(host, {
+        src,
+        ...(assetId ? { assetId } : {}),
+        title: t('Generating subtitles'),
+      }, {
+        // The panel places the captions when it is still here; the job announces
+        // where the transcript went when it is not (applySubtitles says which).
+        onComplete: (words) => applySubtitles(id, words),
+        onError: (err) => { host.log?.('warn', `timeline subtitles: transcription failed — ${String(err)}`); },
+        onSettled: () => endSubtitles(id),
+      });
+      modal.close();
+      announce(t('Generating subtitles in the background. You can keep working.'));
+    });
+    modal.el.querySelector<HTMLElement>('[data-act="cancel"]')?.addEventListener('click', () => modal.close());
+  }
+
+  /**
+   * Place (or REplace) the caption set for one audio/video box from a finished
+   * word list. One commit: the previous `captions:<id>` group goes and the new
+   * cues land in its place - run it twice and you have one set, not two.
+   *
+   * Returns whether the words were CONSUMED. False means there was nobody to
+   * consume them - the panel has been destroyed, the tool has no text
+   * vocabulary, or the source clip is gone - which is how lib/stt-job.ts knows
+   * to announce where the transcript is instead of assuming it landed.
+   */
+  function applySubtitles(id: string, words: readonly SpeechWordTiming[]): boolean {
     const groupField = cfg.groupField;
     const textField = opts.textField;
     const seedKind = textKind();
-    if (!groupField || !textField || !seedKind || subtitleBusyId) return;
-    subtitleBusyId = id;
-    try {
-      const words = await wordsForBox(id);
-      if (disposed || !words) return;
-      // Everything above awaited; re-read the model and make sure the source survived.
-      const rows = getBoxes();
-      const i = indexOfId(rows, cfg, id);
-      if (i < 0) return;
-      const timing = boxTiming(rows[i]!, cfg);
-      const spans = cueSpansOnTimeline(groupWordsToCues(words), {
+    if (disposed || !groupField || !textField || !seedKind) return false;
+    // The words may have arrived minutes later; re-read the model and make sure
+    // the source survived.
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return false;
+    const timing = boxTiming(rows[i]!, cfg);
+    const spans = words.length
+      ? cueSpansOnTimeline(groupWordsToCues(words), {
         start: timing.start ?? 0,
         dur: span(rows[i]!, durationSec()).dur,
         clipIn: timing.clipIn,
         speed: timing.speed,
-      });
-      if (!spans.length) { announce(t('No speech was found to caption.'), { assertive: true }); return; }
-      const gid = captionGroup(id);
-      const kept = rows.filter((b) => !b || String(b[groupField] ?? '') !== gid);
-      // Mint against the SURVIVORS plus what this loop has already minted - mintId
-      // reads the live model, which does not include either until the commit lands.
-      const used = new Set(kept.map((b) => String(b?.[cfg.idField] ?? '')));
-      let n = used.size + 1;
-      const mint = (): string => {
-        let next = `b${n}`;
-        while (used.has(next)) { n++; next = `b${n}`; }
-        used.add(next);
-        return next;
-      };
-      const made: Box[] = spans.map((c) => ({
-        ...(seedKind.seed as Box | undefined),
-        [cfg.idField]: mint(),
-        [textField]: c.text,
-        [cfg.laneField]: '',            // overlay — a caption rides ABOVE the sequence
-        [cfg.startField]: c.start,
-        [cfg.durField]: Math.round((c.end - c.start) * 1000) / 1000,
-        [cfg.enterField]: 'fade',
-        [cfg.exitField]: 'fade',
-        [groupField]: gid,
-      }));
-      write([...kept, ...made]);
-      selectAndReveal([id]);
-      announce(t('{count} caption boxes added. Each one is editable like any clip.', { count: String(made.length) }));
+      })
+      : [];
+    // Nothing to place is still an answer, and telling the user is consuming it.
+    if (!spans.length) { announce(t('No speech was found to caption.'), { assertive: true }); return true; }
+    const gid = captionGroup(id);
+    const kept = rows.filter((b) => !b || String(b[groupField] ?? '') !== gid);
+    // Mint against the SURVIVORS plus what this loop has already minted - mintId
+    // reads the live model, which does not include either until the commit lands.
+    const used = new Set(kept.map((b) => String(b?.[cfg.idField] ?? '')));
+    let n = used.size + 1;
+    const mint = (): string => {
+      let next = `b${n}`;
+      while (used.has(next)) { n++; next = `b${n}`; }
+      used.add(next);
+      return next;
+    };
+    const made: Box[] = spans.map((c) => ({
+      ...(seedKind.seed as Box | undefined),
+      [cfg.idField]: mint(),
+      [textField]: c.text,
+      [cfg.laneField]: '',            // overlay: a caption rides ABOVE the sequence
+      [cfg.startField]: c.start,
+      [cfg.durField]: Math.round((c.end - c.start) * 1000) / 1000,
+      [cfg.enterField]: 'fade',
+      [cfg.exitField]: 'fade',
+      [groupField]: gid,
+    }));
+    write([...kept, ...made]);
+    selectAndReveal([id]);
+    announce(t('{count} caption boxes added. Each one is editable like any clip.', { count: String(made.length) }));
+    return true;
+  }
+
+  /**
+   * Generate (or REgenerate) the caption set for one audio/video box: take the
+   * cheapest rung of the timing ladder that answers, and only fall through to the
+   * consent sheet (and the background transcription behind it) when none does.
+   */
+  async function generateSubtitles(id: string): Promise<void> {
+    if (!cfg.groupField || !opts.textField || !textKind()) return;
+    if (subtitlesPending.has(id)) return;
+    subtitlesPending.add(id);
+    let handedOver = false;
+    try {
+      const { words, src, assetId } = await subtitleSource(id);
+      if (disposed) return;
+      if (words) { applySubtitles(id, words); return; }
+      let sttOk = false;
+      try { sttOk = host.speech?.transcribeAvailable?.() === true; } catch { /* stays false */ }
+      if (!sttOk || !src) return;
+      openTranscribeSheet(id, src, assetId);
+      handedOver = true;    // the sheet, then the job, owns the guard from here
+    } catch (err) {
+      host.log?.('warn', `timeline subtitles failed — ${String(err)}`);
     } finally {
-      subtitleBusyId = '';
+      if (!handedOver) endSubtitles(id);
     }
   }
 

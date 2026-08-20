@@ -13,6 +13,11 @@
  * The saved record carries `aiGenerated: 'full'` so the Gen AI pill surfaces on
  * the tile (bridge/assets.ts), plus a `meta.tts` block (voice/speed/model/text/
  * word timings) so a captioning surface can re-read the alignment later.
+ *
+ * Generate runs as a background job (generateSpeechAsJob, over lib/jobs.ts): a
+ * long script keeps synthesizing when the sheet closes, the global toast shows
+ * it from anywhere, and a take that finishes with nobody watching saves itself
+ * to Your uploads rather than evaporating.
  */
 
 import '../styles/script-audio.css';   // async CSS chunk (lazy dialog - not on the landing)
@@ -25,8 +30,10 @@ import {
 import { audioTransportHtml, wireAudioTransport, type AudioTransport } from '../lib/audio-transport.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { startJob, jobsSnapshot } from '../lib/jobs.ts';
 import { fmtBytes } from '../lib/format.ts';
 import { escapeHtml } from '../lib/html.ts';
+import { announce } from '../a11y.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { AssetRef, HostV1, SpeechProgress, SpeechResult } from '@lolly-tools/core/host-v1';
@@ -227,6 +234,19 @@ export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise
 }
 
 /**
+ * The one fraction reading of a `SpeechProgress`, clamped to 0..1, or null when
+ * the transport won't say how far along it is. Shared by the panel's own bar and
+ * by the background job that mirrors it, so the two surfaces can never disagree
+ * about how far a generation has got - there is one percent calculation here,
+ * not one per painter.
+ */
+export function speechProgressFraction(p: SpeechProgress): number | null {
+  const f = p.fraction ?? (p.total ? (p.loaded ?? 0) / p.total : undefined);
+  if (f == null || !Number.isFinite(f)) return null;
+  return Math.min(1, Math.max(0, f));
+}
+
+/**
  * The one progress-painting recipe for `host.speech.synthesize` (the thin
  * track + primary fill from styles/script-audio.css, indeterminate pulse when
  * the transport won't say). Shared by the dialog and the writing view; the
@@ -238,14 +258,107 @@ export function speechProgressPainter(
   onPhase: (phase: SpeechProgress['phase']) => void,
 ): (p: SpeechProgress) => void {
   return (p: SpeechProgress): void => {
-    const fraction = p.fraction ?? (p.total ? (p.loaded ?? 0) / p.total : undefined);
+    const fraction = speechProgressFraction(p);
     progressEl.hidden = false;
     progressEl.classList.toggle('script-audio-progress-indeterminate', fraction == null);
-    const pct = fraction == null ? 0 : Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+    const pct = fraction == null ? 0 : Math.round(fraction * 100);
     fillEl.style.width = fraction == null ? '100%' : `${pct}%`;
     progressEl.setAttribute('aria-valuenow', String(pct));
     onPhase(p.phase);
   };
+}
+
+// ── Generation as a background job (plans/124 section 9, WP-F) ────────────────
+
+/** One Generate run's inputs, snapshotted at click time - the same discipline
+ *  {@link TtsClip} keeps, so an edit made while the model runs can never
+ *  mislabel the clip that comes back. */
+export interface SpeechJobRequest {
+  spokenText: string;
+  voice: string;
+  speed: number;
+}
+
+/** How a surface (the dialog, or the writing view) plugs into the job. */
+export interface SpeechJobSurface {
+  /** Is the surface still on screen? Read at completion, never before. */
+  alive: () => boolean;
+  /** Live progress for the surface's own bar - the SpeechProgress the job mirrors. */
+  onProgress?: (p: SpeechProgress) => void;
+  /** Fired when the job has to wait its turn behind other heavy work. */
+  onQueued?: () => void;
+}
+
+/**
+ * Run one synthesis as a background job (lib/jobs.ts): the serial heavy queue a
+ * model run belongs in, the global toast that shows it from anywhere, and - the
+ * point of the exercise - a generation that keeps going when the user navigates
+ * away instead of dying with the panel.
+ *
+ * Resolves the finished clip while the surface is still on screen, so the
+ * in-panel experience is unchanged: the preview appears and the user saves
+ * explicitly. Resolves null when there is nothing left to paint - cancelled, or
+ * the surface was gone at completion, in which case the take is saved for them
+ * through {@link saveTtsClip}, the identical path the Save button uses (same
+ * `aiGenerated` disclosure, same embedded C2PA credential, same `meta.tts`
+ * block), and the completion announces its name. Rethrows a synthesis failure
+ * after failing the job, so the caller's own error copy still runs.
+ */
+export async function generateSpeechAsJob(
+  host: ScriptAudioHost, req: SpeechJobRequest, surface: SpeechJobSurface,
+): Promise<TtsClip | null> {
+  const speech = host.speech;
+  if (!speech) return null;
+  // Cancel is real, not a button that only looks like one: synthesize() takes an
+  // AbortSignal, rejects promptly, and tells the worker to stop at the next
+  // sentence boundary (bridge/speech.ts). The one caveat the host contract
+  // already documents is a first-use model download, which finishes into the
+  // cache rather than leaving half a model behind.
+  const controller = new AbortController();
+  const job = startJob({ title: t('Generating speech'), cancel: () => controller.abort() });
+  // A heavy job behind another heavy job waits its turn, and a silent panel
+  // would read as a stall - say so before awaiting.
+  if (jobsSnapshot().some(j => j.id === job.id && j.status === 'queued')) surface.onQueued?.();
+  await job.started;
+  if (job.cancelled) return null;
+  try {
+    const result = await speech.synthesize(req.spokenText, {
+      voice: req.voice || undefined,
+      speed: req.speed,
+      signal: controller.signal,
+      onProgress: (p) => {
+        surface.onProgress?.(p);
+        const fraction = speechProgressFraction(p);
+        const note = p.phase === 'download' ? t('Downloading the voice model…') : t('Generating speech…');
+        // total 0 is the toast's indeterminate candy stripe, which is what the
+        // panel's own bar pulses on the same reading.
+        if (fraction == null) job.progress(0, 0, note);
+        else job.progress(Math.round(fraction * 100), 100, note);
+      },
+    });
+    const clip: TtsClip = {
+      result,
+      // Mono PCM → 16-bit WAV: the encoder is stereo, so the one channel feeds both.
+      wavBlob: pcmToWavBlob({ left: result.pcm, right: result.pcm, sampleRate: result.sampleRate }),
+      spokenText: req.spokenText,
+      voice: req.voice,
+      speed: req.speed,
+    };
+    if (surface.alive()) { job.finish(); return clip; }
+    // Nobody is watching any more: the take would otherwise evaporate with the
+    // closed panel, so it goes to Your uploads on its own, and the completion
+    // says which clip it was - the toast itself only ever says "Generating
+    // speech".
+    const name = ttsAssetName(clip.spokenText);
+    job.progress(100, 100, tRaw('Saving “{name}”', { name }));
+    const ref = await saveTtsClip(host, clip);
+    job.finish(ref);
+    announce(tRaw('Speech saved to your uploads: {name}', { name }));
+    return null;
+  } catch (err) {
+    job.fail(err);
+    throw err;
+  }
 }
 
 /**
@@ -261,7 +374,6 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
   return new Promise((resolve) => {
     let trap: FocusTrap | undefined;
     let transport: AudioTransport | null = null;
-    let abort: AbortController | null = null;
     let previewUrl: string | null = null;
     // The last generated clip + the exact inputs that produced it (Save stores
     // these, not the live form, so an edit after Generate can't mislabel a clip).
@@ -328,8 +440,10 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
     const opener      = document.activeElement;
 
     const cleanup = (): void => {
-      abort?.abort();
-      abort = null;
+      // Deliberately does NOT abort an in-flight generation: it is a background
+      // job now, so closing the sheet leaves it running and the clip lands in
+      // Your uploads on its own. The job's own ✕ in the global toast is the
+      // cancel.
       transport?.destroy();
       transport = null;
       if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
@@ -342,8 +456,9 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
     const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
     document.addEventListener('keydown', onKey);
-    // A route change cancels the sheet like Escape/backdrop - any in-flight
-    // synthesis aborts (the surface beneath nav-closes on the same events).
+    // A route change closes the sheet like Escape/backdrop (the surface beneath
+    // nav-closes on the same events). An in-flight synthesis keeps running as a
+    // background job and saves itself.
     const onNav = (): void => done(null);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
     overlay.querySelector('.script-audio-backdrop')?.addEventListener('click', () => done(null));
@@ -423,23 +538,23 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
       dropPreview();
       hideStatus();
       generateBtn.disabled = true;
-      abort = new AbortController();
       try {
-        const res = await speech.synthesize(spoken, {
-          voice: voiceSel.value || undefined,
-          speed: Number(speedSel.value) || 1,
-          signal: abort.signal,
+        const clip = await generateSpeechAsJob(host, {
+          spokenText: spoken, voice: voiceSel.value, speed: Number(speedSel.value) || 1,
+        }, {
+          alive: () => overlay.isConnected,
           onProgress: paintProgress,
+          onQueued: () => showStatus(t('Waiting for other work to finish…')),
         });
-        // The dialog may have closed mid-synthesis (cleanup aborted the signal,
-        // but a shell may resolve anyway) - never touch the removed DOM.
-        if (!overlay.isConnected) return;
-        result = res;
-        spokenText = spoken;
-        usedVoice = voiceSel.value;
-        usedSpeed = Number(speedSel.value) || 1;
-        // Mono PCM → 16-bit WAV: the encoder is stereo, so the one channel feeds both.
-        wavBlob = pcmToWavBlob({ left: res.pcm, right: res.pcm, sampleRate: res.sampleRate });
+        // No clip to paint: cancelled from the toast, or the sheet closed and the
+        // take was saved to Your uploads without us. Either way the DOM below is
+        // gone or stale - never touch it.
+        if (!clip || !overlay.isConnected) return;
+        result = clip.result;
+        wavBlob = clip.wavBlob;
+        spokenText = clip.spokenText;
+        usedVoice = clip.voice;
+        usedSpeed = clip.speed;
         previewUrl = URL.createObjectURL(wavBlob);
         previewEl.hidden = false;
         previewEl.innerHTML = audioTransportHtml({
@@ -463,7 +578,6 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
           showStatus(t("Couldn't generate the audio. Try again."), true);
         }
       } finally {
-        abort = null;
         if (overlay.isConnected) { generateBtn.disabled = false; progressEl.hidden = true; }
       }
     });

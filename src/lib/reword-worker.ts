@@ -31,6 +31,7 @@ import {
   REWORD_TOP_P, rewordMaxNewTokens,
 } from './reword-models.ts';
 import { ORT_HF_BASE } from './ort-hf-base.ts';
+import { MODELS_BASE } from './models-base.ts';
 
 export interface RewordWorkerRequest {
   id: number;
@@ -98,7 +99,10 @@ function ensureRuntime(id: number): Promise<RewordRuntime> {
     // rides on these three lines, and reword-privacy.test.ts pins them.
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
-    env.localModelPath = '/models/';
+    // MODELS_BASE is '' on the web build (→ same-origin '/models/', unchanged); the
+    // desktop shell bakes https://lolly.tools so the wasm reword path pulls weights
+    // from there. allowRemoteModels stays false - nothing hits the HF hub.
+    env.localModelPath = `${MODELS_BASE}/models/`;
     if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.wasmPaths = ORT_HF_BASE;
 
     // One aggregate download meter across the model + tokenizer files.

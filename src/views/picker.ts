@@ -899,10 +899,12 @@ async function render(
     }
     // Per-card "Upscale": enlarge THIS existing raster (a library asset or one of the
     // user's uploads) on-device, without re-uploading it. Resolves the ref exactly like
-    // the pick path (host.assets.get), pre-loads it into the upscale dialog as the
-    // source (skipping its choose step), and on success treats the returned upscaled
-    // asset like a normal pick. Sits beside the pick button, so returning here before the
-    // [data-asset-id] branch below is what stops the click from also picking the source.
+    // the pick path (host.assets.get) and pre-loads it into the upscale dialog as the
+    // source (skipping its choose step). The run is a BACKGROUND job (WP-F), so the
+    // dialog closes at once and the saved asset arrives later via onComplete, where it
+    // behaves like a normal pick - the same shape as the video jobs below. Sits beside
+    // the pick button, so returning here before the [data-asset-id] branch below is what
+    // stops the click from also picking the source.
     const up = (e.target as HTMLElement).closest<HTMLElement>('[data-upscale-id]');
     if (up) {
       e.preventDefault();
@@ -912,10 +914,13 @@ async function render(
       try {
         const ref = await host.assets.get(id);
         const { openUpscaleDialog } = await import('./upscale-dialog.ts');
-        const upscaled = await openUpscaleDialog(host, { source: ref, sourceName });
-        if (!upscaled) return;
-        if (collect) { collectToast(await collect.onAsset(upscaled)); return; }
-        close(upscaled);
+        await openUpscaleDialog(host, {
+          source: ref, sourceName,
+          onComplete: (upscaled) => {
+            if (collect) { void collect.onAsset(upscaled).then(collectToast); return; }
+            close(upscaled);
+          },
+        });
       } catch (err) {
         host.log('error', 'Failed to upscale asset', { id, error: String(err) });
         announce(t('Couldn’t open the upscaler for this image.'), { assertive: true });
@@ -924,7 +929,9 @@ async function render(
     }
     // Remove-background card affordance - the exact mirror of the upscale one: take
     // the ref the user already has as the source, cut it out on-device, treat the
-    // returned cutout like a normal pick. Must return before the pick branch below.
+    // saved cutout like a normal pick. The run is a BACKGROUND job too, so the dialog
+    // closes at once and the cutout arrives later via onComplete. Must return before
+    // the pick branch below.
     const cut = (e.target as HTMLElement).closest<HTMLElement>('[data-matte-id]');
     if (cut) {
       e.preventDefault();
@@ -934,10 +941,13 @@ async function render(
       try {
         const ref = await host.assets.get(id);
         const { openMatteDialog } = await import('./matte-dialog.ts');
-        const cutout = await openMatteDialog(host, { source: ref, sourceName });
-        if (!cutout) return;
-        if (collect) { collectToast(await collect.onAsset(cutout)); return; }
-        close(cutout);
+        await openMatteDialog(host, {
+          source: ref, sourceName,
+          onComplete: (cutout) => {
+            if (collect) { void collect.onAsset(cutout).then(collectToast); return; }
+            close(cutout);
+          },
+        });
       } catch (err) {
         host.log('error', 'Failed to remove background', { id, error: String(err) });
         announce(t('Couldn’t open background removal for this image.'), { assertive: true });
@@ -1282,24 +1292,31 @@ async function render(
 
   // "Upscale": choose a raster image, enlarge it on-device (host.upscale), save it
   // as a user raster asset. A lazy chunk (views/upscale-dialog.ts) so the model UI
-  // costs nothing until asked for; teardown (abort/revoke) lives inside it.
+  // costs nothing until asked for. The run itself is a background job, so the dialog
+  // closes on Run and the finished asset arrives through onComplete.
   root.querySelector('.asset-picker-upscale')?.addEventListener('click', async () => {
     const { openUpscaleDialog } = await import('./upscale-dialog.ts');
-    const ref = await openUpscaleDialog(host);
-    if (!ref) return;
-    if (collect) { collectToast(await collect.onAsset(ref)); return; }
-    close(ref);
+    await openUpscaleDialog(host, {
+      onComplete: (ref) => {
+        if (collect) { void collect.onAsset(ref).then(collectToast); return; }
+        close(ref);
+      },
+    });
   });
 
   // "Remove background": choose a raster image, cut the subject out on-device
   // (host.matte), save the cutout as a user raster asset. Lazy chunk
-  // (views/matte-dialog.ts) so the model UI costs nothing until asked for.
+  // (views/matte-dialog.ts) so the model UI costs nothing until asked for. The run
+  // itself is a background job, so the dialog closes on Run and the finished cutout
+  // arrives through onComplete.
   root.querySelector('.asset-picker-matte')?.addEventListener('click', async () => {
     const { openMatteDialog } = await import('./matte-dialog.ts');
-    const ref = await openMatteDialog(host);
-    if (!ref) return;
-    if (collect) { collectToast(await collect.onAsset(ref)); return; }
-    close(ref);
+    await openMatteDialog(host, {
+      onComplete: (ref) => {
+        if (collect) { void collect.onAsset(ref).then(collectToast); return; }
+        close(ref);
+      },
+    });
   });
 
   // Library sections + bucketing live in lib/asset-category.ts (shared with the Catalog
@@ -3042,7 +3059,9 @@ async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promis
  * throws, and the extra guard here means even a broken import can't turn a
  * successful upload into a failed one. The measured duration/dimensions from the
  * ingest probe ride along as a hint so the common case skips a second container
- * walk. A skipped or failed proxy is invisible - the timeline scrubs the original.
+ * walk. A skipped proxy stays invisible; the transcode itself now runs as a WP-F
+ * job, so it shares the one heavy slot and a failure lands in the global toast
+ * instead of nowhere. Either way the timeline just scrubs the original.
  */
 function scheduleProxyBuild(
   assetId: string,

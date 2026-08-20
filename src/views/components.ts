@@ -77,8 +77,8 @@ import { icon, iconNames } from '../lib/icons.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { viewTopbarHtml } from '../components/view-topbar.ts';
 import { mountBodyPopover, type BodyPopoverHandle } from '../components/body-popover.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backPillHtml, backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 
 // A demo palette for the colour specimens (not the live brand).
@@ -276,8 +276,8 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promis
   const jump = AUDIT_SECTIONS.map(sec => `<a href="#${sectionId(sec.title)}">${escape(sec.title)}</a>`).join('');
 
   viewEl.innerHTML = `
-    ${backPillHtml({ class: 'home-full cl-back' })}
-    <div class="gallery-topright">${homeFabHtml()}</div>
+    ${backHomeHtml({ class: 'home-full cl-back' })}
+    <div class="gallery-topright"></div>
     <header class="cl-head">
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
       <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>

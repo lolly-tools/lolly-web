@@ -15,6 +15,12 @@
  *   3. UPSCALE - per-frame Real-ESRGAN to a normal video, keeping audio. Desktop-
  *      first; on wasm the dialog shows an honest time estimate from a 3-frame
  *      probe and lets the user decide.
+ *   4. GRADE - a colour look applied per frame: a 3D LUT (darkroom's baked .cube,
+ *      or a user's own) plus film grain and a vignette. Pure maths, no model, no
+ *      network; the LUT is parsed ONCE at op construction, never per frame.
+ *   5. TRIM - no pixel change at all (an identity op); the WINDOW does the work.
+ *      A request-level `range` narrows both the decode grid and the audio slice,
+ *      so a trim is a re-encode of the selected seconds and nothing else.
  *
  * ── ARCHITECTURE: a source → op → sink loop, strictly streaming ───────────────
  * The pure loop `runFramePipeline` pulls one DecodedFrame at a time from a
@@ -32,11 +38,19 @@
  *
  * ── HONESTY LEDGER (same convention as lib/matter.ts / lib/upscaler.ts) ───────
  * The PURE parts below - the frame loop, the EMA/scene-cut smoother, even-crop
- * rounding, the provenance branch, the estimate extrapolation - are unit-tested
- * headless (video-jobs.test.ts). The mediabunny decode and the WebCodecs/alpha
- * encode adapters have NOT been run in this environment (no codecs under node);
- * they are verified by Andy's in-browser smoke test. Their shape mirrors the
- * already-shipping clip-proxy transcode and sequence-render streaming mux.
+ * rounding, the grade op, the audio slice, the provenance branch, the estimate
+ * extrapolation - are unit-tested headless (video-jobs.test.ts). The mediabunny
+ * decode and the WebCodecs/alpha encode adapters have NOT been run in this
+ * environment (no codecs under node); they are verified by Andy's in-browser
+ * smoke test. Their shape mirrors the already-shipping clip-proxy transcode and
+ * sequence-render streaming mux. That covers the reader's RANGE window and its
+ * source-fps derivation (mediabunny packet stats) too: the range reaches the
+ * reader through a dep seam a fake can record, but what a real decoder does with
+ * a windowed timestamp grid is browser-smoke-verified only. The same line runs
+ * through the audio: `mediabunnyAudioRange` (decode only the window's samples)
+ * is browser-smoke-only, while the DECISION around it - window first, whole-file
+ * decode only when the source is short enough to survive one, otherwise drop the
+ * sound with a logged warning - is unit-tested through the `decodeAudioRange` seam.
  *
  * ── PROVENANCE (plans/124 section 2 table, fixed) ────────────────────────────
  * Container-level C2PA on the OUTPUT (the existing video rule - never per-frame
@@ -47,7 +61,10 @@
  * download-path contract only.
  */
 
-import { packApng, packWebpAnim, extractC2paStore, prepareC2paIngredientFromStore, COMPOSITE_SOURCE_TYPE, chromaKeyAlpha } from '@lolly/engine';
+import {
+  packApng, packWebpAnim, extractC2paStore, prepareC2paIngredientFromStore, COMPOSITE_SOURCE_TYPE,
+  chromaKeyAlpha, parseLutText, applyLutFrame, applyGrainVignette, GRAIN_REF_LONG_EDGE,
+} from '@lolly/engine';
 import { packGifAlpha } from './gif-alpha.ts';
 import { startJob, type JobHandle } from './jobs.ts';
 import { t, tRaw } from '../i18n.ts';
@@ -57,10 +74,15 @@ import type {
 
 // ── The op set + per-op params ───────────────────────────────────────────────
 
-export type VideoOp = 'matte' | 'crop' | 'upscale';
+export type VideoOp = 'matte' | 'crop' | 'upscale' | 'grade' | 'trim';
 
 /** A rectangle in source pixels. */
 export interface CropRect { x: number; y: number; w: number; h: number; }
+
+/** A half-open time window over the SOURCE, in seconds. Present on a request, it
+ *  narrows the decode grid AND the audio slice; absent means the whole clip.
+ *  Any op may carry one - a trim is just the identity op plus a range. */
+export interface VideoRange { startSec: number; endSec: number; }
 
 export interface MatteVideoParams {
   /** Default u2netp for video - fast; birefnet-lite is "best (much slower)".
@@ -114,6 +136,70 @@ export interface UpscaleVideoParams {
   fps: number;
   bitrate: number;
 }
+
+/** The creator of a shipped/known LUT, recorded in the grade's C2PA when their
+ *  look is applied. Set only for presets whose author asked to be credited (the
+ *  CC0 film-emulation LUTs carry none); an uploaded LUT is anonymous by nature.
+ *  Rides into the `c2pa.color_adjustments` action's `parameters` + description so
+ *  the credit travels with every file the graded clip ends up in. */
+export interface LutCredit {
+  /** The LUT's name as shown to the user ("S-Log3 (Heavy)"). */
+  name: string;
+  /** The person who authored the look ("Peter Chamalian"). */
+  author: string;
+  /** Their role, if worth recording ("Director of Photography & Editor"). */
+  role?: string;
+  /** The organisation the author works for ("SUSE") - their affiliation, shown in
+   *  the readable credit. Distinct from `copyright`: the rights owner is named
+   *  there, the human author in `author`. */
+  org?: string;
+  /** The copyright line ("© 2025 SUSE"). The author (`author`) and the rights
+   *  owner can differ - here Peter authored it in his role, so SUSE owns it. */
+  copyright?: string;
+  /** SPDX-ish licence label ("CC BY 4.0"). */
+  license: string;
+  /** Canonical licence URL, for the machine-readable record. */
+  licenseUrl?: string;
+  /** When the LUT was authored ("2025-09") - the creation date of the look, not
+   *  of the grade (the C2PA action stamps its own `when` for that). */
+  created?: string;
+}
+
+/** A colour look for the grade op: an optional 3D LUT plus the two spatial effects
+ *  darkroom applies after it. Every field is a plain number/string so the whole look
+ *  round-trips through a URL or a saved preset. */
+export interface GradeVideoParams {
+  /** The LUT as .cube/.3dl TEXT (darkroom bakes its whole colour pipeline into one),
+   *  or '' for no LUT at all - a grain/vignette-only grade is legal. */
+  cubeText: string;
+  /** A human name for the look, used in the provenance description ("Chrome",
+   *  "my-look.cube"). Absent → a generic "Colour graded (on-device)". */
+  lutLabel?: string;
+  /** Attribution for a credited LUT (a preset whose author asked to be named).
+   *  When set, the grade's C2PA credits them; absent for CC0/uploaded looks. */
+  lutCredit?: LutCredit;
+  /** 0..1 mix of the LUT result over the original pixel. */
+  lutIntensity: number;
+  /** Film grain amount, 0..1 (0 skips the whole spatial pass with vignette 0). */
+  grain: number;
+  /** Grain lattice cell size in px, 1..4 - bigger cells read as coarser stock. */
+  grainSize: number;
+  /** Vignette strength, 0..1. */
+  vignette: number;
+  /** Grain PRNG seed. The engine advances it per FRAME, so the noise moves like
+   *  real stock instead of sitting still as a fixed pattern. */
+  seed: number;
+  /** Output frame rate. `fps <= 0` means "keep the source's own rate", exactly as
+   *  trim reads it - a colour look changes no timing, so resampling a 60fps clip
+   *  onto a 30Hz grid would be a second edit nobody asked for. */
+  fps: number;
+  /** Output video bitrate, bits/s. */
+  bitrate: number;
+}
+
+/** Trim carries no pixel parameters - the request-level `range` is the whole edit.
+ *  `fps <= 0` means "keep the source's own frame rate" (the reader derives it). */
+export interface TrimVideoParams { fps: number; bitrate: number; }
 
 // ── Caps (refuse, never OOM) ─────────────────────────────────────────────────
 
@@ -183,6 +269,12 @@ export interface VideoFrameReader {
   readonly height: number;
   readonly fps: number;
   readonly frameCount: number;
+  /** The WHOLE source's duration in seconds, when the adapter knows it - not the
+   *  window's. The reader has already opened the container to build its grid, so
+   *  it is the cheapest place to learn how long the file behind a 3-second window
+   *  actually is, which is what decides whether that file's audio can safely be
+   *  decoded whole (see `jobAudio`). Absent means "unknown". */
+  readonly sourceDurationSec?: number;
   read(): AsyncGenerator<DecodedFrame, void, unknown>;
   close(): Promise<void> | void;
 }
@@ -359,7 +451,34 @@ export function cropFrame(frame: DecodedFrame, rect: CropRect): DecodedFrame {
 
 // ── Provenance branch (plans/124 section 2 table) ────────────────────────────
 
-export interface VideoC2paAction { action: string; digitalSourceType?: string; description?: string; }
+export interface VideoC2paAction { action: string; digitalSourceType?: string; description?: string; parameters?: unknown; }
+
+/** The human tail of a grade action's description when a credited LUT is used:
+ *  "… by Peter Chamalian, SUSE · CC BY 4.0". Kept next to the parameters builder
+ *  so the readable credit and the machine-readable one never drift. */
+export function lutCreditText(c: LutCredit): string {
+  const who = c.org ? `${c.author}, ${c.org}` : c.author;
+  return `by ${who} · ${c.license}`;
+}
+
+/** The `c2pa.color_adjustments` action parameters recording a credited LUT's
+ *  creator, under a Lolly-namespaced key so it never collides with a standard
+ *  C2PA parameter. This is what carries the attribution into every downstream
+ *  file the graded clip becomes an ingredient of. */
+export function lutCreditParameters(c: LutCredit): { 'com.lolly.lut': Record<string, string> } {
+  return {
+    'com.lolly.lut': {
+      name: c.name,
+      creator: c.author,
+      ...(c.role ? { role: c.role } : {}),
+      ...(c.org ? { organization: c.org } : {}),
+      ...(c.copyright ? { copyright: c.copyright } : {}),
+      license: c.license,
+      ...(c.licenseUrl ? { licenseUrl: c.licenseUrl } : {}),
+      ...(c.created ? { created: c.created } : {}),
+    },
+  };
+}
 export interface VideoProvenance {
   /** The export assertion's `tool`. */
   tool: string;
@@ -376,10 +495,30 @@ export interface VideoProvenance {
  */
 export function videoProvenanceFor(
   op: VideoOp,
-  p: { model?: string; version?: string; scale?: number; method?: 'model' | 'chroma' } = {},
+  p: { model?: string; version?: string; scale?: number; method?: 'model' | 'chroma'; lutLabel?: string; lutCredit?: LutCredit } = {},
 ): VideoProvenance {
   if (op === 'crop') {
     return { tool: 'Crop', actions: [{ action: 'c2pa.cropped', description: 'Cropped' }] };
+  }
+  if (op === 'grade') {
+    // A LUT + grain/vignette is a colour adjustment and nothing else - c2pa has a
+    // dedicated action for exactly that, and no model runs, so no aiGenerated flag.
+    // A credited look (a preset whose author asked to be named) additionally
+    // carries the creator in the description AND the action parameters, so the
+    // attribution travels forward into any file that uses the graded clip.
+    const label = p.lutLabel ? `Colour graded — ${p.lutLabel}` : 'Colour graded (on-device)';
+    return {
+      tool: 'Colour grade',
+      actions: [{
+        action: 'c2pa.color_adjustments',
+        description: p.lutCredit ? `${label} ${lutCreditText(p.lutCredit)}` : label,
+        ...(p.lutCredit ? { parameters: lutCreditParameters(p.lutCredit) } : {}),
+      }],
+    };
+  }
+  if (op === 'trim') {
+    // No pixel is altered; the edit is entirely which seconds survived.
+    return { tool: 'Trim', actions: [{ action: 'c2pa.edited', description: 'Trimmed to a shorter clip' }] };
   }
   if (op === 'matte') {
     // A colour key runs no model and invents nothing - record it as a plain edit with
@@ -413,16 +552,28 @@ export function videoProvenanceFor(
 
 export interface SourceProbe { longEdge: number; durationSec: number; bytes: number; }
 
-/** A refusal message for a source a given op can't safely process, or null. */
-export function videoJobRefusal(op: VideoOp, probe: SourceProbe): string | null {
+/**
+ * A refusal message for a source a given op can't safely process, or null.
+ *
+ * With a `range`, the duration cap applies to the EFFECTIVE window rather than the
+ * whole source - which is the point of a trim: a 200s clip is refused outright, but
+ * 30 seconds selected out of it is an ordinary job. The byte cap still measures the
+ * whole file, because the whole file is fetched and scanned for its credential
+ * before anything is decoded.
+ */
+export function videoJobRefusal(op: VideoOp, probe: SourceProbe, range?: VideoRange): string | null {
   if (probe.bytes > VIDEO_JOB_MAX_SOURCE_BYTES) {
     return t('This video is too large to process in the browser.');
   }
-  if (!(probe.durationSec > 0) || probe.durationSec > VIDEO_JOB_MAX_DURATION_SEC) {
-    if (probe.durationSec > VIDEO_JOB_MAX_DURATION_SEC) {
-      return t('This video is too long to process in the browser ({sec}s max).', { sec: VIDEO_JOB_MAX_DURATION_SEC });
-    }
-    return t("Couldn't read this video's length.");
+  if (range && !(Number.isFinite(range.startSec) && Number.isFinite(range.endSec)
+    && range.startSec >= 0 && range.endSec > range.startSec)) {
+    return t("That section of the video isn't valid.");
+  }
+  if (!(probe.durationSec > 0)) return t("Couldn't read this video's length.");
+  const effectiveSec = range ? Math.min(range.endSec, probe.durationSec) - range.startSec : probe.durationSec;
+  if (!(effectiveSec > 0)) return t("That section of the video isn't valid.");
+  if (effectiveSec > VIDEO_JOB_MAX_DURATION_SEC) {
+    return t('This video is too long to process in the browser ({sec}s max).', { sec: VIDEO_JOB_MAX_DURATION_SEC });
   }
   const cap = op === 'matte' ? MATTE_MAX_INPUT_LONG_EDGE
     : op === 'upscale' ? UPSCALE_MAX_INPUT_LONG_EDGE
@@ -555,14 +706,79 @@ export function makeCropOp(rect: CropRect): FrameOp {
   return (frame: DecodedFrame): DecodedFrame => cropFrame(frame, rect);
 }
 
+/**
+ * Build the colour-grade op: the LUT text is parsed ONCE here, not per frame - a
+ * 33³ .cube is ~100k floats, so re-parsing it 900 times would cost more than the
+ * grade itself, and a malformed look must fail when the job is built (visibly, on
+ * the caller's stack) rather than 40 frames in.
+ *
+ * Both stages are engine maths (engine/src/grade.ts), so a graded frame here and a
+ * graded still in darkroom are the same pixels. The grain seed ADVANCES per frame:
+ * a fixed lattice across a whole clip reads as dirt on the lens, not as film.
+ *
+ * The grain lattice is sized against GRAIN_REF_LONG_EDGE rather than the raw pixel
+ * grid. Without that reference the cell is an absolute number of device pixels, so
+ * the same slider draws grain twice as fine on a 1080p render as on the ≤960px
+ * preview the user judged it on, and four times as fine on a 4K one - the texture
+ * is the half of grain being looked at, so it has to be proportional to the picture.
+ *
+ * The frame's RGBA is graded IN PLACE - the reader hands out a fresh buffer per
+ * frame (getImageData allocates), so there is nothing upstream to corrupt, and a
+ * full-frame copy per frame is exactly the allocation a streaming pipeline exists
+ * to avoid.
+ */
+export function makeGradeOp(params: GradeVideoParams): FrameOp {
+  const lut = params.cubeText.trim() ? parseLutText(params.cubeText, params.lutLabel) : null;
+  const spatial = {
+    grain: params.grain, grainSize: params.grainSize, vignette: params.vignette, seed: params.seed,
+  };
+  const spatialOn = params.grain > 0 || params.vignette > 0;
+  let frameIndex = 0;
+  return (frame: DecodedFrame): DecodedFrame => {
+    const data = frame.data;
+    if (lut) applyLutFrame(data, lut, params.lutIntensity);
+    if (spatialOn) applyGrainVignette(data, frame.width, frame.height, spatial, frameIndex, GRAIN_REF_LONG_EDGE);
+    frameIndex++;
+    return { data, width: frame.width, height: frame.height, timestampUs: frame.timestampUs, durationUs: frame.durationUs };
+  };
+}
+
 // ── Real adapters (browser-only, lazily built; honesty ledger) ───────────────
 //
 // These touch mediabunny / WebCodecs / <canvas> and are NOT exercised under node.
 // Tests inject fake readers/writers. Their shape mirrors lib/clip-proxy.ts (decode)
 // and bridge/video-encode-core.ts (encode), both already shipping.
 
-/** Decode a video Blob into a sequential RGBA frame reader at `fps` (mediabunny). */
-export async function mediabunnyFrameReader(blob: Blob, fps: number): Promise<VideoFrameReader> {
+/**
+ * Read a source track's own average frame rate from a bounded packet scan. Used
+ * only when the caller asks for `fps <= 0` ("keep the source rate"), which is what
+ * a TRIM wants: re-timing a clip you only meant to shorten is a silent quality
+ * change. The scan is metadata-only and capped at a few hundred packets, so it
+ * costs a seek, not a decode. Anything unreadable falls back to 30; the result is
+ * clamped to 1..60 so a broken header can't ask for a 1000fps grid.
+ */
+async function sourceTrackFps(track: { computePacketStats?: (n?: number) => Promise<{ averagePacketRate: number }> }): Promise<number> {
+  try {
+    const stats = await track.computePacketStats?.(240);
+    const rate = stats?.averagePacketRate;
+    if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) return Math.min(60, Math.max(1, rate));
+  } catch { /* no stats - fall through to the default */ }
+  return 30;
+}
+
+/**
+ * Decode a video Blob into a sequential RGBA frame reader at `fps` (mediabunny).
+ * `fps <= 0` means "the source's own rate"; a `range` narrows the grid to that
+ * window of the source.
+ *
+ * The emitted `timestampUs` stays 0-BASED under a range (it is `i / f`, never
+ * `startSec + i / f`). That is deliberate: the streaming mux timestamps the audio
+ * it is handed from 0 (video-encode-core.ts's addAudio clock), and the mp4 muxer is
+ * built without `firstTimestampBehavior`, so source-absolute video timestamps would
+ * open the output with an A/V offset of exactly `startSec`. The window lives in the
+ * grid, the output timeline starts at zero.
+ */
+export async function mediabunnyFrameReader(blob: Blob, fps: number, range?: VideoRange): Promise<VideoFrameReader> {
   const m = await import('mediabunny');
   const input = new m.Input({ formats: [m.MP4, m.QTFF, m.WEBM, m.MATROSKA], source: new m.BlobSource(blob) });
   const track = await input.getPrimaryVideoTrack();
@@ -571,8 +787,12 @@ export async function mediabunnyFrameReader(blob: Blob, fps: number): Promise<Vi
   const width = track.displayWidth;
   const height = track.displayHeight;
   const duration = await input.computeDuration();
-  const f = Math.max(1, fps);
-  const frameCount = Math.max(1, Math.round(duration * f));
+  const f = fps > 0 ? Math.max(1, fps) : await sourceTrackFps(track);
+  // The window, clamped into the clip: a range that runs past the end simply stops
+  // at the end, and an absent range is the whole clip (start 0, end = duration).
+  const startSec = range ? Math.max(0, Math.min(range.startSec, duration)) : 0;
+  const endSec = range ? Math.max(startSec, Math.min(range.endSec, duration)) : duration;
+  const frameCount = Math.max(1, Math.round((endSec - startSec) * f));
   const sink = new m.VideoSampleSink(track);
 
   const canvas = document.createElement('canvas');
@@ -581,10 +801,11 @@ export async function mediabunnyFrameReader(blob: Blob, fps: number): Promise<Vi
   const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
 
   async function* read(): AsyncGenerator<DecodedFrame, void, unknown> {
-    // A deterministic timestamp grid at 1/fps - one output frame per grid point,
-    // decoded from the nearest source sample (samplesAtTimestamps handles the seek).
+    // A deterministic timestamp grid at 1/fps over the window - one output frame per
+    // grid point, decoded from the nearest source sample (samplesAtTimestamps handles
+    // the seek). Without a range this is the old whole-clip grid exactly.
     function* grid(): Generator<number> {
-      for (let i = 0; i < frameCount; i++) yield Math.min(duration - 1e-4, i / f);
+      for (let i = 0; i < frameCount; i++) yield Math.max(0, Math.min(endSec - 1e-4, startSec + i / f));
     }
     let i = 0;
     for await (const sample of sink.samplesAtTimestamps(grid())) {
@@ -603,7 +824,83 @@ export async function mediabunnyFrameReader(blob: Blob, fps: number): Promise<Vi
     }
   }
 
-  return { width, height, fps: f, frameCount, read, close: () => { try { input.dispose?.(); } catch { /* gone */ } } };
+  return {
+    width, height, fps: f, frameCount, sourceDurationSec: duration, read,
+    close: () => { try { input.dispose?.(); } catch { /* gone */ } },
+  };
+}
+
+/**
+ * Decode ONLY `[startSec, endSec)` of a source's audio track, via mediabunny's
+ * AudioBufferSink (which windows at the packet level, so the samples outside the
+ * window are never decoded at all).
+ *
+ * This exists because the duration cap measures the SELECTED WINDOW, so a trim
+ * accepts a source of any length up to the byte cap. Handing such a file to
+ * `decodeAudioData` asks the tab to hold the whole compressed file, a copy of it,
+ * and a full-length Float32 PCM buffer - roughly a gigabyte for a 45-minute screen
+ * recording, to keep ten seconds of it. The window is bounded by the same 120s the
+ * refusal enforces, so this path's peak is ~46 MB whatever the source's length.
+ *
+ * Returns null when there is no audio track, the browser can't decode it, or
+ * anything throws. It deliberately does NOT fall back to a whole-file decode
+ * itself: the fallback needs the source bytes, the `decodeAudio` seam and
+ * `host.log`, all of which live at the call site, and doing it in both places
+ * would decode the file twice.
+ *
+ * Channels are capped at stereo because that is all the mux will carry
+ * (videoEncodeWriter clamps `numberOfChannels` to 2), so a 5.1 source cannot make
+ * this allocate three times what the encoder can use.
+ */
+export async function mediabunnyAudioRange(blob: Blob, range: VideoRange): Promise<AudioBufferLike | null> {
+  let input: { dispose?: () => void } | null = null;
+  try {
+    const m = await import('mediabunny');
+    const inp = new m.Input({ formats: [m.MP4, m.QTFF, m.WEBM, m.MATROSKA], source: new m.BlobSource(blob) });
+    input = inp;
+    const track = await inp.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) return null;
+    const rate = track.sampleRate;
+    const channels = Math.min(2, Math.max(1, track.numberOfChannels));
+    const startSec = Math.max(0, range.startSec);
+    const endSec = Math.max(startSec, range.endSec);
+    // A window longer than the job's own duration cap is not one this path will hold
+    // in PCM. Declining it hands the decision back to the caller (fall back, or drop
+    // the sound with a warning); truncating it silently would be worse than either.
+    // videoJobRefusal already blocks such a window before a job ever starts.
+    if (endSec - startSec > VIDEO_JOB_MAX_DURATION_SEC) return null;
+    const length = Math.round((endSec - startSec) * rate);
+    if (!(rate > 0) || !(length > 0)) return null;
+    const out: Float32Array[] = [];
+    for (let c = 0; c < channels; c++) out.push(new Float32Array(length));
+    const sink = new m.AudioBufferSink(track);
+    let wrote = 0;
+    for await (const wrapped of sink.buffers(startSec, endSec)) {
+      const buf = wrapped.buffer;
+      // A packet straddling the window's start arrives whole; the overlap is placed
+      // at a negative destination offset, i.e. its head is skipped rather than the
+      // window being shifted later than the user asked for.
+      const dst = Math.round((wrapped.timestamp - startSec) * rate);
+      const from = dst < 0 ? -dst : 0;
+      const at = dst < 0 ? 0 : dst;
+      const n = Math.min(buf.length - from, length - at);
+      if (n <= 0) continue;
+      for (let c = 0; c < channels; c++) {
+        const src = buf.getChannelData(Math.min(c, buf.numberOfChannels - 1));
+        out[c]!.set(src.subarray(from, from + n), at);
+      }
+      wrote += n;
+    }
+    if (wrote <= 0) return null;
+    return {
+      length, numberOfChannels: channels, sampleRate: rate,
+      getChannelData: (channel: number): Float32Array => out[Math.min(channel, channels - 1)] as Float32Array,
+    };
+  } catch {
+    return null;
+  } finally {
+    try { input?.dispose?.(); } catch { /* gone */ }
+  }
 }
 
 /** A matte transparent-video writer for the three alpha formats:
@@ -758,6 +1055,40 @@ export interface AudioBufferLike {
   getChannelData(channel: number): Float32Array;
 }
 
+/**
+ * Window a decoded audio buffer to `[startSec, endSec)` - the audio half of a
+ * range, and the reason a trimmed video is not muxed against the WHOLE clip's
+ * sound. Pure and structural: the returned object is an `AudioBufferLike` (and so
+ * a `PcmSource`) whose channel data are SUBARRAY VIEWS of the original, so a 2-minute
+ * stereo buffer is windowed without copying a single sample.
+ *
+ * The window is clamped into the buffer, so a range running past the end simply
+ * stops at the end; a range that already covers everything returns the ORIGINAL
+ * buffer (identity), which keeps the untrimmed path allocation-free.
+ */
+export function sliceAudio(buf: AudioBufferLike, startSec: number, endSec: number): AudioBufferLike {
+  const rate = buf.sampleRate;
+  const total = buf.length;
+  const s0 = Number.isFinite(startSec) ? startSec : 0;
+  const s1 = Number.isFinite(endSec) ? endSec : Infinity;
+  const start = Math.max(0, Math.min(total, Math.round(s0 * rate)));
+  const end = Math.max(start, Math.min(total, Math.round(s1 * rate)));
+  if (start === 0 && end === total) return buf;
+  return {
+    length: end - start,
+    numberOfChannels: buf.numberOfChannels,
+    sampleRate: rate,
+    getChannelData: (channel: number): Float32Array => buf.getChannelData(channel).subarray(start, end),
+  };
+}
+
+/** Window `audio` to a request's range, when it has one. The single place every
+ *  audio-keeping op (crop, upscale, grade, trim) goes through, so a range can never
+ *  reach the muxer as a full-length track against a short video. */
+function audioForRange(audio: AudioBufferLike | null, range?: VideoRange): AudioBufferLike | null {
+  return audio && range ? sliceAudio(audio, range.startSec, range.endSec) : audio;
+}
+
 /** Decode a source video's audio track to one AudioBuffer (kept for crop/upscale).
  *  Returns null when there is no audio or the browser can't decode it. */
 export async function decodeSourceAudio(bytes: ArrayBuffer): Promise<AudioBufferLike | null> {
@@ -800,10 +1131,13 @@ export interface VideoJobHost extends HostV1 {
 export function videoJobIds(op: VideoOp, sourceName: string, format: string, now: number): { id: string; name: string } {
   const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
   const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || op;
-  const kind = op === 'matte' ? 'cutout' : op;
-  const label = op === 'matte' ? tRaw('Cutout of {name}', { name: base || t('video') })
-    : op === 'crop' ? tRaw('Cropped {name}', { name: base || t('video') })
-    : tRaw('Upscaled {name}', { name: base || t('video') });
+  const kind = op === 'matte' ? 'cutout' : op === 'grade' ? 'graded' : op === 'trim' ? 'trimmed' : op;
+  const shown = base || t('video');
+  const label = op === 'matte' ? tRaw('Cutout of {name}', { name: shown })
+    : op === 'crop' ? tRaw('Cropped {name}', { name: shown })
+    : op === 'grade' ? tRaw('Graded {name}', { name: shown })
+    : op === 'trim' ? tRaw('Trimmed {name}', { name: shown })
+    : tRaw('Upscaled {name}', { name: shown });
   return { id: `user/video/${now}-${slug}-${kind}.${format}`, name: label };
 }
 
@@ -818,6 +1152,11 @@ export interface VideoJobRequest {
   matte?: MatteVideoParams;
   crop?: Omit<CropVideoParams, 'rect'> & { rect: CropRect };
   upscale?: UpscaleVideoParams;
+  grade?: GradeVideoParams;
+  trim?: TrimVideoParams;
+  /** The section of the source to work on. Absent = the whole clip. Orthogonal to
+   *  the op: a grade or a crop can be windowed too, and a trim is nothing BUT this. */
+  range?: VideoRange;
   /** Carried from the source when it discloses AI content (kept on the derivative). */
   aiGeneratedSource?: 'full' | 'partial';
 }
@@ -834,10 +1173,12 @@ export interface VideoStampOpts {
 }
 
 export interface VideoJobDeps {
-  openReader?: (blob: Blob, fps: number) => Promise<VideoFrameReader>;
+  openReader?: (blob: Blob, fps: number, range?: VideoRange) => Promise<VideoFrameReader>;
   openMatteWriter?: (format: 'webp' | 'png' | 'gif', fps: number) => VideoFrameWriter;
   openVideoWriter?: (plan: { width: number; height: number; fps: number; bitrate: number; audio?: AudioBufferLike | null }) => Promise<VideoFrameWriter>;
   decodeAudio?: (bytes: ArrayBuffer) => Promise<AudioBufferLike | null>;
+  /** Decode only a WINDOW of the source's audio (the bounded path a range takes). */
+  decodeAudioRange?: (blob: Blob, range: VideoRange) => Promise<AudioBufferLike | null>;
   fetchBytes?: (source: VideoJobSource) => Promise<{ blob: Blob; bytes: Uint8Array }>;
   /** Extract the source video's own credential as a C2PA ingredient, or null. */
   extractIngredient?: (bytes: Uint8Array) => unknown | null;
@@ -873,6 +1214,39 @@ function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
   return out;
 }
 
+/**
+ * The audio track a job's writer should carry, decoded the cheapest safe way.
+ *
+ * Without a range the whole file is decoded, as it always was - the refusal caps a
+ * no-range job at 120 seconds, so the whole file IS the window. With a range the
+ * source may be arbitrarily long (the cap measures the selection), so the windowed
+ * decoder goes first and the whole-file decode is only ever a fallback.
+ *
+ * When the windowed decode declines, the fallback is gated on the SOURCE's own
+ * length: within the duration cap it is the same decode a no-range job would have
+ * done, and beyond it the sound is DROPPED with a logged warning rather than
+ * risking a gigabyte of PCM to keep a few seconds of it. A reader that reports no
+ * source duration (a fake, or a future adapter) keeps the old whole-decode
+ * behaviour - only a length the reader actually reports can justify losing sound.
+ */
+async function jobAudio(
+  host: VideoJobHost, req: VideoJobRequest, source: { blob: Blob; bytes: Uint8Array },
+  reader: VideoFrameReader, deps: VideoJobDeps,
+): Promise<AudioBufferLike | null> {
+  const decodeWhole = deps.decodeAudio ?? decodeSourceAudio;
+  if (!req.range) return await decodeWhole(toArrayBuffer(source.bytes));
+  const windowed = await (deps.decodeAudioRange ?? mediabunnyAudioRange)(source.blob, req.range);
+  if (windowed) return windowed;
+  const sourceSec = reader.sourceDurationSec;
+  if (sourceSec !== undefined && sourceSec > VIDEO_JOB_MAX_DURATION_SEC) {
+    host.log?.('warn', 'Video job: the source is too long to decode whole, so this output has no sound', {
+      sourceSec, windowSec: req.range.endSec - req.range.startSec,
+    });
+    return null;
+  }
+  return audioForRange(await decodeWhole(toArrayBuffer(source.bytes)), req.range);
+}
+
 async function defaultFetchBytes(source: VideoJobSource): Promise<{ blob: Blob; bytes: Uint8Array }> {
   let blob: Blob;
   if (source instanceof Blob) blob = source;
@@ -905,12 +1279,18 @@ export async function runVideoJob(
 
   const openReader = deps.openReader ?? mediabunnyFrameReader;
 
-  // Choose the working fps per op.
+  // Choose the working fps per op. Trim AND grade ask for 0 - "the source's own
+  // rate" - because re-timing a clip the user only meant to shorten, or only meant
+  // to recolour, is a silent quality change: a 60fps phone clip handed to Grade
+  // would come back at 30 with half its frames gone, for an edit that touches no
+  // timing at all.
   const fps = req.op === 'matte' ? (req.matte?.fps ?? MATTE_DEFAULT_FPS)
     : req.op === 'crop' ? (req.crop?.fps ?? 30)
+    : req.op === 'grade' ? (req.grade?.fps ?? 0)
+    : req.op === 'trim' ? (req.trim?.fps ?? 0)
     : (req.upscale?.fps ?? 30);
 
-  const reader = await openReader(sourceBlob, fps);
+  const reader = await openReader(sourceBlob, fps, req.range);
 
   // Build the op + the writer per op.
   let op: FrameOp;
@@ -939,23 +1319,65 @@ export async function runVideoJob(
     const params = req.crop ?? { rect: { x: 0, y: 0, w: reader.width, h: reader.height }, fps: 30, bitrate: 8_000_000 };
     const rect = roundCropRect(params.rect, reader.width, reader.height);
     op = makeCropOp(rect);
-    const audio = await (deps.decodeAudio ?? decodeSourceAudio)(toArrayBuffer(sourceBytes));
+    const audio = await jobAudio(host, req, { blob: sourceBlob, bytes: sourceBytes }, reader, deps);
     writer = await (deps.openVideoWriter ?? videoEncodeWriter)({ width: rect.w, height: rect.h, fps, bitrate: params.bitrate, audio });
     outFormat = ''; // filled from the writer result
     assetType = 'video';
     prov = videoProvenanceFor('crop');
+  } else if (req.op === 'grade') {
+    // Same shape as crop: a pure per-frame op at the source's own dimensions, audio
+    // kept. The writer takes the READER's fps and the reader's own dimensions snapped
+    // DOWN to even: a colour look changes neither timing nor geometry, and an odd
+    // displayWidth (an anamorphic PAR, a window-sized screen recording) is exactly
+    // what evenFloor exists for - encoders reject odd 4:2:0 dims, and the writer's
+    // fit path absorbs the missing row rather than failing the job.
+    const params = req.grade ?? {
+      cubeText: '', lutIntensity: 1, grain: 0, grainSize: 2, vignette: 0, seed: 1, fps: 0, bitrate: 8_000_000,
+    };
+    op = makeGradeOp(params);
+    const audio = await jobAudio(host, req, { blob: sourceBlob, bytes: sourceBytes }, reader, deps);
+    writer = await (deps.openVideoWriter ?? videoEncodeWriter)({
+      width: evenFloor(reader.width), height: evenFloor(reader.height), fps: reader.fps, bitrate: params.bitrate, audio,
+    });
+    outFormat = '';
+    assetType = 'video';
+    prov = videoProvenanceFor('grade', {
+      ...(params.lutLabel ? { lutLabel: params.lutLabel } : {}),
+      ...(params.lutCredit ? { lutCredit: params.lutCredit } : {}),
+    });
+  } else if (req.op === 'trim') {
+    // The identity op: every pixel is passed through untouched, and the RANGE (already
+    // applied to the reader's grid and the audio slice) is the entire edit. The writer
+    // takes the READER's fps - a trim at fps 0 asked the reader to resolve the source
+    // rate - and the same even-dimension snap the grade branch above explains.
+    const params = req.trim ?? { fps: 0, bitrate: 8_000_000 };
+    op = (frame: DecodedFrame): DecodedFrame => frame;
+    const audio = await jobAudio(host, req, { blob: sourceBlob, bytes: sourceBytes }, reader, deps);
+    writer = await (deps.openVideoWriter ?? videoEncodeWriter)({
+      width: evenFloor(reader.width), height: evenFloor(reader.height), fps: reader.fps, bitrate: params.bitrate, audio,
+    });
+    outFormat = '';
+    assetType = 'video';
+    prov = videoProvenanceFor('trim');
   } else {
     const params = req.upscale ?? { model: 'realesr-general-x4v3' as UpscaleModelId, fps: 30, bitrate: 12_000_000 };
     const info = host.upscale?.models().find((m) => m.id === params.model);
     const scale = info?.scale ?? 4;
     op = makeUpscaleOp(host, params, ctx.signal);
-    const audio = await (deps.decodeAudio ?? decodeSourceAudio)(toArrayBuffer(sourceBytes));
+    const audio = await jobAudio(host, req, { blob: sourceBlob, bytes: sourceBytes }, reader, deps);
     const outW = evenFloor(reader.width * scale);
     const outH = evenFloor(reader.height * scale);
     writer = await (deps.openVideoWriter ?? videoEncodeWriter)({ width: outW, height: outH, fps, bitrate: params.bitrate, audio });
     outFormat = '';
     assetType = 'video';
     prov = videoProvenanceFor('upscale', { model: info?.name ?? params.model, version: info?.version, scale });
+  }
+
+  // A range composes with any op (the reader's decode window), so a windowed
+  // crop/grade/matte/upscale performed TWO edits and the credential must say so:
+  // the op's own action above, plus the trim. The trim op itself already stamps it.
+  if (req.range && req.op !== 'trim') {
+    prov.actions.push({ action: 'c2pa.edited', description: 'Trimmed to a shorter clip' });
   }
 
   const piped = await runFramePipeline(reader, op, writer, ctx);
@@ -1016,8 +1438,14 @@ export async function probeVideoJob(
   try {
     const fetchBytes = deps.fetchBytes ?? defaultFetchBytes;
     const { blob } = await fetchBytes(req.source);
-    const fps = req.op === 'matte' ? (req.matte?.fps ?? MATTE_DEFAULT_FPS) : (req.op === 'crop' ? (req.crop?.fps ?? 30) : (req.upscale?.fps ?? 30));
-    const reader = await (deps.openReader ?? mediabunnyFrameReader)(blob, fps);
+    const fps = req.op === 'matte' ? (req.matte?.fps ?? MATTE_DEFAULT_FPS)
+      : req.op === 'crop' ? (req.crop?.fps ?? 30)
+      : req.op === 'grade' ? (req.grade?.fps ?? 0)
+      : req.op === 'trim' ? (req.trim?.fps ?? 0)
+      : (req.upscale?.fps ?? 30);
+    // The same window the real run will use, so the estimate describes the TRIMMED
+    // clip rather than the whole source (reader.frameCount is what the caller scales by).
+    const reader = await (deps.openReader ?? mediabunnyFrameReader)(blob, fps, req.range);
     let op: FrameOp;
     if (req.op === 'matte') {
       const params = req.matte ?? { model: MATTE_VIDEO_DEFAULT_MODEL, format: 'webp' as const, fps, longEdge: MATTE_DEFAULT_LONG_EDGE };
@@ -1027,6 +1455,13 @@ export async function probeVideoJob(
     } else if (req.op === 'upscale') {
       const params = req.upscale ?? { model: 'realesr-general-x4v3' as UpscaleModelId, fps, bitrate: 12_000_000 };
       op = makeUpscaleOp(host, params);
+    } else if (req.op === 'grade') {
+      op = makeGradeOp(req.grade ?? {
+        cubeText: '', lutIntensity: 1, grain: 0, grainSize: 2, vignette: 0, seed: 1, fps, bitrate: 8_000_000,
+      });
+    } else if (req.op === 'trim') {
+      // Identity: the probe measures the decode, which is all a trim costs per frame.
+      op = (frame: DecodedFrame): DecodedFrame => frame;
     } else {
       op = makeCropOp(roundCropRect(req.crop?.rect ?? { x: 0, y: 0, w: reader.width, h: reader.height }, reader.width, reader.height));
     }
@@ -1062,6 +1497,8 @@ export function runVideoJobAsJob(
 ): JobHandle {
   const title = req.op === 'matte' ? t('Removing background')
     : req.op === 'crop' ? t('Cropping video')
+    : req.op === 'grade' ? t('Grading video')
+    : req.op === 'trim' ? t('Trimming video')
     : t('Upscaling video');
   const controller = new AbortController();
   const job = startJob({ title, cancel: () => controller.abort() });

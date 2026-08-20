@@ -41,6 +41,7 @@
  */
 
 import type { SendTarget } from './send-target.ts';
+import { popupOAuth } from './provider-auth.ts';
 import { isTauriShell } from './instance-choice.ts';
 import { t } from '../i18n.ts';
 
@@ -118,55 +119,21 @@ export function seedDriveTokenForTests(token: string, ttlMs = 60_000): void {
   cached = { token, expiresAt: Date.now() + ttlMs };
 }
 
-function requestToken(): Promise<string> {
+async function requestToken(): Promise<string> {
   const clientId = driveClientId();
-  if (!clientId) return Promise.reject(new Error('Google Drive is not configured on this build'));
+  if (!clientId) throw new Error('Google Drive is not configured on this build');
   const state = crypto.getRandomValues(new Uint32Array(4)).join('-');
   const redirectUri = `${location.origin}/oauth-return.html`;
-  const popup = window.open(buildAuthUrl(clientId, state, redirectUri), 'lolly-gdrive-auth',
-    'popup,width=480,height=640');
-  if (!popup) return Promise.reject(new Error('Sign-in popup was blocked - allow popups for this site'));
-  return new Promise<string>((resolve, reject) => {
-    const done = (fn: () => void) => { cleanup(); fn(); };
-    const accept = (data: { source?: string; hash?: string } | null) => {
-      if (!data || data.source !== 'lolly-oauth') return;
-      try {
-        const { token, expiresInS } = parseOAuthReturn(data.hash || '', state);
-        // Refresh a minute early so an upload never starts on a dying token.
-        cached = { token, expiresAt: Date.now() + (expiresInS - 60) * 1000 };
-        done(() => resolve(token));
-      } catch (err) { done(() => reject(err)); }
-    };
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== location.origin) return;
-      accept(e.data as { source?: string; hash?: string } | null);
-    };
-    // Under cross-origin isolation (COOP: same-origin) the popup's opener
-    // handle is severed on the provider's pages, so the return page reaches us
-    // over BroadcastChannel instead (same-origin, same isolation partition -
-    // see oauth-return.html). Both channels stay live: whichever delivers
-    // first wins, so non-isolated browsers are unchanged.
-    let bc: BroadcastChannel | null = null;
-    try {
-      bc = new BroadcastChannel('lolly-oauth');
-      bc.onmessage = (e) => accept(e.data as { source?: string; hash?: string } | null);
-    } catch { /* no BroadcastChannel - the opener path covers it */ }
-    // A closed popup never posts; poll so the caller isn't left hanging. A
-    // SEVERED handle also reads closed under isolation, so there the timeout
-    // is the only honest cancel signal and the poll must stay out of it.
-    const closedPoll = globalThis.crossOriginIsolated ? null : setInterval(() => {
-      if (popup.closed) done(() => reject(new Error('Google sign-in was cancelled')));
-    }, 500);
-    const timeout = setTimeout(() => done(() => reject(new Error('Google sign-in timed out'))), 180_000);
-    const cleanup = () => {
-      window.removeEventListener('message', onMessage);
-      bc?.close();
-      if (closedPoll != null) clearInterval(closedPoll);
-      clearTimeout(timeout);
-      try { if (!popup.closed) popup.close(); } catch { /* cross-origin at half-close */ }
-    };
-    window.addEventListener('message', onMessage);
-  });
+  // The popup + both return channels (opener and the isolation-proof
+  // BroadcastChannel) live in lib/provider-auth.ts now - the shared machinery
+  // every send-target driver rides (plans/129). This driver keeps its own
+  // implicit token grant: Google web clients demand a secret for code
+  // exchange, so PKCE-without-secret is not on the table here.
+  const ret = await popupOAuth(buildAuthUrl(clientId, state, redirectUri), 'lolly-gdrive-auth');
+  const { token, expiresInS } = parseOAuthReturn(ret.hash, state);
+  // Refresh a minute early so an upload never starts on a dying token.
+  cached = { token, expiresAt: Date.now() + (expiresInS - 60) * 1000 };
+  return token;
 }
 
 async function driveToken(): Promise<string> {
@@ -237,24 +204,31 @@ export async function sendEmfToDrive(bytes: Uint8Array, baseName: string,
 
 // ─── The `gdrive` SendTarget (lib/send-target.ts) ────────────────────────────
 
-/** The Google Drive destination the built-ins registration installs. EMF-only
- *  for now - the point of this target is the Drawings/Slides conversion; a
- *  generic any-format Drive upload can widen `formats` later. Not offered in
- *  the Tauri shells: the popup + postMessage return leg needs a browser
- *  window model. */
+/** The Google Drive destination the built-ins registration installs. EVERY
+ *  export format Lolly makes is welcome (plans/129 - "drive can take all media
+ *  made by lolly"); EMF keeps its special journey, converting into a native
+ *  Google Drawing for the Slides workflow. Not offered in the Tauri shells:
+ *  the popup + postMessage return leg needs a browser window model (WP4). */
 export function googleDriveSendTarget(): SendTarget {
   return {
     kind: 'gdrive',
     label: t('Google Drive'),
-    formats: ['emf'],
     available: () => driveAvailable() && !isTauriShell(),
     actionLabel: () => t('Send to Google Drive'),
-    hint: t('Uploads this EMF to your Google Drive as a Google Drawing, ready to copy into Slides. Lolly can only see files it created (drive.file scope), and the sign-in token is kept in memory for this session only.'),
-    send: async ({ bytes, name }) => {
-      const out = await sendEmfToDrive(bytes, name);
+    hint: t('Uploads this file to your Google Drive. Lolly can only see files it created (drive.file scope), and the sign-in token is kept in memory for this session only. An EMF lands as a Google Drawing, ready for Slides.'),
+    send: async ({ bytes, name, format, mime }) => {
+      if (format === 'emf') {
+        const out = await sendEmfToDrive(bytes, name);
+        return {
+          url: out.file.webViewLink || `https://drive.google.com/file/d/${encodeURIComponent(out.file.id)}/view`,
+          label: out.converted ? t('Open in Google Drawings') : t('Open in Drive, then Open with → Google Drawings'),
+        };
+      }
+      const filename = name.toLowerCase().endsWith(`.${format}`) ? name : `${name}.${format}`;
+      const file = await driveCreate({ name: filename, mimeType: mime || 'application/octet-stream' }, mime || 'application/octet-stream', bytes);
       return {
-        url: out.file.webViewLink || `https://drive.google.com/file/d/${encodeURIComponent(out.file.id)}/view`,
-        label: out.converted ? t('Open in Google Drawings') : t('Open in Drive, then Open with → Google Drawings'),
+        url: file.webViewLink || `https://drive.google.com/file/d/${encodeURIComponent(file.id)}/view`,
+        label: t('Open in Drive'),
       };
     },
   };

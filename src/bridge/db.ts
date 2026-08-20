@@ -34,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -203,6 +203,14 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // like 'matte-models'/'upscale-models', so likewise NOT in REQUIRED_STORES
         // (its absence must never escalate into a data-wipe) and out of the backup.
         db.createObjectStore('ocr-models');
+      }
+      if (oldVersion < 15) {
+        // Instance-pack file store (plans/131, lib/pack-store.ts) - the bytes of
+        // a loaded .lolly pack (tools + catalog assets), keyed by canonical
+        // root-relative path and served through lib/instance.ts's fetch overlay.
+        // Rebuilt whole by re-loading the pack file, so NOT in REQUIRED_STORES -
+        // its absence must never escalate into wiping user data.
+        db.createObjectStore('pack-files');
       }
     },
     blocking() {

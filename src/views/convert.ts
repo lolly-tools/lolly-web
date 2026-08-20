@@ -16,9 +16,9 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText } from '@lolly/engine';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) - never re-fork it
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
 import '../styles/parts/convert.css';    // async CSS chunk (lazy view - not on the landing)
@@ -276,8 +276,8 @@ async function canvasToIco(canvas: HTMLCanvasElement): Promise<Blob> {
 export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {
   document.title = 'Convert — Lolly';
   viewEl.innerHTML = `
-    ${backPillHtml()}
-    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
+    ${backHomeHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout convert-view">
       <header class="plat-header">
         <h1 class="plat-title">${t('Convert')}</h1>

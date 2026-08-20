@@ -64,6 +64,9 @@
 // scripts/check-bundle-budget.ts.
 import { ENGINE_VERSION } from '../../../../engine/src/version.ts';
 import { openDB } from '../bridge/db.ts';
+import {
+  initPackStore, packActive, packAssetEntries, packFetch, packToolEntries,
+} from './pack-store.ts';
 
 /** Key of the persisted base inside the 'profile' KV store. */
 const INSTANCE_KEY = 'instance-base';
@@ -120,7 +123,10 @@ export async function setInstanceBase(url: string | null): Promise<void> {
   } catch { /* storage unavailable — sync will just revalidate */ }
 }
 
-/** Load the persisted base. Memoised; never throws (unreadable → bundled). */
+/** Load the persisted base. Memoised; never throws (unreadable → bundled).
+ *  Also initialises the instance-pack store (plans/131): catalog/sync.ts awaits
+ *  this before its first fetch, so the pack overlay below is ready without any
+ *  main.ts wiring - the same trick the base itself uses. */
 export function initInstanceBase(): Promise<void> {
   initPromise ??= (async () => {
     try {
@@ -129,6 +135,7 @@ export function initInstanceBase(): Promise<void> {
     } catch {
       base = ''; // unreadable/invalid - fall back to bundled content
     }
+    await initPackStore();
   })();
   return initPromise;
 }
@@ -153,11 +160,70 @@ export function instancePath(p: string): string {
 /**
  * fetch() for instance-base traffic: tauri-plugin-http for cross-origin URLs
  * under Tauri (CORS-free, scope-checked in Rust), window.fetch otherwise.
+ *
+ * A loaded instance pack (lib/pack-store.ts) overlays this: pack files answer
+ * by canonical path BEFORE any transport, and the two catalog indexes come
+ * back MERGED - pack entries over the underlying source's, pack winning on id
+ * collision (profiles.json's later-roots-win, at runtime). With the underlying
+ * source unreachable the pack's own entries still answer, which is what makes
+ * pack mode the strongest offline mode: its bytes never left the device.
  */
 export function instanceFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
+  if (packActive()) {
+    const path = pathOf(url);
+    if (path === '/catalog/tools/index.json') return packMergedIndex(url, init, 'tools');
+    if (path === '/catalog/assets/index.json') return packMergedIndex(url, init, 'assets');
+    if (path.startsWith('/tools/') || path.startsWith('/catalog/')) {
+      return packFetch(path).then(r => r ?? transportFetch(url, init));
+    }
+  }
+  return transportFetch(url, init);
+}
+
+function transportFetch(url: string, init?: RequestInit): Promise<Response> {
   if (hasTauriInternals() && isCrossOrigin(url)) return tauriHttpFetch(url, withClientHeader(init));
   return fetch(url, isCrossOrigin(url) ? init : withClientHeader(init));
+}
+
+/** The root-relative path of an instance URL (absolute or already relative).
+ *  A sub-path deployment's base prefixes every instancePath URL - strip it so
+ *  pack keys stay canonical root-relative paths. */
+function pathOf(url: string): string {
+  if (!/^https?:/i.test(url)) return url.split(/[?#]/, 1)[0] ?? url;
+  let path: string;
+  try { path = new URL(url).pathname; } catch { return url; }
+  if (base) {
+    try {
+      const basePath = new URL(base).pathname.replace(/\/+$/, '');
+      if (basePath && path.startsWith(`${basePath}/`)) path = path.slice(basePath.length);
+    } catch { /* malformed base - leave the path as-is */ }
+  }
+  return path;
+}
+
+/**
+ * One catalog index, merged: the underlying source's entries (bundled seed or
+ * remote instance) with the pack's laid over them. An unreachable underlying
+ * index degrades to pack-only entries rather than failing the sync.
+ */
+async function packMergedIndex(
+  url: string, init: RequestInit | undefined, kind: 'tools' | 'assets',
+): Promise<Response> {
+  let baseIndex: Record<string, unknown> | null = null;
+  try {
+    const resp = await transportFetch(url, init);
+    if (resp.ok) baseIndex = await resp.json() as Record<string, unknown>;
+  } catch { /* offline / no instance yet - the pack still answers */ }
+  const packEntries = kind === 'tools' ? await packToolEntries() : await packAssetEntries();
+  if (!baseIndex) baseIndex = { version: '1', [kind]: [] };
+  const packIds = new Set(packEntries.map(e => e.id));
+  const underlying = Array.isArray(baseIndex[kind]) ? baseIndex[kind] as Array<{ id: string }> : [];
+  baseIndex[kind] = [...underlying.filter(e => !packIds.has(e.id)), ...packEntries];
+  return new Response(JSON.stringify(baseIndex), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 /**

@@ -13,7 +13,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CAPTION_GROUP_PREFIX, MIN_CUE_KEEP_S, captionGroup, cueSpansOnTimeline, isCaptionGroup, ttsWordsOf,
+  CAPTION_GROUP_PREFIX, MIN_CUE_KEEP_S, TRANSCRIPT_META_KEY, captionGroup, cueSpansOnTimeline,
+  isCaptionGroup, transcriptWordsOf, ttsWordsOf, wordTimingsOf,
 } from './timeline-captions.ts';
 import { MIN_DUR } from './timeline-math.ts';
 
@@ -109,4 +110,23 @@ test('ttsWordsOf validates the meta.tts.words shape and rejects everything else'
   assert.equal(ttsWordsOf({}), null);
   assert.equal(ttsWordsOf(null), null);
   assert.equal(ttsWordsOf('nope'), null);
+});
+
+test('transcriptWordsOf reads the meta.transcript rung, and never the tts one', () => {
+  const note = { at: 1, engine: 'whisper', words: [{ text: 'Hi', start: 0, end: 0.4 }] };
+  assert.deepEqual(transcriptWordsOf({ [TRANSCRIPT_META_KEY]: note }), [{ text: 'Hi', start: 0, end: 0.4 }]);
+  // The two rungs are separate FACTS: a Whisper transcript of somebody's
+  // recording must never be read as proof Lolly synthesised the clip.
+  assert.equal(transcriptWordsOf({ tts: { words: [{ text: 'Hi', start: 0, end: 0.4 }] } }), null);
+  assert.equal(ttsWordsOf({ [TRANSCRIPT_META_KEY]: note }), null);
+  assert.equal(transcriptWordsOf({ [TRANSCRIPT_META_KEY]: { words: [] } }), null);
+  assert.equal(transcriptWordsOf({ [TRANSCRIPT_META_KEY]: 'yes' }), null);
+  assert.equal(transcriptWordsOf(null), null);
+});
+
+test('wordTimingsOf is the one validator both rungs read through', () => {
+  assert.deepEqual(wordTimingsOf([{ text: 'a', start: 0, end: 1 }]), [{ text: 'a', start: 0, end: 1 }]);
+  assert.equal(wordTimingsOf([]), null);
+  assert.equal(wordTimingsOf('words'), null);
+  assert.equal(wordTimingsOf([{ text: 'a', start: 'x', end: 1 }]), null);
 });

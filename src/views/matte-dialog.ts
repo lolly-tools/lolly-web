@@ -8,6 +8,14 @@
  * model downloads once (consent line up front), and the pixels never leave the
  * device.
  *
+ * THE RUN IS A BACKGROUND JOB (2026-08-19, the video-job / Upscale shape). This
+ * dialog decides - source, model, output format, and the honest feasibility check -
+ * then hands the decoded frame to lib/matte-job.ts's `startMatteJob` and dismisses
+ * itself. The global candy-stripe toast (lib/job-toast.ts) owns progress and
+ * cancellation from there, the run survives navigating away, and the saved cutout
+ * arrives through `opts.onComplete` - which is how a caller treats the result as a
+ * pick or refreshes its view. Nobody watches a modal spinner for a model run.
+ *
  * TWO things distinguish this from Upscale, and they are the whole point of
  * hosting it:
  *  1. PROVENANCE, not destruction. Every other remover strips the file's
@@ -29,50 +37,27 @@ import { fmtBytes } from '../lib/format.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
-import { extractC2paStore, prepareC2paIngredientFromStore } from '@lolly/engine';
 import { MATTE_DEFAULT_MODEL } from '../lib/matte-models.ts';
-import { classifyMatteError, type MatteErrorKind } from '../lib/matte-error.ts';
+import {
+  startMatteJob, outputFormatFor,
+  type MatteJobHost, type MatteJobRequest, type OutFormat,
+} from '../lib/matte-job.ts';
 import type {
-  AssetRef, HostV1, MatteFrame, MatteModelId, MatteProgress,
+  AssetRef, MatteFrame, MatteModelId,
 } from '@lolly-tools/core/host-v1';
 
-/** The user-asset record this dialog writes (mirrors UpscaleAssetRecordInput). */
-export interface MatteAssetRecordInput {
-  id: string;
-  type: AssetRef['type'];
-  format: string;
-  blob?: Blob;
-  version?: string;
-  width?: number;
-  height?: number;
-  meta?: Record<string, unknown>;
-}
-
-export interface MatteHost extends HostV1 {
-  assets: HostV1['assets'] & {
-    _uploadUserAsset(record: MatteAssetRecordInput): Promise<void>;
-  };
-}
+// The run+save tail (and the record shape it writes) lives in lib/matte-job.ts;
+// both names stay exported from here, under the names the call sites import.
+export type { MatteAssetRecordInput } from '../lib/matte-job.ts';
+export type MatteHost = MatteJobHost;
 
 export type MatteSource = AssetRef | Blob | string;
 
 export interface MatteDialogOpts {
   source?: MatteSource;
   sourceName?: string;
-}
-
-// The alpha-capable output formats we can reliably encode from a canvas. A source
-// in one of these keeps its format; anything else (JPEG, unknown) → PNG, the
-// lossless safe default. AVIF encode is browser-dependent, so it falls back to
-// PNG when canvas.toBlob can't produce it (handled in frameToBlob).
-const ALPHA_FORMATS = ['png', 'webp', 'avif'] as const;
-type OutFormat = (typeof ALPHA_FORMATS)[number];
-const MIME: Record<OutFormat, string> = { png: 'image/png', webp: 'image/webp', avif: 'image/avif' };
-
-/** The format the cutout should be saved as, from the source's format. */
-function outputFormatFor(sourceFormat: string | undefined): OutFormat {
-  const f = (sourceFormat ?? '').toLowerCase().replace('jpeg', 'jpg');
-  return (ALPHA_FORMATS as readonly string[]).includes(f) ? (f as OutFormat) : 'png';
+  /** Fires with the saved cutout when the background job completes. */
+  onComplete?: (ref: AssetRef) => void;
 }
 
 async function sourceToBlob(source: MatteSource, fallbackName?: string): Promise<{ blob: Blob; name: string; format?: string }> {
@@ -112,56 +97,13 @@ async function sourceToFrame(source: MatteSource, fallbackName?: string): Promis
   }
 }
 
-/** RGBA cutout → a blob in `fmt`, falling back to PNG when the browser can't
- *  encode the requested format (AVIF on older browsers). */
-function frameToBlob(frame: MatteFrame, fmt: OutFormat): Promise<{ blob: Blob; format: OutFormat }> {
-  const canvas = document.createElement('canvas');
-  canvas.width = frame.width;
-  canvas.height = frame.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return Promise.reject(new Error('no 2d context'));
-  const img = ctx.createImageData(frame.width, frame.height);
-  img.data.set(frame.data);
-  ctx.putImageData(img, 0, 0);
-  const encode = (mime: string): Promise<Blob | null> =>
-    new Promise((res) => canvas.toBlob((b) => res(b), mime));
-  return encode(MIME[fmt]).then((blob) => {
-    // toBlob returns the PNG fallback with the WRONG type when a format is
-    // unsupported, so verify the produced type actually matches before trusting it.
-    if (blob && blob.type === MIME[fmt]) return { blob, format: fmt };
-    return encode('image/png').then((png) => {
-      if (!png) throw new Error('toBlob failed');
-      return { blob: png, format: 'png' as OutFormat };
-    });
-  });
-}
-
-/** A human, actionable message for a failed matte run - never the raw runtime
- *  string. 'aborted' is handled by the caller (silent), so it's not mapped here. */
-function matteErrorMessage(kind: Exclude<MatteErrorKind, 'aborted'>): string {
-  switch (kind) {
-    case 'not-installed':
-      return t("Couldn't download the model. Check your connection and try again.");
-    case 'memory':
-      // canRun can't see a transformer's activation memory, so a run can still run
-      // out after a green check - point at the two levers that actually help.
-      return t('Ran out of memory removing the background. Try a smaller image, or the fast model, which needs the least.');
-    default:
-      return t("Couldn't remove the background. Try a smaller image, or a different model.");
-  }
-}
-
-function matteAssetIds(sourceName: string, now: number): { id: string; name: string } {
-  const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
-  const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  return { id: `user/matte/${now}-${slug || 'cutout'}`, name: tRaw('{name} — cutout', { name: base || t('image') }) };
-}
-
 /**
- * Open the Remove-Background dialog. Resolves the saved cutout's AssetRef, or null
- * on cancel. Callers gate on `host.matte?.isAvailable() && host.matte.models().length`
- * before offering the affordance; this also bails (null) when no model is staged,
- * so a stale button can never strand the user in a dead dialog.
+ * Open the Remove-Background dialog. Resolves when the dialog CLOSES - on cancel,
+ * or the moment the user runs it, because the run itself is a background job whose
+ * result arrives through `opts.onComplete` (and lands in the user catalog either
+ * way). Callers gate on `host.matte?.isAvailable() && host.matte.models().length`
+ * before offering the affordance; this also bails when no model is staged, so a
+ * stale button can never strand the user in a dead dialog.
  */
 // The last matte model the user picked, remembered per device so the dialog reopens
 // on their choice (models differ in size, quality and download - a silent reset to
@@ -170,15 +112,14 @@ const MATTE_MODEL_KEY = 'lolly:matteModel';
 const readMatteModel = (): string => { try { return localStorage.getItem(MATTE_MODEL_KEY) || ''; } catch { return ''; } };
 const saveMatteModel = (id: string): void => { try { localStorage.setItem(MATTE_MODEL_KEY, id); } catch { /* private mode — no persistence, harmless */ } };
 
-export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Promise<AssetRef | null> {
+export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Promise<void> {
   const matte = host.matte;
-  if (!matte?.isAvailable()) return Promise.resolve(null);
+  if (!matte?.isAvailable()) return Promise.resolve();
   const models = matte.models();
-  if (models.length === 0) return Promise.resolve(null);
+  if (models.length === 0) return Promise.resolve();
 
   return new Promise((resolve) => {
     let trap: FocusTrap | undefined;
-    let abort: AbortController | null = null;
     let srcFrame: MatteFrame | null = null;
     let srcBytes: Uint8Array | null = null;
     let srcName = '';
@@ -228,9 +169,9 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
           <p class="matte-consent" data-consent hidden></p>
           <p class="matte-note" data-note hidden></p>
           <div class="matte-feasibility" data-feasibility role="alert" hidden></div>
-          <div class="matte-progress" data-progress role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${escapeHtml(t('Removing background'))}" hidden>
-            <div class="matte-progress-fill" data-progress-fill></div>
-          </div>
+          <!-- No progress bar here any more: the run is a background job and the
+               global toast owns its bar, its count and its cancel. This status line
+               stays for what the DIALOG still owns - a source that wouldn't decode. -->
           <div class="matte-status" data-status aria-live="polite" hidden></div>
         </div>
         <footer class="matte-actions">
@@ -249,31 +190,29 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     const consentEl  = overlay.querySelector<HTMLElement>('[data-consent]')!;
     const noteEl     = overlay.querySelector<HTMLElement>('[data-note]')!;
     const feasEl     = overlay.querySelector<HTMLElement>('[data-feasibility]')!;
-    const progressEl = overlay.querySelector<HTMLElement>('[data-progress]')!;
-    const fillEl     = overlay.querySelector<HTMLElement>('[data-progress-fill]')!;
     const statusEl   = overlay.querySelector<HTMLElement>('[data-status]')!;
     const runBtn     = overlay.querySelector<HTMLButtonElement>('[data-run]')!;
     const opener     = document.activeElement;
 
     modelSel.value = defaultModel;
 
+    // Closing tears down the DIALOG only. It deliberately aborts nothing: an
+    // enqueued run belongs to the job registry now, and its ✕ lives in the toast.
     const cleanup = (): void => {
-      abort?.abort();
-      abort = null;
       trap?.release();
       document.removeEventListener('keydown', onKey);
       NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
     };
-    const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+    const done = (): void => { cleanup(); resolve(); };
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
     document.addEventListener('keydown', onKey);
-    const onNav = (): void => done(null);
+    const onNav = (): void => done();
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
-    overlay.querySelector('.matte-backdrop')?.addEventListener('click', () => done(null));
-    overlay.querySelector('.matte-close')?.addEventListener('click', () => done(null));
-    overlay.querySelector('.matte-cancel')?.addEventListener('click', () => done(null));
+    overlay.querySelector('.matte-backdrop')?.addEventListener('click', () => done());
+    overlay.querySelector('.matte-close')?.addEventListener('click', () => done());
+    overlay.querySelector('.matte-cancel')?.addEventListener('click', () => done());
     trap = trapFocus(overlay);
 
     const showStatus = (msg: string, isError = false): void => {
@@ -284,7 +223,6 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     const hideStatus = (): void => { statusEl.hidden = true; statusEl.classList.remove('matte-error'); };
 
     const currentModel = (): MatteModelId => (modelSel.value || defaultModel) as MatteModelId;
-    const modelOf = (id: MatteModelId) => models.find(m => m.id === id) ?? models[0]!;
 
     const paintConsent = async (): Promise<void> => {
       const id = currentModel();
@@ -372,80 +310,33 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       if (file) void loadSource(file);
     });
 
-    runBtn.addEventListener('click', async () => {
+    // Run ENQUEUES and closes. The feasibility gate above still decides whether this
+    // device can do the job at all; past it, the model run, the encode, the credential
+    // and the save are one background job (lib/matte-job.ts) and nothing here waits on
+    // it. Cancellation lives on the toast from here, which is why this handler starts
+    // no AbortController, and the cutout reaches the caller through opts.onComplete.
+    runBtn.addEventListener('click', () => {
       if (!srcFrame || !feasible) return;
       hideStatus();
       runBtn.disabled = true;
-      progressEl.hidden = false;
-      const model = currentModel();
-      abort = new AbortController();
-      const paint = (p: MatteProgress): void => {
-        const frac = p.fraction ?? (p.phase === 'download' ? (p.total ? (p.loaded ?? 0) / p.total : null) : null);
-        progressEl.classList.toggle('matte-progress-indeterminate', frac == null);
-        const pct = frac == null ? 0 : Math.round(Math.min(1, Math.max(0, frac)) * 100);
-        fillEl.style.width = frac == null ? '100%' : `${pct}%`;
-        progressEl.setAttribute('aria-valuenow', String(pct));
-        showStatus(p.phase === 'download' ? t('Downloading the model…') : t('Removing background…'));
+      const req: MatteJobRequest = {
+        frame: srcFrame,
+        // The credential's title is the DECODED source's own name; the saved asset's
+        // id/name prefer the caller's display name where it gave one. Unchanged from
+        // the modal-blocking version.
+        sourceName: srcName,
+        saveName: opts.sourceName ?? srcName,
+        ...(srcBytes ? { sourceBytes: srcBytes } : {}),
+        model: currentModel(),
+        outFormat: formatSel.value as OutFormat,
       };
-      try {
-        // run() TRANSFERS the frame buffer to the worker; hand it a fresh copy and
-        // keep srcFrame intact so a retry after a failed run doesn't post an empty buffer.
-        const runFrame = { width: srcFrame.width, height: srcFrame.height, data: new Uint8ClampedArray(srcFrame.data) };
-        const out = await matte.run(runFrame, { model, signal: abort.signal, onProgress: paint });
-        if (!overlay.isConnected) return;
-        showStatus(t('Saving…'));
-        const { blob: rawBlob, format } = await frameToBlob(out, formatSel.value as OutFormat);
-        const info = modelOf(model);
-
-        // Provenance: stamp the operation and keep the original as an ingredient.
-        // A matte invents nothing, so this is a c2pa.edited step, NOT an
-        // AI-generated claim - and a source credential (e.g. an AI image's) is
-        // preserved rather than erased. Never throws (stampDerivedC2pa is
-        // try/catch internally); a failed re-sign still ships the cut-out.
-        let blob = rawBlob;
-        try {
-          const { stampDerivedC2pa } = await import('../bridge/export.ts');
-          const ex = srcBytes ? extractC2paStore(srcBytes) : null;
-          const ingredient = ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
-          blob = await stampDerivedC2pa(host, rawBlob, format, {
-            title: srcName,
-            tool: 'Remove background',
-            actions: [{ action: 'c2pa.edited', description: `Background removed with ${info.name} ${info.version} (on-device)` }],
-            ...(ingredient ? { ingredients: [ingredient] } : {}),
-            dimensions: `${out.width}×${out.height}`,
-          });
-        } catch (e) {
-          host.log('warn', 'Matte provenance stamp failed', { error: String(e) });
-        }
-
-        const now = Date.now();
-        const { id, name } = matteAssetIds(opts.sourceName ?? srcName, now);
-        await host.assets._uploadUserAsset({
-          id, type: 'raster', format, blob, width: out.width, height: out.height, version: '1.0.0',
-          meta: {
-            name,
-            bytes: blob.size,
-            // NOT aiGenerated: the RGB is 100% the original; only alpha is model-
-            // computed. The operation is disclosed in the credential as an edit.
-            matte: { model, version: info.version },
-          },
-        });
-        done(await host.assets.get(id));
-      } catch (e) {
-        if (!overlay.isConnected) return;
-        // Belt-and-braces: never surface a raw runtime string (e.g. ort-web's
-        // "failed to call OrtRun()… std::bad_alloc"). Classify to an actionable
-        // message. Abort stays silent. See lib/matte-error.ts.
-        const kind = classifyMatteError(e);
-        if (kind === 'aborted') { hideStatus(); }
-        else {
-          host.log('error', 'Matte run failed', { error: String(e), kind });
-          showStatus(matteErrorMessage(kind), true);
-        }
-      } finally {
-        abort = null;
-        if (overlay.isConnected) { runBtn.disabled = !feasible; progressEl.hidden = true; }
-      }
+      startMatteJob(host, req, {
+        onComplete: (ref) => opts.onComplete?.(ref),
+        onError: (err) => host.log('error', 'Matte run failed', { error: String(err) }),
+      });
+      showStatus(t('Working in the background. It will appear in your catalog when it’s done.'));
+      // Let the message land, then close: the toast takes it from here.
+      setTimeout(done, 900);
     });
 
     if (opts.source !== undefined) {

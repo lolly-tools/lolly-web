@@ -35,9 +35,22 @@ for (const workerFile of WORKERS) {
         'the worker must set env.allowRemoteModels = false');
     });
 
-    test('models load same-origin from /models/', () => {
-      assert.match(src, /env\.localModelPath\s*=\s*'\/models\/'/,
-        "the worker must set env.localModelPath = '/models/'");
+    test('models load from `${MODELS_BASE}/models/` (same-origin on the web build)', () => {
+      // MODELS_BASE is a build-time constant: '' on the web build → same-origin
+      // '/models/' (byte-identical to before), overridable via VITE_MODELS_BASE
+      // ONLY for a shell that self-hosts the weights elsewhere (the desktop app
+      // points it at https://lolly.tools). This moves only WHERE the static model
+      // file is fetched from; no audio ever leaves the device, and the HF hub is
+      // still off (allowRemoteModels = false, asserted above).
+      assert.match(src, /env\.localModelPath\s*=\s*`\$\{MODELS_BASE\}\/models\//,
+        'the worker must set env.localModelPath = `${MODELS_BASE}/models/`');
+      assert.match(src, /import\s*\{\s*MODELS_BASE\s*\}\s*from\s*'\.\/models-base\.ts'/,
+        'MODELS_BASE must be imported from ./models-base.ts');
+      const basePath = join(LIB_DIR, 'models-base.ts');
+      assert.ok(existsSync(basePath), 'models-base.ts must exist');
+      const baseSrc = readFileSync(basePath, 'utf8');
+      assert.match(baseSrc, /VITE_MODELS_BASE\s*\?\?\s*''/,
+        "MODELS_BASE must default to '' (same-origin) when VITE_MODELS_BASE is unset");
     });
 
     test('the ONNX wasm runtime loads same-origin', () => {

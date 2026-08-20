@@ -69,8 +69,8 @@ import type { ExportEntry } from '../lib/export-history.ts';
 import { attachDropRouter } from '../lib/drop-router.ts';
 import type { PickerHost } from './picker.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 // The deep-link destination registry (plans/99 M2): every section's data-flag
 // keyword set lives THERE, interpolated here via dashFlag(), never as a string
@@ -745,8 +745,8 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   const wheelColors = [...byHex.values()];
 
   viewEl.innerHTML = `
-    ${backPillHtml()}
-    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
+    ${backHomeHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="dash-layout">
       <header class="plat-header dash-header">
         <h1 class="plat-title">${t('Dashboard')}</h1>

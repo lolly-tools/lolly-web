@@ -133,66 +133,32 @@
 /* Search filter: hide cards that don't match the active query. */
 .profile-view .profile-card.is-filtered-out { display: none; }
 
-/* Below the two-column threshold the rail can't stay a fixed side column: fold
-   it into a single flow with the cards, and turn the section list into a
-   horizontally-scrolling chip strip that sticks under the back pill. */
-@media (max-width: 860px) {
+/* Below the two-column threshold the fixed side rail can't stay a side column, and a
+   horizontally-scrolling text strip ran its section labels off-screen at tablet width.
+   So fold the layout to one column and turn the section nav into a SOLID, floating
+   icon-only bar pinned above the persistent search footer — the same bar phones already
+   used, now across the whole tablet band. The cutoff is the full tablet-landscape width
+   (1024px): between ~861px and ~1024px the fixed 216px rail plus a details column that
+   can't shrink below its fixed headshot overran the viewport and forced a horizontal
+   scrollbar. */
+@media (max-width: 1024px) {
   .profile-view .profile-layout {
     grid-template-columns: 1fr;
     gap: 1rem;
+    /* Clear the raised floating bar so the last card can scroll fully into view above it. */
+    padding-bottom: calc(env(safe-area-inset-bottom) + 10rem);
   }
-  .profile-view .profile-nav {
-    position: sticky;
-    top: 2.75rem;
-    z-index: 3;
-    max-height: none;
-    overflow: visible;
-    gap: .5rem;
-    padding: .5rem 0;
-    /* A soft backdrop so cards scrolling under the sticky strip stay legible. */
-    background: linear-gradient(hsl(var(--background)) 70%, transparent);
-  }
-  .profile-view .profile-nav-list {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: .4rem;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    padding-bottom: .15rem;
-  }
-  .profile-view .profile-nav-list::-webkit-scrollbar { display: none; }
-  .profile-view .profile-nav-item {
-    flex: 0 0 auto;
-    width: auto;
-    border: 1px solid hsl(var(--border));
-    border-radius: 999px;
-    padding: .4rem .8rem;
-  }
-  .profile-view .profile-nav-item.is-active { border-color: hsl(var(--primary) / .5); }
-  .profile-view .profile-nav-empty { display: none; }
-  /* Stack the fields + headshot/theme columns: side by side, the .6fr headshot column
-     couldn't shrink enough and shoved the card past the viewport. */
-  .profile-view .profile-details-grid { grid-template-columns: 1fr; gap: 1.25rem; }
-}
-
-/* Phones: the section nav becomes a SOLID, floating icon-only bar pinned just above the
-   bottom search footer; the identity fields stack to one column; and the view clips its own
-   horizontal overflow as a safety net. */
-@media (max-width: 560px) {
-  .profile-view .profile-fields { grid-template-columns: 1fr; }
-  /* Last-resort guard so no child can push the page sideways on a narrow phone. */
+  /* Last-resort guard so no child can push the page sideways in the tablet band. */
   .profile-view { overflow-x: clip; }
 
-  /* Float the nav as its OWN bar above the persistent search footer (--footer-h), over the
-     scrolling cards, rather than a sticky top strip. Only the pill catches input, so taps
-     pass through the empty gutters to the content below. */
+  /* Float the nav as its OWN bar above the persistent search footer, over the scrolling
+     cards, rather than a sticky top strip. Only the pill catches input, so taps pass
+     through the empty gutters to the content below. The bottom offset clears the whole
+     footer (search field + its wrapped nav row) plus a gap, so the bar floats above it. */
   .profile-view .profile-nav {
     position: fixed; top: auto; z-index: 40;
     left: var(--vv-left, 0px); right: var(--vv-right, 0px);
-    /* Clear the WHOLE footer (search field + bottom nav row ~= the .has-search-footer 5.5rem
-       clearance), not just --footer-h, plus a gap, so the bar floats above it not on it. */
-    bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 6.5rem);
+    bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 7rem);
     max-height: none; overflow: visible;
     padding: 0 .6rem; background: none;
     pointer-events: none;
@@ -224,9 +190,16 @@
   /* Active = a strong primary TINT + ring (not a solid fill: the solid primary-on-
      primary-foreground recipe lives once in buttons.css - R2). Clear on the icon bar. */
   .profile-view .profile-nav-item.is-active { background: hsl(var(--primary) / .22); color: hsl(var(--primary)); box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / .55); }
-  /* Clear the raised floating bar so the last card can scroll fully into view above it. */
-  .profile-view .profile-layout { padding-bottom: calc(env(safe-area-inset-bottom) + 10rem); }
+  .profile-view .profile-nav-empty { display: none; }
+  /* Stack the fields + headshot/theme columns: side by side, the .6fr headshot column
+     couldn't shrink enough and shoved the card past the viewport. */
+  .profile-view .profile-details-grid { grid-template-columns: 1fr; gap: 1.25rem; }
 }
+
+/* (Phones share the tablet band's treatment now: the floating icon-only section bar,
+   the single-column layout, and the overflow guard all live in the max-width:1024px
+   block above. The phone-specific details-card layout — headshot on top, fields stacked
+   and centred — stays in the max-width:640px block below.) */
 
 /* (The old two-button .profile-footer toolbar is retired — the shell's persistent
    search bar shows on this route instead; see components/search-bar.ts.) */
@@ -810,4 +783,25 @@
 }
 .identity-verify-link:hover { background: hsl(151 57% 36%); color: #fff; border-color: transparent; }
 .identity-verify-link svg { flex: 0 0 auto; }
+
+/* Connected services (plans/129): the personal send-target providers. Rows
+   reuse the store-manage idiom; the credential providers get a small form. */
+.profile-view .pconn-row { align-items: flex-start; }
+/* The name cell stacks: provider name, then account, then the note - the row's
+   flex display would otherwise glue them onto one line. Same fix inside the
+   credential cards' summaries. */
+.profile-view .pconn-row .store-manage-name,
+.profile-view .pconn-cred summary .store-manage-name { display: block; }
+.profile-view .pconn-account { display: block; font-weight: 600; margin-top: 2px; }
+.profile-view .pconn-note { display: block; opacity: .75; font-size: calc(12px * var(--a11y-fs)); margin-top: 2px; }
+.profile-view .pconn-persist { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: calc(12.5px * var(--a11y-fs)); opacity: .9; }
+.profile-view .pconn-cred { border: 1px solid hsl(var(--border) / .6); border-radius: 10px; padding: .55rem .8rem; margin-top: .6rem; }
+.profile-view .pconn-cred summary { cursor: pointer; list-style: none; }
+.profile-view .pconn-cred summary::-webkit-details-marker { display: none; }
+.profile-view .pconn-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .6rem .8rem; margin-top: .7rem; }
+.profile-view .pconn-field { display: flex; flex-direction: column; gap: .25rem; font-size: calc(12.5px * var(--a11y-fs)); }
+.profile-view .pconn-form > .pconn-note, .profile-view .pconn-form > .pconn-actions { grid-column: 1 / -1; }
+.profile-view .pconn-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.profile-view .pconn-status { font-size: calc(12.5px * var(--a11y-fs)); opacity: .85; }
+
 }

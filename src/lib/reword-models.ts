@@ -18,6 +18,8 @@
  * Llama 3.2 and Gemma fail the licence bar.
  */
 
+import { MODELS_BASE } from './models-base.ts';
+
 /** The one staged model. The id doubles as the directory under /models/reword/. */
 export const REWORD_MODEL_ID = 'smollm2-360m-instruct';
 
@@ -41,7 +43,7 @@ export const REWORD_MODEL_BYTES = 390_053_199;
 
 /** The cache probe URL: the big file's local path, as transformers.js keys its
  *  Cache API entries ('transformers-cache', keyed by fetched path). */
-export const REWORD_MODEL_CACHE_URL = `/models/${REWORD_MODEL_DIR}/onnx/model_q4.onnx`;
+export const REWORD_MODEL_CACHE_URL = `${MODELS_BASE}/models/${REWORD_MODEL_DIR}/onnx/model_q4.onnx`;
 
 /** Licence line - a real obligation the shell carries in its credits. */
 export const REWORD_MODEL_LICENSE = 'Apache-2.0';

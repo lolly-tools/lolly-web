@@ -41,8 +41,8 @@ import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { UserFontsHost } from '../user-fonts.ts';
@@ -548,8 +548,8 @@ function resultMarkup(x: Extracted): string {
 
 export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promise<void> {
   viewEl.innerHTML = `
-    ${backPillHtml()}
-    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
+    ${backHomeHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout pdfx-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Unpack')}</h1>

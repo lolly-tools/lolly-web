@@ -2196,6 +2196,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const canVideoMatte = videoDecodable;
     const canVideoCrop = videoDecodable && videoEncodable;
     const canVideoUpscale = videoDecodable && videoEncodable && host.upscale?.isAvailable() === true;
+    // Grade + Trim (plans/130) are the two video edits that need the frame VISIBLE to be
+    // answerable, so they are inline modes over this preview rather than dialog forms -
+    // the crop/retouch pattern. Both re-encode, so both need the encoder as well as the
+    // decoder; the model-free maths (a LUT, grain, a vignette, a time window) needs
+    // nothing else, which is why there is no third capability in these gates.
+    const canVideoGrade = videoDecodable && videoEncodable;
+    const canVideoTrim = videoDecodable && videoEncodable;
     // "Trim margins" (plan 97 section 7.3): the retro-trim of an upload that arrived padded,
     // offering the same before/after card every ingest surface shows. Uploads only - 
     // a catalog asset is an immutable, checksum-validated contract. A still raster or
@@ -2254,6 +2261,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
           ${canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
           ${canVideoUpscale ? `<button type="button" class="btn cat-act-vid-upscale" data-act="vid-upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
+          ${canVideoGrade ? `<button type="button" class="btn cat-act-vid-grade" data-act="vid-grade">${icon('palette', { size: 14 })}<span>${t('Grade…')}</span></button>` : ''}
+          ${canVideoTrim ? `<button type="button" class="btn cat-act-vid-trim" data-act="vid-trim">${icon('filmStrip', { size: 14 })}<span>${t('Trim…')}</span></button>` : ''}
           <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
@@ -2297,6 +2306,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         cropModeActive = false;   // clear the attachZoom pause if the modal closed mid-crop (backdrop/paging)
         inlineTrim?.();           // …and answer an open trim card, so its preview URLs are revoked
         inlineRetouch?.exit();    // …and stand a brush session down (aborts any in-flight fill)
+        inlineVideoEdit?.exit();  // …and the video Grade/Trim mode (its own <video> would keep decoding)
         syncAssetUrl(null);       // the bar goes back to the plain catalog URL
         detailsDialog = null;
         detailsModal = null;
@@ -2571,6 +2581,62 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         },
       );
     }
+    // Inline video edit (plans/130): Grade and Trim are two tabs of ONE mode over
+    // this preview - the look and the in/out points are both decisions about what is
+    // on screen, so they are made at the frame. Applying enqueues a background job and
+    // leaves; the global toast owns progress, exactly like the vid-* dialog path.
+    let inlineVideoEdit: import('./video-edit-inline.ts').VideoEditInlineHandle | null = null;
+    let videoEditEntering = false;
+    async function enterInlineVideoEdit(tab: import('./video-edit-inline.ts').VideoEditTab): Promise<void> {
+      if (inlineVideoEdit || videoEditEntering || inlineCrop || inlineRetouch) return;
+      const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
+      const thumb = preview?.querySelector<HTMLVideoElement>('video.cat-thumb');
+      if (!preview || !thumb) return;
+      // The flag spans BOTH awaits (the import and the mount), because the handle
+      // that `if (inlineVideoEdit)` tests isn't assigned until after them.
+      videoEditEntering = true;
+      let modeCleared = false;
+      try {
+        const { mountInlineVideoEdit } = await import('./video-edit-inline.ts');
+        if (detailsDialog !== dlg || inlineVideoEdit) return;   // paged/closed during the import
+        cropModeActive = true;   // pause attachZoom's wheel/drag while the mode owns the stage
+        preview.classList.add('is-video-editing');
+        dlg.classList.add('is-video-editing');
+        const handle = await mountInlineVideoEdit(host as unknown as VideoJobHost, {
+          stage: preview,
+          video: thumb,
+          ref,
+          name,
+          initialTab: tab,
+          onDone: (made) => {
+            // Two callers land here: the mode ending (null), and - later - a job
+            // enqueued from it completing (the made ref). Idempotent for that reason.
+            if (!modeCleared) {
+              modeCleared = true;
+              inlineVideoEdit = null;
+              cropModeActive = false;
+              preview.classList.remove('is-video-editing');
+              dlg.classList.remove('is-video-editing');
+            }
+            // A landing job refreshes the grid; it never opens a modal over the
+            // user, who is minutes past this edit by then (the vid-* precedent).
+            if (made && mounted) void reload().then(rerender);
+          },
+        });
+        if (detailsDialog !== dlg) { handle.exit(); return; }   // paged/closed during the mount
+        inlineVideoEdit = handle;
+      } finally {
+        videoEditEntering = false;
+        // A mount that threw must not leave the takeover classes - and attachZoom's
+        // pause - standing over a stage with no mode on it. Only this dialog's own
+        // pause is cleared: a newer modal may have opened a mode of its own.
+        if (!inlineVideoEdit && !modeCleared) {
+          preview.classList.remove('is-video-editing');
+          dlg.classList.remove('is-video-editing');
+          if (detailsDialog === dlg) cropModeActive = false;
+        }
+      }
+    }
     // Synchronous in-flight guard: `inlineCrop` isn't assigned until AFTER the async
     // prepCropSource below, so a fast double-click could pass an `if (inlineCrop)`
     // check twice and build two overlays. This flag is set/cleared around the only
@@ -2607,6 +2673,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             `<label class="field-toggle"><input type="radio" class="field-radio" name="cat-crop-fmt" value="${escape(v)}"${i === 0 ? ' checked' : ''}> ${escape(l)}</label>`).join('')}</div>
           <span class="cat-mode-bar-actions">
             <button type="button" class="btn cat-crop-cancel">${escape(t('Cancel'))}</button>
+            <button type="button" class="btn cat-crop-save">${escape(t('Save to catalog'))}</button>
             <button type="button" class="btn cat-crop-go modal-primary">${escape(t('Download crop'))}</button>
           </span>
         </div>
@@ -2642,6 +2709,48 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       work.addEventListener('click', async (e) => {
         const tgt = e.target as HTMLElement;
         if (tgt.closest('.cat-crop-cancel')) { exit(); return; }
+        if (tgt.closest('.cat-crop-save')) {
+          // Save the crop AS a catalog asset (same signed bytes as the
+          // download - the credential chain incl. the genAI backfill is
+          // identical), then open the new copy.
+          const saveBtn = work.querySelector<HTMLButtonElement>('.cat-crop-save');
+          if (saveBtn?.disabled) return;
+          if (saveBtn) saveBtn.disabled = true;
+          const made: { ref: AssetRef | null } = { ref: null };
+          const save: CropDeliver = async (blob, format, o) => {
+            const signed = await signDerived(ref, blob, format, o);
+            const base = String(ref.meta?.name ?? ref.id.split('/').pop() ?? 'image').replace(/\.[a-z0-9]+$/i, '');
+            const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+            const id = `user/crop/${Date.now()}-${slug || 'crop'}`;
+            const aiKind = assetAiKind(ref);
+            const assets = host.assets as unknown as {
+              _uploadUserAsset(r: { id: string; type: AssetRef['type']; format: string; blob: Blob; version: string; meta: Record<string, unknown> }): Promise<void>;
+            };
+            await assets._uploadUserAsset({
+              id,
+              type: format === 'svg' ? 'vector' : 'raster',
+              format,
+              blob: signed,
+              version: '1.0.0',
+              meta: {
+                name: tRaw('{name} — crop', { name: base }),
+                bytes: signed.size,
+                // The source's authored AI flag rides onto the copy's meta so
+                // the AI chip survives alongside the credential's record.
+                ...(aiKind ? { aiGenerated: aiKind } : {}),
+              },
+            });
+            made.ref = await host.assets.get(id);
+          };
+          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg }, save); }
+          catch (err) { host.log?.('error', 'Catalog crop save failed', { id: ref.id, error: String(err) }); }
+          exit();
+          if (made.ref) {
+            announce(tRaw('Crop saved to your uploads as "{name}".', { name: String(made.ref.meta?.name ?? made.ref.id) }));
+            await reload(); rerender(); openDetails(made.ref);
+          }
+          return;
+        }
         if (tgt.closest('.cat-crop-go')) {
           try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg }); }
           catch (err) { host.log?.('error', 'Catalog crop failed', { id: ref.id, error: String(err) }); }
@@ -2963,7 +3072,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
       if (act === 'read-text') {
         // Image → OCR → clipboard + a Tier-2 text-signals read (source:'ocr', so no
-        // byte-level artifacts - the panel says so). Stays in the modal.
+        // byte-level artifacts - the panel says so).
+        //
+        // The READ is a WP-F background job (lib/ocr-job.ts): wasm inference over a
+        // whole photo, plus a first-run model download, is exactly what the serial
+        // heavy queue exists for, and the toast owns its progress and its cancel. The
+        // pixels are still decoded HERE, while this asset is on screen; everything
+        // after that outlives the modal.
+        //
+        // So every write below is guarded on THIS modal still being the open one:
+        // the old `finally` restored a button that could already be detached (or,
+        // after ←/→ paging, could belong to a different asset's modal). When the
+        // surface is gone the durable half still runs - persistAiSignals writes the
+        // verdict onto the asset's meta - and the announcement says where to find it.
         const box = dlg.querySelector<HTMLElement>('[data-tsig]');
         const btn = target.closest<HTMLButtonElement>('.cat-act-read-text');
         if (btn?.disabled) return; // an OCR run is already in flight - never start a second
@@ -2973,28 +3094,57 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // must not spin up two concurrent OCR passes over the same image.
         if (btn) btn.disabled = true;
         if (span) span.textContent = t('Reading…');
-        try {
-          const frame = await rasterToOcrFrame(ref.url);
-          const result = await host.ocr!.run(frame);
-          const text = result.text.trim();
-          if (text) {
-            const panel = analyzeVerifyText(text, 'ocr');
-            if (box) { box.innerHTML = `<pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(text, panel.marks)}</pre>${catTextSignalsHtml(panel)}`; box.hidden = false; }
-            // Announce what actually happened: the clipboard write can be refused
-            // (permissions, unfocused document), and "copied" would then be a lie.
-            let copied = true;
-            try { await navigator.clipboard.writeText(text); } catch { copied = false; }
-            announce(copied ? t('Text copied') : t('Text read. Copying to the clipboard was blocked.'));
-            // Same persistence as Analyse text, marked 'ocr': the verdict came off
-            // pixels, so only style signals ran - the note says which read it was.
-            await persistAiSignals(ref, panel, 'ocr');
-          } else if (box) { box.textContent = t('No readable text was found.'); box.hidden = false; }
-        } catch {
-          if (box) { box.textContent = t('The text could not be read.'); box.hidden = false; }
-        } finally {
+        /** Is the modal that started this read still the open one? */
+        const alive = (): boolean => detailsDialog === dlg;
+        const restore = (): void => {
+          if (!alive()) return;
           if (btn) btn.disabled = false;
           if (span) span.textContent = orig;
+        };
+        const readFailed = (): void => {
+          if (alive() && box) { box.textContent = t('The text could not be read.'); box.hidden = false; }
+          else announce(t('The text could not be read.'));
+        };
+        let frame: { width: number; height: number; data: Uint8ClampedArray };
+        try {
+          frame = await rasterToOcrFrame(ref.url);
+        } catch {
+          readFailed();
+          restore();
+          return;
         }
+        const { startOcrJob } = await import('../lib/ocr-job.ts');
+        startOcrJob(host, { frame }, {
+          onComplete: (result) => {
+            void (async (): Promise<void> => {
+              const text = result.text.trim();
+              if (!text) {
+                if (alive() && box) { box.textContent = t('No readable text was found.'); box.hidden = false; }
+                else announce(t('No readable text was found.'));
+                return;
+              }
+              const panel = analyzeVerifyText(text, 'ocr');
+              if (alive()) {
+                if (box) { box.innerHTML = `<pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(text, panel.marks)}</pre>${catTextSignalsHtml(panel)}`; box.hidden = false; }
+                // Announce what actually happened: the clipboard write can be refused
+                // (permissions, unfocused document), and "copied" would then be a lie.
+                let copied = true;
+                try { await navigator.clipboard.writeText(text); } catch { copied = false; }
+                announce(copied ? t('Text copied') : t('Text read. Copying to the clipboard was blocked.'));
+              } else {
+                // Nothing to paint into, and a clipboard write nobody asked for
+                // any more would be a surprise - say where the result went instead.
+                announce(t('The text was read. Open this asset again to see the result.'));
+              }
+              // Same persistence as Analyse text, marked 'ocr': the verdict came off
+              // pixels, so only style signals ran - the note says which read it was.
+              // This is the DURABLE half, so it runs whether or not the modal is open.
+              await persistAiSignals(ref, panel, 'ocr');
+            })();
+          },
+          onError: () => readFailed(),
+          onSettled: restore,   // includes a cancel from the toast
+        });
         return;
       }
       if (act === 'humanize') {
@@ -3187,6 +3337,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         catch (err) { host.log('error', 'Retouch failed', { id: ref.id, error: String(err) }); }
         return;
       }
+      // Crop, Grade and Trim are three tabs of one inline video mode (plans/130) - the
+      // stage becomes a paused frame with a crop box on it and a scrub bar under it, so
+      // none of them leaves this detail context. Crop moved here from the video-job
+      // dialog: framing a picture over four number fields was never the way to ask.
+      if (act === 'vid-grade' || act === 'vid-trim' || act === 'vid-crop') {
+        try { await enterInlineVideoEdit(act === 'vid-trim' ? 'trim' : act === 'vid-crop' ? 'crop' : 'grade'); }
+        catch (err) { host.log('error', 'Video edit failed', { id: ref.id, error: String(err) }); }
+        return;
+      }
       // The remaining actions leave this asset's detail context, so close first.
       closeDetails();
       if (act === 'download') {
@@ -3194,42 +3353,91 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);
         else await directDownload(ref);
       }
-      else if (act === 'upscale' || act === 'matte') {
-        // Enlarge / cut-out THIS asset on-device, save the result as a user asset, then
-        // show it. The dialogs carry the source's Content Credential forward as an
-        // ingredient (with the Gen-AI flag intact), so an AI image keeps its provenance.
+      else if (act === 'upscale') {
+        // Enlarge THIS asset on-device. The dialog validates, consents and decodes, then
+        // starts a WP-F background JOB and closes - so nothing here waits on the model,
+        // and the toast owns progress and cancellation. The saved copy carries the
+        // source's Content Credential forward as an ingredient (with the Gen-AI flag
+        // intact), so an AI image keeps its provenance. onComplete refreshes a still-open
+        // catalog and says which asset landed; no modal opens itself over the user.
         try {
-          const made = act === 'upscale'
-            ? await (await import('./upscale-dialog.ts')).openUpscaleDialog(host as unknown as UpscaleHost, { source: ref, sourceName: name })
-            : await (await import('./matte-dialog.ts')).openMatteDialog(host as unknown as MatteHost, { source: ref, sourceName: name });
-          if (made) { await reload(); rerender(); openDetails(made); }
-          else openDetails(ref); // cancelled - restore the asset the user was inspecting
+          const { openUpscaleDialog } = await import('./upscale-dialog.ts');
+          await openUpscaleDialog(host as unknown as UpscaleHost, {
+            source: ref, sourceName: name,
+            onComplete: (made) => {
+              if (!mounted) return;
+              void reload().then(() => {
+                if (!mounted) return;
+                rerender();
+                announce(tRaw('{name} is ready in your uploads.', { name: (made.meta?.name as string | undefined) ?? name }));
+              });
+            },
+          });
         } catch (err) {
-          host.log('error', act === 'upscale' ? 'Upscale failed' : 'Background removal failed', { id: ref.id, error: String(err) });
+          host.log('error', 'Upscale failed', { id: ref.id, error: String(err) });
         }
+        openDetails(ref); // the run is in the background - restore the asset the user was inspecting
+      }
+      else if (act === 'matte') {
+        // Cut THIS asset out on-device. Same shape as Upscale above and the video ops
+        // below: the dialog validates, consents and decodes, then starts a WP-F
+        // background JOB and closes, so nothing here waits on the model and the toast
+        // owns progress and cancellation. The cutout carries the source's Content
+        // Credential forward as an ingredient (with the Gen-AI flag intact), so an AI
+        // image keeps its provenance. onComplete refreshes a still-open catalog and
+        // says which asset landed; no modal opens itself over the user.
+        try {
+          const { openMatteDialog } = await import('./matte-dialog.ts');
+          await openMatteDialog(host as unknown as MatteHost, {
+            source: ref, sourceName: name,
+            onComplete: (made) => {
+              if (!mounted) return;
+              void reload().then(() => {
+                if (!mounted) return;
+                rerender();
+                announce(tRaw('{name} is ready in your uploads.', { name: (made.meta?.name as string | undefined) ?? name }));
+              });
+            },
+          });
+        } catch (err) {
+          host.log('error', 'Background removal failed', { id: ref.id, error: String(err) });
+        }
+        openDetails(ref); // the run is in the background - restore the asset the user was inspecting
       }
       else if (act === 'extract-audio') {
-        // Decode THIS video's sound track on-device, save it as an audio user asset
-        // (its own derived asset - no 'renders' tag), then show it. The source video's
-        // own Content Credential rides forward as an ingredient.
+        // Decode THIS video's sound track on-device and save it as an audio user asset
+        // (its own derived asset - no 'renders' tag). Same shape as Upscale and Matte
+        // above: the dialog picks a format, starts a WP-F background JOB and closes, so
+        // nothing here waits on a whole-file decode and the toast owns progress and
+        // cancellation. The source video's own Content Credential rides forward as an
+        // ingredient. onComplete refreshes a still-open catalog and says which asset
+        // landed; no modal opens itself over the user.
         try {
           const { openExtractAudioDialog } = await import('../lib/extract-audio.ts');
-          const made = await openExtractAudioDialog(host as unknown as ExtractAudioHost, {
+          await openExtractAudioDialog(host as unknown as ExtractAudioHost, {
             source: ref, sourceName: name,
             ...(ref.meta?.aiGenerated === 'full' || ref.meta?.aiGenerated === 'partial' ? { aiGenerated: ref.meta.aiGenerated } : {}),
+            onComplete: (made) => {
+              if (!mounted) return;
+              void reload().then(() => {
+                if (!mounted) return;
+                rerender();
+                announce(tRaw('{name} is ready in your uploads.', { name: (made.meta?.name as string | undefined) ?? name }));
+              });
+            },
           });
-          if (made) { await reload(); rerender(); openDetails(made); }
-          else openDetails(ref); // cancelled - restore the asset the user was inspecting
         } catch (err) {
           host.log('error', 'Extract audio failed', { id: ref.id, error: String(err) });
         }
+        openDetails(ref); // the run is in the background - restore the asset the user was inspecting
       }
-      else if (act === 'vid-matte' || act === 'vid-crop' || act === 'vid-upscale') {
-        // Process THIS video on-device (background-remove / crop / upscale). The shared
-        // dialog starts a WP-F background job and closes; the result lands as a plain
-        // derived user asset (no 'renders' tag) with container-level C2PA, the source
-        // video carried as an ingredient. onComplete refreshes a still-open catalog.
-        const op = act === 'vid-matte' ? 'matte' : act === 'vid-crop' ? 'crop' : 'upscale';
+      else if (act === 'vid-matte' || act === 'vid-upscale') {
+        // Process THIS video on-device (background-remove / upscale). Both are model runs
+        // with no framing decision in them, so they stay in the shared dialog: it starts a
+        // WP-F background job and closes; the result lands as a plain derived user asset
+        // (no 'renders' tag) with container-level C2PA, the source video carried as an
+        // ingredient. onComplete refreshes a still-open catalog.
+        const op = act === 'vid-matte' ? 'matte' : 'upscale';
         try {
           const { openVideoJobDialog } = await import('./video-job-dialog.ts');
           await openVideoJobDialog(host as unknown as VideoJobHost, {
@@ -3263,6 +3471,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // save is committing, which must never be torn down mid-write.
       if (inlineRetouch) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!inlineRetouch.busy()) inlineRetouch.exit(); }
+        return;
+      }
+      // And for the video Grade/Trim mode - busy() covers the beat between the Apply
+      // click and the job being enqueued, which must not be torn down half-made.
+      if (inlineVideoEdit) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!inlineVideoEdit.busy()) inlineVideoEdit.exit(); }
         return;
       }
       // With a trim card up, paging is off for the same reason: it would tear the card
@@ -4359,12 +4573,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // inspected file shows the exact transform parameters. Signing is
   // best-effort - any failure ships the un-stamped bytes; a credential failure
   // must never fail a download.
-  async function downloadSigned(ref: AssetRef, blob: Blob, format: string, filename: string, o: {
+  /** What downloadCrop hands its delivery: the (unsigned) bytes + the credential
+   *  inputs. The default delivery signs-and-downloads; the crop mode's
+   *  "Save to catalog" delivery signs-and-uploads instead. */
+  interface DerivedSignInputs {
     edits: C2paActionInput[];
     detail?: Record<string, string>;
     dims?: string;
     sourceBytes?: Uint8Array;
-  }): Promise<void> {
+  }
+  type CropDeliver = (blob: Blob, format: string, o: DerivedSignInputs) => Promise<void>;
+
+  /** Stamp a derived blob's Content Credential (the download/save shared half of
+   *  downloadSigned): edits + the source as ingredient, with the genAI source
+   *  type backfilled so a flagged asset never reads as human-made afterwards.
+   *  Best-effort - a failed stamp returns the unsigned bytes, logged. */
+  async function signDerived(ref: AssetRef, blob: Blob, format: string, o: DerivedSignInputs): Promise<Blob> {
     let out = blob;
     if (STAMPABLE.has(format)) {
       try {
@@ -4410,7 +4634,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         host.log?.('warn', 'Catalog download: Content Credentials not attached', { id: ref.id, error: String(err) });
       }
     }
-    await host.export.download(out, filename);
+    return out;
+  }
+
+  async function downloadSigned(ref: AssetRef, blob: Blob, format: string, filename: string, o: DerivedSignInputs): Promise<void> {
+    await host.export.download(await signDerived(ref, blob, format, o), filename);
   }
 
   // Raster / video / lottie: download the file as-is (no styling or reformat to
@@ -4645,7 +4873,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     ref: AssetRef, vector: boolean, svgText: string | null, imgEl: HTMLImageElement,
     frac: { fx: number; fy: number; fw: number; fh: number }, fmt: string,
     baked: { theme?: IconTheme | null; treatment?: PhotoTreatment | null; origSvg?: string | null } = {},
+    deliver?: CropDeliver,
   ): Promise<void> {
+    const send: CropDeliver = deliver
+      ?? (async (b, f, o) => { await downloadSigned(ref, b, f, downloadName(ref, f), o); });
     const { fx, fy, fw, fh } = frac;
     // Steps for what the crop SOURCE already carries (prepCropSource baked these in).
     const bakedEdits: C2paActionInput[] = [];
@@ -4670,7 +4901,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       };
       detail.crop = `${Math.round(box[2])}×${Math.round(box[3])} @ ${Math.round(box[0])},${Math.round(box[1])}`;
       if (fmt === 'svg') {
-        await downloadSigned(ref, new Blob([cropped], { type: 'image/svg+xml' }), 'svg', downloadName(ref, 'svg'), {
+        await send(new Blob([cropped], { type: 'image/svg+xml' }), 'svg', {
           edits: [...bakedEdits, cropStep], detail, sourceBytes,
         });
         return;
@@ -4678,7 +4909,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const edge = 1024, ar = box[2] / box[3];
       const w = ar >= 1 ? edge : Math.max(1, Math.round(edge * ar));
       const h = ar >= 1 ? Math.max(1, Math.round(edge / ar)) : edge;
-      await downloadSigned(ref, await svgToPng(cropped, w, h), 'png', downloadName(ref, 'png'), {
+      await send(await svgToPng(cropped, w, h), 'png', {
         edits: [...bakedEdits, cropStep, { action: 'c2pa.converted', description: `Rasterised the SVG artwork to PNG at ${w}×${h}px` }],
         detail, dims: `${w}×${h}`, sourceBytes,
       });
@@ -4699,7 +4930,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (!blob) throw new Error('crop encode failed');
     const outFmt = fmt === 'jpg' ? 'jpg' : fmt;
     detail.crop = `${swp}×${shp}px @ ${sxp},${syp}`;
-    await downloadSigned(ref, blob, outFmt, downloadName(ref, outFmt), {
+    await send(blob, outFmt, {
       edits: [
         ...bakedEdits,
         { action: 'c2pa.cropped', description: `Cropped to ${swp}×${shp}px (from ${NW}×${NH}px)` },

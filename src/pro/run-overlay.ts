@@ -6,8 +6,15 @@
  * runBatch call and the zip/sequential delivery, extracted from runBatchFlow so
  * it can render into either:
  *   - the docked `#pro-progress` panel (the in-grid batch run), or
- *   - a floating toast appended to <body> (a folder/group export launched from
- *     the shared overlay, with no /pro grid mounted).
+ *   - nothing at all: with no `mount` the shell is built detached and the global
+ *     job toast (lib/job-toast.ts) is the run's only visible surface. That is the
+ *     shape every non-/pro caller uses now - a folder, a selection, one session,
+ *     a multi-edit download-all, "Export everything" - because a run must outlive
+ *     the view that started it, and a view-owned toast cannot.
+ *
+ * Every run reports into a WP-F job (lib/batch-job.ts): progress, cancellation and
+ * failure all travel through the handle, so leaving the view costs the cards and
+ * the log but never the run, its progress or its download.
  *
  * It owns its own cancel flag and quip rotator. It deliberately does NOT touch
  * any /pro grid state (state.running / renderGrid) - the docked caller passes an
@@ -16,6 +23,9 @@
 import './run-overlay.css';
 import { runBatch } from './batch.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { t } from '../i18n.ts';
+import { isBatchRunActive, startBatchJob, releaseBatchJob } from '../lib/batch-job.ts';
+import type { JobHandle } from '../lib/jobs.ts';
 import { buildZip, saveBlob, saveSequential } from './zip.ts';
 import { QUIPS, quipLines } from './quips.ts';
 import { buildPreflightReport, collectUnmade, rowLabel, type SkippedLike } from './manifest.ts';
@@ -33,7 +43,21 @@ interface BatchAuthor {
 
 /** Options for a batch run + delivery (see the JSDoc on runBatchWithProgress). */
 interface RunBatchProgressOpts<F = unknown> {
-  mount: HTMLElement;
+  /**
+   * Where to render the progress shell. OPTIONAL: with no mount the shell is built
+   * into a detached node and the global job toast (lib/job-toast.ts) is the run's
+   * only visible channel - the shape every caller but /pro's docked panel uses now.
+   * One code path either way, so cards/log/retry never need a second implementation.
+   */
+  mount?: HTMLElement;
+  /**
+   * The job this run reports into (lib/batch-job.ts). Supplied by a caller whose job
+   * already covers row assembly and preflight; the caller owns its terminal state.
+   * Omitted (the Retry button, a direct call) → the run starts and owns one itself.
+   */
+  job?: JobHandle;
+  /** Title for the job this run starts for itself. Ignored when `job` is supplied. */
+  jobTitle?: string;
   format?: string;
   unit?: string;
   dpi?: number;
@@ -113,6 +137,8 @@ interface RunBatchProgressResult<F = unknown> {
   files: BatchFile[];
   results: BatchResult<F>[];
   cancelled: boolean;
+  /** The zip that was actually saved, when one was - what the completion names. */
+  zipName?: string;
 }
 
 const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, c => (
@@ -156,14 +182,12 @@ const fmtIcon = (fmt: string): string => {
  * writing to the same mount - the second run rebuilding the shell detaches the first's
  * head, log, card wall and Cancel button - and two zips saved with no explanation.
  *
- * The flag is set immediately before the run's own try/finally and cleared in it, so a
- * throw anywhere inside cannot strand it. {@link isBatchRunActive} lets a caller (see
- * `/pro`'s Render button) refuse rather than race.
+ * The lock is no longer a boolean this module clears in its own `finally`: it is the
+ * JOB registry (lib/batch-job.ts). A run that outlives its view still frees the slot
+ * when it finishes, fails or is cancelled from the toast - which the boolean could not
+ * do, because only this function's `finally` ever cleared it.
  */
-let batchRunActive = false;
-
-/** True while a batch run owns the offscreen stage. See {@link batchRunActive}. */
-export const isBatchRunActive = (): boolean => batchRunActive;
+export { isBatchRunActive } from '../lib/batch-job.ts';
 
 const defaultNoteText = (note: unknown): string =>
   typeof note === 'string' ? note : String((note as { message?: unknown })?.message ?? '');
@@ -179,7 +203,9 @@ const defaultNoteTone = (note: unknown): 'info' | 'warn' => {
  * @param {HostV1} host
  * @param {Array} rows                         renderable rows (already planned)
  * @param {object} opts
- * @param {HTMLElement} opts.mount             where to render the progress shell
+ * @param {HTMLElement} [opts.mount]           where to render the progress shell (omit → detached; the job toast is the surface)
+ * @param {object} [opts.job]                  the caller's job handle to report into
+ * @param {string} [opts.jobTitle]             title for the job this run starts for itself
  * @param {string} [opts.format]
  * @param {string} [opts.unit]
  * @param {number} [opts.dpi]
@@ -200,19 +226,29 @@ const defaultNoteTone = (note: unknown): 'info' | 'warn' => {
  */
 export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: BatchRow[], opts: RunBatchProgressOpts<F> = {} as RunBatchProgressOpts<F>): Promise<RunBatchProgressResult<F>> {
   const {
-    mount, format, unit, dpi, pathAware = false,
+    format, unit, dpi, pathAware = false,
     zipBaseName, author = null, csv, skipped = [],
     profile, bleed, marks, srcIndex, notes, retryOf, skippedFindings, runFindings,
     noteText = defaultNoteText as (note: F) => string,
     noteTone = defaultNoteTone as (note: F) => 'info' | 'warn',
     onRendered, onBatchRendered, announce, strongPassword, zipLock,
   } = opts;
-  // Refuse rather than race: two runs sharing the offscreen stage and one mount is the
-  // failure this lock exists for (see batchRunActive). Thrown, not silently returned, so
-  // a caller's error path reports it instead of a run vanishing.
-  if (batchRunActive) throw new Error('A batch run is already in progress — wait for it to finish.');
+  // The batch slot. A caller whose job already covers row assembly and preflight hands
+  // its handle in and keeps ownership of the terminal state; a bare call (the Retry
+  // button, a test) claims a job of its own here - and only that path refuses, because
+  // an inherited job IS the run currently holding the slot.
+  const inheritedJob = opts.job;
+  if (!inheritedJob && isBatchRunActive()) throw new Error('A batch run is already in progress — wait for it to finish.');
+  const job = inheritedJob ?? startBatchJob(opts.jobTitle || t('Rendering batch'));
+  // No mount → the shell is built detached and the global job toast is the visible
+  // channel (see RunBatchProgressOpts.mount).
+  const mount = opts.mount ?? document.createElement('div');
   const total = rows.length;
   let cancelRequested = false;
+  // Two ways to stop: this overlay's own Cancel button and the toast's ✕ (which flips
+  // job.cancelled). Both stop further renders; whatever already rendered is still
+  // delivered, which is what the overlay's Cancel has always done.
+  const isCancelled = (): boolean => cancelRequested || job.cancelled;
 
   // A row is named to a human by something it CARRIES - its filename or its tool. The
   // labeller is `manifest.ts`'s, imported rather than restated, so the overlay and
@@ -387,15 +423,27 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   paintQuip();
   const quipTimer = setInterval(() => { qi = (qi + 1) % order.length; paintQuip(); }, 4200);
 
-  batchRunActive = true;
+  // An OWNED job is this run's to finish; an inherited one belongs to the wrapper that
+  // started it (lib/batch-job.ts), which finishes it after its own delivery step.
+  const settle = (r: RunBatchProgressResult<F>): RunBatchProgressResult<F> => {
+    if (!inheritedJob) job.finish(r);
+    return r;
+  };
   try {
     draw(`<strong>Rendering 0 / ${total}…</strong>`);
     announce?.(`Rendering ${total} item${total === 1 ? '' : 's'}…`);
+    // Wait our turn in the process-wide serial queue (lib/jobs.ts). Resolves at once when
+    // nothing heavy is running; a wrapper has already waited, so this is a no-op there.
+    await job.started;
+    // Cancelled before a single row rendered. `onRendered` still fires: it is the hook a
+    // caller uses to re-enable its UI, and skipping it here left /pro's grid disabled
+    // with nothing running.
+    if (isCancelled()) { onRendered?.(); return settle({ files: [], results: [], cancelled: true }); }
 
     const { files, results } = await runBatch<F>(rows, host, {
       format, unit, dpi, pathAware, strongPassword,
       profile, bleed, marks, notes,
-      isCancelled: () => cancelRequested,
+      isCancelled,
       onProgress: (p) => {
         if (p.status === 'rendering') { draw(`<strong>Rendering ${done + 1} / ${total}…</strong>`); return; }
         // A cancel renders NOTHING - counting it as done over-reported "Rendered n / total"
@@ -423,6 +471,10 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         const pct = total ? Math.round((done / total) * 100) : 0;
         barFill.style.width = `${pct}%`;
         barTrack.setAttribute('aria-valuenow', String(done));
+        // …and the same count into the job, which is what the global toast draws - the
+        // one progress surface that survives leaving this view. The note is the file
+        // just finished, by its bare name (no zip path).
+        job.progress(done, total, p.status === 'done' ? (p.name.split('/').pop() || p.name) : undefined);
       },
     });
 
@@ -462,7 +514,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       ...report,
       zipName: `${zipBaseName}.zip`,
       engine: ENGINE_VERSION,
-      cancelled: cancelRequested,
+      cancelled: isCancelled(),
       retryOf,
       // SEAM (Phase 1): the sidecar carries the payload verbatim. `notes` is opaque
       // here and stays opaque all the way into the JSON.
@@ -489,7 +541,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         // (this run has released it by now, but /pro's Render button may have started a
         // fresh one), and its failures must surface here rather than as an unhandled
         // rejection with the overlay frozen on "Rendered n / n".
-        if (batchRunActive) {
+        if (isBatchRunActive()) {
           appendLog(`<li class="pro-log-skip">Another export is still running — try again when it finishes.</li>`);
           return;
         }
@@ -497,6 +549,11 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         const retryRows = failedResults.map(r => r.row);
         runBatchWithProgress<F>(host, retryRows, {
           ...opts,
+          // A retry is its OWN job: this run's handle (inherited or not) is settled by
+          // the time the button can be clicked, and reporting into a finished job is a
+          // silent no-op - the retry would render with no progress anywhere.
+          job: undefined,
+          jobTitle: t('Retrying failed rows'),
           // Its OWN zip: the first was saveBlob'd before this button could exist, so
           // merging is impossible and pretending otherwise is the trap.
           zipBaseName: `${zipBaseName}-retry`,
@@ -533,22 +590,27 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       draw(`<strong>No files produced.</strong>`);
       announce?.('Batch finished — no files produced.');
       offerRetry();
-      return { files, results, cancelled: cancelRequested };
+      return settle({ files, results, cancelled: isCancelled() });
     }
 
     onBatchRendered?.(files); // host-injected usage metric (see main.js)
 
     // Deliver: one zip when possible; spaced sequential downloads as a fallback.
+    // Delivery is a browser download either way (pro/zip.ts saveBlob), so it lands
+    // whether or not the view that started the run is still on screen.
     let delivered = false;
+    let zipName: string | undefined;
+    job.progress(done, total, t('Packaging the download…'));
     try {
       const zip = await buildZip(files, { zipName: `${zipBaseName}.zip`, author, csv, zipLock, password: strongPassword, unmade, noted, runNotes, retryOf, preflight });
       saveBlob(zip, `${zipBaseName}.zip`);
       delivered = true;
+      zipName = `${zipBaseName}.zip`;
       draw(`<strong>Done — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
       announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);
       // The whole queue finished - celebrate: the big trumpet for a real batch, the subtle
       // "ta-da" for a lone render (matching the single-session download path).
-      if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory');
+      if (!isCancelled()) playSfx(total > 1 ? 'fanfare' : 'victory');
     } catch (zipErr) {
       const msg = esc(String((zipErr as { message?: unknown }).message ?? zipErr));
       if (zipLock && strongPassword) {
@@ -568,7 +630,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
         delivered = true;
         draw(`<strong>Done — ${files.length} files downloaded${tail}.</strong>`);
         announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} downloaded${tail}.`);
-        if (!cancelRequested) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) - big trumpet for a batch, subtle "ta-da" for one
+        if (!isCancelled()) playSfx(total > 1 ? 'fanfare' : 'victory'); // finished (fallback path) - big trumpet for a batch, subtle "ta-da" for one
       }
     }
     // Auto-save each delivered member's credentialed bytes into the personal
@@ -588,9 +650,14 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       })();
     }
     offerRetry();
-    return { files, results, cancelled: cancelRequested };
+    return settle({ files, results, cancelled: isCancelled(), ...(zipName ? { zipName } : {}) });
+  } catch (err) {
+    // An owned job must show the failure itself; an inherited one is failed by its
+    // wrapper, which is why the error is rethrown either way.
+    if (!inheritedJob) job.fail(err);
+    throw err;
   } finally {
     clearInterval(quipTimer); // never leave the rotator running
-    batchRunActive = false;   // …and never leave the run lock held (see batchRunActive)
+    if (!inheritedJob) releaseBatchJob(job);
   }
 }

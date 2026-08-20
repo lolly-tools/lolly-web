@@ -23,6 +23,7 @@ import { rowsForFolder, rowFromToolSession, rowFromBatchRow, slug, isMotionRow }
 import type { Finding } from '@lolly/engine';
 import { isBatchSlot } from '../folder-tiles.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
+import type { JobHandle } from '../lib/jobs.ts';
 import type { BatchRow, BatchFile } from './batch.ts';
 import type { ExportRow } from './folder-rows.ts';
 
@@ -64,6 +65,8 @@ interface Folder {
 /** Options for {@link exportFolderAsBatch}. */
 interface ExportFolderOpts {
   mount?: HTMLElement;
+  /** The caller's WP-F job (lib/batch-job.ts), threaded into the run. */
+  job?: JobHandle;
   /** Passed straight through to the run overlay / zip packer. */
   author?: unknown;
   format?: string;
@@ -81,6 +84,8 @@ interface ExportFolderOpts {
 /** Options for {@link renderSessionToFile}. */
 interface RenderSessionOpts {
   mount?: HTMLElement;
+  /** The caller's WP-F job (lib/batch-job.ts), threaded into the run. */
+  job?: JobHandle;
   author?: unknown;
   onBatchRendered?: (files: BatchFile[]) => void;
 }
@@ -92,6 +97,8 @@ interface ExportSelectionOpts {
   folderIds?: string[];
   allFolders?: Folder[];
   mount?: HTMLElement;
+  /** The caller's WP-F job (lib/batch-job.ts), threaded into the run. */
+  job?: JobHandle;
   author?: unknown;
   onBatchRendered?: (files: BatchFile[]) => void;
   announce?: (msg: string) => void;
@@ -118,7 +125,7 @@ interface ExportSelectionOpts {
  * @returns {Promise<{files, results, cancelled}>}
  */
 export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder, {
-  mount, author = null, format = 'png', unit = 'px', dpi = 300, folders = null, onBatchRendered, announce, strongPassword, zipLock,
+  mount, job, author = null, format = 'png', unit = 'px', dpi = 300, folders = null, onBatchRendered, announce, strongPassword, zipLock,
 }: ExportFolderOpts = {}) {
   // `folders` (the full list) lets rowsForFolder recurse into sub-folders so a nested
   // tree exports under nested zip paths; omit it and only this folder's own sessions go.
@@ -139,7 +146,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
   if (renderable.length === 0) throw new Error('Nothing to export — none of these sessions can be rendered.');
 
   return runBatchWithProgress(host, renderable, {
-    mount: mount!,
+    mount, job,
     format, unit, dpi,
     srcIndex,
     // Per-row preflight findings, keyed by queue position. A skipped row has no queue
@@ -169,7 +176,7 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
  * @param {string} slot   host.state slot of the saved session
  * @param {object} opts   { mount, author, onBatchRendered }
  */
-export async function renderSessionToFile(host: FolderExportHost, slot: string, { mount, author = null, onBatchRendered }: RenderSessionOpts = {}) {
+export async function renderSessionToFile(host: FolderExportHost, slot: string, { mount, job, author = null, onBatchRendered }: RenderSessionOpts = {}) {
   const data = await host.state.load(slot);
   if (!data) throw new Error('This saved session could not be loaded.');
   // A batch session expands to many rows → no single bare file; render its rows directly
@@ -192,7 +199,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
     const plan = await planBatch<Finding>(batchRows as BatchRow[], { check: snapshotCheck.check });
     if (plan.renderable.length === 0) throw new Error(plan.skipped[0]?.reason || 'This batch session can’t be rendered.');
     return runBatchWithProgress(host, plan.renderable, {
-      mount: mount!, pathAware: true, zipBaseName: slug(label) || 'lolly-batch',
+      mount, job, pathAware: true, zipBaseName: slug(label) || 'lolly-batch',
       author: author as BatchAuthor | null, skipped: plan.skipped, srcIndex: plan.srcIndex,
       notes: notesFromFindings(plan.findings, plan.renderable.length), onBatchRendered,
       skippedFindings: skippedFindings(plan), runFindings: snapshotCheck.runFindings,
@@ -205,7 +212,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
   // The one path with NO overlay and no zip: a single session rendered to a bare file.
   // Its diagnostics reach the caller through the return value or nowhere, and Phase 2
   // accepts "nowhere" - a single-session render is not a batch report.
-  const { files } = await runBatch(renderable, host, { isCancelled: () => false, onProgress: () => {} });
+  const { files } = await runBatch(renderable, host, { isCancelled: () => job?.cancelled === true, onProgress: () => {} });
   if (files.length === 0) throw new Error('No file was produced.');
   onBatchRendered?.(files);
   const file = files[0]!;
@@ -241,7 +248,7 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
  */
 export async function exportSelectionAsBatch(host: FolderExportHost, {
   label = 'Selection', sessionRefs = [], folderIds = [], allFolders = [],
-  mount, author = null, onBatchRendered, announce, strongPassword, zipLock, onMotionFound,
+  mount, job, author = null, onBatchRendered, announce, strongPassword, zipLock, onMotionFound,
 }: ExportSelectionOpts = {}) {
   let rows: ExportRow[] = [];
   if (sessionRefs.length) {
@@ -275,7 +282,7 @@ export async function exportSelectionAsBatch(host: FolderExportHost, {
   if (renderable.length === 0) throw new Error('None of the selected items can be rendered.');
 
   return runBatchWithProgress(host, renderable, {
-    mount: mount!, pathAware: true,
+    mount, job, pathAware: true,
     zipBaseName: slug(label) || 'lolly-selection',
     author: author as BatchAuthor | null, skipped, srcIndex,
     notes: notesFromFindings(findings, renderable.length),

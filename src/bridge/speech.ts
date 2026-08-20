@@ -36,17 +36,18 @@ import { KOKORO_MODEL_BYTES, KOKORO_MODEL_ID, KOKORO_VOICES, MAX_INPUT_CHARS } f
 import type { SpeechWorkerReply, SpeechWorkerRequest } from '../lib/speech-kokoro-worker.ts';
 import { WHISPER_MODEL_BYTES, WHISPER_MODEL_ID, WHISPER_SAMPLE_RATE } from '../lib/speech-whisper.ts';
 import type { TranscribeWorkerReply, TranscribeWorkerRequest } from '../lib/speech-whisper-worker.ts';
+import { MODELS_BASE } from '../lib/models-base.ts';
 
 /** The cache key transformers.js stores the model under (utils/hub.js: the
  *  resolved local path, relative to origin). Probed by cached(), never fetched. */
-const MODEL_CACHE_URL = `/models/${KOKORO_MODEL_ID}/onnx/model_quantized.onnx`;
+const MODEL_CACHE_URL = `${MODELS_BASE}/models/${KOKORO_MODEL_ID}/onnx/model_quantized.onnx`;
 
 /** Whisper's q8 pair, same probe. BOTH files - transformers.js caches per file,
  *  and an interrupted first download can leave the encoder cached without the
  *  (much larger) decoder; reporting that as warm would break the consent UI. */
 const WHISPER_CACHE_URLS = [
-  `/models/${WHISPER_MODEL_ID}/onnx/encoder_model_quantized.onnx`,
-  `/models/${WHISPER_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
+  `${MODELS_BASE}/models/${WHISPER_MODEL_ID}/onnx/encoder_model_quantized.onnx`,
+  `${MODELS_BASE}/models/${WHISPER_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
 ];
 
 interface Pending {

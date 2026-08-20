@@ -43,6 +43,7 @@
 import { buildLollyDurablePayload, TRUSTMARK_PAYLOAD_BITS } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
 import { loadOrt, readResponseWithProgress, type FetchProgress } from './ort.ts';
+import { MODELS_BASE } from './models-base.ts';
 
 /** The encoder variant we embed with. Q (256px) matches the decoder the deep
  *  scan tries first, so a Q-embedded mark reads back on the existing decode path. */
@@ -76,7 +77,7 @@ async function fetchEncoderBytes(cacheOnly: boolean, onProgress?: (p: FetchProgr
   } catch { /* IDB unavailable - fall through to network */ }
   if (cacheOnly) return null;
 
-  const url = `/models/trustmark/${ENCODER_FILE}`;
+  const url = `${MODELS_BASE}/models/trustmark/${ENCODER_FILE}`;
   let resp: Response;
   try { resp = await fetch(url); } catch { return null; }
   if (!resp.ok) return null; // not converted yet (Andy hasn't run the script) - a plain 404

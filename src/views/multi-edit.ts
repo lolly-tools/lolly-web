@@ -42,7 +42,7 @@ import { t, tRaw } from '../i18n.ts';
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
-import { mountProgressToast } from '../components/progress-toast.ts';
+import { startBatchExport } from '../lib/batch-job.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -606,18 +606,15 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     for (let i = 0; i < members.length; i++) await saveOne(i);
   }
 
-  // Progress toast for the render pipeline - the same shared toast the Projects view
-  // floats for its batch exports (components/progress-toast.ts).
-  const toasts = new Set<HTMLElement>();
-  cleanups.push(() => toasts.forEach(t => t.remove()));
-  function renderViaToast(run: (mount: HTMLElement) => unknown): void {
-    mountProgressToast(run, { variant: 'bar', track: toasts });
-  }
   const authorForExport = async () => {
     const profile = await host.profile.get().catch(() => null);
     return (profile as { useDetails?: boolean } | null)?.useDetails ? profile : null;
   };
 
+  // Renders run as a WP-F background job - the same path the Projects view uses
+  // (lib/batch-job.ts). The global job toast owns progress, cancel and failure, and the
+  // run is deliberately NOT registered in `cleanups`: leaving this view must not kill an
+  // export that is already rendering. `exporting` guards only the click, not the run.
   let exporting = false;
   viewEl.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement; // not `t` - that's the i18n lookup
@@ -637,9 +634,9 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         const i = Number(one.dataset.meDownload);
         await saveOne(i);
         const author = await authorForExport();
-        renderViaToast(async (mount) => {
+        startBatchExport(tRaw('Rendering {name}', { name: members[i]!.label }), async (job) => {
           const { renderSessionToFile } = await import('../pro/folder-export.ts');
-          await renderSessionToFile(host, members[i]!.slot, { mount, author });
+          return renderSessionToFile(host, members[i]!.slot, { job, author });
         });
       } else if (all) {
         // One nested, C2PA-signed zip via the SAME pipeline as the Projects
@@ -649,11 +646,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         const { ok, strongPassword, zipLock } = await askExportLock('these designs', true);
         if (!ok) return;
         const author = await authorForExport();
-        renderViaToast(async (mount) => {
+        startBatchExport(t('Rendering these designs'), async (job) => {
           const { exportSelectionAsBatch } = await import('../pro/folder-export.ts');
-          await exportSelectionAsBatch(host, {
+          return exportSelectionAsBatch(host, {
             label: 'Multi-edit', sessionRefs: members.map(m => m.slot), folderIds: [], allFolders: [],
-            mount, author, strongPassword, zipLock,
+            job, author, strongPassword, zipLock,
           });
         });
       } else if (save) {

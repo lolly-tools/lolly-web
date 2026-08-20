@@ -52,7 +52,7 @@ import { confirmDialog as baseConfirmDialog, choiceDialog, closeConfirmDialogs }
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
-import { mountProgressToast } from '../components/progress-toast.ts';
+import { startBatchExport } from '../lib/batch-job.ts';
 import { announce } from '../a11y.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
@@ -220,7 +220,6 @@ export async function mountProjects(
   let profile: Profile | null = null;
   let headshotUrl = '';
   let mounted = true;        // false after the view is swapped out (guards async renders)
-  const toasts = new Set<HTMLElement>();  // live "Render folder" toasts, torn down on navigate-away
   let overlayModal: ModalHandle<any> | null = null;      // the move-picker / new-folder-name dialog, if open
   let releaseSearch: (() => void) | null = null;         // the shell search-bar claim (set in boot, below)
   let featuredHandle: FeaturedRowHandle | null = null; // the Uncategorised preview ribbon (drift/coverflow/grip), if mounted
@@ -1990,13 +1989,14 @@ export async function mountProjects(
 
   const authorForExport = (): Profile | null => (profile?.useDetails ? profile : null);
 
-  // Every render/export path (folder, single session, selection) runs inside the shared
-  // progress toast (components/progress-toast.ts) - full-width `--bar` variant under the
-  // profile row (projects.css), tracked in `toasts` so navigate-away tears it down
-  // (_cleanup). `run(mount)` does the gated /pro export; errors surface in the toast.
-  function renderViaToast(run: (mount: HTMLElement) => unknown): void {
+  // Every render/export path (folder, single session, selection) runs as a WP-F background
+  // JOB (lib/batch-job.ts): the global job toast owns its progress and its cancel, and a
+  // failure anywhere in `run` - row assembly included - surfaces there through job.fail.
+  // Nothing is bound to this view any more, so navigating away leaves the run alive and
+  // visible, and the zip still downloads when it lands.
+  function startRenderJob(title: string, run: Parameters<typeof startBatchExport>[1]): void {
     closeMenu();
-    mountProgressToast(run, { variant: 'bar', track: toasts });
+    startBatchExport(title, run);
   }
 
   // ── render a whole folder as one nested batch zip (gated /pro import) ────────
@@ -2016,10 +2016,10 @@ export async function mountProjects(
     const { askExportLock } = await import('../lib/export-lock.ts');
     const { ok, strongPassword, zipLock } = await askExportLock(t('this folder'), true);
     if (!ok) return;
-    renderViaToast(async (mount) => {
+    startRenderJob(tRaw('Rendering {name}', { name: folder.name }), async (job) => {
       const { exportFolderAsBatch } = await import('../pro/folder-export.ts');
-      await exportFolderAsBatch(host, folder, {
-        mount,
+      return exportFolderAsBatch(host, folder, {
+        job,
         author: authorForExport(),
         folders,   // recurse sub-folders into nested zip paths (Uncategorised has none)
         onBatchRendered: opts.onBatchRendered,
@@ -2032,9 +2032,13 @@ export async function mountProjects(
   // A single-tool session downloads as a bare file (its native format); a batch session
   // falls back to a zip. See pro/folder-export.js renderSessionToFile.
   function renderSession(slot: string): void {
-    renderViaToast(async (mount) => {
+    // The job is named by what it is rendering - the session's own name, else its tool.
+    // It is what the toast (and a desktop notification) says while this view is gone.
+    const entry = entryBySlot().get(slot);
+    const label = entry?.label || entry?.filename || toolName(entry?.toolId ?? '');
+    startRenderJob(tRaw('Rendering {name}', { name: label }), async (job) => {
       const { renderSessionToFile } = await import('../pro/folder-export.ts');
-      await renderSessionToFile(host, slot, { mount, author: authorForExport(), onBatchRendered: opts.onBatchRendered });
+      return renderSessionToFile(host, slot, { job, author: authorForExport(), onBatchRendered: opts.onBatchRendered });
     });
   }
 
@@ -2159,11 +2163,11 @@ export async function mountProjects(
     const { askExportLock } = await import('../lib/export-lock.ts');
     const { ok, strongPassword, zipLock } = await askExportLock(t('this selection'), true);
     if (!ok) return;
-    renderViaToast(async (mount) => {
+    startRenderJob(tRaw('Rendering {name}', { name: label }), async (job) => {
       const { exportSelectionAsBatch } = await import('../pro/folder-export.ts');
-      await exportSelectionAsBatch(host, {
+      return exportSelectionAsBatch(host, {
         label, sessionRefs, folderIds, allFolders: folders,
-        mount, author: authorForExport(), onBatchRendered: opts.onBatchRendered,
+        job, author: authorForExport(), onBatchRendered: opts.onBatchRendered,
         strongPassword, zipLock,
       });
     });
@@ -2263,7 +2267,7 @@ export async function mountProjects(
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
   // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
   // the router REUSES for every route - leave it bound and the next mount stacks another.
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); tileMenu.destroy(); unwireEscape(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); overlayModal?.close(); releaseSearch?.(); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); tileMenu.destroy(); unwireEscape(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); overlayModal?.close(); releaseSearch?.(); };
   await reload();
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;

@@ -332,8 +332,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     takePendingDesignSystemFile();
     viewEl.innerHTML = `
       <div class="start">
-        <div class="gallery-topright">${homeFab}${langFabHtml()}</div>
-        ${backPill}
+        <div class="gallery-topright">${langFabHtml()}</div>
+        <div class="start-back-row">${backPill}${homeFab}</div>
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
           <h1 class="start-title">${t('This brand is set')}</h1>
@@ -373,8 +373,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   viewEl.innerHTML = `
     <div class="start start--studio">
-      <div class="gallery-topright start-topright">${homeFab}${langFabHtml()}</div>
-      ${backPill}
+      <div class="gallery-topright start-topright">${langFabHtml()}</div>
+      <div class="start-back-row">${backPill}${homeFab}</div>
       <header class="start-head">
         <p class="start-eyebrow">${t('Design system')}</p>
         <h1 class="start-title">${t('Make it yours')}</h1>
@@ -444,7 +444,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
              label) or drop a file on it. The format tiles lead so people
              recognise THEIR export at a glance, in preference order. -->
         <label class="start-import-drop" data-start-import-drop>
-          <input type="file" class="start-import-file visually-hidden" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" aria-label="${escape(t('Choose a design or brand file'))}">
+          <input type="file" class="start-import-file visually-hidden" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip,.lolly" aria-label="${escape(t('Choose a design or brand file'))}">
           <span class="start-import-formats" role="list" aria-label="${escape(t('Accepted formats, in preference order'))}">
             ${IMPORT_FORMATS.map(f => `
               <span class="start-import-fmt" role="listitem">

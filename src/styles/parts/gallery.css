@@ -342,10 +342,16 @@
    collapsed to just its icon (label hidden) rather than dropped, so Platform &
    Capabilities stay reachable. aria-label keeps them named. */
 @media (max-width: 640px) {
-  .gallery-footer { flex-wrap: wrap; gap: .5rem .6rem; }
+  /* Search on its own top row; the icon-only nav buttons share ONE row beneath it.
+     A tight column gap + trimmed horizontal padding (the footer's own and each button's)
+     keeps all of them on that row rather than wrapping the last one ("What?") onto a
+     third line — and min-width:0 lets the flex children shrink to fit instead of forcing
+     a wrap at their content width. */
+  .gallery-footer { flex-wrap: wrap; gap: .5rem .3rem; padding-inline: .5rem; }
   .gallery-search-wrap { flex-basis: 100%; order: -1; }
   .gallery-footer > .btn,
-  .gallery-footer > .gallery-nav-jelly { flex: 1; }
+  .gallery-footer > .gallery-nav-jelly { flex: 1 1 0; min-width: 0; }
+  .gallery-footer > .btn { padding-inline: .4rem; }
   .gallery-footer .gallery-nav-label { display: none; }
 }
 

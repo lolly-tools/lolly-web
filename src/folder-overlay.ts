@@ -13,11 +13,11 @@
  * static graph stays /pro-free and the overlay loads from the (pro-free) gallery.
  */
 import { escape } from './utils.ts';
-import { t } from './i18n.ts';
+import { t, tRaw } from './i18n.ts';
 import { mountModal } from './components/modal.ts';
 import { confirmDialog } from './components/confirm-dialog.ts';
 import { mountBodyPopover } from './components/body-popover.ts';
-import { mountProgressToast } from './components/progress-toast.ts';
+import { startBatchExport } from './lib/batch-job.ts';
 import type { BodyPopoverHandle } from './components/body-popover.ts';
 import { announce } from './a11y.ts';
 import { createFolderStore } from './folders.ts';
@@ -484,17 +484,16 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     const { askExportLock } = await import('./lib/export-lock.ts');
     const { ok, strongPassword, zipLock } = await askExportLock('this folder', true);
     if (!ok) return;
-    // The shared progress toast (components/progress-toast.ts). Deliberately NOT tracked
-    // to this dialog's lifecycle: mountModal uses showModal(), so while the overlay is up
-    // the body-level toast sits below the top layer and is invisible. The user only ever
-    // sees this progress by closing the overlay - tying the toast to onClose would destroy
-    // it at the exact moment it becomes visible. It outlives the overlay by design and is
-    // dismissed by its own ✕ (matching the pre-dedupe behaviour).
-    mountProgressToast(async (mount) => {
+    // A WP-F background job (lib/batch-job.ts), never anything owned by this dialog:
+    // mountModal uses showModal(), so a body-level progress surface sits below the top
+    // layer and is invisible while the overlay is up. The run outlives the overlay by
+    // design - the global job toast shows it the moment the dialog closes, and a failure
+    // lands there too instead of in a toast nobody could see.
+    startBatchExport(tRaw('Rendering {name}', { name: folder.name }), async (job) => {
       const { exportFolderAsBatch } = await import('./pro/folder-export.ts');
       const profile = await host.profile.get().catch(() => null);
-      await exportFolderAsBatch(host as unknown as Parameters<typeof exportFolderAsBatch>[0], folder, {
-        mount,
+      return exportFolderAsBatch(host as unknown as Parameters<typeof exportFolderAsBatch>[0], folder, {
+        job,
         author: profile?.useDetails ? profile : null,
         strongPassword, zipLock,
       });

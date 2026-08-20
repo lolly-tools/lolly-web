@@ -17,6 +17,7 @@ import {
   rewordMaxNewTokens,
 } from './reword-models.ts';
 import type { RewordWorkerReply, RewordWorkerRequest, RewordWorkerProgress } from './reword-worker.ts';
+import { MODELS_BASE } from './models-base.ts';
 
 /**
  * unstaged      - weights not vendored into this deploy; the UI stays absent.
@@ -99,7 +100,7 @@ async function nativeStaged(): Promise<boolean | null> {
 async function nativeStage(t: TauriInternals, onProgress?: (p: RewordProgress) => void): Promise<void> {
   let loaded = 0;
   for (const file of REWORD_MODEL_FILES) {
-    const res = await fetch(`/models/${REWORD_MODEL_DIR}/${file}`);
+    const res = await fetch(`${MODELS_BASE}/models/${REWORD_MODEL_DIR}/${file}`);
     if (!res.ok) throw new Error(`reword model file unavailable: ${file} (${res.status})`);
     const bytes = new Uint8Array(await res.arrayBuffer());
     await t.invoke('reword_put_file', bytes, { headers: { 'x-file': file } });

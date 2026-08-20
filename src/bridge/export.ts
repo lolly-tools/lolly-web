@@ -193,9 +193,11 @@ export interface ExportOpts {
    *  records whether a container raster was actually marked, so stampC2pa can
    *  claim an imprint truthfully for pdf. See ImprintState. */
   _imprintSink?: ImprintState;
-  /** Internal: accumulates componentOf ingredients extracted from bitmaps the SVG/PDF
-   *  walker inlines (whose canvas re-encode strips their C2PA), so an embedded genAI
-   *  asset's origin still rides the export's manifest. Created only under c2pa. */
+  /** Internal: accumulates ingredients gathered during dispatch - componentOf entries
+   *  from bitmaps the SVG/PDF walker inlines (whose canvas re-encode strips their C2PA),
+   *  and the sequence render's componentOf clip/bed credentials (sequence-ingredients.ts) -
+   *  so an embedded asset's origin still rides the export's manifest. Created only
+   *  under c2pa; deduped against opts.ingredients by activeLabel after dispatch. */
   _ingredientSink?: IngredientCredential[];
   palette?: BrandPaletteEntry[];
   bleed?: number | string;

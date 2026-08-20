@@ -57,6 +57,24 @@
  * ceilings: without both, a five-file drop would open five decoder/encoder pairs
  * at once and navigating away would leave them running to completion.
  *
+ * AND IT IS A JOB. The FIFO above only serialises proxies AGAINST EACH OTHER. A
+ * transcode was the last encoder run in this app outside the process-wide serial
+ * slot (lib/jobs.ts), so a background proxy could start on top of a video matte
+ * or upscale run and take the tab into an out-of-memory kill. The transcode
+ * therefore registers as an ordinary heavy job: same single slot, same global
+ * toast, same ✕ - and a failure now says so instead of vanishing. Two boundaries
+ * are deliberate:
+ *   • the job covers the TRANSCODE and its store write, not the cheap prelude.
+ *     A cached row and the skip ladder cost nothing, have nothing to show, and
+ *     must not sit behind a four-minute upscale before answering.
+ *   • the FIFO stays. Handing clip-proxy's ordering to the jobs queue outright
+ *     would put those cheap answers in the same line, which is a regression, not
+ *     an equivalence.
+ * Waiting for the slot here cannot deadlock: nothing on a heavy path awaits a
+ * proxy build, and the whole-tree guard in clip-proxy.test.ts is what keeps that
+ * true. `ensureProxy` still never throws - a failed job is a failed OPTIMISATION,
+ * and the upload it rode in behind is already stored and untouched.
+ *
  * ROUTE TAKEN FOR KEYFRAME DENSITY: mediabunny's `Conversion` API, whose
  * `ConversionVideoOptions.keyFrameInterval` controls GOP length directly
  * ("Setting this field forces a transcode" - exactly what a proxy build is).
@@ -96,6 +114,8 @@
  */
 
 import { toCodedError, type CodedError } from '../bridge/sequence-plan.ts';
+import { startJob, cancelJob } from './jobs.ts';
+import { t } from '../i18n.ts';
 import {
   clearNoProxy, isKnownNoProxy, markNoProxy, proxyUrlFor, revokeProxyUrl, setProxyUrl,
   resetScrubCache as resetRegistry, scrubSourceId,
@@ -358,7 +378,12 @@ export interface ProxyConverter {
   convert(
     source: Blob,
     plan: { width: number; height: number },
-    opts?: { signal?: AbortSignal },
+    opts?: {
+      signal?: AbortSignal;
+      /** Completion, 0..1. Optional on BOTH sides: a converter that cannot say
+       *  simply never calls it, and the job's bar stays indeterminate. */
+      onProgress?: (fraction: number) => void;
+    },
   ): Promise<ProxyOutput | null>;
 }
 
@@ -458,6 +483,10 @@ async function mediabunnyConverter(): Promise<ProxyConverter> {
           opts.signal.addEventListener('abort', onAbort, { once: true });
         }
         const lostAudio = c.discardedTracks.some((d) => d.track?.type === 'audio');
+        // Must be assigned BEFORE execute() - mediabunny only computes progress
+        // when the callback is already there (its own documented rule).
+        const report = opts.onProgress;
+        if (report) c.onProgress = (fraction): void => { report(fraction); };
         await c.execute();
         const buf = target.buffer;
         if (!buf) return null;
@@ -533,8 +562,19 @@ export interface EnsureProxyOpts {
  * and each link is already wrapped so one failure cannot stall the next.
  */
 let proxyQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * One queued or running build: its abort handle, plus the id of its WP-F job
+ * once it has reached the transcode. `jobId` is null before that point and again
+ * after, so a cancel arriving early or late has nothing stale to act on.
+ */
+interface ProxyBuild {
+  ctl: AbortController;
+  jobId: string | null;
+}
+
 /** In-flight + queued builds, so a teardown can cancel every one of them. */
-const inFlight = new Set<AbortController>();
+const inFlight = new Set<ProxyBuild>();
 
 function enqueue<T>(run: () => Promise<T>, fallback: T): Promise<T> {
   const next = proxyQueue.then(run, run).catch(() => fallback);
@@ -550,7 +590,9 @@ function enqueue<T>(run: () => Promise<T>, fallback: T): Promise<T> {
  * at. Wire this to teardown and `pagehide`.
  */
 export function abortProxyBuilds(): void {
-  for (const c of [...inFlight]) { try { c.abort(); } catch { /* already aborted */ } }
+  // Only the controller is touched: every build routes its own abort to its job
+  // (see ensureProxy), so one path cancels the transcode AND clears the toast.
+  for (const b of [...inFlight]) { try { b.ctl.abort(); } catch { /* already aborted */ } }
   inFlight.clear();
 }
 
@@ -581,13 +623,21 @@ export function ensureProxy(assetId: string, bytes: Blob, opts: EnsureProxyOpts 
     if (opts.signal.aborted) return Promise.resolve(null);
     opts.signal.addEventListener('abort', () => ctl.abort(), { once: true });
   }
-  inFlight.add(ctl);
+  const build: ProxyBuild = { ctl, jobId: null };
+  // ONE abort route for every canceller there is - the caller's signal,
+  // abortProxyBuilds(), pagehide, and the toast's own ✕ (whose cancel callback
+  // aborts this same controller). Without it a stopped transcode would leave a
+  // job sitting in the list holding the heavy slot for the rest of the session.
+  ctl.signal.addEventListener('abort', () => {
+    if (build.jobId) cancelJob(build.jobId);
+  }, { once: true });
+  inFlight.add(build);
   return enqueue(async () => {
     try {
       if (ctl.signal.aborted) return null;
-      return await buildProxyInner(assetId, bytes, opts, ctl.signal, opts.log);
+      return await buildProxyInner(assetId, bytes, opts, build, opts.log);
     } finally {
-      inFlight.delete(ctl);
+      inFlight.delete(build);
     }
   }, null);
 }
@@ -611,8 +661,9 @@ function armPageHide(): void {
 
 async function buildProxyInner(
   assetId: string, bytes: Blob, opts: EnsureProxyOpts,
-  signal: AbortSignal, log: EnsureProxyOpts['log'],
+  build: ProxyBuild, log: EnsureProxyOpts['log'],
 ): Promise<Blob | null> {
+  const signal = build.ctl.signal;
   const store = await openProxyStore();
   const key = proxyKey(assetId);
 
@@ -651,51 +702,85 @@ async function buildProxyInner(
 
   if (signal.aborted) return null;
   const plan = proxyDimensions(probe.width, probe.height);
-  let out: ProxyOutput | null;
-  try {
-    out = await converter.convert(bytes, plan, { signal });
-  } catch (err) {
-    return noteFailure(log, `transcode ${assetId}`, err);
-  }
-  if (signal.aborted) return null;
-  const proxy = out?.blob ?? null;
-  if (!out || !proxy || proxy.size <= 0) return null;
-  // A "proxy" no smaller than the source is a worse deal on every axis (same
-  // decode cost, extra bytes) - throw it away rather than store it.
-  if (proxy.size >= bytes.size) {
-    log?.('info', `[clip-proxy] discarded ${assetId}: proxy (${proxy.size}B) not smaller than source (${bytes.size}B)`);
-    return null;
-  }
-  // A SHORT proxy is the dangerous output, because nothing about it looks wrong:
-  // the filmstrip would spread the clip's first few seconds across the whole bar.
-  // Only reject on a MEASURED shortfall - a converter that cannot measure its own
-  // output reports 0, and an unmeasured proxy is no worse than the old behaviour.
-  if (out.durationSec > 0) {
-    const tolerance = Math.max(PROXY_DURATION_TOLERANCE_SEC, probe.durationSec * PROXY_DURATION_TOLERANCE_FRACTION);
-    if (probe.durationSec - out.durationSec > tolerance) {
-      log?.('warn', `[clip-proxy] discarded ${assetId}: proxy is ${out.durationSec.toFixed(2)}s of a ${probe.durationSec.toFixed(2)}s source — the transcode ended early`);
-      return null;
-    }
-  }
 
-  if (store && await hasRoomFor(proxy.size)) {
+  // ── everything below is ONE heavy job (lib/jobs.ts) ────────────────────────
+  // The transcode claims the process-wide serial slot, so it can no longer start
+  // on top of a matte or upscale run. The title is what a person would call it;
+  // the ✕ in the toast aborts this build's controller, which the listener in
+  // ensureProxy turns back into a cancelJob. See the header for why the prelude
+  // above is deliberately outside the job.
+  const job = startJob({ title: t('Preparing a clip for scrubbing'), cancel: () => build.ctl.abort() });
+  build.jobId = job.id;
+  // The count reads in seconds of the source, so "12 of 30" means something. A
+  // source of unknown length leaves total 0, which the toast draws indeterminate.
+  const totalSec = Number.isFinite(probe.durationSec) ? Math.round(probe.durationSec) : 0;
+  try {
+    await job.started;
+    if (job.cancelled || signal.aborted) return null;
+
+    let out: ProxyOutput | null;
     try {
-      await store.put({
-        key, assetId, kind: 'proxy', blob: proxy,
-        srcBytes: bytes.size, w: plan.width, h: plan.height,
-        hasAudio: out.hasAudio, createdAt: Date.now(),
+      out = await converter.convert(bytes, plan, {
+        signal,
+        onProgress: totalSec > 0
+          ? (fraction): void => job.progress(Math.min(totalSec, Math.round(fraction * totalSec)), totalSec)
+          : undefined,
       });
     } catch (err) {
-      noteFailure(log, `write ${key}`, err); // built but unstored: still usable now
+      // No longer swallowed. The toast carries the failure; the UPLOAD is
+      // already stored and is not touched by any of this, so ingest stands.
+      job.fail(err);
+      return noteFailure(log, `transcode ${assetId}`, err);
     }
+    if (signal.aborted) return null;
+    const proxy = out?.blob ?? null;
+    if (!out || !proxy || proxy.size <= 0) return null;
+    // A "proxy" no smaller than the source is a worse deal on every axis (same
+    // decode cost, extra bytes) - throw it away rather than store it.
+    if (proxy.size >= bytes.size) {
+      log?.('info', `[clip-proxy] discarded ${assetId}: proxy (${proxy.size}B) not smaller than source (${bytes.size}B)`);
+      return null;
+    }
+    // A SHORT proxy is the dangerous output, because nothing about it looks wrong:
+    // the filmstrip would spread the clip's first few seconds across the whole bar.
+    // Only reject on a MEASURED shortfall - a converter that cannot measure its own
+    // output reports 0, and an unmeasured proxy is no worse than the old behaviour.
+    if (out.durationSec > 0) {
+      const tolerance = Math.max(PROXY_DURATION_TOLERANCE_SEC, probe.durationSec * PROXY_DURATION_TOLERANCE_FRACTION);
+      if (probe.durationSec - out.durationSec > tolerance) {
+        log?.('warn', `[clip-proxy] discarded ${assetId}: proxy is ${out.durationSec.toFixed(2)}s of a ${probe.durationSec.toFixed(2)}s source — the transcode ended early`);
+        return null;
+      }
+    }
+
+    if (store && await hasRoomFor(proxy.size)) {
+      try {
+        await store.put({
+          key, assetId, kind: 'proxy', blob: proxy,
+          srcBytes: bytes.size, w: plan.width, h: plan.height,
+          hasAudio: out.hasAudio, createdAt: Date.now(),
+        });
+      } catch (err) {
+        // Built but unstored: still usable right now, so the caller keeps its
+        // blob - but the row is what the feature is FOR, so the job says failed.
+        job.fail(err);
+        noteFailure(log, `write ${key}`, err);
+      }
+    }
+    // The proxy now EXISTS, so any "this asset has no proxy" memo taken while the
+    // transcode was running is a lie. Clearing it is what lets the clip that was
+    // dropped on the timeline mid-build pick the proxy up on its next capture -
+    // without this the very upload the feature exists for never uses its own proxy.
+    clearNoProxy(assetId);
+    revokeProxyUrl(assetId);   // a rebuild (force) must not leave the OLD url primed
+    return proxy;
+  } finally {
+    build.jobId = null;
+    // Every exit settles here so the single heavy slot is freed exactly once:
+    // kept, discarded, declined by the encoder, or thrown out of. A no-op when
+    // fail() or the toast's cancel already put the job in a terminal state.
+    job.finish();
   }
-  // The proxy now EXISTS, so any "this asset has no proxy" memo taken while the
-  // transcode was running is a lie. Clearing it is what lets the clip that was
-  // dropped on the timeline mid-build pick the proxy up on its next capture - 
-  // without this the very upload the feature exists for never uses its own proxy.
-  clearNoProxy(assetId);
-  revokeProxyUrl(assetId);   // a rebuild (force) must not leave the OLD url primed
-  return proxy;
 }
 
 // ── read + evict ────────────────────────────────────────────────────────────

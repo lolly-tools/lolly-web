@@ -544,7 +544,7 @@ test('a line carries the decoration fields: an end arrowhead and two empty bindi
   enter(f, 'line');
   place(f, 120, 140, { drag: [420, 300] });
   const made = f.boxes().filter((b) => b.kind === 'path')[0]!;
-  assert.equal(made.headEnd, 'triangle', 'a line points at something by default');
+  assert.equal(made.headEnd, 'open', 'a line points at something by default');
   assert.equal(made.headStart, 'none');
   assert.equal(made.bindStart, '', 'a free end is an EMPTY binding, not an absent field');
   assert.equal(made.bindEnd, '');

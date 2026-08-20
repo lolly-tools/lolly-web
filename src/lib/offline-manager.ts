@@ -54,6 +54,7 @@
 
 import { openDB } from '../bridge/db.ts';
 import { currentLang } from '../i18n.ts';
+import { MODELS_BASE } from './models-base.ts';
 import { UPSCALE_MODEL_STORE, UPSCALE_MODEL_CACHE_VERSION } from './upscale-models.ts';
 import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts';
 import { OCR_MODEL_STORE, OCR_MODEL_CACHE_VERSION } from './ocr-models.ts';
@@ -267,6 +268,17 @@ async function putFile(cache: Cache, file: ManifestFile, resp: Response): Promis
 
 const DOWNLOAD_CONCURRENCY = 4;
 
+/** Where to actually FETCH a manifest file from. The manifest lists model weights
+ *  under same-origin `/models/…`, which is correct for the web deploy (it self-serves
+ *  them) but 404s in the desktop shell, whose build prunes `dist/models/` to stay
+ *  under the binary-embed limit. There, VITE_MODELS_BASE points at the model host
+ *  (https://lolly.tools) so ONLY the pruned `/models/` bytes are pulled from there;
+ *  `/ort/`, `/ort-hf/`, `/assets/` etc. stay in the bundle and same-origin. The CACHE
+ *  KEY stays `file.url` (relative) so cachedMatches/pruneList are unchanged, and on
+ *  the web build MODELS_BASE is '' so this is a no-op (byte-identical). */
+const modelFetchUrl = (url: string): string =>
+  MODELS_BASE && url.startsWith('/models/') ? MODELS_BASE + url : url;
+
 /**
  * Download a manifest file list into a named bucket. Resumable (files already
  * present and current are folded into `loaded` without a fetch), cancellable
@@ -300,7 +312,7 @@ export async function downloadList(
           report();
           continue;
         }
-        const resp = await fetch(file.url, { signal });
+        const resp = await fetch(modelFetchUrl(file.url), { signal });
         const ct = resp.headers.get('content-type') ?? '';
         // SPA-fallback guard: HTML for a non-.html path = the file is gone.
         if (!resp.ok || (ct.includes('text/html') && !file.url.endsWith('.html'))) {

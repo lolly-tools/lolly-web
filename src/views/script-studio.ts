@@ -11,10 +11,12 @@
  * keep the widest column.
  *
  * All the plumbing is the dialog's, imported rather than re-implemented:
- * markdownToSpokenText strips structure from speech, speechProgressPainter
- * drives the same thin progress track, saveTtsClip writes the identical
- * `user/tts/*` asset record (Gen AI pill, `meta.tts` captioning block). The two
- * surfaces cannot drift because they share one recipe.
+ * markdownToSpokenText strips structure from speech, generateSpeechAsJob runs
+ * the synthesis as a background job (so a long script survives a nav away and
+ * saves itself), speechProgressPainter drives the same thin progress track,
+ * saveTtsClip writes the identical `user/tts/*` asset record (Gen AI pill,
+ * `meta.tts` captioning block). The two surfaces cannot drift because they share
+ * one recipe.
  *
  * A routed view like the Colour Lab, not an overlay: no tab, the shared back
  * pill (lib/back-nav.ts) names wherever you came from. Deep links onto a shell
@@ -24,7 +26,7 @@
 import '../styles/script-audio.css';          // the shared progress track + preview row
 import '../styles/parts/script-studio.css';   // this view's own layout (lazy chunk)
 import {
-  markdownToSpokenText, saveTtsClip, speechProgressPainter, SOFT_CHAR_CAP,
+  generateSpeechAsJob, markdownToSpokenText, saveTtsClip, speechProgressPainter, SOFT_CHAR_CAP,
   type ScriptAudioHost, type TtsClip,
 } from './script-audio.ts';
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
@@ -35,8 +37,8 @@ import { icon } from '../lib/icons.ts';
 import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
 import type { SpeechResult } from '@lolly-tools/core/host-v1';
 
@@ -85,8 +87,8 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   // A deep link onto a shell without the speech bridge: say so, plainly.
   if (!speech?.isAvailable()) {
     viewEl.innerHTML = `
-      ${backPillHtml()}
-      <div class="gallery-topright">${homeFabHtml()}</div>
+      ${backHomeHtml()}
+      <div class="gallery-topright"></div>
       <div class="platform-layout scriptst-layout">
         <header class="plat-header">
           <h1 class="plat-title">${t('Script audio')}</h1>
@@ -104,8 +106,8 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   }
 
   viewEl.innerHTML = `
-    ${backPillHtml()}
-    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
+    ${backHomeHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout scriptst-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Script audio')}</h1>
@@ -176,7 +178,6 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   kbdEl.textContent = tRaw('{keys} generates', { keys: isMac ? '⌘ Enter' : 'Ctrl Enter' });
 
   let transport: AudioTransport | null = null;
-  let abort: AbortController | null = null;
   let previewUrl: string | null = null;
   // The last generated clip + the exact inputs that produced it (Save stores
   // these, not the live form - the dialog's discipline).
@@ -292,23 +293,23 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
     dropPreview();
     hideStatus();
     generateBtn.disabled = true;
-    abort = new AbortController();
     try {
-      const res = await speech.synthesize(spoken, {
-        voice: voiceSel.value || undefined,
-        speed: Number(speedSel.value) || 1,
-        signal: abort.signal,
+      const clip = await generateSpeechAsJob(host, {
+        spokenText: spoken, voice: voiceSel.value, speed: Number(speedSel.value) || 1,
+      }, {
+        alive: () => viewEl.isConnected,
         onProgress: paintProgress,
+        onQueued: () => showStatus(t('Waiting for other work to finish…')),
       });
-      // The view may have unmounted mid-synthesis (cleanup aborted the signal,
-      // but a shell may resolve anyway) - never touch the replaced DOM.
-      if (!viewEl.isConnected) return;
-      result = res;
-      spokenText = spoken;
-      usedVoice = voiceSel.value;
-      usedSpeed = Number(speedSel.value) || 1;
-      // Mono PCM → 16-bit WAV: the encoder is stereo, so the one channel feeds both.
-      wavBlob = pcmToWavBlob({ left: res.pcm, right: res.pcm, sampleRate: res.sampleRate });
+      // No clip to paint: cancelled from the toast, or the view was replaced and
+      // the take was saved to Your uploads without us. Never touch the DOM that
+      // has since been swapped out.
+      if (!clip || !viewEl.isConnected) return;
+      result = clip.result;
+      wavBlob = clip.wavBlob;
+      spokenText = clip.spokenText;
+      usedVoice = clip.voice;
+      usedSpeed = clip.speed;
       previewUrl = URL.createObjectURL(wavBlob);
       previewEl.hidden = false;
       previewEl.innerHTML = audioTransportHtml({
@@ -332,7 +333,6 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
         showStatus(t("Couldn't generate the audio. Try again."), true);
       }
     } finally {
-      abort = null;
       if (viewEl.isConnected) { generateBtn.disabled = false; progressEl.hidden = true; }
     }
   };
@@ -376,8 +376,9 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   textarea.focus();
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
-    abort?.abort();
-    abort = null;
+    // Deliberately does NOT abort an in-flight generation: it is a background
+    // job now, so leaving the view keeps it running and the clip lands in Your
+    // uploads on its own. The job's own ✕ in the global toast is the cancel.
     transport?.destroy();
     transport = null;
     auditionAudio?.pause();

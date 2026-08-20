@@ -56,6 +56,7 @@ import { peekNeuroDemo, applyNeuroDemo } from './lib/neuro-demo.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
+import { maybeShowModelsWelcome } from './components/models-welcome.ts';
 import { initOrg } from './org/index.ts';
 import { registerBuiltinSendTargets } from './lib/send-targets-builtin.ts';
 import { initSelectPreview } from './select-preview.ts';
@@ -933,6 +934,13 @@ async function boot(): Promise<void> {
   // components/instance-sheet.ts's own header for the two callers (this gate,
   // and the profile "Change" button later).
   await maybeShowFirstRunInstanceSheet(host);
+
+  // First-run desktop models sheet (Tauri shells only, once): offer to pre-download
+  // the heavy on-device AI image models from the model host (VITE_MODELS_BASE) so
+  // background removal / upscaling work instantly and offline. Non-blocking - it
+  // floats over the gallery as it paints, and is a fast no-op on web, CLI, and
+  // every later boot. See components/models-welcome.ts.
+  void maybeShowModelsWelcome();
 
   // Sideloaded tools (installed from a .lolly) are spliced into the tool index the moment
   // the catalog lands, so they appear in the galleries/pickers and pass the tool view's

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The shared VIDEO-job dialog (plans/124 section 10, WP-G) - one modal behind the
- * catalog asset viewer's "Remove background…", "Crop…" and "Upscale…" actions on a
- * VIDEO asset. Preview frame, op controls, an honest estimate, then Run.
+ * catalog asset viewer's "Remove background…" and "Upscale…" actions on a VIDEO
+ * asset. Preview frame, op controls, an honest estimate, then Run. Both are model
+ * runs with nothing to frame; the ops that ARE a framing decision (crop, grade,
+ * trim) are edited inline over the catalog preview (views/video-edit-inline.ts).
  *
  * Run starts a WP-F background JOB (lib/video-jobs.ts → runVideoJobAsJob) and
  * CLOSES: the global toast (lib/job-toast.ts) then drives progress and survives
@@ -12,7 +14,7 @@
  * `onComplete` refreshes a still-open catalog view.
  *
  * AUDIO copy is per-op and honest: matte-to-transparent (WebP/APNG) can't carry
- * audio, so it is dropped; crop/upscale keep the source track. Esc/backdrop close
+ * audio, so it is dropped; an upscale keeps the source track. Esc/backdrop close
  * (mountModal owns that). Lazy-loaded, like matte-dialog / extract-audio.
  */
 import { mountModal } from '../components/modal.ts';
@@ -57,10 +59,16 @@ export interface VideoJobDialogOpts {
   onComplete?: (ref: AssetRef) => void;
 }
 
+// Every VideoOp needs a title even where this modal is not its surface: crop, grade
+// and trim are edited INLINE over the catalog preview (views/video-edit-inline.ts),
+// so they never open this dialog - but the Record is exhaustive on purpose, so a new
+// op cannot be added without deciding what it is called.
 const TITLE: Record<VideoOp, () => string> = {
   matte: () => t('Remove background'),
   crop: () => t('Crop video'),
   upscale: () => t('Upscale video'),
+  grade: () => t('Colour grade'),
+  trim: () => t('Trim video'),
 };
 
 /** Read a video's intrinsic size + duration from its URL (metadata only). */
@@ -90,7 +98,6 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
 
     const isMatte = opts.op === 'matte';
     const isUpscale = opts.op === 'upscale';
-    const isCrop = opts.op === 'crop';
 
     // Matte model options: the fast net is the video default; the transformer is
     // offered as the slow "best" choice. Only staged, wasm-runnable models.
@@ -153,19 +160,11 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
         </select>
       </label>` : '';
 
-    const cropControls = isCrop ? `
-      <div class="vjob-crop" data-crop hidden>
-        <label class="vjob-field"><span>X</span><input type="number" class="field-input" data-crop-x min="0" step="2" value="0"></label>
-        <label class="vjob-field"><span>Y</span><input type="number" class="field-input" data-crop-y min="0" step="2" value="0"></label>
-        <label class="vjob-field"><span>${escapeHtml(t('Width'))}</span><input type="number" class="field-input" data-crop-w min="2" step="2"></label>
-        <label class="vjob-field"><span>${escapeHtml(t('Height'))}</span><input type="number" class="field-input" data-crop-h min="2" step="2"></label>
-      </div>` : '';
-
     const content = `
       <h2 class="modal-title">${escapeHtml(TITLE[opts.op]())}</h2>
       <p class="modal-msg vjob-name">${escapeHtml(opts.sourceName)}</p>
       <div class="vjob-controls">
-        ${matteControls}${upscaleControls}${cropControls}
+        ${matteControls}${upscaleControls}
       </div>
       <p class="modal-msg vjob-audio">${escapeHtml(audioNote)}</p>
       ${modelNote}
@@ -189,7 +188,6 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
     const cancelBtn = el.querySelector<HTMLButtonElement>('[data-act="cancel"]')!;
     const estimateEl = el.querySelector<HTMLElement>('[data-estimate]')!;
     const statusEl = el.querySelector<HTMLElement>('[data-status]')!;
-    const cropWrap = el.querySelector<HTMLElement>('[data-crop]');
 
     // GIF is the only 1-bit-alpha format; reveal the hard-edge note only when it is
     // chosen so WebP/PNG (soft alpha) stay noise-free.
@@ -254,8 +252,8 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
     // null read is fine where a temporal-dead-zone read would throw.
     if (isMatte) applyMethod();
 
-    // Probe the source size/length: validate against the caps, prefill the crop
-    // box, and refuse up front rather than after Run.
+    // Probe the source size/length: validate against the caps and refuse up front
+    // rather than after Run.
     void probeVideoMeta(opts.source.url).then((meta) => {
       if (!el.isConnected) return;
       srcDims = meta;
@@ -267,13 +265,6 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
       const refusal = videoJobRefusal(opts.op, { longEdge, durationSec: meta.durationSec, bytes: (opts.source.meta?.bytes as number) ?? 0 });
       if (refusal) { estimateEl.textContent = refusal; return; }
 
-      if (isCrop && cropWrap) {
-        cropWrap.hidden = false;
-        (el.querySelector('[data-crop-w]') as HTMLInputElement).value = String(meta.width);
-        (el.querySelector('[data-crop-h]') as HTMLInputElement).value = String(meta.height);
-        (el.querySelector('[data-crop-w]') as HTMLInputElement).max = String(meta.width);
-        (el.querySelector('[data-crop-h]') as HTMLInputElement).max = String(meta.height);
-      }
       goBtn.disabled = false;
 
       if (isMatte) {
@@ -328,11 +319,10 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
         const model = (el.querySelector('[data-model]') as HTMLSelectElement).value as UpscaleModelId;
         req.upscale = { model, fps: 30, bitrate: 12_000_000 };
       } else {
-        const num = (sel: string): number => Number((el.querySelector(sel) as HTMLInputElement)?.value) || 0;
-        req.crop = {
-          rect: { x: num('[data-crop-x]'), y: num('[data-crop-y]'), w: num('[data-crop-w]') || (srcDims?.width ?? 0), h: num('[data-crop-h]') || (srcDims?.height ?? 0) },
-          fps: 30, bitrate: 8_000_000,
-        };
+        // No silent fall-through. This modal renders controls for exactly two ops; crop,
+        // grade and trim are inline surfaces with their own params, so building one here
+        // would send the job off with, say, a crop request and no rect the user chose.
+        throw new Error(`video-job-dialog: no controls for the '${opts.op}' op`);
       }
       return req;
     }

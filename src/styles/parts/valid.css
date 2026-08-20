@@ -193,6 +193,10 @@
 .valid-preview--sm { max-width: 12rem; justify-self: start; }
 .valid-preview--sm img,
 .valid-preview--sm video { max-height: 9rem; }
+/* Audio gets the native player at full row width; there is nothing to crop. */
+.valid-preview.is-audio { display: block; background: none; }
+.valid-preview.is-audio audio { display: block; width: 100%; min-width: 16rem; }
+.valid-preview--sm.is-audio { max-width: 20rem; }
 /* Formats a browser can't decode inline (TIFF, MKV) — a quiet labelled tile. */
 .valid-preview.is-placeholder {
   padding: 2rem 1rem;
@@ -709,6 +713,11 @@
   0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
   50%      { opacity: 0.78; transform: scale(1.12) rotate(8deg); }
 }
+/* The "likely" (pipeline-fingerprint) tier is deliberately calmer than a
+   declaration: same violet identity, none of the motion, a softer lift. */
+.valid-ai-flag--likely { animation: none; box-shadow: 0 8px 20px -14px hsl(var(--vf-ai) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.3); }
+.valid-ai-flag--likely::after { display: none; }
+.valid-ai-flag--likely .valid-ai-flag-ic svg { animation: none; }
 /* Credit line ("Made with Google AI") + the invisible-watermark note inside the
    AI banner — the note reads as a quieter footnote under the main claim. */
 .valid-ai-flag-credit { font-size: calc(0.82rem * var(--a11y-fs)); font-style: italic; color: hsl(0 0% 100% / 0.95); }
@@ -953,6 +962,8 @@
   box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / 0.7);
 }
 .valid-item-ai svg { width: 0.85em; height: 0.85em; }
+/* The fingerprint tier's chip ("AI?"), quieter than a declared "AI". */
+.valid-item-ai.is-likely { background: hsl(var(--vf-ai) / 0.55); box-shadow: none; }
 
 /* The assertion log — a video-game "power-on" cascade: rows arm one after
    another, each swept once by a light bar as it lands. The round mark chip

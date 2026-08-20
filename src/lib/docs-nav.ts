@@ -97,6 +97,27 @@ export function extractSitemap(doc: Document): HTMLElement | null {
 }
 
 /**
+ * The footer CONTACT block - everything in the built page's `<footer>` EXCEPT the
+ * `.footer-sitemap` (the reader already shows that in its own sitemap slot): the
+ * "Open Source · Privacy · Inclusive Design" line, the "Questions? Contact Andy
+ * Fitzsimon - fitzy@suse.com" line, and the "Founded by SUSE" badge + its image.
+ * Rebuilt into a fresh `<footer class="docs-contact-footer">` so docs.css can style
+ * it (the built page's own footer CSS lives in <head>, which the reader never keeps);
+ * internal `/info` links are rewritten to the in-app reader like everywhere else.
+ */
+export function extractContactFooter(doc: Document): HTMLElement | null {
+  const src = doc.querySelector('footer');
+  if (!src) return null;
+  const parts = Array.from(src.children).filter((el) => !el.classList.contains('footer-sitemap'));
+  if (!parts.length) return null;
+  const footer = document.createElement('footer');
+  footer.className = 'docs-contact-footer';
+  for (const p of parts) footer.appendChild(document.importNode(p, true));
+  rewriteDocLinks(footer);
+  return footer;
+}
+
+/**
  * The top PATHWAYS section switcher - the `.nav-group` anchors from the fetched page's
  * top bar (Quickstart · For Creators · For Builders · For Operators · Trust), rebuilt
  * into a compact bar. Rebuilt rather than cloned so the search box + language menu that

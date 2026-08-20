@@ -29,6 +29,7 @@ globalThis.document = dom.window.document;
 const {
   runFramePipeline, MatteAlphaSmoother, lumaHistogram, histogramDelta, SCENE_CUT_THRESHOLD,
   evenFloor, roundCropRect, cropFrame, videoProvenanceFor, runVideoJob, matteOutputFrames,
+  lutCreditText, lutCreditParameters,
   extrapolateEstimate, scaledEvenDims, MATTE_MAX_OUTPUT_FRAMES,
   resizeFrameRGBA, makeChromaKeyOp, CHROMA_DEFAULT_KEY, clampMatteLongEdge, MATTE_MAX_INPUT_LONG_EDGE,
 } = await import('./video-jobs.ts');
@@ -202,6 +203,49 @@ test('videoProvenanceFor: upscale = genAI partial with the composite source type
   assert.equal(p.actions[0]!.digitalSourceType, COMPOSITE_SOURCE_TYPE);
   assert.equal(p.aiGenerated, 'partial');
   assert.match(p.actions[0]!.description!, /Upscaled 4× with Real-ESRGAN v3/);
+});
+
+test('videoProvenanceFor: grade = colour_adjustments, no aiGenerated, no credit params by default', () => {
+  const p = videoProvenanceFor('grade', { lutLabel: 'Muted chrome' });
+  assert.equal(p.tool, 'Colour grade');
+  assert.equal(p.actions[0]!.action, 'c2pa.color_adjustments');
+  assert.equal(p.actions[0]!.description, 'Colour graded — Muted chrome');
+  assert.equal(p.actions[0]!.parameters, undefined);   // a CC0/anonymous look carries none
+  assert.equal(p.aiGenerated, undefined);
+});
+
+test('videoProvenanceFor: a credited LUT names its author + rights owner in description AND parameters', () => {
+  const credit = {
+    name: 'SUSE7 S-Log3 (Heavy)', author: 'Peter Chamalian',
+    role: 'Director of Photography & Editor', org: 'SUSE',
+    copyright: '© 2025 SUSE', license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', created: '2025-09',
+  };
+  const p = videoProvenanceFor('grade', { lutLabel: credit.name, lutCredit: credit });
+  // Human-readable: author + affiliation + licence, appended to the look name.
+  assert.equal(
+    p.actions[0]!.description,
+    'Colour graded — SUSE7 S-Log3 (Heavy) by Peter Chamalian, SUSE · CC BY 4.0',
+  );
+  // Machine-readable: the full record under a Lolly-namespaced key. Author (Peter)
+  // and copyright owner (SUSE) are distinct fields.
+  const lut = (p.actions[0]!.parameters as Record<string, Record<string, string>>)['com.lolly.lut']!;
+  assert.equal(lut.creator, 'Peter Chamalian');
+  assert.equal(lut.organization, 'SUSE');
+  assert.equal(lut.copyright, '© 2025 SUSE');
+  assert.equal(lut.license, 'CC BY 4.0');
+  assert.equal(lut.created, '2025-09');
+});
+
+test('lutCreditText / lutCreditParameters: omit optional fields cleanly', () => {
+  const bare = { name: 'X', author: 'A', license: 'CC0' };
+  assert.equal(lutCreditText(bare), 'by A · CC0');   // no org → author alone
+  const params = lutCreditParameters(bare)['com.lolly.lut'];
+  assert.equal(params.creator, 'A');
+  assert.equal(params.license, 'CC0');
+  assert.equal('organization' in params, false);
+  assert.equal('copyright' in params, false);
+  assert.equal('role' in params, false);
 });
 
 // ── runVideoJob end-to-end with fakes (record + stamp branch) ──────────────────
@@ -401,4 +445,352 @@ test('runVideoJob matte via chroma: model-free, plain colour-key stamp, source c
   const stamp = cap.calls[0]!;
   assert.match((stamp.o.actions as Array<{ description?: string }>)[0]!.description ?? '', /colour key/i);
   assert.deepEqual(stamp.o.ingredients, [{ marker: 'source-credential' }], 'the source video Content Credential is preserved as an ingredient');
+});
+
+// ── grade + trim + the range window (plans/130) ────────────────────────────────
+//
+// The LUT/grain MATHS belong to the engine (engine/src/grade.test.ts pins the
+// sampling, the tetrahedral interpolation and the darkroom-identical grain). What
+// is pinned here is how the PIPELINE uses them: one parse per job, a per-frame
+// seed, the audio windowed before it reaches the writer, and the range reaching
+// the reader seam at all.
+
+const {
+  makeGradeOp, sliceAudio, videoJobRefusal, videoJobIds,
+} = await import('./video-jobs.ts');
+
+/** A 2-point 3D LUT that maps EVERY input colour to pure blue - degenerate on
+ *  purpose, so the assertion is about the LUT being read and applied, not about
+ *  which interpolation weights fell out. */
+const FLAT_BLUE_CUBE = ['TITLE "Flat blue"', 'LUT_3D_SIZE 2', ...Array.from({ length: 8 }, () => '0.0 0.0 1.0')].join('\n');
+
+/** A decoded-audio stand-in: `sec` seconds of a ramp, one channel. */
+function fakeAudioBuffer(sec: number, sampleRate = 1000): {
+  length: number; numberOfChannels: number; sampleRate: number; getChannelData(): Float32Array;
+} {
+  const length = Math.round(sec * sampleRate);
+  const chan = new Float32Array(length);
+  for (let i = 0; i < length; i++) chan[i] = i;
+  return { length, numberOfChannels: 1, sampleRate, getChannelData: () => chan };
+}
+
+/** The grade params with everything off - each test turns on only what it pins. */
+function gradeParams(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { cubeText: '', lutIntensity: 1, grain: 0, grainSize: 2, vignette: 0, seed: 1, fps: 30, bitrate: 8_000_000, ...over };
+}
+
+test('runVideoJob grade: the LUT recolours every frame, the audio rides along, and the stamp names the look', async () => {
+  const { host, uploaded } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ width: number; height: number; audio?: unknown }> = [];
+  const audio = fakeAudioBuffer(4);
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    decodeAudio: async () => audio,
+    openVideoWriter: async (plan: { width: number; height: number; audio?: unknown }) => { plans.push(plan); return writer; },
+  };
+  const ref = await runVideoJob(host as never, {
+    op: 'grade', source: { id: 'g', type: 'video', url: 'blob:g', format: 'mp4' } as never, sourceName: 'clip.mp4',
+    grade: gradeParams({ cubeText: FLAT_BLUE_CUBE, lutLabel: 'Flat blue' }),
+  } as never, {}, deps as never);
+
+  assert.ok(ref);
+  // Every source frame was solid mid-grey; the LUT maps it to blue, alpha untouched.
+  const out = writer.frames[0]!.data;
+  assert.ok(out[0]! <= 4 && out[1]! <= 4, 'red/green pulled to zero by the LUT');
+  assert.ok(out[2]! >= 250, 'blue pushed to full by the LUT');
+  assert.equal(out[3], 255, 'alpha is never a colour channel');
+  // Grade keeps the source dimensions and the source sound.
+  assert.equal(plans[0]!.width, 4);
+  assert.equal(plans[0]!.audio, audio, 'the whole track reaches the writer when there is no range');
+  const rec = uploaded[0]!;
+  assert.equal(rec.type, 'video');
+  assert.equal(rec.aiGenerated, undefined, 'a colour grade invents nothing');
+  assert.match(rec.id as string, /^user\/video\/\d+-clip-graded\.mp4$/);
+  const stamp = cap.calls[0]!;
+  const action = (stamp.o.actions as Array<{ action: string; description?: string }>)[0]!;
+  assert.equal(action.action, 'c2pa.color_adjustments');
+  assert.match(action.description ?? '', /Flat blue/);
+});
+
+test('runVideoJob grade: grain with no LUT still changes the pixels, and the noise MOVES frame to frame', async () => {
+  const { host } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const deps = { ...baseDeps(cap, null, writer), openReader: async () => fakeReader(2, 8, 8, 128) };
+  await runVideoJob(host as never, {
+    op: 'grade', source: { id: 'g2', type: 'video', url: 'blob:g2', format: 'mp4' } as never, sourceName: 'g2.mp4',
+    grade: gradeParams({ cubeText: '', grain: 1, grainSize: 2, seed: 7 }),
+  } as never, {}, deps as never);
+
+  const [a, b] = [writer.frames[0]!.data, writer.frames[1]!.data];
+  const rgb = (d: Uint8ClampedArray): number[] => [...d].filter((_, i) => i % 4 !== 3);
+  assert.ok(rgb(a).some((v) => v !== 128), 'grain moved the flat frame off 128');
+  assert.notDeepEqual(rgb(a), rgb(b), 'the grain seed advances per frame - a fixed lattice would read as dirt on the lens');
+});
+
+test('runVideoJob trim: pixels pass through untouched, the range reaches the reader AND the audio slice', async () => {
+  const { host, uploaded } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ audio?: { length: number } | null }> = [];
+  let seenRange: unknown = 'never called';
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    openReader: async (_blob: Blob, _fps: number, range?: unknown) => { seenRange = range; return fakeReader(3); },
+    decodeAudio: async () => fakeAudioBuffer(10),
+    openVideoWriter: async (plan: { audio?: { length: number } | null }) => { plans.push(plan); return writer; },
+  };
+  const ref = await runVideoJob(host as never, {
+    op: 'trim', source: { id: 'tr', type: 'video', url: 'blob:tr', format: 'mp4' } as never, sourceName: 'talk.mp4',
+    trim: { fps: 0, bitrate: 8_000_000 }, range: { startSec: 2, endSec: 5 },
+  } as never, {}, deps as never);
+
+  assert.ok(ref);
+  assert.deepEqual(seenRange, { startSec: 2, endSec: 5 }, 'the reader decides the window; the loop never re-times frames');
+  assert.equal(writer.frames[0]!.data[0], 128, 'a trim is the identity op - no pixel is touched');
+  assert.equal(plans[0]!.audio!.length, 3000, '3 seconds of a 1kHz track, sliced before the muxer sees it');
+  const rec = uploaded[0]!;
+  assert.match(rec.id as string, /^user\/video\/\d+-talk-trimmed\.mp4$/);
+  const action = (cap.calls[0]!.o.actions as Array<{ action: string; description?: string }>)[0]!;
+  assert.equal(action.action, 'c2pa.edited');
+  assert.match(action.description ?? '', /Trimmed/);
+});
+
+test('videoJobIds: grade and trim get their own kind + label', () => {
+  assert.match(videoJobIds('grade', 'my clip.mp4', 'mp4', 1700).id, /^user\/video\/1700-my-clip-graded\.mp4$/);
+  assert.equal(videoJobIds('grade', 'my clip.mp4', 'mp4', 1700).name, 'Graded my clip');
+  assert.match(videoJobIds('trim', 'my clip.mp4', 'mp4', 1700).id, /^user\/video\/1700-my-clip-trimmed\.mp4$/);
+  assert.equal(videoJobIds('trim', 'my clip.mp4', 'mp4', 1700).name, 'Trimmed my clip');
+});
+
+test('sliceAudio: a windowed VIEW of each channel, clamped to the buffer, identity for a full range', () => {
+  const rate = 100;
+  const total = 1000; // 10 seconds
+  const chan = new Float32Array(total);
+  for (let i = 0; i < total; i++) chan[i] = i;
+  const buf = { length: total, numberOfChannels: 1, sampleRate: rate, getChannelData: () => chan };
+
+  const mid = sliceAudio(buf, 2, 5);
+  assert.equal(mid.length, 300);
+  assert.equal(mid.sampleRate, rate);
+  assert.equal(mid.numberOfChannels, 1);
+  assert.equal(mid.getChannelData(0).length, 300);
+  assert.equal(mid.getChannelData(0)[0], 200, 'the window starts at startSec × sampleRate');
+  assert.equal(mid.getChannelData(0)[299], 499);
+  assert.equal(mid.getChannelData(0).buffer, chan.buffer, 'a view, not a copy - a 2-minute stereo track is windowed for free');
+
+  const past = sliceAudio(buf, 8, 99);
+  assert.equal(past.length, 200, 'a window running past the end simply stops at the end');
+  assert.equal(past.getChannelData(0)[0], 800);
+
+  assert.equal(sliceAudio(buf, 0, 10), buf, 'a full range returns the ORIGINAL buffer');
+  assert.equal(sliceAudio(buf, 0, 999), buf, 'so does one clamped back to full');
+});
+
+test('videoJobRefusal: the duration cap measures the SELECTED window, not the whole source', () => {
+  const long = { longEdge: 1280, durationSec: 200, bytes: 1024 };
+  assert.equal(videoJobRefusal('trim', long, { startSec: 10, endSec: 40 }), null, '30s out of a 200s source is an ordinary job');
+  assert.match(videoJobRefusal('trim', long, { startSec: 0, endSec: 200 }) ?? '', /too long/i);
+  assert.match(videoJobRefusal('grade', long, { startSec: 0, endSec: 500 }) ?? '', /too long/i, 'the window is clamped to the source before it is measured');
+  // Nonsense windows are refused before anything is decoded.
+  assert.ok(videoJobRefusal('trim', long, { startSec: 5, endSec: 5 }), 'an empty window');
+  assert.ok(videoJobRefusal('trim', long, { startSec: 9, endSec: 4 }), 'end before start');
+  assert.ok(videoJobRefusal('trim', long, { startSec: -1, endSec: 4 }), 'a negative start');
+  assert.ok(videoJobRefusal('trim', long, { startSec: 0, endSec: Number.NaN }), 'a non-finite edge');
+  assert.ok(videoJobRefusal('trim', long, { startSec: 500, endSec: 520 }), 'a window entirely past the end of the source');
+  // Without a range every existing verdict is unchanged.
+  assert.match(videoJobRefusal('crop', long) ?? '', /too long/i);
+  assert.equal(videoJobRefusal('crop', { longEdge: 1280, durationSec: 10, bytes: 1024 }), null);
+  assert.ok(videoJobRefusal('crop', { longEdge: 1280, durationSec: 0, bytes: 1024 }), 'an unreadable length');
+  assert.ok(videoJobRefusal('upscale', { longEdge: 4000, durationSec: 10, bytes: 1024 }), 'the per-op long-edge cap still applies');
+});
+
+test('makeGradeOp: a malformed LUT throws when the op is BUILT, not part-way through the clip', () => {
+  assert.throws(() => makeGradeOp(gradeParams({ cubeText: 'this is not a LUT at all' }) as never));
+  // An empty look is legal: no LUT stage, nothing thrown.
+  assert.doesNotThrow(() => makeGradeOp(gradeParams() as never));
+});
+
+test('runVideoJob crop with a range: the credential records BOTH edits (crop + trim)', async () => {
+  const { host } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    decodeAudio: async () => null,
+    openVideoWriter: async () => writer,
+  };
+  const ref = await runVideoJob(host as never, {
+    op: 'crop', source: { id: 'cw', type: 'video', url: 'blob:cw', format: 'mp4' } as never, sourceName: 'window.mp4',
+    crop: { rect: { x: 0, y: 0, w: 2, h: 2 }, fps: 30, bitrate: 8_000_000 }, range: { startSec: 1, endSec: 3 },
+  } as never, {}, deps as never);
+
+  assert.ok(ref);
+  const actions = cap.calls[0]!.o.actions as Array<{ action: string; description?: string }>;
+  assert.equal(actions[0]!.action, 'c2pa.cropped', 'the op itself comes first');
+  assert.equal(actions[1]!.action, 'c2pa.edited', 'and the window it composed with is the second action');
+  assert.match(actions[1]!.description ?? '', /Trimmed/);
+});
+
+// ── what reaches the encoder: even dims, the source's own rate, a windowed decode ─
+//
+// The three things a fake reader can pin about the WRITER PLAN, none of which a
+// real codec is needed for: the dimensions are encodable, the frame rate is the
+// one the source already had, and the audio handed over is the window rather than
+// the whole track. The decoders behind those numbers (mediabunny's frame reader
+// and mediabunnyAudioRange) stay browser-smoke-only.
+
+/** A reader a test can dial: odd dims for the even snap, a resolved rate for the
+ *  fps plan, and the SOURCE duration the audio fallback gate reads. */
+function dialledReader(over: {
+  width?: number; height?: number; fps?: number; frames?: number; sourceDurationSec?: number;
+} = {}): Record<string, unknown> {
+  const width = over.width ?? 4;
+  const height = over.height ?? 4;
+  const n = over.frames ?? 2;
+  return {
+    width, height, fps: over.fps ?? 12, frameCount: n,
+    ...(over.sourceDurationSec === undefined ? {} : { sourceDurationSec: over.sourceDurationSec }),
+    async *read(): AsyncGenerator<Frame, void, unknown> {
+      for (let i = 0; i < n; i++) {
+        const data = new Uint8ClampedArray(width * height * 4).fill(128);
+        for (let p = 3; p < data.length; p += 4) data[p] = 255;
+        yield { data, width, height, timestampUs: i * 1000, durationUs: 1000 };
+      }
+    },
+    close(): void { /* nothing to release */ },
+  };
+}
+
+/** fakeHost with a host.log that keeps what it was told - the only way a DROPPED
+ *  audio track is visible to anyone. */
+function loggingHost(): { host: unknown; uploaded: Array<Record<string, unknown>>; logs: Array<{ level: string; msg: string }> } {
+  const made = fakeHost();
+  const logs: Array<{ level: string; msg: string }> = [];
+  (made.host as { log: unknown }).log = (level: string, msg: string): void => { logs.push({ level, msg }); };
+  return { host: made.host, uploaded: made.uploaded, logs };
+}
+
+test('runVideoJob grade + trim: an odd-dimension source is snapped to even before the encoder sees it', async () => {
+  for (const op of ['grade', 'trim'] as const) {
+    const { host } = fakeHost();
+    const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+    const writer = fakeWriter('mp4');
+    const plans: Array<{ width: number; height: number }> = [];
+    const deps = {
+      ...baseDeps(cap, null, writer),
+      // 873×481: what an anamorphic PAR or a window-sized screen recording resolves to.
+      openReader: async () => dialledReader({ width: 873, height: 481 }),
+      openVideoWriter: async (plan: { width: number; height: number }) => { plans.push(plan); return writer; },
+    };
+    await runVideoJob(host as never, {
+      op,
+      source: { id: 'odd', type: 'video', url: 'blob:odd', format: 'mp4' } as never,
+      sourceName: 'anamorphic.mp4',
+      ...(op === 'grade' ? { grade: gradeParams() } : { trim: { fps: 0, bitrate: 8_000_000 } }),
+    } as never, {}, deps as never);
+
+    assert.equal(plans[0]!.width, 872, `${op}: an odd width never reaches the encoder (4:2:0 rejects it)`);
+    assert.equal(plans[0]!.height, 480, `${op}: nor an odd height`);
+  }
+});
+
+test('runVideoJob grade: fps 0 asks the reader for the source rate, and the writer plans at exactly that', async () => {
+  const { host } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ fps: number }> = [];
+  let askedFps = -1;
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    openReader: async (_blob: Blob, fps: number) => { askedFps = fps; return dialledReader({ fps: 50 }); },
+    openVideoWriter: async (plan: { fps: number }) => { plans.push(plan); return writer; },
+  };
+  await runVideoJob(host as never, {
+    op: 'grade', source: { id: 'r', type: 'video', url: 'blob:r', format: 'mp4' } as never, sourceName: 'fast.mp4',
+    grade: gradeParams({ fps: 0 }),
+  } as never, {}, deps as never);
+
+  assert.equal(askedFps, 0, "0 is the reader's 'keep the source rate' contract - the same one trim passes");
+  assert.equal(plans[0]!.fps, 50, 'a colour look re-times nothing: a 50fps clip is encoded at 50, not resampled to 30');
+});
+
+test('runVideoJob with a range: only the WINDOW of the audio is decoded, never the whole track', async () => {
+  const { host } = fakeHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ audio?: { length: number } | null }> = [];
+  let wholeDecodes = 0;
+  let seenRange: unknown = 'never called';
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    // 45 minutes of source behind a 3-second selection - the case the duration cap
+    // now admits, and the one a whole-file decode would spend a gigabyte of PCM on.
+    openReader: async () => dialledReader({ sourceDurationSec: 2700 }),
+    decodeAudio: async () => { wholeDecodes++; return fakeAudioBuffer(2700); },
+    decodeAudioRange: async (_blob: Blob, range: { startSec: number; endSec: number }) => {
+      seenRange = range;
+      return fakeAudioBuffer(range.endSec - range.startSec);
+    },
+    openVideoWriter: async (plan: { audio?: { length: number } | null }) => { plans.push(plan); return writer; },
+  };
+  await runVideoJob(host as never, {
+    op: 'trim', source: { id: 'lo', type: 'video', url: 'blob:lo', format: 'mp4' } as never, sourceName: 'long.mp4',
+    trim: { fps: 0, bitrate: 8_000_000 }, range: { startSec: 100, endSec: 103 },
+  } as never, {}, deps as never);
+
+  assert.deepEqual(seenRange, { startSec: 100, endSec: 103 }, 'the window reaches the audio decoder, not just the frame reader');
+  assert.equal(wholeDecodes, 0, 'a 45-minute track is never decoded whole to keep 3 seconds of it');
+  assert.equal(plans[0]!.audio!.length, 3000, '3 seconds at 1kHz - the window is what the muxer is handed');
+});
+
+test('runVideoJob: a declined window decode falls back to the whole track while the source is short enough', async () => {
+  const { host, logs } = loggingHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ audio?: { length: number } | null }> = [];
+  let wholeDecodes = 0;
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    openReader: async () => dialledReader({ sourceDurationSec: 30 }),
+    decodeAudio: async () => { wholeDecodes++; return fakeAudioBuffer(30); },
+    decodeAudioRange: async () => null,
+    openVideoWriter: async (plan: { audio?: { length: number } | null }) => { plans.push(plan); return writer; },
+  };
+  await runVideoJob(host as never, {
+    op: 'trim', source: { id: 'sh', type: 'video', url: 'blob:sh', format: 'mp4' } as never, sourceName: 'short.mp4',
+    trim: { fps: 0, bitrate: 8_000_000 }, range: { startSec: 2, endSec: 5 },
+  } as never, {}, deps as never);
+
+  assert.equal(wholeDecodes, 1, '30 seconds is what a no-range job decodes anyway - no reason to lose the sound');
+  assert.equal(plans[0]!.audio!.length, 3000, 'and the fallback still windows what it decoded');
+  assert.deepEqual(logs.filter((l) => l.level === 'warn'), [], 'nothing was dropped, so nothing is warned about');
+});
+
+test('runVideoJob: a declined window decode on a long source drops the sound, visibly in the log', async () => {
+  const { host, logs } = loggingHost();
+  const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+  const writer = fakeWriter('mp4');
+  const plans: Array<{ audio?: unknown }> = [];
+  let wholeDecodes = 0;
+  const deps = {
+    ...baseDeps(cap, null, writer),
+    openReader: async () => dialledReader({ sourceDurationSec: 2700 }),
+    decodeAudio: async () => { wholeDecodes++; return fakeAudioBuffer(2700); },
+    decodeAudioRange: async () => null,
+    openVideoWriter: async (plan: { audio?: unknown }) => { plans.push(plan); return writer; },
+  };
+  const ref = await runVideoJob(host as never, {
+    op: 'trim', source: { id: 'lo2', type: 'video', url: 'blob:lo2', format: 'mp4' } as never, sourceName: 'long.mp4',
+    trim: { fps: 0, bitrate: 8_000_000 }, range: { startSec: 100, endSec: 103 },
+  } as never, {}, deps as never);
+
+  assert.ok(ref, 'the job still finishes - the picture is the edit the user asked for');
+  assert.equal(wholeDecodes, 0, 'the gigabyte of PCM is never allocated');
+  assert.equal(plans[0]!.audio, null, 'the clip ships mute rather than risking the tab');
+  const warn = logs.find((l) => l.level === 'warn');
+  assert.ok(warn, 'and a dropped track is never silent about being dropped');
+  assert.match(warn!.msg, /no sound/i);
 });

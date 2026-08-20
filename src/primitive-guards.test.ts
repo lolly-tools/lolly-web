@@ -670,13 +670,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // names + numeric/boolean attrs), and the read-error banner (escape()d message) - all
   // user-data interpolations go through escape() (utils.ts).
   'views/data.ts': 4,
-  // The in-app docs reader (#/docs, M2 Phase 1). All three sinks are safe: the view
+  // The in-app docs reader (#/docs, M2 Phase 1). All four sinks are safe: the view
   // scaffold (shellHtml - t() labels + lib/icons markup, no free text), the error banner
-  // (escape()d message), and the full-width toggle's glyph (a TRUSTED lib/icons string;
-  // its label is an aria attribute, never HTML). The rehosted /info page fragment is
-  // injected as a PARSED node (DOMParser), not via a sink, and has its
-  // <script>/<style>/.listen-bar stripped.
-  'views/docs.ts': 3,
+  // (escape()d message + an escape(url)'d open-the-docs link), the language switcher's
+  // glyph (the TRUSTED LANG_ICON_SVG constant), and the full-width toggle's glyph (a
+  // TRUSTED lib/icons string; its label is an aria attribute, never HTML). The rehosted
+  // /info page fragment is injected as a PARSED node (DOMParser), not via a sink, and
+  // has its <script>/<style>/.listen-bar stripped.
+  'views/docs.ts': 4,
   // The in-app docs "Try it" hydration (M3). One insertAdjacentHTML sink: a TRUSTED
   // static icon (lib/icons.ts glyph string) appended to the pill; the label beside it is
   // set via textContent, never interpolated as HTML. No user/manifest string reaches a sink.
@@ -716,7 +717,6 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // this scan); this module only toggles classes + wires the shell's option callbacks.
   'components/profile-menu.ts': 1,
   'components/profiles-manager.ts': 3,
-  'components/progress-toast.ts': 2,
   // The persistent bar singleton's one render (plans/99 M1): a template.innerHTML of
   // footerNav()+gallerySearchBox() markup, whose only dynamic interpolations - 
   // placeholder/aria-label/value from the view's claim - are escape()d inside
@@ -1073,7 +1073,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // `.asset-picker-trim` slot); the fix made offerTrim's answer nullable so a
   // dismissal stores nothing.
   'views/picker.ts': 27,
-  'views/profile.ts': 23,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d
+  // Personal send targets (plans/129): the connections section body. One sink; every
+  // dynamic value (labels, provider kind, account names, scopes notes, field values)
+  // goes through escape() in oauthRowHtml/credentialRowsHtml, the rest is t() output.
+  'views/profile-connections.ts': 1,
+  'views/profile.ts': 18,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d; 23 → 18 2026-08-19: "Export everything" became a background job (lib/batch-job.ts), so its five progress-toast writes are gone - the global job toast reports it now
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) - both t() strings escape()d, the button markup is static
   'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)
   'views/record-control.ts': 6,
@@ -1202,6 +1206,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolated value is a t() literal or escapeHtml()'d; all later writes are
   // textContent / setAttribute / canvas paints, never HTML.
   'views/retouch-inline.ts': 1,
+  // 1 as of 2026-08-19 (plan 130, the inline video grade/trim mode). The one sink is
+  // the mode scaffold (tabs + mode bar + panels): every interpolated value is a t()
+  // literal or escapeHtml()'d, and sliderRow's numeric params are number-typed. All
+  // later writes are textContent / value / setAttribute / canvas paints, never HTML.
+  'views/video-edit-inline.ts': 1,
   // 1 as of 2026-08-09 (plan 100 section 11.27, the private-collab QR skin). The one sink
   // is `qrElementRenderer`'s `box.innerHTML = svg.value`, and the markup is this
   // module's OWN output: `renderQrSvg` builds it from the matrix it just computed,

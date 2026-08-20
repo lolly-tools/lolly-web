@@ -56,10 +56,13 @@ import { TOKEN_EXT } from '@lolly/engine';
 import type { UserFontsHost } from './user-fonts.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
-/** 2 adds the `versions/` + `frozen/` parts (plans/97 section 6a). `minReader` stays 1
- *  on purpose: the parts are additive, so a reader that predates them loads the
- *  pack and counts them as skipped rather than refusing a file it can mostly use. */
-export const BRAND_FORMAT_VERSION = 2;
+/** 2 adds the `versions/` + `frozen/` parts (plans/97 section 6a); 3 adds the
+ *  instance-pack parts (plans/131: instance.json, tools/, catalog/, pack.sig -
+ *  written by scripts/build-instance-pack.ts, read below via lib/pack-store.ts).
+ *  `minReader` stays 1 on purpose: the parts are additive, so a reader that
+ *  predates them loads the pack and counts them as skipped rather than refusing
+ *  a file it can mostly use. */
+export const BRAND_FORMAT_VERSION = 3;
 export const BRAND_READER_VERSION = 1;
 
 // The brand-adjacent localStorage keys that travel. Deliberately tiny: the
@@ -69,11 +72,14 @@ const BRAND_PREF_KEYS = ['theme'];
 const KNOWN_PARTS = new Set([
   'manifest.json', 'tokens.json', 'fonts.json', 'logos.json', 'prefs.json',
   'versions.json', 'frozen.json',
+  // Instance-pack parts (plans/131) - read by lib/pack-store.ts.
+  'instance.json', 'tools.json', 'catalog.json', 'pack.sig',
 ]);
 const isKnownPart = (path: string): boolean =>
   KNOWN_PARTS.has(path) || path === README_NAME
   || path.startsWith('fonts/') || path.startsWith('logos/')
-  || path.startsWith('versions/') || path.startsWith('frozen/');
+  || path.startsWith('versions/') || path.startsWith('frozen/')
+  || path.startsWith('tools/') || path.startsWith('catalog/');
 
 /** The host slice a brand pack travels through - the same seams user-fonts
  *  drives, plus profile.get for the export filename. */
@@ -106,6 +112,11 @@ export interface BrandImportSummary extends BrandPackSummary {
    *  Kept as they were: a published version is permanent, and two systems' "v2"
    *  are not the same thing. */
   versionsSkipped: number;
+  /** Instance-pack results (plans/131) - zero/absent for a plain brand pack. */
+  packTools: number;
+  packAssets: number;
+  packName?: string;
+  packSignature?: 'verified' | 'unverified' | 'unsigned';
 }
 
 /** One stored face's manifest row: its full asset record sans blob, plus the
@@ -429,6 +440,7 @@ export async function importBrandPack(
   const summary: BrandImportSummary = {
     tokens: false, fontFamilies: 0, fontFiles: 0, logos: 0, prefs: 0,
     versions: 0, frozen: 0, versionsSkipped: 0, skipped: 0, failedFonts: 0,
+    packTools: 0, packAssets: 0,
   };
 
   // Fonts BEFORE tokens: when the tokens land, applyChromeBrandVars reads
@@ -589,6 +601,26 @@ export async function importBrandPack(
   }
 
   await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => { /* cosmetic */ });
+
+  // Instance-pack parts (plans/131): the brand's tools + catalog assets, plus
+  // the instance base its community content comes from. All-or-nothing and
+  // AFTER the brand parts - a signature refusal throws out of the import (the
+  // brand itself has landed by then, which is the right partial: tokens and
+  // fonts are data, tools are code). Signature policy lives in pack-store.
+  if (readJson(files, 'instance.json')) {
+    const { importInstancePackParts } = await import('./lib/pack-store.ts');
+    const result = await importInstancePackParts(files);
+    summary.packTools = result.tools;
+    summary.packAssets = result.assets;
+    summary.packName = result.name;
+    summary.packSignature = result.signature;
+    if (result.instance) {
+      // The pack says where community content lives while it is loaded.
+      const { setInstanceBase } = await import('./lib/instance.ts');
+      await setInstanceBase(result.instance).catch(e =>
+        host.log?.('warn', "Couldn't set the pack's instance base", { error: String(e) }));
+    }
+  }
 
   summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;
   return summary;

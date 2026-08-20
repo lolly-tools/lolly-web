@@ -19,9 +19,9 @@ import { escape, safeHref } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { t, tRaw, docsAppHref } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { GROUP_LABELS, type SearchGroupId } from '../lib/search/registry.ts';
 import { docsIconName } from '../lib/search/providers/docs.ts';
@@ -125,9 +125,8 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   if (!viewEl.isConnected) return;
 
   viewEl.innerHTML = `
-    ${backPillHtml()}
+    ${backHomeHtml()}
     <div class="ask-topright" data-topright>
-      ${homeFabHtml({ className: 'ask-top-btn' })}
       <a href="#/profile" class="ask-top-btn ask-profile-link" aria-label="${escape(t('Open your profile'))}" title="${escape(t('Profile'))}">${icon('user')}</a>
     </div>
     <div class="platform-layout ask-layout">
@@ -173,11 +172,14 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   consentEl.hidden = true;
   transcriptEl.insertAdjacentElement('afterend', consentEl);
   let consentBusy = false;
+  /** Unsubscribes this view from the download job's progress fan-out. */
+  let detachDownload: (() => void) | null = null;
   const offerConsent = async (): Promise<void> => {
     if (embedConsentDismissed || consentBusy || !askSession().length) return;
     try {
       const { cachedEmbedModel, EMBED_MODEL_BYTES } = await import('../lib/ask/embed.ts');
-      const { fetchPrecacheManifest, downloadAsk } = await import('../lib/offline-manager.ts');
+      const { downloadEmbedModel, embedDownloadActive } = await import('../lib/ask/embed-download.ts');
+      const { fetchPrecacheManifest } = await import('../lib/offline-manager.ts');
       const precache = await fetchPrecacheManifest();
       if (!viewEl.isConnected || !precache?.groups.embed?.length || (await cachedEmbedModel())) return;
       if (consentEl.dataset.wired) { consentEl.hidden = false; return; }
@@ -192,24 +194,49 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
         embedConsentDismissed = true;
         consentEl.hidden = true;
       });
-      consentEl.querySelector('[data-consent-get]')?.addEventListener('click', () => {
-        if (consentBusy) return;
+      // The chip is now a MIRROR, not the owner: lib/ask/embed-download.ts runs
+      // the ~23 MB fetch as a WP-F job, so it keeps going (and stays visible in
+      // the global toast, with a working ✕) after this view is torn down. Every
+      // callback here checks isConnected, because by then it may be writing into
+      // a detached node.
+      const mirror = (text: HTMLElement): (() => void) => {
+        const { detach } = downloadEmbedModel(precache, {
+          onProgress: (loaded, total) => {
+            if (!viewEl.isConnected) return;
+            const pct = total ? Math.round((loaded / total) * 100) : 0;
+            text.textContent = tRaw('Downloading the matching model, {n}%', { n: pct });
+          },
+          onDone: () => {
+            consentBusy = false;
+            if (!viewEl.isConnected) return;
+            text.textContent = t('Ready. Your next question uses it.');
+            setTimeout(() => { consentEl.hidden = true; }, 4000);
+          },
+          onError: () => {
+            consentBusy = false;
+            if (!viewEl.isConnected) return;
+            text.textContent = t('The download did not finish. Answers keep working without it.');
+            setTimeout(() => { consentEl.hidden = true; }, 4000);
+          },
+        });
+        return detach;
+      };
+      /** Put the chip in its downloading state and attach it to the job. */
+      const showDownloading = (): void => {
         consentBusy = true;
         const text = consentEl.querySelector<HTMLElement>('.ask-consent-text')!;
         for (const b of consentEl.querySelectorAll('button')) (b as HTMLButtonElement).hidden = true;
-        downloadAsk(precache, {
-          onProgress: (p) => {
-            const pct = p.total ? Math.round((p.loaded / p.total) * 100) : 0;
-            text.textContent = tRaw('Downloading the matching model, {n}%', { n: pct });
-          },
-        }).then(() => {
-          text.textContent = t('Ready. Your next question uses it.');
-          setTimeout(() => { consentEl.hidden = true; }, 4000);
-        }).catch(() => {
-          text.textContent = t('The download did not finish. Answers keep working without it.');
-          setTimeout(() => { consentEl.hidden = true; }, 4000);
-        }).finally(() => { consentBusy = false; });
+        detachDownload?.();
+        detachDownload = mirror(text);
+      };
+      consentEl.querySelector('[data-consent-get]')?.addEventListener('click', () => {
+        if (consentBusy) return;
+        showDownloading();
       });
+      // Coming back to #/ask mid-download: the model is still uncached, so the
+      // chip re-offers itself. Attach to the running job instead of starting a
+      // second download of the same bytes.
+      if (embedDownloadActive()) showDownloading();
     } catch { /* the chip is an enhancement - its absence is never an error */ }
   };
 
@@ -282,6 +309,10 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     busy = false;
+    // Detach the chip's mirror only. The download job carries on - that is the
+    // whole point of moving it out of this view - and the toast still shows it.
+    detachDownload?.();
+    detachDownload = null;
     if (benchOn) delete (globalThis as Record<string, unknown>).__lollyAskBench;
   };
 }

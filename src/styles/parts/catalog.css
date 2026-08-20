@@ -1086,9 +1086,16 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-preview.is-retouching .cat-zoom-stage,
 .cat-details-preview.is-retouching .cat-stage-bar,
 .cat-details-preview.is-retouching .cat-thumb,
-.cat-details-preview.is-retouching .cat-details-nav { display: none; }
+.cat-details-preview.is-retouching .cat-details-nav,
+/* Video Grade/Trim is the third one: its own paused <video> owns the stage, and the
+   arrows must go for the same reason — paging away mid-edit would take the mode with it. */
+.cat-details-preview.is-video-editing .cat-zoom-stage,
+.cat-details-preview.is-video-editing .cat-stage-bar,
+.cat-details-preview.is-video-editing .cat-thumb,
+.cat-details-preview.is-video-editing .cat-details-nav { display: none; }
 .cat-details.is-cropping .cat-details-actions,
-.cat-details.is-retouching .cat-details-actions { display: none; }
+.cat-details.is-retouching .cat-details-actions,
+.cat-details.is-video-editing .cat-details-actions { display: none; }
 /* The work centres in the preview (its grid place-items:center); the viewport carries its
    own rounded corners, so the wrapper's dialog margin is dropped. */
 .cat-crop-work.cat-crop-inline {
@@ -1116,6 +1123,194 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-crop-inline .cat-zoom-hud {
   position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
   z-index: 3; padding: 2px 6px; border-radius: 999px; background: hsl(0 0% 0% / .55);
+}
+
+
+/* ── Inline video edit (details modal) ── the third inline mode (views/video-edit-inline.ts):
+   Grade and Trim as two tabs over a PAUSED frame, with a scrub bar under it. It reuses the
+   .cat-mode-bar toolbar above and takes the same takeover classes as crop/retouch, so the
+   zoom stage, the stage bar, the prev/next arrows and the body's action row all step aside.
+   The frame is the hero — the viewport takes every pixel the controls leave. */
+.cat-vid-work {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  z-index: 3;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+}
+.cat-vid-body {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px 12px; overflow: auto;
+}
+.cat-vid-viewport {
+  position: relative; flex: 1 1 auto; min-height: 120px;
+  display: grid; place-items: center; overflow: hidden;
+  border-radius: var(--radius); background: hsl(var(--muted) / .35);
+}
+.cat-vid-preview { display: block; max-width: 100%; max-height: 100%; }
+/* The graded still sits EXACTLY over the frame it was taken from (its inline width/height
+   track the video's rendered box), so tuning a look never shifts the picture. */
+.cat-vid-canvas {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  max-width: 100%; max-height: 100%; pointer-events: none;
+}
+.cat-vid-scrub { display: flex; align-items: center; gap: 8px; }
+.cat-vid-step { flex: none; font-variant-numeric: tabular-nums; }
+.cat-vid-track { position: relative; flex: 1 1 auto; min-width: 0; display: block; }
+.cat-vid-track input[type="range"] { position: relative; z-index: 1; width: 100%; margin: 0; }
+/* The selected window, painted on the track itself: in/out are a span of time, and a
+   number pair alone never shows how much of the clip is left. */
+.cat-vid-span {
+  position: absolute; top: 50%; height: 6px; transform: translateY(-50%);
+  border-radius: 3px; background: hsl(var(--primary) / .35); pointer-events: none;
+}
+.cat-vid-time, .cat-vid-readout {
+  font-size: calc(.8rem * var(--a11y-fs)); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cat-vid-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.cat-vid-panel[hidden] { display: none; }
+.cat-vid-slider, .cat-vid-field { display: inline-flex; align-items: center; gap: 6px; }
+.cat-vid-slider-label { font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.cat-vid-slider input[type="range"] { width: 108px; }
+.cat-vid-slider output { font-size: calc(.8rem * var(--a11y-fs)); font-variant-numeric: tabular-nums; min-width: 3ch; }
+.cat-vid-inout { display: inline-flex; align-items: center; gap: 14px; }
+.cat-vid-timefield { display: inline-flex; align-items: center; gap: 6px; }
+/* Manual entry is the OPTIONAL path now, so the field reads as a readout that happens to
+   accept typing rather than as a form control competing with the strip above it. */
+.cat-vid-inout input.cat-vid-readout {
+  font: inherit; font-size: calc(.8rem * var(--a11y-fs));
+  font-variant-numeric: tabular-nums; width: 7ch; padding: 3px 6px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--background)); color: inherit;
+}
+/* ── The trim tab's filmstrip ── the primary control: a picture of the whole source with a
+   handle at each end (lib/clip-thumbs.ts paints the frames, views/video-edit-inline.ts owns
+   the gesture). It takes a full row of the wrapping panel, because a strip you cannot see
+   the ends of is not a strip. A source that will not decode leaves the canvas blank and
+   every control on it still works. */
+.cat-vid-strip {
+  position: relative; flex: 1 0 100%; height: 44px;
+  border-radius: var(--radius); overflow: hidden; cursor: pointer;
+  background: hsl(var(--muted) / .5);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.cat-vid-strip-frames { display: block; width: 100%; height: 100%; }
+/* No frames yet, or none coming (an undecodable or cross-origin source): the strip stays
+   a plain track rather than pretending to be a picture that failed to arrive. */
+.cat-vid-strip:not(.has-frames) { background: hsl(var(--muted) / .8); }
+/* Outside the window, dimmed rather than hidden: what is being dropped is part of the
+   decision, so it stays legible. */
+.cat-vid-strip-veil {
+  position: absolute; top: 0; bottom: 0;
+  background: hsl(var(--background) / .66); pointer-events: none;
+}
+.cat-vid-strip-veil[data-veil-in] { left: 0; }
+.cat-vid-strip-veil[data-veil-out] { right: 0; }
+.cat-vid-strip-head {
+  position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 2;
+  background: hsl(var(--primary)); pointer-events: none;
+}
+/* The grips read as BRACKETS on the ends of the kept range, the shape an NLE trim handle
+   has had for thirty years: each one sits just INSIDE the window with its flat face on the
+   cut, so the bracket and the veil edge are the same line, and neither can drift off the
+   strip when an edge is parked at 0 or at the duration.
+
+   Their contrast cannot depend on the frame behind them - a white-background clip ate the
+   hairline these replaced (Andy, 2026-08-19). So: dark fill, a white outer stroke, a drop
+   shadow under that, and a pale glyph inside. Whatever the frame is doing, one of those
+   three layers is fighting it.
+
+   This is the VISUAL grip only. The zone that RESPONDS is picked per pointer event in JS
+   and is wider still (wider again for a finger); the two sizes are deliberately different
+   numbers, exactly as the sequence editor keeps them. */
+.cat-vid-strip-edge {
+  position: absolute; top: 0; bottom: 0; z-index: 3;
+  width: 22px; padding: 0; margin: 0;
+  display: flex; align-items: stretch;
+  border: 0; background: transparent; cursor: ew-resize;
+}
+.cat-vid-strip-edge[data-edge="in"] { justify-content: flex-start; }
+/* The out bracket hangs back off its own position, so its right face is the cut. */
+.cat-vid-strip-edge[data-edge="out"] { justify-content: flex-end; transform: translateX(-100%); }
+.cat-vid-strip-edge::before {
+  content: ''; width: 12px; height: 100%;
+  background: hsl(0 0% 9% / .94);
+  box-shadow: 0 0 0 1.5px hsl(0 0% 100% / .92), 0 1px 4px hsl(0 0% 0% / .5);
+}
+.cat-vid-strip-edge[data-edge="in"]::before { border-radius: 0 4px 4px 0; }
+.cat-vid-strip-edge[data-edge="out"]::before { border-radius: 4px 0 0 4px; }
+/* The knurl inside the bracket - two hairlines, the universal "this is draggable". */
+.cat-vid-strip-edge::after {
+  content: ''; position: absolute; top: 50%; width: 4px; height: 14px;
+  transform: translateY(-50%); pointer-events: none;
+  background: repeating-linear-gradient(to right, hsl(0 0% 100% / .85) 0 1px, transparent 1px 3px);
+}
+.cat-vid-strip-edge[data-edge="in"]::after { left: 4px; }
+.cat-vid-strip-edge[data-edge="out"]::after { right: 4px; }
+/* Grabbed or focused, the bracket takes the brand colour: which edge is live must never
+   be a thing the user infers from where the badge appeared. */
+.cat-vid-strip-edge:hover::before,
+.cat-vid-strip-edge:focus-visible::before,
+.cat-vid-strip-edge:active::before { background: hsl(var(--primary)); }
+.cat-vid-strip-edge:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -1px; }
+/* The readout that follows the edge being dragged: the window's length, plus how far
+   this gesture has moved it. */
+.cat-vid-strip-badge {
+  position: absolute; top: 4px; z-index: 4; transform: translateX(-50%);
+  padding: 1px 7px; border-radius: 999px; pointer-events: none; white-space: nowrap;
+  background: hsl(0 0% 0% / .72); color: #fff;
+  font-size: calc(.72rem * var(--a11y-fs)); font-variant-numeric: tabular-nums;
+}
+.cat-vid-strip-badge[hidden] { display: none; }
+.cat-vid-tabs { display: inline-flex; gap: 4px; }
+.cat-vid-tab {
+  font: inherit; font-size: calc(.85rem * var(--a11y-fs)); font-weight: 600;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground));
+}
+.cat-vid-tab.is-active { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff; }
+.cat-vid-note, .cat-vid-dur { margin: 0; font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.cat-vid-error, .cat-vid-refusal { margin: 0; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--destructive)); }
+.cat-vid-error[hidden], .cat-vid-refusal[hidden], .cat-vid-span[hidden] { display: none; }
+/* The crop tab's box, in the still crop box's visual language (.cat-crop-box and its
+   handles above) over a paused frame instead of an image. Its stage is sized in JS from
+   the video's own rendered box, so the box frames the PICTURE and its fractions map
+   straight onto source pixels; the viewport's overflow clips the dimming shadow. */
+.cat-vid-crop {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  max-width: 100%; max-height: 100%; z-index: 2;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.cat-vid-crop[hidden] { display: none; }
+.cat-vid-crop-box {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px solid #fff; outline: 1px solid #0007; cursor: move;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5);
+}
+.cat-vid-crop-h { position: absolute; width: 14px; height: 14px; background: #fff; border: 1px solid #0007; border-radius: 2px; }
+.cat-vid-crop-h[data-h="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
+.cat-vid-crop-h[data-h="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
+.cat-vid-crop-h[data-h="sw"] { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.cat-vid-crop-h[data-h="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }
+/* Invisible full-length strips straddling each border, so an edge can be grabbed
+   anywhere along its run. Inset 8px from each end to stay clear of the corner handles. */
+.cat-vid-crop-e { position: absolute; }
+.cat-vid-crop-e[data-h="n"] { top: -6px; left: 8px; right: 8px; height: 12px; cursor: ns-resize; }
+.cat-vid-crop-e[data-h="s"] { bottom: -6px; left: 8px; right: 8px; height: 12px; cursor: ns-resize; }
+.cat-vid-crop-e[data-h="w"] { left: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
+.cat-vid-crop-e[data-h="e"] { right: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
+@media (max-width: 640px) {
+  /* The panels wrap to their own rows on a phone; the frame keeps whatever is left. */
+  .cat-vid-slider input[type="range"] { width: 84px; }
+  .cat-vid-viewport { min-height: 96px; }
+  /* A taller strip on a phone: the drag axis is horizontal, so the height is the whole
+     target on the other one, and a finger wants more of it than a cursor does. The
+     bracket grows with it - a grip sized for a cursor is a grip a thumb covers. */
+  .cat-vid-strip { height: 52px; }
+  .cat-vid-strip-edge { width: 28px; }
+  .cat-vid-strip-edge::before { width: 16px; }
+  .cat-vid-strip-edge[data-edge="in"]::after { left: 6px; }
+  .cat-vid-strip-edge[data-edge="out"]::after { right: 6px; }
 }
 
 

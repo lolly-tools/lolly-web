@@ -4868,9 +4868,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette(); await paintFonts(); await paintLogos(); void applyChromeBrandVars(host);
   };
   const importPack = async (file: File): Promise<void> => {
-    await importBrandPack(transferHost, await file.arrayBuffer());
+    const summary = await importBrandPack(transferHost, await file.arrayBuffer());
     await reload();
-    announce(t('Brand loaded'));
+    if (summary.packTools > 0) {
+      // An instance pack (plans/131) landed tools + catalog entries beside the
+      // brand: resync now so the gallery lists them without a reload/boot.
+      void import('../catalog/sync.ts')
+        .then(({ syncCatalog }) => syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]))
+        .catch(() => { /* next boot's sync picks it up */ });
+      announce(tRaw('Brand loaded — {name}: {n} tools installed', {
+        name: summary.packName ?? t('instance pack'), n: summary.packTools,
+      }));
+    } else {
+      announce(t('Brand loaded'));
+    }
   };
 
   return {

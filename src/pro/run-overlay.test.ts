@@ -88,3 +88,41 @@ test('the run lock is released, and a second concurrent run is refused, not race
   await first;
   assert.equal(isBatchRunActive(), false);
 });
+
+// ── The run as a background JOB (WP-F) ───────────────────────────────────────
+// The lock that /pro's Render button asks about is no longer a boolean this module
+// clears in its own `finally` - it is the job registry (lib/batch-job.ts). These two
+// pin the shape /pro and the four view surfaces actually use.
+
+const { startBatchJob } = await import('../lib/batch-job.ts');
+const { jobsSnapshot } = await import('../lib/jobs.ts');
+
+test('a run given a job reports into it, and leaves the lock to the job that owns it', async () => {
+  const mount = freshMount();
+  const job = startBatchJob('Rendering 4 files');
+  assert.equal(isBatchRunActive(), true);   // claimed by the JOB, before the run starts
+
+  await runBatchWithProgress(host, rows, { mount, job, zipBaseName: 'batch', srcIndex: SRC });
+
+  // Every row reported - the count the global toast draws, whatever view is on screen.
+  const live = jobsSnapshot().find(j => j.id === job.id)!;
+  assert.deepEqual({ done: live.progress?.done, total: live.progress?.total }, { done: 4, total: 4 });
+  // …and the run did NOT settle a job it does not own: that belongs to the wrapper,
+  // which finishes it after delivery. The lock is still held until it does - the
+  // regression being pinned is the inverse, a lock left held once nothing owns it.
+  assert.equal(live.status, 'running');
+  assert.equal(isBatchRunActive(), true);
+
+  job.finish();
+  assert.equal(isBatchRunActive(), false);
+});
+
+test('a run with no mount still runs - the job toast is the surface, not a view', async () => {
+  const job = startBatchJob('Rendering Folder');
+  const out = await runBatchWithProgress(host, rows, { job, zipBaseName: 'folder' });
+  assert.equal(out.results.length, 4);
+  assert.equal(out.files.length, 0);        // no tool loader here, so every row fails
+  assert.equal(jobsSnapshot().find(j => j.id === job.id)!.progress!.done, 4);
+  job.finish();
+  assert.equal(isBatchRunActive(), false);
+});

@@ -36,11 +36,12 @@
  */
 import '../styles/parts/docs.css';
 import { escape } from '../utils.ts';
-import { t, tRaw, currentLang, normalizeLang, docsInfoHref, type Lang } from '../i18n.ts';
+import { t, tRaw, currentLang, normalizeLang, docsInfoHref, LANG_ICON_SVG, type Lang } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { attachLangMenu } from '../components/lang-menu.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
@@ -51,6 +52,7 @@ import {
   rewriteDocLinks,
   extractSidebar,
   extractSitemap,
+  extractContactFooter,
   extractPathways,
   buildToc,
 } from '../lib/docs-nav.ts';
@@ -66,9 +68,9 @@ type DocsHost = HostV1;
  *  + component HTML + t() labels only - no free/user text reaches this sink. */
 function shellHtml(inner: string): string {
   return `
-    ${backPillHtml()}
+    ${backHomeHtml()}
     <div class="docs-topright" data-topright>
-      ${homeFabHtml({ className: 'docs-top-btn' })}
+      <a href="#/profile" class="docs-top-btn docs-profile-link" aria-label="${escape(t('Open your profile'))}" title="${escape(t('Profile'))}">${icon('user')}</a>
     </div>
     <div class="docs-reader" data-reader>
       <div class="docs-pathways-slot" data-pathways hidden></div>
@@ -78,6 +80,7 @@ function shellHtml(inner: string): string {
         <div class="docs-toc-slot" data-toc hidden></div>
       </div>
       <div class="docs-sitemap-slot" data-sitemap hidden></div>
+      <div class="docs-contact-slot" data-contact hidden></div>
     </div>`;
 }
 
@@ -110,6 +113,19 @@ export async function mountDocs(
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'docs-top-btn' }));
+  // Language switcher, styled as a docs top pill (not the bare .lang-fab icon) so it
+  // matches the theme/home/wide cluster it sits in. attachLangMenu takes the element
+  // directly, so the trigger needs no .lang-fab class - just the popover ARIA hooks.
+  const langBtn = document.createElement('button');
+  langBtn.type = 'button';
+  langBtn.className = 'docs-top-btn';
+  langBtn.setAttribute('aria-label', t('Language'));
+  langBtn.title = t('Language');
+  langBtn.setAttribute('aria-haspopup', 'menu');
+  langBtn.setAttribute('aria-expanded', 'false');
+  langBtn.innerHTML = LANG_ICON_SVG;
+  viewEl.querySelector('[data-topright]')?.prepend(langBtn);
+  const detachLangMenu = attachLangMenu(langBtn, host);
   if (isLanding) {
     // Both before the fetch, so the loading state already sits in the landing's own
     // single-column shell and the band CSS is parsed by the time the fragment lands.
@@ -270,6 +286,10 @@ export async function mountDocs(
   if (isLanding) viewEl.querySelector('.docs-pathway-home')?.classList.add('active');
   fillSlot('[data-sidebar]', extractSidebar(doc));
   fillSlot('[data-sitemap]', extractSitemap(doc));
+  // The founded-by-SUSE badge + "Questions? Contact fitzy@suse.com" line from the built
+  // page's footer - the sitemap already rode up in its own slot just above; this brings
+  // the rest of that footer with it so the reader isn't missing the site's contact.
+  fillSlot('[data-contact]', extractContactFooter(doc));
   // The landing gets no table of contents: its own sticky quicknav already jumps between
   // bands (hidden in landing mode), and the bands are sections of a front door rather
   // than headings of an article. Its pathways + sitemap slots fill as on any page; it
@@ -371,6 +391,7 @@ export async function mountDocs(
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     node.removeEventListener('click', onAnchorClick as EventListener);
+    detachLangMenu();
     stopSpy?.();
     // Order: detach the narration block from the shared window (the window stays if music
     // is still registered) before dropping the host (stops audio, removes the <audio> tap).

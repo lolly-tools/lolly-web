@@ -172,32 +172,9 @@
   cursor: pointer;
 }
 .upscale-suggest:hover { border-color: hsl(var(--primary)); }
-/* Same recipe as the Script-audio bar: a thin track, a primary fill JS drives. */
-.upscale-progress {
-  height: 6px;
-  border-radius: 3px;
-  background: hsl(var(--border));
-  overflow: hidden;
-}
-.upscale-progress-fill {
-  height: 100%;
-  width: 0;
-  border-radius: 3px;
-  background: hsl(var(--primary));
-  transition: width 0.15s;
-}
-/* No fraction to report yet: pulse the full track. */
-.upscale-progress-indeterminate .upscale-progress-fill {
-  animation: upscale-pulse 1.2s ease-in-out infinite;
-}
-@keyframes upscale-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .upscale-progress-indeterminate .upscale-progress-fill { animation: none; opacity: 0.7; }
-}
-html[data-a11y-motion="reduce"] .upscale-progress-indeterminate .upscale-progress-fill { animation: none; opacity: 0.7; }
+/* No in-dialog progress bar: Run enqueues a WP-F background job and the sheet
+   closes, so the global job toast (styles/parts/job-toast.css) owns the bar. The
+   status line below carries only the decode errors and the hand-off message. */
 .upscale-status {
   font-size: calc(12.5px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));

@@ -39,6 +39,7 @@ import {
 } from './speech-kokoro.ts';
 import type { EspeakFn, SentenceClip } from './speech-kokoro.ts';
 import { ORT_HF_BASE } from './ort-hf-base.ts';
+import { MODELS_BASE } from './models-base.ts';
 
 export interface SpeechWorkerRequest {
   id: number;
@@ -85,12 +86,16 @@ function ensureRuntime(id: number): Promise<KokoroRuntime> {
   runtime = (async (): Promise<KokoroRuntime> => {
     const { env, AutoTokenizer, StyleTextToSpeech2Model, Tensor } = await import('@huggingface/transformers');
 
-    // Same-origin everything (see the module header). localModelPath's default
-    // is already '/models/' in the browser, but set it explicitly - the whole
-    // privacy story rides on these three lines.
+    // Model weights load from `${MODELS_BASE}/models/`. On the web build MODELS_BASE
+    // is '' → '/models/' (same-origin, byte-identical to before); the desktop shell
+    // bakes VITE_MODELS_BASE=https://lolly.tools so it pulls the weights from there
+    // once, caches them (transformers.js Cache API), then runs offline. The privacy
+    // story is unchanged: allowRemoteModels stays false, so nothing hits the HF hub
+    // and no audio ever leaves the device - the only fetch is the static model file,
+    // exactly as in the same-origin case.
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
-    env.localModelPath = '/models/';
+    env.localModelPath = `${MODELS_BASE}/models/`;
     if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.wasmPaths = ORT_HF_BASE;
 
     // One aggregate download meter across the model + tokenizer files. The
@@ -129,7 +134,7 @@ const voiceCache = new Map<string, Float32Array>();
 async function getVoiceData(voice: string): Promise<Float32Array> {
   const hit = voiceCache.get(voice);
   if (hit) return hit;
-  const url = `/models/kokoro/voices/${voice}.bin`;
+  const url = `${MODELS_BASE}/models/kokoro/voices/${voice}.bin`;
   let resp: Response | undefined;
   try {
     const c = await caches.open('lolly-speech');

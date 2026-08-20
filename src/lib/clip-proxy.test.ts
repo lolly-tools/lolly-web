@@ -679,6 +679,7 @@ const read = (rel: string): string => readFileSync(join(webSrc, rel), 'utf8');
 const PROXY_CONSUMERS: Record<string, string> = {
   'lib/clip-proxy.ts': 'the feature itself',
   'lib/clip-proxy.test.ts': 'this file',
+  'lib/clip-proxy-job.test.ts': 'the WP-F job wiring of the transcode (heavy slot, failure, cancel) — tests only, no export path',
   'lib/scrub-registry.ts': 'the synchronous half of the feature',
   'lib/scrub-registry.test.ts': 'its tests',
   'lib/clip-thumbs.ts': 'THE preview consumer — filmstrips and waveforms',

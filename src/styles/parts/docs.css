@@ -431,6 +431,22 @@
 .docs-sitemap-slot .sitemap-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: .35rem; }
 .docs-sitemap-slot a.sitemap-title:hover { color: hsl(var(--primary)); }
 
+/* footer contact block (extracted <footer> minus the sitemap) — the "Questions? Contact
+   Andy Fitzsimon — fitzy@suse.com" line, the Open-Source/Privacy/Inclusive-Design line,
+   and the Founded-by-SUSE badge. The built page's own footer CSS lives in its <head>,
+   which the reader never keeps, so re-declare the centred muted look here — and, load-
+   bearing, size the badge image: /info/founded-by.svg ships with NO intrinsic width or
+   height, so without an explicit width the inline anchor + image collapse to 0×0. */
+.docs-contact-slot { margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border)); font-size: .82rem; color: hsl(var(--muted-foreground)); }
+/* Centre the block — a global `footer { text-align: right }` (base.css) directly
+   matches the adopted <footer>, so it must be overridden on the element itself. */
+.docs-contact-slot .docs-contact-footer { text-align: center; }
+.docs-contact-slot p { margin: 0 0 .5rem; }
+.docs-contact-slot a { color: hsl(var(--muted-foreground)); text-decoration: underline; text-underline-offset: 2px; }
+.docs-contact-slot a:hover { color: hsl(var(--primary)); }
+.docs-contact-slot .founded-badge { display: inline-block; line-height: 0; margin-top: .5rem; }
+.docs-contact-slot .founded-badge img { display: block; width: 15em; max-width: 100%; height: auto; }
+
 /* responsive: fold the rails away on narrow screens (content + TOC-in-flow) */
 @media (max-width: 1024px) {
   .docs-reader-grid { grid-template-columns: minmax(0, 1fr); }

@@ -12,6 +12,10 @@ interface ImportMetaEnv {
   // External base URL for the on-device model files (Vercel Blob); '' / undefined
   // means same-origin /models/. Read only by lib/models-base.ts.
   readonly VITE_MODELS_BASE?: string;
+  // Deployment public key (JWK JSON) that vouches for the catalog index and any
+  // loadable .lolly instance pack; unset means unsigned/dev. Read only by
+  // lib/pack-store.ts (kept in sync with catalog/integrity.ts's PINNED_KEY).
+  readonly VITE_CATALOG_PUBLIC_KEY_JWK?: string;
 }
 
 interface ImportMeta {

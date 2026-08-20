@@ -12,6 +12,8 @@
  * transformers.js itself (or finds the offline part's pre-download).
  */
 
+import { MODELS_BASE } from '../models-base.ts';
+
 /** The staged model's directory name under /models/ - transformers.js resolves
  *  this id against env.localModelPath, so it doubles as the model id. */
 export const EMBED_MODEL_ID = 'embed';
@@ -25,7 +27,7 @@ export const EMBED_MODEL_BYTES = 23_685_047;
 /** The cache key transformers.js stores the model under (utils/hub.js: the
  *  resolved local path, relative to origin). Probed by cachedEmbedModel(),
  *  never fetched. */
-const MODEL_CACHE_URL = `/models/${EMBED_MODEL_ID}/onnx/model_quantized.onnx`;
+const MODEL_CACHE_URL = `${MODELS_BASE}/models/${EMBED_MODEL_ID}/onnx/model_quantized.onnx`;
 
 export interface EmbedProgress { phase: 'download'; fraction: number; loaded?: number; total?: number }
 

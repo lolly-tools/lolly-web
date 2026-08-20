@@ -37,6 +37,7 @@ import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { canGoBack, getPrevView } from '../lib/back-nav.ts';
 import { navigateTo } from '../nav.ts';
+import { homeFabHtml } from './home-fab.ts';
 
 export interface BackTarget {
   /** Where the pill points. Always a real href so middle-click/copy-link work. */
@@ -149,6 +150,17 @@ export function backPillHtml(opts: BackPillOpts = {}): string {
   }
   // nosemgrep: lolly-href-escape-is-not-scheme-validation - same resolveBackTarget() origin-relative route as above
   return `<a href="${escape(target.href)}" class="tools-home${cls ? ` ${cls}` : ''}" data-back-pill="${mode}">${arrow}<span class="back-pill-label">${escape(target.label)}</span></a>`;
+}
+
+/** The top-LEFT chrome island: the back pill with the always-Home FAB immediately
+ *  to its right, both in the shared glass family (components.css `.tools-home` +
+ *  topbar.css `.home-fab`) so they read as one level row - the mirror of the
+ *  top-right `.gallery-topright` cluster. `.chrome-topleft` (overrides.css) pins
+ *  the row and neutralises the pill's own fixed positioning. No extra wiring: a
+ *  view's existing mountBackPill()+mountHomeFab() both scan the whole root, so the
+ *  pill and the FAB here are wired by the calls the view already makes. */
+export function backHomeHtml(opts: BackPillOpts = {}): string {
+  return `<div class="chrome-topleft">${backPillHtml(opts)}${homeFabHtml()}</div>`;
 }
 
 export interface MountBackPillOpts {

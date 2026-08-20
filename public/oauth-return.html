@@ -19,15 +19,16 @@
   // app (both ends carry the same isolation headers, so they share a
   // partition). Non-isolated browsers keep working through the opener path.
   (function () {
-    // A bare visit (no fragment) is NOT a sign-in return - say so honestly
-    // rather than broadcasting an empty payload and claiming success. (A
-    // broadcast "succeeds" even with nobody listening, so the fragment is the
-    // only real evidence a provider sent us here.)
-    if (!location.hash) {
+    // A bare visit (no fragment AND no query) is NOT a sign-in return - say so
+    // honestly rather than broadcasting an empty payload and claiming success.
+    // Token grants return in the FRAGMENT, code grants (Dropbox, Microsoft -
+    // plans/129) in the QUERY; both are forwarded verbatim and parsed by the
+    // opener, which owns the state validation.
+    if (!location.hash && !location.search) {
       document.getElementById('msg').textContent = 'This page only works as part of signing in from the app.';
       return;
     }
-    var payload = { source: 'lolly-oauth', hash: location.hash };
+    var payload = { source: 'lolly-oauth', hash: location.hash, search: location.search };
     var delivered = false;
     try {
       var bc = new BroadcastChannel('lolly-oauth');

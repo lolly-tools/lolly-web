@@ -36,7 +36,7 @@ import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts'
 import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
-import { mountProgressToast } from '../components/progress-toast.ts';
+import { startBatchExport } from '../lib/batch-job.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
@@ -63,6 +63,8 @@ import {
   rewordCacheBytes,
 } from '../lib/offline-manager.ts';
 import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
+import { beginOfflineRun, cancelOfflineRun, offlineRunActive, offlineRunLine, subscribeOfflineRun } from '../lib/offline-run.ts';
+import type { OfflineRunHandle, OfflineRunLine } from '../lib/offline-run.ts';
 import { upscaleCacheBytes, matteCacheBytes, ocrCacheBytes } from '../lib/model-prefetch.ts';
 import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
@@ -83,8 +85,8 @@ import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog
 import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
 import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '@lolly-tools/core/host-v1';
 import type { FeatureFlag } from '../feature-flags.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 
 /** A saved session as the web state bridge lists it - StateEntry plus the
  *  export filename and the thumbnail this view renders. */
@@ -271,6 +273,7 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
   { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
   { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
+  { id: 'connections-section', icon: 'upload', label: 'Connected services', keywords: 'connect send drive dropbox onedrive s3 bucket nextcloud webdav providers oauth' },
   { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
   { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
 ];
@@ -536,10 +539,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   const renderSaveListHtml = () => renderSaveRow(renderSaveState);
 
   viewEl.innerHTML = `
-    ${backPillHtml()}
+    ${backHomeHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
       <div class="gallery-topright">
-        ${homeFabHtml()}
         ${langFabHtml()}
       </div>
     </div>
@@ -684,6 +686,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <details class="profile-card profile-collapse" id="offline-section"${startOpen('offline-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Available offline')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body" id="offline-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+      </details>
+
+      <details class="profile-card profile-collapse" id="connections-section"${startOpen('connections-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Connected services')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body" id="connections-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
       <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
@@ -1937,8 +1944,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     //   'include' → render them (user committed to keeping the tab active)
     //   'skip'    → drop them, render everything else
     //   'cancel'  → abort the render (Escape / backdrop / Cancel)
-    // `behind` is dimmed while the choice is open so the progress toast doesn't distract.
-    function askKeepTabActive(count: number, behind?: HTMLElement): Promise<'include' | 'skip' | 'cancel'> {
+    function askKeepTabActive(count: number): Promise<'include' | 'skip' | 'cancel'> {
       return new Promise(resolve => {
         const n = count === 1 ? t('1 creation is a video or animation') : t('{n} of your creations are videos or animations', { n: count });
         const content = `
@@ -1949,12 +1955,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
             <button class="btn" data-choice="cancel">${t('Cancel')}</button>
           </div>`;
-        behind?.classList.add('is-dimmed');
         const modal = mountModal<'include' | 'skip' | 'cancel'>(content, {
           className: 'clear-dialog clear-dialog--hoard',
           cancelValue: 'cancel',
           initialFocus: (el) => el.querySelector<HTMLElement>('[data-choice="include"]'),
-          onClose: (result) => { openProfileModals.delete(modal); behind?.classList.remove('is-dimmed'); resolve(result ?? 'cancel'); },
+          onClose: (result) => { openProfileModals.delete(modal); resolve(result ?? 'cancel'); },
         });
         modal.el.setAttribute('aria-labelledby', 'keepactive-title');
         openProfileModals.add(modal);
@@ -1965,78 +1970,75 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
     }
 
-    // The two-part export+render job, kicked off once the confirm word matches. Runs in
-    // the shared progress toast (components/progress-toast.ts) - the `--top` variant, so
-    // the wait-time quips stay readable while a big archive renders (the bottom-right
-    // default can sit below the fold on a long, scrolled profile page). Tracked in
-    // openProfileToasts so a view swap tears it down. The toast's outer catch is new:
-    // this job previously had no failure path outside its two inner try/catches, so a
-    // throw elsewhere left a stale "rendering…" message on screen forever.
+    // The two-part export+render job, kicked off once the confirm word matches. It runs as
+    // ONE WP-F background job (lib/batch-job.ts): the data backup and the render report
+    // through the same handle, the global job toast owns the progress, and a throw
+    // anywhere fails the job so the failure is visible even after the user has left this
+    // view. It used to run in a view-owned progress toast that a view swap tore down mid
+    // archive - the run kept going with nothing on screen to show for it.
     async function exportAndRenderEverything(): Promise<void> {
       // The victorious fanfare fires when the render QUEUE finishes (see runBatchWithProgress),
       // not here at kickoff - so it lands as a genuine "it's all done" reward.
-      mountProgressToast(async (mount, toast) => {
+      startBatchExport(t('Exporting everything'), async (job) => {
         const prof = await host.profile.get().catch(() => null);
         const author = prof && (prof as { useDetails?: boolean }).useDetails ? prof : null;
 
         // 1) Portable data backup (quick) - the same bundle the "Export my data" button makes.
+        job.progress(0, 0, t('Saving your data backup…'));
         try {
           const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
           saveBlob(blob, filename);
-          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Saved your data backup.</strong> Now rendering every creation…')}</p>`;
           announce(tRaw('Data backup saved: {sessions}, {images}', {
             sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
             images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
           }));
         } catch (err) {
+          // The backup failing must not take the render down with it - it is a separate
+          // deliverable, so it is reported and the job carries on.
           host.log?.('error', 'Data export failed', { error: String(err) });
-          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
+          announce(tRaw('The data backup failed ({error}). Continuing to the render…', { error: String((err as { message?: unknown })?.message ?? err) }));
         }
 
         // 2) Render EVERYTHING into one nested zip mirroring the Projects tree: loose
         // (uncategorised) sessions at the top, each top-level folder recursed into subpaths.
+        job.progress(0, 0, t('Rendering every creation…'));
+        const [{ createFolderStore, childFolders }, { exportSelectionAsBatch }] = await Promise.all([
+          import('../folders.ts'),
+          import('../pro/folder-export.ts'),
+        ]);
+        const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+        const folders = await store.list();
+        const entries = await (host.state as unknown as { list(): Promise<Array<{ slot: string }>> }).list().catch(() => []);
+        const claimed = new Set(folders.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref)));
+        const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
+        const topLevelIds = childFolders(folders, null).map(f => f.id);
+        if (!looseSlots.length && !topLevelIds.length) {
+          announce(t('Backup saved. You have no saved sessions to render yet.'));
+          return undefined;
+        }
         try {
-          const [{ createFolderStore, childFolders }, { exportSelectionAsBatch }] = await Promise.all([
-            import('../folders.ts'),
-            import('../pro/folder-export.ts'),
-          ]);
-          const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
-          const folders = await store.list();
-          const entries = await (host.state as unknown as { list(): Promise<Array<{ slot: string }>> }).list().catch(() => []);
-          const claimed = new Set(folders.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref)));
-          const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
-          const topLevelIds = childFolders(folders, null).map(f => f.id);
-          if (!looseSlots.length && !topLevelIds.length) {
-            mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> You have no saved sessions to render yet — make something first, then come back.')}</p>`;
-            return;
-          }
           const result = await exportSelectionAsBatch(host as unknown as Parameters<typeof exportSelectionAsBatch>[0], {
             label: prof?.firstname ? `${prof.firstname}'s Lolly` : 'Lolly',
             sessionRefs: looseSlots,
             folderIds: topLevelIds,
             allFolders: folders as unknown as NonNullable<Parameters<typeof exportSelectionAsBatch>[1]>['allFolders'],
-            mount,
+            job,
             author,
             announce,
             // Videos/animations encode in real time (they pause if the tab is hidden), so make
-            // them opt-in behind an explicit "I'll keep this tab active" affirmation. Dim the
-            // whole toast (not just its mount) while the choice is open - it floats above the
-            // dialog's backdrop, so it needs its own dimming.
-            onMotionFound: (count) => askKeepTabActive(count, toast),
+            // them opt-in behind an explicit "I'll keep this tab active" affirmation.
+            onMotionFound: (count) => askKeepTabActive(count),
           });
           // A falsy result means the motion prompt was cancelled - the backup still went out,
-          // but nothing was rendered, so say so rather than leaving a stale "rendering…".
-          if (!result) {
-            mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
-          }
+          // but nothing was rendered, so say so rather than finishing silently.
+          if (!result) announce(t('Backup saved. Render cancelled, so nothing else was downloaded.'));
+          return result;
         } catch (err) {
-          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
+          // Logged here (the view has the host), then rethrown so job.fail carries it to
+          // the toast - a render failure must never be swallowed into a log line.
           host.log?.('error', 'Render-everything failed', { error: String(err) });
+          throw err;
         }
-      }, {
-        variant: 'top',
-        seed: `<p class="pro-progress-msg"><strong>${t('Preparing your export…')}</strong></p>`,
-        track: openProfileToasts,
       });
     }
 
@@ -2087,10 +2089,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // but counted by the Storage section's Asset-cache slice, never double here. ──
   const offlineDetails = viewEl.querySelector<HTMLDetailsElement>('#offline-section');
   let offlineLoaded = false;
-  // Set by loadOffline's wiring; called from _cleanup so a router view swap
-  // aborts an in-flight offline download instead of orphaning it (a remount
-  // could otherwise start a second concurrent run over the same buckets).
-  let offlineDownloadAbort: (() => void) | null = null;
+  // Set by loadOffline's wiring; called from _cleanup to DETACH this view from
+  // the run, never to stop it. The run itself lives in lib/offline-run.ts (a
+  // WP-F job), so leaving /profile mid-sweep keeps the download going with the
+  // global job toast owning its progress and its Cancel.
+  let offlineRunUnsub: (() => void) | null = null;
   async function loadOffline() {
     if (offlineLoaded) return;
     offlineLoaded = true;
@@ -2311,19 +2314,33 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // nobody on the connections this feature exists for). Failures are skipped
     // and reported as a count; the button doubles as the progress line. Shared
     // by the tools-row "Download all" and the section's "Download everything".
-    const sweepTools = async ({ fanfare = true } = {}): Promise<number> => {
-      if (allBtn.disabled) return 0;
+    // Re-entrancy is its OWN flag, not allBtn.disabled: the Everything sweep
+    // now runs the tools phase while the run holds every control disabled, so
+    // reading the button's state here would skip the phase entirely.
+    let toolsSweeping = false;
+    const sweepTools = async ({ fanfare = true, run = null as OfflineRunHandle | null } = {}): Promise<number> => {
+      if (toolsSweeping) return 0;
+      toolsSweeping = true;
       allBtn.disabled = true;
       const queue = tools.filter(tl => !pins[tl.id]);
       let failed = 0;
       let n = 0;
-      for (const tl of queue) {
-        allBtn.textContent = t('Downloading {n} of {total}…', { n: ++n, total: queue.length });
-        const btn = body.querySelector<HTMLElement>(`.odl-pin[data-odl="${CSS.escape(tl.id)}"]`);
-        if (!await download(tl.id, btn, { chime: false })) failed++;
+      try {
+        for (const tl of queue) {
+          // Cooperative cancel: the toast's ✕ (or the in-view Cancel) stops the
+          // sweep between tools - a tool download is short, so there is nothing
+          // finer to interrupt.
+          if (run?.cancelled) break;
+          allBtn.textContent = t('Downloading {n} of {total}…', { n: ++n, total: queue.length });
+          run?.report({ label: t('Tools'), loaded: n, total: queue.length, unit: 'items' });
+          const btn = body.querySelector<HTMLElement>(`.odl-pin[data-odl="${CSS.escape(tl.id)}"]`);
+          if (!await download(tl.id, btn, { chime: false })) failed++;
+        }
+      } finally {
+        toolsSweeping = false;
+        allBtn.disabled = false;
+        allBtn.textContent = t('Download all');
       }
-      allBtn.disabled = false;
-      allBtn.textContent = t('Download all');
       if (fanfare) {
         if (failed === 0) playSfx('victory');
         announce(failed
@@ -2333,7 +2350,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       await refreshCounter();
       return failed;
     };
-    allBtn.addEventListener('click', () => { void sweepTools(); });
+    // The tools-only sweep is a run too: dozens of small fetches still deserve
+    // to survive leaving the view, and to be cancellable from the toast.
+    allBtn.addEventListener('click', () => { void (async () => {
+      if (offlineRunActive()) return;
+      const run = beginOfflineRun(t('Downloading tools'));
+      if (!run) return;
+      try { await sweepTools({ run }); } finally { run.end(); }
+    })(); });
 
     noneBtn.addEventListener('click', async () => {
       const sure = await confirmDialog({
@@ -2366,15 +2390,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     // ── The parts rows: app / catalogue / docs / verify ─────────────────────
     let partState: PartState = parts;
-    let controller: AbortController | null = null;
-    // Re-entrancy is decided on this flag, set SYNCHRONOUSLY at runParts entry
-    // - `controller` is only assigned after two awaits (headroom estimate +
-    // confirm dialog), which is exactly the window a double-click exploits.
+    // Re-entrancy WITHIN this view is decided on this flag, set SYNCHRONOUSLY at
+    // runParts entry - the run is only registered after two awaits (headroom
+    // estimate + confirm dialog), which is exactly the window a double-click
+    // exploits. Across views (a remount mid-run) the module-level
+    // offlineRunActive() is the guard, since this flag is fresh per mount.
     let running = false;
     // The catalogue row's recorded scope no longer matches the checked chips - 
     // display state only; the record itself is untouched until a download runs.
     let catalogScopeDirty = false;
-    offlineDownloadAbort = () => controller?.abort();
     const everythingBtn = body.querySelector<HTMLButtonElement>('#odl-everything')!;
     const cancelBtn = body.querySelector<HTMLButtonElement>('#odl-cancel')!;
     const sweepSizeEl = body.querySelector<HTMLElement>('#odl-sweep-size')!;
@@ -2477,6 +2501,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           : modelIds.length ? t('all saved') : '';
       }
       for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'verify', 'catalog'] as const) syncPartRow(id);
+      // A live run owns row enablement: syncPartRow reads storage state, so it
+      // would re-enable rows the run just froze. This fires from async
+      // re-pricing (tag chips, the recorded-scope restore) too, which is
+      // exactly when a view mounted mid-run would flicker back to idle.
+      if (offlineRunActive()) setBusy(true);
     };
 
     const setBusy = (busy: boolean): void => {
@@ -2491,17 +2520,23 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (!busy) syncSweepSize(); // restore per-row enablement from state
     };
 
-    const showProgress = (label: string, p: DownloadProgress): void => {
-      const pct = p.total ? Math.min(100, Math.round((p.loaded / p.total) * 100)) : null;
+    // Paints ONE line of the run onto this view's bar. It is fed by the run's
+    // fan-out (subscribeOfflineRun below), not by the download loop directly -
+    // so the bar keeps painting in whichever /profile is currently mounted,
+    // including one mounted after the run started somewhere else.
+    const showProgress = (line: OfflineRunLine): void => {
+      const label = line.label;
+      const num = (n: number): string => line.unit === 'items' ? String(n) : fmtBytes(n);
+      const pct = line.total ? Math.min(100, Math.round((line.loaded / line.total) * 100)) : null;
       progTrack.classList.toggle('is-indeterminate', pct === null);
       if (pct === null) {
         progTrack.removeAttribute('aria-valuenow');
         progFill.style.width = '100%';
-        progText.textContent = tRaw('{label} — {loaded} so far…', { label, loaded: fmtBytes(p.loaded) });
+        progText.textContent = tRaw('{label} — {loaded} so far…', { label, loaded: num(line.loaded) });
       } else {
         progTrack.setAttribute('aria-valuenow', String(pct));
         progFill.style.width = `${pct}%`;
-        progText.textContent = tRaw('{label} — {loaded} of {total}', { label, loaded: fmtBytes(p.loaded), total: fmtBytes(p.total ?? 0) });
+        progText.textContent = tRaw('{label} — {loaded} of {total}', { label, loaded: num(line.loaded), total: num(line.total ?? 0) });
       }
     };
 
@@ -2513,9 +2548,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     /** Run one part's download; true on success. The caller owns busy state
      *  and passes the catalogue scope it CAPTURED at run start - re-reading
      *  the live checkboxes here would let a mid-run change alter what a
-     *  started download means. */
-    const runPart = async (id: OfflinePartId, signal: AbortSignal, scope: 'all' | string[]): Promise<boolean> => {
-      const onProgress = (p: DownloadProgress) => showProgress(partLabel(id), p);
+     *  started download means. Progress goes to the RUN (job + every mounted
+     *  view), never straight to this view's bar. */
+    const runPart = async (id: OfflinePartId, run: OfflineRunHandle, scope: 'all' | string[]): Promise<boolean> => {
+      const signal = run.signal;
+      const onProgress = (p: DownloadProgress) => run.report({ label: partLabel(id), loaded: p.loaded, total: p.total, unit: 'bytes' });
       try {
         if (id === 'app' && precache) await downloadApp(precache, { signal, onProgress });
         else if (id === 'docs' && infoManifest) await downloadDocs(infoManifest, { signal, onProgress });
@@ -2545,9 +2582,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     /** Preflight + sequential run of several parts behind one progress bar.
      *  Resolves true only when the run actually completed (with or without
      *  per-part failures) - false on re-entry, decline, or cancel, so a caller
-     *  chaining more work (the Everything sweep) knows not to continue. */
-    const runParts = async (ids: OfflinePartId[]): Promise<boolean> => {
-      if (running) return false;
+     *  chaining more work (the Everything sweep) knows not to continue.
+     *
+     *  `outer` lets the Everything sweep run its parts phase and its tools
+     *  phase inside ONE job: when it is passed, this function neither starts
+     *  nor ends the run, and leaves the completion announcement to the caller. */
+    const runParts = async (ids: OfflinePartId[], outer?: OfflineRunHandle): Promise<boolean> => {
+      if (running || (!outer && offlineRunActive())) return false;
       running = true;   // synchronous - closes the double-click window the two awaits below open
       try {
         const want = ids.filter(id => partAvailable[id] && (!partState[id] || isStale(id)));
@@ -2565,26 +2606,41 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           });
           if (!sure) return false;
         }
-        controller = new AbortController();
+        // One part gets that part's name in the toast; several share the section's.
+        const run = outer ?? beginOfflineRun(want.length === 1
+          ? tRaw('Downloading {name}', { name: partLabel(want[0]!) })
+          : t('Downloading for offline'));
+        if (!run) return false;   // another view's run is already in flight
         setBusy(true);
         let failed = 0;
+        let cancelled = false;
         try {
           for (const id of want) {
-            if (!await runPart(id, controller.signal, scope)) failed++;
+            if (!await runPart(id, run, scope)) failed++;
           }
         } catch {
+          cancelled = true;
+        } finally {
+          // The run ends here, not at view teardown. end() settles the job the
+          // toast is showing and releases the module-level slot; a cancelled
+          // job is already terminal, so this is a no-op for it.
+          if (!outer) run.end(failed ? t('{n} downloads failed — check your connection', { n: failed }) : undefined);
+          setBusy(false);
+        }
+        if (cancelled) {
           // Cancelled - everything already fetched stays cached, so the next
           // run resumes from here. Say so instead of reading as an error.
           announce(t('Download paused — already-saved files are kept'));
           return false;
-        } finally {
-          controller = null;
-          setBusy(false);
         }
         if (failed === 0) playSfx('victory');
-        announce(failed
-          ? t('{n} downloads failed — check your connection', { n: failed })
-          : t('Saved for offline'), { assertive: failed > 0 });
+        if (!outer) {
+          announce(failed
+            ? t('{n} downloads failed — check your connection', { n: failed })
+            : want.length === 1
+              ? tRaw('{name} is available offline', { name: partLabel(want[0]!) })
+              : t('Offline download complete'), { assertive: failed > 0 });
+        }
         // Downloads may deserve eviction protection now that they hold real bytes.
         await syncPersistLine();
         return failed === 0;
@@ -2597,7 +2653,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const dl = (e.target as HTMLElement).closest<HTMLElement>('[data-part-dl]');
       if (dl) { await runParts([dl.dataset.partDl as OfflinePartId]); return; }
       const rm = (e.target as HTMLElement).closest<HTMLElement>('[data-part-rm]');
-      if (!rm || running) return;
+      // offlineRunActive() covers a run started by an earlier mount of this view.
+      if (!rm || running || offlineRunActive()) return;
       const id = rm.dataset.partRm as OfflinePartId;
       const sure = await confirmDialog({
         title: t('Remove this offline download?'),
@@ -2635,26 +2692,37 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
 
     everythingBtn.addEventListener('click', async () => {
-      if (running) return;
+      if (running || offlineRunActive()) return;
       // Held disabled across BOTH phases - parts and the tools sweep - so a
       // second click can't slip in during the sweep and re-announce success.
       everythingBtn.disabled = true;
+      // ONE job covers both phases, so the toast tells a single story and the
+      // whole thing stays cancellable from anywhere in the app.
+      const run = beginOfflineRun(t('Downloading everything for offline'));
+      if (!run) { everythingBtn.disabled = false; return; }
       try {
         // The models fold into the sweep only when the opt-in box is ticked (their size is
         // stated on that row). A declined headroom warning or a mid-run Cancel resolves false:
         // the tools sweep must NOT start after the user said stop.
         const sweepIds: OfflinePartId[] = ['app', 'catalog', 'docs', ...(inclModels() ? availableModelParts() : [])];
-        if (!await runParts(sweepIds)) return;
-        const failed = await sweepTools({ fanfare: false });
+        if (!await runParts(sweepIds, run)) return;
+        setBusy(true);   // the parts phase released it; the tools phase owns it now
+        const failed = await sweepTools({ fanfare: false, run });
         announce(failed
           ? t('{n} downloads failed — check your connection', { n: failed })
-          : t('Everything you picked is saved for offline'), { assertive: failed > 0 });
+          : run.cancelled
+            ? t('Download paused — already-saved files are kept')
+            : t('Everything you picked is saved for offline'), { assertive: failed > 0 });
       } finally {
+        run.end();
+        setBusy(false);
         everythingBtn.disabled = false;
         syncSweepSize();
       }
     });
-    cancelBtn.addEventListener('click', () => controller?.abort());
+    // Cancel routes through the job registry (not a bare controller.abort) so the
+    // toast, the registry and the fetches all agree the run stopped.
+    cancelBtn.addEventListener('click', () => cancelOfflineRun());
 
     // Eviction protection: say where downloads stand, and offer the fix - a
     // re-request from a click is exactly when browsers grant it.
@@ -2686,9 +2754,47 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
     }
     syncSweepSize();
+
+    // ── The run outlives this view (lib/offline-run.ts) ─────────────────────
+    // The bar is driven by the run's fan-out, so it keeps painting for as long
+    // as THIS view lives and picks up a run that started in a previous mount.
+    // Fires on change only (the lib/jobs.ts subscribe contract), so the current
+    // line is read once below. _cleanup unsubscribes; it never aborts.
+    offlineRunUnsub = subscribeOfflineRun({
+      onProgress: line => showProgress(line),
+      onEnd: () => { void (async () => {
+        // The run may have finished parts this view never watched start.
+        partState = await partRecords().catch(() => partState);
+        setBusy(false);
+        await refreshCounter();
+      })(); },
+    });
+    // Re-entering /profile mid-run: read as busy rather than offer a second
+    // sweep over the same buckets. Must come after the syncSweepSize() above,
+    // which restores per-row enablement from storage state.
+    if (offlineRunActive()) {
+      setBusy(true);
+      const line = offlineRunLine();
+      if (line) showProgress(line);
+    }
   }
   offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
   if (offlineDetails?.open) loadOffline();
+
+  // Connected services (plans/129) - same lazy-mount idiom; the module owns
+  // its own re-rendering after connect/disconnect/save.
+  const connectionsDetails = viewEl.querySelector<HTMLDetailsElement>('#connections-section');
+  let connectionsLoaded = false;
+  const loadConnections = async (): Promise<void> => {
+    if (connectionsLoaded) return;
+    connectionsLoaded = true;
+    const body = viewEl.querySelector<HTMLElement>('#connections-body');
+    if (!body) return;
+    const { mountConnectionsBody } = await import('./profile-connections.ts');
+    await mountConnectionsBody(body);
+  };
+  connectionsDetails?.addEventListener('toggle', () => { if (connectionsDetails!.open) void loadConnections(); });
+  if (connectionsDetails?.open) void loadConnections();
 
   // ── Content Credentials: lazy, like Storage. The identity bridge (host.identity)
   // holds the device keypair + CA-issued cert; this section only ever shows either
@@ -2863,10 +2969,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     openProfileModals.clear();
     openProfileToasts.forEach(el => el.remove());
     openProfileToasts.clear();
-    // Abort any in-flight offline download - a remount would otherwise start a
-    // second concurrent run over the same buckets (the download is resumable,
-    // so aborting loses nothing already fetched).
-    offlineDownloadAbort?.();
+    // Detach this view from the offline download run - it is NOT aborted here.
+    // A multi-gigabyte sweep used to end the moment the user navigated away,
+    // which pinned them to this view for the whole thing; it now runs as a job
+    // (lib/offline-run.ts) that the toast owns after teardown. A remount can't
+    // start a second concurrent run over the same buckets either:
+    // beginOfflineRun() refuses while one is live, and a view mounted mid-run
+    // paints its controls busy.
+    offlineRunUnsub?.();
+    offlineRunUnsub = null;
   };
 }
 

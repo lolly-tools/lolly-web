@@ -177,11 +177,26 @@ import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import type { ExportOpts } from './export.ts';
 // Type only - the encoders themselves stay out of this module's graph.
 import type { AudioPcm } from '../lib/audio-encode.ts';
+// The provenance gather (plans/130). Its policy lives in its own module because
+// nothing in THIS file can be reached by a headless test - see its header.
+import { gatherSequenceIngredients, type SequenceIngredientSource } from './sequence-ingredients.ts';
+import { assetIdForUrl, MAX_CREDENTIAL_SCAN_BYTES } from './assets.ts';
 
-/** The slice of the web host this renderer needs. Log only - everything else is
- *  resolved from the DOM the tool already rendered. */
+/**
+ * The slice of the web host this renderer needs.
+ *
+ * Log, plus - optionally - the asset bridge's credential lookup. A rendered
+ * document keeps no asset ids, only URLs, so `assetIdForUrl` turns a clip's src
+ * back into an id and this is what asks for that id's preserved Content
+ * Credentials. Optional because the host handed in is frequently `null` (tests,
+ * and the default parameter below), and its absence costs only the byte-scan
+ * fallback rather than the export.
+ */
 export interface SeqHost {
   log?(level: string, msg: string): void;
+  assets?: {
+    credential?(id: string): Promise<{ store: Uint8Array; format: string } | null>;
+  };
 }
 
 // ── policy constants ────────────────────────────────────────────────────────
@@ -913,6 +928,88 @@ function mediaSrc(L: SeqLayer): string {
 }
 
 /**
+ * Preserve what this film is MADE OF, into the export's Content Credentials
+ * (plans/130).
+ *
+ * WHERE IT IS CALLED FROM, and why that is the whole design. `renderFormat` reads
+ * `opts._ingredientSink` after the render returns, so the gather has to have run by
+ * then whichever way the render left - and `renderSequenceAuthored` has FIVE exits
+ * (the tilt capture tier, the GL composite, the worker, the in-thread executor, and
+ * the nested writers below them), the first of which returns before a single plate
+ * is photographed. There is no late point common to all five. So both callers run
+ * this immediately after the stage guard, before any path-specific work, and no
+ * exit has to remember anything.
+ *
+ * WHAT COUNTS AS A SOURCE. Every video and audio layer, with no further filter.
+ * Not the mixer's list: that skips muted, zero-length and speed-shifted clips,
+ * which still put picture on the screen (and were still opened either way), so
+ * their provenance is still part of this film's history. Not the worker's `clips`
+ * either: that holds only video layers visible in the used grid, which drops every
+ * audio box - precisely the case this exists to cover. And the export bar's music
+ * bed is not a layer at all, so it is added by hand or it travels uncredited.
+ *
+ * Never fatal. The gather itself cannot throw; this wrapper catches anyway, because
+ * a provenance gather failing is not a reason to refuse someone their film.
+ */
+async function gatherStageIngredients(
+  layers: SeqLayer[], opts: ExportOpts, host: SeqHost | null,
+): Promise<void> {
+  if (!opts.c2pa || !opts._ingredientSink) return;
+  try {
+    const sources: SequenceIngredientSource[] = [];
+    for (const L of layers) {
+      if (L.kind !== 'video' && L.kind !== 'audio') continue;
+      const url = mediaSrc(L);
+      if (url) sources.push({ kind: L.kind, url });
+    }
+    if (opts.audio?.url) sources.push({ kind: 'audio', url: opts.audio.url });
+    if (opts.audio?.mix?.url) sources.push({ kind: 'audio', url: opts.audio.mix.url });
+    await gatherSequenceIngredients(sources, opts._ingredientSink, {
+      // A rendered document holds URLs and nothing else, so the id has to be
+      // recovered from the asset bridge's own object-URL cache. This is the only
+      // route to an upload's credential at all: ingest re-encoded its pixels, so
+      // the store lives beside the record rather than in the bytes being played.
+      credentialForUrl: async (url) => {
+        try {
+          const id = assetIdForUrl(url);
+          if (!id) return null;
+          return (await host?.assets?.credential?.(id)) ?? null;
+        } catch {
+          return null;
+        }
+      },
+      // The fallback, for the sources with no id to find. Capped at the same size
+      // the asset bridge refuses to scan past: a timeline can hold several
+      // multi-hundred-megabyte clips, and reading all of them to look for a
+      // manifest most of them do not carry is a cost nobody asked for.
+      fetchBytes: async (url, answered) => {
+        // Only a URL the bridge ANSWERED for is already settled: that store is the
+        // authoritative one, and for an upload it is the only copy that exists, so
+        // re-reading the whole clip could only reach the same place slowly, with
+        // the artboard held posed by withAuthoredDom. A null answer settles
+        // nothing. Naming an id and carrying a credential are different facts: a
+        // video job signs its output into its own bytes, and a record written
+        // before that capture existed has an id and an empty credential field -
+        // skipping the scan on the id alone threw those clips' provenance away
+        // silently, which is the one outcome this gather exists to prevent.
+        if (answered) return null;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          if (blob.size > MAX_CREDENTIAL_SCAN_BYTES) return null;
+          return new Uint8Array(await blob.arrayBuffer());
+        } catch {
+          return null;
+        }
+      },
+    });
+  } catch (err) {
+    host?.log?.('warn', `Source credentials not gathered (${(err as { message?: string })?.message ?? err}); exporting without them.`);
+  }
+}
+
+/**
  * The mixed timeline audio as planar PCM: every unmuted clip's own sound plus the
  * export bar's music bed, ducked under them. This is what an audio-only export
  * (wav/mp3/m4a/opus) of a sequence IS - the soundtrack of the video export, in a
@@ -941,6 +1038,10 @@ export async function sequenceAudioPcm(
   if (stage.totalMs > MAX_SEQUENCE_MS) {
     throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);
   }
+  // An audio-only export of a sequence is stamped by the same renderFormat tail the
+  // video is, so it earns its ingredients the same way. Threading them only through
+  // renderSequence would credit the film and orphan its soundtrack.
+  await gatherStageIngredients(stage.layers, opts, host);
   // Length is derived through the frame grid rather than from totalMs directly,
   // so it is the identical number renderSequence hands the mix for mp4/webm (the
   // streaming path never caps the grid). Same fps default, same rounding.
@@ -963,7 +1064,10 @@ export async function sequenceAudioPcm(
  *
  * Contract with the export funnel: this returns the finished container with
  * provenance tags already embedded (like every other video renderer); the C2PA
- * stamp is applied uniformly by renderFormat afterwards.
+ * stamp is applied uniformly by renderFormat afterwards. What this render owes
+ * that stamp is its INGREDIENTS - the credentials of the clips and the bed it was
+ * cut from, gathered up front into `opts._ingredientSink` (plans/130) because
+ * renderFormat reads that sink whichever exit the render took.
  *
  * THE READ/RESTORE SEAM (plans/104 section 6 point 0) is this wrapper, and it is the whole
  * reason the render is one function inside another. Everything below reads or
@@ -1002,6 +1106,11 @@ async function renderSequenceAuthored(
   if (stage.totalMs > MAX_SEQUENCE_MS) {
     throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);
   }
+
+  // FIRST, before a single plate is photographed or a thread is chosen: the film's
+  // sources are the same whichever of the five exits below this render leaves by,
+  // and the tilt tier takes the earliest of them. See gatherStageIngredients.
+  await gatherStageIngredients(stage.layers, opts, host);
 
   const stageEl = ((node as HTMLElement).matches?.('[data-sequence]') ? node : node.querySelector('[data-sequence]')) as HTMLElement;
   // A frames-as-scenes slideshow ("Design", plan 92) sizes to a SLIDE, not the stage:
@@ -1138,7 +1247,8 @@ async function renderSequenceAuthored(
   // BEFORE it, so plates are never built under P2a) - hence the render does NOT return
   // here; it falls through, builds plates, and hands the finished SeqJob to
   // `renderGlComposite` after the thread-selection point. Everything else about the
-  // export (the plates, the audio mix, the mux, one container-level C2PA) is identical.
+  // export (the plates, the audio mix, the mux, the ingredient gather that already
+  // ran above, one container-level C2PA over its results) is identical.
   const useGl = !!tilt && glSequenceRenderEnabled() && supportsGlSequenceRender();
   if (tilt && !useGl) {
     log('info', `sequence: TILT export — the camera authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);

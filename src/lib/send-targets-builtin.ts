@@ -14,7 +14,20 @@
  */
 import { registerSendTarget } from './send-target.ts';
 import { googleDriveSendTarget } from './google-drive.ts';
+import { dropboxSendTarget } from './dropbox-send.ts';
+import { oneDriveSendTarget } from './onedrive-send.ts';
+import { s3SendTarget } from './s3-send.ts';
+import { nextcloudSendTarget } from './nextcloud-send.ts';
+import { primeConnections } from './provider-connections.ts';
 
 export function registerBuiltinSendTargets(): void {
   registerSendTarget(googleDriveSendTarget());
+  registerSendTarget(dropboxSendTarget());
+  registerSendTarget(oneDriveSendTarget());
+  registerSendTarget(s3SendTarget());
+  registerSendTarget(nextcloudSendTarget());
+  // Credential kinds (s3, webdav) gate on hasConnection(), a sync read of the
+  // in-memory cache - warm it now so a saved bucket surfaces in the export
+  // panel without a /profile visit first.
+  primeConnections();
 }
